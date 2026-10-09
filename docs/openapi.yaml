@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Veasel Code API
-  version: 0.1.0
-  description: Local session, multi-provider chat, and event API. Repository tools and code changes are not yet implemented.
+  version: 0.3.1
+  description: Local session, multi-provider chat, Agent Plugin skill selection, and event API. Repository tools and code changes are not yet implemented.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -27,6 +27,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Capabilities'
+  /v1/plugins:
+    get:
+      operationId: listAgentPlugins
+      description: Discovers bounded local Agent Plugins and returns metadata without skill instruction bodies.
+      responses:
+        '200':
+          description: Available plugins and non-fatal discovery diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginCatalog'
+        '500':
+          description: Plugin directory could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/sessions:
     get:
       operationId: listSessions
@@ -149,6 +166,62 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/skills:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listSessionSkills
+      description: Returns the Agent Plugin skills enabled for this session.
+      responses:
+        '200':
+          description: Active skill identifiers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionPluginSkill'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: setSessionSkill
+      description: Enables or disables a validated Agent Plugin skill for the session. Enabled instructions are included as untrusted system context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetSessionPluginSkill'
+      responses:
+        '200':
+          description: Updated active skill identifiers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionPluginSkill'
+        '400':
+          description: Invalid request or skill instructions cannot be safely loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session or plugin skill not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/chat/completions:
     post:
       operationId: createChatCompletion
@@ -229,6 +302,66 @@ components:
           type: array
           items:
             type: string
+    PluginCatalog:
+      type: object
+      required: [plugins, diagnostics]
+      properties:
+        plugins:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginCatalogEntry'
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginDiagnostic'
+    PluginCatalogEntry:
+      type: object
+      required: [name, version, description, skills, mcp_servers, diagnostics]
+      properties:
+        name: { type: string }
+        version: { type: string }
+        description: { type: string }
+        skills:
+          type: array
+          items: { $ref: '#/components/schemas/PluginSkillSummary' }
+        mcp_servers:
+          type: array
+          description: Validated server declarations only; no MCP process is started by this API.
+          items: { $ref: '#/components/schemas/PluginMCPServerSummary' }
+        diagnostics:
+          type: array
+          items: { $ref: '#/components/schemas/PluginDiagnostic' }
+    PluginSkillSummary:
+      type: object
+      required: [name, description]
+      properties:
+        name: { type: string }
+        description: { type: string }
+    PluginMCPServerSummary:
+      type: object
+      required: [name, transport]
+      properties:
+        name: { type: string }
+        transport: { type: string }
+    PluginDiagnostic:
+      type: object
+      required: [component, message]
+      properties:
+        component: { type: string }
+        message: { type: string }
+    SessionPluginSkill:
+      type: object
+      required: [plugin_name, skill_name]
+      properties:
+        plugin_name: { type: string }
+        skill_name: { type: string }
+    SetSessionPluginSkill:
+      type: object
+      required: [plugin_name, skill_name, enabled]
+      properties:
+        plugin_name: { type: string, minLength: 1 }
+        skill_name: { type: string, minLength: 1 }
+        enabled: { type: boolean }
     CreateSession:
       type: object
       required: [title, directory]

@@ -4,6 +4,19 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
 mkdir "$work_dir/workspace"
+plugin_dir="$work_dir/plugins/review-package"
+mkdir -p "$plugin_dir/skills/review"
+cat >"$plugin_dir/plugin.json" <<'EOF'
+{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"review-tools","version":"1.0.0","description":"Fixture plugin for API smoke tests."}
+EOF
+cat >"$plugin_dir/skills/review/SKILL.md" <<'EOF'
+---
+name: review
+description: Review code changes carefully.
+---
+
+Fixture skill instructions for verifying session activation.
+EOF
 port="${VEASEL_SMOKE_PORT:-$((30000 + $$ % 20000))}"
 api="http://127.0.0.1:${port}"
 server_pid=""
@@ -27,6 +40,9 @@ fail() {
 	if [[ -f "$work_dir/server.log" ]]; then
 		cat "$work_dir/server.log" >&2
 	fi
+	if [[ -f "$work_dir/provider.log" ]]; then
+		cat "$work_dir/provider.log" >&2
+	fi
 	exit 1
 }
 
@@ -44,6 +60,7 @@ start_server() {
 		[[ "$1" == gemini ]] && provider_base="/v1beta"
 		[[ "${2:-}" == redirect ]] && provider_base="/redirect/v1"
 		env -u VEASEL_MODEL_API_KEY VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
+			VEASEL_PLUGIN_DIR="$work_dir/plugins" \
 			VEASEL_MODEL_PROVIDER="$1" VEASEL_MODEL=smoke-model \
 			OPENAI_API_KEY=veasel-openai-key ANTHROPIC_API_KEY=veasel-anthropic-key \
 			GEMINI_API_KEY=veasel-gemini-key \
@@ -51,7 +68,8 @@ start_server() {
 			"$work_dir/veasel" serve >"$work_dir/server.log" 2>&1 &
 	else
 		env -u VEASEL_MODEL -u VEASEL_MODEL_API_KEY -u VEASEL_MODEL_BASE_URL -u VEASEL_MODEL_PROVIDER \
-			VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" "$work_dir/veasel" serve >"$work_dir/server.log" 2>&1 &
+			VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" VEASEL_PLUGIN_DIR="$work_dir/plugins" \
+			"$work_dir/veasel" serve >"$work_dir/server.log" 2>&1 &
 	fi
 	server_pid=$!
 	for ((attempt = 0; attempt < 80; attempt++)); do
@@ -76,6 +94,10 @@ grep -Fq '"healthy":true' "$work_dir/health" || fail 'health response is incorre
 grep -Fq "\"version\":\"$expected_version\"" "$work_dir/health" || fail 'health version does not match the CLI version'
 curl -fsS "$api/v1/capabilities" >"$work_dir/capabilities"
 grep -Fq 'sessions.create' "$work_dir/capabilities" || fail 'session capability is missing'
+grep -Fq 'sessions.skills' "$work_dir/capabilities" || fail 'session skill capability is missing'
+curl -fsS "$api/v1/plugins" >"$work_dir/plugins.json"
+grep -Fq 'review-tools' "$work_dir/plugins.json" || fail 'plugin catalog is missing the fixture plugin'
+grep -Fq 'Review code changes carefully.' "$work_dir/plugins.json" || fail 'plugin catalog is missing skill metadata'
 expect_status 400 -H 'content-type: application/json' -d '{"messages":[{"role":"assistant","content":"not a user turn"}]}' "$api/v1/chat/completions"
 expect_status 403 -H 'Origin: http://attacker.example' -H 'content-type: application/json' \
 	-d '{"title":"forbidden","directory":"/tmp"}' "$api/v1/sessions"
@@ -91,6 +113,19 @@ grep -Fq '"title":"API smoke"' "$work_dir/response" || fail 'created session is 
 grep -Fq "\"directory\":\"$work_dir/workspace\"" "$work_dir/response" || fail 'workspace root was not stored canonically'
 session_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$work_dir/response")"
 [[ -n "$session_id" ]] || fail 'session id is missing'
+
+curl -fsS "$api/v1/sessions/$session_id/skills" >"$work_dir/skills"
+[[ "$(cat "$work_dir/skills")" == '[]' ]] || fail 'new session unexpectedly has active skills'
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","skill_name":"review","enabled":true}' \
+	"$api/v1/sessions/$session_id/skills"
+grep -Fq 'review-tools' "$work_dir/response" || fail 'skill enable response is missing the plugin name'
+expect_status 400 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","skill_name":"review"}' \
+	"$api/v1/sessions/$session_id/skills"
+expect_status 404 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","skill_name":"missing","enabled":true}' \
+	"$api/v1/sessions/$session_id/skills"
 
 curl -fsS "$api/v1/sessions" >"$work_dir/sessions"
 grep -Fq "$session_id" "$work_dir/sessions" || fail 'created session is missing from the list'
@@ -109,8 +144,10 @@ server_pid=""
 start_server
 curl -fsS "$api/v1/sessions/$session_id" >"$work_dir/recovered"
 grep -Fq '"title":"API smoke"' "$work_dir/recovered" || fail 'session did not survive a server restart'
+curl -fsS "$api/v1/sessions/$session_id/skills" >"$work_dir/recovered-skills"
+grep -Fq 'review-tools' "$work_dir/recovered-skills" || fail 'session skill selection did not survive a server restart'
 
-python3 "$repo_root/scripts/mock-provider.py" "$work_dir/provider.port" >/dev/null 2>&1 &
+python3 "$repo_root/scripts/mock-provider.py" "$work_dir/provider.port" >"$work_dir/provider.log" 2>&1 &
 provider_pid=$!
 for ((attempt = 0; attempt < 80; attempt++)); do
 	[[ -s "$work_dir/provider.port" ]] && break
@@ -135,6 +172,11 @@ for provider in openai-compatible anthropic gemini; do
 	grep -Fq '"content":"Continue this session"' "$work_dir/messages" || fail "$provider user turn was not persisted"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/messages" || fail "$provider assistant turn was not persisted"
 done
+
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","skill_name":"review","enabled":false}' \
+	"$api/v1/sessions/$session_id/skills"
+[[ "$(cat "$work_dir/response")" == '[]' ]] || fail 'skill disable did not clear the session selection'
 
 kill "$server_pid"
 wait "$server_pid" 2>/dev/null || true

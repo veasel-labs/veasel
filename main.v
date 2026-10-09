@@ -11,7 +11,11 @@ fn serve(port int, data_dir string) ! {
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }
 	}
-	mut app := new_app(store)
+	plugin_directory := os.getenv_opt('VEASEL_PLUGIN_DIR') or {
+		os.join_path(data_dir, 'plugins')
+	}
+	os.mkdir_all(plugin_directory)!
+	mut app := new_app(store, plugin_directory)
 	defer {
 		app.close()
 	}
@@ -49,7 +53,7 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${product_version}\n\nCommands:\n  serve    Start the local V backend\n  tui      Start the terminal client (Bun required)\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR')
+		println('Veasel Code ${product_version}\n\nCommands:\n  serve    Start the local V backend\n  tui      Start the terminal client (Bun required)\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR')
 		return
 	}
 	match command {

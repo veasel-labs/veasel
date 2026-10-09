@@ -68,6 +68,9 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [ ] Implement Agent Plugins v1.0.0 client conformance for directory loading,
   closed manifest validation, Skills, MCP stdio and Streamable HTTP, `PLUGIN_DATA`,
   placeholder expansion, failure isolation, and `com.veasel.code` extensions.
+- [x] Discover local Agent Plugin Skills, expose metadata through the API,
+  persist per-session activation, and include bounded instructions as untrusted
+  model context. This is a partial integration, not a conformance claim.
 - [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
   compatibility report before claiming support.
 - [ ] Document and test the Agent Toolkit integration contract.

@@ -29,6 +29,18 @@ type ChatExchange = {
   model: string
 }
 
+type PluginCatalog = {
+  plugins: Array<{
+    name: string
+    skills: Array<{ name: string; description: string }>
+  }>
+}
+
+type SessionPluginSkill = {
+  plugin_name: string
+  skill_name: string
+}
+
 const port = process.env.VEASEL_PORT ?? "4097"
 const configuredApi = process.env.VEASEL_API_URL ?? `http://127.0.0.1:${port}`
 const apiUrl = new URL(configuredApi)
@@ -154,7 +166,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new session   ↑/↓ navigate   enter open   r refresh   q quit",
+  content: "n new session   /skills list   /skill on|off plugin/skill   ↑/↓ navigate   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -169,6 +181,8 @@ let titleInput: InputRenderable | undefined
 let activeSession: Session | undefined
 let chatInput: InputRenderable | undefined
 let sendingMessage = false
+let chatMessages: ChatTurn[] = []
+let skillNotice = ""
 
 function renderSessions() {
   if (sessions.length === 0) {
@@ -216,10 +230,12 @@ async function createSession(title: string) {
 }
 
 function renderChat(messages: ChatTurn[]) {
+  chatMessages = messages
   const heading = activeSession
     ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
     : ""
-  sessionDetail.content = heading + (messages.length === 0
+  sessionDetail.content = safeTerminalText(heading)
+    + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0
     ? "Start with a question or describe a coding task."
     : messages.map((message) => {
       const label = message.role === "assistant" ? "VEASEL" : "YOU"
@@ -233,6 +249,7 @@ function safeTerminalText(value: string) {
 
 async function openSession(session: Session) {
   activeSession = session
+  skillNotice = ""
   renderChat([])
   const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(session.id)}/messages`, {
     signal: controller.signal,
@@ -262,6 +279,26 @@ async function openSession(session: Session) {
 async function sendMessage(value: string) {
   const content = value.trim()
   if (!content || !activeSession || !chatInput || sendingMessage) return
+  if (content === "/skills") {
+    await showSkills()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const skillCommand = /^\/skill\s+(on|off)\s+([a-z0-9.-]+)\/([a-z0-9-]+)$/.exec(content)
+  if (skillCommand) {
+    await setSkill(skillCommand[1] === "on", skillCommand[2], skillCommand[3])
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/skill ")) {
+    skillNotice = "Use /skill on <plugin>/<skill> or /skill off <plugin>/<skill>."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   sendingMessage = true
   chatInput.value = ""
   chatInput.blur()
@@ -290,6 +327,49 @@ async function sendMessage(value: string) {
   } finally {
     sendingMessage = false
     chatInput?.focus()
+  }
+}
+
+async function showSkills() {
+  if (!activeSession) return
+  try {
+    const [catalogResponse, activeResponse] = await Promise.all([
+      fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/skills`, { signal: controller.signal }),
+    ])
+    if (!catalogResponse.ok || !activeResponse.ok) throw new Error("plugin catalog is unavailable")
+    const catalog = await catalogResponse.json() as PluginCatalog
+    const active = await activeResponse.json() as SessionPluginSkill[]
+    const enabled = new Set(active.map((item) => `${item.plugin_name}/${item.skill_name}`))
+    const lines = catalog.plugins.flatMap((plugin) => plugin.skills.map((skill) => {
+      const key = `${plugin.name}/${skill.name}`
+      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}\n  ${skill.description}`
+    }))
+    skillNotice = lines.length > 0
+      ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>.`
+      : "No Agent Plugin skills found. Add a package with plugin.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load plugin skills: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function setSkill(enabled: boolean, pluginName: string, skillName: string) {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/skills`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ plugin_name: pluginName, skill_name: skillName, enabled }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    skillNotice = `${enabled ? "Enabled" : "Disabled"} ${pluginName}/${skillName} for this session. Use /skills to review active skills.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not update skill: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
   }
 }
 

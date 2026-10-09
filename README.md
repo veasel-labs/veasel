@@ -1,5 +1,10 @@
 # Veasel Code
 
+[![CI](https://github.com/veasel-labs/veasel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/veasel-labs/veasel/actions/workflows/ci.yml)
+[![Security](https://github.com/veasel-labs/veasel/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/veasel-labs/veasel/actions/workflows/security.yml)
+[![Latest preview](https://img.shields.io/github/v/release/veasel-labs/veasel?include_prereleases&label=preview)](https://github.com/veasel-labs/veasel/releases)
+[![Website](https://img.shields.io/badge/website-veasel.dev-3b6b54)](https://www.veasel.dev/)
+
 Veasel Code is an open-source AI coding agent with a V-native runtime and a
 server-first API. The project is being built in working vertical slices; see
 [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the current

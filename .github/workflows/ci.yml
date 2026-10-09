@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: V backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: vlang/setup-v@2c790c60223ed135f6949d1358675e4fd004b801 # v1
+        with:
+          version-file: .v-version
+      - name: Install SQLite development files
+        run: sudo apt-get update && sudo apt-get install --yes libsqlite3-dev
+      - name: Verify formatting
+        run: v fmt -verify .
+      - name: Build backend
+        run: v -o /tmp/veasel .
+      - name: Run domain tests
+        run: v test main_test.v
+      - name: Run HTTP and persistence smoke
+        run: scripts/api-smoke.sh
+
+  tui:
+    name: Terminal client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+        working-directory: tui
+      - run: bun run typecheck
+        working-directory: tui

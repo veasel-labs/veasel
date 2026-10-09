@@ -1,0 +1,90 @@
+# Veasel Code implementation plan
+
+## Architecture direction
+
+Build the execution core as a V application with independently testable
+domain, persistence, and transport modules. Keep Veb routes thin: validate the
+request, call typed core operations, map domain errors, and publish events.
+A versioned loopback HTTP API is the stable boundary for terminal, desktop,
+web, IDE, and Agent Toolkit clients. SQLite is the initial durable store, with
+schema versions and transactional writes. Session events are persisted in the
+same transaction as their state change before being published, so reconnecting
+clients can resume by event ID. Tool execution is isolated behind permission
+checks and must not be replayed blindly after a crash.
+
+The API/client split follows the current OpenCode server architecture, where
+clients use an HTTP API and event stream. This is a direction reference rather
+than a promise of full route compatibility. Exact reference revisions and
+contract comparisons belong in `docs/compatibility/`.
+
+The TUI is TypeScript with OpenTUI Core renderables, kept as a separate API
+client; the agent runtime, tools and persistence remain in V. Core was chosen
+for the first small view because its direct event and renderer APIs work with
+the pinned package and installed Bun 1.4.2. Solid remains an option as the
+view's composition needs grow. The package is pinned and typechecked, and the
+Linux x64 flow was exercised interactively. Cross-platform distribution still
+needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
+[`VLIB_REUSE.md`](VLIB_REUSE.md).
+
+## Milestones and backlog
+
+### Milestone 1 — functional foundation (complete locally)
+
+- [x] Initialize the local product repository, license, agent contract, and
+  architecture plan.
+- [x] Inspect local VSL/VTL, V compiler/stdlib, LangChainV, agent-toolkit,
+  agentic-harness, agentic-workstation, and requested agent references; record
+  reusable practices in [`RESEARCH.md`](RESEARCH.md).
+- [x] V HTTP server with health and capability endpoints.
+- [x] SQLite migration ledger and transactional session create/list/get behavior.
+- [x] Durable, replayable SSE event stream with cursor validation.
+- [x] OpenTUI terminal client connected to the server; Solid remains evaluated.
+- [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
+- [x] Initial OpenAPI contract and documentation.
+
+### Milestone 2 — first real coding agent
+
+- [ ] Provider/model configuration and bounded streaming transport.
+- [ ] Repository read/search tools, then patch editing and shell execution.
+- [ ] Permission requests and explicit approvals before sensitive effects.
+- [ ] End-to-end task against a disposable fixture repository.
+
+### Milestone 3 — persistent execution
+
+- [ ] Durable jobs, cancellation, status transitions, and disconnect/reconnect.
+- [ ] Recovery classification; require human intervention for uncertain effects.
+- [ ] Execution history, token usage, and observability.
+
+### Milestone 4 — extensibility
+
+- [ ] Provider and tool interfaces, MCP, Git/worktrees, agent definitions.
+- [ ] Documented Agent Toolkit integration contract.
+
+### Milestone 5 — competitive experience
+
+- [ ] Multi-agent isolation and orchestration.
+- [ ] Context retrieval, rich diff review, accessibility, and UX refinement.
+- [ ] Cross-platform packaging and measured performance baselines.
+
+## Initial compatibility target
+
+Milestone 1 is an original API, not an OpenCode clone. The first comparison
+surface is health, capability discovery, session creation/retrieval, and event
+replay. The historical OpenCode/Codex/Pi samples in [`RESEARCH.md`](RESEARCH.md)
+are research pins only, not claims of current heads. Refresh and pin exact
+upstream schemas before adding a compatibility claim. Do not reuse source code
+without recording and honoring its license and attribution.
+
+## Risks and decisions
+
+- The official Veasel artwork is CC BY-NC 4.0. Keep it out of the product until
+  commercial-use rights are established; use original typography and colors.
+- The organization and repository publication are tracked separately from the
+  code milestones; do not describe them as complete until GitHub confirms them.
+- Milestone 1 is complete only for the local Linux x64 development environment;
+  macOS, Windows, Linux musl, concurrent client and production reliability
+  checks remain open.
+- V's SQLite module uses native SQLite linkage. CI and packaging must verify
+  platform-specific headers/libraries rather than assuming zero system needs.
+- SSE and SQLite behavior must be tested under concurrent clients before the
+  server claims reliable background execution.

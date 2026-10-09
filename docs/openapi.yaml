@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: Veasel Code API
+  version: 0.1.0
+  description: Local session and event API. Agent execution is not yet implemented.
+servers:
+  - url: http://127.0.0.1:4097
+    description: Loopback only; remote binding is not implemented.
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      responses:
+        '200':
+          description: Server is ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /v1/capabilities:
+    get:
+      operationId: getCapabilities
+      responses:
+        '200':
+          description: Implemented server capabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capabilities'
+  /v1/sessions:
+    get:
+      operationId: listSessions
+      responses:
+        '200':
+          description: Stored sessions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+    post:
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSession'
+      responses:
+        '201':
+          description: Session and session.created event were stored atomically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: Invalid JSON or request fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}:
+    get:
+      operationId: getSession
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/events:
+    get:
+      operationId: streamEvents
+      description: Replays persisted events newer than Last-Event-ID, then streams new events.
+      parameters:
+        - in: header
+          name: Last-Event-ID
+          required: false
+          description: Non-negative numeric event ID; defaults to 0.
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Server-sent event stream using event IDs as resumable cursors.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Last-Event-ID is not a non-negative integer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Health:
+      type: object
+      required: [healthy, version]
+      properties:
+        healthy:
+          type: boolean
+        version:
+          type: string
+    Capabilities:
+      type: object
+      required: [api_version, features]
+      properties:
+        api_version:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+    CreateSession:
+      type: object
+      required: [title, directory]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        directory:
+          type: string
+          minLength: 1
+          maxLength: 4096
+    Session:
+      type: object
+      required: [id, title, directory, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        directory:
+          type: string
+        created_at:
+          type: string
+          description: SQLite timestamp formatted as YYYY-MM-DD HH:MM:SS.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

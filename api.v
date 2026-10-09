@@ -110,8 +110,9 @@ fn (app &App) complete_with_provider_limit(input CompletionInput) !CompletionOut
 }
 
 fn (mut app App) close() {
-	for mut lock in app.session_turn_locks {
-		lock.destroy()
+	for lock in app.session_turn_locks {
+		mut lock_ref := lock
+		lock_ref.destroy()
 	}
 	mut slots := app.provider_slots
 	slots.destroy()

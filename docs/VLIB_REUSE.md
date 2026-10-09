@@ -7,8 +7,8 @@ supported V compiler's `vlib/`. Prefer its maintained modules when they cover
 the need. A gap or a required product-specific policy is a valid reason for
 Veasel code or a third-party adapter; importing unrelated libraries is not.
 This map was verified against V `5bd67093f97f3574b36bc1a9f19f56a9c0a4ad07`
-(V 0.5.2, local checkout 242 commits ahead of its recorded upstream). Recheck
-the APIs against each supported compiler release.
+(a local checkout ahead of upstream). CI pins the upstream commit in
+`.v-version`; recheck the APIs during compiler upgrades.
 
 “Use all libraries” means a complete audit and reuse of every relevant module.
 It does not mean importing modules unrelated to a coding agent.

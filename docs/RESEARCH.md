@@ -10,7 +10,7 @@ listed capabilities.
 
 | Source | Inspection location / revision | What it contributes |
 |---|---|---|
-| V compiler and `vlib` | Local checkout `/home/ulisesjcf/Projects/github.com/vlang/v`, commit `5bd67093f97f3574b36bc1a9f19f56a9c0a4ad07`; installed compiler reports V 0.5.2 at that commit. | Actual APIs and compiler behavior. Local checkout is 242 commits ahead of its recorded `origin/master`; recheck the supported compiler matrix before releases. |
+| V compiler and `vlib` | Local checkout `/home/ulisesjcf/Projects/github.com/vlang/v`, updated with `v up` to `407c52edddca9715fb57e6571afeef0d193f2465` on 2026-10-09. | V 0.5.2 compiled successfully from this upstream master revision. `.v-version` pins the same inspected revision for CI; recheck APIs when updating it. |
 | `awesome-v` | Upstream [repository](https://github.com/vlang/awesome-v), CC0 list. No local checkout. | Discovery index for V libraries, CLI/TUI projects, databases, HTTP and terminal packages; listings are leads, not a quality or maintenance guarantee. |
 | `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch `add-mascot`. No local checkout. | Official V mascot inspiration. Its artwork license is CC BY-NC 4.0, so the art is excluded from this product unless commercial rights are obtained. |
 | VSL | `~/.vmodules/vsl`, commit `a27f8ececf35ba91e58e71e3f6e707d2b609fc8e`, branch `main`. No tracked edits; two untracked V compiler cache directories were present and left untouched. | V-native modules, optional numerical/native backends, APIs with explicit backend expectations, module docs, examples, bounded local/CI testing. |

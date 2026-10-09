@@ -14,8 +14,9 @@
 
 ## V workflow
 
-- Target the installed V 0.5.2 compiler initially and verify all APIs against
-  that compiler's source.
+- Keep `.v-version` pinned to an inspected upstream V commit and verify APIs
+	against that compiler's source. The local 0.5.2 binary is a development
+	compiler only; CI is the source of truth for the pinned upstream compiler.
 - Serialize V compiler invocations. Before starting one, check `pgrep -a -x v`.
 - Use an explicit systemd user scope with `MemoryMax`, `MemorySwapMax=0`, and
   `VJOBS=1`; stop if host memory pressure rises.

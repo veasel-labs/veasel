@@ -14,7 +14,7 @@ response is simulated here.
 
 ## Requirements
 
-- V 0.5.2 or newer (initial API verification is against 0.5.2)
+- The V compiler revision pinned in `.v-version` (CI installs the exact revision)
 - SQLite development headers/library as required by V's `db.sqlite`
 - Bun 1.3.14 or newer for the OpenTUI terminal client (not needed by the backend)
 
@@ -29,11 +29,22 @@ v fmt -w .
 The server defaults to `127.0.0.1:4097`. Set `VEASEL_DATA_DIR` to choose the
 directory for `veasel.sqlite3`. Remote binding is not implemented. The TUI
 accepts `VEASEL_API_URL` only for an unauthenticated loopback HTTP address.
+The API also rejects non-loopback `Host` values and browser `Origin` headers
+outside loopback hosts.
+
+The initial completion adapters support `openai-compatible` (the default),
+`anthropic`, and `gemini`. Set `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, and a
+provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`;
+`VEASEL_MODEL_API_KEY` can override these). `VEASEL_MODEL_BASE_URL` defaults to
+the selected provider's API root; custom endpoints must use HTTPS or loopback
+HTTP. Keys are read only by the V backend and are never returned by the API.
+Streaming, tools, and repository edits are not available yet.
 
 ## API
 
 Milestone 1 uses `/v1/health`, `/v1/capabilities`, `/v1/sessions`,
-`/v1/sessions/:id`, and `/v1/events` (SSE). See the OpenAPI document at
+`/v1/sessions/:id`, `/v1/chat/completions` when configured, and `/v1/events`
+(SSE). See the OpenAPI document at
 [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Verification

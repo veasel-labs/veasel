@@ -2,8 +2,10 @@ import {
   BoxRenderable,
   InputRenderable,
   InputRenderableEvents,
+  StyledText,
   TextRenderable,
   createCliRenderer,
+  fg,
 } from "@opentui/core"
 
 type Session = {
@@ -83,9 +85,41 @@ const detail = new BoxRenderable(renderer, {
   borderStyle: "rounded",
   borderColor: "#303944",
 })
-detail.add(new TextRenderable(renderer, { content: "YOUR WORK, KEPT CLOSE", fg: "#a7f3d0" }))
+const portrait = [
+  "    DDDDD     DDDDD    ",
+  "   DLLLLD     DLLLLD   ",
+  "  DLLLLLDDDDDDDLLLLLD  ",
+  "  DLLLDDDDDDDDDDDLLLDD ",
+  " DDDDDDDDBBBBBBDDDDDDD ",
+  "DDDDDDBBBBBBBBBBBBBBDDDD",
+  "DDDDBBBBBBBBBBBBBBBBBBDDD",
+  "DDBBBBBBBBBBBBBBBBBBBBBBDD",
+  "DBBBBKBBBBBBBBBBBBKBBBBBBBD",
+  "DBBBBHKBBBBBBBBBBHKBBBBBBBD",
+  "DBBBBBBBBBBNNBBBBBBBBBBBBBD",
+  " DDBBWWWWWNNNNNWWWWWWBBBBDD ",
+  "  DDBBWWWWWWWWWWWWBBBBDD  ",
+  "   DDDBBWWWWWWWWBBBDDD   ",
+  "     DDDBBBBBBBDDD     ",
+  "       DDDDDD       ",
+]
+const pixelColors: Record<string, string> = {
+  D: "#202e3b",
+  B: "#4b6c88",
+  L: "#90b8db",
+  K: "#080b0f",
+  H: "#ffffff",
+  N: "#080b0f",
+  W: "#ffffff",
+}
+const portraitText = new StyledText(portrait.flatMap((row) => [
+  ...[...row].map((pixel) => fg(pixelColors[pixel] ?? "#171c22")(pixel === " " ? "  " : "██")),
+  fg("#171c22")("\n"),
+]))
+detail.add(new TextRenderable(renderer, { content: portraitText }))
+detail.add(new TextRenderable(renderer, { content: "VEASEL CODE", fg: "#a7f3d0" }))
 const sessionDetail = new TextRenderable(renderer, {
-  content: "Choose a session on the left, or start a fresh workspace.\n\nVeasel keeps session history on this machine and streams updates as they happen.",
+  content: "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again.",
   fg: "#b9c2ca",
   wrapMode: "word",
 })

@@ -44,7 +44,8 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 2 — first real coding agent
 
-- [ ] Provider/model configuration and bounded streaming transport.
+- [x] OpenAI-compatible, Anthropic, and Gemini provider adapters with bounded synchronous completion transport.
+- [ ] Streaming model responses and cancellation.
 - [ ] Repository read/search tools, then patch editing and shell execution.
 - [ ] Permission requests and explicit approvals before sensitive effects.
 - [ ] End-to-end task against a disposable fixture repository.

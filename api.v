@@ -43,6 +43,20 @@ pub struct Context {
 	veb.Context
 }
 
+pub fn (mut ctx Context) before_request() {
+	host := ctx.req.header.get_custom('Host', exact: false) or { '' }
+	if !is_loopback_host(host) {
+		ctx.res.set_status(.forbidden)
+		ctx.text('The API only accepts loopback Host values')
+		return
+	}
+	origin := ctx.req.header.get_custom('Origin', exact: false) or { return }
+	if !is_loopback_origin(origin) {
+		ctx.res.set_status(.forbidden)
+		ctx.text('The API only accepts loopback browser origins')
+	}
+}
+
 pub struct App {
 pub:
 	store &Store
@@ -58,10 +72,41 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 
 @['/v1/capabilities'; get]
 pub fn (app &App) capabilities(mut ctx Context) veb.Result {
+	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay']
+	if configured_model() != none {
+		features << 'chat.complete'
+	}
 	return ctx.json(Capabilities{
 		api_version: 'v1'
-		features:    ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay']
+		features:    features
 	})
+}
+
+@['/v1/chat/completions'; post]
+pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
+	if ctx.req.data.len > max_chat_input_bytes + 8192 {
+		return json_request_error(mut ctx, 'Request body exceeds the size limit')
+	}
+	input := json2.decode[CompletionInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected JSON with a messages array')
+	}
+	validate_messages(input.messages) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	if configured_model() == none {
+		ctx.res.set_status(.service_unavailable)
+		return ctx.json(APIError{
+			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
+		})
+	}
+	output := complete(input) or {
+		eprintln('veasel: model provider request failed (${err.msg()})')
+		ctx.res.set_status(.bad_gateway)
+		return ctx.json(APIError{
+			error: 'Model provider request failed'
+		})
+	}
+	return ctx.json(output)
 }
 
 @['/v1/sessions'; get]

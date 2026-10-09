@@ -73,3 +73,44 @@ fn test_session_and_event_write_roll_back_together() {
 	}
 	assert recovered.title == 'Recovered'
 }
+
+fn test_model_endpoint_requires_tls_or_exact_loopback() {
+	assert secure_endpoint('https://api.example.test/v1') or { panic(err) } == 'https://api.example.test/v1'
+	assert secure_endpoint('http://localhost:11434/v1') or { panic(err) } == 'http://localhost:11434/v1'
+	assert secure_endpoint('http://127.0.0.1:8080/v1') or { panic(err) } == 'http://127.0.0.1:8080/v1'
+	assert secure_endpoint('http://[::1]:8080/v1') or { panic(err) } == 'http://[::1]:8080/v1'
+	assert model_endpoint_rejected('http://localhost.attacker.test/v1')
+	assert model_endpoint_rejected('http://127.0.0.10/v1')
+	assert model_endpoint_rejected('https://user:secret@example.test/v1')
+}
+
+fn test_local_api_accepts_only_loopback_host_and_origin() {
+	assert is_loopback_host('127.0.0.1:4097')
+	assert is_loopback_host('localhost:4097')
+	assert is_loopback_host('[::1]:4097')
+	assert !is_loopback_host('localhost.attacker.test')
+	assert !is_loopback_host('127.0.0.10:4097')
+	assert is_loopback_origin('http://127.0.0.1:8080')
+	assert is_loopback_origin('http://localhost:3000')
+	assert !is_loopback_origin('https://localhost:3000')
+	assert !is_loopback_origin('http://localhost.attacker.test')
+	assert !is_loopback_origin('http://127.0.0.1:8080/path')
+}
+
+fn model_endpoint_rejected(base_url string) bool {
+	_ := secure_endpoint(base_url) or { return true }
+	return false
+}
+
+fn test_chat_input_is_bounded_and_ends_with_user_turn() {
+	validate_messages([ChatMessage{ role: 'user', content: 'Hello' }]) or { panic(err) }
+	assert chat_input_rejected([])
+	assert chat_input_rejected([ChatMessage{ role: 'assistant', content: 'Unprompted' }])
+	assert chat_input_rejected([ChatMessage{ role: 'tool', content: 'Not allowed' }])
+	assert chat_input_rejected([ChatMessage{ role: 'user', content: '   ' }])
+}
+
+fn chat_input_rejected(messages []ChatMessage) bool {
+	validate_messages(messages) or { return true }
+	return false
+}

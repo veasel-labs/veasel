@@ -173,6 +173,7 @@ for provider in openai-compatible anthropic gemini; do
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/messages" || fail "$provider assistant turn was not persisted"
 done
 
+rm -rf "$work_dir/plugins/review-package"
 expect_status 200 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","skill_name":"review","enabled":false}' \
 	"$api/v1/sessions/$session_id/skills"

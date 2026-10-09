@@ -198,16 +198,18 @@ pub fn (app &App) set_session_skill(mut ctx Context, id string) veb.Result {
 			error: 'session not found'
 		})
 	}
-	root, skill := find_agent_skill(app.plugin_directory, input.plugin_name, input.skill_name) or {
-		ctx.res.set_status(.not_found)
-		return ctx.json(APIError{
-			error: 'plugin skill not found'
-		})
-	}
 	if input.enabled {
+		root, skill := find_agent_skill(app.plugin_directory, input.plugin_name, input.skill_name) or {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'plugin skill not found'
+			})
+		}
 		_ = load_skill_instructions(root, skill) or {
 			return json_request_error(mut ctx, 'Skill instructions could not be safely loaded')
 		}
+	} else if !is_valid_plugin_name(input.plugin_name) || !is_valid_skill_name(input.skill_name) {
+		return json_request_error(mut ctx, 'Plugin and skill names are invalid')
 	}
 	mut turn_lock := app.session_turn_lock(id)
 	turn_lock.lock()

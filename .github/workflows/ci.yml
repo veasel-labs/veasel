@@ -84,11 +84,6 @@ jobs:
           if (-not (Test-Path $installer)) { throw "V SQLite installer is missing: $installer" }
           v run $installer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $sqlite_source = Join-Path $vroot 'thirdparty/sqlite/sqlite3.c'
-          $sqlite_object = Join-Path $vroot 'thirdparty/sqlite/sqlite3.o'
-          & gcc -O2 -c $sqlite_source -o $sqlite_object
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path $sqlite_object)) { throw "V SQLite object was not created: $sqlite_object" }
       - name: Verify formatting
         run: v fmt -verify .
       - name: Create output directory
@@ -103,8 +98,26 @@ jobs:
       - name: Install terminal client dependencies
         run: bun install --frozen-lockfile
         working-directory: tui
-      - name: Build backend
-        run: v -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" -prod -o dist/veasel${{ runner.os == 'Windows' && '.exe' || '' }} .
+      - name: Build backend on Unix
+        if: runner.os != 'Windows'
+        run: v -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" -prod -o dist/veasel .
+      - name: Build backend on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vroot = v env | ForEach-Object {
+            if ($_ -match '^VROOT="(.+)"$') { $Matches[1] }
+          }
+          if (-not $vroot) { throw 'Could not resolve the V installation root.' }
+          $sqlite_source = Join-Path $vroot 'thirdparty/sqlite/sqlite3.c'
+          $sqlite_object = Join-Path $vroot 'thirdparty/sqlite/sqlite3.o'
+          if (-not (Test-Path $sqlite_source)) { throw "V SQLite source is missing: $sqlite_source" }
+          & gcc -O2 -c $sqlite_source -o $sqlite_object
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item -LiteralPath $sqlite_object | Format-List FullName,Length
+          if (-not (Test-Path $sqlite_object)) { throw "V SQLite object was not created: $sqlite_object" }
+          & v -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" -prod -o dist/veasel.exe .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bundle terminal client on Unix
         if: runner.os != 'Windows'
         run: cp -R tui dist/tui

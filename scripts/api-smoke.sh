@@ -66,10 +66,14 @@ start_server() {
 
 cd "$repo_root"
 "${V_BIN:-v}" -o "$work_dir/veasel" .
+"$work_dir/veasel" --help >"$work_dir/help"
+expected_version="$(sed -n '1s/^Veasel Code //p' "$work_dir/help")"
+[[ -n "$expected_version" ]] || fail 'CLI version is missing from help output'
 start_server
 expect_status 403 -H 'Host: attacker.example' "$api/v1/health"
 
 grep -Fq '"healthy":true' "$work_dir/health" || fail 'health response is incorrect'
+grep -Fq "\"version\":\"$expected_version\"" "$work_dir/health" || fail 'health version does not match the CLI version'
 curl -fsS "$api/v1/capabilities" >"$work_dir/capabilities"
 grep -Fq 'sessions.create' "$work_dir/capabilities" || fail 'session capability is missing'
 expect_status 400 -H 'content-type: application/json' -d '{"messages":[{"role":"assistant","content":"not a user turn"}]}' "$api/v1/chat/completions"

@@ -7,8 +7,6 @@ import time
 import veb
 import veb.sse
 
-const version = '0.1.0'
-
 struct Health {
 pub:
 	healthy bool
@@ -79,7 +77,7 @@ pub:
 pub fn (app &App) health(mut ctx Context) veb.Result {
 	return ctx.json(Health{
 		healthy: true
-		version: version
+		version: product_version
 	})
 }
 

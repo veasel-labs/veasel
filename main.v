@@ -11,8 +11,9 @@ fn serve(port int, data_dir string) ! {
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }
 	}
-	mut app := &App{
-		store: store
+	mut app := new_app(store)
+	defer {
+		app.close()
 	}
 	veb.run_at[App, Context](mut app, host: '127.0.0.1', family: .ip, port: port)!
 }

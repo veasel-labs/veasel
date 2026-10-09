@@ -19,7 +19,9 @@
 	compiler only; CI is the source of truth for the pinned upstream compiler.
 - Serialize V compiler invocations. Before starting one, check `pgrep -a -x v`.
 - Use an explicit systemd user scope with `MemoryMax`, `MemorySwapMax=0`, and
-  `VJOBS=1`; stop if host memory pressure rises.
+	`VJOBS=1`; stop if host memory pressure rises.
+- Never use `systemd-run` or host-specific memory scopes in CI; run CI commands
+	directly on their GitHub-hosted runners.
 - Format changed V files with `v fmt -w` and use focused V checks/tests.
 - Do not commit without code review.
 

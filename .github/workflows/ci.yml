@@ -143,7 +143,7 @@ jobs:
         run: tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel tui
       - name: Package Windows binary
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/veasel.exe,dist/tui -DestinationPath dist/veasel-windows.zip
+        run: Compress-Archive -Path dist/veasel.exe,dist/tui -DestinationPath dist/veasel-Windows.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: veasel-${{ runner.os }}

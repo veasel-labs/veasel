@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { classifyCommits, nextPrerelease } from "./release-plan.mjs";
+import { classifyChanges, classifyCommits, nextPrerelease } from "./release-plan.mjs";
 
 test("only feature, fix, performance, and breaking commits trigger versions", () => {
   assert.equal(classifyCommits(["docs: clarify providers", "ci: lint workflows"]), null);
@@ -13,6 +13,15 @@ test("only feature, fix, performance, and breaking commits trigger versions", ()
     classifyCommits(["feat: add session search\n\nBREAKING CHANGE: session IDs change"]),
     "major",
   );
+});
+
+test("runtime code changes still release when a squash title has a non-release prefix", () => {
+  assert.equal(classifyChanges(["docs: add status badges"], ["api.v"]), "patch");
+  assert.equal(classifyChanges(["docs: clarify providers"], ["docs/providers.md"]), null);
+  assert.equal(classifyChanges(["ci: update workflow"], [".github/workflows/ci.yml"]), null);
+  assert.equal(classifyChanges(["feat: add repository tools"], ["api.v"]), "minor");
+  assert.equal(classifyChanges(["fix: guard session updates"], ["api.v"]), "patch");
+  assert.equal(classifyChanges(["docs: explain tests"], ["api_test.v"]), null);
 });
 
 test("prerelease increments follow the V module's current semantic version", () => {

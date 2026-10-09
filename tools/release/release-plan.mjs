@@ -25,6 +25,21 @@ export function classifyCommits(messages) {
   return release;
 }
 
+export function classifyChanges(messages, paths) {
+  const conventionalRelease = classifyCommits(messages);
+  if (conventionalRelease) return conventionalRelease;
+
+  const runtimeChanged = paths.some((path) => {
+    if (path.endsWith("_test.v")) return false;
+    return (
+      path.endsWith(".v") ||
+      path.startsWith("tui/src/") ||
+      ["tui/package.json", "tui/bun.lock", "v.mod", "v.sum"].includes(path)
+    );
+  });
+  return runtimeChanged ? "patch" : null;
+}
+
 export function nextPrerelease(currentVersion, release) {
   const base = semver.valid(currentVersion);
   if (!base || !["patch", "minor", "major"].includes(release)) {
@@ -54,7 +69,8 @@ function releasePlan() {
     .split("\0")
     .map((message) => message.trim())
     .filter(Boolean);
-  const release = classifyCommits(commits);
+  const paths = git(["diff", "--name-only", range, "--"]).split("\n").filter(Boolean);
+  const release = classifyChanges(commits, paths);
 
   if (!release) return { released: false };
 

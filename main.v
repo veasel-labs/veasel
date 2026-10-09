@@ -17,8 +17,13 @@ fn serve(port int, data_dir string) ! {
 	veb.run_at[App, Context](mut app, host: '127.0.0.1', family: .ip, port: port)!
 }
 
+fn tui_directory_for_executable(executable_path string) string {
+	executable := os.real_path(executable_path)
+	return os.join_path(os.dir(executable), 'tui')
+}
+
 fn launch_tui() {
-	tui_dir := os.join_path(os.dir(@FILE), 'tui')
+	tui_dir := tui_directory_for_executable(os.executable())
 	if !os.is_file(os.join_path(tui_dir, 'package.json')) {
 		eprintln('veasel: the TUI package is missing at ${tui_dir}')
 		exit(1)

@@ -3,6 +3,20 @@ module main
 import os
 import uuid
 
+fn test_tui_directory_is_resolved_next_to_the_executable() {
+	root := os.join_path(os.temp_dir(), 'veasel-bundle-${uuid.new_v4().str()}')
+	defer { os.rmdir_all(root) or {} }
+	tui_dir := os.join_path(root, 'tui')
+	executable := os.join_path(root, 'veasel')
+	os.mkdir_all(tui_dir) or { panic(err) }
+	os.write_file(os.join_path(tui_dir, 'package.json'), '{"name":"veasel-tui"}') or {
+		panic(err)
+	}
+	os.write_file(executable, 'binary fixture') or { panic(err) }
+
+	assert tui_directory_for_executable(executable) == os.real_path(tui_dir)
+}
+
 fn test_session_store_persists_session_and_creation_event() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

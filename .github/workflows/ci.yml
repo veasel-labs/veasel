@@ -76,10 +76,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $vroot = v env | ForEach-Object {
-            if ($_ -match '^VROOT="(.+)"$') { $Matches[1] }
-          }
-          if (-not $vroot) { throw 'Could not resolve the V installation root.' }
+          $roots = @(Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'vlang') -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName 'vlib/db/sqlite/sqlite.c.v') })
+          if ($roots.Count -ne 1) { throw "Expected one V source root from setup-v, found $($roots.Count)." }
+          $vroot = $roots[0].FullName
+          "V_BUILD_ROOT=$vroot" >> $env:GITHUB_ENV
           $installer = Join-Path $vroot 'vlib/db/sqlite/install_thirdparty_sqlite.vsh'
           if (-not (Test-Path $installer)) { throw "V SQLite installer is missing: $installer" }
           v run $installer
@@ -105,10 +106,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $vroot = v env | ForEach-Object {
-            if ($_ -match '^VROOT="(.+)"$') { $Matches[1] }
-          }
-          if (-not $vroot) { throw 'Could not resolve the V installation root.' }
+          $vroot = $env:V_BUILD_ROOT
+          if (-not $vroot) { throw 'The setup-v source root was not preserved.' }
           $sqlite_source = Join-Path $vroot 'thirdparty/sqlite/sqlite3.c'
           $sqlite_object = Join-Path $vroot 'thirdparty/sqlite/sqlite3.o'
           if (-not (Test-Path $sqlite_source)) { throw "V SQLite source is missing: $sqlite_source" }

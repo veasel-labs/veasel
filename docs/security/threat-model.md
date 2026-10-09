@@ -1,0 +1,77 @@
+# Veasel Code threat model
+
+**Scope:** Local V backend, OpenTUI client, SQLite sessions, configured model
+providers, and the proposed repository-tool boundary
+**Date:** 2026-10-09
+**Modeler:** Codex
+**Architecture source:** `docs/IMPLEMENTATION_PLAN.md`, `api.v`, `provider.v`,
+`store.v`, `main.v`, `tui/src/main.ts`
+**Version:** `1db4b73`
+**Previous model:** Initial
+
+## Architecture overview
+
+- **Assets:** provider credentials in backend environment; user prompts and
+  model replies in SQLite; workspace source files; tool arguments and output;
+  event history; session directory metadata.
+- **Trust boundaries:** user ↔ TUI; TUI ↔ loopback HTTP API; V backend ↔ SQLite;
+  V backend ↔ configured external model provider; future agent ↔ repository
+  content and future tools.
+- **Data flows:** TUI sends prompts over loopback HTTP; V validates the request,
+  loads recent session history, sends it to the configured provider over HTTPS
+  (or user-configured loopback HTTP), then transactionally stores the user and
+  assistant turns and emits replayable event IDs. No repository tools execute
+  today.
+- **Actors:** local user, other processes under the same OS account, browser
+  origins reaching loopback, configured model provider, and future repository
+  content that may contain adversarial instructions.
+
+## Risk-ranked findings
+
+| # | Asset / Flow | Trust boundary | STRIDE | Agentic ID | Threat and evidence | Attack path | Impact | Likelihood | Severity | Confidence | Mitigation | Residual | Acceptance criteria | Evidence | Status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Session HTTP API | TUI ↔ loopback server | S, I, E | AGNT05 | The server has no application token. It binds to `127.0.0.1`; it rejects non-loopback Host values and non-loopback browser Origins, but requests without Origin are accepted. Workspace creation now canonicalizes and checks the directory. | A local process under the same OS user calls session routes and reads or changes that user's local session data. | Read or create local session data; future tool access could exercise workspace permissions. | Low outside the local account; medium for untrusted same-user processes. | Medium | High | Keep loopback binding and strict Host/Origin checks. Canonicalize the selected root before persisting it. Future tool paths must remain under that root after symlink resolution. Revisit a random per-install bearer token if browser or remote clients are added. | Same-UID processes remain inside the local-user trust boundary. | No non-loopback bind; malicious Host and Origin are rejected; each future tool path is contained in the selected workspace. | `main.v:12-16`; `api.v:59-72`, `api.v:224-249`; `scripts/api-smoke.sh` Host/Origin cases. | mitigation added; path tools pending |
+| 2 | Prompts, history, and provider credentials | Backend ↔ external model provider | I | LLM06 | Session prompts and history are sent to the configured provider; keys are read from environment and sent in provider-specific headers. | User configures an external provider → session text is sent to that provider. A misconfigured or hostile endpoint could observe prompts and credentials. | Disclosure of source excerpts included in prompts, private conversation text, or provider key. | Medium | High | Keep credentials server-side; require HTTPS except loopback HTTP; reject URL userinfo, query, fragments, and redirects; cap input/output; show provider disclosure in UX before adding file-content tools. | The configured provider receives all prompt/history context needed to answer. | Provider smoke verifies exact auth header; redirects are disabled; remote endpoints require TLS; UI clearly identifies provider and warns before workspace content leaves the machine. | `provider.v:94-164`, `provider.v:384-410`, `api.v:139-195`. | new |
+| 3 | Repository content returned to an LLM | Agent ↔ workspace | T, E, I | AGNT02, AGNT04, AGNT05 | No repository tools exist yet. When introduced, files and tool output must be treated as untrusted prompt content, not policy. | Malicious instructions in a README, source comment, or generated file → model follows them → invokes a broader tool or discloses unrelated data. | Unauthorized file changes, command execution, or source disclosure. | Medium | High | Keep read tools scoped to the selected root; mark tool output as untrusted data; deny writes and shell by default; gate each side effect with a durable approval decision that includes the exact operation and arguments. | Prompt injection cannot be eliminated; it must not expand tool permissions. | Fixture repo containing injection text cannot cause reads outside root, writes, or shell without a matching approval. | No repository tool implementation exists in commit `1db4b73`; next milestone. | new |
+| 4 | Synchronous completion route | API worker and provider resources | D | LLM04 | Requests permit 64 messages and 100 KB input, provider response reads stop at 1 MB, but each synchronous provider request can wait up to 60 seconds and there is no global in-flight cap or cancellation. | Local client starts many slow model calls → Veb workers and sockets stay occupied. | Local API unavailability and resource exhaustion. | Low for normal single-user TUI use; medium under automated load. | Medium | Medium | Add a bounded provider semaphore, request deadline/cancellation propagation, and observable active-request limits before background jobs or concurrent agents. | A single slow request can still occupy one worker until cancellation lands. | Stress check demonstrates a fixed upper bound on in-flight provider requests and cancellation releases its slot and socket. | `provider.v:389-410`; `api.v:139-195`; `main.v:12-16`. | new |
+| 5 | Veasel mascot artwork | Public product and website assets | T | — | The current pixel adaptation is marked CC BY-NC 4.0 in `THIRD_PARTY_NOTICES.md`; product instructions prohibit noncommercial mascot art. | Commercial distribution of the product includes the adaptation without separate rights. | Licensing conflict and inability to distribute commercially. | Medium if commercial release is pursued. | High | High | Keep the rights notice and obtain explicit commercial permission before commercial use; otherwise remove the artwork and use original, non-derivative identity assets. | Permission status is not evidenced in the repo. | Commercial release has a documented license grant or no CC BY-NC artwork is shipped. | `THIRD_PARTY_NOTICES.md`; `tui/README.md`; product `AGENTS.md`. | new |
+| 6 | Agent Plugin files, skills, MCP servers | Plugin package ↔ V runtime / provider | T, E, I, D | AGNT02, AGNT04, AGNT05 | Agent Plugins v1 supports prompt instructions and MCP servers, including stdio child processes and remote HTTP endpoints. Veasel has an experimental validation-only loader, but no executable plugin runtime or trust policy. | Malicious or compromised plugin uses a symlink escape, instruction injection, executable, remote endpoint, header forwarding, or tool result to read/disclose data or trigger an unapproved side effect. | Workspace/provider secret disclosure, unauthorized file changes, arbitrary code execution as the Veasel user, or resource exhaustion. | Medium for installed third-party plugins. | Critical | High | Validate against locally pinned schemas; enforce filesystem-resolved package and workspace containment; isolate failure boundaries; treat instructions, allowed-tools, resources and results as untrusted; intersect skill tool hints with user policy; use literal process argv; separate plugin trust from per-tool approval; never follow configured HTTP redirects with plugin headers; cap MCP tool output and resource use. Document that stdio subprocesses inherit the user's OS privileges unless an OS sandbox is active. | The portable standard does not provide sandboxing. A malicious approved executable can act with the runtime user's privileges. | Conformance fixtures prove path and config rules; untrusted plugins cannot run until explicitly trusted; denied tool actions have no effect; redirects cannot leak headers; process/resource limits and shutdown are verified. | Pinned v1.0.0 [`agent-plugins.md`](../compatibility/agent-plugins.md); V `vlib/mcp` and `vlib/os/process.v` inspected at `.v-version`. | new |
+
+## Mitigations and security acceptance criteria
+
+| Finding | Mitigation | Acceptance criteria | Owner | Verified |
+|---|---|---|---|---|
+| 1 | Keep server loopback-only and preserve request Host/Origin validation. Persist only a canonical existing directory as the per-session workspace boundary. | API tests reject non-loopback Host/Origin and nonexistent/non-directory roots; future path tests reject `..`, absolute paths, and symlink escapes. | Veasel Code | Root canonicalization implemented; focused V/API checks pending. |
+| 2 | Keep keys in backend environment; validate provider endpoints; make outbound disclosure visible in the client before sending workspace excerpts. | Mock-provider API smoke confirms completion routing, provider headers, and redirect rejection. Dedicated endpoint-validation unit tests and client disclosure remain pending. | Veasel Code | Partially: API smoke passes; endpoint-validation unit tests and client disclosure pending. |
+| 3 | Treat repository/tool text as untrusted; split tool permissions into read, write, and execute; persist exact approvals before side effects. | Prompt-injection fixture cannot cause an out-of-root read or a write/command without an exact approval record. | Veasel Code | Pending. |
+| 4 | Add bounded concurrency and cancellation from API request through model call and job lifecycle. | Load and cancellation checks show bounded workers and no leaked active slots. | Veasel Code | Pending. |
+| 5 | Obtain commercial permission or remove the CC BY-NC artwork. | License grant is recorded or artwork is absent from distributed assets. | Product owner | Pending. |
+| 6 | Implement Agent Plugins v1.0.0 with local schema validation, plugin-root containment, untrusted-content boundaries, transport-safe MCP adapters, and explicit execution trust. | Conformance and adversarial fixtures pass; all child processes/resources close under verified limits; user-facing trust and approval flows are tested. | Veasel Code | Pending design and implementation. |
+
+## Attack paths
+
+1. Same-user local process → loopback API without Origin → session data access.
+2. User session → configured external provider → prompt/history disclosure.
+3. Future malicious repository text → model/tool loop → attempted permission
+   expansion; exact tool scopes and explicit approvals must stop side effects.
+4. Slow model endpoint → synchronous Veb route → worker saturation; add
+   bounded concurrency and cancellation before multi-agent execution.
+5. CC BY-NC artwork → commercial package → licensing conflict; resolve before
+   commercialization.
+6. Plugin package → MCP stdio or remote transport → tool result/model loop;
+   package validation, trust, exact permissions and resource bounds must stop
+   the package from widening runtime authority.
+
+## Incremental review
+
+- **Unchanged:** none; this is the initial model.
+- **New:** canonical workspace root validation; local API boundary, provider disclosure, future repository prompt
+  injection, synchronous request exhaustion, mascot licensing.
+- **Next review:** update as repository tools, Agent Plugin runtime integration,
+  MCP connectors, write tools, shell execution, remote APIs, or background jobs
+  are added.
+
+## Review status
+
+This is an evidence-linked engineering model, not a security certification.
+Human review remains required before the first write or shell tool is enabled.

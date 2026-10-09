@@ -1,6 +1,7 @@
 module main
 
 import json2
+import os
 import strconv
 import time
 import veb
@@ -217,18 +218,32 @@ pub fn (app &App) create_session(mut ctx Context) veb.Result {
 	if input.title.trim_space().len == 0 || input.title.len > 200 {
 		return json_request_error(mut ctx, 'Title must contain 1 to 200 characters')
 	}
-	if input.directory.trim_space().len == 0 || input.directory.len > 4096 {
+	if input.directory.len == 0 || input.directory.len > 4096 {
 		return json_request_error(mut ctx, 'Directory must contain 1 to 4096 characters')
+	}
+	directory := canonical_workspace_root(input.directory) or {
+		return json_request_error(mut ctx, 'Directory must resolve to an existing workspace directory')
 	}
 	session := app.store.create_session(SessionInput{
 		title:     input.title.trim_space()
-		directory: input.directory.trim_space()
+		directory: directory
 	}) or {
 		eprintln('veasel: create session failed: ${err}')
 		return json_server_error(mut ctx, 'Unable to create session')
 	}
 	ctx.res.set_status(.created)
 	return ctx.json(session)
+}
+
+fn canonical_workspace_root(path string) !string {
+	if path.len == 0 || path.len > 4096 {
+		return error('invalid workspace directory')
+	}
+	canonical := os.real_path(path)
+	if !os.is_abs_path(canonical) || !os.is_dir(canonical) {
+		return error('workspace directory does not exist')
+	}
+	return canonical
 }
 
 @['/v1/sessions/:id'; get]

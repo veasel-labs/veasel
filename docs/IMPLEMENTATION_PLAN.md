@@ -14,8 +14,8 @@ checks and must not be replayed blindly after a crash.
 
 The API/client split follows the current OpenCode server architecture, where
 clients use an HTTP API and event stream. This is a direction reference rather
-than a promise of full route compatibility. Exact reference revisions and
-contract comparisons belong in `docs/compatibility/`.
+than a promise of full route compatibility. The pinned comparison and
+route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode.md).
 
 The TUI is TypeScript with OpenTUI Core renderables, kept as a separate API
 client; the agent runtime, tools and persistence remain in V. Core was chosen
@@ -47,10 +47,12 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] OpenAI-compatible, Anthropic, and Gemini provider adapters with bounded synchronous completion transport.
 - [x] SQLite-backed session chat history and a TUI conversation composer.
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
-- [ ] Streaming model responses and cancellation.
-- [ ] Repository read/search tools, then patch editing and shell execution.
-- [ ] Permission requests and explicit approvals before sensitive effects.
-- [ ] End-to-end task against a disposable fixture repository.
+- [ ] Serialize turns per session and bound provider concurrency; propagate cancellation and deadlines.
+- [ ] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded tool loop.
+- [ ] Add repository list/read/search tools with canonical-root and symlink containment; treat file content as untrusted.
+- [ ] Add patch review and explicit, durable approval before writes or shell execution.
+- [ ] Deliver streaming model responses and cancellation through the API, event store, and TUI.
+- [ ] Complete an end-to-end coding task against a disposable fixture repository, including diff review, tests, and a denied unapproved effect.
 
 ### Milestone 3 — persistent execution
 
@@ -60,8 +62,14 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 4 — extensibility
 
-- [ ] Provider and tool interfaces, MCP, Git/worktrees, agent definitions.
-- [ ] Documented Agent Toolkit integration contract.
+- [ ] Complete the typed tool and provider interfaces, safe Git/worktree APIs,
+  and versioned agent definitions.
+- [ ] Implement Agent Plugins v1.0.0 client conformance for directory loading,
+  closed manifest validation, Skills, MCP stdio and Streamable HTTP, `PLUGIN_DATA`,
+  placeholder expansion, failure isolation, and `com.veasel.code` extensions.
+- [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
+  compatibility report before claiming support.
+- [ ] Document and test the Agent Toolkit integration contract.
 
 ### Milestone 5 — competitive experience
 
@@ -71,17 +79,30 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 
 ## Initial compatibility target
 
-Milestone 1 is an original API, not an OpenCode clone. The first comparison
-surface is health, capability discovery, session creation/retrieval, and event
-replay. The historical OpenCode/Codex/Pi samples in [`RESEARCH.md`](RESEARCH.md)
-are research pins only, not claims of current heads. Refresh and pin exact
-upstream schemas before adding a compatibility claim. Do not reuse source code
-without recording and honoring its license and attribution.
+Milestone 1 is an original API, not an OpenCode clone. The current comparison
+covers session lifecycle and events against the pinned OpenCode contract; Veasel
+health and capability routes are product-specific. The historical
+OpenCode/Codex/Pi samples in [`RESEARCH.md`](RESEARCH.md) are research pins only,
+not claims of current heads. Refresh and pin exact upstream schemas before
+adding a compatibility claim. Do not reuse source code without recording and
+honoring its license and attribution.
 
 ## Risks and decisions
 
 - The official Veasel artwork is CC BY-NC 4.0. Keep it out of the product until
   commercial-use rights are established; use original typography and colors.
+- Session creation now records an existing, canonical workspace root. Before
+  filesystem tools are introduced, enforce root-bound access on every operation,
+  including symlink changes, and treat file contents as untrusted. Loopback plus
+  Origin validation is not a filesystem sandbox.
+- Agent Plugins v1.0.0 is a published normative format for Skills and MCP; it
+  does not define permission UX, marketplace installation, sandboxing, or
+  lifecycle policy. Implement those client responsibilities in Veasel. Track
+  exact requirements and evidence in
+  [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md); do not
+  claim conformance until its release gate passes.
+- Before enabling tool loops, cap in-flight provider calls and tool-loop steps;
+  same-session turns must be serialized so provider history cannot race.
 - The organization and repository publication are tracked separately from the
   code milestones; do not describe them as complete until GitHub confirms them.
 - Milestone 1 is complete only for the local Linux x64 development environment;

@@ -62,14 +62,19 @@ configured, and `/v1/events` (SSE). See the OpenAPI document at
 
 ## Verification
 
-Run `v test main_test.v` for the SQLite domain tests and
+Run `v test .` for the V unit tests and
 `scripts/api-smoke.sh` for HTTP validation, session persistence across a
 server restart, and SSE replay. The smoke script requires `curl` and GNU
 `timeout`. For memory-bounded local V checks, see [AGENTS.md](AGENTS.md).
 
 See [`docs/VLIB_REUSE.md`](docs/VLIB_REUSE.md) for the checked V standard
 library reuse map and [`docs/RESEARCH.md`](docs/RESEARCH.md) for ecosystem and
-repository practices.
+repository practices. [`docs/security/threat-model.md`](docs/security/threat-model.md)
+tracks the current local API boundary, provider disclosure, and the security
+gates required before repository tools are enabled. The pinned
+[`Agent Plugins v1.0.0 conformance plan`](docs/compatibility/agent-plugins.md)
+tracks the compatibility target and required evidence; Veasel does not yet
+claim plugin support.
 
 ## Licensing
 

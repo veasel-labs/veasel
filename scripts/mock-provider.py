@@ -23,6 +23,12 @@ SESSION_SYSTEM = (
 class MockProvider(BaseHTTPRequestHandler):
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path == "/redirect/v1/chat/completions":
+            self.send_response(302)
+            self.send_header("Location", "/v1/chat/completions")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if self.headers.get("Authorization") == f"Bearer {API_KEYS['openai-compatible']}":
             if (
                 self.path != "/v1/chat/completions"

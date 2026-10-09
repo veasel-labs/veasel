@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
+mkdir "$work_dir/workspace"
 port="${VEASEL_SMOKE_PORT:-$((30000 + $$ % 20000))}"
 api="http://127.0.0.1:${port}"
 server_pid=""
@@ -41,6 +42,7 @@ start_server() {
 	if [[ -n "${1:-}" ]]; then
 		provider_base="/v1"
 		[[ "$1" == gemini ]] && provider_base="/v1beta"
+		[[ "${2:-}" == redirect ]] && provider_base="/redirect/v1"
 		env -u VEASEL_MODEL_API_KEY VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
 			VEASEL_MODEL_PROVIDER="$1" VEASEL_MODEL=smoke-model \
 			OPENAI_API_KEY=veasel-openai-key ANTHROPIC_API_KEY=veasel-anthropic-key \
@@ -77,8 +79,12 @@ expect_status 503 -H 'Origin: http://localhost:3000' -H 'content-type: applicati
 	-d '{"messages":[{"role":"user","content":"hello"}]}' "$api/v1/chat/completions"
 
 expect_status 400 -H 'content-type: application/json' -d '{"title":" ","directory":"/tmp"}' "$api/v1/sessions"
-expect_status 201 -H 'content-type: application/json' -d '{"title":"API smoke","directory":"/tmp/veasel-smoke"}' "$api/v1/sessions"
+expect_status 400 -H 'content-type: application/json' \
+	-d "{\"title\":\"Missing workspace\",\"directory\":\"$work_dir/missing\"}" "$api/v1/sessions"
+expect_status 201 -H 'content-type: application/json' \
+	-d "{\"title\":\"API smoke\",\"directory\":\"$work_dir/workspace\"}" "$api/v1/sessions"
 grep -Fq '"title":"API smoke"' "$work_dir/response" || fail 'created session is missing from the response'
+grep -Fq "\"directory\":\"$work_dir/workspace\"" "$work_dir/response" || fail 'workspace root was not stored canonically'
 session_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$work_dir/response")"
 [[ -n "$session_id" ]] || fail 'session id is missing'
 
@@ -125,5 +131,13 @@ for provider in openai-compatible anthropic gemini; do
 	grep -Fq '"content":"Continue this session"' "$work_dir/messages" || fail "$provider user turn was not persisted"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/messages" || fail "$provider assistant turn was not persisted"
 done
+
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+server_pid=""
+start_server openai-compatible redirect
+expect_status 502 -H 'content-type: application/json' \
+	-d '{"messages":[{"role":"user","content":"Say hello"}]}' "$api/v1/chat/completions"
+grep -Fq 'Model provider request failed' "$work_dir/response" || fail 'provider redirect response was not rejected'
 
 printf 'API and provider smoke passed\n'

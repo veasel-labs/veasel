@@ -24,7 +24,7 @@ jobs:
       - name: Build backend
         run: v -o /tmp/veasel .
       - name: Run domain tests
-        run: v test main_test.v
+        run: v test .
       - name: Run HTTP and persistence smoke
         run: scripts/api-smoke.sh
 

@@ -6,9 +6,10 @@ Before adding a dependency or implementing infrastructure, inspect the
 supported V compiler's `vlib/`. Prefer its maintained modules when they cover
 the need. A gap or a required product-specific policy is a valid reason for
 Veasel code or a third-party adapter; importing unrelated libraries is not.
-This map was verified against V `5bd67093f97f3574b36bc1a9f19f56a9c0a4ad07`
-(a local checkout ahead of upstream). CI pins the upstream commit in
-`.v-version`; recheck the APIs during compiler upgrades.
+This map was verified against V
+`407c52edddca9715fb57e6571afeef0d193f2465`, the revision pinned in
+`.v-version` and built by the current CI. Recheck the APIs during compiler
+upgrades.
 
 “Use all libraries” means a complete audit and reuse of every relevant module.
 It does not mean importing modules unrelated to a coding agent.
@@ -21,6 +22,7 @@ It does not mean importing modules unrelated to a coding agent.
 | Server events | `vlib/veb/sse/sse.v` | Use connection takeover and `SSEConnection` for event delivery; Veasel owns durable event IDs, replay, event schema, and connection lifecycle tests. |
 | HTTP client | `vlib/net/http/request.v` | Use for model/provider requests and response/progress callbacks after checking streaming and timeout semantics in the pinned V version. Do not hand-roll HTTP or TLS. |
 | JSON | `vlib/json2/` | Use typed `decode[T]` and `encode[T]`; do not use obsolete `encoding.json` imports. |
+| YAML | `vlib/yaml/` | Use the pinned parser for Agent Skills `SKILL.md` frontmatter after isolating the frontmatter block; preserve the Markdown body without normalizing instructions. |
 | SQLite | `vlib/db/sqlite/sqlite.c.v`, `orm.v` | Use prepared parameters, WAL, busy timeout, transactions and schema introspection. Migration versions/SQL remain small product-owned code because `vlib` has no general migration runner. |
 | IDs / randomness | `vlib/uuid/`, `vlib/crypto/rand/` | Use UUID v4/v7 and cryptographic random bytes where appropriate; do not substitute timestamps or `math/rand` for security-sensitive values. |
 | Synchronization | `vlib/sync/` | Use mutexes, channels, wait groups and timers for shared state and workers; define ownership, shutdown and cancellation at the application layer. |
@@ -30,7 +32,7 @@ It does not mean importing modules unrelated to a coding agent.
 | Text search | `vlib/regex/` | Use for bounded filtering/matching. `vlib` has no indexed, ripgrep-class source search; use an explicit `rg` tool adapter or a measured bounded walker rather than claiming equivalent search. |
 | Diffs | `vlib/arrays/diff/` | Evaluate generic Myers-style diff and patch generation for line changes before introducing another diff engine; wrap it with file/path policy and tests. |
 | Git | No high-level Git client module found in this checkout. | Use the shell-free process adapter to invoke Git with fixed argument arrays; parse structured output and test each supported Git version. |
-| MCP | `vlib/mcp/` | Reuse message, client and server protocol support for the MCP milestone. Add Veasel-specific tool policy and trust boundaries around external servers. |
+| MCP | `vlib/mcp/README.md`, `mcp.v`; `vlib/net/http/request.v` | Reuse stdio, Streamable HTTP, JSON-RPC/session handling, cancellation and current protocol revisions. The current stdlib HTTP adapter does not expose `allow_redirect`, while `net.http` defaults it to true; do not pass plugin-configured headers through it until a no-redirect adapter or verified upstream fix prevents cross-origin credential forwarding. The plugin loader still owns config validation, expansion, PLUGIN_DATA, process trust, permission UX and failure isolation. |
 | Terminal | `vlib/term/ui/`, `vlib/term/`, `vlib/readline/`, `vlib/ncurses/` | Native V has terminal input/rendering and line-editing tools. Measure its layout/widget limits against product UX. The current richer OpenTUI client remains a separate API consumer; the runtime stays V. |
 | Logging | `vlib/log/`, `vlib/log/safe_log.v` | Use structured levels and thread-safe logging. Redact credentials and untrusted content in Veasel before output. |
 | Benchmarks | `vlib/benchmark/` | Use reproducible V benchmarks for startup, storage, tool process overhead and other native runtime paths; record machine/compiler/workload metadata. |

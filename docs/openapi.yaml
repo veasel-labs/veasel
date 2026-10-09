@@ -241,6 +241,7 @@ components:
           type: string
           minLength: 1
           maxLength: 4096
+          description: Existing workspace directory; the server stores its canonical path.
     Session:
       type: object
       required: [id, title, directory, created_at]

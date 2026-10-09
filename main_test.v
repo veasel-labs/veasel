@@ -1,5 +1,8 @@
 module main
 
+import os
+import uuid
+
 fn test_session_store_persists_session_and_creation_event() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }
@@ -128,6 +131,32 @@ fn test_chat_input_is_bounded_and_ends_with_user_turn() {
 	assert chat_input_rejected([ChatMessage{ role: 'assistant', content: 'Unprompted' }])
 	assert chat_input_rejected([ChatMessage{ role: 'tool', content: 'Not allowed' }])
 	assert chat_input_rejected([ChatMessage{ role: 'user', content: '   ' }])
+}
+
+fn test_workspace_root_is_canonical_and_must_exist() {
+	root := canonical_workspace_root(os.getwd()) or { panic(err) }
+	assert root == os.real_path(os.getwd())
+	assert os.is_abs_path(root)
+	temp_root := os.join_path(os.temp_dir(), 'veasel-workspace-${uuid.new_v4().str()}')
+	alias := os.join_path(os.temp_dir(), 'veasel-workspace-link-${uuid.new_v4().str()}')
+	os.mkdir_all(temp_root) or { panic(err) }
+	defer { os.rmdir_all(temp_root) or {} }
+	os.symlink(temp_root, alias) or { panic(err) }
+	defer { os.rm(alias) or {} }
+	canonical_alias := canonical_workspace_root(alias) or { panic(err) }
+	assert canonical_alias == os.real_path(temp_root)
+	spaced_root := os.join_path(os.temp_dir(), 'veasel-workspace-${uuid.new_v4().str()} ')
+	os.mkdir_all(spaced_root) or { panic(err) }
+	defer { os.rmdir_all(spaced_root) or {} }
+	canonical_spaced_root := canonical_workspace_root(spaced_root) or { panic(err) }
+	assert canonical_spaced_root == os.real_path(spaced_root)
+	missing := os.join_path(os.temp_dir(), 'veasel-missing-${uuid.new_v4().str()}')
+	assert workspace_root_rejected(missing)
+}
+
+fn workspace_root_rejected(path string) bool {
+	_ := canonical_workspace_root(path) or { return true }
+	return false
 }
 
 fn chat_input_rejected(messages []ChatMessage) bool {

@@ -15,6 +15,20 @@ type Session = {
   created_at: string
 }
 
+type ChatTurn = {
+  id: number
+  session_id: string
+  role: "user" | "assistant"
+  content: string
+  created_at: string
+}
+
+type ChatExchange = {
+  messages: ChatTurn[]
+  provider: string
+  model: string
+}
+
 const port = process.env.VEASEL_PORT ?? "4097"
 const configuredApi = process.env.VEASEL_API_URL ?? `http://127.0.0.1:${port}`
 const apiUrl = new URL(configuredApi)
@@ -152,6 +166,9 @@ let sessions: Session[] = []
 let selected = 0
 let creating = false
 let titleInput: InputRenderable | undefined
+let activeSession: Session | undefined
+let chatInput: InputRenderable | undefined
+let sendingMessage = false
 
 function renderSessions() {
   if (sessions.length === 0) {
@@ -196,6 +213,84 @@ async function createSession(title: string) {
   await refreshSessions()
   selected = sessions.findIndex((session) => session.id === created.id)
   renderSessions()
+}
+
+function renderChat(messages: ChatTurn[]) {
+  const heading = activeSession
+    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
+    : ""
+  sessionDetail.content = heading + (messages.length === 0
+    ? "Start with a question or describe a coding task."
+    : messages.map((message) => {
+      const label = message.role === "assistant" ? "VEASEL" : "YOU"
+      return `${label}\n${safeTerminalText(message.content)}`
+    }).join("\n\n"))
+}
+
+function safeTerminalText(value: string) {
+  return value.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, "")
+}
+
+async function openSession(session: Session) {
+  activeSession = session
+  renderChat([])
+  const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(session.id)}/messages`, {
+    signal: controller.signal,
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  renderChat(await response.json() as ChatTurn[])
+  if (!chatInput) {
+    const input = new InputRenderable(renderer, {
+      id: "chat-composer",
+      width: "100%",
+      placeholder: "Ask Veasel to explain or change something…",
+      backgroundColor: "#202832",
+      focusedBackgroundColor: "#293640",
+      textColor: "#e5e7eb",
+      cursorColor: "#a7f3d0",
+      maxLength: 100_000,
+    })
+    chatInput = input
+    detail.add(input)
+    input.on(InputRenderableEvents.ENTER, (value) => {
+      void sendMessage(value)
+    })
+  }
+  chatInput.focus()
+}
+
+async function sendMessage(value: string) {
+  const content = value.trim()
+  if (!content || !activeSession || !chatInput || sendingMessage) return
+  sendingMessage = true
+  chatInput.value = ""
+  chatInput.blur()
+  status.content = "● Veasel is thinking…"
+  status.fg = "#f3c969"
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    const exchange = await response.json() as ChatExchange
+    const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
+      signal: controller.signal,
+    })
+    if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
+    renderChat(await historyResponse.json() as ChatTurn[])
+    status.content = `● ${exchange.provider}  ·  ${exchange.model}`
+    status.fg = "#a7f3d0"
+  } catch (error) {
+    if (controller.signal.aborted) return
+    status.content = `● message failed  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.fg = "#f28b82"
+  } finally {
+    sendingMessage = false
+    chatInput?.focus()
+  }
 }
 
 async function consumeEvents() {
@@ -289,6 +384,15 @@ renderer.keyInput.on("keypress", (key) => {
     }
     return
   }
+  if (chatInput && activeSession) {
+    if (key.name === "escape") {
+      detail.remove(chatInput)
+      chatInput = undefined
+      activeSession = undefined
+      sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again."
+    }
+    return
+  }
   if (key.name === "n") {
     key.stopPropagation()
     beginCreate()
@@ -302,7 +406,10 @@ renderer.keyInput.on("keypress", (key) => {
     renderSessions()
   } else if (key.name === "return" && sessions[selected]) {
     const session = sessions[selected]
-    sessionDetail.content = `SESSION  /  ${session.title}\n\nid  ${session.id}\npath  ${session.directory}\ncreated  ${session.created_at}\n\nThis session is ready. Agent execution is coming in the next milestone.`
+    void openSession(session).catch((error) => {
+      status.content = `● unable to open session  ·  ${error instanceof Error ? error.message : "request failed"}`
+      status.fg = "#f28b82"
+    })
   }
 })
 

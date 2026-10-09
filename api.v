@@ -25,6 +25,18 @@ pub:
 	error string
 }
 
+struct ChatMessageInput {
+pub:
+	content string
+}
+
+struct ChatExchange {
+pub:
+	messages []ChatTurn
+	provider string
+	model    string
+}
+
 fn json_request_error(mut ctx Context, message string) veb.Result {
 	ctx.res.set_status(.bad_request)
 	return ctx.json(APIError{
@@ -107,6 +119,86 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 		})
 	}
 	return ctx.json(output)
+}
+
+@['/v1/sessions/:id/messages'; get]
+pub fn (app &App) get_session_messages(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	messages := app.store.messages_for_session(id, 100) or {
+		return json_server_error(mut ctx, 'Unable to read session messages')
+	}
+	return ctx.json(messages)
+}
+
+@['/v1/sessions/:id/messages'; post]
+pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
+	if ctx.req.data.len > max_chat_input_bytes + 1024 {
+		return json_request_error(mut ctx, 'Request body exceeds the size limit')
+	}
+	input := json2.decode[ChatMessageInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected JSON with a content field')
+	}
+	user_message := ChatMessage{
+		role:    'user'
+		content: input.content
+	}
+	validate_messages([user_message]) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	if configured_model() == none {
+		ctx.res.set_status(.service_unavailable)
+		return ctx.json(APIError{
+			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
+		})
+	}
+	mut messages := [ChatMessage{
+		role:    'system'
+		content: 'You are Veasel Code, a coding assistant. You can explain code and help plan changes, but this version cannot inspect or edit repository files or execute commands. Never claim that you performed actions.'
+	}]
+	history := app.store.messages_for_session(id, max_chat_messages - 2) or {
+		return json_server_error(mut ctx, 'Unable to read session messages')
+	}
+	for turn in history {
+		messages << ChatMessage{
+			role:    turn.role
+			content: turn.content
+		}
+	}
+	messages << user_message
+	output := complete(CompletionInput{
+		messages: messages
+	}) or {
+		eprintln('veasel: session completion failed (${err.msg()})')
+		ctx.res.set_status(.bad_gateway)
+		return ctx.json(APIError{
+			error: 'Model provider request failed'
+		})
+	}
+	persisted := app.store.append_exchange(id, input.content, output.content) or {
+		if err.msg() == 'session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'session not found'
+			})
+		}
+		return json_server_error(mut ctx, 'Unable to persist session messages')
+	}
+	return ctx.json(ChatExchange{
+		messages: persisted
+		provider: output.provider
+		model:    output.model
+	})
 }
 
 @['/v1/sessions'; get]

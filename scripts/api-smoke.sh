@@ -118,6 +118,12 @@ for provider in openai-compatible anthropic gemini; do
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/response" || fail "$provider response did not reach the API client"
+	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
+		"$api/v1/sessions/$session_id/messages"
+	grep -Fq "\"provider\":\"$provider\"" "$work_dir/response" || fail "$provider session response reported the wrong provider"
+	curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/messages"
+	grep -Fq '"content":"Continue this session"' "$work_dir/messages" || fail "$provider user turn was not persisted"
+	grep -Fq '"content":"Provider fixture reply"' "$work_dir/messages" || fail "$provider assistant turn was not persisted"
 done
 
 printf 'API and provider smoke passed\n'

@@ -13,6 +13,11 @@ API_KEYS = {
     "gemini": "veasel-gemini-key",
 }
 REPLY = "Provider fixture reply"
+SESSION_SYSTEM = (
+    "You are Veasel Code, a coding assistant. You can explain code and help plan changes, "
+    "but this version cannot inspect or edit repository files or execute commands. "
+    "Never claim that you performed actions."
+)
 
 
 class MockProvider(BaseHTTPRequestHandler):
@@ -23,7 +28,10 @@ class MockProvider(BaseHTTPRequestHandler):
                 self.path != "/v1/chat/completions"
                 or payload.get("model") != "smoke-model"
                 or payload.get("max_tokens") != 4096
-                or payload.get("messages", [])[0].get("content") != "Be concise"
+                or payload.get("messages", [])[0].get("content")
+                not in ("Be concise", SESSION_SYSTEM)
+                or payload.get("messages", [])[-1].get("content")
+                not in ("Say hello", "Continue this session")
             ):
                 self.send_error(400)
                 return
@@ -35,7 +43,9 @@ class MockProvider(BaseHTTPRequestHandler):
                 self.path != "/v1/messages"
                 or payload.get("model") != "smoke-model"
                 or payload.get("max_tokens") != 4096
-                or payload.get("system") != "Be concise"
+                or payload.get("system") not in ("Be concise", SESSION_SYSTEM)
+                or payload.get("messages", [])[-1].get("content")
+                not in ("Say hello", "Continue this session")
             ):
                 self.send_error(400)
                 return
@@ -44,8 +54,10 @@ class MockProvider(BaseHTTPRequestHandler):
             if (
                 self.path != "/v1beta/models/smoke-model:generateContent"
                 or payload.get("systemInstruction", {}).get("parts", [])[0].get("text")
-                != "Be concise"
+                not in ("Be concise", SESSION_SYSTEM)
                 or payload.get("generationConfig", {}).get("maxOutputTokens") != 4096
+                or payload.get("contents", [])[-1].get("parts", [])[0].get("text")
+                not in ("Say hello", "Continue this session")
             ):
                 self.send_error(400)
                 return

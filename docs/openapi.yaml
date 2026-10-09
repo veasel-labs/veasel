@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.1.0
-  description: Local session and event API. Agent execution is not yet implemented.
+  description: Local session, multi-provider chat, and event API. Repository tools and code changes are not yet implemented.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -79,6 +79,72 @@ paths:
                 $ref: '#/components/schemas/Session'
         '404':
           description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/messages:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listSessionMessages
+      description: Returns up to the latest 100 persisted turns in chronological order.
+      responses:
+        '200':
+          description: Session chat history.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatTurn'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: sendSessionMessage
+      description: Completes and atomically stores a user and assistant turn in the session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessage'
+      responses:
+        '200':
+          description: Persisted exchange and the provider/model that answered it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatExchange'
+        '400':
+          description: Invalid or oversized message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Configured model provider request failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Model provider is not configured.
           content:
             application/json:
               schema:
@@ -212,11 +278,51 @@ components:
             $ref: '#/components/schemas/ChatMessage'
     CompletionOutput:
       type: object
-      required: [model, content]
+      required: [provider, model, content]
       properties:
+        provider:
+          type: string
         model:
           type: string
         content:
+          type: string
+    SendMessage:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    ChatTurn:
+      type: object
+      required: [id, session_id, role, content, created_at]
+      properties:
+        id:
+          type: integer
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        created_at:
+          type: string
+    ChatExchange:
+      type: object
+      required: [messages, provider, model]
+      properties:
+        messages:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/ChatTurn'
+        provider:
+          type: string
+        model:
           type: string
     Error:
       type: object

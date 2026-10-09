@@ -45,6 +45,8 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 ### Milestone 2 — first real coding agent
 
 - [x] OpenAI-compatible, Anthropic, and Gemini provider adapters with bounded synchronous completion transport.
+- [x] SQLite-backed session chat history and a TUI conversation composer.
+- [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
 - [ ] Streaming model responses and cancellation.
 - [ ] Repository read/search tools, then patch editing and shell execution.
 - [ ] Permission requests and explicit approvals before sensitive effects.

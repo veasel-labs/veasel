@@ -13,6 +13,15 @@ pub:
 	created_at string
 }
 
+pub struct ChatTurn {
+pub:
+	id         int
+	session_id string
+	role       string
+	content    string
+	created_at string
+}
+
 struct SessionInput {
 pub:
 	title     string
@@ -82,6 +91,32 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit initial migration')
+		}
+	}
+	if current < 2 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin chat history migration')
+		}
+		db.exec("CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), role TEXT NOT NULL CHECK (role IN ('user', 'assistant')), content TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create messages table')
+		}
+		db.exec('CREATE INDEX messages_session_id_id ON messages(session_id, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index chat history')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (2)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record chat history migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit chat history migration')
 		}
 	}
 	return &Store{
@@ -186,4 +221,76 @@ fn (mut store Store) events_after(after int) ![]Event {
 		}
 	}
 	return events
+}
+
+fn (mut store Store) messages_for_session(session_id string, limit int) ![]ChatTurn {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param_many('SELECT id, session_id, role, content, created_at FROM (SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id',
+		[session_id, limit.str()])!
+	mut messages := []ChatTurn{cap: rows.len}
+	for row in rows {
+		messages << ChatTurn{
+			id:         row.val(0).int()
+			session_id: row.val(1)
+			role:       row.val(2)
+			content:    row.val(3)
+			created_at: row.val(4)
+		}
+	}
+	return messages
+}
+
+fn (mut store Store) append_exchange(session_id string, user_content string, assistant_content string) ![]ChatTurn {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	for turn in [ChatTurn{
+		role:    'user'
+		content: user_content
+	}, ChatTurn{
+		role:    'assistant'
+		content: assistant_content
+	}] {
+		_ = store.db.exec_param_many('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
+			[session_id, turn.role, turn.content]) or {
+			store.db.rollback() or {}
+			return error('unable to persist chat turn')
+		}
+		_ = store.db.exec_param2('INSERT INTO events (type, session_id) VALUES (?, ?)', 'message.created',
+			session_id) or {
+			store.db.rollback() or {}
+			return error('unable to persist chat event')
+		}
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit chat exchange')
+	}
+	rows := store.db.exec_param('SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2',
+		session_id)!
+	mut result := []ChatTurn{cap: rows.len}
+	for row in rows {
+		result << ChatTurn{
+			id:         row.val(0).int()
+			session_id: row.val(1)
+			role:       row.val(2)
+			content:    row.val(3)
+			created_at: row.val(4)
+		}
+	}
+	result = result.reverse()
+	return result
 }

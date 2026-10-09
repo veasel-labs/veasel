@@ -7,10 +7,12 @@ scope and status.
 
 ## Current status
 
-Milestone 1 provides a V server with health/capability endpoints,
-SQLite-backed sessions, a replayable event stream, and a small terminal
-client. Model-backed coding and tool execution are later milestones; no agent
-response is simulated here.
+The current vertical slice provides a V server with health/capability
+endpoints, SQLite-backed sessions and chat history, a replayable event stream,
+and an OpenTUI terminal client. When configured, sessions can chat through
+OpenAI-compatible, Anthropic, or Gemini APIs. Repository tools, code changes,
+and background execution are still in progress; the product reports only
+actual provider replies and does not simulate agent actions.
 
 ## Requirements
 
@@ -20,10 +22,19 @@ response is simulated here.
 
 ## Development
 
+Start the V API in one terminal. For example, using Gemini:
+
 ```sh
+export VEASEL_MODEL_PROVIDER=gemini
+export VEASEL_MODEL=your-model-name
+export GEMINI_API_KEY=your-api-key
 v run . serve
+```
+
+Then launch the TUI from the repository in a second terminal:
+
+```sh
 v run . tui
-v fmt -w .
 ```
 
 The server defaults to `127.0.0.1:4097`. Set `VEASEL_DATA_DIR` to choose the
@@ -38,13 +49,15 @@ provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`;
 `VEASEL_MODEL_API_KEY` can override these). `VEASEL_MODEL_BASE_URL` defaults to
 the selected provider's API root; custom endpoints must use HTTPS or loopback
 HTTP. Keys are read only by the V backend and are never returned by the API.
-Streaming, tools, and repository edits are not available yet.
+The TUI sends messages through `/v1/sessions/:id/messages` and reloads the
+persisted conversation when a session opens. Streaming, tools, and repository
+edits are not available yet.
 
 ## API
 
-Milestone 1 uses `/v1/health`, `/v1/capabilities`, `/v1/sessions`,
-`/v1/sessions/:id`, `/v1/chat/completions` when configured, and `/v1/events`
-(SSE). See the OpenAPI document at
+The API uses `/v1/health`, `/v1/capabilities`, `/v1/sessions`,
+`/v1/sessions/:id`, `/v1/sessions/:id/messages`, `/v1/chat/completions` when
+configured, and `/v1/events` (SSE). See the OpenAPI document at
 [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Verification
@@ -60,6 +73,7 @@ repository practices.
 
 ## Licensing
 
-The initial code is MIT licensed. The official Veasel mascot artwork is not
-included: its upstream repository currently declares CC BY-NC 4.0. No
-endorsement by the V project is implied.
+The initial code is MIT licensed. The startup pixel portrait adapts the
+official Veasel mascot under CC BY-NC 4.0, which restricts commercial use
+without separate permission. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+No endorsement by the V project is implied.

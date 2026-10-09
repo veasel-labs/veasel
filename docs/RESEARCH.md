@@ -12,7 +12,7 @@ listed capabilities.
 |---|---|---|
 | V compiler and `vlib` | Local checkout `/home/ulisesjcf/Projects/github.com/vlang/v`, updated with `v up` to `407c52edddca9715fb57e6571afeef0d193f2465` on 2026-10-09. | V 0.5.2 compiled successfully from this upstream master revision. `.v-version` pins the same inspected revision for CI; recheck APIs when updating it. |
 | `awesome-v` | Upstream [repository](https://github.com/vlang/awesome-v), CC0 list. No local checkout. | Discovery index for V libraries, CLI/TUI projects, databases, HTTP and terminal packages; listings are leads, not a quality or maintenance guarantee. |
-| `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch `add-mascot`. No local checkout. | Official V mascot inspiration. Its artwork license is CC BY-NC 4.0, so the art is excluded from this product unless commercial rights are obtained. |
+| `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch `add-mascot`. No local checkout. | Official Veasel mascot source. The startup pixel adaptation is included with attribution under CC BY-NC 4.0; commercial use requires separate permission. |
 | VSL | `~/.vmodules/vsl`, commit `a27f8ececf35ba91e58e71e3f6e707d2b609fc8e`, branch `main`. No tracked edits; two untracked V compiler cache directories were present and left untouched. | V-native modules, optional numerical/native backends, APIs with explicit backend expectations, module docs, examples, bounded local/CI testing. |
 | VTL | `~/.vmodules/vtl`, commit `1236453e7c3a5cfdded43aa71d4d1c1f2fb492d1`, branch `perf/in-place-autograd-grad-accumulation`. Clean at inspection. | Public pure-V API over a lower-level VSL compute library; stable API separated from experimental CUDA/Vulkan paths; lightweight local test workflow. |
 | RxV | Upstream [repository](https://github.com/ulises-jeremias/rxv), `main`. No local checkout. | V-native, dependency-free, channel-oriented asynchronous stream operators; informs event abstractions, but does not remove the need to own cancellation and shutdown semantics. |
@@ -183,6 +183,6 @@ Research-only license snapshot: V, VSL, VTL, RxV and setup-v are MIT; Agent
 Toolkit, agentic-harness and agentic-workstation are MIT; OpenCode and Pi are
 MIT; Codex is Apache-2.0; Awesome V is CC0; Veasel mascot artwork is CC BY-NC
 4.0; Claude Code source is not available under a public source license. This is
-not legal advice. Preserve upstream notices for any adapted code, and do not
-include the mascot artwork in commercial product materials without separate
-rights.
+not legal advice. Preserve upstream notices for any adapted code. The startup
+pixel portrait is already included under CC BY-NC 4.0; do not use it in
+commercial product materials without separate rights.

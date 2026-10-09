@@ -74,6 +74,26 @@ fn test_session_and_event_write_roll_back_together() {
 	assert recovered.title == 'Recovered'
 }
 
+fn test_chat_exchange_is_persisted_atomically_and_replayed() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Chat', directory: '/tmp/chat' }) or {
+		panic(err)
+	}
+	exchange := store.append_exchange(session.id, 'What is this?', 'A test reply.') or { panic(err) }
+	assert exchange.len == 2
+	assert exchange[0].role == 'user'
+	assert exchange[0].content == 'What is this?'
+	assert exchange[1].role == 'assistant'
+	assert exchange[1].content == 'A test reply.'
+	replayed := store.messages_for_session(session.id, 10) or { panic(err) }
+	assert replayed == exchange
+	events := store.events_after(0) or { panic(err) }
+	assert events.len == 3
+	assert events[1].type == 'message.created'
+	assert events[2].type == 'message.created'
+}
+
 fn test_model_endpoint_requires_tls_or_exact_loopback() {
 	assert secure_endpoint('https://api.example.test/v1') or { panic(err) } == 'https://api.example.test/v1'
 	assert secure_endpoint('http://localhost:11434/v1') or { panic(err) } == 'http://localhost:11434/v1'

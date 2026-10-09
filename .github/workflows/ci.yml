@@ -236,7 +236,11 @@ jobs:
           set -euo pipefail
           mapfile -t archives < <(find release-assets -maxdepth 1 -type f \( -name 'veasel-Linux.tar.gz' -o -name 'veasel-macOS.tar.gz' -o -name 'veasel-Windows.zip' \) | sort)
           test "${#archives[@]}" -eq 3
-          sha256sum "${archives[@]}" > SHA256SUMS
+          (
+            cd release-assets
+            sha256sum veasel-Linux.tar.gz veasel-macOS.tar.gz veasel-Windows.zip > ../SHA256SUMS
+            sha256sum --check ../SHA256SUMS
+          )
           python3 - <<'PY'
           import hashlib
           import json

@@ -47,7 +47,8 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] OpenAI-compatible, Anthropic, and Gemini provider adapters with bounded synchronous completion transport.
 - [x] SQLite-backed session chat history and a TUI conversation composer.
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
-- [ ] Serialize turns per session and bound provider concurrency; propagate cancellation and deadlines.
+- [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
+- [ ] Propagate request cancellation and deadlines through queued turns and provider transports.
 - [ ] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded tool loop.
 - [ ] Add repository list/read/search tools with canonical-root and symlink containment; treat file content as untrusted.
 - [ ] Add patch review and explicit, durable approval before writes or shell execution.

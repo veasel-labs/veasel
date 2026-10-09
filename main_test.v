@@ -1,7 +1,42 @@
 module main
 
 import os
+import sync
 import uuid
+
+fn test_session_turn_lock_stripes_serialize_the_same_session() {
+	store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	mut app := new_app(store)
+	defer {
+		app.close()
+	}
+	mut first := app.session_turn_lock('session-a')
+	mut second := app.session_turn_lock('session-a')
+	assert first == second
+	first.lock()
+	assert !second.try_lock()
+	first.unlock()
+	assert second.try_lock()
+	second.unlock()
+	assert session_turn_lock_index('session-a') >= 0
+	assert session_turn_lock_index('session-a') < session_turn_lock_stripes
+}
+
+fn test_provider_semaphore_enforces_its_configured_capacity() {
+	mut slots := sync.new_semaphore_init(max_provider_concurrency)
+	defer {
+		slots.destroy()
+	}
+	for _ in 0 .. max_provider_concurrency {
+		assert slots.try_wait()
+	}
+	assert !slots.try_wait()
+	slots.post()
+	assert slots.try_wait()
+}
 
 fn test_tui_directory_is_resolved_next_to_the_executable() {
 	root := os.join_path(os.temp_dir(), 'veasel-bundle-${uuid.new_v4().str()}')

@@ -3,9 +3,13 @@ module main
 import json2
 import os
 import strconv
+import sync
 import time
 import veb
 import veb.sse
+
+const max_provider_concurrency = 4
+const session_turn_lock_stripes = 64
 
 struct Health {
 pub:
@@ -69,8 +73,49 @@ pub fn (mut ctx Context) before_request() {
 }
 
 pub struct App {
+	session_turn_locks []&sync.Mutex
+	provider_slots     &sync.Semaphore
 pub:
 	store &Store
+}
+
+fn new_app(store &Store) &App {
+	mut session_turn_locks := []&sync.Mutex{cap: session_turn_lock_stripes}
+	for _ in 0 .. session_turn_lock_stripes {
+		session_turn_locks << sync.new_mutex()
+	}
+	return &App{
+		store:              store
+		session_turn_locks: session_turn_locks
+		provider_slots:     sync.new_semaphore_init(max_provider_concurrency)
+	}
+}
+
+fn (app &App) session_turn_lock(id string) &sync.Mutex {
+	index := session_turn_lock_index(id)
+	return app.session_turn_locks[index]
+}
+
+fn session_turn_lock_index(id string) int {
+	return id.hash() % session_turn_lock_stripes
+}
+
+fn (app &App) complete_with_provider_limit(input CompletionInput) !CompletionOutput {
+	mut slots := app.provider_slots
+	slots.wait()
+	defer {
+		slots.post()
+	}
+	return complete(input)
+}
+
+fn (mut app App) close() {
+	for index in 0 .. app.session_turn_locks.len {
+		mut lock_ref := app.session_turn_locks[index]
+		lock_ref.destroy()
+	}
+	mut slots := app.provider_slots
+	slots.destroy()
 }
 
 @['/v1/health'; get]
@@ -110,7 +155,7 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
 		})
 	}
-	output := complete(input) or {
+	output := app.complete_with_provider_limit(input) or {
 		eprintln('veasel: model provider request failed (${err.msg()})')
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
@@ -161,6 +206,11 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
 		})
 	}
+	mut turn_lock := app.session_turn_lock(id)
+	turn_lock.lock()
+	defer {
+		turn_lock.unlock()
+	}
 	mut messages := [ChatMessage{
 		role:    'system'
 		content: 'You are Veasel Code, a coding assistant. You can explain code and help plan changes, but this version cannot inspect or edit repository files or execute commands. Never claim that you performed actions.'
@@ -175,7 +225,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		}
 	}
 	messages << user_message
-	output := complete(CompletionInput{
+	output := app.complete_with_provider_limit(CompletionInput{
 		messages: messages
 	}) or {
 		eprintln('veasel: session completion failed (${err.msg()})')

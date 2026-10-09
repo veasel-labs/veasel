@@ -36,6 +36,7 @@ pub:
 	created_at string
 }
 
+@[heap]
 struct Store {
 mut:
 	mu sync.Mutex

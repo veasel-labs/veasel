@@ -8,31 +8,159 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  backend:
-    name: V backend
+  release-plan:
+    name: Version plan
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      released: ${{ steps.plan.outputs.released || 'false' }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      release: ${{ steps.plan.outputs.release }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.21.0
+          cache: npm
+          cache-dependency-path: tools/release/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: tools/release
+      - run: npm test
+        working-directory: tools/release
+      - name: Calculate prerelease version
+        id: plan
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm run plan
+        working-directory: tools/release
+      - name: Skip publishing for pull requests
+        id: skip
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        run: echo "released=false" >> "$GITHUB_OUTPUT"
+
+  backend:
+    name: V backend / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: release-plan
+    timeout-minutes: 25
     env:
       VJOBS: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: vlang/setup-v@2c790c60223ed135f6949d1358675e4fd004b801 # v1
         with:
           version-file: .v-version
-      - name: Install SQLite development files
+      - name: Install SQLite development files on Linux
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes libsqlite3-dev
+      - name: Install V bundled SQLite on other platforms
+        if: runner.os != 'Linux'
+        run: v run @vlib/db/sqlite/install_thirdparty_sqlite.vsh
       - name: Verify formatting
         run: v fmt -verify .
+      - name: Create output directory
+        if: runner.os != 'Windows'
+        run: mkdir -p dist
+      - name: Create output directory on Windows
+        if: runner.os == 'Windows'
+        run: New-Item -ItemType Directory -Path dist -Force
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - name: Install terminal client dependencies
+        run: bun install --frozen-lockfile
+        working-directory: tui
       - name: Build backend
-        run: v -o /tmp/veasel .
-      - name: Run domain tests
+        run: v -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" -prod -o dist/veasel${{ runner.os == 'Windows' && '.exe' || '' }} .
+      - name: Bundle terminal client on Unix
+        if: runner.os != 'Windows'
+        run: cp -R tui dist/tui
+      - name: Bundle terminal client on Windows
+        if: runner.os == 'Windows'
+        run: Copy-Item -Path tui -Destination dist/tui -Recurse
+      - name: Run Linux domain tests
+        if: runner.os == 'Linux'
         timeout-minutes: 10
         run: |
           v test main_test.v
           v test plugins_test.v
-      - name: Run HTTP and persistence smoke
+      - name: Run Linux HTTP and persistence smoke
+        if: runner.os == 'Linux'
         run: scripts/api-smoke.sh
+      - name: Benchmark SQLite session round trips
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p benchmark-results
+          VEASEL_RUN_BENCHMARK=1 VEASEL_BENCH_OUTPUT=benchmark-results/session-store.json v -prod test store_benchmark_test.v
+          cat benchmark-results/session-store.json
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        run: tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel tui
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/veasel.exe,dist/tui -DestinationPath dist/veasel-windows.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: veasel-${{ runner.os }}
+          path: dist/veasel-*
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: runner.os == 'Linux'
+        with:
+          name: benchmark-session-store
+          path: benchmark-results/session-store.json
+          if-no-files-found: error
+          retention-days: 30
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+      - name: Scan repository files
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "1"
+      - name: Upload scan report to code scanning
+        if: always() && github.event_name != 'pull_request' && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # v4.31.9
+        with:
+          sarif_file: trivy-results.sarif
+      - name: Retain pull request scan report
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          if-no-files-found: warn
+          retention-days: 7
 
   tui:
     name: Terminal client
@@ -46,3 +174,68 @@ jobs:
         working-directory: tui
       - run: bun run typecheck
         working-directory: tui
+      - run: bun audit --audit-level=high
+        working-directory: tui
+
+  publish-prerelease:
+    name: Publish verified prerelease
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-plan.outputs.released == 'true'
+    needs: [release-plan, backend, security, tui]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: veasel-*
+          path: release-assets
+          merge-multiple: true
+      - name: Build checksums and release manifest
+        env:
+          RELEASE_TAG: ${{ needs.release-plan.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.release-plan.outputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t archives < <(find release-assets -maxdepth 1 -type f \( -name 'veasel-Linux.tar.gz' -o -name 'veasel-macOS.tar.gz' -o -name 'veasel-Windows.zip' \) | sort)
+          test "${#archives[@]}" -eq 3
+          sha256sum "${archives[@]}" > SHA256SUMS
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          assets = []
+          for path in sorted(Path('release-assets').iterdir()):
+              if path.name not in {'veasel-Linux.tar.gz', 'veasel-macOS.tar.gz', 'veasel-Windows.zip'}:
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              assets.append({'name': path.name, 'sha256': digest})
+          if len(assets) != 3:
+              raise SystemExit('expected Linux, macOS, and Windows release archives')
+          Path('release.json').write_text(json.dumps({
+              'name': 'Veasel Code',
+              'version': os.environ['RELEASE_VERSION'],
+              'tag': os.environ['RELEASE_TAG'],
+              'source_commit': os.environ['RELEASE_COMMIT'],
+              'channel': 'next',
+              'prerelease': True,
+              'assets': assets,
+          }, indent=2) + '\n')
+          PY
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-plan.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.release-plan.outputs.version }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* SHA256SUMS release.json --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* SHA256SUMS release.json \
+              --target "$RELEASE_COMMIT" --title "Veasel Code $RELEASE_VERSION" \
+              --generate-notes --prerelease
+          fi

@@ -82,3 +82,16 @@ The initial code is MIT licensed. The startup pixel portrait adapts the
 official Veasel mascot under CC BY-NC 4.0, which restricts commercial use
 without separate permission. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 No endorsement by the V project is implied.
+
+## Community
+
+Read the [contribution guide](CONTRIBUTING.md), [security policy](SECURITY.md),
+and [support guide](SUPPORT.md). Organization-wide community standards are in
+[veasel-labs/.github](https://github.com/veasel-labs/.github); product
+questions and proposals belong in [Discussions](https://github.com/veasel-labs/veasel/discussions).
+
+## Releases
+
+Verified pushes to `main` automatically publish versioned Linux, macOS, and
+Windows prereleases with SHA-256 checksums and a build manifest. See the
+[release policy](docs/RELEASES.md) and [GitHub Releases](https://github.com/veasel-labs/veasel/releases).

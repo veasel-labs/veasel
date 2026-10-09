@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible problem in Veasel Code.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Share only safe-to-publish logs. Remove API keys, prompts, and private source code.
+  - type: input
+    id: version
+    attributes:
+      label: Veasel Code version or commit
+      placeholder: 0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: v-version
+    attributes:
+      label: V compiler version
+      placeholder: Output of `v version`
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Linux, macOS, Windows, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest safe, repeatable sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted logs
+      render: text

@@ -1,5 +1,8 @@
 /tui/node_modules/
 /tui/dist/
+/tools/danger/node_modules/
+/tools/danger/.test-dist/
+/tools/release/node_modules/
 /veasel
 /veasel.exe
 *.sqlite3

@@ -1,0 +1,15 @@
+{
+  "name": "@veasel-labs/danger-policy",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsc --outDir .test-dist --noEmit false && node --test .test-dist/policy.test.js",
+    "local": "danger local"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "danger": "^14.0.7",
+    "typescript": "^6.0.3"
+  }
+}

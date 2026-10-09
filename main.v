@@ -4,6 +4,7 @@ import os
 import veb
 
 const default_port = 4097
+const product_version = $d('veasel_version', '0.1.0-dev')
 
 fn serve(port int, data_dir string) ! {
 	mut store := open_store(os.join_path(data_dir, 'veasel.sqlite3'))!
@@ -42,7 +43,7 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${version}\n\nCommands:\n  serve    Start the local V backend\n  tui      Start the terminal client (Bun required)\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR')
+		println('Veasel Code ${product_version}\n\nCommands:\n  serve    Start the local V backend\n  tui      Start the terminal client (Bun required)\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR')
 		return
 	}
 	match command {

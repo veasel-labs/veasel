@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: bun
+    directory: /tui
+    schedule:
+      interval: weekly
+    groups:
+      bun-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /tools/danger
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+    groups:
+      danger-dependencies:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /tools/release
+    schedule:
+      interval: weekly
+    groups:
+      release-dependencies:
+        patterns: ["*"]

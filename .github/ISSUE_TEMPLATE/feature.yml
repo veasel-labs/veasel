@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a user problem and a way to solve it.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the task or friction in your own workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain an outcome; implementation ideas are optional.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Security and privacy
+      options:
+        - label: I have considered effects on repository access, shell execution, credentials, and model data.

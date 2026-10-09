@@ -33,6 +33,13 @@ pub:
 	content string
 }
 
+struct PluginSkillSelectionInput {
+pub:
+	plugin_name string
+	skill_name  string
+	enabled     bool
+}
+
 struct ChatExchange {
 pub:
 	messages []ChatTurn
@@ -76,16 +83,18 @@ pub struct App {
 	session_turn_locks []&sync.Mutex
 	provider_slots     &sync.Semaphore
 pub:
-	store &Store
+	store            &Store
+	plugin_directory string
 }
 
-fn new_app(store &Store) &App {
+fn new_app(store &Store, plugin_directory string) &App {
 	mut session_turn_locks := []&sync.Mutex{cap: session_turn_lock_stripes}
 	for _ in 0 .. session_turn_lock_stripes {
 		session_turn_locks << sync.new_mutex()
 	}
 	return &App{
 		store:              store
+		plugin_directory:   plugin_directory
 		session_turn_locks: session_turn_locks
 		provider_slots:     sync.new_semaphore_init(max_provider_concurrency)
 	}
@@ -128,13 +137,90 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 
 @['/v1/capabilities'; get]
 pub fn (app &App) capabilities(mut ctx Context) veb.Result {
-	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay']
+	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay',
+		'plugins.catalog', 'sessions.skills']
 	if configured_model() != none {
 		features << 'chat.complete'
 	}
 	return ctx.json(Capabilities{
 		api_version: 'v1'
 		features:    features
+	})
+}
+
+@['/v1/plugins'; get]
+pub fn (app &App) list_plugins(mut ctx Context) veb.Result {
+	catalog := discover_agent_plugins(app.plugin_directory) or {
+		return json_server_error(mut ctx, 'Unable to read the plugin directory')
+	}
+	return ctx.json(catalog)
+}
+
+@['/v1/sessions/:id/skills'; get]
+pub fn (app &App) get_session_skills(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	skills := app.store.session_plugin_skills(id) or {
+		return json_server_error(mut ctx, 'Unable to read session skills')
+	}
+	return ctx.json(skills)
+}
+
+@['/v1/sessions/:id/skills'; post]
+pub fn (app &App) set_session_skill(mut ctx Context, id string) veb.Result {
+	fields := json2.decode[map[string]json2.Any](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected plugin_name, skill_name, and enabled fields')
+	}
+	plugin_value := fields['plugin_name'] or {
+		return json_request_error(mut ctx, 'Expected plugin_name, skill_name, and enabled fields')
+	}
+	skill_value := fields['skill_name'] or {
+		return json_request_error(mut ctx, 'Expected plugin_name, skill_name, and enabled fields')
+	}
+	enabled_value := fields['enabled'] or {
+		return json_request_error(mut ctx, 'Expected plugin_name, skill_name, and enabled fields')
+	}
+	if plugin_value !is string || skill_value !is string || enabled_value !is bool {
+		return json_request_error(mut ctx, 'Expected plugin_name, skill_name, and enabled fields')
+	}
+	input := PluginSkillSelectionInput{
+		plugin_name: plugin_value as string
+		skill_name:  skill_value as string
+		enabled:     enabled_value as bool
+	}
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	if input.enabled {
+		root, skill := find_agent_skill(app.plugin_directory, input.plugin_name, input.skill_name) or {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'plugin skill not found'
+			})
+		}
+		_ = load_skill_instructions(root, skill) or {
+			return json_request_error(mut ctx, 'Skill instructions could not be safely loaded')
+		}
+	} else if !is_valid_plugin_name(input.plugin_name) || !is_valid_skill_name(input.skill_name) {
+		return json_request_error(mut ctx, 'Plugin and skill names are invalid')
+	}
+	mut turn_lock := app.session_turn_lock(id)
+	turn_lock.lock()
+	defer {
+		turn_lock.unlock()
+	}
+	app.store.set_session_plugin_skill(id, input.plugin_name, input.skill_name, input.enabled) or {
+		return json_server_error(mut ctx, 'Unable to update session skill selection')
+	}
+	return ctx.json(app.store.session_plugin_skills(id) or {
+		return json_server_error(mut ctx, 'Unable to read session skills')
 	})
 }
 
@@ -215,6 +301,18 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		role:    'system'
 		content: 'You are Veasel Code, a coding assistant. You can explain code and help plan changes, but this version cannot inspect or edit repository files or execute commands. Never claim that you performed actions.'
 	}]
+	active_skills := app.store.session_plugin_skills(id) or {
+		return json_server_error(mut ctx, 'Unable to read session skills')
+	}
+	skill_context := load_session_skill_context(app.plugin_directory, active_skills) or {
+		return json_server_error(mut ctx, 'Unable to load an enabled plugin skill')
+	}
+	if skill_context.len > 0 {
+		messages[0] = ChatMessage{
+			role:    'system'
+			content: messages[0].content + '\n\n' + skill_context
+		}
+	}
 	history := app.store.messages_for_session(id, max_chat_messages - 2) or {
 		return json_server_error(mut ctx, 'Unable to read session messages')
 	}

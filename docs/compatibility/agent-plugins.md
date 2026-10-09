@@ -5,8 +5,9 @@
 **Release date:** 2026-09-28
 **Agent Skills source:** [official Skills specification](https://agentskills.io/specification)
 **MCP protocol revision:** [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)
-**Veasel status:** experimental loader code is in progress; it is not yet
-validated, integrated with sessions, or conformant.
+**Veasel status:** experimental local discovery and per-session Skills
+activation are implemented. MCP declarations remain metadata only; the full
+Agent Plugins v1.0.0 conformance gate remains open.
 
 The v1 portable package contains a root `plugin.json` and optional components
 in the fixed `skills/` and `mcp.json` locations. Plugin directory installation,
@@ -39,7 +40,7 @@ portable-format requirements, and will be exercised in tests.
 | Closed manifest | Permit only the defined root fields. Required non-empty `$schema` and `name`; name grammar/length; metadata and author types. | Partial implementation; unverified | Official schema fixtures plus targeted RFC 2119 edge cases. |
 | Non-fatal manifest cases | Report and ignore unknown root fields; report and ignore a non-object `extensions`; ignore unsupported namespaces without validating their values. Other schema violations reject the whole plugin. | Partial implementation; unverified | Tests prove exact failure boundary and no components execute after fatal validation. |
 | Fixed discovery | Missing locations are valid. Discover only immediate `skills/<child>/SKILL.md` and root `mcp.json`; validate expected filesystem kinds. | Partial implementation; unverified | Nested-skill decoys, absent/invalid directories, file-vs-directory cases, symlink escape cases. |
-| Agent Skills | Validate YAML frontmatter and required/optional fields per Agent Skills; require name to match parent directory; skip invalid skill alone; preserve optional files and directories. | Partial implementation; unverified | Skills conformance fixtures and isolation tests; implement experimental `allowed-tools` only as a restriction intersected with Veasel/user policy, never as self-granted authority. |
+| Agent Skills | Validate YAML frontmatter and required/optional fields per Agent Skills; require name to match parent directory; skip invalid skill alone; preserve optional files and directories. | Discovery and explicit per-session activation implemented; plugin fixture tests and HTTP/provider smoke cover metadata isolation, enable/disable, persistence, and prompt inclusion. Full spec fixture matrix remains open. | Add exhaustive official Skills fixtures and isolation cases; implement `allowed-tools` only as a restriction intersected with Veasel/user policy, never as self-granted authority. |
 | MCP document | Read only root `mcp.json`; validate canonical schema version equals `plugin.json`; closed top-level fields and independent server entries. | Partial implementation; unverified | Official schema fixtures, mismatched version, unknown fields, per-entry isolation. |
 | MCP transports | Support stdio and Streamable HTTP; also evaluate optional legacy HTTP+SSE. Use declared transport without silent fallback. | Not implemented in Veasel. V `vlib/mcp` provides stdio and Streamable HTTP clients, but its current HTTP adapter does not expose redirect policy and uses `http.fetch` defaults that permit redirects. | End-to-end fixture servers for every claimed transport, initialization/handshake, tools, cancellation, and clean shutdown. Before passing configured plugin headers, use a transport adapter that disables redirects or otherwise proves they cannot cross origins. |
 | MCP stdio config | One executable token; bare name or contained `./` package path; no expansion in command; default cwd is plugin root; strict cwd roots and containment. | Partial config validation; no process launch | Tests for command-token behavior, cwd forms, executable resolution, no shell interpolation, and containment. |
@@ -68,6 +69,21 @@ Agent Plugins makes legacy HTTP+SSE optional, so Veasel will not claim support
 for that transport until a fixture proves the complete client lifecycle. A
 conformant plugin client still has to implement Skills or MCP; Veasel targets
 both, and supports both required/recommended MCP transports.
+
+## Current implementation boundary
+
+The API returns plugin metadata from `GET /v1/plugins`. Session Skills are
+selected with `GET/POST /v1/sessions/{id}/skills`; the TUI exposes `/skills`
+and `/skill on|off <plugin>/<skill>`. Selection is persisted and produces
+session events. Instructions are bounded, reloaded when composing each turn,
+and inserted into explicitly untrusted system context. The API does not expose
+instruction bodies through the catalog. `VEASEL_PLUGIN_DIR` overrides the
+default `$VEASEL_DATA_DIR/plugins` directory.
+
+Plugin files can change after selection, so each turn revalidates and reloads
+the selected Skill. If loading fails, the request fails closed. Skills do not
+grant tools or permissions. `mcp.json` is parsed and displayed for inspection,
+but server processes are not launched and no MCP tools are available.
 
 ## Release gate
 

@@ -38,6 +38,26 @@ fn test_agent_plugin_loads_manifest_and_shallow_skills() {
 	assert plugin.diagnostics[2].component == 'skills/broken'
 }
 
+fn test_agent_plugin_catalog_exposes_skill_metadata_without_instructions() {
+	directory := os.join_path(os.temp_dir(), 'veasel-plugin-catalog-${uuid.new_v4().str()}')
+	package := os.join_path(directory, 'review-package')
+	os.mkdir_all(os.join_path(package, 'skills', 'review')) or { panic(err) }
+	defer { os.rmdir_all(directory) or {} }
+	os.write_file(os.join_path(package, 'plugin.json'), test_manifest) or { panic(err) }
+	os.write_file(os.join_path(package, 'skills', 'review', 'SKILL.md'), '---\nname: review\ndescription: Review changes.\n---\n\nOnly load this body after selection.') or {
+		panic(err)
+	}
+	catalog := discover_agent_plugins(directory) or { panic(err) }
+	assert catalog.plugins.len == 1
+	assert catalog.plugins[0].name == 'review-tools'
+	assert catalog.plugins[0].skills.len == 1
+	assert catalog.plugins[0].skills[0].name == 'review'
+	assert catalog.plugins[0].skills[0].description == 'Review changes.'
+	assert !json2.encode[PluginCatalog](catalog).contains('Only load this body after selection.')
+	root, skill := find_agent_skill(directory, 'review-tools', 'review') or { panic(err) }
+	assert load_skill_instructions(root, skill) or { panic(err) } == '\nOnly load this body after selection.'
+}
+
 fn test_plugin_paths_reject_traversal() {
 	root := os.join_path(os.temp_dir(), 'veasel-plugin-${uuid.new_v4().str()}')
 	external := os.join_path(os.temp_dir(), 'veasel-plugin-external-${uuid.new_v4().str()}')

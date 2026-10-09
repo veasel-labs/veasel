@@ -16,8 +16,10 @@ The current vertical slice provides a V server with health/capability
 endpoints, SQLite-backed sessions and chat history, a replayable event stream,
 and an OpenTUI terminal client. When configured, sessions can chat through
 OpenAI-compatible, Anthropic, or Gemini APIs. Repository tools, code changes,
-and background execution are still in progress; the product reports only
-actual provider replies and does not simulate agent actions.
+and background execution are still in progress. Local Agent Plugins can be
+discovered and their validated Skills enabled per session; MCP declarations
+are metadata only and are not started. The product reports only actual
+provider replies and does not simulate agent actions.
 
 ## Requirements
 
@@ -48,6 +50,14 @@ accepts `VEASEL_API_URL` only for an unauthenticated loopback HTTP address.
 The API also rejects non-loopback `Host` values and browser `Origin` headers
 outside loopback hosts.
 
+Agent Plugin packages are discovered from `$VEASEL_PLUGIN_DIR` or
+`$VEASEL_DATA_DIR/plugins`. In the TUI, use `/skills` to list discovered
+Skills, `/skill on <plugin>/<skill>` to add one to the active session, and
+`/skill off <plugin>/<skill>` to remove it. Skill instructions are treated as
+untrusted reference context and reloaded from disk for each turn. Install only
+plugins you trust. MCP server declarations are shown in metadata but Veasel
+does not launch them yet; the project does not claim Agent Plugins conformance.
+
 The initial completion adapters support `openai-compatible` (the default),
 `anthropic`, and `gemini`. Set `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, and a
 provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`;
@@ -60,16 +70,16 @@ edits are not available yet.
 
 ## API
 
-The API uses `/v1/health`, `/v1/capabilities`, `/v1/sessions`,
+The API uses `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/sessions`,
 `/v1/sessions/:id`, `/v1/sessions/:id/messages`, `/v1/chat/completions` when
-configured, and `/v1/events` (SSE). See the OpenAPI document at
+configured, `/v1/sessions/:id/skills`, and `/v1/events` (SSE). See the OpenAPI document at
 [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Verification
 
 Run `v test .` for the V unit tests and
 `scripts/api-smoke.sh` for HTTP validation, session persistence across a
-server restart, and SSE replay. The smoke script requires `curl` and GNU
+server restart, plugin discovery and session skill activation, and SSE replay. The smoke script requires `curl` and GNU
 `timeout`. For memory-bounded local V checks, see [AGENTS.md](AGENTS.md).
 
 See [`docs/VLIB_REUSE.md`](docs/VLIB_REUSE.md) for the checked V standard

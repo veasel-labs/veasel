@@ -9,7 +9,10 @@ fn test_session_turn_lock_stripes_serialize_the_same_session() {
 	defer {
 		store.close() or {}
 	}
-	mut app := new_app(store)
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-plugins-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	mut app := new_app(store, plugin_directory)
 	defer {
 		app.close()
 	}
@@ -87,6 +90,28 @@ fn test_session_store_event_cursor_replays_only_newer_events() {
 	next_events := store.events_after(first_events[0].id) or { panic(err) }
 	assert next_events.len == 1
 	assert next_events[0].session_id != first.id
+}
+
+fn test_session_plugin_skills_persist_and_emit_only_state_changes() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Skill session', directory: '/tmp/skills' }) or {
+		panic(err)
+	}
+	store.set_session_plugin_skill(session.id, 'review-tools', 'review', true) or { panic(err) }
+	store.set_session_plugin_skill(session.id, 'review-tools', 'review', true) or { panic(err) }
+	assert store.session_plugin_skills(session.id) or { panic(err) } == [SessionPluginSkill{
+		plugin_name: 'review-tools'
+		skill_name:  'review'
+	}]
+	events := store.events_after(0) or { panic(err) }
+	assert events.len == 2
+	assert events[1].type == 'session.skill_enabled'
+	store.set_session_plugin_skill(session.id, 'review-tools', 'review', false) or { panic(err) }
+	assert (store.session_plugin_skills(session.id) or { panic(err) }).len == 0
+	updated_events := store.events_after(0) or { panic(err) }
+	assert updated_events.len == 3
+	assert updated_events[2].type == 'session.skill_disabled'
 }
 
 fn test_session_title_is_not_interpreted_as_sql() {

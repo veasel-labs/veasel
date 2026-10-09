@@ -36,6 +36,12 @@ pub:
 	created_at string
 }
 
+pub struct SessionPluginSkill {
+pub:
+	plugin_name string
+	skill_name  string
+}
+
 @[heap]
 struct Store {
 mut:
@@ -120,8 +126,90 @@ fn open_store(path string) !&Store {
 			return error('unable to commit chat history migration')
 		}
 	}
+	if current < 3 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin plugin skill migration')
+		}
+		db.exec('CREATE TABLE session_plugin_skills (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, plugin_name TEXT NOT NULL, skill_name TEXT NOT NULL, enabled_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (session_id, plugin_name, skill_name))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create session plugin skill table')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (3)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record plugin skill migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit plugin skill migration')
+		}
+	}
 	return &Store{
 		db: db
+	}
+}
+
+fn (mut store Store) session_plugin_skills(session_id string) ![]SessionPluginSkill {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param('SELECT plugin_name, skill_name FROM session_plugin_skills WHERE session_id = ? ORDER BY plugin_name, skill_name',
+		session_id)!
+	mut skills := []SessionPluginSkill{cap: rows.len}
+	for row in rows {
+		skills << SessionPluginSkill{
+			plugin_name: row.val(0)
+			skill_name:  row.val(1)
+		}
+	}
+	return skills
+}
+
+fn (mut store Store) set_session_plugin_skill(session_id string, plugin_name string, skill_name string, enabled bool) ! {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	rows := store.db.exec_param_many('SELECT 1 FROM session_plugin_skills WHERE session_id = ? AND plugin_name = ? AND skill_name = ?',
+		[session_id, plugin_name, skill_name]) or {
+		store.db.rollback() or {}
+		return error('unable to read session plugin skills')
+	}
+	exists := rows.len != 0
+	if exists == enabled {
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit session plugin skill update')
+		}
+		return
+	}
+	if enabled {
+		_ = store.db.exec_param_many('INSERT INTO session_plugin_skills (session_id, plugin_name, skill_name) VALUES (?, ?, ?)',
+			[session_id, plugin_name, skill_name]) or {
+			store.db.rollback() or {}
+			return error('unable to enable session plugin skill')
+		}
+	} else {
+		_ = store.db.exec_param_many('DELETE FROM session_plugin_skills WHERE session_id = ? AND plugin_name = ? AND skill_name = ?',
+			[session_id, plugin_name, skill_name]) or {
+			store.db.rollback() or {}
+			return error('unable to disable session plugin skill')
+		}
+	}
+	event_type := if enabled { 'session.skill_enabled' } else { 'session.skill_disabled' }
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		[event_type, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record session plugin skill event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session plugin skill update')
 	}
 }
 

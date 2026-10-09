@@ -18,9 +18,21 @@ SESSION_SYSTEM = (
     "but this version cannot inspect or edit repository files or execute commands. "
     "Never claim that you performed actions."
 )
+def is_session_system(content):
+    if content in ("Be concise", SESSION_SYSTEM):
+        return True
+    return (
+        content.startswith(SESSION_SYSTEM + "\n\nUser-enabled Agent Plugin skills")
+        and "Skill: review-tools/review" in content
+        and "Fixture skill instructions for verifying session activation." in content
+    )
 
 
 class MockProvider(BaseHTTPRequestHandler):
+    def reject(self, payload):
+        print(json.dumps({"path": self.path, "headers": dict(self.headers), "payload": payload}), file=sys.stderr)
+        self.send_error(400)
+
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if self.path == "/redirect/v1/chat/completions":
@@ -34,12 +46,14 @@ class MockProvider(BaseHTTPRequestHandler):
                 self.path != "/v1/chat/completions"
                 or payload.get("model") != "smoke-model"
                 or payload.get("max_tokens") != 4096
-                or payload.get("messages", [])[0].get("content")
-                not in ("Be concise", SESSION_SYSTEM)
+                or not (
+                    payload.get("messages", [])[0].get("content") == "Be concise"
+                    or is_session_system(payload.get("messages", [])[0].get("content"))
+                )
                 or payload.get("messages", [])[-1].get("content")
                 not in ("Say hello", "Continue this session")
             ):
-                self.send_error(400)
+                self.reject(payload)
                 return
             body = {
                 "choices": [{"message": {"role": "assistant", "content": REPLY}}]
@@ -49,23 +63,27 @@ class MockProvider(BaseHTTPRequestHandler):
                 self.path != "/v1/messages"
                 or payload.get("model") != "smoke-model"
                 or payload.get("max_tokens") != 4096
-                or payload.get("system") not in ("Be concise", SESSION_SYSTEM)
+                or not (
+                    payload.get("system") == "Be concise"
+                    or is_session_system(payload.get("system"))
+                )
                 or payload.get("messages", [])[-1].get("content")
                 not in ("Say hello", "Continue this session")
             ):
-                self.send_error(400)
+                self.reject(payload)
                 return
             body = {"content": [{"type": "text", "text": REPLY}]}
         elif self.headers.get("x-goog-api-key") == API_KEYS["gemini"]:
             if (
                 self.path != "/v1beta/models/smoke-model:generateContent"
-                or payload.get("systemInstruction", {}).get("parts", [])[0].get("text")
-                not in ("Be concise", SESSION_SYSTEM)
+                or not is_session_system(
+                    payload.get("systemInstruction", {}).get("parts", [])[0].get("text")
+                )
                 or payload.get("generationConfig", {}).get("maxOutputTokens") != 4096
                 or payload.get("contents", [])[-1].get("parts", [])[0].get("text")
                 not in ("Say hello", "Continue this session")
             ):
-                self.send_error(400)
+                self.reject(payload)
                 return
             body = {
                 "candidates": [

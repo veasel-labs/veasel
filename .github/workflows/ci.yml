@@ -83,6 +83,12 @@ jobs:
           $installer = Join-Path $vroot 'vlib/db/sqlite/install_thirdparty_sqlite.vsh'
           if (-not (Test-Path $installer)) { throw "V SQLite installer is missing: $installer" }
           v run $installer
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sqlite_source = Join-Path $vroot 'thirdparty/sqlite/sqlite3.c'
+          $sqlite_object = Join-Path $vroot 'thirdparty/sqlite/sqlite3.o'
+          & gcc -O2 -c $sqlite_source -o $sqlite_object
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path $sqlite_object)) { throw "V SQLite object was not created: $sqlite_object" }
       - name: Verify formatting
         run: v fmt -verify .
       - name: Create output directory

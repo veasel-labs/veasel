@@ -65,7 +65,13 @@ jobs:
           version-file: .v-version
       - name: Install SQLite development files on Linux
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes libsqlite3-dev
+        run: |
+          if pkg-config --exists sqlite3 && test -r /usr/include/sqlite3.h; then
+            pkg-config --modversion sqlite3
+          else
+            sudo apt-get update
+            sudo apt-get install --yes libsqlite3-dev
+          fi
       - name: Install V bundled SQLite on Windows
         if: runner.os == 'Windows'
         shell: pwsh

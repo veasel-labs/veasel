@@ -60,7 +60,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: vlang/setup-v@2c790c60223ed135f6949d1358675e4fd004b801 # v1
+      - uses: vlang/setup-v@663cc08827d1fc0532ee755b4dedbb183c11d06a # v1.7
+        id: setup-v
         with:
           version-file: .v-version
       - name: Install SQLite development files on Linux
@@ -75,11 +76,14 @@ jobs:
       - name: Install V bundled SQLite on Windows
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          V_BUILD_ROOT: ${{ steps.setup-v.outputs.bin-path }}
         run: |
-          $roots = @(Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'vlang') -Directory |
-            Where-Object { Test-Path (Join-Path $_.FullName 'vlib/db/sqlite/sqlite.c.v') })
-          if ($roots.Count -ne 1) { throw "Expected one V source root from setup-v, found $($roots.Count)." }
-          $vroot = $roots[0].FullName
+          $vroot = $env:V_BUILD_ROOT
+          if (-not $vroot) { throw 'setup-v did not expose its V source root.' }
+          if (-not (Test-Path (Join-Path $vroot 'vlib/db/sqlite/sqlite.c.v'))) {
+            throw "V SQLite module is missing from setup-v root: $vroot"
+          }
           "V_BUILD_ROOT=$vroot" >> $env:GITHUB_ENV
           $installer = Join-Path $vroot 'vlib/db/sqlite/install_thirdparty_sqlite.vsh'
           if (-not (Test-Path $installer)) { throw "V SQLite installer is missing: $installer" }

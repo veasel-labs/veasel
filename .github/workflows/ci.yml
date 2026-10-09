@@ -12,6 +12,9 @@ jobs:
   backend:
     name: V backend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VJOBS: 1
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: vlang/setup-v@2c790c60223ed135f6949d1358675e4fd004b801 # v1
@@ -24,7 +27,10 @@ jobs:
       - name: Build backend
         run: v -o /tmp/veasel .
       - name: Run domain tests
-        run: v test .
+        timeout-minutes: 10
+        run: |
+          v test main_test.v
+          v test plugins_test.v
       - name: Run HTTP and persistence smoke
         run: scripts/api-smoke.sh
 

@@ -683,11 +683,10 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 	}
 	output := app.complete_with_provider_limit(mut turn_ctx, input) or {
 		if err.msg() in ['cancelled', 'deadline_exceeded'] {
-			ctx.res.set_status(if err.msg() == 'deadline_exceeded' {
-				.gateway_timeout
-			} else {
-				.conflict
-			})
+			if err.msg() == 'cancelled' {
+				return json_conflict_error(mut ctx, err.msg())
+			}
+			ctx.res.set_status(.gateway_timeout)
 			return ctx.json(APIError{
 				error: err.msg()
 			})
@@ -706,11 +705,10 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 		})
 	}
 	if context_error := turn_context_error(mut turn_ctx) {
-		ctx.res.set_status(if context_error == 'deadline_exceeded' {
-			.gateway_timeout
-		} else {
-			.conflict
-		})
+		if context_error == 'cancelled' {
+			return json_conflict_error(mut ctx, context_error)
+		}
+		ctx.res.set_status(.gateway_timeout)
 		return ctx.json(APIError{
 			error: context_error
 		})
@@ -868,11 +866,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	messages << user_message
 	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id) or {
 		if err.msg() in ['cancelled', 'deadline_exceeded'] {
-			ctx.res.set_status(if err.msg() == 'deadline_exceeded' {
-				.gateway_timeout
-			} else {
-				.conflict
-			})
+			if err.msg() == 'cancelled' {
+				return json_conflict_error(mut ctx, err.msg())
+			}
+			ctx.res.set_status(.gateway_timeout)
 			return ctx.json(APIError{
 				error: err.msg()
 			})
@@ -895,11 +892,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		})
 	}
 	if context_error := turn_context_error(mut turn_ctx) {
-		ctx.res.set_status(if context_error == 'deadline_exceeded' {
-			.gateway_timeout
-		} else {
-			.conflict
-		})
+		if context_error == 'cancelled' {
+			return json_conflict_error(mut ctx, context_error)
+		}
+		ctx.res.set_status(.gateway_timeout)
 		return ctx.json(APIError{
 			error: context_error
 		})

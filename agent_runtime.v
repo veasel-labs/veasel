@@ -5,11 +5,17 @@ import json2
 const max_agent_tool_rounds = 6
 const max_agent_tool_calls = 12
 const max_agent_tool_result_bytes = 1_000_000
-const max_agent_tool_argument_bytes = 4_096
+const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 const max_agent_context_bytes = max_chat_input_bytes + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
 
 struct AgentToolError {
 	error string
+}
+
+struct AgentWorkspaceEditResult {
+	id   string
+	path string
+	note string
 }
 
 fn workspace_agent_tools() []AgentToolDefinition {
@@ -48,10 +54,28 @@ fn workspace_agent_tools() []AgentToolDefinition {
 				required:   ['query']
 			}
 		},
+		AgentToolDefinition{
+			name:        'workspace_propose_file_edit'
+			description: 'Propose a change to one UTF-8 file in the current workspace. This never writes the file. The user must inspect and explicitly approve the stored diff before it is applied.'
+			parameters:  ToolParameters{
+				properties: {
+					'path':    ToolParameter{
+						type:        'string'
+						description: 'Relative path to an existing file or a new file whose parent directory already exists.'
+					}
+					'content': ToolParameter{
+						type:        'string'
+						description: 'Complete proposed UTF-8 text for this one file, at most 512000 bytes.'
+					}
+				}
+				required:   ['path', 'content']
+			}
+		},
 	]
 }
 
-fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string) !CompletionOutput {
+fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string,
+	session_id string) !CompletionOutput {
 	tools := workspace_agent_tools()
 	mut tool_calls := 0
 	mut result_bytes := 0
@@ -91,7 +115,7 @@ fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string) 
 		}
 		tool_calls += output.tool_calls.len
 		for call in output.tool_calls {
-			result := execute_workspace_agent_tool(root, call)
+			result := execute_workspace_agent_tool(app, root, session_id, call)
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
@@ -122,7 +146,8 @@ fn agent_context_bytes(messages []ChatMessage) int {
 	return total
 }
 
-fn execute_workspace_agent_tool(root string, call ProviderToolCall) string {
+fn execute_workspace_agent_tool(app &App, root string, session_id string,
+	call ProviderToolCall) string {
 	result := match call.function.name {
 		'workspace_list_files' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
@@ -187,6 +212,44 @@ fn execute_workspace_agent_tool(root string, call ProviderToolCall) string {
 				})
 			}
 			json2.encode[WorkspaceSearchResult](search)
+		}
+		'workspace_propose_file_edit' {
+			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'Tool arguments must be a JSON object.'
+				})
+			}
+			path := string_tool_argument(tool_arguments, 'path') or {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'A relative file path is required.'
+				})
+			}
+			content := string_tool_argument(tool_arguments, 'content') or {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'Proposed UTF-8 file content is required.'
+				})
+			}
+			if tool_arguments.len != 2 {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'Unexpected tool argument.'
+				})
+			}
+			draft := prepare_workspace_edit(root, path, content) or {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'The workspace edit is invalid or unavailable: ${err.msg()}'
+				})
+			}
+			mut store := app.store
+			proposal := store.create_workspace_edit(session_id, draft) or {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'The workspace edit could not be saved for review.'
+				})
+			}
+			json2.encode[AgentWorkspaceEditResult](AgentWorkspaceEditResult{
+				id:   proposal.id
+				path: proposal.path
+				note: 'Stored for human review. The file has not been changed.'
+			})
 		}
 		else {
 			return json2.encode[AgentToolError](AgentToolError{

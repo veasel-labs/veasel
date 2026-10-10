@@ -49,6 +49,13 @@ mut:
 	db sqlite.DB
 }
 
+struct InterruptedWorkspaceEdit {
+	id          string
+	path        string
+	root        string
+	create_file bool
+}
+
 fn open_store(path string) !&Store {
 	if path != ':memory:' {
 		os.mkdir_all(os.dir(path))!
@@ -145,6 +152,86 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit plugin skill migration')
+		}
+	}
+	if current < 4 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin workspace edit migration')
+		}
+		db.exec("CREATE TABLE workspace_edits (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, path TEXT NOT NULL, expected_hash TEXT NOT NULL, content TEXT NOT NULL, diff TEXT NOT NULL, create_file INTEGER NOT NULL CHECK (create_file IN (0, 1)), status TEXT NOT NULL CHECK (status IN ('pending', 'applying', 'applied', 'rejected', 'conflict', 'interrupted')), reviewed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create workspace edit table')
+		}
+		db.exec('CREATE INDEX workspace_edits_session_created ON workspace_edits (session_id, created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index workspace edits')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (4)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record workspace edit migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit workspace edit migration')
+		}
+	}
+	if current >= 4 {
+		pending_recovery := db.exec("SELECT e.id, e.path, e.create_file, s.directory FROM workspace_edits e JOIN sessions s ON s.id = e.session_id WHERE e.status IN ('applying', 'interrupted')") or {
+			db.close() or {}
+			return error('unable to inspect interrupted workspace edit backups')
+		}
+		mut recoveries := []InterruptedWorkspaceEdit{cap: pending_recovery.len}
+		for row in pending_recovery {
+			recoveries << InterruptedWorkspaceEdit{
+				id:          row.val(0)
+				path:        row.val(1)
+				create_file: row.val(2).int() == 1
+				root:        row.val(3)
+			}
+		}
+		for recovery in recoveries {
+			if !recovery.create_file {
+				recover_interrupted_workspace_edit(recovery.root, recovery.id, recovery.path)
+			}
+		}
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin workspace edit recovery')
+		}
+		interrupted := db.exec("SELECT id, session_id FROM workspace_edits WHERE status = 'applying'") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to inspect interrupted workspace edits')
+		}
+		mut interrupted_ids := []string{cap: interrupted.len}
+		mut interrupted_sessions := []string{cap: interrupted.len}
+		for row in interrupted {
+			interrupted_ids << row.val(0)
+			interrupted_sessions << row.val(1)
+		}
+		for index, id in interrupted_ids {
+			_ = db.exec_param_many("UPDATE workspace_edits SET status = 'interrupted', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'applying'",
+				[id]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to recover interrupted workspace edit')
+			}
+			_ = db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+				['workspace.edit_interrupted', interrupted_sessions[index]]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to record interrupted workspace edit')
+			}
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit workspace edit recovery')
 		}
 	}
 	return &Store{
@@ -382,4 +469,255 @@ fn (mut store Store) append_exchange(session_id string, user_content string, ass
 	}
 	result = result.reverse()
 	return result
+}
+
+fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEditDraft) !WorkspaceEditProposal {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	pending := store.db.exec_param("SELECT COUNT(*) FROM workspace_edits WHERE session_id = ? AND status = 'pending'",
+		session_id) or {
+		store.db.rollback() or {}
+		return error('unable to inspect pending workspace edits')
+	}
+	if pending.len != 1 || pending[0].val(0).int() >= max_pending_workspace_edits {
+		store.db.rollback() or {}
+		return error('pending workspace edit limit reached')
+	}
+	id := uuid.new_v4().str()
+	_ = store.db.exec_param_many('INSERT INTO workspace_edits (id, session_id, path, expected_hash, content, diff, create_file, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+		[id, session_id, draft.path, draft.expected_hash, draft.content, draft.diff, if draft.create_file {
+			'1'
+		} else {
+			'0'
+		}, 'pending']) or {
+		store.db.rollback() or {}
+		return error('unable to persist workspace edit proposal')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		['workspace.edit_proposed', session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record workspace edit proposal')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit workspace edit proposal')
+	}
+	rows := store.db.exec_param('SELECT id, session_id, path, diff, status, created_at, updated_at FROM workspace_edits WHERE id = ?',
+		id)!
+	if rows.len != 1 {
+		return error('workspace edit proposal could not be read')
+	}
+	return workspace_edit_proposal_from_row(rows[0])
+}
+
+fn (mut store Store) workspace_edits(session_id string) ![]WorkspaceEditSummary {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param_many('SELECT id, path, status, created_at, updated_at FROM workspace_edits WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 50',
+		[session_id])!
+	mut proposals := []WorkspaceEditSummary{cap: rows.len}
+	for row in rows {
+		proposals << WorkspaceEditSummary{
+			id:         row.val(0)
+			path:       row.val(1)
+			status:     row.val(2)
+			created_at: row.val(3)
+			updated_at: row.val(4)
+		}
+	}
+	return proposals
+}
+
+fn (mut store Store) review_workspace_edit(session_id string, id string) !WorkspaceEditProposal {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	rows := store.db.exec_param_many("SELECT id, session_id, path, diff, status, created_at, updated_at, COALESCE(reviewed_at, '') FROM workspace_edits WHERE session_id = ? AND id = ?",
+		[session_id, id]) or {
+		store.db.rollback() or {}
+		return error('unable to read workspace edit proposal')
+	}
+	if rows.len != 1 {
+		store.db.rollback() or {}
+		return error('workspace edit proposal not found')
+	}
+	row := rows[0]
+	proposal := workspace_edit_proposal_from_row(row)
+	if row.val(4) == 'pending' && row.val(7).len == 0 {
+		_ = store.db.exec_param_many("UPDATE workspace_edits SET reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NULL",
+			[id, session_id]) or {
+			store.db.rollback() or {}
+			return error('unable to record workspace edit review')
+		}
+		if store.db.get_affected_rows_count() != 1 {
+			store.db.rollback() or {}
+			return error('workspace edit changed while it was being reviewed')
+		}
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+			['workspace.edit_reviewed', session_id]) or {
+			store.db.rollback() or {}
+			return error('unable to record workspace edit review event')
+		}
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit workspace edit review')
+	}
+	return proposal
+}
+
+fn (mut store Store) begin_workspace_edit(session_id string, id string) !StoredWorkspaceEdit {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	rows := store.db.exec_param_many("SELECT id, session_id, path, expected_hash, content, diff, create_file, status, COALESCE(reviewed_at, '') FROM workspace_edits WHERE id = ? AND session_id = ?",
+		[id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to read workspace edit proposal')
+	}
+	if rows.len != 1 || rows[0].val(7) != 'pending' {
+		store.db.rollback() or {}
+		return error('workspace edit is not awaiting approval')
+	}
+	row := rows[0]
+	if row.val(8).len == 0 {
+		store.db.rollback() or {}
+		return error('workspace edit diff has not been reviewed')
+	}
+	edit := StoredWorkspaceEdit{
+		id:            row.val(0)
+		session_id:    row.val(1)
+		path:          row.val(2)
+		expected_hash: row.val(3)
+		content:       row.val(4)
+		diff:          row.val(5)
+		create_file:   row.val(6).int() == 1
+		status:        'applying'
+	}
+	_ = store.db.exec_param_many("UPDATE workspace_edits SET status = 'applying', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NOT NULL",
+		[id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record workspace edit approval')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('workspace edit is not awaiting approval')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		['workspace.edit_approved', session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record workspace edit approval event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit workspace edit approval')
+	}
+	return edit
+}
+
+fn (mut store Store) finish_workspace_edit(session_id string, id string, status string) ! {
+	if status !in ['applied', 'conflict', 'interrupted'] {
+		return error('invalid workspace edit state transition')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	_ = store.db.exec_param_many('UPDATE workspace_edits SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = ?',
+		[status, id, session_id, 'applying']) or {
+		store.db.rollback() or {}
+		return error('unable to update workspace edit state')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('workspace edit state changed unexpectedly')
+	}
+	rows := store.db.exec_param_many('SELECT status FROM workspace_edits WHERE id = ? AND session_id = ?',
+		[id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to verify workspace edit state')
+	}
+	if rows.len != 1 || rows[0].val(0) != status {
+		store.db.rollback() or {}
+		return error('workspace edit state changed unexpectedly')
+	}
+	event_type := match status {
+		'applied' { 'workspace.edit_applied' }
+		'conflict' { 'workspace.edit_conflict' }
+		else { 'workspace.edit_interrupted' }
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		[event_type, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record workspace edit state')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit workspace edit state')
+	}
+}
+
+fn (mut store Store) reject_workspace_edit(session_id string, id string) ! {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	_ = store.db.exec_param_many("UPDATE workspace_edits SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending'",
+		[id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to reject workspace edit')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('workspace edit is not awaiting review')
+	}
+	rows := store.db.exec_param_many('SELECT status FROM workspace_edits WHERE id = ? AND session_id = ?',
+		[id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to verify workspace edit status')
+	}
+	if rows.len != 1 || rows[0].val(0) != 'rejected' {
+		store.db.rollback() or {}
+		return error('workspace edit is not awaiting review')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		['workspace.edit_rejected', session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record workspace edit rejection')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit workspace edit rejection')
+	}
+}
+
+fn workspace_edit_proposal_from_row(row sqlite.Row) WorkspaceEditProposal {
+	return WorkspaceEditProposal{
+		id:         row.val(0)
+		session_id: row.val(1)
+		path:       row.val(2)
+		diff:       row.val(3)
+		status:     row.val(4)
+		created_at: row.val(5)
+		updated_at: row.val(6)
+	}
 }

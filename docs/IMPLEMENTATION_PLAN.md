@@ -53,7 +53,8 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
-- [ ] Add patch review and explicit, durable approval before writes or shell execution.
+- [x] Generate bounded single-file diffs, persist proposals, require explicit durable approval, reject stale snapshots, and recover interrupted applications without replay.
+- [ ] Add permissioned shell execution with explicit, durable approval.
 - [ ] Deliver streaming model responses and cancellation through the API, event store, and TUI.
 - [ ] Complete an end-to-end coding task against a disposable fixture repository, including diff review, tests, and a denied unapproved effect.
 

@@ -4,18 +4,27 @@ import json2
 import os
 import uuid
 
-fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
+fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_approval() {
 	root := os.join_path(os.temp_dir(), 'veasel-agent-tools-${uuid.new_v4().str()}')
 	os.mkdir_all(os.join_path(root, 'src')) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	os.write_file(os.join_path(root, 'src', 'main.v'), 'module fixture\nworkspace-sentinel\n') or {
 		panic(err)
 	}
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(root, 'plugins')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	session := store.create_session(SessionInput{ title: 'Edit fixture', directory: root }) or {
+		panic(err)
+	}
 
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
-		'workspace_search']
-	listing := execute_workspace_agent_tool(root, ProviderToolCall{
+		'workspace_search', 'workspace_propose_file_edit']
+	listing := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'list-1'
 		function: ProviderFunctionCall{
 			name:      'workspace_list_files'
@@ -25,7 +34,7 @@ fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
 	assert listing.contains('src/main.v')
 	assert !listing.contains(root)
 
-	read := execute_workspace_agent_tool(root, ProviderToolCall{
+	read := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'read-1'
 		function: ProviderFunctionCall{
 			name:      'workspace_read_file'
@@ -34,7 +43,7 @@ fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
 	})
 	assert read.contains('workspace-sentinel')
 
-	search := execute_workspace_agent_tool(root, ProviderToolCall{
+	search := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'search-1'
 		function: ProviderFunctionCall{
 			name:      'workspace_search'
@@ -43,7 +52,7 @@ fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
 	})
 	assert search.contains('workspace-sentinel')
 
-	traversal := execute_workspace_agent_tool(root, ProviderToolCall{
+	traversal := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'read-escape'
 		function: ProviderFunctionCall{
 			name:      'workspace_read_file'
@@ -53,7 +62,7 @@ fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
 	assert traversal.contains('error')
 	assert !traversal.contains(root)
 
-	unexpected_argument := execute_workspace_agent_tool(root, ProviderToolCall{
+	unexpected_argument := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'read-extra'
 		function: ProviderFunctionCall{
 			name:      'workspace_read_file'
@@ -62,7 +71,7 @@ fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
 	})
 	assert unexpected_argument.contains('Unexpected tool argument')
 
-	unknown := execute_workspace_agent_tool(root, ProviderToolCall{
+	unknown := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'unknown'
 		function: ProviderFunctionCall{
 			name:      'shell'
@@ -70,6 +79,19 @@ fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
 		}
 	})
 	assert unknown.contains('not available')
+
+	proposal_result := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'propose-1'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\\n"}'
+		}
+	})
+	assert proposal_result.contains('Stored for human review')
+	assert proposal_result.contains('"id"')
+	assert !proposal_result.contains('module fixture')
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
 
 	assert message_validation_error_contains([ChatMessage{
 		role:       'assistant'

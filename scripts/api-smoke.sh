@@ -63,7 +63,7 @@ expect_status() {
 	local expected="$1"
 	shift
 	local actual
-	actual="$(curl -sS -o "$work_dir/response" -w '%{http_code}' "$@")"
+	actual="$(curl -sS -o "$work_dir/response" -w '%{http_code}' "$@")" || fail "request failed: $*"
 	[[ "$actual" == "$expected" ]] || fail "expected HTTP $expected, got $actual ($(cat "$work_dir/response"))"
 }
 
@@ -144,6 +144,32 @@ expect_status 200 -H 'content-type: application/json' \
 grep -Fq '"path":"src/main.v"' "$work_dir/response" || fail 'workspace search did not return the matching path'
 grep -Fq '"line":3' "$work_dir/response" || fail 'workspace search returned the wrong line number'
 
+expect_status 201 -H 'content-type: application/json' \
+	-d '{"path":"src/main.v","content":"module fixture\n// workspace-search-sentinel\nfn main() { println(\"approved\") }\n"}' \
+	"$api/v1/sessions/$session_id/workspace/edits"
+grep -Fq '"status":"pending"' "$work_dir/response" || fail 'workspace edit proposal is not pending review'
+grep -Fq -- '+fn main()' "$work_dir/response" || fail 'workspace edit proposal omitted the new content diff'
+edit_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$work_dir/response")"
+[[ -n "$edit_id" ]] || fail 'workspace edit proposal id is missing'
+cmp -s "$work_dir/workspace/src/main.v" <(printf 'module fixture\n\n// workspace-search-sentinel\n') || fail 'proposing a workspace edit changed the file before approval'
+expect_status 409 -X POST -H 'content-type: application/json' -d '{}' "$api/v1/sessions/$session_id/workspace/edits/$edit_id/approve"
+grep -Fq 'has not been reviewed' "$work_dir/response" || fail 'approval did not require a prior diff review'
+expect_status 200 "$api/v1/sessions/$session_id/workspace/edits/$edit_id"
+grep -Fq '+fn main()' "$work_dir/response" || fail 'workspace edit detail omitted the diff'
+expect_status 200 -X POST "$api/v1/sessions/$session_id/workspace/edits/$edit_id/approve"
+grep -Fq '"status":"applied"' "$work_dir/response" || fail 'approved workspace edit was not marked applied'
+grep -Fq 'println("approved")' "$work_dir/workspace/src/main.v" || fail 'approved workspace edit was not applied to disk'
+expect_status 409 -X POST "$api/v1/sessions/$session_id/workspace/edits/$edit_id/approve"
+
+expect_status 201 -H 'content-type: application/json' \
+	-d '{"path":"src/main.v","content":"module fixture\n// workspace-search-sentinel\nfn main() { println(\"rejected\") }\n"}' \
+	"$api/v1/sessions/$session_id/workspace/edits"
+edit_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$work_dir/response")"
+[[ -n "$edit_id" ]] || fail 'second workspace edit proposal id is missing'
+expect_status 200 -X POST "$api/v1/sessions/$session_id/workspace/edits/$edit_id/reject"
+grep -Fq '"status":"rejected"' "$work_dir/response" || fail 'workspace edit rejection was not persisted'
+grep -Fq 'println("approved")' "$work_dir/workspace/src/main.v" || fail 'rejecting a workspace edit changed the file'
+
 curl -fsS "$api/v1/sessions/$session_id/skills" >"$work_dir/skills"
 [[ "$(cat "$work_dir/skills")" == '[]' ]] || fail 'new session unexpectedly has active skills'
 expect_status 200 -H 'content-type: application/json' \
@@ -206,12 +232,27 @@ for provider in openai-compatible anthropic gemini; do
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'The path was rejected.' "$work_dir/response" || fail "$provider tool call did not reject parent traversal"
 	! grep -Fq 'outside-root-secret' "$work_dir/response" || fail "$provider tool result exposed a file outside the workspace"
+	expect_status 200 -H 'content-type: application/json' -d '{"content":"Propose workspace edit"}' \
+		"$api/v1/sessions/$session_id/messages"
+	grep -Fq 'Proposed a file edit for review.' "$work_dir/response" || fail "$provider edit proposal did not reach the user"
+	edit_path="src/$provider-edit.v"
+	[[ ! -e "$work_dir/workspace/$edit_path" ]] || fail "$provider proposal wrote a file before approval"
+	curl -fsS "$api/v1/sessions/$session_id/workspace/edits" >"$work_dir/provider-edits"
+	grep -Fq "$edit_path" "$work_dir/provider-edits" || fail "$provider proposal was not persisted"
+	edit_id="$(python3 -c 'import json, sys; path = sys.argv[1]; edits = json.load(open(sys.argv[2])); print(next((edit["id"] for edit in edits if edit["path"] == path), ""))' "$edit_path" "$work_dir/provider-edits")"
+	[[ -n "$edit_id" ]] || fail "$provider proposal id is missing"
+	expect_status 200 -X GET "$api/v1/sessions/$session_id/workspace/edits/$edit_id"
+	grep -Fq '+fn main() {}' "$work_dir/response" || fail "$provider proposal diff is missing"
+	expect_status 200 -X POST "$api/v1/sessions/$session_id/workspace/edits/$edit_id/approve"
+	grep -Fq '"status":"applied"' "$work_dir/response" || fail "$provider proposal approval failed"
+	grep -Fq 'fn main() {}' "$work_dir/workspace/$edit_path" || fail "$provider approved edit was not applied"
 	curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/messages"
 	grep -Fq '"content":"Continue this session"' "$work_dir/messages" || fail "$provider user turn was not persisted"
 	grep -Fq '"content":"Inspect workspace"' "$work_dir/messages" || fail "$provider tool-call user turn was not persisted"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/messages" || fail "$provider assistant turn was not persisted"
 	grep -Fq '"content":"Found workspace-search-sentinel"' "$work_dir/messages" || fail "$provider tool result was not followed by a final response"
 	grep -Fq '"content":"The path was rejected."' "$work_dir/messages" || fail "$provider traversal attempt was not safely answered"
+	grep -Fq '"content":"Proposed a file edit for review."' "$work_dir/messages" || fail "$provider edit proposal was not persisted"
 done
 
 rm -rf "$work_dir/plugins/review-package"

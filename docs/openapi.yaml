@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local sessions, multi-provider chat with bounded provider-native workspace read tools, experimental Agent Plugin skill selection, and replayable events. Workspace content returned by tools is sent to the configured model provider.
+  description: Local sessions, multi-provider chat, bounded workspace tools with durable single-file edit approval, experimental Agent Plugin skill selection, and replayable events. Workspace excerpts requested by tools are sent to the configured model provider.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -128,7 +128,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: sendSessionMessage
-      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may use bounded read-only workspace listing, file reads, and literal search; returned workspace content is sent to the configured provider.
+      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may list/read/search bounded workspace files and create durable single-file edit proposals. Requested workspace content is sent to the configured provider; proposed file contents are not written before explicit approval.
       requestBody:
         required: true
         content:
@@ -305,6 +305,145 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/edits:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listWorkspaceEdits
+      description: Lists recent workspace edit proposals and their durable review states. Proposal content is never applied by listing.
+      responses:
+        '200':
+          description: Recent review proposals.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items: { $ref: '#/components/schemas/WorkspaceEditSummary' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: proposeWorkspaceEdit
+      description: Stores a unified diff for one existing file or a new file in an existing directory. This operation never writes to the workspace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceEditInput' }
+      responses:
+        '201':
+          description: Diff saved for explicit user review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEditProposal' }
+        '400':
+          description: Invalid path, text, or proposal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: The session has reached its pending proposal limit.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/edits/{edit_id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: edit_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getWorkspaceEdit
+      description: Returns one proposal diff and durably records that the review view was opened before approval.
+      responses:
+        '200':
+          description: Diff and durable proposal state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEditProposal' }
+        '404':
+          description: Session or proposal not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/edits/{edit_id}/approve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: edit_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: approveWorkspaceEdit
+      description: Durably records approval, checks that the file still matches the reviewed snapshot, then applies the file replacement. An interrupted application is never replayed automatically.
+      responses:
+        '200':
+          description: The approved file edit was applied and recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEditAction' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Proposal has not been reviewed or is no longer pending, or the file changed or became unsafe since review.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: The write outcome is uncertain. Inspect the workspace before proceeding.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/edits/{edit_id}/reject:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: edit_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: rejectWorkspaceEdit
+      description: Durably rejects a pending proposal without changing the workspace.
+      responses:
+        '200':
+          description: The proposal was rejected.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEditAction' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Proposal is not pending.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -495,6 +634,38 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/WorkspaceSearchMatch' }
         truncated: { type: boolean }
+    WorkspaceEditInput:
+      type: object
+      required: [path, content]
+      properties:
+        path: { type: string, minLength: 1, maxLength: 4096 }
+        content: { type: string, maxLength: 512000, description: Complete proposed UTF-8 file contents. }
+    WorkspaceEditProposal:
+      type: object
+      required: [id, session_id, path, diff, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        path: { type: string }
+        diff: { type: string, maxLength: 1100000 }
+        status: { type: string, enum: [pending, applying, applied, rejected, conflict, interrupted] }
+        created_at: { type: string }
+        updated_at: { type: string }
+    WorkspaceEditSummary:
+      type: object
+      required: [id, path, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        path: { type: string }
+        status: { type: string, enum: [pending, applying, applied, rejected, conflict, interrupted] }
+        created_at: { type: string }
+        updated_at: { type: string }
+    WorkspaceEditAction:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [applied, rejected] }
     CreateSession:
       type: object
       required: [title, directory]

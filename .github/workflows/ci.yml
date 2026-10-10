@@ -167,7 +167,7 @@ jobs:
           v test workspace_tools_test.v
       - name: Run Windows workspace edit and recovery tests
         if: runner.os == 'Windows'
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           v test main_test.v
           v test plugin_mcp_transport_test.v

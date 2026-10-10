@@ -115,6 +115,41 @@ fn test_agent_plugin_manifest_rejects_fatal_schema_violations() {
 	assert plugin_manifest_rejected('{broken json')
 }
 
+fn test_agent_plugin_component_discovery_is_optional_and_isolated() {
+	root := os.join_path(os.temp_dir(), 'veasel-plugin-components-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'plugin.json'), test_mcp_manifest) or { panic(err) }
+
+	empty_plugin := load_agent_plugin(root) or { panic(err) }
+	assert empty_plugin.skills.len == 0
+	assert empty_plugin.mcp_servers.len == 0
+	assert empty_plugin.diagnostics.len == 0
+
+	os.mkdir_all(os.join_path(root, 'skills', 'review')) or { panic(err) }
+	os.write_file(os.join_path(root, 'skills', 'review', 'SKILL.md'), '---\nname: review\ndescription: Review changes.\n---\nBody') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(root, 'mcp.json'), '{broken json') or { panic(err) }
+	plugin_with_invalid_mcp := load_agent_plugin(root) or { panic(err) }
+	assert plugin_with_invalid_mcp.skills.len == 1
+	assert plugin_with_invalid_mcp.skills[0].name == 'review'
+	assert plugin_with_invalid_mcp.mcp_servers.len == 0
+	assert plugin_with_invalid_mcp.diagnostics.len == 1
+	assert plugin_with_invalid_mcp.diagnostics[0].component == 'mcp.json'
+
+	os.rm(os.join_path(root, 'mcp.json')) or { panic(err) }
+	os.rm(os.join_path(root, 'skills', 'review', 'SKILL.md')) or { panic(err) }
+	os.rmdir(os.join_path(root, 'skills', 'review')) or { panic(err) }
+	os.rmdir(os.join_path(root, 'skills')) or { panic(err) }
+	os.write_file(os.join_path(root, 'skills'), 'not a directory') or { panic(err) }
+	os.mkdir(os.join_path(root, 'mcp.json')) or { panic(err) }
+	plugin_with_invalid_component_kinds := load_agent_plugin(root) or { panic(err) }
+	assert plugin_with_invalid_component_kinds.skills.len == 0
+	assert plugin_with_invalid_component_kinds.mcp_servers.len == 0
+	assert plugin_with_invalid_component_kinds.diagnostics.len == 2
+}
+
 fn plugin_manifest_from_text(text string) !(PluginManifest, []PluginDiagnostic) {
 	fields := json2.decode[map[string]json2.Any](text) or {
 		return error('invalid manifest fixture')

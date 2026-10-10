@@ -33,12 +33,18 @@ type PluginCatalog = {
   plugins: Array<{
     name: string
     skills: Array<{ name: string; description: string }>
+    mcp_servers: Array<{ name: string; transport: string; command: string }>
   }>
 }
 
 type SessionPluginSkill = {
   plugin_name: string
   skill_name: string
+}
+
+type SessionPluginMCPServer = {
+  plugin_name: string
+  server_name: string
 }
 
 type WorkspaceEditSummary = {
@@ -176,7 +182,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new session   /skills   /patches   /patch show|approve|reject <id>   ↑/↓ navigate   q quit",
+  content: "n new session   /skills   /mcp   /patches   /patch show|approve|reject <id>   ↑/↓ navigate   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -298,6 +304,26 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (content === "/mcp") {
+    await showMcpServers()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpCommand = /^\/mcp\s+(trust|untrust)\s+([a-z0-9.-]+)\/([^\r\n]+)$/.exec(content)
+  if (mcpCommand) {
+    await setMcpServerTrust(mcpCommand[1] === "trust", mcpCommand[2], mcpCommand[3].trim())
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/mcp ")) {
+    skillNotice = "Use /mcp to list servers, then /mcp trust <plugin>/<server> or /mcp untrust <plugin>/<server>. Trust runs stdio code with your account's privileges."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/patches") {
     await showWorkspaceEdits()
     chatInput.value = ""
@@ -392,6 +418,34 @@ async function showSkills() {
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load plugin skills: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function showMcpServers() {
+  if (!activeSession) return
+  try {
+    const [catalogResponse, activeResponse] = await Promise.all([
+      fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-servers`, { signal: controller.signal }),
+    ])
+    if (!catalogResponse.ok || !activeResponse.ok) throw new Error("plugin catalog is unavailable")
+    const catalog = await catalogResponse.json() as PluginCatalog
+    const active = await activeResponse.json() as SessionPluginMCPServer[]
+    const trusted = new Set(active.map((item) => `${item.plugin_name}/${item.server_name}`))
+    const lines = catalog.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
+      const key = `${plugin.name}/${server.name}`
+      const command = server.command ? `\n  command: ${safeTerminalText(server.command)}` : ""
+      const support = server.transport === "stdio" ? "stdio" : `${server.transport} (unsupported)`
+      return `${trusted.has(key) ? "● trusted" : "○ available"}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}`
+    }))
+    const inventory = lines.length > 0
+      ? lines.join("\n\n")
+      : "No Agent Plugin MCP servers found. Add a package with mcp.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
+    skillNotice = `AGENT PLUGIN MCP SERVERS\n${inventory}\n\nTrust with /mcp trust <plugin>/<server>; revoke with /mcp untrust <plugin>/<server>. Only stdio servers can be trusted. Trust starts plugin code on the next model turn with your account's OS privileges; it may access files and network available to your user. MCP tool arguments and results are sent to your configured model provider. Review the package before trusting it.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }
@@ -495,6 +549,31 @@ async function setSkill(enabled: boolean, pluginName: string, skillName: string)
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not update skill: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function setMcpServerTrust(trusted: boolean, pluginName: string, serverName: string) {
+  if (!activeSession) return
+  if (!serverName || serverName.length > 256) {
+    skillNotice = "MCP server name must contain 1 to 256 characters."
+    renderChat(chatMessages)
+    return
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-servers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ plugin_name: pluginName, server_name: serverName, trusted }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    skillNotice = trusted
+      ? `Trusted ${safeTerminalText(pluginName)}/${safeTerminalText(serverName)} for this session. Its stdio process starts on the next model turn; it can use the files and network available to your account. Use /mcp to review or revoke trust.`
+      : `Revoked MCP trust for ${safeTerminalText(pluginName)}/${safeTerminalText(serverName)}. It will not start on future model turns.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not update MCP trust: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

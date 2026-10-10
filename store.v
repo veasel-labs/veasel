@@ -42,6 +42,12 @@ pub:
 	skill_name  string
 }
 
+pub struct SessionPluginMCPServer {
+pub:
+	plugin_name string
+	server_name string
+}
+
 @[heap]
 struct Store {
 mut:
@@ -180,6 +186,27 @@ fn open_store(path string) !&Store {
 			return error('unable to commit workspace edit migration')
 		}
 	}
+	if current < 5 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin plugin MCP trust migration')
+		}
+		db.exec('CREATE TABLE session_plugin_mcp_servers (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, plugin_name TEXT NOT NULL, server_name TEXT NOT NULL, trusted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (session_id, plugin_name, server_name))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create session plugin MCP trust table')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (5)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record plugin MCP trust migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit plugin MCP trust migration')
+		}
+	}
 	if current >= 4 {
 		pending_recovery := db.exec("SELECT e.id, e.path, e.create_file, s.directory FROM workspace_edits e JOIN sessions s ON s.id = e.session_id WHERE e.status IN ('applying', 'interrupted')") or {
 			db.close() or {}
@@ -297,6 +324,72 @@ fn (mut store Store) set_session_plugin_skill(session_id string, plugin_name str
 	store.db.commit() or {
 		store.db.rollback() or {}
 		return error('unable to commit session plugin skill update')
+	}
+}
+
+fn (mut store Store) session_plugin_mcp_servers(session_id string) ![]SessionPluginMCPServer {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param('SELECT plugin_name, server_name FROM session_plugin_mcp_servers WHERE session_id = ? ORDER BY plugin_name, server_name',
+		session_id)!
+	mut servers := []SessionPluginMCPServer{cap: rows.len}
+	for row in rows {
+		servers << SessionPluginMCPServer{
+			plugin_name: row.val(0)
+			server_name: row.val(1)
+		}
+	}
+	return servers
+}
+
+fn (mut store Store) set_session_plugin_mcp_server(session_id string, plugin_name string,
+	server_name string, trusted bool) ! {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	rows := store.db.exec_param_many('SELECT 1 FROM session_plugin_mcp_servers WHERE session_id = ? AND plugin_name = ? AND server_name = ?',
+		[session_id, plugin_name, server_name]) or {
+		store.db.rollback() or {}
+		return error('unable to read session plugin MCP trust')
+	}
+	exists := rows.len != 0
+	if exists == trusted {
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit session plugin MCP trust update')
+		}
+		return
+	}
+	if trusted {
+		_ = store.db.exec_param_many('INSERT INTO session_plugin_mcp_servers (session_id, plugin_name, server_name) VALUES (?, ?, ?)',
+			[session_id, plugin_name, server_name]) or {
+			store.db.rollback() or {}
+			return error('unable to trust session plugin MCP server')
+		}
+	} else {
+		_ = store.db.exec_param_many('DELETE FROM session_plugin_mcp_servers WHERE session_id = ? AND plugin_name = ? AND server_name = ?',
+			[session_id, plugin_name, server_name]) or {
+			store.db.rollback() or {}
+			return error('unable to revoke session plugin MCP trust')
+		}
+	}
+	event_type := if trusted {
+		'session.mcp_server_trusted'
+	} else {
+		'session.mcp_server_untrusted'
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		[event_type, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record session plugin MCP trust event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session plugin MCP trust update')
 	}
 }
 

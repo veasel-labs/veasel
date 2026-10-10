@@ -76,7 +76,22 @@ fn workspace_agent_tools() []AgentToolDefinition {
 
 fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string,
 	session_id string) !CompletionOutput {
-	tools := workspace_agent_tools()
+	active_mcp_servers := app.store.session_plugin_mcp_servers(session_id)!
+	if active_mcp_servers.len > 0 {
+		if !app.try_plugin_mcp_slot() {
+			return error('plugin_mcp_busy')
+		}
+		mut mcp_slots := app.plugin_mcp_slots
+		defer {
+			mcp_slots.post()
+		}
+	}
+	mcp_tools, mcp_bindings, mut mcp_connections := app.load_session_plugin_mcp_tools(session_id)!
+	defer {
+		close_plugin_mcp_connections(mut mcp_connections)
+	}
+	mut tools := workspace_agent_tools()
+	tools << mcp_tools
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
@@ -115,7 +130,11 @@ fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string,
 		}
 		tool_calls += output.tool_calls.len
 		for call in output.tool_calls {
-			result := execute_workspace_agent_tool(app, root, session_id, call)
+			result := if binding := mcp_bindings[call.function.name] {
+				execute_plugin_mcp_tool(mut mcp_connections, binding, call.function.arguments)
+			} else {
+				execute_workspace_agent_tool(app, root, session_id, call)
+			}
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')

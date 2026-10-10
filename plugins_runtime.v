@@ -31,6 +31,7 @@ pub struct PluginMCPServerSummary {
 pub:
 	name      string
 	transport string
+	command   string
 }
 
 fn discover_agent_plugins(directory string) !PluginCatalog {
@@ -80,6 +81,7 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 			mcp_servers << PluginMCPServerSummary{
 				name:      server.name
 				transport: server.transport
+				command:   server.command
 			}
 		}
 		plugins << PluginCatalogEntry{
@@ -102,7 +104,11 @@ fn find_agent_skill(directory string, plugin_name string, skill_name string) !(s
 		return error('plugin or skill name is invalid')
 	}
 	root := canonical_plugin_root(directory)!
-	for entry in os.ls(root)! {
+	entries := os.ls(root)!
+	if entries.len > max_plugin_packages {
+		return error('plugin directory exceeds the ${max_plugin_packages} package limit')
+	}
+	for entry in entries.sorted() {
 		package_path := plugin_path(root, entry) or { continue }
 		if !os.is_dir(package_path) {
 			continue
@@ -117,6 +123,38 @@ fn find_agent_skill(directory string, plugin_name string, skill_name string) !(s
 			}
 		}
 		return error('skill not found in plugin')
+	}
+	return error('plugin not found')
+}
+
+fn find_agent_mcp_server(directory string, plugin_name string, server_name string) !(string, PluginMCPServer) {
+	if !is_valid_plugin_name(plugin_name) || server_name.trim_space().len == 0 || server_name.len > 256
+		|| server_name.contains('\0') {
+		return error('plugin or MCP server name is invalid')
+	}
+	root := canonical_plugin_root(directory)!
+	entries := os.ls(root)!
+	if entries.len > max_plugin_packages {
+		return error('plugin directory exceeds the ${max_plugin_packages} package limit')
+	}
+	for entry in entries.sorted() {
+		package_path := plugin_path(root, entry) or { continue }
+		if !os.is_dir(package_path) {
+			continue
+		}
+		plugin := load_agent_plugin(package_path) or { continue }
+		if plugin.manifest.name != plugin_name {
+			continue
+		}
+		for server in plugin.mcp_servers {
+			if server.name == server_name {
+				if server.transport != 'stdio' {
+					return error('only stdio Agent Plugin MCP servers can be trusted currently')
+				}
+				return plugin.root, server
+			}
+		}
+		return error('MCP server not found in plugin')
 	}
 	return error('plugin not found')
 }

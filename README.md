@@ -16,12 +16,13 @@ The current vertical slice provides a V server with health/capability
 endpoints, SQLite-backed sessions and chat history, a replayable event stream,
 and an OpenTUI terminal client. When configured, sessions can chat through
 OpenAI-compatible, Anthropic, or Gemini APIs. Repository tools, code changes,
-and background execution are still in progress. The API now provides bounded,
-read-only workspace list/read/search routes; the model cannot call these tools
-yet. Local Agent Plugins can be discovered and their validated Skills enabled
-per session; MCP declarations are metadata only and are not started. The
-product reports only actual provider replies and does not simulate agent
-actions.
+and background execution are still in progress. Session chat can call bounded,
+read-only workspace list/read/search tools using provider-native tool calling
+for all three provider families. Requested workspace content is sent to the
+configured model provider. The loop cannot write files or execute commands.
+Local Agent Plugins can be discovered and their validated Skills enabled per
+session; MCP declarations are metadata only and are not started. The product
+reports only actual provider replies and does not simulate agent actions.
 
 ## Requirements
 
@@ -67,17 +68,18 @@ provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`;
 the selected provider's API root; custom endpoints must use HTTPS or loopback
 HTTP. Keys are read only by the V backend and are never returned by the API.
 The TUI sends messages through `/v1/sessions/:id/messages` and reloads the
-persisted conversation when a session opens. Streaming, tools, and repository
-edits are not available yet.
+persisted conversation when a session opens. Provider tool calls run with
+bounded workspace list/read/search operations. Streaming, file edits, shell
+execution, and durable approvals are not available yet.
 
 ## API
 
 The API uses `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/sessions`,
 `/v1/sessions/:id`, `/v1/sessions/:id/messages`,
 `/v1/sessions/:id/workspace/{files,file,search}`, `/v1/chat/completions` when
-configured, `/v1/sessions/:id/skills`, and `/v1/events` (SSE). Workspace
-routes are read-only and are not callable by the model yet. See the OpenAPI
-document at
+configured, `/v1/sessions/:id/skills`, and `/v1/events` (SSE). The session
+provider tool loop uses the same bounded, read-only workspace operations. See
+the OpenAPI document at
 [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Verification

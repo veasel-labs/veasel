@@ -14,8 +14,12 @@ const max_provider_response_bytes = 1_000_000
 
 pub struct ChatMessage {
 pub:
-	role    string
-	content string
+	role                  string
+	content               string
+	name                  string             @[omitempty]
+	tool_call_id          string             @[json: 'tool_call_id'; omitempty]
+	provider_tool_call_id string             @[json: 'provider_tool_call_id'; omitempty]
+	tool_calls            []ProviderToolCall @[json: 'tool_calls'; omitempty]
 }
 
 pub struct CompletionInput {
@@ -24,10 +28,53 @@ pub:
 }
 
 pub struct CompletionOutput {
+	tool_calls []ProviderToolCall
 pub:
 	provider string
 	model    string
 	content  string
+}
+
+pub struct ProviderToolCall {
+pub:
+	id                 string
+	provider_call_id   string @[json: 'provider_call_id'; omitempty]
+	type               string = 'function'
+	function           ProviderFunctionCall
+	provider_signature string @[json: 'provider_signature'; omitempty]
+}
+
+pub struct ProviderFunctionCall {
+pub:
+	name      string
+	arguments string
+}
+
+pub struct AgentToolDefinition {
+pub:
+	name        string
+	description string
+	parameters  ToolParameters
+}
+
+pub struct ToolParameters {
+pub:
+	type       string = 'object'
+	properties map[string]ToolParameter
+	required   []string
+}
+
+struct StrictToolParameters {
+	type                  string = 'object'
+	properties            map[string]ToolParameter
+	required              []string
+	additional_properties bool @[json: 'additionalProperties']
+}
+
+pub struct ToolParameter {
+pub:
+	type        string
+	description string @[omitempty]
 }
 
 struct ModelConfig {
@@ -38,7 +85,7 @@ struct ModelConfig {
 }
 
 interface ModelProvider {
-	complete(config ModelConfig, messages []ChatMessage) !CompletionOutput
+	complete(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !CompletionOutput
 }
 
 struct OpenAICompatibleProvider {}
@@ -48,9 +95,22 @@ struct AnthropicProvider {}
 struct GeminiProvider {}
 
 struct OpenAIRequest {
-	model      string
-	max_tokens int
-	messages   []ChatMessage
+	model       string
+	max_tokens  int
+	messages    []ChatMessage
+	tools       []OpenAITool @[omitempty]
+	tool_choice string       @[omitempty]
+}
+
+struct OpenAITool {
+	type     string = 'function'
+	function OpenAIFunction
+}
+
+struct OpenAIFunction {
+	name        string
+	description string
+	parameters  StrictToolParameters
 }
 
 struct OpenAIResponse {
@@ -58,19 +118,33 @@ struct OpenAIResponse {
 }
 
 struct OpenAIChoice {
-	message ChatMessage
+	message       OpenAIResponseMessage
+	finish_reason string
 }
 
-struct NativeMessage {
-	role    string
-	content string
+struct OpenAIResponseMessage {
+	role       string
+	content    ?string
+	tool_calls []ProviderToolCall @[json: 'tool_calls'; omitempty]
 }
 
 struct AnthropicRequest {
 	model      string
 	max_tokens int
 	system     string @[omitempty]
-	messages   []NativeMessage
+	messages   []AnthropicRequestMessage
+	tools      []AnthropicTool @[omitempty]
+}
+
+struct AnthropicRequestMessage {
+	role    string
+	content []AnthropicContentBlock
+}
+
+struct AnthropicTool {
+	name         string
+	description  string
+	input_schema StrictToolParameters
 }
 
 struct AnthropicResponse {
@@ -78,14 +152,30 @@ struct AnthropicResponse {
 }
 
 struct AnthropicContentBlock {
-	type string
-	text string
+	type        string
+	text        string               @[omitempty]
+	content     string               @[omitempty]
+	id          string               @[omitempty]
+	name        string               @[omitempty]
+	input       map[string]json2.Any @[omitempty]
+	tool_use_id string               @[json: 'tool_use_id'; omitempty]
 }
 
 struct GeminiRequest {
 	system_instruction GeminiContent @[json: 'systemInstruction']
 	contents           []GeminiContent
 	generation_config  GeminiGenerationConfig @[json: 'generationConfig']
+	tools              []GeminiToolGroup      @[omitempty]
+}
+
+struct GeminiToolGroup {
+	function_declarations []GeminiFunctionDeclaration @[json: 'functionDeclarations']
+}
+
+struct GeminiFunctionDeclaration {
+	name        string
+	description string
+	parameters  ToolParameters
 }
 
 struct GeminiGenerationConfig {
@@ -98,7 +188,22 @@ struct GeminiContent {
 }
 
 struct GeminiPart {
-	text string
+	text              string                  @[omitempty]
+	function_call     ?GeminiFunctionCall     @[json: 'functionCall'; omitempty]
+	function_response ?GeminiFunctionResponse @[json: 'functionResponse'; omitempty]
+	thought_signature string                  @[json: 'thoughtSignature'; omitempty]
+}
+
+struct GeminiFunctionCall {
+	id   string @[omitempty]
+	name string
+	args map[string]json2.Any
+}
+
+struct GeminiFunctionResponse {
+	id       string @[omitempty]
+	name     string
+	response map[string]json2.Any
 }
 
 struct GeminiResponse {
@@ -216,6 +321,10 @@ fn validate_messages(messages []ChatMessage) ! {
 		if message.role !in ['system', 'user', 'assistant'] {
 			return error('message role is invalid')
 		}
+		if message.name != '' || message.tool_call_id != '' || message.provider_tool_call_id != ''
+			|| message.tool_calls.len > 0 {
+			return error('provider tool metadata is not accepted in completion input')
+		}
 		if message.content.trim_space().len == 0 {
 			return error('message content must not be empty')
 		}
@@ -231,6 +340,10 @@ fn validate_messages(messages []ChatMessage) ! {
 
 fn complete(input CompletionInput) !CompletionOutput {
 	validate_messages(input.messages)!
+	return complete_with_tools(input.messages, [])
+}
+
+fn complete_with_tools(messages []ChatMessage, tools []AgentToolDefinition) !CompletionOutput {
 	config := model_config()!
 	provider := match config.provider {
 		'openai-compatible', 'openai' { ModelProvider(OpenAICompatibleProvider{}) }
@@ -238,7 +351,7 @@ fn complete(input CompletionInput) !CompletionOutput {
 		'gemini' { ModelProvider(GeminiProvider{}) }
 		else { return error('unsupported model provider') }
 	}
-	return provider.complete(config, input.messages)
+	return provider.complete(config, messages, tools)
 }
 
 fn configured_model() ?string {
@@ -246,59 +359,109 @@ fn configured_model() ?string {
 	return config.model
 }
 
-fn (provider OpenAICompatibleProvider) complete(config ModelConfig, messages []ChatMessage) !CompletionOutput {
+fn (provider OpenAICompatibleProvider) complete(config ModelConfig, messages []ChatMessage,
+	tools []AgentToolDefinition) !CompletionOutput {
 	url := '${secure_endpoint(config.base_url)!}/chat/completions'
+	mut openai_tools := []OpenAITool{cap: tools.len}
+	for tool in tools {
+		openai_tools << OpenAITool{
+			function: OpenAIFunction{
+				name:        tool.name
+				description: tool.description
+				parameters:  strict_tool_parameters(tool.parameters)
+			}
+		}
+	}
 	request := OpenAIRequest{
-		model:      config.model
-		max_tokens: max_model_output_tokens
-		messages:   messages
+		model:       config.model
+		max_tokens:  max_model_output_tokens
+		messages:    messages
+		tools:       openai_tools
+		tool_choice: if tools.len > 0 { 'auto' } else { '' }
 	}
 	response := post_model_json(url, config, json2.encode[OpenAIRequest](request), .bearer)!
 	decoded := json2.decode[OpenAIResponse](response.body) or {
 		return error('response_parse')
 	}
-	if decoded.choices.len == 0 || decoded.choices[0].message.content.trim_space().len == 0 {
+	if decoded.choices.len == 0 {
+		return error('empty_response')
+	}
+	message := decoded.choices[0].message
+	content := message.content or { '' }
+	if content.trim_space().len == 0 && message.tool_calls.len == 0 {
 		return error('empty_response')
 	}
 	return CompletionOutput{
-		provider: config.provider
-		model:    config.model
-		content:  decoded.choices[0].message.content
+		provider:   config.provider
+		model:      config.model
+		content:    content
+		tool_calls: message.tool_calls
 	}
 }
 
-fn (provider AnthropicProvider) complete(config ModelConfig, messages []ChatMessage) !CompletionOutput {
+fn (provider AnthropicProvider) complete(config ModelConfig, messages []ChatMessage,
+	tools []AgentToolDefinition) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
-	system, conversation := split_system_messages(messages)
+	system, conversation := anthropic_messages(messages)
+	mut anthropic_tools := []AnthropicTool{cap: tools.len}
+	for tool in tools {
+		anthropic_tools << AnthropicTool{
+			name:         tool.name
+			description:  tool.description
+			input_schema: strict_tool_parameters(tool.parameters)
+		}
+	}
 	request := AnthropicRequest{
 		model:      config.model
 		max_tokens: max_model_output_tokens
 		system:     system
 		messages:   conversation
+		tools:      anthropic_tools
 	}
 	response := post_model_json('${base}/messages', config, json2.encode[AnthropicRequest](request), .anthropic)!
 	decoded := json2.decode[AnthropicResponse](response.body) or {
 		return error('response_parse')
 	}
 	mut content := []string{}
+	mut tool_calls := []ProviderToolCall{}
 	for block in decoded.content {
 		if block.type == 'text' && block.text != '' {
 			content << block.text
+		} else if block.type == 'tool_use' && block.id != '' && block.name != '' {
+			tool_calls << ProviderToolCall{
+				id:               block.id
+				provider_call_id: block.id
+				type:             'function'
+				function:         ProviderFunctionCall{
+					name:      block.name
+					arguments: json2.encode[map[string]json2.Any](block.input)
+				}
+			}
 		}
 	}
-	if content.len == 0 {
+	if content.len == 0 && tool_calls.len == 0 {
 		return error('empty_response')
 	}
 	return CompletionOutput{
-		provider: config.provider
-		model:    config.model
-		content:  content.join('')
+		provider:   config.provider
+		model:      config.model
+		content:    content.join('')
+		tool_calls: tool_calls
 	}
 }
 
-fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage) !CompletionOutput {
+fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage,
+	tools []AgentToolDefinition) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
 	system, conversation := gemini_messages(messages)
+	mut declarations := []GeminiFunctionDeclaration{cap: tools.len}
+	for tool in tools {
+		declarations << GeminiFunctionDeclaration{
+			name:        tool.name
+			description: tool.description
+			parameters:  tool.parameters
+		}
+	}
 	request := GeminiRequest{
 		system_instruction: GeminiContent{
 			parts: [GeminiPart{ text: system }]
@@ -306,6 +469,13 @@ fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage
 		contents:           conversation
 		generation_config:  GeminiGenerationConfig{
 			max_output_tokens: max_model_output_tokens
+		}
+		tools:              if declarations.len > 0 {
+			[GeminiToolGroup{
+				function_declarations: declarations
+			}]
+		} else {
+			[]
 		}
 	}
 	model_path := urllib.path_escape(config.model)
@@ -318,48 +488,163 @@ fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage
 		return error('empty_response')
 	}
 	mut content := []string{}
+	mut tool_calls := []ProviderToolCall{}
 	for part in decoded.candidates[0].content.parts {
 		if part.text != '' {
 			content << part.text
 		}
+		if function_call := part.function_call {
+			tool_calls << ProviderToolCall{
+				id:                 if function_call.id != '' {
+					function_call.id
+				} else {
+					'gemini-${messages.len}-${tool_calls.len + 1}'
+				}
+				provider_call_id:   function_call.id
+				provider_signature: part.thought_signature
+				type:               'function'
+				function:           ProviderFunctionCall{
+					name:      function_call.name
+					arguments: json2.encode[map[string]json2.Any](function_call.args)
+				}
+			}
+		}
 	}
-	if content.len == 0 {
+	if content.len == 0 && tool_calls.len == 0 {
 		return error('empty_response')
 	}
 	return CompletionOutput{
-		provider: config.provider
-		model:    config.model
-		content:  content.join('')
+		provider:   config.provider
+		model:      config.model
+		content:    content.join('')
+		tool_calls: tool_calls
 	}
 }
 
-fn split_system_messages(messages []ChatMessage) (string, []NativeMessage) {
+fn anthropic_messages(messages []ChatMessage) (string, []AnthropicRequestMessage) {
 	mut system := []string{}
-	mut conversation := []NativeMessage{cap: messages.len}
+	mut conversation := []AnthropicRequestMessage{cap: messages.len}
+	mut pending_tool_results := []AnthropicContentBlock{}
 	for message in messages {
 		if message.role == 'system' {
 			system << message.content
-		} else {
-			conversation << NativeMessage{
-				role:    message.role
-				content: message.content
+			continue
+		}
+		if message.role == 'tool' {
+			pending_tool_results << AnthropicContentBlock{
+				type:        'tool_result'
+				tool_use_id: message.tool_call_id
+				content:     message.content
 			}
+			continue
+		}
+		if pending_tool_results.len > 0 {
+			conversation << AnthropicRequestMessage{
+				role:    'user'
+				content: pending_tool_results
+			}
+			pending_tool_results = []
+		}
+		mut blocks := []AnthropicContentBlock{}
+		if message.content != '' {
+			blocks << AnthropicContentBlock{
+				type: 'text'
+				text: message.content
+			}
+		}
+		for call in message.tool_calls {
+			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+				map[string]json2.Any{}
+			}
+			blocks << AnthropicContentBlock{
+				type:  'tool_use'
+				id:    call.id
+				name:  call.function.name
+				input: tool_arguments
+			}
+		}
+		conversation << AnthropicRequestMessage{
+			role:    message.role
+			content: blocks
+		}
+	}
+	if pending_tool_results.len > 0 {
+		conversation << AnthropicRequestMessage{
+			role:    'user'
+			content: pending_tool_results
 		}
 	}
 	return system.join('\n\n'), conversation
 }
 
+fn strict_tool_parameters(parameters ToolParameters) StrictToolParameters {
+	return StrictToolParameters{
+		properties:            parameters.properties
+		required:              parameters.required
+		additional_properties: false
+	}
+}
+
 fn gemini_messages(messages []ChatMessage) (string, []GeminiContent) {
 	mut system := []string{}
 	mut conversation := []GeminiContent{cap: messages.len}
+	mut pending_tool_results := []GeminiPart{}
 	for message in messages {
 		if message.role == 'system' {
 			system << message.content
+		} else if message.role == 'tool' {
+			response := json2.decode[map[string]json2.Any](message.content) or {
+				{
+					'content': json2.Any(message.content)
+				}
+			}
+			pending_tool_results << GeminiPart{
+				function_response: GeminiFunctionResponse{
+					id:       message.provider_tool_call_id
+					name:     message.name
+					response: response
+				}
+			}
 		} else {
+			if pending_tool_results.len > 0 {
+				conversation << GeminiContent{
+					role:  'user'
+					parts: pending_tool_results
+				}
+				pending_tool_results = []
+			}
+			mut parts := []GeminiPart{}
+			if message.content != '' {
+				parts << GeminiPart{
+					text: message.content
+				}
+			}
+			for call in message.tool_calls {
+				tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+					map[string]json2.Any{}
+				}
+				parts << GeminiPart{
+					function_call:     GeminiFunctionCall{
+						id:   call.provider_call_id
+						name: call.function.name
+						args: tool_arguments
+					}
+					thought_signature: call.provider_signature
+				}
+			}
+			if parts.len == 0 {
+				continue
+			}
 			conversation << GeminiContent{
 				role:  if message.role == 'assistant' { 'model' } else { 'user' }
-				parts: [GeminiPart{ text: message.content }]
+				parts: parts
 			}
+		}
+	}
+	if pending_tool_results.len > 0 {
+		conversation << GeminiContent{
+			role:  'user'
+			parts: pending_tool_results
 		}
 	}
 	return if system.len > 0 {

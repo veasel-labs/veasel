@@ -191,6 +191,7 @@ for provider in openai-compatible anthropic gemini; do
 	start_server "$provider"
 	curl -fsS "$api/v1/capabilities" >"$work_dir/configured-capabilities"
 	grep -Fq 'chat.complete' "$work_dir/configured-capabilities" || fail "$provider chat capability is missing"
+	grep -Fq 'agent.tools.workspace_readonly' "$work_dir/configured-capabilities" || fail "$provider workspace tool capability is missing"
 	expect_status 200 -H 'content-type: application/json' \
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"
@@ -198,9 +199,19 @@ for provider in openai-compatible anthropic gemini; do
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq "\"provider\":\"$provider\"" "$work_dir/response" || fail "$provider session response reported the wrong provider"
+	expect_status 200 -H 'content-type: application/json' -d '{"content":"Inspect workspace"}' \
+		"$api/v1/sessions/$session_id/messages"
+	grep -Fq 'Found workspace-search-sentinel' "$work_dir/response" || fail "$provider native tool call did not return the workspace search result"
+	expect_status 200 -H 'content-type: application/json' -d '{"content":"Try to read outside"}' \
+		"$api/v1/sessions/$session_id/messages"
+	grep -Fq 'The path was rejected.' "$work_dir/response" || fail "$provider tool call did not reject parent traversal"
+	! grep -Fq 'outside-root-secret' "$work_dir/response" || fail "$provider tool result exposed a file outside the workspace"
 	curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/messages"
 	grep -Fq '"content":"Continue this session"' "$work_dir/messages" || fail "$provider user turn was not persisted"
+	grep -Fq '"content":"Inspect workspace"' "$work_dir/messages" || fail "$provider tool-call user turn was not persisted"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/messages" || fail "$provider assistant turn was not persisted"
+	grep -Fq '"content":"Found workspace-search-sentinel"' "$work_dir/messages" || fail "$provider tool result was not followed by a final response"
+	grep -Fq '"content":"The path was rejected."' "$work_dir/messages" || fail "$provider traversal attempt was not safely answered"
 done
 
 rm -rf "$work_dir/plugins/review-package"

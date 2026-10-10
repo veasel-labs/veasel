@@ -470,8 +470,8 @@ fn is_valid_skill_name(name string) bool {
 		|| name.contains('--') {
 		return false
 	}
-	for c in name {
-		if c != `-` && (!utf8.is_letter(c) && !utf8.is_number(c) || c.to_lower() != c) {
+	for c in name.runes() {
+		if c != `-` && ((!utf8.is_letter(c) && !utf8.is_number(c)) || c.to_lower() != c) {
 			return false
 		}
 	}

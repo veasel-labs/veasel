@@ -3,9 +3,9 @@
 
 import json
 import sys
-import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Event
 
 
 API_KEYS = {
@@ -14,6 +14,7 @@ API_KEYS = {
     "gemini": "veasel-gemini-key",
 }
 REPLY = "Provider fixture reply"
+SLOW_RESPONSE_RELEASE = Event()
 SESSION_SYSTEM = (
     "You are Veasel Code, a coding assistant. You may inspect the selected workspace using bounded "
     "list, read, and literal search tools. You may propose complete text replacements for one file "
@@ -37,6 +38,15 @@ def is_session_system(content):
 
 
 class MockProvider(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/release-slow-response":
+            self.send_error(404)
+            return
+        SLOW_RESPONSE_RELEASE.set()
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def reject(self, payload):
         print(json.dumps({"path": self.path, "headers": dict(self.headers), "payload": payload}), file=sys.stderr)
         self.send_error(400)
@@ -254,7 +264,9 @@ class MockProvider(BaseHTTPRequestHandler):
         encoded = json.dumps(body).encode()
         if user_text == "Wait for cancellation":
             print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
-            time.sleep(5)
+            if not SLOW_RESPONSE_RELEASE.wait(timeout=20):
+                self.send_error(504)
+                return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
@@ -267,6 +279,6 @@ class MockProvider(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port_file = Path(sys.argv[1])
-    server = HTTPServer(("127.0.0.1", 0), MockProvider)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), MockProvider)
     port_file.write_text(str(server.server_address[1]))
     server.serve_forever()

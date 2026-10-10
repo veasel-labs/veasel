@@ -48,6 +48,7 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] SQLite-backed session chat history and a TUI conversation composer.
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
+- [x] Reject provider work immediately with `503` and `Retry-After` when all provider slots are occupied, keeping overload from accumulating unbounded waiting requests.
 - [ ] Propagate request cancellation and deadlines through queued turns and provider transports.
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.

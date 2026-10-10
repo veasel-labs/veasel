@@ -41,6 +41,24 @@ fn test_provider_semaphore_enforces_its_configured_capacity() {
 	assert slots.try_wait()
 }
 
+fn test_app_rejects_provider_work_when_all_slots_are_busy() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-plugins-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	mut slots := app.provider_slots
+	for _ in 0 .. max_provider_concurrency {
+		assert slots.try_wait()
+	}
+	assert !app.try_provider_slot()
+	slots.post()
+	assert app.try_provider_slot()
+	slots.post()
+}
+
 fn test_tui_directory_is_resolved_next_to_the_executable() {
 	root := os.join_path(os.temp_dir(), 'veasel-bundle-${uuid.new_v4().str()}')
 	defer { os.rmdir_all(root) or {} }

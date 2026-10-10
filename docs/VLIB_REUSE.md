@@ -23,6 +23,7 @@ It does not mean importing modules unrelated to a coding agent.
 | HTTP client | `vlib/net/http/request.v` | Use for model/provider requests and response/progress callbacks after checking streaming and timeout semantics in the pinned V version. Do not hand-roll HTTP or TLS. |
 | JSON | `vlib/json2/` | Use typed `decode[T]` and `encode[T]`; do not use obsolete `encoding.json` imports. |
 | YAML | `vlib/yaml/` | Use the pinned parser for Agent Skills `SKILL.md` frontmatter after isolating the frontmatter block; preserve the Markdown body without normalizing instructions. |
+| Unicode text | `vlib/encoding/utf8/` | Use Unicode letter/number classification when validating Agent Skills names; count names by runes, not UTF-8 bytes. |
 | SQLite | `vlib/db/sqlite/sqlite.c.v`, `orm.v` | Use prepared parameters, WAL, busy timeout, transactions and schema introspection. Migration versions/SQL remain small product-owned code because `vlib` has no general migration runner. |
 | IDs / randomness | `vlib/uuid/`, `vlib/crypto/rand/` | Use UUID v4/v7 and cryptographic random bytes where appropriate; do not substitute timestamps or `math/rand` for security-sensitive values. |
 | Synchronization | `vlib/sync/` | Use mutexes, channels, wait groups and timers for shared state and workers; define ownership, shutdown and cancellation at the application layer. |
@@ -51,7 +52,7 @@ compatibility, and SQLite native-library packaging need platform validation.
 
 ## Current foundation imports
 
-The first vertical slice uses `veb`, `veb.sse`, `json2`, `db.sqlite`, `os`,
-`sync`, `uuid`, `strconv` and `time`. The next tool/provider/job milestones
-should first evaluate the modules above instead of creating replacement
-implementations.
+The current foundation uses `veb`, `veb.sse`, `json2`, `db.sqlite`, `os`,
+`sync`, `uuid`, `strconv`, `time`, `yaml` and `encoding/utf8`. The next
+tool/provider/job milestones should first evaluate the modules above instead
+of creating replacement implementations.

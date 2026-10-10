@@ -1,5 +1,6 @@
 module main
 
+import encoding.utf8
 import json2
 import os
 import yaml
@@ -344,6 +345,11 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 		return error('frontmatter must be a YAML mapping')
 	}
 	fields := doc.root as map[string]yaml.Any
+	for key, _ in fields {
+		if key !in ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools'] {
+			return error('unknown Agent Skill frontmatter field `${key}`')
+		}
+	}
 	name := skill_required_string(fields, 'name')!
 	description := skill_required_string(fields, 'description')!
 	if !is_valid_skill_name(name) || name != directory_name {
@@ -460,14 +466,27 @@ fn skill_required_string(fields map[string]yaml.Any, key string) !string {
 }
 
 fn is_valid_skill_name(name string) bool {
-	if name.len < 1 || name.len > 64 || name[0] == `-` || name[name.len - 1] == `-`
-		|| name.contains('--') {
+	if name.len == 0 {
 		return false
 	}
-	for c in name {
-		if c !in `a` .. `z` && c !in `0` .. `9` && c != `-` {
+	mut rune_count := 0
+	mut previous_was_hyphen := false
+	for c in name.runes_iterator() {
+		rune_count++
+		if rune_count > 64 {
+			return false
+		}
+		if c == `-` {
+			if rune_count == 1 || previous_was_hyphen {
+				return false
+			}
+			previous_was_hyphen = true
+			continue
+		}
+		previous_was_hyphen = false
+		if (!utf8.is_letter(c) && !utf8.is_number(c)) || c.to_lower() != c {
 			return false
 		}
 	}
-	return true
+	return rune_count > 0 && !previous_was_hyphen
 }

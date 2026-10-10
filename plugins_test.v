@@ -58,6 +58,80 @@ fn test_agent_plugin_catalog_exposes_skill_metadata_without_instructions() {
 	assert load_skill_instructions(root, skill) or { panic(err) } == '\nOnly load this body after selection.'
 }
 
+fn test_agent_plugin_manifest_enforces_closed_schema_and_nonfatal_exceptions() {
+	minimal, minimal_diagnostics := plugin_manifest_from_text('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"minimal"}') or {
+		panic(err)
+	}
+	assert minimal.name == 'minimal'
+	assert minimal.version == ''
+	assert minimal_diagnostics.len == 0
+
+	full, full_diagnostics := plugin_manifest_from_text('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"acme.tools-1","version":"not-semver","description":"","author":{"name":"","email":"not-an-email","url":"not-a-url"},"homepage":"not-a-url","repository":"not-a-url","license":"not-spdx","keywords":["one","two"],"extensions":{"vendor.example":["opaque",{"nested":true}]}}') or {
+		panic(err)
+	}
+	assert full.name == 'acme.tools-1'
+	assert full.version == 'not-semver'
+	assert full.description == ''
+	assert full.license == 'not-spdx'
+	assert full_diagnostics.len == 0
+	_, opaque_extension_diagnostics := plugin_manifest_from_text('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"opaque-extension","extensions":{"vendor.example":[]}}') or {
+		panic(err)
+	}
+	assert opaque_extension_diagnostics.len == 0
+
+	fields := json2.decode[map[string]json2.Any](test_manifest) or { panic(err) }
+	_, diagnostics := parse_plugin_manifest(fields) or { panic(err) }
+	assert diagnostics.len == 2
+	assert diagnostics.any(it.message.contains('unknown top-level field'))
+	assert diagnostics.any(it.message.contains('non-object extensions'))
+}
+
+fn test_agent_plugin_manifest_failure_prevents_component_discovery() {
+	root := os.join_path(os.temp_dir(), 'veasel-plugin-invalid-manifest-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'skills', 'review')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'plugin.json'), '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"Invalid--name"}') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(root, 'skills', 'review', 'SKILL.md'), '---\nname: review\ndescription: Review changes.\n---\nBody') or {
+		panic(err)
+	}
+	assert plugin_load_rejected(root)
+}
+
+fn test_agent_plugin_manifest_rejects_fatal_schema_violations() {
+	assert plugin_manifest_rejected('{"name":"missing-schema"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"https://agent-plugins.org/schemas/2.0.0/plugin.schema.json","name":"unsupported"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"Uppercase"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"double--dash"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"double..dot"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"-leading"}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":42}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"valid","version":1}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"valid","author":[]}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"valid","author":{"nickname":"unknown"}}')
+	assert plugin_manifest_rejected('{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"valid","keywords":["ok",false]}')
+	assert plugin_manifest_rejected('{broken json')
+}
+
+fn plugin_manifest_from_text(text string) !(PluginManifest, []PluginDiagnostic) {
+	fields := json2.decode[map[string]json2.Any](text) or {
+		return error('invalid manifest fixture')
+	}
+	return parse_plugin_manifest(fields)
+}
+
+fn plugin_manifest_rejected(text string) bool {
+	_, _ := plugin_manifest_from_text(text) or { return true }
+	return false
+}
+
+fn plugin_load_rejected(root string) bool {
+	_ := load_agent_plugin(root) or { return true }
+	return false
+}
+
 fn test_plugin_paths_reject_traversal() {
 	root := os.join_path(os.temp_dir(), 'veasel-plugin-${uuid.new_v4().str()}')
 	external := os.join_path(os.temp_dir(), 'veasel-plugin-external-${uuid.new_v4().str()}')

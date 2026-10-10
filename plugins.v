@@ -466,12 +466,21 @@ fn skill_required_string(fields map[string]yaml.Any, key string) !string {
 }
 
 fn is_valid_skill_name(name string) bool {
-	if name.len == 0 || name.runes().len > 64 || name[0] == `-` || name[name.len - 1] == `-`
-		|| name.contains('--') {
+	runes := name.runes()
+	if runes.len == 0 || runes.len > 64 || runes[0] == `-` || runes[runes.len - 1] == `-` {
 		return false
 	}
-	for c in name.runes() {
-		if c != `-` && ((!utf8.is_letter(c) && !utf8.is_number(c)) || c.to_lower() != c) {
+	mut previous_was_hyphen := false
+	for c in runes {
+		if c == `-` {
+			if previous_was_hyphen {
+				return false
+			}
+			previous_was_hyphen = true
+			continue
+		}
+		previous_was_hyphen = false
+		if (!utf8.is_letter(c) && !utf8.is_number(c)) || c.to_lower() != c {
 			return false
 		}
 	}

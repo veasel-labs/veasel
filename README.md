@@ -117,3 +117,4 @@ questions and proposals belong in [Discussions](https://github.com/veasel-labs/v
 Verified pushes to `main` automatically publish versioned Linux, macOS, and
 Windows prereleases with SHA-256 checksums and a build manifest. See the
 [release policy](docs/RELEASES.md) and [GitHub Releases](https://github.com/veasel-labs/veasel/releases).
+Use `veasel --version` to inspect the version embedded in an installed binary.

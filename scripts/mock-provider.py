@@ -3,6 +3,7 @@
 
 import json
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -61,7 +62,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Propose workspace edit")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Propose workspace edit", "Wait for cancellation")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
@@ -251,6 +252,9 @@ class MockProvider(BaseHTTPRequestHandler):
             return
 
         encoded = json.dumps(body).encode()
+        if user_text == "Wait for cancellation":
+            print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
+            time.sleep(2)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))

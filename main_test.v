@@ -2,10 +2,12 @@ module main
 
 import os
 import json2
+import context as vcontext
 import sync
 import uuid
+import time
 
-fn test_session_turn_lock_stripes_serialize_the_same_session() {
+fn test_session_turn_semaphores_serialize_the_same_session() {
 	store := open_store(':memory:') or { panic(err) }
 	defer {
 		store.close() or {}
@@ -20,13 +22,64 @@ fn test_session_turn_lock_stripes_serialize_the_same_session() {
 	mut first := app.session_turn_lock('session-a')
 	mut second := app.session_turn_lock('session-a')
 	assert first == second
-	first.lock()
-	assert !second.try_lock()
-	first.unlock()
-	assert second.try_lock()
-	second.unlock()
+	assert first.try_wait()
+	assert !second.try_wait()
+	first.post()
+	assert second.try_wait()
+	second.post()
 	assert session_turn_lock_index('session-a') >= 0
 	assert session_turn_lock_index('session-a') < session_turn_lock_stripes
+}
+
+fn test_turn_operation_can_be_cancelled_and_is_session_scoped() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-operations-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	actual_id, mut turn_ctx, cancel := app.begin_turn_operation('session-a', operation_id) or {
+		panic(err)
+	}
+	assert actual_id == operation_id
+	assert !app.cancel_turn_operation('session-b', operation_id)
+	assert app.cancel_turn_operation('session-a', operation_id.to_upper())
+	ctx_error := turn_ctx.err()
+	assert ctx_error !is none
+	assert ctx_error.msg().contains('canceled')
+	app.finish_turn_operation(operation_id)
+	assert !app.cancel_turn_operation('session-a', operation_id)
+	cancel()
+}
+
+fn test_turn_cancellation_releases_a_queued_session_turn() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-queued-turn-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	mut slot := app.session_turn_lock('session-queued')
+	slot.wait()
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	result := chan string{cap: 1}
+	spawn fn (app &App, mut turn_ctx vcontext.Context, result chan string) {
+		app.acquire_session_turn(mut turn_ctx, 'session-queued') or {
+			result <- err.msg()
+			return
+		}
+		mut acquired := app.session_turn_lock('session-queued')
+		acquired.post()
+		result <- 'acquired'
+	}(app, mut turn_ctx, result)
+	time.sleep(25 * time.millisecond)
+	cancel()
+	assert <-result == 'cancelled'
+	slot.post()
 }
 
 fn test_provider_semaphore_enforces_its_configured_capacity() {

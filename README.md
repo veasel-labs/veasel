@@ -86,8 +86,14 @@ single-file edit; the TUI shows its unified diff with `/patches` and
 `/patch show <id>`, and writes only after that diff has been opened and
 `/patch approve <id>` is entered. Review and application states persist locally.
 Stale proposals are rejected, and an
-interrupted write is never replayed automatically. Shell execution, streaming,
-and cancellation are not available yet. The backend accepts up to four
+interrupted write is never replayed automatically. Shell execution and
+streaming are not available yet. Press Escape while a response is running to
+cancel its operation; session requests may also provide an
+`X-Veasel-Operation-ID` UUID and call the session cancellation endpoint. Turns
+have a two-minute deadline. A cancelled API request returns promptly, while a
+synchronous provider transport keeps its slot until the bounded V HTTP timeout
+or a response progress callback stops it. Direct `/v1/chat/completions` calls
+use the matching `/v1/operations/:id/cancel` endpoint. The backend accepts up to four
 provider requests at once; requests reaching the provider gate while all slots
 are occupied receive `503 Service Unavailable` with `Retry-After: 1` instead of
 joining an unbounded provider queue.

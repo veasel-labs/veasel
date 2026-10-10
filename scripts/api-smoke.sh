@@ -217,6 +217,7 @@ for provider in openai-compatible anthropic gemini; do
 	start_server "$provider"
 	curl -fsS "$api/v1/capabilities" >"$work_dir/configured-capabilities"
 	grep -Fq 'chat.complete' "$work_dir/configured-capabilities" || fail "$provider chat capability is missing"
+	grep -Fq 'chat.cancel' "$work_dir/configured-capabilities" || fail "$provider chat cancellation capability is missing"
 	grep -Fq 'agent.tools.workspace_readonly' "$work_dir/configured-capabilities" || fail "$provider workspace tool capability is missing"
 	expect_status 200 -H 'content-type: application/json' \
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
@@ -225,6 +226,22 @@ for provider in openai-compatible anthropic gemini; do
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq "\"provider\":\"$provider\"" "$work_dir/response" || fail "$provider session response reported the wrong provider"
+	if [[ "$provider" == openai-compatible ]]; then
+		operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+		curl -sS -o "$work_dir/cancelled-turn-response" -w '%{http_code}' \
+			-X POST -H 'content-type: application/json' -H "x-veasel-operation-id: $operation_id" \
+			-d '{"content":"Wait for cancellation"}' \
+			"$api/v1/sessions/$session_id/messages" >"$work_dir/cancelled-turn-status" &
+		turn_pid=$!
+		for ((attempt = 0; attempt < 50; attempt++)); do
+			grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" && break
+			sleep 0.05
+		done
+		grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || fail 'slow provider request did not start'
+		expect_status 202 -X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel"
+		wait "$turn_pid"
+		[[ "$(cat "$work_dir/cancelled-turn-status")" == 409 ]] || fail 'cancelled provider request did not return HTTP 409'
+	fi
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Inspect workspace"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'Found workspace-search-sentinel' "$work_dir/response" || fail "$provider native tool call did not return the workspace search result"

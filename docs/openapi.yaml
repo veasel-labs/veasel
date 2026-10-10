@@ -128,7 +128,15 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: sendSessionMessage
-      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may list/read/search bounded workspace files and create durable single-file edit proposals. Requested workspace content is sent to the configured provider; proposed file contents are not written before explicit approval.
+      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may list/read/search bounded workspace files and create durable single-file edit proposals. Requested workspace content is sent to the configured provider; proposed file contents are not written before explicit approval. Send a unique X-Veasel-Operation-ID UUID to allow cancellation; turns have a two-minute deadline, and cancellation releases the API request while a synchronous provider transport winds down under its bounded timeout.
+      parameters:
+        - in: header
+          name: X-Veasel-Operation-ID
+          required: false
+          description: Caller-generated UUID used by the session cancellation endpoint. Reusing an active ID returns 409.
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -172,6 +180,72 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '504':
+          description: The two-minute turn deadline expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The active turn was cancelled or the operation identifier is already in use.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/operations/{operation_id}/cancel:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: operation_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: cancelSessionTurn
+      description: Cancels an active session turn, including one waiting for its serialized session slot. The turn request returns 409; provider transports retain their provider slot until bounded network cleanup finishes.
+      responses:
+        '202':
+          description: Cancellation was signaled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation_id, status]
+                properties:
+                  operation_id: { type: string, format: uuid }
+                  status: { type: string, const: cancelling }
+        '404':
+          description: Session or active operation not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/operations/{operation_id}/cancel:
+    parameters:
+      - in: path
+        name: operation_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: cancelChatCompletion
+      description: Cancels an active direct chat completion. The completion request returns 409; provider transports retain their provider slot until bounded network cleanup finishes.
+      responses:
+        '202':
+          description: Cancellation was signaled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation_id, status]
+                properties:
+                  operation_id: { type: string, format: uuid }
+                  status: { type: string, const: cancelling }
+        '404':
+          description: Active operation not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/skills:
     parameters:
       - in: path
@@ -500,7 +574,15 @@ paths:
   /v1/chat/completions:
     post:
       operationId: createChatCompletion
-      description: Sends bounded system, user, and assistant messages to the configured model provider.
+      description: Sends bounded system, user, and assistant messages to the configured model provider. Send a unique X-Veasel-Operation-ID UUID and use /v1/operations/{operation_id}/cancel to cancel it. Turns have a two-minute deadline.
+      parameters:
+        - in: header
+          name: X-Veasel-Operation-ID
+          required: false
+          description: Caller-generated UUID used by the direct completion cancellation endpoint. Reusing an active ID returns 409.
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
@@ -534,6 +616,18 @@ paths:
               schema:
                 type: integer
                 example: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: The two-minute turn deadline expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: The active turn was cancelled or the operation identifier is already in use.
           content:
             application/json:
               schema:

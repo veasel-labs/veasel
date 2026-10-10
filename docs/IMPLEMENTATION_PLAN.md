@@ -49,7 +49,8 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
 - [x] Reject provider work immediately with `503` and `Retry-After` when all provider slots are occupied, keeping overload from accumulating unbounded waiting requests.
-- [ ] Propagate request cancellation and deadlines through queued turns and provider transports.
+- [ ] Stop an in-flight provider socket immediately when cancellation arrives before its first response chunk; the pinned `net.http.fetch` API exposes bounded timeouts and progress callbacks but no external socket cancellation handle.
+- [x] Add UUID operation IDs and explicit cancellation endpoints, make queued per-session turns cancellable, enforce a two-minute turn deadline, pass context deadlines into all provider transports, and expose Escape cancellation in the TUI. The provider slot remains reserved until the blocking transport finishes its bounded cleanup.
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.

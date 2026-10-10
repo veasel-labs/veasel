@@ -182,7 +182,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new session   /skills   /mcp   /patches   /patch show|approve|reject <id>   ↑/↓ navigate   q quit",
+  content: "n new   /skills   /mcp   /patches   /patch show|approve|reject   Esc cancel   ↑/↓   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -197,6 +197,9 @@ let titleInput: InputRenderable | undefined
 let activeSession: Session | undefined
 let chatInput: InputRenderable | undefined
 let sendingMessage = false
+let activeTurnId: string | undefined
+let activeTurnController: AbortController | undefined
+let activeTurnCancelled = false
 let chatMessages: ChatTurn[] = []
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
@@ -366,6 +369,11 @@ async function sendMessage(value: string) {
     return
   }
   sendingMessage = true
+  activeTurnId = crypto.randomUUID()
+  activeTurnController = new AbortController()
+  activeTurnCancelled = false
+  const operationId = activeTurnId
+  const turnController = activeTurnController
   chatInput.value = ""
   chatInput.blur()
   status.content = "● Veasel is thinking…"
@@ -373,9 +381,9 @@ async function sendMessage(value: string) {
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-veasel-operation-id": operationId },
       body: JSON.stringify({ content }),
-      signal: controller.signal,
+      signal: AbortSignal.any([controller.signal, turnController.signal]),
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     const exchange = await response.json() as ChatExchange
@@ -388,12 +396,35 @@ async function sendMessage(value: string) {
     status.content = `● ${exchange.provider}  ·  ${exchange.model}`
     status.fg = "#a7f3d0"
   } catch (error) {
+    if (activeTurnCancelled) {
+      status.content = "● response cancelled"
+      status.fg = "#f3c969"
+      return
+    }
     if (controller.signal.aborted) return
     status.content = `● message failed  ·  ${error instanceof Error ? error.message : "request failed"}`
     status.fg = "#f28b82"
   } finally {
     sendingMessage = false
+    activeTurnId = undefined
+    activeTurnController = undefined
     chatInput?.focus()
+  }
+}
+
+async function cancelActiveTurn() {
+  if (!activeSession || !activeTurnId || !activeTurnController || activeTurnCancelled) return
+  activeTurnCancelled = true
+  status.content = "● cancelling response…"
+  status.fg = "#f3c969"
+  try {
+    await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/operations/${activeTurnId}/cancel`, {
+      method: "POST",
+    })
+  } catch {
+    // Closing the local response below still stops TUI waiting if the server exited.
+  } finally {
+    activeTurnController.abort()
   }
 }
 
@@ -662,6 +693,7 @@ function beginCreate() {
 renderer.keyInput.on("keypress", (key) => {
   if (key.name === "q" && !creating) {
     key.stopPropagation()
+    void cancelActiveTurn()
     controller.abort()
     renderer.destroy()
     return
@@ -677,6 +709,11 @@ renderer.keyInput.on("keypress", (key) => {
   }
   if (chatInput && activeSession) {
     if (key.name === "escape") {
+      if (sendingMessage) {
+        key.stopPropagation()
+        void cancelActiveTurn()
+        return
+      }
       detail.remove(chatInput)
       chatInput = undefined
       activeSession = undefined

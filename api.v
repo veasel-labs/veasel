@@ -1,6 +1,7 @@
 module main
 
 import json2
+import context as vcontext
 import os
 import strconv
 import sync
@@ -9,7 +10,9 @@ import veb
 import veb.sse
 
 const max_provider_concurrency = 4
+const max_active_turn_operations = 32
 const session_turn_lock_stripes = 64
+const max_agent_turn_duration = 2 * time.minute
 
 struct Health {
 pub:
@@ -69,6 +72,11 @@ pub:
 	status string
 }
 
+struct CancelTurnResponse {
+	operation_id string
+	status       string
+}
+
 struct ChatExchange {
 pub:
 	messages []ChatTurn
@@ -123,7 +131,8 @@ pub fn (mut ctx Context) before_request() {
 }
 
 pub struct App {
-	session_turn_locks []&sync.Mutex
+	session_turn_locks []&sync.Semaphore
+	operation_registry &TurnOperationRegistry
 	provider_slots     &sync.Semaphore
 	plugin_mcp_slots   &sync.Semaphore
 pub:
@@ -133,21 +142,26 @@ pub:
 }
 
 fn new_app(store &Store, plugin_directory string) &App {
-	mut session_turn_locks := []&sync.Mutex{cap: session_turn_lock_stripes}
+	mut session_turn_locks := []&sync.Semaphore{cap: session_turn_lock_stripes}
 	for _ in 0 .. session_turn_lock_stripes {
-		session_turn_locks << sync.new_mutex()
+		session_turn_locks << sync.new_semaphore_init(1)
 	}
 	return &App{
 		store:                 store
 		plugin_directory:      plugin_directory
 		plugin_data_directory: os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
 		session_turn_locks:    session_turn_locks
+		operation_registry:    &TurnOperationRegistry{
+			mutex:            sync.new_mutex()
+			operations:       map[string]ActiveTurnOperation{}
+			provider_workers: sync.new_waitgroup()
+		}
 		provider_slots:        sync.new_semaphore_init(max_provider_concurrency)
 		plugin_mcp_slots:      sync.new_semaphore_init(max_plugin_mcp_concurrency)
 	}
 }
 
-fn (app &App) session_turn_lock(id string) &sync.Mutex {
+fn (app &App) session_turn_lock(id string) &sync.Semaphore {
 	index := session_turn_lock_index(id)
 	return app.session_turn_locks[index]
 }
@@ -164,27 +178,55 @@ fn session_can_trust_plugin_mcp_server(active []SessionPluginMCPServer, plugin_n
 	return active.len < max_session_plugin_mcp_servers
 }
 
-fn (app &App) complete_with_provider_limit(input CompletionInput) !CompletionOutput {
+fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
+	input CompletionInput) !CompletionOutput {
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
 	mut slots := app.provider_slots
-	defer {
+	workers := app.begin_provider_worker() or {
 		slots.post()
+		return error('app_shutting_down')
 	}
-	return complete(input)
+	result_chan := chan ProviderTurnResult{cap: 1}
+	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, mut turn_ctx vcontext.Context, input CompletionInput,
+		result_chan chan ProviderTurnResult) {
+		defer {
+			mut provider_slots := slots
+			provider_slots.post()
+			mut provider_workers := workers
+			provider_workers.done()
+		}
+		result := complete_with_turn_context(mut turn_ctx, input.messages, [])
+		result_chan <- result
+	}(slots, workers, mut turn_ctx, input, result_chan)
+	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
-fn (app &App) complete_agent_with_provider_limit(messages []ChatMessage,
+fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
+	messages []ChatMessage,
 	tools []AgentToolDefinition) !CompletionOutput {
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
 	mut slots := app.provider_slots
-	defer {
+	workers := app.begin_provider_worker() or {
 		slots.post()
+		return error('app_shutting_down')
 	}
-	return complete_with_tools(messages, tools)
+	result_chan := chan ProviderTurnResult{cap: 1}
+	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, mut turn_ctx vcontext.Context, messages []ChatMessage,
+		tools []AgentToolDefinition, result_chan chan ProviderTurnResult) {
+		defer {
+			mut provider_slots := slots
+			provider_slots.post()
+			mut provider_workers := workers
+			provider_workers.done()
+		}
+		result := complete_with_turn_context(mut turn_ctx, messages, tools)
+		result_chan <- result
+	}(slots, workers, mut turn_ctx, messages.clone(), tools.clone(), result_chan)
+	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
 fn (app &App) try_provider_slot() bool {
@@ -198,10 +240,17 @@ fn (app &App) try_plugin_mcp_slot() bool {
 }
 
 fn (mut app App) close() {
+	app.cancel_all_turn_operations()
+	app.wait_for_turn_operations()
+	mut registry := app.operation_registry
+	mut workers := registry.provider_workers
+	workers.wait()
 	for index in 0 .. app.session_turn_locks.len {
 		mut lock_ref := app.session_turn_locks[index]
 		lock_ref.destroy()
 	}
+	mut operation_lock := registry.mutex
+	operation_lock.destroy()
 	mut slots := app.provider_slots
 	slots.destroy()
 	mut mcp_slots := app.plugin_mcp_slots
@@ -268,9 +317,9 @@ pub fn (app &App) approve_workspace_edit(mut ctx Context, id string, edit_id str
 		})
 	}
 	mut turn_lock := app.session_turn_lock(id)
-	turn_lock.lock()
+	turn_lock.wait()
 	defer {
-		turn_lock.unlock()
+		turn_lock.post()
 	}
 	mut store := app.store
 	mut begin_error := ''
@@ -393,6 +442,7 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		'workspace.edits.reject']
 	if configured_model() != none {
 		features << 'chat.complete'
+		features << 'chat.cancel'
 		features << 'agent.tools.workspace_readonly'
 		features << 'agent.tools.workspace_edit_proposal'
 	}
@@ -520,9 +570,9 @@ pub fn (app &App) set_session_skill(mut ctx Context, id string) veb.Result {
 		return json_request_error(mut ctx, 'Plugin and skill names are invalid')
 	}
 	mut turn_lock := app.session_turn_lock(id)
-	turn_lock.lock()
+	turn_lock.wait()
 	defer {
-		turn_lock.unlock()
+		turn_lock.post()
 	}
 	app.store.set_session_plugin_skill(id, input.plugin_name, input.skill_name, input.enabled) or {
 		return json_server_error(mut ctx, 'Unable to update session skill selection')
@@ -570,9 +620,9 @@ pub fn (app &App) set_session_mcp_server(mut ctx Context, id string) veb.Result 
 		}
 	}
 	mut turn_lock := app.session_turn_lock(id)
-	turn_lock.lock()
+	turn_lock.wait()
 	defer {
-		turn_lock.unlock()
+		turn_lock.post()
 	}
 	if input.trusted {
 		trusted := app.store.session_plugin_mcp_servers(id) or {
@@ -610,8 +660,39 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
 		})
 	}
-	output := app.complete_with_provider_limit(input) or {
-		if err.msg() == 'provider_busy' {
+	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }
+	if !validate_operation_id(requested_id) {
+		return json_request_error(mut ctx, 'X-Veasel-Operation-ID must be a non-nil UUID')
+	}
+	operation_id, mut turn_ctx, cancel := app.begin_turn_operation('', requested_id) or {
+		if err.msg() == 'operations_busy' {
+			ctx.res.set_status(.service_unavailable)
+			ctx.res.header.add_custom('Retry-After', '1') or {}
+			return ctx.json(APIError{
+				error: 'Too many active operations; retry shortly'
+			})
+		}
+		ctx.res.set_status(.conflict)
+		return ctx.json(APIError{
+			error: 'Operation identifier is already active or invalid'
+		})
+	}
+	defer {
+		app.finish_turn_operation(operation_id)
+		cancel()
+	}
+	output := app.complete_with_provider_limit(mut turn_ctx, input) or {
+		if err.msg() in ['cancelled', 'deadline_exceeded'] {
+			ctx.res.set_status(if err.msg() == 'deadline_exceeded' {
+				.gateway_timeout
+			} else {
+				.conflict
+			})
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		if err.msg() in ['provider_busy', 'app_shutting_down'] {
 			ctx.res.set_status(.service_unavailable)
 			ctx.res.header.add_custom('Retry-After', '1') or {}
 			return ctx.json(APIError{
@@ -624,10 +705,62 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 			error: 'Model provider request failed'
 		})
 	}
+	if context_error := turn_context_error(mut turn_ctx) {
+		ctx.res.set_status(if context_error == 'deadline_exceeded' {
+			.gateway_timeout
+		} else {
+			.conflict
+		})
+		return ctx.json(APIError{
+			error: context_error
+		})
+	}
 	return ctx.json(CompletionResponse{
 		provider: output.provider
 		model:    output.model
 		content:  output.content
+	})
+}
+
+@['/v1/sessions/:id/operations/:operation_id/cancel'; post]
+pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	canonical_id := canonical_operation_id(operation_id) or {
+		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
+	}
+	if !app.cancel_turn_operation(id, canonical_id) {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'active operation not found'
+		})
+	}
+	ctx.res.set_status(.accepted)
+	return ctx.json(CancelTurnResponse{
+		operation_id: canonical_id
+		status:       'cancelling'
+	})
+}
+
+@['/v1/operations/:operation_id/cancel'; post]
+pub fn (app &App) cancel_chat_completion(mut ctx Context, operation_id string) veb.Result {
+	canonical_id := canonical_operation_id(operation_id) or {
+		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
+	}
+	if !app.cancel_turn_operation('', canonical_id) {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'active operation not found'
+		})
+	}
+	ctx.res.set_status(.accepted)
+	return ctx.json(CancelTurnResponse{
+		operation_id: canonical_id
+		status:       'cancelling'
 	})
 }
 
@@ -672,10 +805,40 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
 		})
 	}
-	mut turn_lock := app.session_turn_lock(id)
-	turn_lock.lock()
+	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }
+	if !validate_operation_id(requested_id) {
+		return json_request_error(mut ctx, 'X-Veasel-Operation-ID must be a non-nil UUID')
+	}
+	operation_id, mut turn_ctx, cancel := app.begin_turn_operation(id, requested_id) or {
+		if err.msg() == 'operations_busy' {
+			ctx.res.set_status(.service_unavailable)
+			ctx.res.header.add_custom('Retry-After', '1') or {}
+			return ctx.json(APIError{
+				error: 'Too many active operations; retry shortly'
+			})
+		}
+		ctx.res.set_status(.conflict)
+		return ctx.json(APIError{
+			error: 'Operation identifier is already active or invalid'
+		})
+	}
 	defer {
-		turn_lock.unlock()
+		app.finish_turn_operation(operation_id)
+		cancel()
+	}
+	mut turn_lock := app.session_turn_lock(id)
+	app.acquire_session_turn(mut turn_ctx, id) or {
+		ctx.res.set_status(if err.msg() == 'deadline_exceeded' {
+			.gateway_timeout
+		} else {
+			.conflict
+		})
+		return ctx.json(APIError{
+			error: err.msg()
+		})
+	}
+	defer {
+		turn_lock.post()
 	}
 	mut messages := [ChatMessage{
 		role:    'system'
@@ -703,8 +866,18 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		}
 	}
 	messages << user_message
-	output := app.run_workspace_agent_turn(mut messages, session.directory, id) or {
-		if err.msg() in ['provider_busy', 'plugin_mcp_busy'] {
+	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id) or {
+		if err.msg() in ['cancelled', 'deadline_exceeded'] {
+			ctx.res.set_status(if err.msg() == 'deadline_exceeded' {
+				.gateway_timeout
+			} else {
+				.conflict
+			})
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		if err.msg() in ['provider_busy', 'plugin_mcp_busy', 'app_shutting_down'] {
 			ctx.res.set_status(.service_unavailable)
 			ctx.res.header.add_custom('Retry-After', '1') or {}
 			return ctx.json(APIError{
@@ -719,6 +892,16 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
 			error: 'Model provider request failed'
+		})
+	}
+	if context_error := turn_context_error(mut turn_ctx) {
+		ctx.res.set_status(if context_error == 'deadline_exceeded' {
+			.gateway_timeout
+		} else {
+			.conflict
+		})
+		return ctx.json(APIError{
+			error: context_error
 		})
 	}
 	persisted := app.store.append_exchange(id, input.content, output.content) or {

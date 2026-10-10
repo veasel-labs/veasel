@@ -1,6 +1,7 @@
 module main
 
 import json2
+import context as vcontext
 import net.http
 import net.urllib
 import os
@@ -87,7 +88,13 @@ struct ModelConfig {
 }
 
 interface ModelProvider {
-	complete(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !CompletionOutput
+	complete(mut turn_ctx vcontext.Context, config ModelConfig, messages []ChatMessage,
+		tools []AgentToolDefinition) !CompletionOutput
+}
+
+struct ProviderTurnResult {
+	output CompletionOutput
+	error  string
 }
 
 struct OpenAICompatibleProvider {}
@@ -340,12 +347,20 @@ fn validate_messages(messages []ChatMessage) ! {
 	}
 }
 
-fn complete(input CompletionInput) !CompletionOutput {
-	validate_messages(input.messages)!
-	return complete_with_tools(input.messages, [])
+fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMessage,
+	tools []AgentToolDefinition) ProviderTurnResult {
+	output := complete_with_tools(mut turn_ctx, messages, tools) or {
+		return ProviderTurnResult{
+			error: err.msg()
+		}
+	}
+	return ProviderTurnResult{
+		output: output
+	}
 }
 
-fn complete_with_tools(messages []ChatMessage, tools []AgentToolDefinition) !CompletionOutput {
+fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
+	tools []AgentToolDefinition) !CompletionOutput {
 	config := model_config()!
 	provider := match config.provider {
 		'openai-compatible', 'openai' { ModelProvider(OpenAICompatibleProvider{}) }
@@ -353,7 +368,7 @@ fn complete_with_tools(messages []ChatMessage, tools []AgentToolDefinition) !Com
 		'gemini' { ModelProvider(GeminiProvider{}) }
 		else { return error('unsupported model provider') }
 	}
-	return provider.complete(config, messages, tools)
+	return provider.complete(mut turn_ctx, config, messages, tools)
 }
 
 fn configured_model() ?string {
@@ -361,7 +376,8 @@ fn configured_model() ?string {
 	return config.model
 }
 
-fn (provider OpenAICompatibleProvider) complete(config ModelConfig, messages []ChatMessage,
+fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
+	messages []ChatMessage,
 	tools []AgentToolDefinition) !CompletionOutput {
 	url := '${secure_endpoint(config.base_url)!}/chat/completions'
 	mut openai_tools := []OpenAITool{cap: tools.len}
@@ -381,7 +397,7 @@ fn (provider OpenAICompatibleProvider) complete(config ModelConfig, messages []C
 		tools:       openai_tools
 		tool_choice: if tools.len > 0 { 'auto' } else { '' }
 	}
-	response := post_model_json(url, config, json2.encode[OpenAIRequest](request), .bearer)!
+	response := post_model_json(mut turn_ctx, url, config, json2.encode[OpenAIRequest](request), .bearer)!
 	decoded := json2.decode[OpenAIResponse](response.body) or {
 		return error('response_parse')
 	}
@@ -401,7 +417,8 @@ fn (provider OpenAICompatibleProvider) complete(config ModelConfig, messages []C
 	}
 }
 
-fn (provider AnthropicProvider) complete(config ModelConfig, messages []ChatMessage,
+fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
+	messages []ChatMessage,
 	tools []AgentToolDefinition) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
 	system, conversation := anthropic_messages(messages)
@@ -420,7 +437,8 @@ fn (provider AnthropicProvider) complete(config ModelConfig, messages []ChatMess
 		messages:   conversation
 		tools:      anthropic_tools
 	}
-	response := post_model_json('${base}/messages', config, json2.encode[AnthropicRequest](request), .anthropic)!
+	response := post_model_json(mut turn_ctx, '${base}/messages', config,
+		json2.encode[AnthropicRequest](request), .anthropic)!
 	decoded := json2.decode[AnthropicResponse](response.body) or {
 		return error('response_parse')
 	}
@@ -452,7 +470,8 @@ fn (provider AnthropicProvider) complete(config ModelConfig, messages []ChatMess
 	}
 }
 
-fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage,
+fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
+	messages []ChatMessage,
 	tools []AgentToolDefinition) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
 	system, conversation := gemini_messages(messages)
@@ -482,7 +501,7 @@ fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage
 	}
 	model_path := urllib.path_escape(config.model)
 	url := '${base}/models/${model_path}:generateContent'
-	response := post_model_json(url, config, json2.encode[GeminiRequest](request), .gemini)!
+	response := post_model_json(mut turn_ctx, url, config, json2.encode[GeminiRequest](request), .gemini)!
 	decoded := json2.decode[GeminiResponse](response.body) or {
 		return error('response_parse')
 	}
@@ -678,7 +697,18 @@ enum ModelAuth {
 	gemini
 }
 
-fn post_model_json(url string, config ModelConfig, payload string, auth ModelAuth) !http.Response {
+fn post_model_json(mut turn_ctx vcontext.Context, url string, config ModelConfig, payload string,
+	auth ModelAuth) !http.Response {
+	if context_error := turn_context_error(mut turn_ctx) {
+		return error(context_error)
+	}
+	deadline := turn_ctx.deadline() or { return error('deadline_missing') }
+	remaining := deadline - time.now()
+	if remaining <= 0 {
+		return error('deadline_exceeded')
+	}
+	read_timeout := if remaining < 60 * time.second { remaining } else { 60 * time.second }
+	write_timeout := if remaining < 10 * time.second { remaining } else { 10 * time.second }
 	mut headers := http.new_header(key: .content_type, value: 'application/json')
 	match auth {
 		.bearer {
@@ -697,12 +727,18 @@ fn post_model_json(url string, config ModelConfig, payload string, auth ModelAut
 		url:                  url
 		header:               headers
 		data:                 payload
-		read_timeout:         60 * time.second
-		write_timeout:        10 * time.second
+		read_timeout:         read_timeout
+		write_timeout:        write_timeout
 		allow_redirect:       false
 		max_retries:          1
 		stop_receiving_limit: max_provider_response_bytes
 		validate:             true
+		on_progress:          fn [turn_ctx] (request &http.Request, chunk []u8, read_so_far u64) ! {
+			mut active_ctx := turn_ctx
+			if context_error := turn_context_error(mut active_ctx) {
+				return error(context_error)
+			}
+		}
 	) or { return error('transport') }
 	if response.status_code < 200 || response.status_code >= 300 {
 		return error('HTTP ${response.status_code}')

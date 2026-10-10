@@ -55,7 +55,10 @@ fn test_plugin_stdio_mcp_process_environment_handshake_and_tool_call() {
 		'arguments': arguments
 	}) or { panic(err) }
 	assert response.error.code == 0
-	assert response.result.contains('${os.real_path(root)}|${os.real_path(data)}|${os.real_path(root)}')
+	expected := '${os.real_path(root)}|${os.real_path(data)}|${os.real_path(root)}'
+	encoded := json2.encode(expected).to_lower()
+	encoded_expected := encoded[1..encoded.len - 1]
+	assert response.result.to_lower().contains(encoded_expected)
 }
 
 fn test_trusted_session_mcp_tool_discovery_and_dispatch_keep_turn_state() {

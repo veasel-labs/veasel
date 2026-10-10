@@ -6,6 +6,19 @@ work_dir="$(mktemp -d)"
 mkdir "$work_dir/workspace"
 plugin_dir="$work_dir/plugins/review-package"
 mkdir -p "$plugin_dir/skills/review"
+mkdir -p "$work_dir/workspace/src" "$work_dir/outside"
+cat >"$work_dir/workspace/README.md" <<'EOF'
+Veasel workspace smoke fixture.
+EOF
+cat >"$work_dir/workspace/src/main.v" <<'EOF'
+module fixture
+
+// workspace-search-sentinel
+EOF
+cat >"$work_dir/outside/secret.txt" <<'EOF'
+outside-root-secret
+EOF
+ln -s "$work_dir/outside" "$work_dir/workspace/outside-link"
 cat >"$plugin_dir/plugin.json" <<'EOF'
 {"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"review-tools","version":"1.0.0","description":"Fixture plugin for API smoke tests."}
 EOF
@@ -95,6 +108,7 @@ grep -Fq "\"version\":\"$expected_version\"" "$work_dir/health" || fail 'health 
 curl -fsS "$api/v1/capabilities" >"$work_dir/capabilities"
 grep -Fq 'sessions.create' "$work_dir/capabilities" || fail 'session capability is missing'
 grep -Fq 'sessions.skills' "$work_dir/capabilities" || fail 'session skill capability is missing'
+grep -Fq 'workspace.search' "$work_dir/capabilities" || fail 'workspace search capability is missing'
 curl -fsS "$api/v1/plugins" >"$work_dir/plugins.json"
 grep -Fq 'review-tools' "$work_dir/plugins.json" || fail 'plugin catalog is missing the fixture plugin'
 grep -Fq 'Review code changes carefully.' "$work_dir/plugins.json" || fail 'plugin catalog is missing skill metadata'
@@ -113,6 +127,22 @@ grep -Fq '"title":"API smoke"' "$work_dir/response" || fail 'created session is 
 grep -Fq "\"directory\":\"$work_dir/workspace\"" "$work_dir/response" || fail 'workspace root was not stored canonically'
 session_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$work_dir/response")"
 [[ -n "$session_id" ]] || fail 'session id is missing'
+
+curl -fsS "$api/v1/sessions/$session_id/workspace/files" >"$work_dir/workspace-files"
+grep -Fq 'src/main.v' "$work_dir/workspace-files" || fail 'workspace file listing omitted a source file'
+grep -Fq 'README.md' "$work_dir/workspace-files" || fail 'workspace file listing omitted the README'
+! grep -Fq '.git/' "$work_dir/workspace-files" || fail 'workspace listing exposed .git contents'
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"path":"src/main.v"}' "$api/v1/sessions/$session_id/workspace/file"
+grep -Fq 'workspace-search-sentinel' "$work_dir/response" || fail 'workspace file content was not returned'
+expect_status 400 -H 'content-type: application/json' \
+	-d '{"path":"../outside/secret.txt"}' "$api/v1/sessions/$session_id/workspace/file"
+expect_status 400 -H 'content-type: application/json' \
+	-d '{"path":"outside-link/secret.txt"}' "$api/v1/sessions/$session_id/workspace/file"
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"query":"workspace-search-sentinel"}' "$api/v1/sessions/$session_id/workspace/search"
+grep -Fq '"path":"src/main.v"' "$work_dir/response" || fail 'workspace search did not return the matching path'
+grep -Fq '"line":3' "$work_dir/response" || fail 'workspace search returned the wrong line number'
 
 curl -fsS "$api/v1/sessions/$session_id/skills" >"$work_dir/skills"
 [[ "$(cat "$work_dir/skills")" == '[]' ]] || fail 'new session unexpectedly has active skills'

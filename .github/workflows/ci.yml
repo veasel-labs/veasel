@@ -133,6 +133,7 @@ jobs:
         run: |
           v test main_test.v
           v test plugins_test.v
+          v test workspace_tools_test.v
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'
         run: scripts/api-smoke.sh

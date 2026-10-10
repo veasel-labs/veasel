@@ -16,10 +16,12 @@ The current vertical slice provides a V server with health/capability
 endpoints, SQLite-backed sessions and chat history, a replayable event stream,
 and an OpenTUI terminal client. When configured, sessions can chat through
 OpenAI-compatible, Anthropic, or Gemini APIs. Repository tools, code changes,
-and background execution are still in progress. Local Agent Plugins can be
-discovered and their validated Skills enabled per session; MCP declarations
-are metadata only and are not started. The product reports only actual
-provider replies and does not simulate agent actions.
+and background execution are still in progress. The API now provides bounded,
+read-only workspace list/read/search routes; the model cannot call these tools
+yet. Local Agent Plugins can be discovered and their validated Skills enabled
+per session; MCP declarations are metadata only and are not started. The
+product reports only actual provider replies and does not simulate agent
+actions.
 
 ## Requirements
 
@@ -71,8 +73,11 @@ edits are not available yet.
 ## API
 
 The API uses `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/sessions`,
-`/v1/sessions/:id`, `/v1/sessions/:id/messages`, `/v1/chat/completions` when
-configured, `/v1/sessions/:id/skills`, and `/v1/events` (SSE). See the OpenAPI document at
+`/v1/sessions/:id`, `/v1/sessions/:id/messages`,
+`/v1/sessions/:id/workspace/{files,file,search}`, `/v1/chat/completions` when
+configured, `/v1/sessions/:id/skills`, and `/v1/events` (SSE). Workspace
+routes are read-only and are not callable by the model yet. See the OpenAPI
+document at
 [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ## Verification

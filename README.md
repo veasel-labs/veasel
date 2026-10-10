@@ -70,7 +70,10 @@ HTTP. Keys are read only by the V backend and are never returned by the API.
 The TUI sends messages through `/v1/sessions/:id/messages` and reloads the
 persisted conversation when a session opens. Provider tool calls run with
 bounded workspace list/read/search operations. Streaming, file edits, shell
-execution, and durable approvals are not available yet.
+execution, and durable approvals are not available yet. The backend accepts up
+to four provider requests at once; requests reaching the provider gate while
+all slots are occupied receive `503 Service Unavailable` with
+`Retry-After: 1` instead of joining an unbounded provider queue.
 
 ## API
 

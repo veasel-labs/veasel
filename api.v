@@ -127,8 +127,10 @@ fn session_turn_lock_index(id string) int {
 }
 
 fn (app &App) complete_with_provider_limit(input CompletionInput) !CompletionOutput {
+	if !app.try_provider_slot() {
+		return error('provider_busy')
+	}
 	mut slots := app.provider_slots
-	slots.wait()
 	defer {
 		slots.post()
 	}
@@ -137,12 +139,19 @@ fn (app &App) complete_with_provider_limit(input CompletionInput) !CompletionOut
 
 fn (app &App) complete_agent_with_provider_limit(messages []ChatMessage,
 	tools []AgentToolDefinition) !CompletionOutput {
+	if !app.try_provider_slot() {
+		return error('provider_busy')
+	}
 	mut slots := app.provider_slots
-	slots.wait()
 	defer {
 		slots.post()
 	}
 	return complete_with_tools(messages, tools)
+}
+
+fn (app &App) try_provider_slot() bool {
+	mut slots := app.provider_slots
+	return slots.try_wait()
 }
 
 fn (mut app App) close() {
@@ -324,6 +333,13 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 		})
 	}
 	output := app.complete_with_provider_limit(input) or {
+		if err.msg() == 'provider_busy' {
+			ctx.res.set_status(.service_unavailable)
+			ctx.res.header.add_custom('Retry-After', '1') or {}
+			return ctx.json(APIError{
+				error: 'Model provider is at capacity; retry shortly'
+			})
+		}
 		eprintln('veasel: model provider request failed (${err.msg()})')
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
@@ -410,6 +426,13 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	}
 	messages << user_message
 	output := app.run_workspace_agent_turn(mut messages, session.directory) or {
+		if err.msg() == 'provider_busy' {
+			ctx.res.set_status(.service_unavailable)
+			ctx.res.header.add_custom('Retry-After', '1') or {}
+			return ctx.json(APIError{
+				error: 'Model provider is at capacity; retry shortly'
+			})
+		}
 		eprintln('veasel: session completion failed (${err.msg()})')
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{

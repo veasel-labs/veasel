@@ -94,9 +94,9 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
 
 	shell_proposal := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
-		id: 'shell-propose-1'
+		id:       'shell-propose-1'
 		function: ProviderFunctionCall{
-			name: 'workspace_propose_shell_command'
+			name:      'workspace_propose_shell_command'
 			arguments: '{"command":"touch shell-must-not-run","cwd":".","timeout_seconds":10}'
 		}
 	})
@@ -199,8 +199,8 @@ fn test_approved_shell_command_revalidates_reviewed_working_directory() {
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	result := run_approved_shell_command(root, ShellCommandSummary{
-		command: 'touch must-not-run'
-		cwd: '../'
+		command:         'touch must-not-run'
+		cwd:             '../'
 		timeout_seconds: 10
 	})
 	assert result.status == 'failed'
@@ -224,8 +224,8 @@ fn test_approved_shell_command_rejects_replaced_workspace_root() {
 	os.rename(original, moved) or { panic(err) }
 	os.symlink(other, original) or { panic(err) }
 	result := run_approved_shell_command(canonical_root, ShellCommandSummary{
-		command: 'touch must-not-run'
-		cwd: '.'
+		command:         'touch must-not-run'
+		cwd:             '.'
 		timeout_seconds: 10
 	})
 	assert result.status == 'failed'

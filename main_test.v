@@ -130,7 +130,7 @@ fn test_shell_command_requires_review_and_is_marked_uncertain_after_restart() {
 	defer { os.rmdir_all(root) or {} }
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
-	session := store.create_session(SessionInput{title: 'Shell approval', directory: root}) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'Shell approval', directory: root }) or { panic(err) }
 	draft := prepare_shell_command(root, 'touch must-not-run', '.', 10) or { panic(err) }
 	proposal := store.create_shell_command(session.id, draft) or { panic(err) }
 	assert !os.exists(os.join_path(root, 'must-not-run'))
@@ -173,7 +173,7 @@ fn test_shell_command_rejects_unicode_line_separators() {
 	defer { os.rmdir_all(root) or {} }
 	_ := prepare_shell_command(root, 'echo safe\u2028rm -rf .', '.', 5) or { return }
 	assert false, 'Unicode line separators must not alter reviewed command rendering'
-	}
+}
 
 fn test_shell_command_rejects_zero_width_formatting_characters() {
 	root := os.join_path(os.temp_dir(), 'veasel-shell-format-${uuid.new_v4().str()}')

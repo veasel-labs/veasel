@@ -249,7 +249,10 @@ fn open_store(path string) !&Store {
 				db.close() or {}
 				return error('unable to recover interrupted shell command')
 			}
-			_ = db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', ['shell.command_uncertain', row.val(1)]) or {
+			_ = db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+				'shell.command_uncertain',
+				row.val(1),
+			]) or {
 				db.rollback() or {}
 				db.close() or {}
 				return error('unable to record interrupted shell command')
@@ -324,14 +327,45 @@ fn (mut store Store) create_shell_command(session_id string, draft ShellCommandD
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.begin()!
-	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or { store.db.rollback() or {}; return error('session not found') }
-	if sessions.len != 1 { store.db.rollback() or {}; return error('session not found') }
-	pending := store.db.exec_param_many("SELECT COUNT(*) FROM shell_commands WHERE session_id = ? AND status = 'pending'", [session_id]) or { store.db.rollback() or {}; return error('unable to inspect pending shell commands') }
-	if pending.len != 1 || pending[0].val(0).int() >= max_pending_shell_commands { store.db.rollback() or {}; return error('pending shell command limit reached') }
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	pending := store.db.exec_param_many("SELECT COUNT(*) FROM shell_commands WHERE session_id = ? AND status = 'pending'", [session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to inspect pending shell commands')
+	}
+	if pending.len != 1 || pending[0].val(0).int() >= max_pending_shell_commands {
+		store.db.rollback() or {}
+		return error('pending shell command limit reached')
+	}
 	id := uuid.new_v4().str()
-	_ = store.db.exec_param_many('INSERT INTO shell_commands (id, session_id, command, cwd, timeout_seconds, status) VALUES (?, ?, ?, ?, ?, ?)', [id, session_id, draft.command, draft.cwd, draft.timeout_seconds.str(), 'pending']) or { store.db.rollback() or {}; return error('unable to persist shell command proposal') }
-	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', ['shell.command_proposed', session_id]) or { store.db.rollback() or {}; return error('unable to record shell command proposal') }
-	store.db.commit() or { store.db.rollback() or {}; return error('unable to commit shell command proposal') }
+	_ = store.db.exec_param_many('INSERT INTO shell_commands (id, session_id, command, cwd, timeout_seconds, status) VALUES (?, ?, ?, ?, ?, ?)', [
+		id,
+		session_id,
+		draft.command,
+		draft.cwd,
+		draft.timeout_seconds.str(),
+		'pending',
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist shell command proposal')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+		'shell.command_proposed',
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record shell command proposal')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit shell command proposal')
+	}
 	return store.get_shell_command_unlocked(session_id, id)!
 }
 
@@ -348,15 +382,42 @@ fn (mut store Store) review_shell_command(session_id string, id string) !ShellCo
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.begin()!
-	rows := store.db.exec_param_many("SELECT id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at, COALESCE(reviewed_at, '') FROM shell_commands WHERE session_id = ? AND id = ?", [session_id, id]) or { store.db.rollback() or {}; return error('unable to read shell command') }
-	if rows.len != 1 { store.db.rollback() or {}; return error('shell command not found') }
+	rows := store.db.exec_param_many("SELECT id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at, COALESCE(reviewed_at, '') FROM shell_commands WHERE session_id = ? AND id = ?", [
+		session_id,
+		id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to read shell command')
+	}
+	if rows.len != 1 {
+		store.db.rollback() or {}
+		return error('shell command not found')
+	}
 	row := rows[0]
 	if row.val(4) == 'pending' && row.val(9).len == 0 {
-		_ = store.db.exec_param_many("UPDATE shell_commands SET reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NULL", [id, session_id]) or { store.db.rollback() or {}; return error('unable to record shell command review') }
-		if store.db.get_affected_rows_count() != 1 { store.db.rollback() or {}; return error('shell command changed while being reviewed') }
-		_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', ['shell.command_reviewed', session_id]) or { store.db.rollback() or {}; return error('unable to record shell command review event') }
+		_ = store.db.exec_param_many("UPDATE shell_commands SET reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NULL", [
+			id,
+			session_id,
+		]) or {
+			store.db.rollback() or {}
+			return error('unable to record shell command review')
+		}
+		if store.db.get_affected_rows_count() != 1 {
+			store.db.rollback() or {}
+			return error('shell command changed while being reviewed')
+		}
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+			'shell.command_reviewed',
+			session_id,
+		]) or {
+			store.db.rollback() or {}
+			return error('unable to record shell command review event')
+		}
 	}
-	store.db.commit() or { store.db.rollback() or {}; return error('unable to commit shell command review') }
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit shell command review')
+	}
 	return shell_command_from_row(row, '')
 }
 
@@ -364,13 +425,40 @@ fn (mut store Store) begin_shell_command(session_id string, id string) !ShellCom
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.begin()!
-	rows := store.db.exec_param_many("SELECT id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at, COALESCE(reviewed_at, '') FROM shell_commands WHERE session_id = ? AND id = ?", [session_id, id]) or { store.db.rollback() or {}; return error('unable to read shell command') }
-	if rows.len != 1 || rows[0].val(4) != 'pending' || rows[0].val(9).len == 0 { store.db.rollback() or {}; return error('shell command has not been reviewed and is awaiting approval') }
+	rows := store.db.exec_param_many("SELECT id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at, COALESCE(reviewed_at, '') FROM shell_commands WHERE session_id = ? AND id = ?", [
+		session_id,
+		id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to read shell command')
+	}
+	if rows.len != 1 || rows[0].val(4) != 'pending' || rows[0].val(9).len == 0 {
+		store.db.rollback() or {}
+		return error('shell command has not been reviewed and is awaiting approval')
+	}
 	row := rows[0]
-	_ = store.db.exec_param_many("UPDATE shell_commands SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NOT NULL", [id, session_id]) or { store.db.rollback() or {}; return error('unable to persist shell command approval') }
-	if store.db.get_affected_rows_count() != 1 { store.db.rollback() or {}; return error('shell command is no longer awaiting approval') }
-	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', ['shell.command_approved', session_id]) or { store.db.rollback() or {}; return error('unable to record shell command approval') }
-	store.db.commit() or { store.db.rollback() or {}; return error('unable to commit shell command approval') }
+	_ = store.db.exec_param_many("UPDATE shell_commands SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NOT NULL", [
+		id,
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist shell command approval')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('shell command is no longer awaiting approval')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+		'shell.command_approved',
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record shell command approval')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit shell command approval')
+	}
 	return shell_command_from_row(row, 'running')
 }
 
@@ -378,30 +466,77 @@ fn (mut store Store) finish_shell_command(session_id string, id string, result S
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.begin()!
-	_ = store.db.exec_param_many('UPDATE shell_commands SET status = ?, exit_code = ?, output = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = ?', [result.status, result.exit_code.str(), result.output, id, session_id, 'running']) or { store.db.rollback() or {}; return error('unable to persist shell command result') }
-	if store.db.get_affected_rows_count() != 1 { store.db.rollback() or {}; return error('shell command state changed unexpectedly') }
-	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', ['shell.command_${result.status}', session_id]) or { store.db.rollback() or {}; return error('unable to record shell command result') }
-	store.db.commit() or { store.db.rollback() or {}; return error('unable to commit shell command result') }
+	_ = store.db.exec_param_many('UPDATE shell_commands SET status = ?, exit_code = ?, output = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = ?', [
+		result.status,
+		result.exit_code.str(),
+		result.output,
+		id,
+		session_id,
+		'running',
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist shell command result')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('shell command state changed unexpectedly')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+		'shell.command_${result.status}',
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record shell command result')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit shell command result')
+	}
 }
 
 fn (mut store Store) reject_shell_command(session_id string, id string) ! {
 	store.mu.lock()
 	defer { store.mu.unlock() }
 	store.db.begin()!
-	_ = store.db.exec_param_many("UPDATE shell_commands SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending'", [id, session_id]) or { store.db.rollback() or {}; return error('unable to reject shell command') }
-	if store.db.get_affected_rows_count() != 1 { store.db.rollback() or {}; return error('shell command is not awaiting review') }
-	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', ['shell.command_rejected', session_id]) or { store.db.rollback() or {}; return error('unable to record shell command rejection') }
-	store.db.commit() or { store.db.rollback() or {}; return error('unable to commit shell command rejection') }
+	_ = store.db.exec_param_many("UPDATE shell_commands SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending'", [
+		id,
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to reject shell command')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('shell command is not awaiting review')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+		'shell.command_rejected',
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record shell command rejection')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit shell command rejection')
+	}
 }
 
 fn (mut store Store) get_shell_command_unlocked(session_id string, id string) !ShellCommandSummary {
-	rows := store.db.exec_param_many('SELECT id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at FROM shell_commands WHERE session_id = ? AND id = ?', [session_id, id])!
+	rows := store.db.exec_param_many('SELECT id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at FROM shell_commands WHERE session_id = ? AND id = ?', [
+		session_id,
+		id,
+	])!
 	if rows.len != 1 { return error('shell command not found') }
 	return shell_command_from_row(rows[0], '')
 }
 
 fn shell_command_from_row(row sqlite.Row, status_override string) ShellCommandSummary {
-	return ShellCommandSummary{id: row.val(0), command: row.val(1), cwd: row.val(2), timeout_seconds: row.val(3).int(), status: if status_override.len > 0 { status_override } else { row.val(4) }, exit_code: row.val(5).int(), output: row.val(6), created_at: row.val(7), updated_at: row.val(8)}
+	return ShellCommandSummary{ id: row.val(0), command: row.val(1), cwd: row.val(2), timeout_seconds: row.val(3).int(), status: if status_override.len > 0 {
+		status_override
+	} else {
+		row.val(4)
+	}, exit_code: row.val(5).int(), output: row.val(6), created_at: row.val(7), updated_at: row.val(8) }
 }
 
 fn (mut store Store) session_plugin_skills(session_id string) ![]SessionPluginSkill {

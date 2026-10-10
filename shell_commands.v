@@ -22,15 +22,15 @@ mut:
 
 fn (app &App) begin_shell_operation() bool {
 	mut registry := app.shell_operation_registry
-	mut lock := registry.mutex
-	lock.lock()
+	mut registry_lock := registry.mutex
+	registry_lock.lock()
 	if registry.closing {
-		lock.unlock()
+		registry_lock.unlock()
 		return false
 	}
 	mut workers := registry.workers
 	workers.add(1)
-	lock.unlock()
+	registry_lock.unlock()
 	return true
 }
 
@@ -42,10 +42,10 @@ fn (app &App) finish_shell_operation() {
 
 fn (app &App) close_shell_operations() {
 	mut registry := app.shell_operation_registry
-	mut lock := registry.mutex
-	lock.lock()
+	mut registry_lock := registry.mutex
+	registry_lock.lock()
 	registry.closing = true
-	lock.unlock()
+	registry_lock.unlock()
 }
 
 fn (app &App) wait_for_shell_operations() {
@@ -56,34 +56,34 @@ fn (app &App) wait_for_shell_operations() {
 
 pub struct ShellCommandSummary {
 pub:
-	id         string
-	command    string
-	cwd        string
+	id              string
+	command         string
+	cwd             string
 	timeout_seconds int
-	status     string
-	exit_code  int
-	output     string
-	created_at string
-	updated_at string
+	status          string
+	exit_code       int
+	output          string
+	created_at      string
+	updated_at      string
 }
 
 struct ShellCommandDraft {
-	command string
-	cwd string
+	command         string
+	cwd             string
 	timeout_seconds int
 }
 
 struct ShellCommandResult {
-	status string
+	status    string
 	exit_code int
-	output string
+	output    string
 }
 
 struct AgentShellCommandResult {
-	id string
+	id      string
 	command string
-	cwd string
-	note string
+	cwd     string
+	note    string
 }
 
 fn prepare_shell_command(root string, command string, cwd string, timeout_seconds int) !ShellCommandDraft {
@@ -118,14 +118,14 @@ fn prepare_shell_command(root string, command string, cwd string, timeout_second
 		}
 		stored_cwd = relative_path.replace('\\', '/')
 	}
-	return ShellCommandDraft{command: command, cwd: stored_cwd, timeout_seconds: timeout_seconds}
+	return ShellCommandDraft{ command: command, cwd: stored_cwd, timeout_seconds: timeout_seconds }
 }
 
 fn shell_text_has_unsafe_controls(value string) bool {
 	for character in value.runes() {
 		if utf8.is_control(character) || character in [0x00ad, 0x034f, 0x061c, 0x180e, 0x200b,
-			0x200c, 0x200d, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d,
-			0x202e, 0x2060, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff] {
+			0x200c, 0x200d, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
+			0x2060, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff] {
 			return true
 		}
 	}
@@ -163,7 +163,9 @@ fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCom
 	}
 	$if windows {
 		shell := os.getenv('COMSPEC')
-		if shell.len == 0 { return ShellCommandResult{status: 'failed', exit_code: -1, output: 'COMSPEC is not configured'} }
+		if shell.len == 0 {
+			return ShellCommandResult{ status: 'failed', exit_code: -1, output: 'COMSPEC is not configured' }
+		}
 		mut process := os.new_process(shell)
 		process.set_args(['/D', '/S', '/C', command.command])
 		process.set_stdin_path('NUL')
@@ -210,11 +212,21 @@ fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellComma
 	mut safe_output := output.bytestr()
 	if safe_output.len > 0 {
 		bytes := safe_output.bytes()
-		if !utf8.validate(&bytes[0], bytes.len) { safe_output = '[Output omitted: command produced invalid UTF-8]' }
+		if !utf8.validate(&bytes[0], bytes.len) {
+			safe_output = '[Output omitted: command produced invalid UTF-8]'
+		}
 	}
 	if output_limited { safe_output += shell_output_limited_marker }
-	status := if timed_out { 'timed_out' } else if output_limited { 'output_limited' } else if code == 0 { 'succeeded' } else { 'failed' }
-	return ShellCommandResult{status: status, exit_code: code, output: safe_output}
+	status := if timed_out {
+		'timed_out'
+	} else if output_limited {
+		'output_limited'
+	} else if code == 0 {
+		'succeeded'
+	} else {
+		'failed'
+	}
+	return ShellCommandResult{ status: status, exit_code: code, output: safe_output }
 }
 
 fn append_shell_output(mut output []u8, chunk string, mut limited bool) {

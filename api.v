@@ -120,11 +120,11 @@ pub fn (mut ctx Context) before_request() {
 }
 
 pub struct App {
-	session_turn_locks []&sync.Semaphore
-	operation_registry &TurnOperationRegistry
-	provider_slots     &sync.Semaphore
-	plugin_mcp_slots   &sync.Semaphore
-	shell_command_slots &sync.Semaphore
+	session_turn_locks       []&sync.Semaphore
+	operation_registry       &TurnOperationRegistry
+	provider_slots           &sync.Semaphore
+	plugin_mcp_slots         &sync.Semaphore
+	shell_command_slots      &sync.Semaphore
 	shell_operation_registry &ShellCommandRegistry
 pub:
 	store                 &Store
@@ -138,18 +138,18 @@ fn new_app(store &Store, plugin_directory string) &App {
 		session_turn_locks << sync.new_semaphore_init(1)
 	}
 	return &App{
-		store:                 store
-		plugin_directory:      plugin_directory
-		plugin_data_directory: os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
-		session_turn_locks:    session_turn_locks
-		operation_registry:    &TurnOperationRegistry{
+		store:                    store
+		plugin_directory:         plugin_directory
+		plugin_data_directory:    os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
+		session_turn_locks:       session_turn_locks
+		operation_registry:       &TurnOperationRegistry{
 			mutex:            sync.new_mutex()
 			operations:       map[string]ActiveTurnOperation{}
 			provider_workers: sync.new_waitgroup()
 		}
-		provider_slots:        sync.new_semaphore_init(max_provider_concurrency)
-		plugin_mcp_slots:      sync.new_semaphore_init(max_plugin_mcp_concurrency)
-		shell_command_slots:   sync.new_semaphore_init(max_active_shell_commands)
+		provider_slots:           sync.new_semaphore_init(max_provider_concurrency)
+		plugin_mcp_slots:         sync.new_semaphore_init(max_plugin_mcp_concurrency)
+		shell_command_slots:      sync.new_semaphore_init(max_active_shell_commands)
 		shell_operation_registry: &ShellCommandRegistry{
 			mutex:   sync.new_mutex()
 			workers: sync.new_waitgroup()

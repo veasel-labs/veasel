@@ -77,11 +77,11 @@ fn workspace_agent_tools() []AgentToolDefinition {
 			description: 'Propose one single-line shell command for the user to inspect and explicitly approve. This tool never executes commands. Execution uses /bin/sh on POSIX or COMSPEC on Windows, runs with the server OS user permissions, may access files and the network, inherits its environment, is not sandboxed, and is never replayed automatically after a restart. Use only when the requested task requires a shell side effect.'
 			parameters:  ToolParameters{
 				properties: {
-					'command': ToolParameter{type: 'string', description: 'Exact single-line command text shown for approval and passed to the platform shell.'}
-					'cwd': ToolParameter{type: 'string', description: 'Existing workspace-relative working directory, or . for the workspace root.'}
-					'timeout_seconds': ToolParameter{type: 'integer', description: 'Execution timeout from 1 to 300 seconds.'}
+					'command':         ToolParameter{ type: 'string', description: 'Exact single-line command text shown for approval and passed to the platform shell.' }
+					'cwd':             ToolParameter{ type: 'string', description: 'Existing workspace-relative working directory, or . for the workspace root.' }
+					'timeout_seconds': ToolParameter{ type: 'integer', description: 'Execution timeout from 1 to 300 seconds.' }
 				}
-				required: ['command', 'cwd', 'timeout_seconds']
+				required:   ['command', 'cwd', 'timeout_seconds']
 			}
 		},
 	]
@@ -294,17 +294,17 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 		}
 		'workspace_propose_shell_command' {
 			draft := parse_shell_tool_arguments(call.function.arguments, root) or {
-				return json2.encode[AgentToolError](AgentToolError{error: 'Shell command proposal is invalid: ${err.msg()}'})
+				return json2.encode[AgentToolError](AgentToolError{ error: 'Shell command proposal is invalid: ${err.msg()}' })
 			}
 			mut store := app.store
 			proposal := store.create_shell_command(session_id, draft) or {
-				return json2.encode[AgentToolError](AgentToolError{error: 'Shell command proposal could not be saved for review.'})
+				return json2.encode[AgentToolError](AgentToolError{ error: 'Shell command proposal could not be saved for review.' })
 			}
 			json2.encode[AgentShellCommandResult](AgentShellCommandResult{
-				id: proposal.id
+				id:      proposal.id
 				command: proposal.command
-				cwd: proposal.cwd
-				note: 'Stored for human review. No command was executed.'
+				cwd:     proposal.cwd
+				note:    'Stored for human review. No command was executed.'
 			})
 		}
 		else {

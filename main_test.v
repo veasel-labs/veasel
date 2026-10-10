@@ -173,12 +173,18 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 
 fn test_model_endpoint_requires_tls_or_exact_loopback() {
 	assert secure_endpoint('https://api.example.test/v1') or { panic(err) } == 'https://api.example.test/v1'
+	assert secure_endpoint('https://api.example.test/v1/') or { panic(err) } == 'https://api.example.test/v1'
 	assert secure_endpoint('http://localhost:11434/v1') or { panic(err) } == 'http://localhost:11434/v1'
 	assert secure_endpoint('http://127.0.0.1:8080/v1') or { panic(err) } == 'http://127.0.0.1:8080/v1'
 	assert secure_endpoint('http://[::1]:8080/v1') or { panic(err) } == 'http://[::1]:8080/v1'
+	assert model_endpoint_rejected('http://example.test/v1')
 	assert model_endpoint_rejected('http://localhost.attacker.test/v1')
 	assert model_endpoint_rejected('http://127.0.0.10/v1')
 	assert model_endpoint_rejected('https://user:secret@example.test/v1')
+	assert model_endpoint_rejected('https://api.example.test/v1?token=secret')
+	assert model_endpoint_rejected('https://api.example.test/v1#fragment')
+	assert model_endpoint_rejected('ftp://api.example.test/v1')
+	assert model_endpoint_rejected('not a URL')
 }
 
 fn test_local_api_accepts_only_loopback_host_and_origin() {

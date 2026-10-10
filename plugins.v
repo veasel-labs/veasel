@@ -466,14 +466,18 @@ fn skill_required_string(fields map[string]yaml.Any, key string) !string {
 }
 
 fn is_valid_skill_name(name string) bool {
-	runes := name.runes()
-	if runes.len == 0 || runes.len > 64 || runes[0] == `-` || runes[runes.len - 1] == `-` {
+	if name.len == 0 {
 		return false
 	}
+	mut rune_count := 0
 	mut previous_was_hyphen := false
-	for c in runes {
+	for c in name.runes_iterator() {
+		rune_count++
+		if rune_count > 64 {
+			return false
+		}
 		if c == `-` {
-			if previous_was_hyphen {
+			if rune_count == 1 || previous_was_hyphen {
 				return false
 			}
 			previous_was_hyphen = true
@@ -484,5 +488,5 @@ fn is_valid_skill_name(name string) bool {
 			return false
 		}
 	}
-	return true
+	return rune_count > 0 && !previous_was_hyphen
 }

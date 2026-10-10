@@ -14,12 +14,12 @@ const max_provider_response_bytes = 1_000_000
 
 pub struct ChatMessage {
 pub:
-	role         string
-	content      string
-	name         string             @[omitempty]
-	tool_call_id string             @[json: 'tool_call_id'; omitempty]
-	provider_tool_call_id string     @[json: 'provider_tool_call_id'; omitempty]
-	tool_calls   []ProviderToolCall @[json: 'tool_calls'; omitempty]
+	role                  string
+	content               string
+	name                  string             @[omitempty]
+	tool_call_id          string             @[json: 'tool_call_id'; omitempty]
+	provider_tool_call_id string             @[json: 'provider_tool_call_id'; omitempty]
+	tool_calls            []ProviderToolCall @[json: 'tool_calls'; omitempty]
 }
 
 pub struct CompletionInput {

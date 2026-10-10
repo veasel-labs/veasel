@@ -109,18 +109,18 @@ fn test_provider_tool_transcripts_preserve_native_context() {
 			}]
 		},
 		ChatMessage{
-			role:         'tool'
-			name:         'workspace_search'
-			tool_call_id: 'native-call-1'
+			role:                  'tool'
+			name:                  'workspace_search'
+			tool_call_id:          'native-call-1'
 			provider_tool_call_id: 'native-call-1'
-			content:      '{"matches":[{"path":"src/main.v","line":2,"text":"sentinel"}]}'
+			content:               '{"matches":[{"path":"src/main.v","line":2,"text":"sentinel"}]}'
 		},
 	]
 
 	_, anthropic := anthropic_messages(messages)
 	assert anthropic.len == 3
 	assert anthropic[1].content[0].id == 'native-call-1'
-	assert anthropic[1].content[0].input['query'].str() == 'sentinel'
+	assert anthropic[1].content[0].input['query'] or { panic('Anthropic tool arguments were lost') }.str() == 'sentinel'
 	assert anthropic[2].role == 'user'
 	assert anthropic[2].content[0].type == 'tool_result'
 	assert anthropic[2].content[0].tool_use_id == 'native-call-1'
@@ -134,20 +134,26 @@ fn test_provider_tool_transcripts_preserve_native_context() {
 	assert gemini[2].parts[0].function_response or {
 		panic('Gemini function response was lost')
 	}.id == 'native-call-1'
-	assert gemini[2].parts[0].function_response or {
+	function_response := gemini[2].parts[0].function_response or {
 		panic('Gemini function response was lost')
-	}.response['matches'].json_str() == '[{"line":2,"path":"src/main.v","text":"sentinel"}]'
+	}
+	matches := function_response.response['matches'] or { panic('Gemini tool result was lost') }
+	match_items := matches.as_array()
+	assert match_items.len == 1
+	match_fields := match_items[0].as_map()
+	assert match_fields['path'] or { panic('Gemini tool result path was lost') }.str() == 'src/main.v'
+	assert match_fields['line'] or { panic('Gemini tool result line was lost') }.int() == 2
+	assert match_fields['text'] or { panic('Gemini tool result text was lost') }.str() == 'sentinel'
 
 	openai_transcript := json2.encode[[]ChatMessage](messages[1..])
 	assert openai_transcript.contains('tool_call_id')
 	assert openai_transcript.contains('native-call-1')
 	assert openai_transcript.contains('tool_calls')
 	_ = json2.decode[json2.Any](openai_transcript) or { panic(err) }
-	public_completion := json2.encode[CompletionOutput](CompletionOutput{
-		provider:   'fixture'
-		model:      'fixture-model'
-		content:    'Done.'
-		tool_calls: messages[1].tool_calls
+	public_completion := json2.encode[CompletionResponse](CompletionResponse{
+		provider: 'fixture'
+		model:    'fixture-model'
+		content:  'Done.'
 	})
 	assert !public_completion.contains('tool_calls')
 }

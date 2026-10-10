@@ -57,6 +57,13 @@ pub:
 	model    string
 }
 
+struct CompletionResponse {
+pub:
+	provider string
+	model    string
+	content  string
+}
+
 fn json_request_error(mut ctx Context, message string) veb.Result {
 	ctx.res.set_status(.bad_request)
 	return ctx.json(APIError{
@@ -323,7 +330,11 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 			error: 'Model provider request failed'
 		})
 	}
-	return ctx.json(output)
+	return ctx.json(CompletionResponse{
+		provider: output.provider
+		model:    output.model
+		content:  output.content
+	})
 }
 
 @['/v1/sessions/:id/messages'; get]

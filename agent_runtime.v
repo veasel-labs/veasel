@@ -97,11 +97,11 @@ fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string) 
 				return error('agent tool result limit reached')
 			}
 			messages << ChatMessage{
-				role:         'tool'
-				name:         call.function.name
-				tool_call_id: call.id
+				role:                  'tool'
+				name:                  call.function.name
+				tool_call_id:          call.id
 				provider_tool_call_id: call.provider_call_id
-				content:      result
+				content:               result
 			}
 		}
 	}

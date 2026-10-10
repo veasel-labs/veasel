@@ -1,5 +1,6 @@
 module main
 
+import context as vcontext
 import json2
 
 const max_agent_tool_rounds = 6
@@ -74,8 +75,11 @@ fn workspace_agent_tools() []AgentToolDefinition {
 	]
 }
 
-fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string,
+fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
 	session_id string) !CompletionOutput {
+	if context_error := turn_context_error(mut turn_ctx) {
+		return error(context_error)
+	}
 	active_mcp_servers := app.store.session_plugin_mcp_servers(session_id)!
 	if active_mcp_servers.len > 0 {
 		if !app.try_plugin_mcp_slot() {
@@ -96,10 +100,13 @@ fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string,
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
 	for round in 0 .. max_agent_tool_rounds {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
 		if agent_context_bytes(messages) > max_agent_context_bytes {
 			return error('agent context size limit reached')
 		}
-		output := app.complete_agent_with_provider_limit(messages, tools)!
+		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools)!
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
@@ -113,6 +120,9 @@ fn (app &App) run_workspace_agent_turn(mut messages []ChatMessage, root string,
 			return error('agent tool round limit reached')
 		}
 		for call in output.tool_calls {
+			if context_error := turn_context_error(mut turn_ctx) {
+				return error(context_error)
+			}
 			if call.type != 'function' || call.id.trim_space().len == 0 || call.id.len > 200
 				|| call.function.name.len == 0 || call.function.name.len > 100
 				|| call.function.arguments.len > max_agent_tool_argument_bytes {

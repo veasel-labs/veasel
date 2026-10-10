@@ -55,6 +55,8 @@ pub:
 	headers   map[string]string
 	cwd       string
 	env       map[string]string
+pub mut:
+	plugin_name string
 }
 
 struct PluginDiagnostic {
@@ -145,6 +147,9 @@ fn load_agent_plugin(directory string) !AgentPlugin {
 	}
 	load_plugin_skills(root, mut plugin)
 	load_plugin_mcp(root, fields, mut plugin)
+	for index in 0 .. plugin.mcp_servers.len {
+		plugin.mcp_servers[index].plugin_name = plugin.manifest.name
+	}
 	return plugin
 }
 

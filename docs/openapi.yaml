@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local sessions, multi-provider chat, bounded workspace tools with durable single-file edit approval, experimental Agent Plugin skill selection, and replayable events. Workspace excerpts requested by tools are sent to the configured model provider.
+  description: Local sessions, multi-provider chat, bounded workspace tools with durable single-file edit approval, experimental Agent Plugin Skills and trusted stdio MCP tools, and replayable events. Workspace excerpts and MCP tool arguments/results are sent to the configured model provider.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -228,6 +228,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/mcp-servers:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listSessionMCPServers
+      description: Returns MCP servers explicitly trusted for this session.
+      responses:
+        '200':
+          description: Trusted MCP server identifiers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SessionPluginMCPServer' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: setSessionMCPServerTrust
+      description: Trusts or revokes a stdio MCP server for this session. A trusted server is launched on the next model turn with the Veasel process user's OS privileges.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetSessionPluginMCPServer' }
+      responses:
+        '200':
+          description: Updated trusted MCP server identifiers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SessionPluginMCPServer' }
+        '400':
+          description: Invalid request or unsupported MCP transport.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session or MCP server not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/workspace/files:
     parameters:
       - in: path
@@ -557,7 +607,7 @@ components:
           items: { $ref: '#/components/schemas/PluginSkillSummary' }
         mcp_servers:
           type: array
-          description: Validated server declarations only; no MCP process is started by this API.
+          description: Validated declarations. Only stdio servers can be trusted; a trusted server may be launched during the next model turn.
           items: { $ref: '#/components/schemas/PluginMCPServerSummary' }
         diagnostics:
           type: array
@@ -570,10 +620,13 @@ components:
         description: { type: string }
     PluginMCPServerSummary:
       type: object
-      required: [name, transport]
+      required: [name, transport, command]
       properties:
         name: { type: string }
         transport: { type: string }
+        command:
+          type: string
+          description: Executable token declared by the plugin, or a resolved package path for a ./ command; empty for other transports.
     PluginDiagnostic:
       type: object
       required: [component, message]
@@ -586,6 +639,19 @@ components:
       properties:
         plugin_name: { type: string }
         skill_name: { type: string }
+    SessionPluginMCPServer:
+      type: object
+      required: [plugin_name, server_name]
+      properties:
+        plugin_name: { type: string }
+        server_name: { type: string }
+    SetSessionPluginMCPServer:
+      type: object
+      required: [plugin_name, server_name, trusted]
+      properties:
+        plugin_name: { type: string, minLength: 1, maxLength: 64 }
+        server_name: { type: string, minLength: 1, maxLength: 256 }
+        trusted: { type: boolean }
     SetSessionPluginSkill:
       type: object
       required: [plugin_name, skill_name, enabled]

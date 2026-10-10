@@ -55,6 +55,8 @@ pub:
 	name        string
 	description string
 	parameters  ToolParameters
+	// MCP input schemas stay raw so nested JSON Schema types pass through intact.
+	raw_parameters string
 }
 
 pub struct ToolParameters {
@@ -110,7 +112,7 @@ struct OpenAITool {
 struct OpenAIFunction {
 	name        string
 	description string
-	parameters  StrictToolParameters
+	parameters  json2.Any
 }
 
 struct OpenAIResponse {
@@ -144,7 +146,7 @@ struct AnthropicRequestMessage {
 struct AnthropicTool {
 	name         string
 	description  string
-	input_schema StrictToolParameters
+	input_schema json2.Any
 }
 
 struct AnthropicResponse {
@@ -175,7 +177,7 @@ struct GeminiToolGroup {
 struct GeminiFunctionDeclaration {
 	name        string
 	description string
-	parameters  ToolParameters
+	parameters  json2.Any
 }
 
 struct GeminiGenerationConfig {
@@ -368,7 +370,7 @@ fn (provider OpenAICompatibleProvider) complete(config ModelConfig, messages []C
 			function: OpenAIFunction{
 				name:        tool.name
 				description: tool.description
-				parameters:  strict_tool_parameters(tool.parameters)
+				parameters:  provider_tool_parameters(tool)
 			}
 		}
 	}
@@ -408,7 +410,7 @@ fn (provider AnthropicProvider) complete(config ModelConfig, messages []ChatMess
 		anthropic_tools << AnthropicTool{
 			name:         tool.name
 			description:  tool.description
-			input_schema: strict_tool_parameters(tool.parameters)
+			input_schema: provider_tool_parameters(tool)
 		}
 	}
 	request := AnthropicRequest{
@@ -459,7 +461,7 @@ fn (provider GeminiProvider) complete(config ModelConfig, messages []ChatMessage
 		declarations << GeminiFunctionDeclaration{
 			name:        tool.name
 			description: tool.description
-			parameters:  tool.parameters
+			parameters:  tool_parameters_json(tool)
 		}
 	}
 	request := GeminiRequest{
@@ -582,6 +584,22 @@ fn strict_tool_parameters(parameters ToolParameters) StrictToolParameters {
 		properties:            parameters.properties
 		required:              parameters.required
 		additional_properties: false
+	}
+}
+
+fn tool_parameters_json(tool AgentToolDefinition) json2.Any {
+	if tool.raw_parameters != '' {
+		return json2.decode[json2.Any](tool.raw_parameters) or { json2.Any{} }
+	}
+	return json2.decode[json2.Any](json2.encode[ToolParameters](tool.parameters)) or { json2.Any{} }
+}
+
+fn provider_tool_parameters(tool AgentToolDefinition) json2.Any {
+	if tool.raw_parameters != '' {
+		return json2.decode[json2.Any](tool.raw_parameters) or { json2.Any{} }
+	}
+	return json2.decode[json2.Any](json2.encode[StrictToolParameters](strict_tool_parameters(tool.parameters))) or {
+		json2.Any{}
 	}
 }
 

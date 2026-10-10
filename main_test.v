@@ -1,6 +1,7 @@
 module main
 
 import os
+import json2
 import sync
 import uuid
 
@@ -39,6 +40,35 @@ fn test_provider_semaphore_enforces_its_configured_capacity() {
 	assert !slots.try_wait()
 	slots.post()
 	assert slots.try_wait()
+}
+
+fn test_plugin_mcp_semaphore_caps_concurrent_plugin_turns() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-mcp-slots-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	for _ in 0 .. max_plugin_mcp_concurrency {
+		assert app.try_plugin_mcp_slot()
+	}
+	assert !app.try_plugin_mcp_slot()
+	mut slots := app.plugin_mcp_slots
+	slots.post()
+	assert app.try_plugin_mcp_slot()
+}
+
+fn test_session_mcp_trust_limit_allows_updates_but_rejects_an_extra_server() {
+	mut active := []SessionPluginMCPServer{cap: max_session_plugin_mcp_servers}
+	for index in 0 .. max_session_plugin_mcp_servers {
+		active << SessionPluginMCPServer{
+			plugin_name: 'plugin-${index}'
+			server_name: 'server'
+		}
+	}
+	assert session_can_trust_plugin_mcp_server(active, 'plugin-0', 'server')
+	assert !session_can_trust_plugin_mcp_server(active, 'another-plugin', 'server')
 }
 
 fn test_workspace_edit_approval_is_durable_single_use_and_recovered_after_restart() {
@@ -190,6 +220,88 @@ fn test_session_plugin_skills_persist_and_emit_only_state_changes() {
 	updated_events := store.events_after(0) or { panic(err) }
 	assert updated_events.len == 3
 	assert updated_events[2].type == 'session.skill_disabled'
+}
+
+fn test_session_plugin_mcp_trust_persists_and_emits_only_state_changes() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'MCP session', directory: '/tmp/mcp' }) or {
+		panic(err)
+	}
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true) or {
+		panic(err)
+	}
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true) or {
+		panic(err)
+	}
+	assert store.session_plugin_mcp_servers(session.id) or { panic(err) } == [SessionPluginMCPServer{
+		plugin_name: 'local-tools'
+		server_name: 'workspace'
+	}]
+	events := store.events_after(0) or { panic(err) }
+	assert events.len == 2
+	assert events[1].type == 'session.mcp_server_trusted'
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', false) or {
+		panic(err)
+	}
+	assert (store.session_plugin_mcp_servers(session.id) or { panic(err) }).len == 0
+	updated_events := store.events_after(0) or { panic(err) }
+	assert updated_events.len == 3
+	assert updated_events[2].type == 'session.mcp_server_untrusted'
+}
+
+fn test_provider_tool_parameters_preserve_nested_mcp_json_schema() {
+	schema := '{"type":"object","properties":{"files":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},"required":["files"],"additionalProperties":false}'
+	tool := AgentToolDefinition{
+		name:           'mcp_review_list'
+		description:    'List review files.'
+		raw_parameters: schema
+	}
+	openai_payload := json2.encode[OpenAIRequest](OpenAIRequest{
+		model: 'test'
+		tools: [OpenAITool{
+			function: OpenAIFunction{
+				name:        tool.name
+				description: tool.description
+				parameters:  provider_tool_parameters(tool)
+			}
+		}]
+	})
+	assert openai_payload.contains('"items":{"type":"object"')
+	assert openai_payload.contains('"required":["path"]')
+	assert !openai_payload.contains('"parameters":"{')
+	assert json2.encode[json2.Any](provider_tool_parameters(tool)).contains('"items"')
+	anthropic_payload := json2.encode[AnthropicRequest](AnthropicRequest{
+		tools: [AnthropicTool{
+			name:         tool.name
+			description:  tool.description
+			input_schema: provider_tool_parameters(tool)
+		}]
+	})
+	assert anthropic_payload.contains('"input_schema":{"type":"object"')
+	assert anthropic_payload.contains('"items":{"type":"object"')
+	gemini_payload := json2.encode[GeminiRequest](GeminiRequest{
+		tools: [GeminiToolGroup{
+			function_declarations: [GeminiFunctionDeclaration{
+				name:        tool.name
+				description: tool.description
+				parameters:  tool_parameters_json(tool)
+			}]
+		}]
+	})
+	assert gemini_payload.contains('"parameters":{"type":"object"')
+	assert gemini_payload.contains('"items":{"type":"object"')
+}
+
+fn test_plugin_mcp_provider_name_is_bounded_and_namespaced() {
+	first := plugin_mcp_provider_name('review-tools', 'local.server', 'read-files')
+	second := plugin_mcp_provider_name('review-tools', 'local.server', 'write-files')
+	assert first.starts_with('mcp_')
+	assert first.len <= 64
+	assert first != second
+	for character in first {
+		assert character.is_alnum() || character in [`_`, `-`]
+	}
 }
 
 fn test_session_title_is_not_interpreted_as_sql() {

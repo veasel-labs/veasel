@@ -33,7 +33,7 @@ type PluginCatalog = {
   plugins: Array<{
     name: string
     skills: Array<{ name: string; description: string }>
-    mcp_servers: Array<{ name: string; transport: string; command: string }>
+    mcp_servers: Array<{ name: string; transport: string; command: string; url_origin: string; header_count: number; header_names: string[] }>
   }>
 }
 
@@ -318,7 +318,7 @@ async function sendMessage(value: string) {
     return
   }
   if (content.startsWith("/mcp ")) {
-    skillNotice = "Use /mcp to list servers, then /mcp trust <plugin>/<server> or /mcp untrust <plugin>/<server>. Trust runs stdio code with your account's privileges."
+    skillNotice = "Use /mcp to list servers, then /mcp trust <plugin>/<server> or /mcp untrust <plugin>/<server>. Review the stdio command or remote origin before trusting a server."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -436,13 +436,19 @@ async function showMcpServers() {
     const lines = catalog.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
       const key = `${plugin.name}/${server.name}`
       const command = server.command ? `\n  command: ${safeTerminalText(server.command)}` : ""
-      const support = server.transport === "stdio" ? "stdio" : `${server.transport} (unsupported)`
-      return `${trusted.has(key) ? "● trusted" : "○ available"}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}`
+      const endpoint = server.url_origin ? `\n  endpoint: ${safeTerminalText(server.url_origin)}` : ""
+      const headers = server.header_count
+        ? `\n  configured headers: ${server.header_names.map(safeTerminalText).join(", ")}`
+        : ""
+      const support = ["stdio", "streamable-http"].includes(server.transport)
+        ? server.transport
+        : `${server.transport} (unsupported)`
+      return `${trusted.has(key) ? "● trusted" : "○ available"}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}${endpoint}${headers}`
     }))
     const inventory = lines.length > 0
       ? lines.join("\n\n")
       : "No Agent Plugin MCP servers found. Add a package with mcp.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
-    skillNotice = `AGENT PLUGIN MCP SERVERS\n${inventory}\n\nTrust with /mcp trust <plugin>/<server>; revoke with /mcp untrust <plugin>/<server>. Only stdio servers can be trusted. Trust starts plugin code on the next model turn with your account's OS privileges; it may access files and network available to your user. MCP tool arguments and results are sent to your configured model provider. Review the package before trusting it.`
+    skillNotice = `AGENT PLUGIN MCP SERVERS\n${inventory}\n\nTrust with /mcp trust <plugin>/<server>; revoke with /mcp untrust <plugin>/<server>. Stdio servers run with your OS privileges and can access files and network available to your user. Streamable HTTP servers receive configured headers and MCP tool inputs only at the displayed origin; redirects are refused. MCP tool inputs and results are sent to your configured model provider. Review each package and endpoint before trusting it.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
@@ -569,7 +575,7 @@ async function setMcpServerTrust(trusted: boolean, pluginName: string, serverNam
     })
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     skillNotice = trusted
-      ? `Trusted ${safeTerminalText(pluginName)}/${safeTerminalText(serverName)} for this session. Its stdio process starts on the next model turn; it can use the files and network available to your account. Use /mcp to review or revoke trust.`
+      ? `Trusted ${safeTerminalText(pluginName)}/${safeTerminalText(serverName)} for this session. It connects or launches on the next model turn. Use /mcp to review the command or remote origin and revoke trust.`
       : `Revoked MCP trust for ${safeTerminalText(pluginName)}/${safeTerminalText(serverName)}. It will not start on future model turns.`
     renderChat(chatMessages)
   } catch (error) {

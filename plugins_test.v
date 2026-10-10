@@ -240,6 +240,15 @@ fn test_agent_plugin_mcp_config_isolated_and_transport_bounded() {
 	assert diagnostics.len == 3
 }
 
+fn test_plugin_mcp_catalog_redacts_remote_endpoint_path_and_query() {
+	assert plugin_mcp_url_origin('HTTPS://Tools.Example:8443/private/mcp?token=secret') == 'https://tools.example:8443'
+	assert plugin_mcp_url_origin('not-a-url') == ''
+	assert plugin_mcp_header_names({
+		'X-Zebra':       'second-secret'
+		'Authorization': 'first-secret'
+	}) == ['Authorization', 'X-Zebra']
+}
+
 fn test_plugin_placeholder_expansion_is_single_pass() {
 	root_token := '$' + '{PLUGIN_ROOT}'
 	data_token := '$' + '{PLUGIN_DATA}'

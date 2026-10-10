@@ -136,9 +136,19 @@ fn (mut transport PluginMCPTransport) close() {
 	transport.process.close()
 }
 
-fn new_plugin_mcp_client(plugin_root string, plugin_data string, server PluginMCPServer) !(mcp.Client, PluginMCPTransport) {
-	transport := start_plugin_mcp_transport(plugin_root, plugin_data, server)!
-	return mcp.new_client(transport, mcp.ClientConfig{}), transport
+fn new_plugin_mcp_client(plugin_root string, plugin_data string, server PluginMCPServer) !mcp.Client {
+	match server.transport {
+		'stdio' {
+			transport := start_plugin_mcp_transport(plugin_root, plugin_data, server)!
+			return mcp.new_client(transport, mcp.ClientConfig{})
+		}
+		'streamable-http' {
+			return new_plugin_mcp_http_client(server)
+		}
+		else {
+			return error('unsupported Agent Plugin MCP server')
+		}
+	}
 }
 
 fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefinition, map[string]PluginMCPToolBinding, []PluginMCPConnection) {
@@ -159,7 +169,7 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 			continue
 		}
 		plugin_data := os.join_path(app.plugin_data_directory, selected.plugin_name)
-		mut client, _ := new_plugin_mcp_client(plugin_root, plugin_data, server) or {
+		mut client := new_plugin_mcp_client(plugin_root, plugin_data, server) or {
 			eprintln('veasel: trusted MCP server could not be started')
 			continue
 		}

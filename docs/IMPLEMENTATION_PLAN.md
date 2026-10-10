@@ -74,10 +74,10 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
   persist per-session activation, and include bounded instructions as untrusted
   model context. This is a partial integration, not a conformance claim.
-- [x] Persist per-session stdio MCP trust, launch trusted servers with a
-  sanitized process environment, discover bounded tools, route MCP calls through
-  OpenAI-compatible, Anthropic, and Gemini tool payloads, and keep nested JSON
-  Schemas intact. Streamable HTTP and the full conformance suite remain open.
+- [x] Persist per-session MCP trust, launch trusted stdio servers or connect
+  to trusted Streamable HTTP endpoints with redirects and retries disabled,
+  discover bounded tools, route calls through provider adapters, and keep nested
+  JSON Schemas intact. Full conformance suite remains open.
 - [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
   compatibility report before claiming support.
 - [ ] Document and test the Agent Toolkit integration contract.

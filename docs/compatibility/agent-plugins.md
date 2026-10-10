@@ -11,8 +11,8 @@ is a secondary comparison source and describes itself as a demonstration
 library, not a production dependency.
 **MCP protocol revision:** [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)
 **Veasel status:** experimental local discovery, per-session Skills activation,
-and per-session trusted MCP stdio tools are implemented. Streamable HTTP remains
-metadata-only; the full Agent Plugins v1.0.0 conformance gate remains open.
+and per-session trusted MCP stdio and Streamable HTTP tools are implemented.
+The full Agent Plugins v1.0.0 conformance gate remains open.
 
 The v1 portable package contains a root `plugin.json` and optional components
 in the fixed `skills/` and `mcp.json` locations. Plugin directory installation,
@@ -47,11 +47,11 @@ portable-format requirements, and will be exercised in tests.
 | Fixed discovery | Missing locations are valid. Discover only immediate `skills/<child>/SKILL.md` and root `mcp.json`; validate expected filesystem kinds. | Verified for absent locations, immediate Skill discovery, nested decoys, and invalid component filesystem kinds. Platform-specific junction behavior remains unverified. | `plugins_test.v`: `test_agent_plugin_loads_manifest_and_shallow_skills`, `test_agent_plugin_component_discovery_is_optional_and_isolated`, and `test_plugin_paths_reject_traversal`. |
 | Agent Skills | Validate YAML frontmatter and required/optional fields per Agent Skills; require name to match parent directory; skip invalid skill alone; preserve optional files and directories. | Required/optional field types, supported field set, name grammar, length limits, and name/directory match are validated; Unicode lowercase letters/numbers are accepted. Full fixture matrix remains open. | `plugins_test.v`: `test_agent_skill_frontmatter_enforces_supported_fields_and_limits` and `test_agent_skill_names_follow_unicode_name_rules`. Add pinned official fixtures, optional-resource preservation tests, and skill-level failure-isolation evidence; implement `allowed-tools` only as a restriction intersected with Veasel/user policy, never as self-granted authority. |
 | MCP document | Read only root `mcp.json`; validate canonical schema version equals `plugin.json`; closed top-level fields and independent server entries. | Partial implementation; unverified | Official schema fixtures, mismatched version, unknown fields, per-entry isolation. |
-| MCP transports | Support stdio and Streamable HTTP; also evaluate optional legacy HTTP+SSE. Use declared transport without silent fallback. | Stdio is implemented; Streamable HTTP remains metadata-only. V `vlib/mcp` provides both clients, but its current HTTP adapter does not expose redirect policy and uses `http.fetch` defaults that permit redirects. | End-to-end fixture servers for every claimed transport, initialization/handshake, tools, cancellation, and clean shutdown. Before passing configured plugin headers, use a transport adapter that disables redirects or otherwise proves they cannot cross origins. |
+| MCP transports | Support stdio and Streamable HTTP; also evaluate optional legacy HTTP+SSE. Use declared transport without silent fallback. | Stdio uses the `vlib/mcp` 2025-11-25 handshake. Streamable HTTP starts with `vlib/mcp` 2026-07-28 stateless discovery and request metadata, and falls back when a server reports an older supported revision. The Veasel adapter over `vlib/net/http` refuses redirects/retries, validates TLS, bounds responses, and preserves JSON-RPC protocol errors for negotiation. Legacy HTTP+SSE remains unsupported. | `plugin_mcp_http_transport_test.v` covers stateless discovery, request headers, downgrade to 2025-11-25, JSON and SSE responses, tools/list, tools/call, configured headers and redirect refusal. Add official conformance fixtures, GET notification stream behavior, authorization flow, cancellation and further lifecycle cases. |
 | MCP stdio config | One executable token; bare name or contained `./` package path; no expansion in command; default cwd is plugin root; strict cwd roots and containment. | Implemented for direct process launch without a shell; bounded stdio framing/response time and paginated tool discovery. Limits are 16 pages per server and 64 tools per session; further pages are logged and omitted. | `plugin_mcp_transport_test.v` covers initialize, two tool-list pages, same-turn state, environment/cwd and shutdown on CI; malformed/oversized response and timeout cases remain open. |
 | MCP variables and environment | Set absolute `PLUGIN_ROOT` and persistent per-install `PLUGIN_DATA`; expand exact placeholders once in args/env/cwd only; reserved env names invalid; secrets are not portable. | Implemented for stdio with a sanitized platform environment and per-plugin persistent data directory. | Expansion fixtures, permission checks, update-persistence, and Windows environment cases remain open. |
-| MCP HTTP config | Absolute HTTP(S) URL; no userinfo/fragment; HTTPS off-loopback; literal validated headers; reject case-insensitive duplicates; no redirects forwarding configured headers across origins. | Partial URL/header validation; no HTTP client runtime | URL/header matrix, loopback literal checks, redirect-origin test, no credential leakage. |
-| Failure isolation | Invalid MCP config disables only MCP; invalid entries/unsupported transports/connection failures skip that server; independent skills still load. | Verified for component/config isolation; trusted stdio startup, initialize, and tool listing failures skip that server. | `plugins_test.v`: `test_agent_plugin_component_discovery_is_optional_and_isolated` and `test_agent_plugin_mcp_config_isolated_and_transport_bounded`; runtime process fixtures remain open. |
+| MCP HTTP config | Absolute HTTP(S) URL; no userinfo/fragment; HTTPS off-loopback; literal validated headers; reject case-insensitive duplicates; no redirects forwarding configured headers across origins. | URL/header validation is active. Catalog exposes only the parsed origin, never path/query values. Redirects are refused, TLS verification is enabled for HTTPS, and retries are disabled to avoid repeating tool side effects. | Expand the URL/header matrix and exercise cross-origin redirect refusal, invalid TLS, endpoint authentication, and proxy behavior. |
+| Failure isolation | Invalid MCP config disables only MCP; invalid entries/unsupported transports/connection failures skip that server; independent skills still load. | Verified for component/config isolation; trusted stdio and HTTP connection, initialization, and tool-list failures skip that server. | `plugins_test.v`: `test_agent_plugin_component_discovery_is_optional_and_isolated` and `test_agent_plugin_mcp_config_isolated_and_transport_bounded`; transport runtime failure fixtures remain open. |
 | Client extension | Own and document reverse-domain `com.veasel.code`; read only its exact top-level directory and object-valued manifest namespace; ignore every unknown namespace. | Not implemented | Fixtures for own extension behavior and opaque ignored namespace values. |
 | User control | The standard leaves permissions and sandboxing to each client. Veasel must display provenance, trust state and exact MCP effects before allowing execution. | Per-session trust/revocation, process lifecycle, action warning and provider-data disclosure are implemented. Processes run with the current user privileges and are not sandboxed. | API route tests, process lifecycle tests, and stronger effect previews remain open. |
 | Veasel plugin management (extension beyond v1) | Add/remove a local plugin directory; enable/disable components independently; display metadata, source path, unsupported items, and trust state; preserve its dedicated data directory across updates. | Not implemented | TUI and API flows, durable registry state, remove/re-enable behavior, and upgrade data-preservation tests. |
@@ -65,16 +65,13 @@ Agent Skills frontmatter, `mcp` for MCP client transports and lifecycle, and
 component discovery, permission policy, and MCP connections behind typed V
 interfaces; do not build shell-command parsing or a second MCP wire stack.
 
-The stdlib MCP client currently documents stdio and Streamable HTTP support,
-but its HTTP adapter does not expose redirect control while `net.http` follows
-redirects by default. Since plugin MCP headers are origin-bound, Veasel must
-use a no-redirect adapter or a verified upstream fix before sending configured
-headers. Do not use `mcp.connect_http` with plugin-provided headers as-is.
-Agent Plugins makes legacy HTTP+SSE optional, so Veasel will not claim support
-for that transport until a fixture proves the complete client lifecycle. A
-conformant plugin client still has to implement Skills or MCP; Veasel targets
-both. Veasel currently runs stdio only; it will add Streamable HTTP after
-origin-bound header and redirect controls are verified.
+The stdlib MCP HTTP adapter does not expose redirect policy. Veasel therefore
+uses `net.http.fetch` directly with `allow_redirect: false`, `validate: true`
+for HTTPS, bounded body reads and `max_retries: 1` (one attempt). `vlib/mcp`
+still handles JSON-RPC, initialization, protocol negotiation and lifecycle.
+Configured headers never leave the declared origin because all redirects fail.
+Agent Plugins makes legacy HTTP+SSE optional, so Veasel does not claim that
+transport. This experimental implementation is not a full conformance claim.
 
 ## Current implementation boundary
 
@@ -82,15 +79,17 @@ The API returns plugin metadata from `GET /v1/plugins`. Session Skills are
 selected with `GET/POST /v1/sessions/{id}/skills`; the TUI exposes `/skills`
 and `/skill on|off <plugin>/<skill>`. MCP servers are listed with `/mcp` and
 trusted per session with `/mcp trust <plugin>/<server>`; revoke with
-`/mcp untrust <plugin>/<server>`. Only stdio servers currently run. Their MCP
+`/mcp untrust <plugin>/<server>`. Stdio and Streamable HTTP servers run; other
+transports are skipped. Their MCP
 tools are discovered for each turn and routed through the selected model
 provider. Each trusted server stays available for that model turn and closes
-afterward; only `PLUGIN_DATA` persists between turns. Processes run with the
-current user privileges without an OS sandbox. Tool arguments and results are
+afterward; only stdio `PLUGIN_DATA` persists between turns. Stdio processes run
+with the current user privileges without an OS sandbox. Tool arguments and results are
 sent to the configured provider. Selection is persisted and produces session
 events. Skill instructions are bounded, reloaded when composing each turn,
 and inserted into explicitly untrusted system context. The API does not expose
-instruction bodies through the catalog. `VEASEL_PLUGIN_DIR` overrides the
+instruction bodies or configured header values through the catalog; remote
+origins and header counts are shown for informed trust. `VEASEL_PLUGIN_DIR` overrides the
 default `$VEASEL_DATA_DIR/plugins` directory.
 
 Each session can trust at most eight MCP servers. The runtime caps MCP-enabled

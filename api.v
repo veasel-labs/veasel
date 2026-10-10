@@ -40,6 +40,16 @@ pub:
 	enabled     bool
 }
 
+struct WorkspaceFileInput {
+pub:
+	path string
+}
+
+struct WorkspaceSearchInput {
+pub:
+	query string
+}
+
 struct ChatExchange {
 pub:
 	messages []ChatTurn
@@ -138,7 +148,7 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 @['/v1/capabilities'; get]
 pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay',
-		'plugins.catalog', 'sessions.skills']
+		'plugins.catalog', 'sessions.skills', 'workspace.files', 'workspace.read', 'workspace.search']
 	if configured_model() != none {
 		features << 'chat.complete'
 	}
@@ -146,6 +156,60 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		api_version: 'v1'
 		features:    features
 	})
+}
+
+@['/v1/sessions/:id/workspace/files'; get]
+pub fn (app &App) list_workspace_files(mut ctx Context, id string) veb.Result {
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	files := workspace_files(session.directory, max_workspace_list_results) or {
+		return json_server_error(mut ctx, 'Unable to list workspace files')
+	}
+	return ctx.json(files)
+}
+
+@['/v1/sessions/:id/workspace/file'; post]
+pub fn (app &App) read_workspace_file(mut ctx Context, id string) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'Workspace file request exceeds the size limit')
+	}
+	input := json2.decode[WorkspaceFileInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected a JSON object with a path field')
+	}
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	content := workspace_file(session.directory, input.path) or {
+		return json_request_error(mut ctx, 'Workspace path is invalid or unavailable')
+	}
+	return ctx.json(content)
+}
+
+@['/v1/sessions/:id/workspace/search'; post]
+pub fn (app &App) search_workspace(mut ctx Context, id string) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'Workspace search request exceeds the size limit')
+	}
+	input := json2.decode[WorkspaceSearchInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected a JSON object with a query field')
+	}
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	result := workspace_search(session.directory, input.query) or {
+		return json_request_error(mut ctx, 'Search query is invalid')
+	}
+	return ctx.json(result)
 }
 
 @['/v1/plugins'; get]

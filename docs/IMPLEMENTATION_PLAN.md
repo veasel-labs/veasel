@@ -50,7 +50,8 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
 - [ ] Propagate request cancellation and deadlines through queued turns and provider transports.
 - [ ] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded tool loop.
-- [ ] Add repository list/read/search tools with canonical-root and symlink containment; treat file content as untrusted.
+- [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
+- [ ] Connect repository tools to provider-native calls; treat file content as untrusted and enforce per-tool limits in the bounded tool loop.
 - [ ] Add patch review and explicit, durable approval before writes or shell execution.
 - [ ] Deliver streaming model responses and cancellation through the API, event store, and TUI.
 - [ ] Complete an end-to-end coding task against a disposable fixture repository, including diff review, tests, and a denied unapproved effect.

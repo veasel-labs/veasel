@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local session, multi-provider chat, Agent Plugin skill selection, and event API. Repository tools and code changes are not yet implemented.
+  description: Local session, multi-provider chat, Agent Plugin skill selection, bounded read-only workspace inspection, and event API. Workspace inspection is exposed to API clients but is not yet connected to provider tool calling.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -222,6 +222,86 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/workspace/files:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listWorkspaceFiles
+      description: Lists at most 500 regular files beneath the session workspace. Common generated and dependency directories and all symbolic links are skipped.
+      responses:
+        '200':
+          description: Sorted relative workspace paths; truncated is true if any configured listing limit was reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceFileList' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/file:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: readWorkspaceFile
+      description: Reads one text file of at most 512000 bytes after resolving its path beneath the canonical session root. Outside-root symlinks, binary files, and parent traversal are rejected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceFileInput' }
+      responses:
+        '200':
+          description: Relative file path and UTF-8 text content.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceFileContent' }
+        '400':
+          description: Invalid, oversized, binary, or out-of-root path.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/search:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: searchWorkspace
+      description: Searches literal, case-sensitive text beneath the session root, with bounded file, byte, and result counts. Binary and oversized files are skipped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceSearchInput' }
+      responses:
+        '200':
+          description: Matching paths, one-based line numbers, and bounded line excerpts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceSearchResult' }
+        '400':
+          description: Invalid or oversized search query.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/chat/completions:
     post:
       operationId: createChatCompletion
@@ -362,6 +442,47 @@ components:
         plugin_name: { type: string, minLength: 1 }
         skill_name: { type: string, minLength: 1 }
         enabled: { type: boolean }
+    WorkspaceFileList:
+      type: object
+      required: [files, truncated]
+      properties:
+        files:
+          type: array
+          maxItems: 500
+          items: { type: string }
+        truncated: { type: boolean }
+    WorkspaceFileInput:
+      type: object
+      required: [path]
+      properties:
+        path: { type: string, minLength: 1, maxLength: 4096 }
+    WorkspaceFileContent:
+      type: object
+      required: [path, content]
+      properties:
+        path: { type: string }
+        content: { type: string, maxLength: 512000 }
+    WorkspaceSearchInput:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1, maxLength: 256 }
+    WorkspaceSearchMatch:
+      type: object
+      required: [path, line, text]
+      properties:
+        path: { type: string }
+        line: { type: integer, minimum: 1 }
+        text: { type: string, maxLength: 2000 }
+    WorkspaceSearchResult:
+      type: object
+      required: [matches, truncated]
+      properties:
+        matches:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/WorkspaceSearchMatch' }
+        truncated: { type: boolean }
     CreateSession:
       type: object
       required: [title, directory]

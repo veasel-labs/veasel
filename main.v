@@ -53,7 +53,11 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${product_version}\n\nCommands:\n  serve    Start the local V backend\n  tui      Start the terminal client (Bun required)\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR')
+		println('Veasel Code ${product_version}\n\nCommands:\n  serve    Start the local V backend\n  tui      Start the terminal client (Bun required)\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel serve\n  veasel tui\n  veasel --version')
+		return
+	}
+	if command in ['--version', '-v', 'version'] {
+		println('Veasel Code ${product_version}')
 		return
 	}
 	match command {

@@ -41,6 +41,16 @@ type SessionPluginSkill = {
   skill_name: string
 }
 
+type WorkspaceEditSummary = {
+  id: string
+  path: string
+  status: "pending" | "applying" | "applied" | "rejected" | "conflict" | "interrupted"
+  created_at: string
+  updated_at: string
+}
+
+type WorkspaceEditProposal = WorkspaceEditSummary & { session_id: string; diff: string }
+
 const port = process.env.VEASEL_PORT ?? "4097"
 const configuredApi = process.env.VEASEL_API_URL ?? `http://127.0.0.1:${port}`
 const apiUrl = new URL(configuredApi)
@@ -166,7 +176,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new session   /skills list   /skill on|off plugin/skill   ↑/↓ navigate   q quit",
+  content: "n new session   /skills   /patches   /patch show|approve|reject <id>   ↑/↓ navigate   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -183,6 +193,7 @@ let chatInput: InputRenderable | undefined
 let sendingMessage = false
 let chatMessages: ChatTurn[] = []
 let skillNotice = ""
+const reviewedEditIds = new Set<string>()
 
 function renderSessions() {
   if (sessions.length === 0) {
@@ -232,7 +243,7 @@ async function createSession(title: string) {
 function renderChat(messages: ChatTurn[]) {
   chatMessages = messages
   const heading = activeSession
-    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nWhen Veasel uses read-only workspace tools, returned file excerpts are sent to your configured model provider.\n\n`
+    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nFile excerpts requested by Veasel are sent to your configured model provider. Proposed replacements are stored locally until you review and approve them.\n\n`
     : ""
   sessionDetail.content = safeTerminalText(heading)
     + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0
@@ -250,17 +261,19 @@ function safeTerminalText(value: string) {
 async function openSession(session: Session) {
   activeSession = session
   skillNotice = ""
+  reviewedEditIds.clear()
   renderChat([])
   const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(session.id)}/messages`, {
     signal: controller.signal,
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   renderChat(await response.json() as ChatTurn[])
+  await notifyPendingWorkspaceEdits()
   if (!chatInput) {
     const input = new InputRenderable(renderer, {
       id: "chat-composer",
       width: "100%",
-      placeholder: "Ask Veasel to explain or change something…",
+      placeholder: "Ask Veasel to explain or propose a workspace change…",
       backgroundColor: "#202832",
       focusedBackgroundColor: "#293640",
       textColor: "#e5e7eb",
@@ -281,6 +294,33 @@ async function sendMessage(value: string) {
   if (!content || !activeSession || !chatInput || sendingMessage) return
   if (content === "/skills") {
     await showSkills()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content === "/patches") {
+    await showWorkspaceEdits()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const editCommand = /^\/patch\s+(approve|reject)\s+([0-9a-f-]{36})$/.exec(content)
+  if (editCommand) {
+    await actOnWorkspaceEdit(editCommand[1] === "approve" ? "approve" : "reject", editCommand[2])
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const showEditCommand = /^\/patch\s+show\s+([0-9a-f-]{36})$/.exec(content)
+  if (showEditCommand) {
+    await showWorkspaceEdit(showEditCommand[1])
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/patch ")) {
+    skillNotice = "Use /patches to find an ID, /patch show <id> to inspect its diff, then approve or reject it."
+    renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -318,6 +358,7 @@ async function sendMessage(value: string) {
     })
     if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
     renderChat(await historyResponse.json() as ChatTurn[])
+    await notifyPendingWorkspaceEdits()
     status.content = `● ${exchange.provider}  ·  ${exchange.model}`
     status.fg = "#a7f3d0"
   } catch (error) {
@@ -351,6 +392,91 @@ async function showSkills() {
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load plugin skills: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function showWorkspaceEdits() {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const edits = await response.json() as WorkspaceEditSummary[]
+    skillNotice = edits.length > 0
+      ? `WORKSPACE EDIT PROPOSALS\n${edits.map((edit) => {
+        const commands = edit.status === "pending"
+          ? `\nInspect diff: /patch show ${edit.id}`
+          : ""
+        const recovery = edit.status === "interrupted"
+          ? "\nApplication stopped unexpectedly. Inspect the file manually; Veasel will not replay this edit."
+          : ""
+        return `${edit.status.toUpperCase()}  ${safeTerminalText(edit.path)}\n${edit.id}${commands}${recovery}`
+      }).join("\n\n")}`
+      : "No workspace edit proposals. Ask Veasel to make a change; it will show a diff for your review before writing any file."
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load workspace edit proposals: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function notifyPendingWorkspaceEdits() {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) return
+    const edits = await response.json() as WorkspaceEditSummary[]
+    const pending = edits.filter((edit) => edit.status === "pending")
+    if (pending.length === 0) return
+    skillNotice = `${pending.length} workspace edit proposal${pending.length === 1 ? "" : "s"} need your review. Type /patches to inspect them. No files have changed.`
+    renderChat(chatMessages)
+  } catch {
+    // Keep chat usable when the optional proposal notification cannot be loaded.
+  }
+}
+
+async function showWorkspaceEdit(editId: string) {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits/${editId}`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const edit = await response.json() as WorkspaceEditProposal
+    if (edit.status === "pending") reviewedEditIds.add(edit.id)
+    skillNotice = `REVIEW WORKSPACE EDIT  /  ${edit.status.toUpperCase()}\n${safeTerminalText(edit.path)}\n${safeTerminalText(edit.diff)}${edit.status === "pending" ? `\nAfter inspecting the diff, type /patch approve ${edit.id} or /patch reject ${edit.id}.` : ""}`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load workspace edit diff: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function actOnWorkspaceEdit(action: "approve" | "reject", editId: string) {
+  if (!activeSession) return
+  if (!reviewedEditIds.has(editId)) {
+    skillNotice = `Inspect this proposal first with /patch show ${editId}.`
+    renderChat(chatMessages)
+    return
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits/${editId}/${action}`, {
+      method: "POST",
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const result = await response.json() as { status: string }
+    reviewedEditIds.delete(editId)
+    skillNotice = action === "approve" && result.status === "applied"
+      ? `Applied the reviewed workspace edit (${editId}). Use /patches to inspect the outcome.`
+      : `Rejected the workspace edit (${editId}). Use /patches to review remaining proposals.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not ${action} workspace edit: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

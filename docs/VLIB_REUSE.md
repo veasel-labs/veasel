@@ -56,3 +56,10 @@ The current foundation uses `veb`, `veb.sse`, `json2`, `db.sqlite`, `os`,
 `sync`, `uuid`, `strconv`, `time`, `yaml` and `encoding/utf8`. The next
 tool/provider/job milestones should first evaluate the modules above instead
 of creating replacement implementations.
+
+Workspace edit proposals use `arrays.diff` for unified review output,
+`crypto.sha256` plus `encoding.hex` to reject stale file snapshots, `encoding/utf8`
+to validate replacement content, and `os` path/file operations for workspace
+confinement and replacement. Proposal and approval states are stored in SQLite
+transactions; interrupted applications are surfaced for inspection and are
+never replayed automatically.

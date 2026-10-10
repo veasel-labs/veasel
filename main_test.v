@@ -41,6 +41,66 @@ fn test_provider_semaphore_enforces_its_configured_capacity() {
 	assert slots.try_wait()
 }
 
+fn test_workspace_edit_approval_is_durable_single_use_and_recovered_after_restart() {
+	root := os.join_path(os.temp_dir(), 'veasel-edit-store-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	database := os.join_path(root, 'veasel.sqlite')
+	workspace_file := os.join_path(root, 'existing.v')
+	os.write_file(workspace_file, 'original\n') or { panic(err) }
+	mut store := open_store(database) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'Edit approval', directory: root }) or {
+		panic(err)
+	}
+	draft := WorkspaceEditDraft{
+		path:          'existing.v'
+		expected_hash: workspace_content_hash('original\n')
+		content:       'module fixture\n'
+		diff:          '-original\n+module fixture\n'
+		create_file:   false
+	}
+	proposal := store.create_workspace_edit(session.id, draft) or { panic(err) }
+	assert proposal.status == 'pending'
+	assert proposal.diff == '-original\n+module fixture\n'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
+	assert workspace_edit_review_required(mut store, session.id, proposal.id)
+	reviewed := store.review_workspace_edit(session.id, proposal.id) or { panic(err) }
+	assert reviewed.status == 'pending'
+	applying := store.begin_workspace_edit(session.id, proposal.id) or { panic(err) }
+	assert applying.status == 'applying'
+	assert workspace_edit_second_approval_rejected(mut store, session.id, proposal.id)
+	store.close() or { panic(err) }
+	os.rm(workspace_file) or { panic(err) }
+	backup := os.join_path(root, '.veasel-edit-${proposal.id}.bak')
+	os.write_file(backup, 'original\n') or { panic(err) }
+	mut recovered_store := open_store(database) or { panic(err) }
+	recovered := recovered_store.workspace_edits(session.id) or { panic(err) }
+	assert recovered.len == 1
+	assert recovered[0].status == 'interrupted'
+	assert os.read_file(workspace_file) or { panic(err) } == 'original\n'
+	assert !os.exists(backup)
+	assert workspace_edit_second_approval_rejected(mut recovered_store, session.id, proposal.id)
+	recovered_store.close() or { panic(err) }
+	os.rm(workspace_file) or { panic(err) }
+	os.write_file(backup, 'original\n') or { panic(err) }
+	mut retried_store := open_store(database) or { panic(err) }
+	defer { retried_store.close() or {} }
+	assert os.read_file(workspace_file) or { panic(err) } == 'original\n'
+	assert !os.exists(backup)
+}
+
+fn workspace_edit_review_required(mut store Store, session_id string, id string) bool {
+	_ := store.begin_workspace_edit(session_id, id) or {
+		return err.msg().contains('diff has not been reviewed')
+	}
+	return false
+}
+
+fn workspace_edit_second_approval_rejected(mut store Store, session_id string, id string) bool {
+	_ := store.begin_workspace_edit(session_id, id) or { return err.msg().contains('not awaiting approval') }
+	return false
+}
+
 fn test_app_rejects_provider_work_when_all_slots_are_busy() {
 	store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

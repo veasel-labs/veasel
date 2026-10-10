@@ -69,6 +69,74 @@ fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 		'search query')
 }
 
+fn test_workspace_edit_is_diffed_confined_and_stale_safe() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-edit-${uuid.new_v4().str()}')
+	external := os.join_path(os.temp_dir(), 'veasel-workspace-edit-external-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'src')) or { panic(err) }
+	os.mkdir_all(external) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(external) or {}
+	}
+	path := os.join_path(root, 'src', 'main.v')
+	os.write_file(path, 'module fixture\nfn main() {}\n') or { panic(err) }
+	$if !windows {
+		os.chmod(path, 0o640) or { panic(err) }
+	}
+	os.write_file(os.join_path(external, 'secret'), 'outside') or { panic(err) }
+	os.symlink(external, os.join_path(root, 'linked')) or { panic(err) }
+	draft := prepare_workspace_edit(root, 'src/main.v', 'module fixture\nfn main() { println(1) }\n') or {
+		panic(err)
+	}
+	assert draft.diff.contains('-fn main() {}')
+	assert draft.diff.contains('+fn main() { println(1) }')
+	assert !draft.create_file
+	assert draft.expected_hash == workspace_content_hash('module fixture\nfn main() {}\n')
+	new_draft := prepare_workspace_edit(root, 'src/new.v', 'module fixture\n') or { panic(err) }
+	assert new_draft.create_file
+	assert new_draft.diff.contains('+module fixture')
+	newline_draft := prepare_workspace_edit(root, 'src/main.v', 'module fixture\nfn main() {}') or {
+		panic(err)
+	}
+	assert newline_draft.diff.contains('Line ending changes:')
+	assert newline_draft.diff.contains('- line 2: LF')
+	assert newline_draft.diff.contains('+ line 2: no line ending')
+	crlf_draft := prepare_workspace_edit(root, 'src/main.v', 'module fixture\r\nfn main() {}\r\n') or {
+		panic(err)
+	}
+	assert crlf_draft.diff.contains('- line 1: LF')
+	assert crlf_draft.diff.contains('+ line 1: CRLF')
+	assert workspace_edit_rejected(root, '../outside.txt')
+	assert workspace_edit_rejected(root, 'linked/secret')
+	assert workspace_edit_rejected(root, '.git/config')
+	assert workspace_edit_rejected(root, 'src/hidden\x1b[31m.v')
+	assert workspace_edit_content_rejected(root, 'src/main.v', 'module fixture\n\x1b[31mfn main() {}\n')
+
+	edit := StoredWorkspaceEdit{
+		id:            uuid.new_v4().str()
+		path:          draft.path
+		expected_hash: draft.expected_hash
+		content:       draft.content
+		diff:          draft.diff
+		status:        'applying'
+	}
+	apply_workspace_edit(root, edit) or { panic(err) }
+	assert os.read_file(path) or { panic(err) } == draft.content
+	$if !windows {
+		info := os.stat(path) or { panic(err) }
+		assert int(info.mode & 0o777) == 0o640
+	}
+	stale := StoredWorkspaceEdit{
+		id:            uuid.new_v4().str()
+		path:          draft.path
+		expected_hash: draft.expected_hash
+		content:       'stale write\n'
+		diff:          ''
+		status:        'applying'
+	}
+	assert workspace_edit_apply_rejected(root, stale)
+}
+
 fn workspace_file_error_contains(root string, path string, expected string) bool {
 	_ := workspace_file(root, path) or { return err.msg().contains(expected) }
 	return false
@@ -81,5 +149,20 @@ fn workspace_files_error_contains(root string, limit int, expected string) bool 
 
 fn workspace_search_error_contains(root string, query string, expected string) bool {
 	_ := workspace_search(root, query) or { return err.msg().contains(expected) }
+	return false
+}
+
+fn workspace_edit_rejected(root string, path string) bool {
+	_ := prepare_workspace_edit(root, path, 'proposed content\n') or { return true }
+	return false
+}
+
+fn workspace_edit_apply_rejected(root string, edit StoredWorkspaceEdit) bool {
+	apply_workspace_edit(root, edit) or { return err.msg().contains('changed after review') }
+	return false
+}
+
+fn workspace_edit_content_rejected(root string, path string, content string) bool {
+	_ := prepare_workspace_edit(root, path, content) or { return err.msg().contains('control characters') }
 	return false
 }

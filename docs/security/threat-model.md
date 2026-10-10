@@ -6,7 +6,7 @@ providers, and the proposed repository-tool boundary
 **Modeler:** Codex
 **Architecture source:** `docs/IMPLEMENTATION_PLAN.md`, `api.v`, `provider.v`,
 `store.v`, `main.v`, `tui/src/main.ts`
-**Version:** `1db4b73`
+**Version:** `f7b2593`
 **Previous model:** Initial
 
 ## Architecture overview
@@ -42,9 +42,9 @@ providers, and the proposed repository-tool boundary
 
 | Finding | Mitigation | Acceptance criteria | Owner | Verified |
 |---|---|---|---|---|
-| 1 | Keep server loopback-only and preserve request Host/Origin validation. Persist only a canonical existing directory as the per-session workspace boundary. | API tests reject non-loopback Host/Origin and nonexistent/non-directory roots; future path tests reject `..`, absolute paths, and symlink escapes. | Veasel Code | Root canonicalization implemented; focused V/API checks pending. |
-| 2 | Keep keys in backend environment; validate provider endpoints; make outbound disclosure visible in the client before sending workspace excerpts. | Mock-provider API smoke confirms completion routing, provider headers, tool-result flow, and redirect rejection. Dedicated endpoint-validation unit tests remain pending. | Veasel Code | Partially: TUI disclosure is implemented; full provider smoke is pending. |
-| 3 | Treat repository/tool text as untrusted; split tool permissions into read, write, and execute; persist exact approvals before side effects. | Provider smoke rejects parent traversal; workspace tests and API smoke reject outside-root symlinks. No write or command tool is exposed. | Veasel Code | Partially: read-only tools and untrusted-content boundaries are implemented; end-to-end tool-loop smoke is pending. |
+| 1 | Keep server loopback-only and preserve request Host/Origin validation. Persist only a canonical existing directory as the per-session workspace boundary. | API tests reject non-loopback Host/Origin and nonexistent/non-directory roots; path tests reject `..`, absolute paths, and symlink escapes. | Veasel Code | Verified: focused V tests and API smoke pass in the pinned Linux, macOS, and Windows CI matrix. |
+| 2 | Keep keys in backend environment; validate provider endpoints; make outbound disclosure visible in the client before sending workspace excerpts. | Three-provider mock API smoke confirms completion routing, provider headers, tool-result flow, redirect rejection, and the TUI data-flow disclosure. Dedicated endpoint-validation unit tests remain pending. | Veasel Code | Partially: disclosure and provider smoke are verified; dedicated endpoint-validation unit tests remain pending. |
+| 3 | Treat repository/tool text as untrusted; split tool permissions into read, write, and execute; persist exact approvals before side effects. | Three-provider smoke rejects parent traversal; workspace tests and API smoke reject outside-root symlinks. No write or command tool is exposed. | Veasel Code | Partially: bounded read-only tool loop and untrusted-content boundaries are verified; exact write approvals remain pending. |
 | 4 | Add bounded concurrency and cancellation from API request through model call and job lifecycle. | Load and cancellation checks show bounded workers and no leaked active slots. | Veasel Code | Pending. |
 | 5 | Obtain commercial permission or remove the CC BY-NC artwork. | License grant is recorded or artwork is absent from distributed assets. | Product owner | Pending. |
 | 6 | Implement Agent Plugins v1.0.0 with local schema validation, plugin-root containment, untrusted-content boundaries, transport-safe MCP adapters, and explicit execution trust. | Conformance and adversarial fixtures pass; all child processes/resources close under verified limits; user-facing trust and approval flows are tested. | Veasel Code | Pending design and implementation. |

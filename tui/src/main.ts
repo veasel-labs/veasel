@@ -232,7 +232,7 @@ async function createSession(title: string) {
 function renderChat(messages: ChatTurn[]) {
   chatMessages = messages
   const heading = activeSession
-    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
+    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nWhen Veasel uses read-only workspace tools, returned file excerpts are sent to your configured model provider.\n\n`
     : ""
   sessionDetail.content = safeTerminalText(heading)
     + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0

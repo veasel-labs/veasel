@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local session, multi-provider chat, Agent Plugin skill selection, bounded read-only workspace inspection, and event API. Workspace inspection is exposed to API clients but is not yet connected to provider tool calling.
+  description: Local sessions, multi-provider chat with bounded provider-native workspace read tools, experimental Agent Plugin skill selection, and replayable events. Workspace content returned by tools is sent to the configured model provider.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -128,7 +128,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: sendSessionMessage
-      description: Completes and atomically stores a user and assistant turn in the session.
+      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may use bounded read-only workspace listing, file reads, and literal search; returned workspace content is sent to the configured provider.
       requestBody:
         required: true
         content:

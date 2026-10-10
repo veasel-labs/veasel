@@ -49,9 +49,9 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
 - [ ] Propagate request cancellation and deadlines through queued turns and provider transports.
-- [ ] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded tool loop.
+- [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
-- [ ] Connect repository tools to provider-native calls; treat file content as untrusted and enforce per-tool limits in the bounded tool loop.
+- [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
 - [ ] Add patch review and explicit, durable approval before writes or shell execution.
 - [ ] Deliver streaming model responses and cancellation through the API, event store, and TUI.
 - [ ] Complete an end-to-end coding task against a disposable fixture repository, including diff review, tests, and a denied unapproved effect.
@@ -96,18 +96,20 @@ honoring its license and attribution.
 
 - The official Veasel artwork is CC BY-NC 4.0. Keep it out of the product until
   commercial-use rights are established; use original typography and colors.
-- Session creation now records an existing, canonical workspace root. Before
-  filesystem tools are introduced, enforce root-bound access on every operation,
-  including symlink changes, and treat file contents as untrusted. Loopback plus
-  Origin validation is not a filesystem sandbox.
+- Session creation records an existing, canonical workspace root. The initial
+  list/read/search tools enforce root-bound access on every operation, reject
+  symlink escapes, and treat file contents as untrusted. Loopback plus Origin
+  validation is not a filesystem sandbox; repeat containment checks for every
+  future filesystem tool.
 - Agent Plugins v1.0.0 is a published normative format for Skills and MCP; it
   does not define permission UX, marketplace installation, sandboxing, or
   lifecycle policy. Implement those client responsibilities in Veasel. Track
   exact requirements and evidence in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md); do not
   claim conformance until its release gate passes.
-- Before enabling tool loops, cap in-flight provider calls and tool-loop steps;
-  same-session turns must be serialized so provider history cannot race.
+- The initial tool loop caps in-flight provider calls and tool-loop steps;
+  same-session turns are serialized so provider history cannot race. Revisit
+  these limits before adding concurrent agents or background execution.
 - The organization and repository publication are tracked separately from the
   code milestones; do not describe them as complete until GitHub confirms them.
 - Milestone 1 is complete only for the local Linux x64 development environment;

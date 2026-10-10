@@ -1,0 +1,153 @@
+module main
+
+import json2
+import os
+import uuid
+
+fn test_workspace_agent_tools_are_read_only_and_validate_arguments() {
+	root := os.join_path(os.temp_dir(), 'veasel-agent-tools-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'src')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'src', 'main.v'), 'module fixture\nworkspace-sentinel\n') or {
+		panic(err)
+	}
+
+	definitions := workspace_agent_tools()
+	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
+		'workspace_search']
+	listing := execute_workspace_agent_tool(root, ProviderToolCall{
+		id:       'list-1'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{}'
+		}
+	})
+	assert listing.contains('src/main.v')
+	assert !listing.contains(root)
+
+	read := execute_workspace_agent_tool(root, ProviderToolCall{
+		id:       'read-1'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v"}'
+		}
+	})
+	assert read.contains('workspace-sentinel')
+
+	search := execute_workspace_agent_tool(root, ProviderToolCall{
+		id:       'search-1'
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"query":"workspace-sentinel"}'
+		}
+	})
+	assert search.contains('workspace-sentinel')
+
+	traversal := execute_workspace_agent_tool(root, ProviderToolCall{
+		id:       'read-escape'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"../outside.txt"}'
+		}
+	})
+	assert traversal.contains('error')
+	assert !traversal.contains(root)
+
+	unexpected_argument := execute_workspace_agent_tool(root, ProviderToolCall{
+		id:       'read-extra'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","extra":"value"}'
+		}
+	})
+	assert unexpected_argument.contains('Unexpected tool argument')
+
+	unknown := execute_workspace_agent_tool(root, ProviderToolCall{
+		id:       'unknown'
+		function: ProviderFunctionCall{
+			name:      'shell'
+			arguments: '{}'
+		}
+	})
+	assert unknown.contains('not available')
+
+	assert message_validation_error_contains([ChatMessage{
+		role:       'assistant'
+		content:    'not trusted'
+		tool_calls: [ProviderToolCall{
+			id:       'injected'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v"}'
+			}
+		}]
+	}], 'tool metadata')
+}
+
+fn message_validation_error_contains(messages []ChatMessage, expected string) bool {
+	validate_messages(messages) or { return err.msg().contains(expected) }
+	return false
+}
+
+fn test_provider_tool_transcripts_preserve_native_context() {
+	messages := [
+		ChatMessage{
+			role:    'user'
+			content: 'Find the sentinel.'
+		},
+		ChatMessage{
+			role:       'assistant'
+			content:    ''
+			tool_calls: [ProviderToolCall{
+				id:                 'native-call-1'
+				provider_call_id:   'native-call-1'
+				provider_signature: 'gemini-signature'
+				function:           ProviderFunctionCall{
+					name:      'workspace_search'
+					arguments: '{"query":"sentinel"}'
+				}
+			}]
+		},
+		ChatMessage{
+			role:         'tool'
+			name:         'workspace_search'
+			tool_call_id: 'native-call-1'
+			provider_tool_call_id: 'native-call-1'
+			content:      '{"matches":[{"path":"src/main.v","line":2,"text":"sentinel"}]}'
+		},
+	]
+
+	_, anthropic := anthropic_messages(messages)
+	assert anthropic.len == 3
+	assert anthropic[1].content[0].id == 'native-call-1'
+	assert anthropic[1].content[0].input['query'].str() == 'sentinel'
+	assert anthropic[2].role == 'user'
+	assert anthropic[2].content[0].type == 'tool_result'
+	assert anthropic[2].content[0].tool_use_id == 'native-call-1'
+	assert anthropic[2].content[0].content.contains('src/main.v')
+
+	_, gemini := gemini_messages(messages)
+	assert gemini.len == 3
+	assert gemini[1].parts[0].function_call or { panic('Gemini function call was lost') }.id == 'native-call-1'
+	assert gemini[1].parts[0].thought_signature == 'gemini-signature'
+	assert gemini[2].role == 'user'
+	assert gemini[2].parts[0].function_response or {
+		panic('Gemini function response was lost')
+	}.id == 'native-call-1'
+	assert gemini[2].parts[0].function_response or {
+		panic('Gemini function response was lost')
+	}.response['matches'].json_str() == '[{"line":2,"path":"src/main.v","text":"sentinel"}]'
+
+	openai_transcript := json2.encode[[]ChatMessage](messages[1..])
+	assert openai_transcript.contains('tool_call_id')
+	assert openai_transcript.contains('native-call-1')
+	assert openai_transcript.contains('tool_calls')
+	_ = json2.decode[json2.Any](openai_transcript) or { panic(err) }
+	public_completion := json2.encode[CompletionOutput](CompletionOutput{
+		provider:   'fixture'
+		model:      'fixture-model'
+		content:    'Done.'
+		tool_calls: messages[1].tool_calls
+	})
+	assert !public_completion.contains('tool_calls')
+}

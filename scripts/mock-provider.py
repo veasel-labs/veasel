@@ -254,7 +254,7 @@ class MockProvider(BaseHTTPRequestHandler):
         encoded = json.dumps(body).encode()
         if user_text == "Wait for cancellation":
             print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
-            time.sleep(2)
+            time.sleep(5)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))

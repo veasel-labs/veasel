@@ -240,7 +240,8 @@ for provider in openai-compatible anthropic gemini; do
 		grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || fail 'slow provider request did not start'
 		expect_status 202 -X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel"
 		wait "$turn_pid"
-		[[ "$(cat "$work_dir/cancelled-turn-status")" == 409 ]] || fail 'cancelled provider request did not return HTTP 409'
+		cancelled_turn_status="$(cat "$work_dir/cancelled-turn-status")"
+		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"
 	fi
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Inspect workspace"}' \
 		"$api/v1/sessions/$session_id/messages"

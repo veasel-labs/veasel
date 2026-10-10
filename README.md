@@ -22,10 +22,12 @@ are persisted for review; the TUI writes only after an explicit approval.
 Requested workspace content is sent to the configured model provider. Shell
 execution and background jobs remain in progress.
 Local Agent Plugins can be discovered, their validated Skills enabled per
-session, and trusted stdio MCP servers exposed as provider tools. MCP processes
-run with the current user's privileges and without an OS sandbox; HTTP MCP
-remains metadata only. The product reports only actual provider replies and
-does not simulate agent actions.
+session, and trusted stdio or Streamable HTTP MCP servers exposed as provider
+tools. Stdio processes run with the current user's privileges and without an OS
+sandbox. HTTP MCP uses the configured origin, refuses redirects, and validates
+TLS certificates; configured headers and tool inputs are sent to that endpoint.
+The product reports only actual provider replies and does not simulate agent
+actions.
 
 ## Requirements
 
@@ -60,15 +62,16 @@ Agent Plugin packages are discovered from `$VEASEL_PLUGIN_DIR` or
 `$VEASEL_DATA_DIR/plugins`. In the TUI, use `/skills` to list discovered
 Skills, `/skill on <plugin>/<skill>` to add one to the active session, and
 `/skill off <plugin>/<skill>` to remove it. Use `/mcp` to inspect MCP server
-declarations, `/mcp trust <plugin>/<server>` to allow stdio execution for the
-session, and `/mcp untrust <plugin>/<server>` to revoke it. Trusted MCP servers
-run with the current user's OS privileges without a sandbox, and their tool
-arguments and results are sent to the configured model provider. A process is
-launched for discovery and remains available for the model turn; only
-`PLUGIN_DATA` persists between turns.
+declarations, `/mcp trust <plugin>/<server>` to allow a server for the session,
+and `/mcp untrust <plugin>/<server>` to revoke it. Trusted stdio processes run
+with the current user's OS privileges without a sandbox. Streamable HTTP sends
+configured headers and tool requests only to the displayed origin and refuses
+redirects. Tool arguments and results are sent to the configured model provider.
+A stdio process is launched for discovery and remains available for the model
+turn; only `PLUGIN_DATA` persists between turns.
 Skill instructions are treated as untrusted reference context and reloaded
-from disk for each turn. Install only plugins you trust. Streamable HTTP is not
-started and the product does not claim Agent Plugins conformance.
+from disk for each turn. Install only plugins you trust. Agent Plugins support
+is experimental and does not claim full v1.0.0 conformance.
 
 The initial completion adapters support `openai-compatible` (the default),
 `anthropic`, and `gemini`. Set `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, and a
@@ -116,8 +119,8 @@ repository practices. [`docs/security/threat-model.md`](docs/security/threat-mod
 tracks the current local API boundary, provider disclosure, and the security
 gates required before repository tools are enabled. The pinned
 [`Agent Plugins v1.0.0 conformance plan`](docs/compatibility/agent-plugins.md)
-tracks the compatibility target and required evidence; Veasel does not yet
-claim plugin support.
+tracks the compatibility target and required evidence; Veasel's Agent Plugins
+integration remains experimental and does not claim full conformance.
 
 ## Licensing
 

@@ -267,10 +267,7 @@ fn test_provider_tool_parameters_preserve_nested_mcp_json_schema() {
 			}
 		}]
 	})
-	assert openai_payload.contains('"items":{"type":"object"')
-	assert openai_payload.contains('"required":["path"]')
-	assert !openai_payload.contains('"parameters":"{')
-	assert json2.encode[json2.Any](provider_tool_parameters(tool)).contains('"items"')
+	assert_provider_schema_shape(openai_payload, 'openai')
 	anthropic_payload := json2.encode[AnthropicRequest](AnthropicRequest{
 		tools: [AnthropicTool{
 			name:         tool.name
@@ -278,8 +275,7 @@ fn test_provider_tool_parameters_preserve_nested_mcp_json_schema() {
 			input_schema: provider_tool_parameters(tool)
 		}]
 	})
-	assert anthropic_payload.contains('"input_schema":{"type":"object"')
-	assert anthropic_payload.contains('"items":{"type":"object"')
+	assert_provider_schema_shape(anthropic_payload, 'anthropic')
 	gemini_payload := json2.encode[GeminiRequest](GeminiRequest{
 		tools: [GeminiToolGroup{
 			function_declarations: [GeminiFunctionDeclaration{
@@ -289,8 +285,56 @@ fn test_provider_tool_parameters_preserve_nested_mcp_json_schema() {
 			}]
 		}]
 	})
-	assert gemini_payload.contains('"parameters":{"type":"object"')
-	assert gemini_payload.contains('"items":{"type":"object"')
+	assert_provider_schema_shape(gemini_payload, 'gemini')
+}
+
+fn assert_provider_schema_shape(payload string, provider string) {
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	mut schema := json2.Any{}
+	if provider == 'openai' {
+		tools := provider_json_array(root['tools'] or { panic('missing tools') })
+		tool := provider_json_object(tools[0])
+		function := provider_json_object(tool['function'] or { panic('missing function') })
+		schema = function['parameters'] or { panic('missing parameters') }
+	} else if provider == 'anthropic' {
+		tools := provider_json_array(root['tools'] or { panic('missing tools') })
+		tool := provider_json_object(tools[0])
+		schema = tool['input_schema'] or { panic('missing input schema') }
+	} else {
+		groups := provider_json_array(root['tools'] or { panic('missing tools') })
+		group := provider_json_object(groups[0])
+		declarations := provider_json_array(group['functionDeclarations'] or {
+			panic('missing function declarations')
+		})
+		declaration := provider_json_object(declarations[0])
+		schema = declaration['parameters'] or { panic('missing parameters') }
+	}
+	root_schema := provider_json_object(schema)
+	assert root_schema['type'] or { panic('missing root type') } == json2.Any('object')
+	properties := provider_json_object(root_schema['properties'] or { panic('missing properties') })
+	files := provider_json_object(properties['files'] or { panic('missing files') })
+	assert files['type'] or { panic('missing files type') } == json2.Any('array')
+	items := provider_json_object(files['items'] or { panic('missing items') })
+	assert items['type'] or { panic('missing item type') } == json2.Any('object')
+	item_properties := provider_json_object(items['properties'] or { panic('missing item properties') })
+	path := provider_json_object(item_properties['path'] or { panic('missing path property') })
+	assert path['type'] or { panic('missing path type') } == json2.Any('string')
+	required := provider_json_array(items['required'] or { panic('missing required') })
+	assert required == [json2.Any('path')]
+}
+
+fn provider_json_object(value json2.Any) map[string]json2.Any {
+	if value !is map[string]json2.Any {
+		panic('expected JSON object')
+	}
+	return value as map[string]json2.Any
+}
+
+fn provider_json_array(value json2.Any) []json2.Any {
+	if value !is []json2.Any {
+		panic('expected JSON array')
+	}
+	return value as []json2.Any
 }
 
 fn test_plugin_mcp_provider_name_is_bounded_and_namespaced() {

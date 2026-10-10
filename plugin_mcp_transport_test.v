@@ -41,7 +41,7 @@ fn test_plugin_stdio_mcp_process_environment_handshake_and_tool_call() {
 		args:      [script]
 		cwd:       './'
 	}
-	mut client, _ := new_plugin_mcp_client(root, data, server) or { panic(err) }
+	mut client := new_plugin_mcp_client(root, data, server) or { panic(err) }
 	defer {
 		client.close()
 	}

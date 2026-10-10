@@ -1,6 +1,7 @@
 module main
 
 import os
+import net.urllib
 
 const max_plugin_packages = 128
 const max_session_skill_context_bytes = 64_000
@@ -29,9 +30,12 @@ pub:
 
 pub struct PluginMCPServerSummary {
 pub:
-	name      string
-	transport string
-	command   string
+	name         string
+	transport    string
+	command      string
+	url_origin   string
+	header_count int
+	header_names []string
 }
 
 fn discover_agent_plugins(directory string) !PluginCatalog {
@@ -78,10 +82,14 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 		}
 		mut mcp_servers := []PluginMCPServerSummary{cap: plugin.mcp_servers.len}
 		for server in plugin.mcp_servers {
+			header_names := plugin_mcp_header_names(server.headers)
 			mcp_servers << PluginMCPServerSummary{
-				name:      server.name
-				transport: server.transport
-				command:   server.command
+				name:         server.name
+				transport:    server.transport
+				command:      server.command
+				url_origin:   plugin_mcp_url_origin(server.url)
+				header_count: server.headers.len
+				header_names: header_names
 			}
 		}
 		plugins << PluginCatalogEntry{
@@ -97,6 +105,21 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 		plugins:     plugins
 		diagnostics: diagnostics
 	}
+}
+
+fn plugin_mcp_header_names(headers map[string]string) []string {
+	return headers.keys().sorted()
+}
+
+fn plugin_mcp_url_origin(value string) string {
+	if value.len == 0 {
+		return ''
+	}
+	parsed := urllib.parse(value) or { return '' }
+	if parsed.scheme.len == 0 || parsed.host.len == 0 {
+		return ''
+	}
+	return '${parsed.scheme.to_lower()}://${parsed.host.to_lower()}'
 }
 
 fn find_agent_skill(directory string, plugin_name string, skill_name string) !(string, PluginSkill) {
@@ -148,8 +171,8 @@ fn find_agent_mcp_server(directory string, plugin_name string, server_name strin
 		}
 		for server in plugin.mcp_servers {
 			if server.name == server_name {
-				if server.transport != 'stdio' {
-					return error('only stdio Agent Plugin MCP servers can be trusted currently')
+				if server.transport !in ['stdio', 'streamable-http'] {
+					return error('Agent Plugin MCP transport is not supported')
 				}
 				return plugin.root, server
 			}

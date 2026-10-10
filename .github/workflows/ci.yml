@@ -91,6 +91,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify formatting
         run: v fmt -verify .
+      - name: Set up Node.js MCP fixtures
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
       - name: Create output directory
         if: runner.os != 'Windows'
         run: mkdir -p dist
@@ -157,6 +161,8 @@ jobs:
         run: |
           v test main_test.v
           v test plugins_test.v
+          v test plugin_mcp_transport_test.v
+          v test plugin_mcp_http_transport_test.v
           v test agent_runtime_test.v
           v test workspace_tools_test.v
       - name: Run Windows workspace edit and recovery tests
@@ -164,6 +170,8 @@ jobs:
         timeout-minutes: 10
         run: |
           v test main_test.v
+          v test plugin_mcp_transport_test.v
+          v test plugin_mcp_http_transport_test.v
           v test workspace_edits_windows_test.v
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'

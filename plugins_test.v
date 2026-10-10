@@ -255,6 +255,42 @@ fn test_agent_skill_body_preserves_markdown_line_endings() {
 	assert body == '\r\nBody\r\nline\r\n'
 }
 
+fn test_agent_skill_names_follow_unicode_name_rules() {
+	assert is_valid_skill_name('café-分析-3')
+	assert is_valid_skill_name('данные')
+	assert is_valid_skill_name('é'.repeat(64))
+	assert !is_valid_skill_name('é'.repeat(65))
+	assert !is_valid_skill_name('Café')
+	assert !is_valid_skill_name('café--analysis')
+	assert !is_valid_skill_name('-café')
+	assert !is_valid_skill_name('café-')
+	assert !is_valid_skill_name('name_with_underscore')
+}
+
+fn test_agent_skill_frontmatter_enforces_supported_fields_and_limits() {
+	description := 'x'.repeat(1024)
+	compatibility := 'x'.repeat(500)
+	valid := parse_agent_skill('review', '/plugin/skills/review/SKILL.md', '---\nname: review\ndescription: ${description}\nlicense: Apache-2.0\ncompatibility: ${compatibility}\nallowed-tools: Read\nmetadata:\n  author: example\n  version: "1.0"\n---\nInstructions') or {
+		panic(err)
+	}
+	assert valid.name == 'review'
+	assert valid.description.len == 1024
+	assert valid.allowed_tools == 'Read'
+	unicode_skill := parse_agent_skill('café-分析-3', '/plugin/skills/café-分析-3/SKILL.md', '---\nname: café-分析-3\ndescription: Unicode skill.\n---\nBody') or {
+		panic(err)
+	}
+	assert unicode_skill.name == 'café-分析-3'
+
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nextra: ignored')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nlicense: true')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ""')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ' + 'x'.repeat(501))
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: ' + 'x'.repeat(1025))
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nallowed-tools: 42')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nmetadata:\n  author: 42')
+	assert agent_skill_frontmatter_rejected('review-dir', 'name: review\ndescription: Valid.')
+}
+
 fn test_plugin_file_reader_enforces_limit_while_reading() {
 	root := os.join_path(os.temp_dir(), 'veasel-plugin-read-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
@@ -282,5 +318,13 @@ fn plugin_cwd_rejected(root string, data string, cwd string) bool {
 
 fn plugin_file_over_limit(path string, limit int) bool {
 	_ := read_plugin_file(path, limit) or { return true }
+	return false
+}
+
+fn agent_skill_frontmatter_rejected(directory_name string, frontmatter string) bool {
+	content := '---\n${frontmatter}\n---\nBody'
+	_ := parse_agent_skill(directory_name, '/plugin/skills/${directory_name}/SKILL.md', content) or {
+		return true
+	}
 	return false
 }

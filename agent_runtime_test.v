@@ -23,7 +23,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
-		'workspace_search', 'workspace_propose_file_edit']
+		'workspace_search', 'workspace_propose_file_edit', 'workspace_propose_shell_command']
 	listing := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'list-1'
 		function: ProviderFunctionCall{
@@ -92,6 +92,20 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert !proposal_result.contains('module fixture')
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
+
+	shell_proposal := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id: 'shell-propose-1'
+		function: ProviderFunctionCall{
+			name: 'workspace_propose_shell_command'
+			arguments: '{"command":"touch shell-must-not-run","cwd":".","timeout_seconds":10}'
+		}
+	})
+	assert shell_proposal.contains('No command was executed')
+	assert !os.exists(os.join_path(root, 'shell-must-not-run'))
+	shell_commands := store.shell_commands(session.id) or { panic(err) }
+	assert shell_commands.len == 1
+	assert shell_commands[0].command == 'touch shell-must-not-run'
+	assert shell_commands[0].status == 'pending'
 
 	assert message_validation_error_contains([ChatMessage{
 		role:       'assistant'
@@ -178,4 +192,44 @@ fn test_provider_tool_transcripts_preserve_native_context() {
 		content:  'Done.'
 	})
 	assert !public_completion.contains('tool_calls')
+}
+
+fn test_approved_shell_command_revalidates_reviewed_working_directory() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-cwd-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	result := run_approved_shell_command(root, ShellCommandSummary{
+		command: 'touch must-not-run'
+		cwd: '../'
+		timeout_seconds: 10
+	})
+	assert result.status == 'failed'
+	assert result.exit_code == -1
+	assert result.output.contains('no process was started')
+	assert !os.exists(os.join_path(root, 'must-not-run'))
+}
+
+fn test_approved_shell_command_rejects_replaced_workspace_root() {
+	$if windows {
+		return
+	}
+	parent := os.join_path(os.temp_dir(), 'veasel-shell-root-${uuid.new_v4().str()}')
+	original := os.join_path(parent, 'workspace')
+	moved := os.join_path(parent, 'workspace-original')
+	other := os.join_path(parent, 'other')
+	os.mkdir_all(original) or { panic(err) }
+	os.mkdir_all(other) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	canonical_root := canonical_workspace_root(original) or { panic(err) }
+	os.rename(original, moved) or { panic(err) }
+	os.symlink(other, original) or { panic(err) }
+	result := run_approved_shell_command(canonical_root, ShellCommandSummary{
+		command: 'touch must-not-run'
+		cwd: '.'
+		timeout_seconds: 10
+	})
+	assert result.status == 'failed'
+	assert result.exit_code == -1
+	assert result.output.contains('no process was started')
+	assert !os.exists(os.join_path(other, 'must-not-run'))
 }

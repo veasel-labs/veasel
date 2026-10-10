@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local sessions, multi-provider chat, bounded workspace tools with durable single-file edit approval, experimental Agent Plugin Skills and trusted stdio/Streamable HTTP MCP tools, and replayable events. Workspace excerpts and MCP tool arguments/results are sent to the configured model provider.
+  description: Local sessions, multi-provider chat, bounded workspace tools with durable file edit and shell command approval, experimental Agent Plugin Skills and trusted stdio/Streamable HTTP MCP tools, and replayable events. Workspace excerpts and MCP tool arguments/results are sent to the configured model provider. Approved shell commands run with the server OS user permissions and inherited environment without an OS sandbox.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -571,6 +571,119 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/commands:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listShellCommandProposals
+      description: Lists recent durable command proposals and outcomes.
+      responses:
+        '200':
+          description: Recent command proposals.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items: { $ref: '#/components/schemas/ShellCommand' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/commands/{command_id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: command_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: reviewShellCommandProposal
+      description: Returns the exact command, cwd and timeout, and durably records that the review view was opened.
+      responses:
+        '200':
+          description: Exact command awaiting approval or its persisted outcome.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShellCommand' }
+        '404':
+          description: Session or proposal not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/commands/{command_id}/approve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: command_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: approveShellCommandProposal
+      description: Durably records explicit approval before running the exact reviewed command with the Veasel process OS user's permissions. Execution is not sandboxed, has a bounded timeout/output, and is never retried after interruption.
+      responses:
+        '200':
+          description: Command outcome and bounded output.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShellCommand' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Proposal has not been reviewed or is no longer pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: The bounded command execution capacity is full.
+          headers:
+            Retry-After:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/commands/{command_id}/reject:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: command_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: rejectShellCommandProposal
+      description: Durably rejects a command proposal without executing it.
+      responses:
+        '200':
+          description: The command was rejected.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceEditAction' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Proposal is not pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/chat/completions:
     post:
       operationId: createChatCompletion
@@ -837,6 +950,19 @@ components:
       properties:
         id: { type: string, format: uuid }
         status: { type: string, enum: [applied, rejected] }
+    ShellCommand:
+      type: object
+      required: [id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        command: { type: string, maxLength: 8192 }
+        cwd: { type: string }
+        timeout_seconds: { type: integer, minimum: 1, maximum: 300 }
+        status: { type: string, enum: [pending, running, succeeded, failed, timed_out, output_limited, rejected, uncertain] }
+        exit_code: { type: integer }
+        output: { type: string, maxLength: 65536 }
+        created_at: { type: string }
+        updated_at: { type: string }
     CreateSession:
       type: object
       required: [title, directory]

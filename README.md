@@ -20,7 +20,13 @@ workspace list/read/search tools and propose one-file replacements using
 provider-native tool calling for all three provider families. Proposed diffs
 are persisted for review; the TUI writes only after an explicit approval.
 Requested workspace content is sent to the configured model provider. Shell
-execution and background jobs remain in progress.
+commands proposed by the model are stored for review and run only after the exact
+command, working directory, and timeout have been opened and explicitly
+approved. Approved commands run with the server process user's permissions,
+inherit its environment, and have no OS sandbox; they can access files and
+network credentials available to that user. Execution is limited to 300 seconds
+and 64 KiB of captured output. Interrupted commands are never replayed.
+Background jobs remain in progress.
 Local Agent Plugins can be discovered, their validated Skills enabled per
 session, and trusted stdio or Streamable HTTP MCP servers exposed as provider
 tools. Stdio processes run with the current user's privileges and without an OS
@@ -86,8 +92,14 @@ single-file edit; the TUI shows its unified diff with `/patches` and
 `/patch show <id>`, and writes only after that diff has been opened and
 `/patch approve <id>` is entered. Review and application states persist locally.
 Stale proposals are rejected, and an
-interrupted write is never replayed automatically. Shell execution and
-streaming are not available yet. Press Escape while a response is running to
+interrupted write is never replayed automatically. Commands can be reviewed
+with `/commands`, inspected with `/command show <id>`, then approved or rejected
+with `/command approve <id>` or `/command reject <id>`. Execution inherits the
+server process environment, is not sandboxed, and requires review of any
+filesystem, network, and credential effects. See the
+[`shell command security model`](docs/SHELL_COMMANDS.md) before enabling this
+workflow. Streaming is not available yet.
+Press Escape while a response is running to
 cancel its operation; session requests may also provide an
 `X-Veasel-Operation-ID` UUID and call the session cancellation endpoint. Turns
 have a two-minute deadline. A cancelled API request returns promptly, while a
@@ -105,7 +117,7 @@ ACLs and extended attributes are not currently copied to the replacement file.
 
 The API uses `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/sessions`,
 `/v1/sessions/:id`, `/v1/sessions/:id/messages`,
-`/v1/sessions/:id/workspace/{files,file,search,edits}`, `/v1/chat/completions`
+`/v1/sessions/:id/workspace/{files,file,search,edits,commands}`, `/v1/chat/completions`
 when configured, `/v1/sessions/:id/skills`, and `/v1/events` (SSE). The session
 provider tool loop uses bounded reads and creates durable, reviewable single-file
 edit proposals. File writes require an explicit approval request. See

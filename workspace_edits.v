@@ -16,7 +16,6 @@ $if windows {
 const max_workspace_edit_bytes = 512_000
 const max_workspace_edit_request_bytes = max_workspace_edit_bytes * 6 + 4_096
 const max_pending_workspace_edits = 20
-
 pub struct WorkspaceEditProposal {
 pub:
 	id         string

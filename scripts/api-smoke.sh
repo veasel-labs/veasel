@@ -242,6 +242,7 @@ for provider in openai-compatible anthropic gemini; do
 		wait "$turn_pid"
 		cancelled_turn_status="$(cat "$work_dir/cancelled-turn-status")"
 		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"
+		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/release-slow-response" >/dev/null || fail 'slow provider fixture could not be released'
 	fi
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Inspect workspace"}' \
 		"$api/v1/sessions/$session_id/messages"

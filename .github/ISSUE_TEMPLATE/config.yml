@@ -3,3 +3,6 @@ contact_links:
   - name: Questions and community support
     url: https://github.com/veasel-labs/veasel/discussions
     about: Ask usage questions and share ideas with the community.
+  - name: Report a security vulnerability privately
+    url: https://github.com/veasel-labs/veasel/security/advisories/new
+    about: Do not disclose suspected vulnerabilities in a public issue.

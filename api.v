@@ -844,7 +844,8 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		})
 	}
 	if request_prefers_async(mut ctx) {
-		app.start_async_session_message(operation_id, mut turn_ctx, cancel, id, session, input)
+		turn_done := turn_ctx.done()
+		app.start_async_session_message(operation_id, turn_done, cancel, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
 		return ctx.json(SessionTurnAccepted{
@@ -906,11 +907,24 @@ fn request_prefers_async(mut ctx Context) bool {
 	return false
 }
 
-fn (app &App) start_async_session_message(operation_id string, mut turn_ctx vcontext.Context,
+fn (app &App) start_async_session_message(operation_id string, turn_done chan int,
 	cancel vcontext.CancelFn, id string, session Session, input ChatMessageInput) {
-	spawn fn (app &App, operation_id string, mut turn_ctx vcontext.Context, cancel vcontext.CancelFn,
-		id string, session Session, input ChatMessageInput) {
+	spawn fn (app &App, operation_id string, turn_done chan int, cancel vcontext.CancelFn, id string,
+		session Session, input ChatMessageInput) {
+		mut background := vcontext.background()
+		mut turn_ctx, cancel_turn := vcontext.with_timeout(mut background, max_agent_turn_duration)
+		worker_done := chan int{cap: 1}
+		spawn fn (turn_done chan int, worker_done chan int, cancel_turn vcontext.CancelFn) {
+			select {
+				_ := <-turn_done {
+					cancel_turn()
+				}
+				_ := <-worker_done {}
+			}
+		}(turn_done, worker_done, cancel_turn)
 		defer {
+			worker_done <- 0
+			cancel_turn()
 			app.finish_turn_operation(operation_id)
 			cancel()
 		}
@@ -918,7 +932,7 @@ fn (app &App) start_async_session_message(operation_id string, mut turn_ctx vcon
 			app.record_session_turn_failure(id, operation_id, err.msg())
 			return
 		}
-	}(app, operation_id, mut turn_ctx, cancel, id, session, input)
+	}(app, operation_id, turn_done, cancel, id, session, input)
 }
 
 fn (app &App) record_session_turn_failure(id string, operation_id string, message string) {

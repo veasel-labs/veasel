@@ -273,10 +273,10 @@ fn plugin_mcp_document_rejected(fields map[string]json2.Any, manifest map[string
 
 fn test_agent_plugin_mcp_variants_follow_closed_schema() {
 	root := os.getwd()
-	stdio_fields := json2.decode[map[string]json2.Any]('{"type":"stdio","command":"node",'
-		+ '"args":["${test_plugin_root_placeholder}/server.js"],'
-		+ '"env":{"CONFIG":"${test_plugin_root_placeholder}/config.json"},'
-		+ '"cwd":"${test_plugin_root_placeholder}"}') or {
+	stdio_fields := json2.decode[map[string]json2.Any]('{"type":"stdio","command":"node",' +
+		'"args":["${test_plugin_root_placeholder}/server.js"],' +
+		'"env":{"CONFIG":"${test_plugin_root_placeholder}/config.json"},' +
+		'"cwd":"${test_plugin_root_placeholder}"}') or {
 		panic(err)
 	}
 	stdio := parse_plugin_mcp_server(root, 'local', json2.Any(stdio_fields)) or { panic(err) }
@@ -286,8 +286,8 @@ fn test_agent_plugin_mcp_variants_follow_closed_schema() {
 	assert stdio.env['CONFIG'] == '${test_plugin_root_placeholder}/config.json'
 	assert stdio.cwd == test_plugin_root_placeholder
 
-	http_fields := json2.decode[map[string]json2.Any]('{"type":"streamable-http",'
-		+ '"url":"http://127.0.0.8:8080/mcp","headers":{"X-Tenant":"public"}}') or {
+	http_fields := json2.decode[map[string]json2.Any]('{"type":"streamable-http",' +
+		'"url":"http://127.0.0.8:8080/mcp","headers":{"X-Tenant":"public"}}') or {
 		panic(err)
 	}
 	http := parse_plugin_mcp_server(root, 'remote', json2.Any(http_fields)) or { panic(err) }
@@ -309,8 +309,7 @@ fn test_agent_plugin_mcp_variants_follow_closed_schema() {
 		'{"type":"sse","url":"https://example.com/sse"}',
 	]
 	for variant in invalid_variants {
-		assert plugin_mcp_server_json_rejected(root, variant),
-			'invalid MCP variant was accepted: ${variant}'
+		assert plugin_mcp_server_json_rejected(root, variant), 'invalid MCP variant was accepted: ${variant}'
 	}
 }
 

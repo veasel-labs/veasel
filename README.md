@@ -79,6 +79,12 @@ configured headers and tool requests only to the displayed origin and refuses
 redirects. Tool arguments and results are sent to the configured model provider.
 A stdio process is launched for discovery and remains available for the model
 turn; only `PLUGIN_DATA` persists between turns.
+Every model-requested MCP call pauses the active turn until you inspect the
+exact tool arguments with `/mcp calls` and `/mcp call show <id>`, then approve
+with `/mcp call approve <id>` or reject with `/mcp call reject <id>`. Rejected
+calls are not retried. Calls interrupted before execution are cancelled; calls
+whose execution outcome cannot be known after a restart are marked uncertain
+and never replayed.
 Skill instructions are treated as untrusted reference context and reloaded
 from disk for each turn. When a Skill is active, the model can request bounded
 UTF-8 resources from that Skill's directory through a read-only tool; paths

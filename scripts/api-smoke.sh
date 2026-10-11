@@ -334,6 +334,101 @@ EOF
 	grep -Fq '"content":"Proposed a shell command for review."' "$work_dir/messages" || fail "$provider shell command proposal was not persisted"
 done
 
+# Exercise a provider-requested MCP side effect through the real approval API.
+cat >"$plugin_dir/mcp.json" <<'EOF'
+{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"effect":{"type":"stdio","command":"node","args":["${PLUGIN_ROOT}/effect.mjs"]}}}
+EOF
+cat >"$plugin_dir/effect.mjs" <<'EOF'
+import readline from 'node:readline';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+for await (const line of readline.createInterface({ input: process.stdin })) {
+  const request = JSON.parse(line);
+  if (!request.id) continue;
+  let result = {};
+  if (request.method === 'initialize') result = { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'effect-fixture', version: '1.0.0' } };
+  else if (request.method === 'tools/list') result = { tools: [{ name: 'write', description: 'Write one fixture value.', inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } }] };
+  else if (request.method === 'tools/call') {
+    if (request.params.arguments.value === 'tool-error') {
+      result = { content: [{ type: 'text', text: 'fixture tool error' }], isError: true };
+    } else {
+      writeFileSync(join(process.env.PLUGIN_ROOT, 'effect.txt'), request.params.arguments.value);
+      result = { content: [{ type: 'text', text: `fixture effect: ${request.params.arguments.value}` }], isError: false };
+    }
+  }
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n');
+}
+EOF
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+server_pid=""
+start_server openai-compatible
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true}' \
+	"$api/v1/sessions/$session_id/mcp-servers"
+rm -f "$plugin_dir/effect.txt"
+curl -sS -o "$work_dir/mcp-approved-response" -w '%{http_code}' \
+	-H 'content-type: application/json' -d '{"content":"Call MCP effect"}' \
+	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-approved-status" &
+mcp_turn_pid=$!
+for ((attempt = 0; attempt < 100; attempt++)); do
+	curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
+	[[ -n "$mcp_call_id" ]] && break
+	sleep 0.1
+done
+[[ -n "$mcp_call_id" ]] || fail 'provider MCP call did not pause for approval'
+[[ ! -e "$plugin_dir/effect.txt" ]] || fail 'MCP server produced an effect before user approval'
+expect_status 409 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
+grep -Fq 'inspected before approval' "$work_dir/response" || fail 'MCP call was approvable before inspection'
+expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
+grep -Fq 'approved-effect' "$work_dir/response" || fail 'MCP call inspection omitted the exact arguments'
+expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
+grep -Fq '"status":"approved"' "$work_dir/response" || fail 'MCP call approval was not persisted'
+wait "$mcp_turn_pid"
+[[ "$(cat "$work_dir/mcp-approved-status")" == 200 ]] || fail 'approved MCP provider turn did not finish successfully'
+grep -Fq 'MCP effect completed.' "$work_dir/mcp-approved-response" || fail 'approved MCP result did not resume the provider turn'
+[[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'approved MCP tool did not produce exactly the expected fixture effect'
+
+curl -sS -o "$work_dir/mcp-rejected-response" -w '%{http_code}' \
+	-H 'content-type: application/json' -d '{"content":"Reject MCP effect"}' \
+	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-rejected-status" &
+mcp_turn_pid=$!
+for ((attempt = 0; attempt < 100; attempt++)); do
+	curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
+	[[ -n "$mcp_call_id" ]] && break
+	sleep 0.1
+done
+[[ -n "$mcp_call_id" ]] || fail 'second provider MCP call did not pause for approval'
+expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
+expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/reject"
+grep -Fq '"status":"rejected"' "$work_dir/response" || fail 'MCP call rejection was not persisted'
+wait "$mcp_turn_pid"
+[[ "$(cat "$work_dir/mcp-rejected-status")" == 200 ]] || fail 'rejected MCP provider turn did not finish successfully'
+grep -Fq 'MCP request rejected.' "$work_dir/mcp-rejected-response" || fail 'provider did not receive the MCP rejection result'
+[[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'rejected MCP tool changed the fixture effect'
+
+curl -sS -o "$work_dir/mcp-error-response" -w '%{http_code}' \
+	-H 'content-type: application/json' -d '{"content":"Fail MCP effect"}' \
+	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-error-status" &
+mcp_turn_pid=$!
+for ((attempt = 0; attempt < 100; attempt++)); do
+	curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
+	[[ -n "$mcp_call_id" ]] && break
+	sleep 0.1
+done
+[[ -n "$mcp_call_id" ]] || fail 'provider MCP error call did not pause for approval'
+expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
+expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
+wait "$mcp_turn_pid"
+[[ "$(cat "$work_dir/mcp-error-status")" == 200 ]] || fail 'MCP tool error provider turn did not finish successfully'
+grep -Fq 'MCP tool reported an error.' "$work_dir/mcp-error-response" || fail 'provider did not receive the MCP tool error result'
+curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); assert any(item["id"] == sys.argv[2] and item["status"] == "failed" for item in calls)' "$work_dir/mcp-calls" "$mcp_call_id" || fail 'MCP isError result was not persisted as failed'
+[[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'MCP error fixture unexpectedly changed the effect'
+
 rm -rf "$work_dir/plugins/review-package"
 expect_status 200 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","skill_name":"review","enabled":false}' \

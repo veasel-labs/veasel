@@ -47,6 +47,23 @@ type SessionPluginMCPServer = {
   server_name: string
 }
 
+type PluginMCPToolCallApproval = {
+  id: string
+  operation_id: string
+  plugin_name: string
+  server_name: string
+  tool_name: string
+  arguments_json: string
+  status: "pending" | "approved" | "running" | "completed" | "rejected" | "failed" | "cancelled" | "uncertain"
+  reviewed_at: string
+  created_at: string
+  updated_at: string
+}
+
+type PluginMCPToolCallSummary = Omit<PluginMCPToolCallApproval, "arguments_json"> & {
+  arguments_bytes: number
+}
+
 type WorkspaceEditSummary = {
   id: string
   path: string
@@ -284,6 +301,11 @@ function safeTerminalText(value: string) {
   return value.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
 }
 
+function safeTerminalReviewText(value: string) {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu,
+    (character) => `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`)
+}
+
 async function openSession(session: Session) {
   activeSession = session
   streamingAssistantText = ""
@@ -319,7 +341,8 @@ async function openSession(session: Session) {
 
 async function sendMessage(value: string) {
   const content = value.trim()
-  if (!content || !activeSession || !chatInput || sendingMessage) return
+  const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
+  if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
   if (content === "/skills") {
     await showSkills()
     chatInput.value = ""
@@ -328,6 +351,22 @@ async function sendMessage(value: string) {
   }
   if (content === "/mcp") {
     await showMcpServers()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content === "/mcp calls") {
+    await showMcpToolCalls()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpToolCallCommand = /^\/mcp call (show|approve|reject) ([0-9a-f-]{36})$/.exec(content)
+  if (mcpToolCallCommand) {
+    const action = mcpToolCallCommand[1]
+    const callId = mcpToolCallCommand[2]
+    if (action === "show") await showMcpToolCall(callId)
+    else if (action === "approve" || action === "reject") await actOnMcpToolCall(callId, action)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -466,15 +505,10 @@ async function cancelActiveTurn() {
   activeTurnCancelled = true
   status.content = "● cancelling response…"
   status.fg = "#f3c969"
-  try {
-    await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/operations/${activeTurnId}/cancel`, {
-      method: "POST",
-    })
-  } catch {
-    // Closing the local response below still stops TUI waiting if the server exited.
-  } finally {
-    activeTurnController.abort()
-  }
+  void fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/operations/${activeTurnId}/cancel`, {
+    method: "POST",
+  }).catch(() => undefined)
+  activeTurnController.abort()
 }
 
 async function showSkills() {
@@ -531,11 +565,91 @@ async function showMcpServers() {
     const inventory = lines.length > 0
       ? lines.join("\n\n")
       : "No Agent Plugin MCP servers found. Add a package with mcp.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
-    skillNotice = `AGENT PLUGIN MCP SERVERS\n${inventory}\n\nTrust with /mcp trust <plugin>/<server>; revoke with /mcp untrust <plugin>/<server>. Stdio servers run with your OS privileges and can access files and network available to your user. Streamable HTTP servers receive configured headers and MCP tool inputs only at the displayed origin; redirects are refused. MCP tool inputs and results are sent to your configured model provider. Review each package and endpoint before trusting it.`
+    skillNotice = `AGENT PLUGIN MCP SERVERS\n${inventory}\n\nTrust with /mcp trust <plugin>/<server>; revoke with /mcp untrust <plugin>/<server>. Trust allows the server to connect and expose tools; every model-requested tool call still requires you to inspect its exact arguments and approve it with /mcp calls. Stdio servers run with your OS privileges and can access files and network available to your user. Streamable HTTP servers receive configured headers and approved MCP tool inputs only at the displayed origin; redirects are refused. MCP tool inputs and results are sent to your configured model provider. Review each package and endpoint before trusting it.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
+  }
+}
+
+async function showMcpToolCalls() {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const calls = await response.json() as PluginMCPToolCallSummary[]
+    const lines = calls.map((call) => {
+      const pending = call.status === "pending"
+        ? `\n  Inspect with /mcp call show ${call.id}`
+        : ""
+      return `${call.status.toUpperCase()}  ${call.id}\n  ${safeTerminalReviewText(call.plugin_name)}/${safeTerminalReviewText(call.server_name)} · ${safeTerminalReviewText(call.tool_name)}\n  arguments: ${call.arguments_bytes} bytes${pending}`
+    })
+    skillNotice = calls.length > 0
+      ? `MCP TOOL CALLS\n${lines.join("\n\n")}\n\nA pending call has not reached its MCP server. Inspect its arguments before approval.`
+      : "No MCP tool calls have been recorded in this session."
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load MCP tool call history: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function showMcpToolCall(callId: string) {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls/${callId}`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const call = await response.json() as PluginMCPToolCallApproval
+    const args = JSON.stringify(JSON.parse(call.arguments_json) as unknown, null, 2)
+    const action = call.status === "pending"
+      ? `\nType /mcp call approve ${call.id} or /mcp call reject ${call.id}.`
+      : ""
+    skillNotice = `REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${safeTerminalReviewText(call.plugin_name)}/${safeTerminalReviewText(call.server_name)} · ${safeTerminalReviewText(call.tool_name)}\nOperation: ${call.operation_id}\nArguments (terminal control and direction characters are escaped):\n${safeTerminalReviewText(args)}${action}`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not inspect MCP tool call: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls/${callId}/${action}`, {
+      method: "POST",
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    skillNotice = action === "approve"
+      ? `Approved MCP call ${callId}. The server call may now run; the active Veasel turn will continue when it returns.`
+      : `Rejected MCP call ${callId}. The server was not called.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not ${action} MCP tool call: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function notifyPendingMcpToolCalls() {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) return
+    const calls = await response.json() as PluginMCPToolCallSummary[]
+    const pending = calls.filter((call) => call.status === "pending")
+    if (pending.length === 0) return
+    skillNotice = `${pending.length} MCP tool call${pending.length === 1 ? "" : "s"} need review. The model turn is waiting and no pending call has reached its server. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`
+    chatInput?.focus()
+    renderChat(chatMessages)
+  } catch {
+    // Keep the model turn usable if the optional approval notice cannot be loaded.
   }
 }
 
@@ -759,7 +873,7 @@ async function consumeEvents() {
               const eventType = line.slice(6).trim()
               refreshSessionsForEvent ||= eventType !== "assistant.delta"
               status.content = `● live  ·  ${eventType}`
-              if (eventType === "assistant.delta" && activeSession && activeTurnId) {
+              if (eventType === "assistant.delta" || eventType === "plugin.mcp_tool_call_pending") {
                 const data = block.split(/\r?\n/).filter((item) => item.startsWith("data:"))
                   .map((item) => item.slice(5).trimStart()).join("\n")
                 try {
@@ -767,12 +881,16 @@ async function consumeEvents() {
                     session_id?: string
                     data?: { operation_id?: string; delta?: string }
                   }
-                  const delta = event.data?.delta
-                  if (event.session_id === activeSession.id
-                    && event.data?.operation_id === activeTurnId
-                    && typeof delta === "string" && delta.length > 0) {
-                    streamingAssistantText += delta
-                    renderChat(chatMessages)
+                  if (eventType === "plugin.mcp_tool_call_pending" && event.session_id === activeSession?.id) {
+                    void notifyPendingMcpToolCalls()
+                  } else if (eventType === "assistant.delta" && activeSession && activeTurnId) {
+                    const delta = event.data?.delta
+                    if (event.session_id === activeSession.id
+                      && event.data?.operation_id === activeTurnId
+                      && typeof delta === "string" && delta.length > 0) {
+                      streamingAssistantText += delta
+                      renderChat(chatMessages)
+                    }
                   }
                 } catch {
                   // Ignore malformed event payloads; the persisted turn remains authoritative.

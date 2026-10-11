@@ -85,6 +85,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested
   JSON Schemas intact. Full conformance suite remains open.
+- [x] Require durable per-call MCP argument inspection and approval, pause and
+  resume the active provider turn, persist rejection and execution outcomes,
+  and recover interrupted calls without replay. API smoke proves no fixture
+  effect occurs before approval and rejection causes no effect.
 - [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
   compatibility report before claiming support.
 - [ ] Document and test the Agent Toolkit integration contract.

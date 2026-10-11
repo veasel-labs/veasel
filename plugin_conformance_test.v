@@ -4,25 +4,25 @@ import json2
 import os
 
 struct AgentPluginManifestFixture {
-name        string
-accepted    bool
-diagnostics []string
-document    map[string]json2.Any
+	name        string
+	accepted    bool
+	diagnostics []string
+	document    map[string]json2.Any
 }
 
 struct AgentPluginMCPFixture {
-name        string
-accepted    bool
-servers     []string
-diagnostics []string
-document    map[string]json2.Any
+	name        string
+	accepted    bool
+	servers     []string
+	diagnostics []string
+	document    map[string]json2.Any
 }
 
 struct AgentSkillFrontmatterFixture {
-name      string
-directory string
-accepted  bool
-content   string
+	name      string
+	directory string
+	accepted  bool
+	content   string
 }
 
 fn test_agent_plugin_v1_manifest_fixture_corpus() {

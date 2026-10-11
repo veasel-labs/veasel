@@ -240,6 +240,36 @@ fn test_agent_plugin_mcp_config_isolated_and_transport_bounded() {
 	assert diagnostics.len == 3
 }
 
+fn test_agent_plugin_mcp_document_conformance_and_entry_isolation() {
+	manifest := json2.decode[map[string]json2.Any](test_mcp_manifest) or { panic(err) }
+	invalid_documents := [
+		'{}',
+		'{"${plugin_schema_key}":"https://agent-plugins.org/schemas/2.0.0/mcp.schema.json","mcpServers":{}}',
+		'{"${plugin_schema_key}":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"}',
+		'{"${plugin_schema_key}":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":[]}',
+		'{"${plugin_schema_key}":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{},"future":true}',
+	]
+	for document in invalid_documents {
+		fields := json2.decode[map[string]json2.Any](document) or { panic(err) }
+		assert plugin_mcp_document_rejected(fields, manifest), 'invalid MCP document was accepted: ${document}'
+	}
+
+	valid_and_invalid := '{"${plugin_schema_key}":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"valid":{"type":"streamable-http","url":"http://127.0.0.8:8080/mcp"},"invalid":{"type":"stdio","command":"echo","unknown":true}}}'
+	fields := json2.decode[map[string]json2.Any](valid_and_invalid) or { panic(err) }
+	mut diagnostics := []PluginDiagnostic{}
+	servers := validate_plugin_mcp(os.getwd(), fields, manifest, mut diagnostics) or { panic(err) }
+	assert servers.len == 1
+	assert servers[0].name == 'valid'
+	assert diagnostics.len == 1
+	assert diagnostics[0].component == 'mcpServers.invalid'
+}
+
+fn plugin_mcp_document_rejected(fields map[string]json2.Any, manifest map[string]json2.Any) bool {
+	mut diagnostics := []PluginDiagnostic{}
+	_ := validate_plugin_mcp(os.getwd(), fields, manifest, mut diagnostics) or { return true }
+	return false
+}
+
 fn test_plugin_mcp_catalog_redacts_remote_endpoint_path_and_query() {
 	assert plugin_mcp_url_origin('HTTPS://Tools.Example:8443/private/mcp?token=secret') == 'https://tools.example:8443'
 	assert plugin_mcp_url_origin('not-a-url') == ''

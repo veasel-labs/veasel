@@ -22,9 +22,11 @@ client; the agent runtime, tools and persistence remain in V. Core was chosen
 for the first small view because its direct event and renderer APIs work with
 the pinned package and installed Bun 1.4.2. Solid remains an option as the
 view's composition needs grow. The package is pinned and typechecked, and the
-Linux x64 flow was exercised interactively. Cross-platform distribution still
-needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
-[`VLIB_REUSE.md`](VLIB_REUSE.md).
+Linux x64 flow was exercised interactively. CI builds and packages the backend
+and TUI bundle for x64 Linux, macOS, and Windows and publishes verified main
+builds automatically. Interactive TUI validation on macOS and Windows and
+measured performance baselines remain open; see [`RESEARCH.md`](RESEARCH.md)
+and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ## Milestones and backlog
 
@@ -55,7 +57,10 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
 - [x] Generate bounded single-file diffs, persist proposals, require explicit durable approval, reject stale snapshots, and recover interrupted applications without replay.
-- [ ] Add permissioned shell execution with explicit, durable approval.
+- [x] Add permissioned shell execution with explicit, durable approval. The
+  TUI requires opening the exact command, working directory, and timeout before
+  approval; execution limits and recovery behavior are documented in
+  [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
 - [ ] Deliver streaming model responses and cancellation through the API, event store, and TUI.
 - [ ] Complete an end-to-end coding task against a disposable fixture repository, including diff review, tests, and a denied unapproved effect.
 
@@ -87,7 +92,10 @@ needs release tests; see [`RESEARCH.md`](RESEARCH.md) and
 
 - [ ] Multi-agent isolation and orchestration.
 - [ ] Context retrieval, rich diff review, accessibility, and UX refinement.
-- [ ] Cross-platform packaging and measured performance baselines.
+- [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
+  Windows in CI and attach verified artifacts to automated prereleases.
+- [ ] Validate interactive TUI behavior on each platform and establish
+  measured performance baselines.
 
 ## Initial compatibility target
 

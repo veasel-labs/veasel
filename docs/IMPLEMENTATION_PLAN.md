@@ -51,8 +51,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
 - [x] Reject provider work immediately with `503` and `Retry-After` when all provider slots are occupied, keeping overload from accumulating unbounded waiting requests.
-- [ ] Stop an in-flight provider socket immediately when cancellation arrives before its first response chunk; the pinned `net.http.fetch` API exposes bounded timeouts and progress callbacks but no external socket cancellation handle.
 - [x] Add UUID operation IDs and explicit cancellation endpoints, make queued per-session turns cancellable, enforce a two-minute turn deadline, pass context deadlines into all provider transports, and expose Escape cancellation in the TUI. The provider slot remains reserved until the blocking transport finishes its bounded cleanup.
+- [ ] Stop an in-flight provider socket immediately when cancellation arrives before its first response chunk; the pinned `net.http.fetch` API exposes bounded timeouts and progress callbacks but no external socket cancellation handle.
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
@@ -62,7 +62,6 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   approval; execution limits and recovery behavior are documented in
   [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
 - [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
-- [ ] Stop an in-flight provider socket immediately when cancellation arrives before its first response chunk; the pinned `net.http.fetch` API exposes bounded timeouts and progress callbacks but no external socket cancellation handle.
 - [x] Complete an end-to-end coding task against a disposable fixture workspace for OpenAI-compatible, Anthropic, and Gemini providers: propose and inspect a greeting implementation, prove the workspace stays unchanged before approval, approve the diff, run its V test, and verify rejected or unreviewed edits and shell effects do not occur (`scripts/api-smoke.sh`).
 
 ### Milestone 3 — persistent execution

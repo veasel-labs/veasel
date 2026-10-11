@@ -9,6 +9,7 @@ const max_agent_tool_calls = 12
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 const max_agent_context_bytes = max_chat_input_bytes + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
+const plugin_mcp_approval_poll_interval = 250 * time.millisecond
 
 struct AgentToolError {
 	error string
@@ -246,7 +247,7 @@ fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Contex
 		current := app.store.get_plugin_mcp_tool_call(session_id, call.id)!
 		match current.status {
 			'pending' {
-				time.sleep(50 * time.millisecond)
+				time.sleep(plugin_mcp_approval_poll_interval)
 				continue
 			}
 			'rejected' {

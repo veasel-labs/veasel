@@ -73,6 +73,9 @@ fail() {
 	if [[ -f "$work_dir/provider.log" ]]; then
 		cat "$work_dir/provider.log" >&2
 	fi
+	if [[ -f "$plugin_dir/requests.log" ]]; then
+		cat "$plugin_dir/requests.log" >&2
+	fi
 	exit 1
 }
 
@@ -353,10 +356,11 @@ cat >"$plugin_dir/mcp.json" <<'EOF'
 EOF
 cat >"$plugin_dir/effect.mjs" <<'EOF'
 import readline from 'node:readline';
-import { writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 for await (const line of readline.createInterface({ input: process.stdin })) {
   const request = JSON.parse(line);
+  appendFileSync(join(process.env.PLUGIN_ROOT, 'requests.log'), `${request.method}\n`);
   if (!request.id) continue;
   let result = {};
   if (request.method === 'initialize') result = { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'effect-fixture', version: '1.0.0' } };

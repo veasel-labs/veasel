@@ -15,6 +15,13 @@ module fixture
 
 // workspace-search-sentinel
 EOF
+cat >"$work_dir/workspace/src/main_test.v" <<'EOF'
+module fixture
+
+fn test_greet_personalizes_hello() {
+	assert greet('Ada') == 'Hello, Ada!'
+}
+EOF
 cat >"$work_dir/outside/secret.txt" <<'EOF'
 outside-root-secret
 EOF
@@ -211,6 +218,12 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
 for provider in openai-compatible anthropic gemini; do
+	rm -f "$work_dir/workspace/approved-effect.txt"
+	cat >"$work_dir/workspace/src/main.v" <<'EOF'
+module fixture
+
+// workspace-search-sentinel
+EOF
 	kill "$server_pid"
 	wait "$server_pid" 2>/dev/null || true
 	server_pid=""
@@ -259,34 +272,37 @@ for provider in openai-compatible anthropic gemini; do
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Propose workspace edit"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'Proposed a file edit for review.' "$work_dir/response" || fail "$provider edit proposal did not reach the user"
-	edit_path="src/$provider-edit.v"
-	[[ ! -e "$work_dir/workspace/$edit_path" ]] || fail "$provider proposal wrote a file before approval"
+	edit_path='src/main.v'
+	cmp -s "$work_dir/workspace/$edit_path" <(printf 'module fixture\n\n// workspace-search-sentinel\n') || fail "$provider proposal changed a file before approval"
 	curl -fsS "$api/v1/sessions/$session_id/workspace/edits" >"$work_dir/provider-edits"
 	grep -Fq "$edit_path" "$work_dir/provider-edits" || fail "$provider proposal was not persisted"
 	edit_id="$(python3 -c 'import json, sys; path = sys.argv[1]; edits = json.load(open(sys.argv[2])); print(next((edit["id"] for edit in edits if edit["path"] == path), ""))' "$edit_path" "$work_dir/provider-edits")"
 	[[ -n "$edit_id" ]] || fail "$provider proposal id is missing"
 	expect_status 200 -X GET "$api/v1/sessions/$session_id/workspace/edits/$edit_id"
-	grep -Fq '+fn main() {}' "$work_dir/response" || fail "$provider proposal diff is missing"
+	grep -Fq '+fn greet(name string) string' "$work_dir/response" || fail "$provider proposal diff is missing"
 	expect_status 200 -X POST "$api/v1/sessions/$session_id/workspace/edits/$edit_id/approve"
 	grep -Fq '"status":"applied"' "$work_dir/response" || fail "$provider proposal approval failed"
-	grep -Fq 'fn main() {}' "$work_dir/workspace/$edit_path" || fail "$provider approved edit was not applied"
+	grep -Fq 'fn greet(name string) string' "$work_dir/workspace/$edit_path" || fail "$provider approved greeting implementation was not applied"
+	"${V_BIN:-v}" test "$work_dir/workspace/src" || fail "$provider-approved coding task did not pass its fixture test"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Propose shell command"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'Proposed a shell command for review.' "$work_dir/response" || fail "$provider shell command proposal did not reach the user"
 	curl -fsS "$api/v1/sessions/$session_id/workspace/commands" >"$work_dir/provider-commands"
-	command_id="$(python3 -c 'import json, sys; commands = json.load(open(sys.argv[1])); print(next((item["id"] for item in commands if item["command"] == "echo veasel-shell-approved"), ""))' "$work_dir/provider-commands")"
+	command_id="$(python3 -c 'import json, sys; commands = json.load(open(sys.argv[1])); print(next((item["id"] for item in commands if item["status"] == "pending" and "echo veasel-shell-approved" in item["command"]), ""))' "$work_dir/provider-commands")"
 	[[ -n "$command_id" ]] || fail "$provider shell command proposal was not persisted"
 	expect_status 409 -X POST "$api/v1/sessions/$session_id/workspace/commands/$command_id/approve"
 	grep -Fq 'Inspect the exact command first' "$work_dir/response" || fail "$provider shell command ran without a recorded review"
+	[[ ! -e "$work_dir/workspace/approved-effect.txt" ]] || fail "$provider unreviewed command changed the workspace"
 	expect_status 200 "$api/v1/sessions/$session_id/workspace/commands/$command_id"
 	grep -Fq 'echo veasel-shell-approved' "$work_dir/response" || fail "$provider command review omitted the exact command"
 	expect_status 200 -X POST "$api/v1/sessions/$session_id/workspace/commands/$command_id/approve"
 	grep -Fq '"status":"succeeded"' "$work_dir/response" || fail "$provider command approval did not finish successfully"
 	grep -Fq 'veasel-shell-approved' "$work_dir/response" || fail "$provider command output was not captured"
+	[[ "$(cat "$work_dir/workspace/approved-effect.txt")" == 'veasel-shell-approved' ]] || fail "$provider approved command did not create its fixture effect"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Propose slow shell command"}' \
 		"$api/v1/sessions/$session_id/messages"
 	curl -fsS "$api/v1/sessions/$session_id/workspace/commands" >"$work_dir/provider-commands"
-	command_id="$(python3 -c 'import json, sys; commands = json.load(open(sys.argv[1])); print(next((item["id"] for item in commands if item["timeout_seconds"] == 1), ""))' "$work_dir/provider-commands")"
+	command_id="$(python3 -c 'import json, sys; commands = json.load(open(sys.argv[1])); print(next((item["id"] for item in commands if item["status"] == "pending" and item["timeout_seconds"] == 1), ""))' "$work_dir/provider-commands")"
 	[[ -n "$command_id" ]] || fail "$provider bounded shell command proposal was not persisted"
 	expect_status 200 "$api/v1/sessions/$session_id/workspace/commands/$command_id"
 	expect_status 200 -X POST "$api/v1/sessions/$session_id/workspace/commands/$command_id/approve"

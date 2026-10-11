@@ -97,7 +97,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   effect occurs before approval and rejection causes no effect.
 - [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
   compatibility report before claiming support.
-- [ ] Document and test the Agent Toolkit integration contract.
+- [x] Document the Agent Toolkit consumer contract and verify its catalog,
+  session Skill, MCP trust, and per-call approval shapes in
+  [`integrations/agent-toolkit.md`](integrations/agent-toolkit.md) and
+  [`scripts/api-smoke.sh`](../scripts/api-smoke.sh).
 
 ### Milestone 5 — competitive experience
 

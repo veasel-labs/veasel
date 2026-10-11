@@ -46,6 +46,12 @@ api="http://127.0.0.1:${port}"
 server_pid=""
 provider_pid=""
 
+# Every smoke request must fail with a useful error instead of hanging until the
+# GitHub Actions job timeout. Individual calls may override max-time when needed.
+curl() {
+	command curl --connect-timeout 2 --max-time 30 "$@"
+}
+
 cleanup() {
 	if [[ -n "$provider_pid" ]]; then
 		kill "$provider_pid" 2>/dev/null || true
@@ -222,6 +228,7 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
 for provider in openai-compatible anthropic gemini; do
+	printf 'Smoke: provider workflow starting (%s)\n' "$provider"
 	rm -f "$work_dir/workspace/approved-effect.txt"
 	cat >"$work_dir/workspace/src/main.v" <<'EOF'
 module fixture
@@ -253,6 +260,7 @@ EOF
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'Read skill reference smoke sentinel' "$work_dir/response" || fail "$provider could not read an active Agent Skill resource"
 	if [[ "$provider" == openai-compatible ]]; then
+		printf 'Smoke: testing provider cancellation\n'
 		operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 		curl -sS -o "$work_dir/cancelled-turn-response" -w '%{http_code}' \
 			-X POST -H 'content-type: application/json' -H "x-veasel-operation-id: $operation_id" \
@@ -278,7 +286,9 @@ EOF
 		cancelled_turn_status="$(cat "$work_dir/cancelled-turn-status")"
 		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"
 		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/release-slow-response" >/dev/null || fail 'slow provider fixture could not be released'
+		printf 'Smoke: provider cancellation passed\n'
 	fi
+	printf 'Smoke: testing provider workspace tools (%s)\n' "$provider"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Inspect workspace"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'Found workspace-search-sentinel' "$work_dir/response" || fail "$provider native tool call did not return the workspace search result"
@@ -301,6 +311,7 @@ EOF
 	grep -Fq '"status":"applied"' "$work_dir/response" || fail "$provider proposal approval failed"
 	grep -Fq 'fn greet(name string) string' "$work_dir/workspace/$edit_path" || fail "$provider approved greeting implementation was not applied"
 	"${V_BIN:-v}" test "$work_dir/workspace/src" || fail "$provider-approved coding task did not pass its fixture test"
+	printf 'Smoke: testing provider shell approval and timeout (%s)\n' "$provider"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Propose shell command"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq 'Proposed a shell command for review.' "$work_dir/response" || fail "$provider shell command proposal did not reach the user"
@@ -333,8 +344,10 @@ EOF
 	grep -Fq '"content":"Proposed a file edit for review."' "$work_dir/messages" || fail "$provider edit proposal was not persisted"
 	grep -Fq '"content":"Proposed a shell command for review."' "$work_dir/messages" || fail "$provider shell command proposal was not persisted"
 done
+printf 'Smoke: provider workflows passed; starting MCP approval checks\n'
 
 # Exercise a provider-requested MCP side effect through the real approval API.
+printf 'Smoke: exercising MCP tool approval, rejection, and error persistence\n'
 cat >"$plugin_dir/mcp.json" <<'EOF'
 {"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"effect":{"type":"stdio","command":"node","args":["${PLUGIN_ROOT}/effect.mjs"]}}}
 EOF
@@ -372,12 +385,13 @@ curl -sS -o "$work_dir/mcp-approved-response" -w '%{http_code}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-approved-status" &
 mcp_turn_pid=$!
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	curl --max-time 3 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'provider MCP call did not pause for approval'
+printf 'Smoke: MCP approval call discovered; inspecting and approving\n'
 [[ ! -e "$plugin_dir/effect.txt" ]] || fail 'MCP server produced an effect before user approval'
 expect_status 409 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
 grep -Fq 'inspected before approval' "$work_dir/response" || fail 'MCP call was approvable before inspection'
@@ -389,18 +403,20 @@ wait "$mcp_turn_pid"
 [[ "$(cat "$work_dir/mcp-approved-status")" == 200 ]] || fail 'approved MCP provider turn did not finish successfully'
 grep -Fq 'MCP effect completed.' "$work_dir/mcp-approved-response" || fail 'approved MCP result did not resume the provider turn'
 [[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'approved MCP tool did not produce exactly the expected fixture effect'
+printf 'Smoke: MCP approval path passed; exercising rejection\n'
 
 curl -sS -o "$work_dir/mcp-rejected-response" -w '%{http_code}' \
 	-H 'content-type: application/json' -d '{"content":"Reject MCP effect"}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-rejected-status" &
 mcp_turn_pid=$!
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	curl --max-time 3 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'second provider MCP call did not pause for approval'
+printf 'Smoke: MCP rejection call discovered; rejecting\n'
 expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
 expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/reject"
 grep -Fq '"status":"rejected"' "$work_dir/response" || fail 'MCP call rejection was not persisted'
@@ -408,18 +424,20 @@ wait "$mcp_turn_pid"
 [[ "$(cat "$work_dir/mcp-rejected-status")" == 200 ]] || fail 'rejected MCP provider turn did not finish successfully'
 grep -Fq 'MCP request rejected.' "$work_dir/mcp-rejected-response" || fail 'provider did not receive the MCP rejection result'
 [[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'rejected MCP tool changed the fixture effect'
+printf 'Smoke: MCP rejection path passed; exercising MCP isError persistence\n'
 
 curl -sS -o "$work_dir/mcp-error-response" -w '%{http_code}' \
 	-H 'content-type: application/json' -d '{"content":"Fail MCP effect"}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-error-status" &
 mcp_turn_pid=$!
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	curl --max-time 3 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'provider MCP error call did not pause for approval'
+printf 'Smoke: MCP error call discovered; inspecting and approving\n'
 expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
 expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
 wait "$mcp_turn_pid"
@@ -428,6 +446,7 @@ grep -Fq 'MCP tool reported an error.' "$work_dir/mcp-error-response" || fail 'p
 curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
 python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); assert any(item["id"] == sys.argv[2] and item["status"] == "failed" for item in calls)' "$work_dir/mcp-calls" "$mcp_call_id" || fail 'MCP isError result was not persisted as failed'
 [[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'MCP error fixture unexpectedly changed the effect'
+printf 'Smoke: MCP approval, rejection, and error persistence passed\n'
 
 rm -rf "$work_dir/plugins/review-package"
 expect_status 200 -H 'content-type: application/json' \

@@ -14,6 +14,11 @@ API_KEYS = {
     "gemini": "veasel-gemini-key",
 }
 REPLY = "Provider fixture reply"
+GREETING_EDIT = (
+    "module fixture\n\n// workspace-search-sentinel\n"
+    "fn greet(name string) string {\n\treturn 'Hello, ${name}!'\n}\n"
+)
+APPROVED_SHELL_COMMAND = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved"
 SLOW_RESPONSE_RELEASE = Event()
 SLOW_SHELL_COMMAND = "timeout /T 3 /NOBREAK >NUL" if sys.platform == "win32" else "sleep 2"
 SESSION_SYSTEM = (
@@ -108,9 +113,9 @@ class MockProvider(BaseHTTPRequestHandler):
                 elif user_text == "Try to read outside":
                     arguments = '{"path":"../outside/secret.txt"}'
                 elif user_text == "Propose workspace edit":
-                    arguments = json.dumps({"path": "src/openai-compatible-edit.v", "content": "module fixture\nfn main() {}\n"})
+                    arguments = json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                 elif user_text == "Propose shell command":
-                    arguments = json.dumps({"command": "echo veasel-shell-approved", "cwd": ".", "timeout_seconds": 10})
+                    arguments = json.dumps({"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10})
                 else:
                     arguments = json.dumps({"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1})
                 body = {"choices": [{"message": {
@@ -175,8 +180,8 @@ class MockProvider(BaseHTTPRequestHandler):
                 tool_input = (
                     {"query": "workspace-search-sentinel"} if user_text == "Inspect workspace" else
                     {"path": "../outside/secret.txt"} if user_text == "Try to read outside" else
-                    {"path": "src/anthropic-edit.v", "content": "module fixture\nfn main() {}\n"} if user_text == "Propose workspace edit" else
-                    {"command": "echo veasel-shell-approved", "cwd": ".", "timeout_seconds": 10} if user_text == "Propose shell command" else
+                    {"path": "src/main.v", "content": GREETING_EDIT} if user_text == "Propose workspace edit" else
+                    {"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10} if user_text == "Propose shell command" else
                     {"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1}
                 )
                 body = {"content": [{"type": "tool_use", "id": "anthropic-edit-1" if user_text in ("Propose workspace edit", "Propose shell command", "Propose slow shell command") else "anthropic-tool-1", "name": requested_tool, "input": tool_input}]}
@@ -237,8 +242,8 @@ class MockProvider(BaseHTTPRequestHandler):
                 args = (
                     {"query": "workspace-search-sentinel"} if user_text == "Inspect workspace" else
                     {"path": "../outside/secret.txt"} if user_text == "Try to read outside" else
-                    {"path": "src/gemini-edit.v", "content": "module fixture\nfn main() {}\n"} if user_text == "Propose workspace edit" else
-                    {"command": "echo veasel-shell-approved", "cwd": ".", "timeout_seconds": 10} if user_text == "Propose shell command" else
+                    {"path": "src/main.v", "content": GREETING_EDIT} if user_text == "Propose workspace edit" else
+                    {"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10} if user_text == "Propose shell command" else
                     {"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1}
                 )
                 body = {"candidates": [{"content": {"role": "model", "parts": [{

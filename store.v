@@ -6,6 +6,8 @@ import os
 import sync
 import uuid
 
+const max_session_history_page_size = 100
+
 pub struct Session {
 pub:
 	id         string
@@ -1059,12 +1061,27 @@ fn (mut store Store) record_assistant_delta(session_id string, operation_id stri
 }
 
 fn (mut store Store) messages_for_session(session_id string, limit int) ![]ChatTurn {
+	return store.messages_page_for_session(session_id, limit, 0)!
+}
+
+fn (mut store Store) messages_page_for_session(session_id string, limit int, before_id int) ![]ChatTurn {
+	if limit < 1 || limit > max_session_history_page_size || before_id < 0 {
+		return error('chat history page bounds are invalid')
+	}
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param_many('SELECT id, session_id, role, content, created_at FROM (SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id',
-		[session_id, limit.str()])!
+	query := 'SELECT id, session_id, role, content, created_at FROM (SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ?'
+	mut params := [session_id]
+	mut cursor_filter := ''
+	if before_id > 0 {
+		cursor_filter = ' AND id < ?'
+		params << before_id.str()
+	}
+	params << limit.str()
+	rows := store.db.exec_param_many('${query}${cursor_filter} ORDER BY id DESC LIMIT ?) ORDER BY id',
+		params)!
 	mut messages := []ChatTurn{cap: rows.len}
 	for row in rows {
 		messages << ChatTurn{

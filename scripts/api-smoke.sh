@@ -223,6 +223,15 @@ grep -Fq '"title":"API smoke"' "$work_dir/response" || fail 'created session is 
 grep -Fq "\"directory\":\"$work_dir/workspace\"" "$work_dir/response" || fail 'workspace root was not stored canonically'
 session_id="$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$work_dir/response")"
 [[ -n "$session_id" ]] || fail 'session id is missing'
+expect_status 200 "$api/v1/sessions/$session_id/messages?limit=1"
+python3 - "$work_dir/response" <<'PY'
+import json
+import sys
+
+assert json.load(open(sys.argv[1], encoding='utf-8')) == []
+PY
+expect_status 400 "$api/v1/sessions/$session_id/messages?limit=0"
+expect_status 400 "$api/v1/sessions/$session_id/messages?before=not-an-id"
 
 curl -fsS "$api/v1/sessions/$session_id/workspace/files" >"$work_dir/workspace-files"
 grep -Fq 'src/main.v' "$work_dir/workspace-files" || fail 'workspace file listing omitted a source file'
@@ -429,6 +438,33 @@ EOF
 	grep -Fq '"content":"Proposed a file edit for review."' "$work_dir/messages" || fail "$provider edit proposal was not persisted"
 	grep -Fq '"content":"Proposed a shell command for review."' "$work_dir/messages" || fail "$provider shell command proposal was not persisted"
 done
+curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/all-messages"
+expect_status 200 "$api/v1/sessions/$session_id/messages?limit=2"
+cp "$work_dir/response" "$work_dir/latest-page"
+python3 - "$work_dir/all-messages" "$work_dir/latest-page" <<'PY'
+import json
+import sys
+
+history = json.load(open(sys.argv[1], encoding='utf-8'))
+page = json.load(open(sys.argv[2], encoding='utf-8'))
+assert len(history) >= 4
+assert page == history[-2:]
+assert page[0]['id'] < page[1]['id']
+PY
+first_id="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))[0]["id"])' "$work_dir/latest-page")"
+expect_status 200 "$api/v1/sessions/$session_id/messages?before=$first_id&limit=2"
+python3 - "$work_dir/all-messages" "$work_dir/latest-page" "$work_dir/response" <<'PY'
+import json
+import sys
+
+history = json.load(open(sys.argv[1], encoding='utf-8'))
+latest = json.load(open(sys.argv[2], encoding='utf-8'))
+previous = json.load(open(sys.argv[3], encoding='utf-8'))
+assert previous == history[-4:-2]
+assert previous[-1]['id'] < latest[0]['id']
+PY
+expect_status 400 "$api/v1/sessions/$session_id/messages?limit=101"
+expect_status 400 "$api/v1/sessions/$session_id/messages?before=-1"
 printf 'Smoke: provider workflows passed; starting MCP approval checks\n'
 
 # Exercise a provider-requested MCP side effect through the real approval API.

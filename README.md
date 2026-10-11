@@ -149,6 +149,8 @@ provider tool loop uses bounded reads and creates durable, reviewable single-fil
 edit proposals. File writes require an explicit approval request. See
 the OpenAPI document at
 [`docs/openapi.yaml`](docs/openapi.yaml).
+Agent Toolkit clients should follow the [integration contract](docs/integrations/agent-toolkit.md),
+which records ownership, API routes, local-only access, and smoke-test coverage.
 
 ## Verification
 

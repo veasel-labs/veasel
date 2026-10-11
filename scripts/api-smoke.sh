@@ -30,6 +30,9 @@ ln -s "$work_dir/outside" "$work_dir/workspace/outside-link"
 cat >"$plugin_dir/plugin.json" <<'EOF'
 {"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"review-tools","version":"1.0.0","description":"Fixture plugin for API smoke tests."}
 EOF
+cat >"$plugin_dir/mcp.json" <<'EOF'
+{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"catalog-http":{"type":"streamable-http","url":"https://catalog.example.invalid/private/path?token=smoke-only-secret","headers":{"Authorization":"Bearer smoke-only-secret"}}}}
+EOF
 cat >"$plugin_dir/skills/review/SKILL.md" <<'EOF'
 ---
 name: review
@@ -181,6 +184,30 @@ grep -Fq 'workspace.search' "$work_dir/capabilities" || fail 'workspace search c
 curl -fsS "$api/v1/plugins" >"$work_dir/plugins.json"
 grep -Fq 'review-tools' "$work_dir/plugins.json" || fail 'plugin catalog is missing the fixture plugin'
 grep -Fq 'Review code changes carefully.' "$work_dir/plugins.json" || fail 'plugin catalog is missing skill metadata'
+python3 - "$work_dir/plugins.json" <<'PY'
+import json
+import sys
+
+catalog = json.load(open(sys.argv[1], encoding='utf-8'))
+assert isinstance(catalog.get('plugins'), list)
+assert isinstance(catalog.get('diagnostics'), list)
+plugin = next(item for item in catalog['plugins'] if item['name'] == 'review-tools')
+assert {'version', 'description', 'skills', 'mcp_servers', 'diagnostics'} <= plugin.keys()
+assert isinstance(plugin['skills'], list)
+assert isinstance(plugin['mcp_servers'], list)
+assert isinstance(plugin['diagnostics'], list)
+skill = next(item for item in plugin['skills'] if item['name'] == 'review')
+assert skill['description'] == 'Review code changes carefully.'
+assert isinstance(skill['allowed_tools'], list)
+assert isinstance(skill['allowed_tools_declared'], bool)
+assert 'instructions' not in skill and 'body' not in skill
+server = next(item for item in plugin['mcp_servers'] if item['name'] == 'catalog-http')
+assert server['url_origin'] == 'https://catalog.example.invalid'
+assert server['header_count'] == 1
+assert server['header_names'] == ['Authorization']
+assert 'private/path' not in json.dumps(catalog)
+assert 'smoke-only-secret' not in json.dumps(catalog)
+PY
 expect_status 400 -H 'content-type: application/json' -d '{"messages":[{"role":"assistant","content":"not a user turn"}]}' "$api/v1/chat/completions"
 expect_status 403 -H 'Origin: http://attacker.example' -H 'content-type: application/json' \
 	-d '{"title":"forbidden","directory":"/tmp"}' "$api/v1/sessions"
@@ -244,7 +271,13 @@ curl -fsS "$api/v1/sessions/$session_id/skills" >"$work_dir/skills"
 expect_status 200 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","skill_name":"review","enabled":true}' \
 	"$api/v1/sessions/$session_id/skills"
-grep -Fq 'review-tools' "$work_dir/response" || fail 'skill enable response is missing the plugin name'
+python3 - "$work_dir/response" <<'PY'
+import json
+import sys
+
+active = json.load(open(sys.argv[1], encoding='utf-8'))
+assert {'plugin_name': 'review-tools', 'skill_name': 'review'} in active
+PY
 expect_status 400 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","skill_name":"review"}' \
 	"$api/v1/sessions/$session_id/skills"
@@ -432,6 +465,13 @@ start_server openai-compatible
 expect_status 200 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true}' \
 	"$api/v1/sessions/$session_id/mcp-servers"
+python3 - "$work_dir/response" <<'PY'
+import json
+import sys
+
+trusted = json.load(open(sys.argv[1], encoding='utf-8'))
+assert {'plugin_name': 'review-tools', 'server_name': 'effect'} in trusted
+PY
 rm -f "$plugin_dir/effect.txt"
 mcp_operation_id="$(start_mcp_turn 'Call MCP effect')"
 for ((attempt = 0; attempt < 100; attempt++)); do

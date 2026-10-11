@@ -247,6 +247,26 @@ fn parse_shell_tool_arguments(arguments string, root string) !ShellCommandDraft 
 	command := string_tool_argument(fields, 'command')!
 	cwd := string_tool_argument(fields, 'cwd')!
 	timeout_value := fields['timeout_seconds'] or { return error('timeout_seconds is required') }
-	if timeout_value !is int { return error('timeout_seconds must be an integer') }
-	return prepare_shell_command(root, command, cwd, timeout_value as int)
+	timeout_seconds := match timeout_value {
+		int {
+			timeout_value
+		}
+		i64 {
+			if timeout_value < 1 || timeout_value > max_shell_command_timeout_seconds {
+				return error('timeout_seconds must be an integer from 1 to ${max_shell_command_timeout_seconds}')
+			}
+			int(timeout_value)
+		}
+		f64 {
+			if timeout_value < 1 || timeout_value > f64(max_shell_command_timeout_seconds)
+				|| timeout_value != f64(int(timeout_value)) {
+				return error('timeout_seconds must be an integer from 1 to ${max_shell_command_timeout_seconds}')
+			}
+			int(timeout_value)
+		}
+		else {
+			return error('timeout_seconds must be an integer')
+		}
+	}
+	return prepare_shell_command(root, command, cwd, timeout_seconds)
 }

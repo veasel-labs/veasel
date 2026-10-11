@@ -102,6 +102,14 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	})
 	assert shell_proposal.contains('No command was executed'), shell_proposal
 	assert !os.exists(os.join_path(root, 'shell-must-not-run'))
+	fractional_timeout := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'shell-fractional-timeout'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_shell_command'
+			arguments: '{"command":"touch fractional-timeout-must-not-run","cwd":".","timeout_seconds":1.5}'
+		}
+	})
+	assert fractional_timeout.contains('invalid')
 	shell_commands := store.shell_commands(session.id) or { panic(err) }
 	assert shell_commands.len == 1
 	assert shell_commands[0].command == 'touch shell-must-not-run'

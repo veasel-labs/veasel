@@ -919,7 +919,8 @@ fn (app &App) start_async_session_message(operation_id string, turn_done chan in
 				_ := <-turn_done {
 					cancel_turn()
 				}
-				_ := <-worker_done {}
+				_ := <-worker_done {
+				}
 			}
 		}(turn_done, worker_done, cancel_turn)
 		defer {

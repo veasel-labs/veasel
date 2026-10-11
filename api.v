@@ -234,7 +234,9 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 		return error('app_shutting_down')
 	}
 	result_chan := chan ProviderTurnResult{cap: 1}
-	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, mut turn_ctx vcontext.Context, input CompletionInput,
+	// Keep a worker-local copy of the interface value. Sharing the mutable
+	// interface header with the waiting goroutine races method dispatch.
+	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, turn_ctx vcontext.Context, input CompletionInput,
 		result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
@@ -242,9 +244,10 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 			mut provider_workers := workers
 			provider_workers.done()
 		}
-		result := complete_with_turn_context(mut turn_ctx, input.messages, [], ignore_provider_text_delta)
+		mut worker_ctx := turn_ctx
+		result := complete_with_turn_context(mut worker_ctx, input.messages, [], ignore_provider_text_delta)
 		result_chan <- result
-	}(slots, workers, mut turn_ctx, input, result_chan)
+	}(slots, workers, turn_ctx, input, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
@@ -260,7 +263,9 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 		return error('app_shutting_down')
 	}
 	result_chan := chan ProviderTurnResult{cap: 1}
-	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, mut turn_ctx vcontext.Context, messages []ChatMessage,
+	// As above, pass Context by value so this goroutine owns its interface
+	// header while the caller waits on the operation.
+	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, turn_ctx vcontext.Context, messages []ChatMessage,
 		tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
@@ -268,9 +273,10 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 			mut provider_workers := workers
 			provider_workers.done()
 		}
-		result := complete_with_turn_context(mut turn_ctx, messages, tools, on_text_delta)
+		mut worker_ctx := turn_ctx
+		result := complete_with_turn_context(mut worker_ctx, messages, tools, on_text_delta)
 		result_chan <- result
-	}(slots, workers, mut turn_ctx, messages.clone(), tools.clone(), on_text_delta, result_chan)
+	}(slots, workers, turn_ctx, messages.clone(), tools.clone(), on_text_delta, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 

@@ -165,11 +165,12 @@ jobs:
           v test plugin_mcp_http_transport_test.v
           v test agent_runtime_test.v
           v test workspace_tools_test.v
-      - name: Run Windows workspace edit and recovery tests
+      - name: Run Windows plugin, workspace edit, and recovery tests
         if: runner.os == 'Windows'
         timeout-minutes: 20
         run: |
           v -d windows_7 test main_test.v
+          v -d windows_7 test plugins_test.v
           v -d windows_7 test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
           v -d windows_7 test workspace_edits_windows_test.v

@@ -10,6 +10,7 @@ const plugin_mcp_schema = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.js
 const plugin_schema_key = '$' + 'schema'
 const max_plugin_manifest_bytes = 1_000_000
 const max_plugin_skill_bytes = 1_000_000
+const max_plugin_skill_resource_bytes = 512_000
 const max_plugin_skill_frontmatter_bytes = 64_000
 const max_plugin_skills = 256
 const max_plugin_mcp_servers = 128
@@ -44,6 +45,8 @@ pub:
 	// Agent Skills hint only; it must never grant authority beyond user policy.
 	allowed_tools          string
 	allowed_tools_declared bool
+mut:
+	directory string
 }
 
 struct PluginMCPServer {
@@ -316,13 +319,14 @@ fn load_plugin_skills(root string, mut plugin AgentPlugin) {
 			}
 			continue
 		}
-		skill := parse_agent_skill(entry, resolved_skill, content) or {
+		mut skill := parse_agent_skill(entry, resolved_skill, content) or {
 			plugin.diagnostics << PluginDiagnostic{
 				component: 'skills/${entry}'
 				message:   'Skipping invalid Agent Skill: ${err.msg()}'
 			}
 			continue
 		}
+		skill.directory = resolved_candidate
 		plugin.skills << skill
 	}
 }
@@ -421,6 +425,29 @@ fn load_skill_instructions(plugin_root string, skill PluginSkill) !string {
 		return error('skill metadata changed after discovery')
 	}
 	return extract_agent_skill_body(content)
+}
+
+fn load_agent_skill_resource(skill_root string, relative_path string) !string {
+	if relative_path.len == 0 || relative_path.len > os.max_path_len || relative_path.contains('\0') {
+		return error('invalid Agent Skill resource path')
+	}
+	root := canonical_plugin_root(skill_root)!
+	if root != skill_root {
+		return error('Agent Skill resource root changed after activation')
+	}
+	path := plugin_path(root, relative_path)!
+	if !os.is_file(path) {
+		return error('Agent Skill resource is not a regular file')
+	}
+	content := read_plugin_file(path, max_plugin_skill_resource_bytes)!
+	if os.real_path(root) != root || os.real_path(path) != path {
+		return error('Agent Skill resource path changed while reading')
+	}
+	content_bytes := content.bytes()
+	if content.contains('\0') || (content_bytes.len > 0 && !utf8.validate(&content_bytes[0], content_bytes.len)) {
+		return error('Agent Skill resource must be UTF-8 text')
+	}
+	return content
 }
 
 fn extract_agent_skill_body(content string) !string {

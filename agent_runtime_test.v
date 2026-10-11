@@ -28,13 +28,16 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	advertised := restrict_agent_tools(workspace_agent_tools(), policy)
 	assert advertised.map(it.name) == ['workspace_read_file']
 	mut mcp_connections := []PluginMCPConnection{}
+	skill_context := SessionSkillContext{
+		tool_policy: policy
+	}
 	denied_edit := execute_agent_tool_if_allowed(app, root, session.id, ProviderToolCall{
 		id:       'denied-edit'
 		function: ProviderFunctionCall{
 			name:      'workspace_propose_file_edit'
 			arguments: '{"path":"source.txt","content":"changed"}'
 		}
-	}, policy, {}, mut mcp_connections)
+	}, skill_context, {}, mut mcp_connections)
 	assert denied_edit.contains('active Agent Skill tool restrictions')
 	assert os.read_file(path) or { panic(err) } == 'must remain unchanged'
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
@@ -45,13 +48,74 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 			name:      'mcp_trusted_action'
 			arguments: '{}'
 		}
-	}, policy, {
+	}, skill_context, {
 		'mcp_trusted_action': PluginMCPToolBinding{
 			connection_index: 0
 			native_name:      'action'
 		}
 	}, mut mcp_connections)
 	assert denied_mcp.contains('active Agent Skill tool restrictions')
+}
+
+fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
+	root := os.join_path(os.temp_dir(), 'veasel-skill-resource-${uuid.new_v4().str()}')
+	skill_root := os.join_path(root, 'skills', 'review')
+	os.mkdir_all(os.join_path(skill_root, 'references')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(skill_root, 'references', 'guide.md'), 'Reference instructions.') or {
+		panic(err)
+	}
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	os.mkdir_all(os.join_path(root, 'workspace')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	session := store.create_session(SessionInput{
+		title:     'Skill resource'
+		directory: os.join_path(root, 'workspace')
+	}) or { panic(err) }
+	access := [AgentSkillResourceAccess{
+		plugin_name: 'review-tools'
+		skill_name:  'review'
+		skill_root:  skill_root
+	}]
+	definitions := agent_skill_resource_tools(access)
+	assert definitions.map(it.name) == ['agent_skill_read_resource']
+	resource_policy := agent_tool_policy_for_skills([PluginSkill{
+		name:                   'references'
+		allowed_tools:          'agent_skill_read_resource'
+		allowed_tools_declared: true
+	}])
+	assert restrict_agent_tools(definitions, resource_policy).map(it.name) == ['agent_skill_read_resource']
+	mut mcp_connections := []PluginMCPConnection{}
+	call := ProviderToolCall{
+		id:       'read-reference'
+		function: ProviderFunctionCall{
+			name:      'agent_skill_read_resource'
+			arguments: '{"plugin_name":"review-tools","skill_name":"review","path":"references/guide.md"}'
+		}
+	}
+	allowed := execute_agent_tool_if_allowed(app, os.join_path(root, 'workspace'), session.id, call,
+		SessionSkillContext{
+			resource_access: access
+		}, {}, mut mcp_connections)
+	assert allowed.contains('Reference instructions.')
+	assert allowed.contains('references/guide.md')
+	blocked_context := SessionSkillContext{
+		tool_policy:     agent_tool_policy_for_skills([PluginSkill{
+			name:                   'read-only'
+			allowed_tools:          'workspace_read_file'
+			allowed_tools_declared: true
+		}])
+		resource_access: access
+	}
+	blocked := execute_agent_tool_if_allowed(app, os.join_path(root, 'workspace'), session.id, call,
+		blocked_context, {}, mut mcp_connections)
+	assert blocked.contains('active Agent Skill tool restrictions')
+	assert restrict_agent_tools(definitions, blocked_context.tool_policy).len == 0
+	disabled := execute_agent_tool_if_allowed(app, os.join_path(root, 'workspace'), session.id, call,
+		SessionSkillContext{}, {}, mut mcp_connections)
+	assert disabled.contains('not active in this session')
 }
 
 fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_approval() {

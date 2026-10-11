@@ -788,6 +788,7 @@ components:
           type: string
         features:
           type: array
+          description: Includes agent.tools.skill_read_resource when model support is configured; the tool is exposed only while one or more Agent Skills are active in the session.
           items:
             type: string
     PluginCatalog:

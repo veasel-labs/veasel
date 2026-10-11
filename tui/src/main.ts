@@ -496,7 +496,7 @@ async function showSkills() {
       return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}\n  ${skill.description}${restriction}`
     }))
     skillNotice = lines.length > 0
-      ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>. A declared tool list only restricts tools already available to this session; approval rules still apply.`
+      ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>. Active skills can let the model read bounded text resources from their own folder; files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
       : "No Agent Plugin skills found. Add a package with plugin.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
     renderChat(chatMessages)
   } catch (error) {

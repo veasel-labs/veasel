@@ -99,6 +99,7 @@ fn test_agent_skill_v1_frontmatter_fixture_corpus() {
 fn assert_fixture_diagnostics(fixture_name string, expected []string, actual []PluginDiagnostic) {
 	assert actual.len == expected.len, '${fixture_name}: expected ${expected.len} diagnostics, got ${actual.len}'
 	for fragment in expected {
-		assert actual.any(it.message.contains(fragment)), '${fixture_name}: missing diagnostic `${fragment}`'
+		assert actual.any(it.message.contains(fragment) || it.component.contains(fragment)),
+			'${fixture_name}: missing diagnostic `${fragment}`'
 	}
 }

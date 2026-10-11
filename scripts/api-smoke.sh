@@ -388,8 +388,18 @@ curl -sS -o "$work_dir/mcp-approved-response" -w '%{http_code}' \
 	-H 'content-type: application/json' -d '{"content":"Call MCP effect"}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-approved-status" &
 mcp_turn_pid=$!
+printf 'Smoke: approved MCP message curl started (pid %s)\n' "$mcp_turn_pid"
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP approval status'
+	if ! curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"; then
+		ps -o pid,ppid,stat,wchan:32,args -p "$mcp_turn_pid" >&2 || true
+		if curl --max-time 2 -fsS "$api/v1/health" >"$work_dir/mcp-health"; then
+			printf 'Smoke: health probe succeeded during MCP poll failure\n' >&2
+		else
+			printf 'Smoke: health probe failed during MCP poll failure\n' >&2
+		fi
+		cat "$work_dir/mcp-approved-status" "$work_dir/mcp-approved-response" >&2 2>/dev/null || true
+		fail 'unable to poll MCP approval status'
+	fi
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then

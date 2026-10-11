@@ -10,11 +10,20 @@ import uuid
 struct PluginMCPHTTPFixture {
 mut:
 	redirect_target_hits int
+	unauthorized_hits    int
 	supports_2026        bool = true
 }
 
 fn (mut fixture PluginMCPHTTPFixture) handle(request http.Request) http.Response {
 	mut response := http.Response{}
+	if request.url == '/unauthorized' {
+		fixture.unauthorized_hits++
+		response.set_status(.unauthorized)
+		response.header.set(.content_type, 'text/plain')
+		response.header.set_custom('WWW-Authenticate', 'Bearer realm="fixture"') or {}
+		response.body = 'authentication required'
+		return response
+	}
 	if request.url == '/redirect' {
 		response.set_status(.found)
 		response.header.set_custom('Location', '/redirect-target') or {}
@@ -190,7 +199,7 @@ fn test_plugin_mcp_streamable_http_stateless_discovery_sse_tool_call_and_redirec
 	os.write_file(os.join_path(package_directory, 'plugin.json'), '{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"remote-plugin"}') or {
 		panic(err)
 	}
-	os.write_file(os.join_path(package_directory, 'mcp.json'), '{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"remote":{"type":"streamable-http","url":"http://${server.addr}/mcp","headers":{"X-Plugin-Token":"fixture-token"}}}}') or {
+	os.write_file(os.join_path(package_directory, 'mcp.json'), '{"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"remote":{"type":"streamable-http","url":"http://${server.addr}/mcp","headers":{"X-Plugin-Token":"fixture-token"}},"auth-required":{"type":"streamable-http","url":"http://${server.addr}/unauthorized"}}}') or {
 		panic(err)
 	}
 	mut store := open_store(':memory:') or { panic(err) }
@@ -200,10 +209,14 @@ fn test_plugin_mcp_streamable_http_stateless_discovery_sse_tool_call_and_redirec
 		directory: workspace_directory
 	}) or { panic(err) }
 	store.set_session_plugin_mcp_server(session.id, 'remote-plugin', 'remote', true) or { panic(err) }
+	store.set_session_plugin_mcp_server(session.id, 'remote-plugin', 'auth-required', true) or {
+		panic(err)
+	}
 	mut app := new_app(store, plugin_directory)
 	defer { app.close() }
 	tools, bindings, mut connections := app.load_session_plugin_mcp_tools(session.id) or { panic(err) }
 	defer { close_plugin_mcp_connections(mut connections) }
+	assert fixture.unauthorized_hits == 1
 	assert tools.len == 1
 	response := execute_plugin_mcp_tool(mut connections, bindings[tools[0].name], '{}')
 	assert response.contains('Remote MCP fixture result')

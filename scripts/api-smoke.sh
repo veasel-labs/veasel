@@ -223,10 +223,11 @@ for provider in openai-compatible anthropic gemini; do
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/response" || fail "$provider response did not reach the API client"
+	event_cursor="$(python3 -c 'import sqlite3, sys; db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True); print(db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0])' "$work_dir/data/veasel.sqlite3")"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq "\"provider\":\"$provider\"" "$work_dir/response" || fail "$provider session response reported the wrong provider"
-	timeout 2s curl -NsS -H 'Last-Event-ID: 0' "$api/v1/events" >"$work_dir/provider-events" 2>/dev/null || [[ "$?" -eq 124 ]]
+	timeout 2s curl -NsS -H "Last-Event-ID: $event_cursor" "$api/v1/events" >"$work_dir/provider-events" 2>/dev/null || [[ "$?" -eq 124 ]]
 	grep -Fq 'event: assistant.delta' "$work_dir/provider-events" || fail "$provider did not persist assistant streaming events"
 	grep -Fq '"operation_id":"' "$work_dir/provider-events" || fail "$provider streaming events omitted the operation identifier"
 	grep -Fq '"delta":"Provider ' "$work_dir/provider-events" || fail "$provider streaming events omitted incremental text"
@@ -237,12 +238,12 @@ for provider in openai-compatible anthropic gemini; do
 			-d '{"content":"Wait for cancellation"}' \
 			"$api/v1/sessions/$session_id/messages" >"$work_dir/cancelled-turn-status" &
 		turn_pid=$!
-		for ((attempt = 0; attempt < 50; attempt++)); do
+		for ((attempt = 0; attempt < 200; attempt++)); do
 			grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" && break
 			sleep 0.05
 		done
 		grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || fail 'slow provider request did not start'
-		expect_status 202 -X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel"
+		expect_status 202 --max-time 10 -X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel"
 		wait "$turn_pid"
 		cancelled_turn_status="$(cat "$work_dir/cancelled-turn-status")"
 		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"

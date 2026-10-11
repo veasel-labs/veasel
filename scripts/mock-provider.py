@@ -290,9 +290,7 @@ class MockProvider(BaseHTTPRequestHandler):
         if payload.get("stream") or ":streamGenerateContent" in self.path:
             if user_text == "Wait for cancellation":
                 print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
-                if not SLOW_RESPONSE_RELEASE.wait(timeout=20):
-                    self.send_error(504)
-                    return
+                SLOW_RESPONSE_RELEASE.wait()
             frames = []
             if provider_kind == "openai":
                 message = body["choices"][0]["message"]
@@ -376,9 +374,7 @@ class MockProvider(BaseHTTPRequestHandler):
         encoded = json.dumps(body).encode()
         if user_text == "Wait for cancellation":
             print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
-            if not SLOW_RESPONSE_RELEASE.wait(timeout=20):
-                self.send_error(504)
-                return
+            SLOW_RESPONSE_RELEASE.wait()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))

@@ -1,0 +1,78 @@
+[
+  {
+    "name": "minimal stdio server",
+    "accepted": true,
+    "servers": ["local"],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": { "local": { "type": "stdio", "command": "node" } }
+    }
+  },
+  {
+    "name": "streamable HTTP server with headers",
+    "accepted": true,
+    "servers": ["remote"],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://tools.example.invalid/mcp",
+          "headers": { "X-Tenant": "example" }
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid server entry does not hide valid sibling",
+    "accepted": true,
+    "servers": ["valid"],
+    "diagnostics": ["mcpServers.invalid"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "valid": { "type": "streamable-http", "url": "http://127.0.0.8:8080/mcp" },
+        "invalid": { "type": "stdio", "command": "node", "unknown": true }
+      }
+    }
+  },
+  {
+    "name": "unsupported optional SSE server is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["unsupported"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": { "legacy": { "type": "sse", "url": "https://tools.example.invalid/sse" } }
+    }
+  },
+  {
+    "name": "missing schema is rejected",
+    "accepted": false,
+    "document": { "mcpServers": {} }
+  },
+  {
+    "name": "schema version mismatch is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/2.0.0/mcp.schema.json",
+      "mcpServers": {}
+    }
+  },
+  {
+    "name": "missing server map is rejected",
+    "accepted": false,
+    "document": { "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json" }
+  },
+  {
+    "name": "unknown root property is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {},
+      "future": true
+    }
+  }
+]

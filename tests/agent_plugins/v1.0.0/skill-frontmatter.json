@@ -1,0 +1,38 @@
+[
+  {
+    "name": "minimal skill frontmatter",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "optional skill metadata",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\nlicense: MIT\ncompatibility: Requires a V workspace.\nmetadata:\n  author: example\n  version: '1.0'\nallowed-tools: workspace_read_file workspace_search\n---\nInstructions."
+  },
+  {
+    "name": "Unicode lowercase skill name",
+    "directory": "café-分析-3",
+    "accepted": true,
+    "content": "---\nname: café-分析-3\ndescription: Review localized source.\n---\nInstructions."
+  },
+  {
+    "name": "unknown frontmatter field is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nunknown-field: true\n---\nInstructions."
+  },
+  {
+    "name": "non-string metadata is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nmetadata:\n  version: 1\n---\nInstructions."
+  },
+  {
+    "name": "skill name must match its directory",
+    "directory": "review-dir",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\n---\nInstructions."
+  }
+]

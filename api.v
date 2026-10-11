@@ -947,6 +947,10 @@ fn session_turn_failure(message string) (string, string) {
 
 fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, session Session,
 	input ChatMessageInput, operation_id string) !ChatExchange {
+	user_message := ChatMessage{
+		role:    'user'
+		content: input.content
+	}
 	mut turn_lock := app.session_turn_lock(id)
 	app.acquire_session_turn(mut turn_ctx, id) or {
 		return err

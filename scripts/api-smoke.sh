@@ -392,6 +392,10 @@ for ((attempt = 0; attempt < 100; attempt++)); do
 	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP approval status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
+	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then
+		wait "$mcp_turn_pid" 2>/dev/null || true
+		fail "provider turn ended before MCP approval was created (HTTP $(cat "$work_dir/mcp-approved-status" 2>/dev/null || true)): $(cat "$work_dir/mcp-approved-response" 2>/dev/null || true)"
+	fi
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'provider MCP call did not pause for approval'
@@ -417,6 +421,10 @@ for ((attempt = 0; attempt < 100; attempt++)); do
 	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll rejected MCP call status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
+	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then
+		wait "$mcp_turn_pid" 2>/dev/null || true
+		fail "provider turn ended before MCP approval was created (HTTP $(cat "$work_dir/mcp-rejected-status" 2>/dev/null || true)): $(cat "$work_dir/mcp-rejected-response" 2>/dev/null || true)"
+	fi
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'second provider MCP call did not pause for approval'
@@ -438,6 +446,10 @@ for ((attempt = 0; attempt < 100; attempt++)); do
 	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP error approval status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
+	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then
+		wait "$mcp_turn_pid" 2>/dev/null || true
+		fail "provider turn ended before MCP approval was created (HTTP $(cat "$work_dir/mcp-error-status" 2>/dev/null || true)): $(cat "$work_dir/mcp-error-response" 2>/dev/null || true)"
+	fi
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'provider MCP error call did not pause for approval'

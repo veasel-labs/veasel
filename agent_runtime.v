@@ -131,6 +131,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 	}
 	mcp_tools, mcp_bindings, mut mcp_connections := app.load_session_plugin_mcp_tools(session_id)!
+	eprintln('veasel: MCP runtime loaded ${mcp_tools.len} tools and ${mcp_bindings.len} bindings')
 	defer {
 		close_plugin_mcp_connections(mut mcp_connections)
 	}
@@ -149,6 +150,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent context size limit reached')
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools, on_text_delta)!
+		if output.tool_calls.len > 0 {
+			eprintln('veasel: provider requested tool ${output.tool_calls[0].function.name}')
+		}
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
@@ -238,6 +242,7 @@ fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Contex
 		}
 		return err
 	}
+	eprintln('veasel: MCP approval record created')
 	for {
 		if context_error := turn_context_error(mut turn_ctx) {
 			mut store := app.store

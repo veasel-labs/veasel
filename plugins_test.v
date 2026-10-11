@@ -171,15 +171,22 @@ fn plugin_load_rejected(root string) bool {
 fn test_plugin_paths_reject_traversal() {
 	root := os.join_path(os.temp_dir(), 'veasel-plugin-${uuid.new_v4().str()}')
 	external := os.join_path(os.temp_dir(), 'veasel-plugin-external-${uuid.new_v4().str()}')
+	internal := os.join_path(root, 'internal-target')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
+	os.mkdir_all(internal) or { panic(err) }
 	os.mkdir_all(external) or { panic(err) }
 	defer { os.rmdir_all(external) or {} }
 	os.write_file(os.join_path(root, 'plugin.json'), '{}') or { panic(err) }
+	internal_file := os.join_path(internal, 'allowed.txt')
+	os.write_file(internal_file, 'allowed') or { panic(err) }
 	os.write_file(os.join_path(external, 'secret.txt'), 'secret') or { panic(err) }
+	os.symlink(internal, os.join_path(root, 'internal-link')) or { panic(err) }
 	os.symlink(external, os.join_path(root, 'escape')) or { panic(err) }
 	assert !plugin_path_rejected(root, 'plugin.json')
+	assert plugin_path(root, 'internal-link/allowed.txt')! == os.real_path(internal_file)
 	assert plugin_path_rejected(root, '../../outside')
+	assert plugin_path_rejected(root, 'missing.txt')
 	assert plugin_path_rejected(root, 'escape/secret.txt')
 	assert is_valid_plugin_name('veasel.tools-1')
 	assert is_valid_plugin_name('review.tools-1')

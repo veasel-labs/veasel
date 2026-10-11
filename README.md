@@ -33,11 +33,13 @@ arguments are assembled before the agent executes them.
 The API supports `Prefer: respond-async` for clients that need the request
 worker released while a model or human MCP approval is pending. It returns an
 operation ID with `202 Accepted`; clients follow `assistant.delta` and the
-terminal `session.turn_completed` event, then reload the committed session
-history. This opt-in execution is process-local and is cancelled during server
-shutdown; durable jobs and restart recovery remain future work. Requests without
-the preference retain the synchronous response contract.
-Durable, restart-resilient background jobs remain in progress.
+terminal `session.turn_completed` event or query
+`/v1/sessions/{session_id}/operations/{operation_id}`, then reload the committed
+session history. Operation state survives reconnects. If the process stops
+before recording a result, startup marks the operation `uncertain` and never
+replays its provider request or possible tool effects. The worker remains
+process-local; durable queued execution and retention remain in progress.
+Requests without the preference retain the synchronous response contract.
 Local Agent Plugins can be discovered, their validated Skills enabled per
 session, and trusted stdio or Streamable HTTP MCP servers exposed as provider
 tools. Stdio processes run with the current user's privileges and without an OS

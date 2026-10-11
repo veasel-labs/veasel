@@ -545,6 +545,10 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   }
   if (activeTurnId !== operationId) {
     if (activeSession?.id === sessionId) {
+      if (completion.status === "uncertain") {
+        status.content = "● operation outcome uncertain · inspect the workspace before retrying"
+        status.fg = "#f3c969"
+      }
       try {
         const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
           signal: controller.signal,
@@ -586,6 +590,10 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
       status.content = `● turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`
       status.fg = "#f3c969"
     }
+  } else if (completion.status === "uncertain") {
+    renderChat(chatMessages)
+    status.content = "● operation outcome uncertain · inspect the workspace before retrying"
+    status.fg = "#f3c969"
   } else if (completion.status === "cancelled") {
     renderChat(chatMessages)
     status.content = userCancelled ? "● response cancelled" : "● turn cancelled"

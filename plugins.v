@@ -42,7 +42,8 @@ pub:
 	description string
 	path        string
 	// Agent Skills hint only; it must never grant authority beyond user policy.
-	allowed_tools string
+	allowed_tools          string
+	allowed_tools_declared bool
 }
 
 struct PluginMCPServer {
@@ -367,6 +368,7 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 		return error('skill description must not be empty')
 	}
 	mut allowed_tools := ''
+	mut allowed_tools_declared := false
 	for key in ['license', 'compatibility', 'allowed-tools'] {
 		if value := fields[key] {
 			if value !is string {
@@ -378,6 +380,7 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 			}
 			if key == 'allowed-tools' {
 				allowed_tools = text
+				allowed_tools_declared = true
 			}
 		}
 	}
@@ -392,10 +395,11 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 		}
 	}
 	return PluginSkill{
-		name:          name
-		description:   description
-		path:          path
-		allowed_tools: allowed_tools
+		name:                   name
+		description:            description
+		path:                   path
+		allowed_tools:          allowed_tools
+		allowed_tools_declared: allowed_tools_declared
 	}
 }
 

@@ -66,8 +66,8 @@ fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() 
 	second_read := plugin_mcp_persistence_call(root, data, server, 'read')
 	root_expected := os.real_path(root)
 	data_expected := os.real_path(data)
-	root_env_expected := os.join_path(root_expected, 'from-env')
-	data_env_expected := os.join_path(data_expected, 'from-env')
+	root_env_expected := root_expected + '/from-env'
+	data_env_expected := data_expected + '/from-env'
 	first_values := first_write.split('|')
 	assert first_values.len == 7
 	assert first_values[0] == root_expected

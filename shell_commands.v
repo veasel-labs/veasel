@@ -191,8 +191,8 @@ fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellComma
 	mut output_limited := false
 	mut timed_out := false
 	for process.is_alive() {
-		append_shell_output(mut output, process.stdout_read(), mut output_limited)
-		append_shell_output(mut output, process.stderr_read(), mut output_limited)
+		output_limited = append_shell_output(mut output, process.stdout_read(), output_limited)
+		output_limited = append_shell_output(mut output, process.stderr_read(), output_limited)
 		if output_limited {
 			process.signal_pgkill()
 			break
@@ -205,8 +205,8 @@ fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellComma
 		time.sleep(10 * time.millisecond)
 	}
 	process.wait()
-	append_shell_output(mut output, process.stdout_read(), mut output_limited)
-	append_shell_output(mut output, process.stderr_read(), mut output_limited)
+	output_limited = append_shell_output(mut output, process.stdout_read(), output_limited)
+	output_limited = append_shell_output(mut output, process.stderr_read(), output_limited)
 	code := process.code
 	process.close()
 	mut safe_output := output.bytestr()
@@ -229,15 +229,16 @@ fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellComma
 	return ShellCommandResult{ status: status, exit_code: code, output: safe_output }
 }
 
-fn append_shell_output(mut output []u8, chunk string, mut limited bool) {
-	if chunk.len == 0 { return }
+fn append_shell_output(mut output []u8, chunk string, limited bool) bool {
+	if chunk.len == 0 { return limited }
 	available := max_shell_command_output_bytes - shell_output_limited_marker.len - output.len
-	if chunk.len > available { limited = true }
+	output_limited := limited || chunk.len > available
 	if available > 0 {
 		chunk_bytes := chunk.bytes()
 		byte_count := if chunk_bytes.len < available { chunk_bytes.len } else { available }
 		output << chunk_bytes[..byte_count]
 	}
+	return output_limited
 }
 
 fn parse_shell_tool_arguments(arguments string, root string) !ShellCommandDraft {

@@ -138,7 +138,8 @@ paths:
         /v1/events. Successful turns atomically persist history and a
         session.turn_completed event; failed or cancelled turns persist a
         terminal event with a safe public error. Send Prefer: respond-async to
-        receive 202 immediately and follow that event; without this preference
+        receive 202 immediately and follow that event or query the durable
+        operation resource; without this preference
         the request waits and returns the full ChatExchange. Send a unique
         X-Veasel-Operation-ID UUID to allow cancellation; turns have a
         two-minute deadline.
@@ -153,7 +154,7 @@ paths:
         - in: header
           name: Prefer
           required: false
-          description: Use respond-async to return an operation ID immediately and receive its terminal status on /v1/events. Omit to wait for a ChatExchange response.
+          description: Use respond-async to return an operation ID immediately. Follow its terminal event or query /v1/sessions/{id}/operations/{operation_id}. Omit to wait for a ChatExchange response.
           schema:
             type: string
             example: respond-async
@@ -165,7 +166,7 @@ paths:
               $ref: '#/components/schemas/SendMessage'
       responses:
         '202':
-          description: The turn is running in the server process. It is cancelled during graceful server shutdown and is not recovered after a crash or forced termination. Follow the durable session.turn_completed event for operation_id and terminal status; completed events also include provider and model, while failed events contain a safe public error.
+          description: The accepted turn is stored before the response. Query the session operation resource or follow session.turn_completed. After a restart, work without a recorded result is classified uncertain and is never replayed.
           headers:
             Preference-Applied:
               description: Confirms that respond-async was applied.
@@ -224,6 +225,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/operations/{operation_id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: operation_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getSessionOperation
+      description: Returns durable async session turn status. The operation belongs to the session in the path. A server restart classifies active work as uncertain and never repeats provider or tool effects.
+      responses:
+        '200':
+          description: Current operation status and safe terminal metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionOperation'
+        '404':
+          description: Session or operation was not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/operations/{operation_id}/cancel:
     parameters:
       - in: path
@@ -247,7 +273,7 @@ paths:
                 required: [operation_id, status]
                 properties:
                   operation_id: { type: string, format: uuid }
-                  status: { type: string, const: cancelling }
+                  status: { type: string, enum: [cancelling, completed, cancelled, failed, uncertain] }
         '404':
           description: Session or active operation not found.
           content:
@@ -886,7 +912,7 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async session turns end with a durable session.turn_completed event whose data includes operation_id and status; successful events include provider and model, and failed/cancelled events include a safe public error.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -897,7 +923,7 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, and session.turn_completed carries the final async status.
+          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, and session.turn_completed carries its final status.
           content:
             text/event-stream:
               schema:
@@ -1247,6 +1273,20 @@ components:
         status:
           type: string
           const: running
+    SessionOperation:
+      type: object
+      required: [id, session_id, status, provider, model, error, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [running, cancelling, completed, failed, cancelled, uncertain]
+        provider: { type: string }
+        model: { type: string }
+        error: { type: string, maxLength: 1024 }
+        created_at: { type: string }
+        updated_at: { type: string }
     Error:
       type: object
       required: [error]

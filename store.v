@@ -23,6 +23,18 @@ pub:
 	created_at string
 }
 
+pub struct SessionOperation {
+pub:
+	id         string
+	session_id string
+	status     string
+	provider   string
+	model      string
+	error      string
+	created_at string
+	updated_at string
+}
+
 struct SessionInput {
 pub:
 	title     string
@@ -291,6 +303,68 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to commit MCP tool approval migration')
 		}
+	}
+	if current < 9 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin durable operation migration')
+		}
+		db.exec("CREATE TABLE session_operations (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, status TEXT NOT NULL CHECK (status IN ('running', 'cancelling', 'completed', 'failed', 'cancelled', 'uncertain')), provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create session operation table')
+		}
+		db.exec('CREATE INDEX session_operations_session_created ON session_operations (session_id, created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index session operations')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (9)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record durable operation migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit durable operation migration')
+		}
+	}
+	// Async session work is never replayed after restart: its provider request or
+	// tool side effects may have completed without a durable response.
+	db.begin() or {
+		db.close() or {}
+		return error('unable to begin session operation recovery')
+	}
+	interrupted_operations := db.exec("SELECT id, session_id FROM session_operations WHERE status IN ('running', 'cancelling')") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to inspect interrupted session operations')
+	}
+	for row in interrupted_operations {
+		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to classify interrupted session operation')
+		}
+		_ = db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'session.turn_completed',
+			row.val(1),
+			json2.encode[EventData](EventData{
+				operation_id: row.val(0)
+				status:       'uncertain'
+				error:        'The server stopped before this operation reached a recorded result.'
+			}),
+		]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record interrupted session operation')
+		}
+	}
+	db.commit() or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to commit session operation recovery')
 	}
 	db.begin() or {
 		db.close() or {}
@@ -849,6 +923,100 @@ fn (mut store Store) get_session(id string) !Session {
 	}
 }
 
+fn (mut store Store) create_session_operation(session_id string, operation_id string) !SessionOperation {
+	if !validate_operation_id(operation_id) {
+		return error('invalid session operation identifier')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	existing := store.db.exec_param_many('SELECT id FROM session_operations WHERE id = ?', [operation_id]) or {
+		store.db.rollback() or {}
+		return error('unable to check session operation identifier')
+	}
+	if existing.len > 0 {
+		store.db.rollback() or {}
+		return error('session operation already exists')
+	}
+	_ = store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status) VALUES (?, ?, 'running')", [
+		operation_id,
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist session operation')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.turn_started',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id: operation_id
+			status:       'running'
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist session operation event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session operation')
+	}
+	return store.session_operation_unlocked(session_id, operation_id)
+}
+
+fn (mut store Store) get_session_operation(session_id string, operation_id string) !SessionOperation {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	return store.session_operation_unlocked(session_id, operation_id)
+}
+
+fn (mut store Store) mark_session_operation_cancelling(session_id string, operation_id string) !string {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
+		session_id,
+		operation_id,
+	])!
+	if rows.len == 0 {
+		// Synchronous session turns share the cancellation endpoint but are not
+		// persisted as async operations.
+		return 'cancelling'
+	}
+	store.db.exec_param_many("UPDATE session_operations SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'",
+		[session_id, operation_id])!
+	updated := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
+		session_id,
+		operation_id,
+	])!
+	return if updated.len == 1 { updated[0].val(0) } else { rows[0].val(0) }
+}
+
+fn (mut store Store) session_operation_unlocked(session_id string, operation_id string) !SessionOperation {
+	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, created_at, updated_at FROM session_operations WHERE session_id = ? AND id = ?', [
+		session_id,
+		operation_id,
+	])!
+	if rows.len != 1 {
+		return error('session operation not found')
+	}
+	row := rows[0]
+	return SessionOperation{
+		id:         row.val(0)
+		session_id: row.val(1)
+		status:     row.val(2)
+		provider:   row.val(3)
+		model:      row.val(4)
+		error:      row.val(5)
+		created_at: row.val(6)
+		updated_at: row.val(7)
+	}
+}
+
 fn (mut store Store) events_after(after int) ![]Event {
 	store.mu.lock()
 	defer {
@@ -944,6 +1112,11 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		}
 	}
 	if operation_id.len > 0 {
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
+			[provider, model, operation_id, session_id]) or {
+			store.db.rollback() or {}
+			return error('unable to persist session operation result')
+		}
 		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
 			'session.turn_completed',
 			session_id,
@@ -1008,6 +1181,15 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session turn completion')
+	}
+	_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')", [
+		status,
+		public_error,
+		operation_id,
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist session operation failure')
 	}
 	store.db.commit() or {
 		store.db.rollback() or {}

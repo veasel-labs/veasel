@@ -96,6 +96,10 @@ start_mcp_turn() {
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq "\"operation_id\":\"$operation_id\"" "$work_dir/response" \
 		|| fail 'async session response did not return its operation ID'
+	operation="$(curl -fsS "$api/v1/sessions/$session_id/operations/$operation_id")" \
+		|| fail 'durable async operation status endpoint was unavailable'
+	printf '%s' "$operation" | python3 -c 'import json, sys; operation = json.load(sys.stdin); assert operation["id"] == sys.argv[1]; assert operation["session_id"] == sys.argv[2]; assert operation["status"] in {"running", "completed", "failed", "cancelled"}' "$operation_id" "$session_id" \
+		|| fail 'durable async operation response did not match the accepted session turn'
 	printf '%s' "$operation_id"
 }
 

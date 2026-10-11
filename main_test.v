@@ -694,6 +694,76 @@ fn test_async_session_turn_completion_event_commits_with_exchange() {
 	assert completion.data.model == 'fixture-model'
 }
 
+fn test_session_operation_survives_restart_and_uncertain_work_is_not_replayed() {
+	database := os.join_path(os.temp_dir(), 'veasel-operation-recovery-${uuid.new_v4().str()}.sqlite')
+	defer {
+		os.rm(database) or {}
+		os.rm('${database}-wal') or {}
+		os.rm('${database}-shm') or {}
+	}
+	operation_id := '4d11f39a-6b1b-4b3d-8c05-28167c15bdc2'
+	mut first := open_store(database) or { panic(err) }
+	session := first.create_session(SessionInput{ title: 'Recover me', directory: '/tmp/recovery' }) or {
+		panic(err)
+	}
+	created := first.create_session_operation(session.id, operation_id) or { panic(err) }
+	assert created.status == 'running'
+	first.close() or { panic(err) }
+
+	mut recovered := open_store(database) or { panic(err) }
+	operation := recovered.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'uncertain'
+	assert operation.error.contains('server stopped')
+	events := recovered.events_after(0) or { panic(err) }
+	completions := events.filter(it.type == 'session.turn_completed')
+	assert completions.len == 1
+	assert completions[0].data.operation_id == operation_id
+	assert completions[0].data.status == 'uncertain'
+	recovered.close() or { panic(err) }
+
+	mut reopened := open_store(database) or { panic(err) }
+	defer { reopened.close() or {} }
+	second_events := reopened.events_after(0) or { panic(err) }
+	assert second_events.filter(it.type == 'session.turn_completed').len == 1
+}
+
+fn test_session_operation_completion_commits_with_chat_history() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Persist result', directory: '/tmp/operation' }) or {
+		panic(err)
+	}
+	operation_id := 'a21fdf7a-cd12-49a2-9617-f60cf12b824c'
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	_ = store.append_exchange(session.id, operation_id, 'Question', 'Answer', 'openai-compatible',
+		'fixture-model') or { panic(err) }
+	mut duplicate_rejected := false
+	_ = store.create_session_operation(session.id, operation_id) or {
+		duplicate_rejected = err.msg() == 'session operation already exists'
+		SessionOperation{}
+	}
+	assert duplicate_rejected
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'completed'
+	assert operation.provider == 'openai-compatible'
+	assert operation.model == 'fixture-model'
+	assert operation.error == ''
+	events := store.events_after(0) or { panic(err) }
+	started := events.filter(it.type == 'session.turn_started')
+	assert started.len == 1
+	assert started[0].data.operation_id == operation_id
+	assert started[0].data.status == 'running'
+	other_session := store.create_session(SessionInput{ title: 'Other session', directory: '/tmp/other' }) or {
+		panic(err)
+	}
+	mut cross_session_lookup_failed := false
+	_ = store.get_session_operation(other_session.id, operation_id) or {
+		cross_session_lookup_failed = true
+		SessionOperation{}
+	}
+	assert cross_session_lookup_failed
+}
+
 fn test_failed_session_turn_completion_event_is_persisted() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }
@@ -701,9 +771,13 @@ fn test_failed_session_turn_completion_event_is_persisted() {
 		panic(err)
 	}
 	operation_id := '7df3b3f9-68ad-466d-a115-7c8c285d1999'
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
 	store.record_session_turn_completion(session.id, operation_id, 'cancelled', 'Turn cancelled.') or {
 		panic(err)
 	}
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Turn cancelled.'
 	events := store.events_after(0) or { panic(err) }
 	completion := events[events.len - 1]
 	assert completion.type == 'session.turn_completed'

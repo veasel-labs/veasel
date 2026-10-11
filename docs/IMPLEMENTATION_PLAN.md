@@ -62,12 +62,17 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   approval; execution limits and recovery behavior are documented in
   [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
 - [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
-- [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist terminal completion events atomically with successful history and consume them in the TUI. These process-local operations are cancelled on shutdown and are not durable jobs.
+- [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist the operation before accepting, expose status for reconnect, and commit successful history, operation state, and terminal events atomically. Active work is classified as uncertain on restart and never replayed. The worker itself remains process-local.
 - [x] Complete an end-to-end coding task against a disposable fixture workspace for OpenAI-compatible, Anthropic, and Gemini providers: propose and inspect a greeting implementation, prove the workspace stays unchanged before approval, approve the diff, run its V test, and verify rejected or unreviewed edits and shell effects do not occur (`scripts/api-smoke.sh`).
 
 ### Milestone 3 — persistent execution
 
-- [ ] Durable jobs, cancellation, status transitions, and disconnect/reconnect.
+- [x] Persist async session turn status before accepting the request, expose a
+  session-scoped status resource for reconnecting clients, atomically commit
+  terminal success with chat history, and classify active work as `uncertain`
+  after restart without replaying provider calls or tool effects.
+- [ ] Durable queued jobs, cancellation across server restarts, bounded job
+  retention, history listing, token usage, and operation observability.
 - [ ] Recovery classification; require human intervention for uncertain effects.
 - [ ] Execution history, token usage, and observability.
 

@@ -749,6 +749,27 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 	})
 }
 
+@['/v1/sessions/:id/operations/:operation_id'; get]
+pub fn (app &App) get_session_operation(mut ctx Context, id string, operation_id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	canonical_id := canonical_operation_id(operation_id) or {
+		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
+	}
+	mut store := app.store
+	operation := store.get_session_operation(id, canonical_id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session operation not found'
+		})
+	}
+	return ctx.json(operation)
+}
+
 @['/v1/sessions/:id/operations/:operation_id/cancel'; post]
 pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id string) veb.Result {
 	_ := app.store.get_session(id) or {
@@ -766,10 +787,14 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 			error: 'active operation not found'
 		})
 	}
+	mut store := app.store
+	status := store.mark_session_operation_cancelling(id, canonical_id) or {
+		return json_server_error(mut ctx, 'Unable to persist cancellation state')
+	}
 	ctx.res.set_status(.accepted)
 	return ctx.json(CancelTurnResponse{
 		operation_id: canonical_id
-		status:       'cancelling'
+		status:       status
 	})
 }
 
@@ -850,6 +875,15 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		})
 	}
 	if request_prefers_async(mut ctx) {
+		mut store := app.store
+		store.create_session_operation(id, operation_id) or {
+			app.finish_turn_operation(operation_id)
+			cancel()
+			if err.msg() == 'session operation already exists' {
+				return json_conflict_error(mut ctx, 'Operation identifier has already been used by this session')
+			}
+			return json_server_error(mut ctx, 'Unable to persist session operation')
+		}
 		turn_done := turn_ctx.done()
 		app.start_async_session_message(operation_id, turn_done, cancel, id, session, input)
 		ctx.res.set_status(.accepted)

@@ -1,12 +1,19 @@
 module main
 
 import os
+import runtime
 import veb
 
 const default_port = 4097
 const product_version = $d('veasel_version', '0.1.0-dev')
 
 fn serve(port int, data_dir string) ! {
+	// Chat handlers can wait on provider I/O and user approval. Keep a spare
+	// Veb worker for the approval, cancellation, and session-control endpoints.
+	minimum_http_workers := max_provider_concurrency + 1
+	if runtime.nr_jobs() < minimum_http_workers {
+		os.setenv('VJOBS', minimum_http_workers.str(), true)
+	}
 	mut store := open_store(os.join_path(data_dir, 'veasel.sqlite3'))!
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }

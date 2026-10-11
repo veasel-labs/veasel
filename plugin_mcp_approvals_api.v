@@ -4,18 +4,15 @@ import veb
 
 @['/v1/sessions/:id/mcp-tool-calls'; get]
 pub fn (app &App) get_session_plugin_mcp_tool_calls(mut ctx Context, id string) veb.Result {
-	eprintln('veasel: MCP call history request started')
 	_ := app.store.get_session(id) or {
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{
 			error: 'session not found'
 		})
 	}
-	eprintln('veasel: MCP call history session loaded')
 	calls := app.store.plugin_mcp_tool_calls(id) or {
 		return json_server_error(mut ctx, 'Unable to read MCP tool call history')
 	}
-	eprintln('veasel: MCP call history loaded (${calls.len})')
 	return ctx.json(calls)
 }
 

@@ -1,0 +1,111 @@
+[
+  {
+    "name": "minimal manifest",
+    "accepted": true,
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "minimal"
+    }
+  },
+  {
+    "name": "manifest with optional fields and client extension",
+    "accepted": true,
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "review-tools",
+      "version": "1.2.3",
+      "description": "Review source changes.",
+      "author": { "name": "Example", "email": "dev@example.invalid", "url": "https://example.invalid" },
+      "homepage": "https://example.invalid/home",
+      "repository": "https://example.invalid/repo",
+      "license": "MIT",
+      "keywords": ["review", "testing"],
+      "extensions": { "com.veasel.code": { "channel": "stable" } }
+    }
+  },
+  {
+    "name": "unknown root property is ignored",
+    "accepted": true,
+    "diagnostics": ["unknown top-level field"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "future-field",
+      "futureField": { "opaque": true }
+    }
+  },
+  {
+    "name": "non-object extensions is ignored with a diagnostic",
+    "accepted": true,
+    "diagnostics": ["non-object extensions"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "bad-extensions",
+      "extensions": []
+    }
+  },
+  {
+    "name": "unknown extension namespace stays opaque",
+    "accepted": true,
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "opaque-extension",
+      "extensions": { "vendor.example": ["opaque", { "nested": true }] }
+    }
+  },
+  {
+    "name": "missing schema is rejected",
+    "accepted": false,
+    "document": { "name": "missing-schema" }
+  },
+  {
+    "name": "unsupported schema version is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/2.0.0/plugin.schema.json",
+      "name": "future-version"
+    }
+  },
+  {
+    "name": "missing name is rejected",
+    "accepted": false,
+    "document": { "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json" }
+  },
+  {
+    "name": "invalid name grammar is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "Uppercase--Name"
+    }
+  },
+  {
+    "name": "optional field type is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "wrong-version-type",
+      "version": 42
+    }
+  },
+  {
+    "name": "unknown author field is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "unknown-author-field",
+      "author": { "nickname": "unsupported" }
+    }
+  },
+  {
+    "name": "non-string keyword is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "wrong-keyword-type",
+      "keywords": ["valid", false]
+    }
+  }
+]

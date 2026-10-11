@@ -6,6 +6,7 @@ work_dir="$(mktemp -d)"
 mkdir "$work_dir/workspace"
 plugin_dir="$work_dir/plugins/review-package"
 mkdir -p "$plugin_dir/skills/review"
+mkdir -p "$plugin_dir/skills/review/references"
 mkdir -p "$work_dir/workspace/src" "$work_dir/outside"
 cat >"$work_dir/workspace/README.md" <<'EOF'
 Veasel workspace smoke fixture.
@@ -36,6 +37,9 @@ description: Review code changes carefully.
 ---
 
 Fixture skill instructions for verifying session activation.
+EOF
+cat >"$plugin_dir/skills/review/references/REFERENCE.md" <<'EOF'
+Skill reference smoke sentinel.
 EOF
 port="${VEASEL_SMOKE_PORT:-$((30000 + $$ % 20000))}"
 api="http://127.0.0.1:${port}"
@@ -232,6 +236,7 @@ EOF
 	grep -Fq 'chat.complete' "$work_dir/configured-capabilities" || fail "$provider chat capability is missing"
 	grep -Fq 'chat.cancel' "$work_dir/configured-capabilities" || fail "$provider chat cancellation capability is missing"
 	grep -Fq 'agent.tools.workspace_readonly' "$work_dir/configured-capabilities" || fail "$provider workspace tool capability is missing"
+	grep -Fq 'agent.tools.skill_read_resource' "$work_dir/configured-capabilities" || fail "$provider skill resource capability is missing"
 	expect_status 200 -H 'content-type: application/json' \
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"
@@ -244,6 +249,9 @@ EOF
 	grep -Fq 'event: assistant.delta' "$work_dir/provider-events" || fail "$provider did not persist assistant streaming events"
 	grep -Fq '"operation_id":"' "$work_dir/provider-events" || fail "$provider streaming events omitted the operation identifier"
 	grep -Fq '"delta":"Provider ' "$work_dir/provider-events" || fail "$provider streaming events omitted incremental text"
+	expect_status 200 -H 'content-type: application/json' -d '{"content":"Read skill reference"}' \
+		"$api/v1/sessions/$session_id/messages"
+	grep -Fq 'Read skill reference smoke sentinel' "$work_dir/response" || fail "$provider could not read an active Agent Skill resource"
 	if [[ "$provider" == openai-compatible ]]; then
 		operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 		curl -sS -o "$work_dir/cancelled-turn-response" -w '%{http_code}' \

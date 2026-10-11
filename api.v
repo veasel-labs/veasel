@@ -890,7 +890,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		delta_buffer.append(delta)!
 	}
 	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
-		skill_context.tool_policy, on_text_delta) or {
+		skill_context, on_text_delta) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
 		}

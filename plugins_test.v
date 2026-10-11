@@ -46,6 +46,10 @@ fn test_agent_plugin_catalog_exposes_skill_metadata_without_instructions() {
 	os.mkdir_all(os.join_path(package, 'skills', 'review')) or { panic(err) }
 	defer { os.rmdir_all(directory) or {} }
 	os.write_file(os.join_path(package, 'plugin.json'), test_manifest) or { panic(err) }
+	os.mkdir_all(os.join_path(package, 'skills', 'review', 'references')) or { panic(err) }
+	os.write_file(os.join_path(package, 'skills', 'review', 'references', 'guide.md'), 'Reference guide.') or {
+		panic(err)
+	}
 	os.write_file(os.join_path(package, 'skills', 'review', 'SKILL.md'), '---\nname: review\ndescription: Review changes.\nallowed-tools: workspace_read_file\n---\n\nOnly load this body after selection.') or {
 		panic(err)
 	}
@@ -68,8 +72,68 @@ fn test_agent_plugin_catalog_exposes_skill_metadata_without_instructions() {
 	assert context.tool_policy.allows('workspace_read_file')
 	assert !context.tool_policy.allows('workspace_propose_shell_command')
 	assert context.instructions.contains('tool restrictions are enforced by Veasel')
+	assert context.resource_access.len == 1
+	assert context.resource_access[0].skill_root == os.real_path(os.join_path(package, 'skills', 'review'))
+	assert load_agent_skill_resource(context.resource_access[0].skill_root, 'references/guide.md') or {
+		panic(err)
+	} == 'Reference guide.'
 	unrestricted_context := load_session_skill_context(directory, []) or { panic(err) }
 	assert !unrestricted_context.tool_policy.restricted
+}
+
+fn test_agent_skill_resource_root_stays_in_selected_skill_directory() {
+	root := os.join_path(os.temp_dir(), 'veasel-skill-resource-root-${uuid.new_v4().str()}')
+	package := os.join_path(root, 'review-package')
+	skill_root := os.join_path(package, 'skills', 'review')
+	target_root := os.join_path(package, 'other-skill')
+	os.mkdir_all(skill_root) or { panic(err) }
+	os.mkdir_all(os.join_path(target_root, 'references')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(package, 'plugin.json'), test_manifest) or { panic(err) }
+	os.write_file(os.join_path(target_root, 'SKILL.md'), '---\nname: review\ndescription: Review changes.\n---\n\nInstructions.') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(target_root, 'references', 'private.md'), 'Other skill resource.') or {
+		panic(err)
+	}
+	os.symlink(os.join_path(target_root, 'SKILL.md'), os.join_path(skill_root, 'SKILL.md')) or {
+		panic(err)
+	}
+	plugin := load_agent_plugin(package) or { panic(err) }
+	assert plugin.skills.len == 1
+	assert plugin.skills[0].directory == os.real_path(skill_root)
+	assert agent_skill_resource_rejected(plugin.skills[0].directory, 'references/private.md')
+}
+
+fn test_agent_skill_resource_reader_is_bounded_utf8_and_confined_to_skill_root() {
+	root := os.join_path(os.temp_dir(), 'veasel-skill-resource-reader-${uuid.new_v4().str()}')
+	skill_root := os.join_path(root, 'skills', 'review')
+	external := os.join_path(root, 'outside')
+	os.mkdir_all(os.join_path(skill_root, 'references')) or { panic(err) }
+	os.mkdir_all(external) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	guide := os.join_path(skill_root, 'references', 'guide.md')
+	os.write_file(guide, 'Reference guide.') or { panic(err) }
+	os.write_file(os.join_path(external, 'secret.md'), 'outside secret') or { panic(err) }
+	os.symlink(os.join_path(external, 'secret.md'), os.join_path(skill_root, 'references', 'escape.md')) or {
+		panic(err)
+	}
+	os.write_file(os.join_path(skill_root, 'references', 'oversized.md'), 'x'.repeat(max_plugin_skill_resource_bytes + 1)) or {
+		panic(err)
+	}
+	os.write_file(os.join_path(skill_root, 'references', 'binary.md'), '\u0000') or { panic(err) }
+	authorized_root := os.real_path(skill_root)
+	assert load_agent_skill_resource(authorized_root, 'references/guide.md') or { panic(err) } == 'Reference guide.'
+	assert agent_skill_resource_rejected(authorized_root, '../outside/secret.md')
+	assert agent_skill_resource_rejected(authorized_root, os.join_path(external, 'secret.md'))
+	assert agent_skill_resource_rejected(authorized_root, 'references/escape.md')
+	assert agent_skill_resource_rejected(authorized_root, 'references')
+	assert agent_skill_resource_rejected(authorized_root, 'references/oversized.md')
+	assert agent_skill_resource_rejected(authorized_root, 'references/binary.md')
+	moved_root := os.join_path(root, 'moved-skill')
+	os.rename(skill_root, moved_root) or { panic(err) }
+	os.symlink(external, skill_root) or { panic(err) }
+	assert agent_skill_resource_rejected(authorized_root, 'secret.md')
 }
 
 fn test_agent_plugin_manifest_enforces_closed_schema_and_nonfatal_exceptions() {
@@ -417,6 +481,11 @@ fn test_agent_skill_tool_policy_combines_only_active_skill_restrictions() {
 			allowed_tools:          'workspace_search workspace_read_file'
 			allowed_tools_declared: true
 		},
+		PluginSkill{
+			name:                   'resources'
+			allowed_tools:          'agent_skill_read_resource'
+			allowed_tools_declared: true
+		},
 	])
 	assert policy.restricted
 	assert agent_skill_allowed_tool_names('workspace_search  workspace_read_file\tworkspace_search') == [
@@ -425,6 +494,7 @@ fn test_agent_skill_tool_policy_combines_only_active_skill_restrictions() {
 	]
 	assert policy.allows('workspace_read_file')
 	assert policy.allows('workspace_search')
+	assert policy.allows('agent_skill_read_resource')
 	assert !policy.allows('workspace_propose_shell_command')
 	assert !policy.allows('unregistered_tool')
 
@@ -454,6 +524,11 @@ fn test_plugin_file_reader_enforces_limit_while_reading() {
 
 fn plugin_path_rejected(root string, relative string) bool {
 	_ := plugin_path(root, relative) or { return true }
+	return false
+}
+
+fn agent_skill_resource_rejected(root string, relative string) bool {
+	_ := load_agent_skill_resource(root, relative) or { return true }
 	return false
 }
 

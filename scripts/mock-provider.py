@@ -89,16 +89,17 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Wait for cancellation")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Wait for cancellation")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text == "Try to read outside" else
+                    "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"
                 )
@@ -112,6 +113,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = '{"query":"workspace-search-sentinel"}'
                 elif user_text == "Try to read outside":
                     arguments = '{"path":"../outside/secret.txt"}'
+                elif user_text == "Read skill reference":
+                    arguments = json.dumps({"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"})
                 elif user_text == "Propose workspace edit":
                     arguments = json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                 elif user_text == "Propose shell command":
@@ -130,7 +133,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 tool_result = last_message.get("content", "")
                 is_edit_result = "Stored for human review" in tool_result
                 is_shell_result = "No command was executed" in tool_result
-                if "workspace-search-sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result:
+                if "workspace-search-sentinel" not in tool_result and "Skill reference smoke sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result:
                     self.reject(payload)
                     return
                 assistant_call = next(
@@ -144,7 +147,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 ):
                     self.reject(payload)
                     return
-                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                 body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 body = {"choices": [{"message": {"role": "assistant", "content": REPLY}}]}
@@ -162,15 +165,16 @@ class MockProvider(BaseHTTPRequestHandler):
                     payload.get("system") == "Be concise"
                     or is_session_system(payload.get("system"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Propose workspace edit", "Propose shell command", "Propose slow shell command")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text == "Try to read outside" else
+                    "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"
                 )
@@ -180,6 +184,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 tool_input = (
                     {"query": "workspace-search-sentinel"} if user_text == "Inspect workspace" else
                     {"path": "../outside/secret.txt"} if user_text == "Try to read outside" else
+                    {"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"} if user_text == "Read skill reference" else
                     {"path": "src/main.v", "content": GREETING_EDIT} if user_text == "Propose workspace edit" else
                     {"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10} if user_text == "Propose shell command" else
                     {"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1}
@@ -189,7 +194,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 tool_result_text = json.dumps(last_blocks)
                 is_edit_result = "Stored for human review" in tool_result_text
                 is_shell_result = "No command was executed" in tool_result_text
-                if "workspace-search-sentinel" not in tool_result_text and "invalid or unavailable" not in tool_result_text and not is_edit_result and not is_shell_result:
+                if "workspace-search-sentinel" not in tool_result_text and "Skill reference smoke sentinel" not in tool_result_text and "invalid or unavailable" not in tool_result_text and not is_edit_result and not is_shell_result:
                     self.reject(payload)
                     return
                 assistant_tool_use = next(
@@ -205,7 +210,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 ):
                     self.reject(payload)
                     return
-                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result_text else "The path was rejected."
+                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result_text else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result_text else "The path was rejected."
                 body = {"content": [{"type": "text", "text": final_text}]}
             else:
                 body = {"content": [{"type": "text", "text": REPLY}]}
@@ -220,16 +225,17 @@ class MockProvider(BaseHTTPRequestHandler):
                     payload.get("systemInstruction", {}).get("parts", [])[0].get("text")
                 )
                 or payload.get("generationConfig", {}).get("maxOutputTokens") != 4096
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Propose workspace edit", "Propose shell command", "Propose slow shell command")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
                 declarations = payload.get("tools", [{}])[0].get("functionDeclarations", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text == "Try to read outside" else
+                    "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"
                 )
@@ -242,6 +248,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 args = (
                     {"query": "workspace-search-sentinel"} if user_text == "Inspect workspace" else
                     {"path": "../outside/secret.txt"} if user_text == "Try to read outside" else
+                    {"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"} if user_text == "Read skill reference" else
                     {"path": "src/main.v", "content": GREETING_EDIT} if user_text == "Propose workspace edit" else
                     {"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10} if user_text == "Propose shell command" else
                     {"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1}
@@ -258,7 +265,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 result_text = json.dumps(last_parts)
                 is_edit_result = "Stored for human review" in result_text
                 is_shell_result = "No command was executed" in result_text
-                if "workspace-search-sentinel" not in result_text and "invalid or unavailable" not in result_text and not is_edit_result and not is_shell_result:
+                if "workspace-search-sentinel" not in result_text and "Skill reference smoke sentinel" not in result_text and "invalid or unavailable" not in result_text and not is_edit_result and not is_shell_result:
                     self.reject(payload)
                     return
                 previous_call = next(
@@ -284,7 +291,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 ):
                     self.reject(payload)
                     return
-                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in result_text else "The path was rejected."
+                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in result_text else "Found workspace-search-sentinel" if "workspace-search-sentinel" in result_text else "The path was rejected."
                 body = {"candidates": [{"content": {"role": "model", "parts": [{"text": final_text}]}}]}
             else:
                 body = {"candidates": [{"content": {"role": "model", "parts": [{"text": REPLY}]}}]}

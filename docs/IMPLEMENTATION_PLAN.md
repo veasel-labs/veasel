@@ -78,8 +78,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   closed manifest validation, Skills, MCP stdio and Streamable HTTP, `PLUGIN_DATA`,
   placeholder expansion, failure isolation, and `com.veasel.code` extensions.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
-  persist per-session activation, and include bounded instructions as untrusted
-  model context. This is a partial integration, not a conformance claim.
+  persist per-session activation, include bounded instructions as untrusted
+  model context, and let the model read bounded resources from active Skill
+  directories on demand. This is a partial integration, not a conformance claim.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

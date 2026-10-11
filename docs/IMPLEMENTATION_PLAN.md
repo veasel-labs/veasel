@@ -95,8 +95,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture
   effect occurs before approval and rejection causes no effect.
-- [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
-  compatibility report before claiming support.
+- [x] Add locally authored spec-derived fixtures, MCP fixture servers, and a
+  public compatibility report. The full conformance gate remains open for the
+  gaps recorded in [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
 - [x] Document the Agent Toolkit consumer contract and verify its catalog,
   session Skill, MCP trust, and per-call approval shapes in
   [`integrations/agent-toolkit.md`](integrations/agent-toolkit.md) and

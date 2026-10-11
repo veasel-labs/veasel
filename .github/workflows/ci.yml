@@ -90,6 +90,7 @@ jobs:
           v run $installer
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify formatting
+        shell: bash
         run: |
           if ! v fmt -verify .; then
             v fmt -diff .

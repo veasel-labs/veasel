@@ -385,7 +385,7 @@ curl -sS -o "$work_dir/mcp-approved-response" -w '%{http_code}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-approved-status" &
 mcp_turn_pid=$!
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl --max-time 3 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP approval status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	sleep 0.1
@@ -410,7 +410,7 @@ curl -sS -o "$work_dir/mcp-rejected-response" -w '%{http_code}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-rejected-status" &
 mcp_turn_pid=$!
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl --max-time 3 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll rejected MCP call status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	sleep 0.1
@@ -431,7 +431,7 @@ curl -sS -o "$work_dir/mcp-error-response" -w '%{http_code}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-error-status" &
 mcp_turn_pid=$!
 for ((attempt = 0; attempt < 100; attempt++)); do
-	curl --max-time 3 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
+	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP error approval status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
 	sleep 0.1

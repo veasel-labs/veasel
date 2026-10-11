@@ -42,6 +42,10 @@ struct EventData {
 pub:
 	operation_id string @[omitempty]
 	delta        string @[omitempty]
+	status       string @[omitempty]
+	provider     string @[omitempty]
+	model        string @[omitempty]
+	error        string @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -261,6 +265,66 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to commit streaming event migration')
 		}
+	}
+	if current < 8 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin MCP tool approval migration')
+		}
+		db.exec("CREATE TABLE plugin_mcp_tool_calls (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, operation_id TEXT NOT NULL, plugin_name TEXT NOT NULL, server_name TEXT NOT NULL, tool_name TEXT NOT NULL, arguments TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'running', 'completed', 'rejected', 'failed', 'cancelled', 'uncertain')), reviewed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create MCP tool approval table')
+		}
+		db.exec('CREATE INDEX plugin_mcp_tool_calls_session_created ON plugin_mcp_tool_calls (session_id, created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index MCP tool approvals')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (8)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record MCP tool approval migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit MCP tool approval migration')
+		}
+	}
+	db.begin() or {
+		db.close() or {}
+		return error('unable to begin MCP tool approval recovery')
+	}
+	interrupted_calls := db.exec("SELECT id, session_id, status FROM plugin_mcp_tool_calls WHERE status IN ('pending', 'approved', 'running')") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to inspect interrupted MCP tool calls')
+	}
+	for row in interrupted_calls {
+		status := if row.val(2) == 'running' { 'uncertain' } else { 'cancelled' }
+		_ = db.exec_param_many('UPDATE plugin_mcp_tool_calls SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?', [
+			status,
+			row.val(0),
+			row.val(2),
+		]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to recover interrupted MCP tool call')
+		}
+		_ = db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+			'plugin.mcp_tool_call_${status}',
+			row.val(1),
+		]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record MCP tool call recovery')
+		}
+	}
+	db.commit() or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to commit MCP tool approval recovery')
 	}
 	if current >= 6 {
 		db.begin() or {
@@ -846,7 +910,8 @@ fn (mut store Store) messages_for_session(session_id string, limit int) ![]ChatT
 	return messages
 }
 
-fn (mut store Store) append_exchange(session_id string, user_content string, assistant_content string) ![]ChatTurn {
+fn (mut store Store) append_exchange(session_id string, operation_id string, user_content string,
+	assistant_content string, provider string, model string) ![]ChatTurn {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -878,6 +943,21 @@ fn (mut store Store) append_exchange(session_id string, user_content string, ass
 			return error('unable to persist chat event')
 		}
 	}
+	if operation_id.len > 0 {
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'session.turn_completed',
+			session_id,
+			json2.encode[EventData](EventData{
+				operation_id: operation_id
+				status:       'completed'
+				provider:     provider
+				model:        model
+			}),
+		]) or {
+			store.db.rollback() or {}
+			return error('unable to persist session turn completion')
+		}
+	}
 	store.db.commit() or {
 		store.db.rollback() or {}
 		return error('unable to commit chat exchange')
@@ -896,6 +976,43 @@ fn (mut store Store) append_exchange(session_id string, user_content string, ass
 	}
 	result = result.reverse()
 	return result
+}
+
+fn (mut store Store) record_session_turn_completion(session_id string, operation_id string,
+	status string, public_error string) ! {
+	if !validate_operation_id(operation_id) || operation_id.len == 0
+		|| status !in ['failed', 'cancelled'] || public_error.len > 1024 {
+		return error('invalid session turn completion')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.turn_completed',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id: operation_id
+			status:       status
+			error:        public_error
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist session turn completion')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session turn completion')
+	}
 }
 
 fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEditDraft) !WorkspaceEditProposal {
@@ -1146,5 +1263,203 @@ fn workspace_edit_proposal_from_row(row sqlite.Row) WorkspaceEditProposal {
 		status:     row.val(4)
 		created_at: row.val(5)
 		updated_at: row.val(6)
+	}
+}
+
+fn (mut store Store) create_plugin_mcp_tool_call(session_id string, operation_id string,
+	plugin_name string, server_name string, tool_name string, arguments string) !PluginMCPToolCallApproval {
+	if arguments.len > max_plugin_mcp_tool_call_argument_bytes {
+		return error('MCP tool arguments exceed the size limit')
+	}
+	_ := json2.decode[map[string]json2.Any](arguments) or {
+		return error('MCP tool arguments must be a JSON object')
+	}
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.begin()!
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	pending := store.db.exec_param_many("SELECT COUNT(*) FROM plugin_mcp_tool_calls WHERE session_id = ? AND status IN ('pending', 'approved', 'running')",
+		[session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to inspect pending MCP tool calls')
+	}
+	if pending.len != 1 || pending[0].val(0).int() >= max_pending_plugin_mcp_tool_calls {
+		store.db.rollback() or {}
+		return error('pending MCP tool call limit reached')
+	}
+	id := uuid.new_v4().str()
+	_ = store.db.exec_param_many('INSERT INTO plugin_mcp_tool_calls (id, session_id, operation_id, plugin_name, server_name, tool_name, arguments, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+		id,
+		session_id,
+		operation_id,
+		plugin_name,
+		server_name,
+		tool_name,
+		arguments,
+		'pending',
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist MCP tool call approval')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)', [
+		'plugin.mcp_tool_call_pending',
+		session_id,
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to publish MCP tool call approval')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit MCP tool call approval')
+	}
+	return store.get_plugin_mcp_tool_call_unlocked(session_id, id)!
+}
+
+fn (mut store Store) plugin_mcp_tool_calls(session_id string) ![]PluginMCPToolCallSummary {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many('SELECT id, operation_id, plugin_name, server_name, tool_name, length(CAST(arguments AS BLOB)), status, COALESCE(reviewed_at, ""), created_at, updated_at FROM plugin_mcp_tool_calls WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT ${max_plugin_mcp_tool_call_history}',
+		[session_id])!
+	mut calls := []PluginMCPToolCallSummary{cap: rows.len}
+	for row in rows {
+		calls << plugin_mcp_tool_call_summary_from_row(row)
+	}
+	return calls
+}
+
+fn plugin_mcp_tool_call_summary_from_row(row sqlite.Row) PluginMCPToolCallSummary {
+	return PluginMCPToolCallSummary{
+		id:              row.val(0)
+		operation_id:    row.val(1)
+		plugin_name:     row.val(2)
+		server_name:     row.val(3)
+		tool_name:       row.val(4)
+		arguments_bytes: row.val(5).int()
+		status:          row.val(6)
+		reviewed_at:     row.val(7)
+		created_at:      row.val(8)
+		updated_at:      row.val(9)
+	}
+}
+
+fn (mut store Store) review_plugin_mcp_tool_call(session_id string, id string) !PluginMCPToolCallApproval {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.begin()!
+	call := store.get_plugin_mcp_tool_call_unlocked(session_id, id) or {
+		store.db.rollback() or {}
+		return err
+	}
+	if call.status == 'pending' && call.reviewed_at.len == 0 {
+		_ = store.db.exec_param_many("UPDATE plugin_mcp_tool_calls SET reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NULL",
+			[id, session_id]) or {
+			store.db.rollback() or {}
+			return error('unable to record MCP tool call review')
+		}
+		if store.db.get_affected_rows_count() != 1 {
+			store.db.rollback() or {}
+			return error('MCP tool call changed while being reviewed')
+		}
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+			['plugin.mcp_tool_call_reviewed', session_id]) or {
+			store.db.rollback() or {}
+			return error('unable to record MCP tool call review event')
+		}
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit MCP tool call review')
+	}
+	return store.get_plugin_mcp_tool_call_unlocked(session_id, id)!
+}
+
+fn (mut store Store) approve_plugin_mcp_tool_call(session_id string, id string) ! {
+	store.transition_plugin_mcp_tool_call(session_id, id, 'approved', "status = 'pending' AND reviewed_at IS NOT NULL",
+		'plugin.mcp_tool_call_approved')!
+}
+
+fn (mut store Store) reject_plugin_mcp_tool_call(session_id string, id string) ! {
+	store.transition_plugin_mcp_tool_call(session_id, id, 'rejected', "status = 'pending'",
+		'plugin.mcp_tool_call_rejected')!
+}
+
+fn (mut store Store) begin_plugin_mcp_tool_call(session_id string, id string) ! {
+	store.transition_plugin_mcp_tool_call(session_id, id, 'running', "status = 'approved'",
+		'plugin.mcp_tool_call_running')!
+}
+
+fn (mut store Store) finish_plugin_mcp_tool_call(session_id string, id string, status string) ! {
+	if status !in ['completed', 'failed'] {
+		return error('invalid MCP tool call result status')
+	}
+	store.transition_plugin_mcp_tool_call(session_id, id, status, "status = 'running'",
+		'plugin.mcp_tool_call_${status}')!
+}
+
+fn (mut store Store) cancel_plugin_mcp_tool_call(session_id string, id string) ! {
+	store.transition_plugin_mcp_tool_call(session_id, id, 'cancelled', "status IN ('pending', 'approved')",
+		'plugin.mcp_tool_call_cancelled')!
+}
+
+fn (mut store Store) transition_plugin_mcp_tool_call(session_id string, id string,
+	status string, expected string, event_type string) ! {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.begin()!
+	query := 'UPDATE plugin_mcp_tool_calls SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND ${expected}'
+	_ = store.db.exec_param_many(query, [status, id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to update MCP tool call status')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.db.rollback() or {}
+		return error('MCP tool call is no longer in the expected state')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		[event_type, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record MCP tool call status')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit MCP tool call status')
+	}
+}
+
+fn (mut store Store) get_plugin_mcp_tool_call(session_id string, id string) !PluginMCPToolCallApproval {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	return store.get_plugin_mcp_tool_call_unlocked(session_id, id)
+}
+
+fn (mut store Store) get_plugin_mcp_tool_call_unlocked(session_id string,
+	id string) !PluginMCPToolCallApproval {
+	rows := store.db.exec_param_many('SELECT id, operation_id, plugin_name, server_name, tool_name, arguments, status, COALESCE(reviewed_at, ""), created_at, updated_at FROM plugin_mcp_tool_calls WHERE session_id = ? AND id = ?',
+		[session_id, id])!
+	if rows.len != 1 {
+		return error('MCP tool call not found')
+	}
+	return plugin_mcp_tool_call_from_row(rows[0])
+}
+
+fn plugin_mcp_tool_call_from_row(row sqlite.Row) PluginMCPToolCallApproval {
+	return PluginMCPToolCallApproval{
+		id:             row.val(0)
+		operation_id:   row.val(1)
+		plugin_name:    row.val(2)
+		server_name:    row.val(3)
+		tool_name:      row.val(4)
+		arguments_json: row.val(5)
+		status:         row.val(6)
+		reviewed_at:    row.val(7)
+		created_at:     row.val(8)
+		updated_at:     row.val(9)
 	}
 }

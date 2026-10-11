@@ -2,7 +2,16 @@ module main
 
 import json2
 import os
+import context as vcontext
+import time
 import uuid
+
+fn test_plugin_mcp_tool_result_failure_classification() {
+	assert plugin_mcp_tool_result_failed('{"error":"transport failed"}')
+	assert plugin_mcp_tool_result_failed('{"content":[{"type":"text","text":"tool failed"}],"isError":true}')
+	assert !plugin_mcp_tool_result_failed('{"content":[{"type":"text","text":"ok"}],"isError":false}')
+	assert !plugin_mcp_tool_result_failed('{"content":[{"type":"text","text":"legacy result"}]}')
+}
 
 fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	root := os.join_path(os.temp_dir(), 'veasel-skill-tool-policy-${uuid.new_v4().str()}')
@@ -31,7 +40,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	skill_context := SessionSkillContext{
 		tool_policy: policy
 	}
-	denied_edit := execute_agent_tool_if_allowed(app, root, session.id, ProviderToolCall{
+	denied_edit := execute_test_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'denied-edit'
 		function: ProviderFunctionCall{
 			name:      'workspace_propose_file_edit'
@@ -42,7 +51,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	assert os.read_file(path) or { panic(err) } == 'must remain unchanged'
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
 	assert (store.shell_commands(session.id) or { panic(err) }).len == 0
-	denied_mcp := execute_agent_tool_if_allowed(app, root, session.id, ProviderToolCall{
+	denied_mcp := execute_test_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'denied-mcp'
 		function: ProviderFunctionCall{
 			name:      'mcp_trusted_action'
@@ -95,7 +104,7 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 			arguments: '{"plugin_name":"review-tools","skill_name":"review","path":"references/guide.md"}'
 		}
 	}
-	allowed := execute_agent_tool_if_allowed(app, os.join_path(root, 'workspace'), session.id, call,
+	allowed := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
 		SessionSkillContext{
 			resource_access: access
 		}, {}, mut mcp_connections)
@@ -109,13 +118,23 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 		}])
 		resource_access: access
 	}
-	blocked := execute_agent_tool_if_allowed(app, os.join_path(root, 'workspace'), session.id, call,
+	blocked := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
 		blocked_context, {}, mut mcp_connections)
 	assert blocked.contains('active Agent Skill tool restrictions')
 	assert restrict_agent_tools(definitions, blocked_context.tool_policy).len == 0
-	disabled := execute_agent_tool_if_allowed(app, os.join_path(root, 'workspace'), session.id, call,
+	disabled := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
 		SessionSkillContext{}, {}, mut mcp_connections)
 	assert disabled.contains('not active in this session')
+}
+
+fn execute_test_agent_tool(app &App, root string, session_id string, call ProviderToolCall,
+	skill_context SessionSkillContext, bindings map[string]PluginMCPToolBinding,
+	mut connections []PluginMCPConnection) string {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, time.second)
+	defer { cancel() }
+	return execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, 'test-operation', call,
+		skill_context, bindings, mut connections) or { panic(err) }
 }
 
 fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_approval() {

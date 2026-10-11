@@ -151,6 +151,87 @@ fn test_shell_command_requires_review_and_is_marked_uncertain_after_restart() {
 	assert !os.exists(os.join_path(root, 'must-not-run'))
 }
 
+fn test_mcp_tool_call_requires_inspection_approval_and_recovers_without_replay() {
+	root := os.join_path(os.temp_dir(), 'veasel-mcp-approval-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	db_path := os.join_path(root, 'veasel.sqlite3')
+	mut store := open_store(db_path) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'MCP approval', directory: root }) or {
+		panic(err)
+	}
+	pending := store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', '{"path":"sentinel"}') or { panic(err) }
+	assert pending.status == 'pending'
+	assert pending.plugin_name == 'fixture'
+	assert pending.server_name == 'tools'
+	assert pending.tool_name == 'write_file'
+	assert pending.arguments_json == '{"path":"sentinel"}'
+	oversized_arguments := '{"value":"' + 'x'.repeat(max_plugin_mcp_tool_call_argument_bytes) + '"}'
+	_ = store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', oversized_arguments) or {
+		assert err.msg().contains('size limit')
+		PluginMCPToolCallApproval{}
+	}
+	_ = store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', '[]') or {
+		assert err.msg().contains('JSON object')
+		PluginMCPToolCallApproval{}
+	}
+	store.approve_plugin_mcp_tool_call(session.id, pending.id) or {
+		assert err.msg().contains('expected state')
+	}
+	reviewed := store.review_plugin_mcp_tool_call(session.id, pending.id) or { panic(err) }
+	assert reviewed.reviewed_at.len > 0
+	store.approve_plugin_mcp_tool_call(session.id, pending.id) or { panic(err) }
+	store.begin_plugin_mcp_tool_call(session.id, pending.id) or { panic(err) }
+	store.finish_plugin_mcp_tool_call(session.id, pending.id, 'completed') or { panic(err) }
+	assert (store.get_plugin_mcp_tool_call(session.id, pending.id) or { panic(err) }).status == 'completed'
+	approved := store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', '{"path":"approved"}') or { panic(err) }
+	_ = store.review_plugin_mcp_tool_call(session.id, approved.id) or { panic(err) }
+	store.approve_plugin_mcp_tool_call(session.id, approved.id) or { panic(err) }
+	running := store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', '{"path":"running"}') or { panic(err) }
+	_ = store.review_plugin_mcp_tool_call(session.id, running.id) or { panic(err) }
+	store.approve_plugin_mcp_tool_call(session.id, running.id) or { panic(err) }
+	store.begin_plugin_mcp_tool_call(session.id, running.id) or { panic(err) }
+	unreviewed := store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', '{"path":"unreviewed"}') or { panic(err) }
+	rejected := store.create_plugin_mcp_tool_call(session.id, uuid.new_v4().str(), 'fixture', 'tools',
+		'write_file', '{"path":"rejected"}') or { panic(err) }
+	store.reject_plugin_mcp_tool_call(session.id, rejected.id) or { panic(err) }
+	store.close() or { panic(err) }
+	mut recovered := open_store(db_path) or { panic(err) }
+	defer { recovered.close() or {} }
+	calls := recovered.plugin_mcp_tool_calls(session.id) or { panic(err) }
+	assert calls.len == 5
+	assert mcp_tool_call_status(calls, pending.id) == 'completed'
+	assert mcp_tool_call_status(calls, approved.id) == 'cancelled'
+	assert mcp_tool_call_status(calls, running.id) == 'uncertain'
+	assert mcp_tool_call_status(calls, rejected.id) == 'rejected'
+	assert mcp_tool_call_status(calls, unreviewed.id) == 'cancelled'
+	assert mcp_tool_call_summary(calls, pending.id).arguments_bytes == pending.arguments_json.len
+}
+
+fn mcp_tool_call_status(calls []PluginMCPToolCallSummary, id string) string {
+	for call in calls {
+		if call.id == id {
+			return call.status
+		}
+	}
+	return ''
+}
+
+fn mcp_tool_call_summary(calls []PluginMCPToolCallSummary, id string) PluginMCPToolCallSummary {
+	for call in calls {
+		if call.id == id {
+			return call
+		}
+	}
+	return PluginMCPToolCallSummary{}
+}
+
 fn test_shell_command_rejects_workspace_escape_and_invalid_limits() {
 	root := os.join_path(os.temp_dir(), 'veasel-shell-path-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
@@ -578,7 +659,9 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	session := store.create_session(SessionInput{ title: 'Chat', directory: '/tmp/chat' }) or {
 		panic(err)
 	}
-	exchange := store.append_exchange(session.id, 'What is this?', 'A test reply.') or { panic(err) }
+	exchange := store.append_exchange(session.id, '', 'What is this?', 'A test reply.', '', '') or {
+		panic(err)
+	}
 	assert exchange.len == 2
 	assert exchange[0].role == 'user'
 	assert exchange[0].content == 'What is this?'
@@ -590,6 +673,43 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	assert events.len == 3
 	assert events[1].type == 'message.created'
 	assert events[2].type == 'message.created'
+}
+
+fn test_async_session_turn_completion_event_commits_with_exchange() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Async chat', directory: '/tmp/chat' }) or {
+		panic(err)
+	}
+	operation_id := 'b1f21cb9-6f34-43d6-b924-7e8b71d9b307'
+	_ = store.append_exchange(session.id, operation_id, 'Review this change', 'Looks good.',
+		'openai-compatible', 'fixture-model') or { panic(err) }
+	events := store.events_after(0) or { panic(err) }
+	completion := events[events.len - 1]
+	assert completion.type == 'session.turn_completed'
+	assert completion.session_id == session.id
+	assert completion.data.operation_id == operation_id
+	assert completion.data.status == 'completed'
+	assert completion.data.provider == 'openai-compatible'
+	assert completion.data.model == 'fixture-model'
+}
+
+fn test_failed_session_turn_completion_event_is_persisted() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Async chat', directory: '/tmp/chat' }) or {
+		panic(err)
+	}
+	operation_id := '7df3b3f9-68ad-466d-a115-7c8c285d1999'
+	store.record_session_turn_completion(session.id, operation_id, 'cancelled', 'Turn cancelled.') or {
+		panic(err)
+	}
+	events := store.events_after(0) or { panic(err) }
+	completion := events[events.len - 1]
+	assert completion.type == 'session.turn_completed'
+	assert completion.data.operation_id == operation_id
+	assert completion.data.status == 'cancelled'
+	assert completion.data.error == 'Turn cancelled.'
 }
 
 fn test_model_endpoint_requires_tls_or_exact_loopback() {

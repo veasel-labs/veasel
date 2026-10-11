@@ -62,6 +62,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   approval; execution limits and recovery behavior are documented in
   [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
 - [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
+- [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist terminal completion events atomically with successful history and consume them in the TUI. These process-local operations are cancelled on shutdown and are not durable jobs.
 - [x] Complete an end-to-end coding task against a disposable fixture workspace for OpenAI-compatible, Anthropic, and Gemini providers: propose and inspect a greeting implementation, prove the workspace stays unchanged before approval, approve the diff, run its V test, and verify rejected or unreviewed edits and shell effects do not occur (`scripts/api-smoke.sh`).
 
 ### Milestone 3 — persistent execution
@@ -85,6 +86,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested
   JSON Schemas intact. Full conformance suite remains open.
+- [x] Require durable per-call MCP argument inspection and approval, pause and
+  resume the active provider turn, persist rejection and execution outcomes,
+  and recover interrupted calls without replay. API smoke proves no fixture
+  effect occurs before approval and rejection causes no effect.
 - [ ] Add spec-derived conformance fixtures, MCP fixture servers, and a public
   compatibility report before claiming support.
 - [ ] Document and test the Agent Toolkit integration contract.
@@ -124,8 +129,9 @@ honoring its license and attribution.
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md); do not
   claim conformance until its release gate passes.
 - The initial tool loop caps in-flight provider calls and tool-loop steps;
-  same-session turns are serialized so provider history cannot race. Revisit
-  these limits before adding concurrent agents or background execution.
+  same-session turns are serialized so provider history cannot race. Opt-in
+  async turns remain process-local; durable job recovery, concurrent agents,
+  and their resource limits remain open.
 - The organization and repository publication are tracked separately from the
   code milestones; do not describe them as complete until GitHub confirms them.
 - Milestone 1 is complete only for the local Linux x64 development environment;
@@ -134,4 +140,4 @@ honoring its license and attribution.
 - V's SQLite module uses native SQLite linkage. CI and packaging must verify
   platform-specific headers/libraries rather than assuming zero system needs.
 - SSE and SQLite behavior must be tested under concurrent clients before the
-  server claims reliable background execution.
+  server claims durable or restart-resilient background execution.

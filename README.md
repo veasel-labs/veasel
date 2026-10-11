@@ -27,10 +27,17 @@ inherit its environment, and have no OS sandbox; they can access files and
 network credentials available to that user. Execution is limited to 300 seconds
 and 64 KiB of captured output. Interrupted commands are never replayed.
 Session turns through all three provider adapters stream text deltas through the
-replayable `/v1/events` endpoint. The TUI renders them while the final API
+replayable `/v1/events` endpoint. The TUI renders them while a synchronous API
 response retains the complete assistant text and provider tool calls. Tool
 arguments are assembled before the agent executes them.
-Background jobs remain in progress.
+The API supports `Prefer: respond-async` for clients that need the request
+worker released while a model or human MCP approval is pending. It returns an
+operation ID with `202 Accepted`; clients follow `assistant.delta` and the
+terminal `session.turn_completed` event, then reload the committed session
+history. This opt-in execution is process-local and is cancelled during server
+shutdown; durable jobs and restart recovery remain future work. Requests without
+the preference retain the synchronous response contract.
+Durable, restart-resilient background jobs remain in progress.
 Local Agent Plugins can be discovered, their validated Skills enabled per
 session, and trusted stdio or Streamable HTTP MCP servers exposed as provider
 tools. Stdio processes run with the current user's privileges and without an OS
@@ -79,6 +86,12 @@ configured headers and tool requests only to the displayed origin and refuses
 redirects. Tool arguments and results are sent to the configured model provider.
 A stdio process is launched for discovery and remains available for the model
 turn; only `PLUGIN_DATA` persists between turns.
+Every model-requested MCP call pauses the active turn until you inspect the
+exact tool arguments with `/mcp calls` and `/mcp call show <id>`, then approve
+with `/mcp call approve <id>` or reject with `/mcp call reject <id>`. Rejected
+calls are not retried. Calls interrupted before execution are cancelled; calls
+whose execution outcome cannot be known after a restart are marked uncertain
+and never replayed.
 Skill instructions are treated as untrusted reference context and reloaded
 from disk for each turn. When a Skill is active, the model can request bounded
 UTF-8 resources from that Skill's directory through a read-only tool; paths

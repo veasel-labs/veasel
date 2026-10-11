@@ -2,12 +2,14 @@ module main
 
 import context as vcontext
 import json2
+import time
 
 const max_agent_tool_rounds = 6
 const max_agent_tool_calls = 12
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 const max_agent_context_bytes = max_chat_input_bytes + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
+const plugin_mcp_approval_poll_interval = 250 * time.millisecond
 
 struct AgentToolError {
 	error string
@@ -113,7 +115,8 @@ fn agent_skill_resource_tools(access []AgentSkillResourceAccess) []AgentToolDefi
 }
 
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
-	session_id string, skill_context SessionSkillContext, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	session_id string, operation_id string, skill_context SessionSkillContext,
+	on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -179,8 +182,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		tool_calls += output.tool_calls.len
 		for call in output.tool_calls {
-			result := execute_agent_tool_if_allowed(app, root, session_id, call, skill_context,
-				mcp_bindings, mut mcp_connections)
+			result := execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, operation_id,
+				call, skill_context, mcp_bindings, mut mcp_connections)!
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
@@ -197,9 +200,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	return error('agent tool round limit reached')
 }
 
-fn execute_agent_tool_if_allowed(app &App, root string, session_id string, call ProviderToolCall,
+fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root string,
+	session_id string, operation_id string, call ProviderToolCall,
 	skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
-	mut mcp_connections []PluginMCPConnection) string {
+	mut mcp_connections []PluginMCPConnection) !string {
 	if !skill_context.tool_policy.allows(call.function.name) {
 		return json2.encode[AgentToolError](AgentToolError{
 			error: 'Tool is not available under the active Agent Skill tool restrictions.'
@@ -209,9 +213,77 @@ fn execute_agent_tool_if_allowed(app &App, root string, session_id string, call 
 		return execute_agent_skill_resource(skill_context.resource_access, call)
 	}
 	if binding := mcp_bindings[call.function.name] {
-		return execute_plugin_mcp_tool(mut mcp_connections, binding, call.function.arguments)
+		return app.execute_plugin_mcp_tool_with_approval(mut turn_ctx, session_id, operation_id,
+			binding, call.function.arguments, mut mcp_connections)!
 	}
 	return execute_workspace_agent_tool(app, root, session_id, call)
+}
+
+fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Context,
+	session_id string, operation_id string, binding PluginMCPToolBinding, arguments string,
+	mut mcp_connections []PluginMCPConnection) !string {
+	if binding.connection_index < 0 || binding.connection_index >= mcp_connections.len {
+		return '{"error":"MCP server connection is unavailable."}'
+	}
+	if arguments.len > max_plugin_mcp_tool_call_argument_bytes {
+		return '{"error":"MCP tool arguments exceed the review size limit."}'
+	}
+	_ := json2.decode[map[string]json2.Any](arguments) or {
+		return '{"error":"MCP tool arguments must be a JSON object."}'
+	}
+	call := app.store.create_plugin_mcp_tool_call(session_id, operation_id, binding.plugin_name,
+		binding.server_name, binding.native_name, arguments) or {
+		if err.msg() == 'pending MCP tool call limit reached' {
+			return '{"error":"Too many MCP tool calls are awaiting user review."}'
+		}
+		return err
+	}
+	for {
+		if context_error := turn_context_error(mut turn_ctx) {
+			mut store := app.store
+			store.cancel_plugin_mcp_tool_call(session_id, call.id) or {}
+			return error(context_error)
+		}
+		current := app.store.get_plugin_mcp_tool_call(session_id, call.id)!
+		match current.status {
+			'pending' {
+				time.sleep(plugin_mcp_approval_poll_interval)
+				continue
+			}
+			'rejected' {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'The user rejected this MCP tool call. Do not retry it unless the user asks.'
+				})
+			}
+			'approved' {
+				if context_error := turn_context_error(mut turn_ctx) {
+					mut store := app.store
+					store.cancel_plugin_mcp_tool_call(session_id, call.id) or {}
+					return error(context_error)
+				}
+				mut store := app.store
+				store.begin_plugin_mcp_tool_call(session_id, call.id)!
+				result := execute_plugin_mcp_tool(mut mcp_connections, binding, arguments)
+				status := if plugin_mcp_tool_result_failed(result) { 'failed' } else { 'completed' }
+				store.finish_plugin_mcp_tool_call(session_id, call.id, status)!
+				return result
+			}
+			else {
+				return error('MCP tool call entered an unexpected state: ${current.status}')
+			}
+		}
+	}
+}
+
+fn plugin_mcp_tool_result_failed(result string) bool {
+	if result.starts_with('{"error":') {
+		return true
+	}
+	fields := json2.decode[map[string]json2.Any](result) or { return false }
+	if error_value := fields['isError'] {
+		return error_value is bool && error_value as bool
+	}
+	return false
 }
 
 fn execute_agent_skill_resource(access []AgentSkillResourceAccess, call ProviderToolCall) string {

@@ -63,7 +63,7 @@ portable-format requirements, and will be exercised in tests.
 | MCP HTTP config | Absolute HTTP(S) URL; no userinfo/fragment; HTTPS off-loopback; literal validated headers; reject case-insensitive duplicates; no redirects forwarding configured headers across origins. | URL/header validation is active. Catalog exposes only the parsed origin, never path/query values. Redirects are refused, TLS verification is enabled for HTTPS, and retries are disabled to avoid repeating tool side effects. | Expand the URL/header matrix and exercise cross-origin redirect refusal, invalid TLS, endpoint authentication, and proxy behavior. |
 | Failure isolation | Invalid MCP config disables only MCP; invalid entries/unsupported transports/connection failures skip that server; independent skills still load. | Verified for component/config isolation; trusted stdio and HTTP connection, initialization, and tool-list failures skip that server. | `plugins_test.v`: `test_agent_plugin_component_discovery_is_optional_and_isolated` and `test_agent_plugin_mcp_config_isolated_and_transport_bounded`; transport runtime failure fixtures remain open. |
 | Client extension | Own and document reverse-domain `com.veasel.code`; read only its exact top-level directory and object-valued manifest namespace; ignore every unknown namespace. | Not implemented | Fixtures for own extension behavior and opaque ignored namespace values. |
-| User control | The standard leaves permissions and sandboxing to each client. Veasel must display provenance, trust state and exact MCP effects before allowing execution. | Per-session trust/revocation, process lifecycle, action warning and provider-data disclosure are implemented. Processes run with the current user privileges and are not sandboxed. | API route tests, process lifecycle tests, and stronger effect previews remain open. |
+| User control | The standard leaves permissions and sandboxing to each client. Veasel must display provenance, trust state and exact MCP effects before allowing execution. | Per-session server trust/revocation and explicit per-call review are implemented. Each model-requested MCP call durably stores its server, native tool and bounded exact argument JSON, pauses the turn, and waits for inspect plus approve/reject. Rejected calls never reach the server; restarted pending/approved calls are cancelled and running calls become uncertain without replay. TUI review visibly escapes terminal controls and direction characters. Processes still run with the current user privileges and are not sandboxed. | `main_test.v:test_mcp_tool_call_requires_inspection_approval_and_recovers_without_replay`; API smoke covers inspect/approve/reject and proves fixture effects happen only after approval. MCP server effects remain arbitrary within that process's privileges. |
 | Veasel plugin management (extension beyond v1) | Add/remove a local plugin directory; enable/disable components independently; display metadata, source path, unsupported items, and trust state; preserve its dedicated data directory across updates. | Not implemented | TUI and API flows, durable registry state, remove/re-enable behavior, and upgrade data-preservation tests. |
 
 ## V standard-library reuse
@@ -92,8 +92,15 @@ trusted per session with `/mcp trust <plugin>/<server>`; revoke with
 `/mcp untrust <plugin>/<server>`. Stdio and Streamable HTTP servers run; other
 transports are skipped. Their MCP
 tools are discovered for each turn and routed through the selected model
-provider. Each trusted server stays available for that model turn and closes
-afterward; only stdio `PLUGIN_DATA` persists between turns. Stdio processes run
+provider. Every model-requested MCP call pauses the active turn until the user
+opens its exact bounded JSON arguments with `/mcp call show <id>` and explicitly
+approves or rejects it. `/mcp calls` lists the durable history; approval uses
+`/mcp call approve <id>` and rejection uses `/mcp call reject <id>`. An approval
+is single-use; rejection is returned to the model as an error, with instructions
+not to retry unless the user asks. Pending/approved calls are cancelled at
+startup; running calls become uncertain and are never replayed. Each trusted
+server stays available for that model turn and closes afterward; only stdio
+`PLUGIN_DATA` persists between turns. Stdio processes run
 with the current user privileges without an OS sandbox. Tool arguments and results are
 sent to the configured provider. Selection is persisted and produces session
 events. Skill instructions are bounded, reloaded when composing each turn,

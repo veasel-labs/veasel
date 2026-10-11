@@ -18,6 +18,8 @@ const max_session_plugin_mcp_cursor_bytes = 1024
 struct PluginMCPToolBinding {
 	connection_index int
 	native_name      string
+	plugin_name      string
+	server_name      string
 }
 
 struct PluginMCPConnection {
@@ -242,6 +244,8 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 				bindings[provider_name] = PluginMCPToolBinding{
 					connection_index: connection_index
 					native_name:      native_name
+					plugin_name:      selected.plugin_name
+					server_name:      selected.server_name
 				}
 				connection_has_tools = true
 			}

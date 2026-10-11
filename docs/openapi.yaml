@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local sessions, multi-provider chat, bounded workspace tools with durable file edit and shell command approval, experimental Agent Plugin Skills and trusted stdio/Streamable HTTP MCP tools, and replayable events. Workspace excerpts and MCP tool arguments/results are sent to the configured model provider. Approved shell commands run with the server OS user permissions and inherited environment without an OS sandbox.
+  description: Local sessions, multi-provider chat, bounded workspace tools with durable file edit and shell command approval, experimental Agent Plugin Skills and trusted stdio/Streamable HTTP MCP tools with explicit per-call review, and replayable events. Workspace excerpts and MCP tool arguments/results are sent to the configured model provider. Approved shell commands and MCP servers run with the server OS user permissions and inherited environment without an OS sandbox.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -128,7 +128,20 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: sendSessionMessage
-      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may list/read/search bounded workspace files and create durable single-file edit proposals. Requested workspace content is sent to the configured provider; proposed file contents are not written before explicit approval. Assistant text streams as durable assistant.delta events on /v1/events while the final response aggregates the complete text and tool calls. Send a unique X-Veasel-Operation-ID UUID to allow cancellation; turns have a two-minute deadline, and the API request returns promptly while provider transport cleanup remains bounded by response progress or the HTTP timeout.
+      description: >-
+        Completes and atomically stores a user and assistant turn in the
+        session. Provider-native tool calls may list/read/search bounded
+        workspace files and create durable single-file edit proposals.
+        Requested workspace content is sent to the configured provider;
+        proposed file contents are not written before explicit approval.
+        Assistant text streams as durable assistant.delta events on
+        /v1/events. Successful turns atomically persist history and a
+        session.turn_completed event; failed or cancelled turns persist a
+        terminal event with a safe public error. Send Prefer: respond-async to
+        receive 202 immediately and follow that event; without this preference
+        the request waits and returns the full ChatExchange. Send a unique
+        X-Veasel-Operation-ID UUID to allow cancellation; turns have a
+        two-minute deadline.
       parameters:
         - in: header
           name: X-Veasel-Operation-ID
@@ -137,6 +150,13 @@ paths:
           schema:
             type: string
             format: uuid
+        - in: header
+          name: Prefer
+          required: false
+          description: Use respond-async to return an operation ID immediately and receive its terminal status on /v1/events. Omit to wait for a ChatExchange response.
+          schema:
+            type: string
+            example: respond-async
       requestBody:
         required: true
         content:
@@ -144,6 +164,18 @@ paths:
             schema:
               $ref: '#/components/schemas/SendMessage'
       responses:
+        '202':
+          description: The turn is running in the server process. It is cancelled during graceful server shutdown and is not recovered after a crash or forced termination. Follow the durable session.turn_completed event for operation_id and terminal status; completed events also include provider and model, while failed events contain a safe public error.
+          headers:
+            Preference-Applied:
+              description: Confirms that respond-async was applied.
+              schema:
+                type: string
+                example: respond-async
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionTurnAccepted'
         '200':
           description: Persisted exchange and the provider/model that answered it.
           content:
@@ -337,6 +369,112 @@ paths:
       responses:
         '200':
           description: Updated trusted MCP server identifiers.
+
+  /v1/sessions/{id}/mcp-tool-calls:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listMcpToolCallApprovals
+      description: Lists up to 50 recent MCP call proposals and outcomes without returning argument contents. Pending calls have not reached their MCP server; inspect one through the detail route.
+      responses:
+        '200':
+          description: Durable MCP tool call history.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items: { $ref: '#/components/schemas/PluginMCPToolCallSummary' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/mcp-tool-calls/{call_id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: call_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: inspectMcpToolCallApproval
+      description: Returns the exact bounded MCP tool arguments and durably records inspection before approval.
+      responses:
+        '200':
+          description: Exact tool arguments and durable call state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginMCPToolCallApproval' }
+        '404':
+          description: Session or call not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/mcp-tool-calls/{call_id}/approve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: call_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: approveMcpToolCall
+      description: Records one-time approval after inspection. The waiting model turn then invokes the exact MCP tool once; the API request does not execute the tool itself.
+      responses:
+        '200':
+          description: The waiting call is approved and may begin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginMCPToolCallApproval' }
+        '404':
+          description: Session or call not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Call has not been inspected or is no longer pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/mcp-tool-calls/{call_id}/reject:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: call_id
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: rejectMcpToolCall
+      description: Durably rejects a pending MCP call. The waiting provider turn receives a rejection error; Veasel does not retry the call.
+      responses:
+        '200':
+          description: The call is rejected and will not reach its MCP server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginMCPToolCallApproval' }
+        '404':
+          description: Session or call not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Call is no longer pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
           content:
             application/json:
               schema:
@@ -748,7 +886,7 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta so clients can render incremental text and ignore deltas from inactive operations.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async session turns end with a durable session.turn_completed event whose data includes operation_id and status; successful events include provider and model, and failed/cancelled events include a safe public error.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -759,7 +897,7 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta in its data object. Provider completion responses still aggregate the full text and tool calls.
+          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, and session.turn_completed carries the final async status.
           content:
             text/event-stream:
               schema:
@@ -871,6 +1009,38 @@ components:
       properties:
         plugin_name: { type: string }
         server_name: { type: string }
+    PluginMCPToolCallApproval:
+      type: object
+      required: [id, operation_id, plugin_name, server_name, tool_name, arguments_json, status, reviewed_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        operation_id: { type: string, format: uuid }
+        plugin_name: { type: string }
+        server_name: { type: string }
+        tool_name: { type: string }
+        arguments_json: { type: string, description: Exact JSON object sent by the model, limited to 32768 UTF-8 bytes; review as untrusted input. }
+        status:
+          type: string
+          enum: [pending, approved, running, completed, rejected, failed, cancelled, uncertain]
+        reviewed_at: { type: string, description: Empty until the detail view records inspection. }
+        created_at: { type: string }
+        updated_at: { type: string }
+    PluginMCPToolCallSummary:
+      type: object
+      required: [id, operation_id, plugin_name, server_name, tool_name, arguments_bytes, status, reviewed_at, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        operation_id: { type: string, format: uuid }
+        plugin_name: { type: string }
+        server_name: { type: string }
+        tool_name: { type: string }
+        arguments_bytes: { type: integer, minimum: 2, maximum: 32768, description: UTF-8 byte length of the withheld tool arguments. Use the detail route to inspect them. }
+        status:
+          type: string
+          enum: [pending, approved, running, completed, rejected, failed, cancelled, uncertain]
+        reviewed_at: { type: string, description: Empty until the detail view records inspection. }
+        created_at: { type: string }
+        updated_at: { type: string }
     SetSessionPluginMCPServer:
       type: object
       required: [plugin_name, server_name, trusted]
@@ -1067,6 +1237,16 @@ components:
           type: string
         model:
           type: string
+    SessionTurnAccepted:
+      type: object
+      required: [operation_id, status]
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          const: running
     Error:
       type: object
       required: [error]

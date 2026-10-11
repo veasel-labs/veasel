@@ -83,6 +83,11 @@ class MockProvider(BaseHTTPRequestHandler):
             last_message = messages[-1] if messages else {}
             user_text = last_message.get("content", "")
             is_tool_follow_up = last_message.get("role") == "tool"
+            if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") or is_tool_follow_up and any(
+                message.get("role") == "user" and message.get("content") in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                for message in messages
+            ):
+                print(f"MCP_PROVIDER_REQUEST: {user_text or 'tool follow-up'}", flush=True)
             if (
                 self.path != "/v1/chat/completions"
                 or payload.get("model") != "smoke-model"
@@ -315,6 +320,11 @@ class MockProvider(BaseHTTPRequestHandler):
         else:
             self.send_error(401)
             return
+
+        if provider_kind == "openai" and (
+            user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") or is_tool_follow_up
+        ):
+            print(f"MCP_PROVIDER_RESPONSE: tool_calls={len(body.get('choices', [{}])[0].get('message', {}).get('tool_calls', []))}", flush=True)
 
         if payload.get("stream") or ":streamGenerateContent" in self.path:
             if user_text == "Wait for cancellation":

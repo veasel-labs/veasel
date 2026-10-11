@@ -228,6 +228,31 @@ fn test_agent_plugin_component_discovery_is_optional_and_isolated() {
 	assert plugin_with_invalid_component_kinds.diagnostics.len == 2
 }
 
+fn test_agent_plugin_skips_invalid_skill_and_keeps_valid_sibling() {
+	root := os.join_path(os.temp_dir(), 'veasel-plugin-skill-isolation-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'plugin.json'), test_mcp_manifest) or { panic(err) }
+
+	valid_skill := os.join_path(root, 'skills', 'review')
+	invalid_skill := os.join_path(root, 'skills', 'bad-skill')
+	os.mkdir_all(valid_skill) or { panic(err) }
+	os.mkdir_all(invalid_skill) or { panic(err) }
+	os.write_file(os.join_path(valid_skill, 'SKILL.md'), '---\nname: review\ndescription: Review changes.\n---\nInstructions') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(invalid_skill, 'SKILL.md'), '---\nname: wrong-directory\ndescription: Invalid.\n---\n') or {
+		panic(err)
+	}
+
+	plugin := load_agent_plugin(root) or { panic(err) }
+	assert plugin.skills.len == 1
+	assert plugin.skills[0].name == 'review'
+	assert plugin.diagnostics.len == 1
+	assert plugin.diagnostics[0].component == 'skills/bad-skill'
+	assert plugin.diagnostics[0].message.starts_with('Skipping invalid Agent Skill:')
+}
+
 fn plugin_manifest_from_text(text string) !(PluginManifest, []PluginDiagnostic) {
 	fields := json2.decode[map[string]json2.Any](text) or {
 		return error('invalid manifest fixture')

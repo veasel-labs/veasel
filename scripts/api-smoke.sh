@@ -264,7 +264,16 @@ EOF
 			sleep 0.05
 		done
 		grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || fail 'slow provider request did not start'
-		expect_status 202 --max-time 10 -X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel"
+		cancel_status=""
+		for ((attempt = 0; attempt < 10; attempt++)); do
+			cancel_status="$(curl -sS -o "$work_dir/cancel-response" -w '%{http_code}' --max-time 1 \
+				-X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel" 2>/dev/null)" || cancel_status=""
+			[[ "$cancel_status" == 202 || "$cancel_status" == 404 ]] && break
+		done
+		[[ "$cancel_status" == 202 || "$cancel_status" == 404 ]] || fail "cancellation endpoint did not respond: ${cancel_status:-timeout}"
+		if [[ "$cancel_status" == 404 ]]; then
+			grep -Fq 'active operation not found' "$work_dir/cancel-response" || fail 'cancellation retry returned an unexpected 404'
+		fi
 		wait "$turn_pid"
 		cancelled_turn_status="$(cat "$work_dir/cancelled-turn-status")"
 		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"

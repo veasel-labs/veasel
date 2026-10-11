@@ -1,6 +1,6 @@
 # Ecosystem and repository research
 
-**Snapshot date:** 2026-10-09
+**Snapshot date:** 2026-10-11
 **Purpose:** Record what was inspected, distinguish local evidence from moving
 upstream references, and turn useful practices into concrete Veasel decisions.
 This is an architecture input, not a claim that Veasel already implements the
@@ -10,7 +10,7 @@ listed capabilities.
 
 | Source | Inspection location / revision | What it contributes |
 |---|---|---|
-| V compiler and `vlib` | Local checkout `/home/ulisesjcf/Projects/github.com/vlang/v`, updated with `v up` to `407c52edddca9715fb57e6571afeef0d193f2465` on 2026-10-09. | V 0.5.2 compiled successfully from this upstream master revision. `.v-version` pins the same inspected revision for CI; recheck APIs when updating it. |
+| V compiler and `vlib` | Local checkout `/home/ulisesjcf/Projects/github.com/vlang/v`, updated with `v up` to `407c52edddca9715fb57e6571afeef0d193f2465` on 2026-10-09. The pinned CI revision advanced to upstream `master` commit [`ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf`](https://github.com/vlang/v/commit/ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf) on 2026-10-11 in [Veasel PR #38](https://github.com/veasel-labs/veasel/pull/38). | V 0.5.2 compiled locally from the 2026-10-09 revision. The new exact pin passed the full Veasel CI matrix on Linux, macOS, and Windows in PR #38; the post-merge `main` run is recorded by GitHub Actions. Recheck APIs when updating the pin. |
 | `awesome-v` | Upstream [repository](https://github.com/vlang/awesome-v), CC0 list. No local checkout. | Discovery index for V libraries, CLI/TUI projects, databases, HTTP and terminal packages; listings are leads, not a quality or maintenance guarantee. |
 | `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch `add-mascot`. No local checkout. | Official Veasel mascot source. The startup pixel adaptation is included with attribution under CC BY-NC 4.0; commercial use requires separate permission. |
 | VSL | `~/.vmodules/vsl`, commit `a27f8ececf35ba91e58e71e3f6e707d2b609fc8e`, branch `main`. No tracked edits; two untracked V compiler cache directories were present and left untouched. | V-native modules, optional numerical/native backends, APIs with explicit backend expectations, module docs, examples, bounded local/CI testing. |

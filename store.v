@@ -532,11 +532,21 @@ fn (mut store Store) get_shell_command_unlocked(session_id string, id string) !S
 }
 
 fn shell_command_from_row(row sqlite.Row, status_override string) ShellCommandSummary {
-	return ShellCommandSummary{ id: row.val(0), command: row.val(1), cwd: row.val(2), timeout_seconds: row.val(3).int(), status: if status_override.len > 0 {
-		status_override
-	} else {
-		row.val(4)
-	}, exit_code: row.val(5).int(), output: row.val(6), created_at: row.val(7), updated_at: row.val(8) }
+	return ShellCommandSummary{
+		id:              row.val(0)
+		command:         row.val(1)
+		cwd:             row.val(2)
+		timeout_seconds: row.val(3).int()
+		status:          if status_override.len > 0 {
+			status_override
+		} else {
+			row.val(4)
+		}
+		exit_code:       row.val(5).int()
+		output:          row.val(6)
+		created_at:      row.val(7)
+		updated_at:      row.val(8)
+	}
 }
 
 fn (mut store Store) session_plugin_skills(session_id string) ![]SessionPluginSkill {

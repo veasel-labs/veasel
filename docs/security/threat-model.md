@@ -56,8 +56,9 @@ providers, and the proposed repository-tool boundary
 2. User session → configured external provider → prompt/history disclosure.
 3. Future malicious repository text → model/tool loop → attempted permission
    expansion; exact tool scopes and explicit approvals must stop side effects.
-4. Slow model endpoint → synchronous Veb route → worker saturation; add
-   bounded concurrency and cancellation before multi-agent execution.
+4. Slow model endpoint → bounded provider slot and response timeout → capacity
+  pressure; keep concurrency bounded and retain the known limitation that
+  cancellation before the first response chunk cannot close the socket yet.
 5. CC BY-NC artwork → commercial package → licensing conflict; resolve before
    commercialization.
 6. Plugin package → MCP stdio or remote transport → tool result/model loop;

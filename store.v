@@ -1,6 +1,7 @@
 module main
 
 import db.sqlite
+import json2
 import os
 import sync
 import uuid
@@ -34,6 +35,13 @@ pub:
 	type       string
 	session_id string
 	created_at string
+	data       EventData
+}
+
+struct EventData {
+pub:
+	operation_id string @[omitempty]
+	delta        string @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -231,6 +239,27 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit shell command migration')
+		}
+	}
+	if current < 7 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin streaming event migration')
+		}
+		db.exec("ALTER TABLE events ADD COLUMN data TEXT NOT NULL DEFAULT '{}'") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add streaming event data')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (7)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record streaming event migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit streaming event migration')
 		}
 	}
 	if current >= 6 {
@@ -761,18 +790,40 @@ fn (mut store Store) events_after(after int) ![]Event {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param('SELECT id, type, session_id, created_at FROM events WHERE id > ? ORDER BY id LIMIT 100',
+	rows := store.db.exec_param('SELECT id, type, session_id, created_at, data FROM events WHERE id > ? ORDER BY id LIMIT 100',
 		after.str())!
 	mut events := []Event{cap: rows.len}
 	for row in rows {
+		data := json2.decode[EventData](row.val(4)) or {
+			return error('unable to decode stored event data')
+		}
 		events << Event{
 			id:         row.val(0).int()
 			type:       row.val(1)
 			session_id: row.val(2)
 			created_at: row.val(3)
+			data:       data
 		}
 	}
 	return events
+}
+
+fn (mut store Store) record_assistant_delta(session_id string, operation_id string, delta string) ! {
+	if delta.len == 0 || delta.len > max_provider_response_bytes || !validate_operation_id(operation_id) {
+		return error('invalid streamed assistant delta')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'assistant.delta',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id: operation_id
+			delta:        delta
+		}),
+	])!
 }
 
 fn (mut store Store) messages_for_session(session_id string, limit int) ![]ChatTurn {

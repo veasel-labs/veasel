@@ -12,6 +12,7 @@ const max_chat_messages = 64
 const max_chat_input_bytes = 100_000
 const max_model_output_tokens = 4096
 const max_provider_response_bytes = 1_000_000
+const max_provider_stream_bytes = 16_000_000
 
 pub struct ChatMessage {
 pub:
@@ -80,6 +81,63 @@ pub:
 	description string @[omitempty]
 }
 
+type ProviderTextDeltaFn = fn (delta string) !
+type ProviderSSEDataFn = fn (data string) !
+
+struct ProviderSSEDecoder {
+mut:
+	on_data ProviderSSEDataFn @[required]
+	pending string
+}
+
+struct ProviderSSERequestState {
+mut:
+	decoder ProviderSSEDecoder
+	bytes   int
+}
+
+fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
+	decoder.pending += chunk
+	trailing_cr := decoder.pending.ends_with('\r')
+	if trailing_cr {
+		prefix := decoder.pending[..decoder.pending.len - 1]
+		decoder.pending = prefix.replace('\r\n', '\n').replace('\r', '\n') + '\r'
+	} else {
+		decoder.pending = decoder.pending.replace('\r\n', '\n').replace('\r', '\n')
+	}
+	for {
+		lf_end := decoder.pending.index('\n\n') or { -1 }
+		if lf_end < 0 {
+			if decoder.pending.len > max_provider_response_bytes {
+				return error('stream frame size limit exceeded')
+			}
+			break
+		}
+		if lf_end > max_provider_response_bytes {
+			return error('stream frame size limit exceeded')
+		}
+		block := decoder.pending[..lf_end]
+		decoder.pending = decoder.pending[lf_end + 2..]
+		mut lines := []string{}
+		for line in block.split('\n') {
+			if line.starts_with('data:') {
+				value := line[5..]
+				lines << if value.starts_with(' ') { value[1..] } else { value }
+			}
+		}
+		if lines.len > 0 {
+			decoder.on_data(lines.join('\n'))!
+		}
+	}
+}
+
+fn (mut decoder ProviderSSEDecoder) finish() ! {
+	if decoder.pending.len > 0 {
+		decoder.pending += '\n\n'
+		decoder.feed('')!
+	}
+}
+
 struct ModelConfig {
 	provider string
 	base_url string
@@ -89,7 +147,7 @@ struct ModelConfig {
 
 interface ModelProvider {
 	complete(mut turn_ctx vcontext.Context, config ModelConfig, messages []ChatMessage,
-		tools []AgentToolDefinition) !CompletionOutput
+		tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput
 }
 
 struct ProviderTurnResult {
@@ -109,6 +167,7 @@ struct OpenAIRequest {
 	messages    []ChatMessage
 	tools       []OpenAITool @[omitempty]
 	tool_choice string       @[omitempty]
+	stream      bool
 }
 
 struct OpenAITool {
@@ -122,19 +181,43 @@ struct OpenAIFunction {
 	parameters  json2.Any
 }
 
-struct OpenAIResponse {
-	choices []OpenAIChoice
+struct OpenAIStreamChunk {
+	choices []OpenAIStreamChoice
 }
 
-struct OpenAIChoice {
-	message       OpenAIResponseMessage
-	finish_reason string
+struct OpenAIStreamChoice {
+	delta OpenAIStreamDelta
 }
 
-struct OpenAIResponseMessage {
-	role       string
+struct OpenAIStreamDelta {
 	content    ?string
-	tool_calls []ProviderToolCall @[json: 'tool_calls'; omitempty]
+	tool_calls []OpenAIStreamToolCallDelta @[json: 'tool_calls'; omitempty]
+}
+
+struct OpenAIStreamToolCallDelta {
+	index    int
+	id       string
+	type     string
+	function OpenAIStreamFunctionDelta
+}
+
+struct OpenAIStreamToolCall {
+mut:
+	id        string
+	type      string
+	name      string
+	arguments string
+}
+
+struct OpenAIStreamOutput {
+mut:
+	content_parts []string
+	tools         []OpenAIStreamToolCall
+}
+
+struct OpenAIStreamFunctionDelta {
+	name      string
+	arguments string
 }
 
 struct AnthropicRequest {
@@ -143,6 +226,33 @@ struct AnthropicRequest {
 	system     string @[omitempty]
 	messages   []AnthropicRequestMessage
 	tools      []AnthropicTool @[omitempty]
+	stream     bool
+}
+
+struct AnthropicStreamEvent {
+	type          string
+	index         int
+	content_block AnthropicContentBlock
+	delta         AnthropicStreamDelta
+}
+
+struct AnthropicStreamDelta {
+	type         string
+	text         string
+	partial_json string
+}
+
+struct AnthropicStreamToolCall {
+mut:
+	id        string
+	name      string
+	arguments string
+}
+
+struct AnthropicStreamOutput {
+mut:
+	content_parts []string
+	tools         []AnthropicStreamToolCall
 }
 
 struct AnthropicRequestMessage {
@@ -154,10 +264,6 @@ struct AnthropicTool {
 	name         string
 	description  string
 	input_schema json2.Any
-}
-
-struct AnthropicResponse {
-	content []AnthropicContentBlock
 }
 
 struct AnthropicContentBlock {
@@ -217,6 +323,12 @@ struct GeminiFunctionResponse {
 
 struct GeminiResponse {
 	candidates []GeminiCandidate
+}
+
+struct GeminiStreamOutput {
+mut:
+	content []string
+	tools   []ProviderToolCall
 }
 
 struct GeminiCandidate {
@@ -348,8 +460,8 @@ fn validate_messages(messages []ChatMessage) ! {
 }
 
 fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMessage,
-	tools []AgentToolDefinition) ProviderTurnResult {
-	output := complete_with_tools(mut turn_ctx, messages, tools) or {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) ProviderTurnResult {
+	output := complete_with_tools(mut turn_ctx, messages, tools, on_text_delta) or {
 		return ProviderTurnResult{
 			error: err.msg()
 		}
@@ -360,7 +472,7 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 }
 
 fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
-	tools []AgentToolDefinition) !CompletionOutput {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	config := model_config()!
 	provider := match config.provider {
 		'openai-compatible', 'openai' { ModelProvider(OpenAICompatibleProvider{}) }
@@ -368,8 +480,10 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 		'gemini' { ModelProvider(GeminiProvider{}) }
 		else { return error('unsupported model provider') }
 	}
-	return provider.complete(mut turn_ctx, config, messages, tools)
+	return provider.complete(mut turn_ctx, config, messages, tools, on_text_delta)
 }
+
+fn ignore_provider_text_delta(_ string) ! {}
 
 fn configured_model() ?string {
 	config := model_config() or { return none }
@@ -378,7 +492,7 @@ fn configured_model() ?string {
 
 fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage,
-	tools []AgentToolDefinition) !CompletionOutput {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	url := '${secure_endpoint(config.base_url)!}/chat/completions'
 	mut openai_tools := []OpenAITool{cap: tools.len}
 	for tool in tools {
@@ -396,30 +510,77 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 		messages:    messages
 		tools:       openai_tools
 		tool_choice: if tools.len > 0 { 'auto' } else { '' }
+		stream:      true
 	}
-	response := post_model_json(mut turn_ctx, url, config, json2.encode[OpenAIRequest](request), .bearer)!
-	decoded := json2.decode[OpenAIResponse](response.body) or {
-		return error('response_parse')
+	mut stream_state := &OpenAIStreamOutput{}
+	callback := fn [mut stream_state, on_text_delta] (data string) ! {
+		if data == '[DONE]' {
+			return
+		}
+		chunk := json2.decode[OpenAIStreamChunk](data) or { return error('response_parse') }
+		for choice in chunk.choices {
+			if text := choice.delta.content {
+				if text != '' {
+					stream_state.content_parts << text
+					on_text_delta(text)!
+				}
+			}
+			for tool_delta in choice.delta.tool_calls {
+				if tool_delta.index < 0 || tool_delta.index > 128 {
+					return error('invalid streamed tool index')
+				}
+				for stream_state.tools.len <= tool_delta.index {
+					stream_state.tools << OpenAIStreamToolCall{}
+				}
+				mut tool := stream_state.tools[tool_delta.index]
+				if tool_delta.id != '' { tool.id += tool_delta.id }
+				if tool_delta.type != '' { tool.type = tool_delta.type }
+				tool.name += tool_delta.function.name
+				tool.arguments += tool_delta.function.arguments
+				if tool.arguments.len > max_provider_response_bytes {
+					return error('tool arguments size limit exceeded')
+				}
+				stream_state.tools[tool_delta.index] = tool
+			}
+		}
 	}
-	if decoded.choices.len == 0 {
-		return error('empty_response')
+	post_model_sse(mut turn_ctx, url, config, json2.encode[OpenAIRequest](request), .bearer,
+		callback)!
+	content := stream_state.content_parts.join('')
+	mut tool_calls := []ProviderToolCall{}
+	for tool in stream_state.tools {
+		if tool.id == '' && tool.name == '' && tool.arguments == '' {
+			continue
+		}
+		if tool.id == '' || tool.name == '' || tool.arguments == '' {
+			return error('incomplete streamed tool call')
+		}
+		json2.decode[map[string]json2.Any](tool.arguments) or {
+			return error('invalid streamed tool arguments')
+		}
+		tool_calls << ProviderToolCall{
+			id:       tool.id
+			type:     if tool.type == '' { 'function' } else { tool.type }
+			function: ProviderFunctionCall{
+				name:      tool.name
+				arguments: tool.arguments
+			}
+		}
 	}
-	message := decoded.choices[0].message
-	content := message.content or { '' }
-	if content.trim_space().len == 0 && message.tool_calls.len == 0 {
+	if content.trim_space().len == 0 && tool_calls.len == 0 {
 		return error('empty_response')
 	}
 	return CompletionOutput{
 		provider:   config.provider
 		model:      config.model
 		content:    content
-		tool_calls: message.tool_calls
+		tool_calls: tool_calls
 	}
 }
 
 fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage,
-	tools []AgentToolDefinition) !CompletionOutput {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
 	system, conversation := anthropic_messages(messages)
 	mut anthropic_tools := []AnthropicTool{cap: tools.len}
@@ -436,26 +597,59 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 		system:     system
 		messages:   conversation
 		tools:      anthropic_tools
+		stream:     true
 	}
-	response := post_model_json(mut turn_ctx, '${base}/messages', config,
-		json2.encode[AnthropicRequest](request), .anthropic)!
-	decoded := json2.decode[AnthropicResponse](response.body) or {
-		return error('response_parse')
+	mut stream_state := &AnthropicStreamOutput{}
+	callback := fn [mut stream_state, on_text_delta] (data string) ! {
+		event := json2.decode[AnthropicStreamEvent](data) or { return error('response_parse') }
+		if event.index < 0 || event.index > 128 {
+			return error('invalid streamed block index')
+		}
+		if event.type == 'content_block_start' && event.content_block.type == 'tool_use' {
+			for stream_state.tools.len <= event.index {
+				stream_state.tools << AnthropicStreamToolCall{}
+			}
+			mut tool := stream_state.tools[event.index]
+			tool.id = event.content_block.id
+			tool.name = event.content_block.name
+			stream_state.tools[event.index] = tool
+		} else if event.type == 'content_block_delta' {
+			if event.delta.type == 'text_delta' && event.delta.text != '' {
+				stream_state.content_parts << event.delta.text
+				on_text_delta(event.delta.text)!
+			} else if event.delta.type == 'input_json_delta' {
+				for stream_state.tools.len <= event.index {
+					stream_state.tools << AnthropicStreamToolCall{}
+				}
+				mut tool := stream_state.tools[event.index]
+				tool.arguments += event.delta.partial_json
+				if tool.arguments.len > max_provider_response_bytes {
+					return error('tool arguments size limit exceeded')
+				}
+				stream_state.tools[event.index] = tool
+			}
+		}
 	}
+	post_model_sse(mut turn_ctx, '${base}/messages', config, json2.encode[AnthropicRequest](request),
+		.anthropic, callback)!
 	mut content := []string{}
 	mut tool_calls := []ProviderToolCall{}
-	for block in decoded.content {
-		if block.type == 'text' && block.text != '' {
-			content << block.text
-		} else if block.type == 'tool_use' && block.id != '' && block.name != '' {
-			tool_calls << ProviderToolCall{
-				id:               block.id
-				provider_call_id: block.id
-				type:             'function'
-				function:         ProviderFunctionCall{
-					name:      block.name
-					arguments: json2.encode[map[string]json2.Any](block.input)
-				}
+	content << stream_state.content_parts
+	for tool in stream_state.tools {
+		if tool.id == '' && tool.name == '' && tool.arguments == '' { continue }
+		if tool.id == '' || tool.name == '' || tool.arguments == '' {
+			return error('incomplete streamed tool call')
+		}
+		json2.decode[map[string]json2.Any](tool.arguments) or {
+			return error('invalid streamed tool arguments')
+		}
+		tool_calls << ProviderToolCall{
+			id:               tool.id
+			provider_call_id: tool.id
+			type:             'function'
+			function:         ProviderFunctionCall{
+				name:      tool.name
+				arguments: tool.arguments
 			}
 		}
 	}
@@ -472,7 +666,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 
 fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage,
-	tools []AgentToolDefinition) !CompletionOutput {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
 	system, conversation := gemini_messages(messages)
 	mut declarations := []GeminiFunctionDeclaration{cap: tools.len}
@@ -500,45 +694,45 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 		}
 	}
 	model_path := urllib.path_escape(config.model)
-	url := '${base}/models/${model_path}:generateContent'
-	response := post_model_json(mut turn_ctx, url, config, json2.encode[GeminiRequest](request), .gemini)!
-	decoded := json2.decode[GeminiResponse](response.body) or {
-		return error('response_parse')
-	}
-	if decoded.candidates.len == 0 {
-		return error('empty_response')
-	}
-	mut content := []string{}
-	mut tool_calls := []ProviderToolCall{}
-	for part in decoded.candidates[0].content.parts {
-		if part.text != '' {
-			content << part.text
-		}
-		if function_call := part.function_call {
-			tool_calls << ProviderToolCall{
-				id:                 if function_call.id != '' {
-					function_call.id
-				} else {
-					'gemini-${messages.len}-${tool_calls.len + 1}'
+	url := '${base}/models/${model_path}:streamGenerateContent?alt=sse'
+	mut stream_state := &GeminiStreamOutput{}
+	callback := fn [mut stream_state, on_text_delta, messages] (data string) ! {
+		decoded := json2.decode[GeminiResponse](data) or { return error('response_parse') }
+		for candidate in decoded.candidates {
+			for part in candidate.content.parts {
+				if part.text != '' {
+					stream_state.content << part.text
+					on_text_delta(part.text)!
 				}
-				provider_call_id:   function_call.id
-				provider_signature: part.thought_signature
-				type:               'function'
-				function:           ProviderFunctionCall{
-					name:      function_call.name
-					arguments: json2.encode[map[string]json2.Any](function_call.args)
+				if function_call := part.function_call {
+					stream_state.tools << ProviderToolCall{
+						id:                 if function_call.id != '' {
+							function_call.id
+						} else {
+							'gemini-${messages.len}-${stream_state.tools.len + 1}'
+						}
+						provider_call_id:   function_call.id
+						provider_signature: part.thought_signature
+						type:               'function'
+						function:           ProviderFunctionCall{
+							name:      function_call.name
+							arguments: json2.encode[map[string]json2.Any](function_call.args)
+						}
+					}
 				}
 			}
 		}
 	}
-	if content.len == 0 && tool_calls.len == 0 {
+	post_model_sse(mut turn_ctx, url, config, json2.encode[GeminiRequest](request), .gemini,
+		callback)!
+	if stream_state.content.len == 0 && stream_state.tools.len == 0 {
 		return error('empty_response')
 	}
 	return CompletionOutput{
 		provider:   config.provider
 		model:      config.model
-		content:    content.join('')
-		tool_calls: tool_calls
+		content:    stream_state.content.join('')
+		tool_calls: stream_state.tools
 	}
 }
 
@@ -697,8 +891,8 @@ enum ModelAuth {
 	gemini
 }
 
-fn post_model_json(mut turn_ctx vcontext.Context, url string, config ModelConfig, payload string,
-	auth ModelAuth) !http.Response {
+fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig, payload string,
+	auth ModelAuth, on_data ProviderSSEDataFn) !http.Response {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -710,6 +904,7 @@ fn post_model_json(mut turn_ctx vcontext.Context, url string, config ModelConfig
 	read_timeout := if remaining < 60 * time.second { remaining } else { 60 * time.second }
 	write_timeout := if remaining < 10 * time.second { remaining } else { 10 * time.second }
 	mut headers := http.new_header(key: .content_type, value: 'application/json')
+	headers.add_custom('Accept', 'text/event-stream')!
 	match auth {
 		.bearer {
 			headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
@@ -722,6 +917,11 @@ fn post_model_json(mut turn_ctx vcontext.Context, url string, config ModelConfig
 			headers.add_custom('x-goog-api-key', config.api_key)!
 		}
 	}
+	mut stream_state := &ProviderSSERequestState{
+		decoder: ProviderSSEDecoder{
+			on_data: on_data
+		}
+	}
 	response := http.fetch(
 		method:               .post
 		url:                  url
@@ -731,15 +931,24 @@ fn post_model_json(mut turn_ctx vcontext.Context, url string, config ModelConfig
 		write_timeout:        write_timeout
 		allow_redirect:       false
 		max_retries:          1
-		stop_receiving_limit: max_provider_response_bytes
+		stop_receiving_limit: max_provider_stream_bytes + 1
 		validate:             true
-		on_progress:          fn [turn_ctx] (request &http.Request, chunk []u8, read_so_far u64) ! {
+		on_progress_body:     fn [mut stream_state, turn_ctx] (_ &http.Request, chunk []u8, _ u64, _ u64, status_code int) ! {
+			stream_state.bytes += chunk.len
+			if stream_state.bytes > max_provider_stream_bytes {
+				return error('provider stream size limit exceeded')
+			}
+			if status_code < 200 || status_code >= 300 {
+				return
+			}
 			mut active_ctx := turn_ctx
 			if context_error := turn_context_error(mut active_ctx) {
 				return error(context_error)
 			}
+			stream_state.decoder.feed(chunk.bytestr())!
 		}
-	) or { return error('transport') }
+	) or { return error(err.msg()) }
+	stream_state.decoder.finish()!
 	if response.status_code < 200 || response.status_code >= 300 {
 		return error('HTTP ${response.status_code}')
 	}

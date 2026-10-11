@@ -26,6 +26,10 @@ approved. Approved commands run with the server process user's permissions,
 inherit its environment, and have no OS sandbox; they can access files and
 network credentials available to that user. Execution is limited to 300 seconds
 and 64 KiB of captured output. Interrupted commands are never replayed.
+Session turns through all three provider adapters stream text deltas through the
+replayable `/v1/events` endpoint. The TUI renders them while the final API
+response retains the complete assistant text and provider tool calls. Tool
+arguments are assembled before the agent executes them.
 Background jobs remain in progress.
 Local Agent Plugins can be discovered, their validated Skills enabled per
 session, and trusted stdio or Streamable HTTP MCP servers exposed as provider
@@ -98,13 +102,14 @@ with `/command approve <id>` or `/command reject <id>`. Execution inherits the
 server process environment, is not sandboxed, and requires review of any
 filesystem, network, and credential effects. See the
 [`shell command security model`](docs/SHELL_COMMANDS.md) before enabling this
-workflow. Streaming is not available yet.
+workflow.
 Press Escape while a response is running to
 cancel its operation; session requests may also provide an
 `X-Veasel-Operation-ID` UUID and call the session cancellation endpoint. Turns
 have a two-minute deadline. A cancelled API request returns promptly, while a
-synchronous provider transport keeps its slot until the bounded V HTTP timeout
-or a response progress callback stops it. Direct `/v1/chat/completions` calls
+provider request keeps its slot until a response chunk observes cancellation or
+the bounded V HTTP timeout expires. Cancellation before the first response chunk
+still waits for that bounded transport cleanup. Direct `/v1/chat/completions` calls
 use the matching `/v1/operations/:id/cancel` endpoint. The backend accepts up to four
 provider requests at once; requests reaching the provider gate while all slots
 are occupied receive `503 Service Unavailable` with `Retry-After: 1` instead of

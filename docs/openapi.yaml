@@ -128,7 +128,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: sendSessionMessage
-      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may list/read/search bounded workspace files and create durable single-file edit proposals. Requested workspace content is sent to the configured provider; proposed file contents are not written before explicit approval. Send a unique X-Veasel-Operation-ID UUID to allow cancellation; turns have a two-minute deadline, and cancellation releases the API request while a synchronous provider transport winds down under its bounded timeout.
+      description: Completes and atomically stores a user and assistant turn in the session. Provider-native tool calls may list/read/search bounded workspace files and create durable single-file edit proposals. Requested workspace content is sent to the configured provider; proposed file contents are not written before explicit approval. Assistant text streams as durable assistant.delta events on /v1/events while the final response aggregates the complete text and tool calls. Send a unique X-Veasel-Operation-ID UUID to allow cancellation; turns have a two-minute deadline, and the API request returns promptly while provider transport cleanup remains bounded by response progress or the HTTP timeout.
       parameters:
         - in: header
           name: X-Veasel-Operation-ID
@@ -748,7 +748,7 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta so clients can render incremental text and ignore deltas from inactive operations.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -759,7 +759,7 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors.
+          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta in its data object. Provider completion responses still aggregate the full text and tool calls.
           content:
             text/event-stream:
               schema:

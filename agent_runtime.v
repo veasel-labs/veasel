@@ -88,7 +88,7 @@ fn workspace_agent_tools() []AgentToolDefinition {
 }
 
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
-	session_id string) !CompletionOutput {
+	session_id string, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -118,7 +118,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if agent_context_bytes(messages) > max_agent_context_bytes {
 			return error('agent context size limit reached')
 		}
-		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools)!
+		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools, on_text_delta)!
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')

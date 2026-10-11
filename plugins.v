@@ -42,10 +42,11 @@ pub:
 	name        string
 	description string
 	path        string
-	directory   string
 	// Agent Skills hint only; it must never grant authority beyond user policy.
 	allowed_tools          string
 	allowed_tools_declared bool
+mut:
+	directory string
 }
 
 struct PluginMCPServer {

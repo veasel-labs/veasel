@@ -7,6 +7,7 @@ import uuid
 const test_manifest = '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"review-tools","extensions":[],"future":true}'
 const test_mcp_manifest = '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"mcp-tools"}'
 const test_mcp_config = '{"' + plugin_schema_key + '":"' + plugin_mcp_schema + '","mcpServers":{"local":{"type":"streamable-http","url":"http://127.0.0.8:8080/mcp"},"remote":{"type":"streamable-http","url":"http://example.com/mcp"},"unknown":{"type":"future"},"nul-arg":{"type":"stdio","command":"echo","args":["bad\\u0000arg"]}}}'
+const test_plugin_root_placeholder = '$' + '{PLUGIN_ROOT}'
 const test_plugin_data_placeholder = '$' + '{PLUGIN_DATA}'
 
 fn test_agent_plugin_loads_manifest_and_shallow_skills() {
@@ -267,6 +268,55 @@ fn test_agent_plugin_mcp_document_conformance_and_entry_isolation() {
 fn plugin_mcp_document_rejected(fields map[string]json2.Any, manifest map[string]json2.Any) bool {
 	mut diagnostics := []PluginDiagnostic{}
 	_ := validate_plugin_mcp(os.getwd(), fields, manifest, mut diagnostics) or { return true }
+	return false
+}
+
+fn test_agent_plugin_mcp_variants_follow_closed_schema() {
+	root := os.getwd()
+	stdio_fields := json2.decode[map[string]json2.Any]('{"type":"stdio","command":"node",'
+		+ '"args":["${test_plugin_root_placeholder}/server.js"],'
+		+ '"env":{"CONFIG":"${test_plugin_root_placeholder}/config.json"},'
+		+ '"cwd":"${test_plugin_root_placeholder}"}') or {
+		panic(err)
+	}
+	stdio := parse_plugin_mcp_server(root, 'local', json2.Any(stdio_fields)) or { panic(err) }
+	assert stdio.transport == 'stdio'
+	assert stdio.command == 'node'
+	assert stdio.args == ['${test_plugin_root_placeholder}/server.js']
+	assert stdio.env['CONFIG'] == '${test_plugin_root_placeholder}/config.json'
+	assert stdio.cwd == test_plugin_root_placeholder
+
+	http_fields := json2.decode[map[string]json2.Any]('{"type":"streamable-http",'
+		+ '"url":"http://127.0.0.8:8080/mcp","headers":{"X-Tenant":"public"}}') or {
+		panic(err)
+	}
+	http := parse_plugin_mcp_server(root, 'remote', json2.Any(http_fields)) or { panic(err) }
+	assert http.transport == 'streamable-http'
+	assert http.url == 'http://127.0.0.8:8080/mcp'
+	assert http.headers['X-Tenant'] == 'public'
+
+	invalid_variants := [
+		'{"type":"stdio"}',
+		'{"type":"stdio","command":""}',
+		'{"type":"stdio","command":"node","unknown":true}',
+		'{"type":"stdio","command":"node","args":[42]}',
+		'{"type":"stdio","command":"node","env":{"PLUGIN_ROOT":"/override"}}',
+		'{"type":"stdio","command":"node","cwd":"/tmp"}',
+		'{"type":"streamable-http","url":"http://example.com/mcp"}',
+		'{"type":"streamable-http","url":"https://user@example.com/mcp"}',
+		'{"type":"streamable-http","url":"https://example.com/mcp","unknown":true}',
+		'{"type":"streamable-http","url":"https://example.com/mcp","headers":{"X-Token":"one","x-token":"two"}}',
+		'{"type":"sse","url":"https://example.com/sse"}',
+	]
+	for variant in invalid_variants {
+		assert plugin_mcp_server_json_rejected(root, variant),
+			'invalid MCP variant was accepted: ${variant}'
+	}
+}
+
+fn plugin_mcp_server_json_rejected(root string, text string) bool {
+	fields := json2.decode[map[string]json2.Any](text) or { return true }
+	_ := parse_plugin_mcp_server(root, 'invalid', json2.Any(fields)) or { return true }
 	return false
 }
 

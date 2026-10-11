@@ -100,7 +100,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 			arguments: '{"command":"touch shell-must-not-run","cwd":".","timeout_seconds":10}'
 		}
 	})
-	assert shell_proposal.contains('No command was executed')
+	assert shell_proposal.contains('No command was executed'), shell_proposal
 	assert !os.exists(os.join_path(root, 'shell-must-not-run'))
 	shell_commands := store.shell_commands(session.id) or { panic(err) }
 	assert shell_commands.len == 1

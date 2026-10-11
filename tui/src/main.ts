@@ -57,6 +57,18 @@ type WorkspaceEditSummary = {
 
 type WorkspaceEditProposal = WorkspaceEditSummary & { session_id: string; diff: string }
 
+type ShellCommandSummary = {
+  id: string
+  command: string
+  cwd: string
+  timeout_seconds: number
+  status: "pending" | "running" | "succeeded" | "failed" | "timed_out" | "output_limited" | "rejected" | "uncertain"
+  exit_code: number
+  output: string
+  created_at: string
+  updated_at: string
+}
+
 const port = process.env.VEASEL_PORT ?? "4097"
 const configuredApi = process.env.VEASEL_API_URL ?? `http://127.0.0.1:${port}`
 const apiUrl = new URL(configuredApi)
@@ -182,7 +194,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new   /skills   /mcp   /patches   /patch show|approve|reject   Esc cancel   ↑/↓   q quit",
+  content: "n new   /skills   /mcp   /patches   /commands   /patch show|approve|reject   /command show|approve|reject   Esc cancel   ↑/↓   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -203,6 +215,7 @@ let activeTurnCancelled = false
 let chatMessages: ChatTurn[] = []
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
+const reviewedShellCommandIds = new Set<string>()
 
 function renderSessions() {
   if (sessions.length === 0) {
@@ -252,7 +265,7 @@ async function createSession(title: string) {
 function renderChat(messages: ChatTurn[]) {
   chatMessages = messages
   const heading = activeSession
-    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nFile excerpts requested by Veasel are sent to your configured model provider. Proposed replacements are stored locally until you review and approve them.\n\n`
+    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nFile excerpts requested by Veasel are sent to your configured model provider. Proposed replacements and commands stay local until review and approval. Approved shell commands inherit the server environment, run as your OS user, and are not sandboxed.\n\n`
     : ""
   sessionDetail.content = safeTerminalText(heading)
     + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0
@@ -264,11 +277,12 @@ function renderChat(messages: ChatTurn[]) {
 }
 
 function safeTerminalText(value: string) {
-  return value.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, "")
+  return value.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
 }
 
 async function openSession(session: Session) {
   activeSession = session
+  reviewedShellCommandIds.clear()
   skillNotice = ""
   reviewedEditIds.clear()
   renderChat([])
@@ -277,7 +291,7 @@ async function openSession(session: Session) {
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   renderChat(await response.json() as ChatTurn[])
-  await notifyPendingWorkspaceEdits()
+  await notifyPendingProposals()
   if (!chatInput) {
     const input = new InputRenderable(renderer, {
       id: "chat-composer",
@@ -354,6 +368,33 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (content === "/commands") {
+    await showShellCommands()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const shellAction = /^\/command\s+(approve|reject)\s+([0-9a-f-]{36})$/.exec(content)
+  if (shellAction) {
+    await actOnShellCommand(shellAction[1] as "approve" | "reject", shellAction[2])
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const showShellAction = /^\/command\s+show\s+([0-9a-f-]{36})$/.exec(content)
+  if (showShellAction) {
+    await showShellCommand(showShellAction[1])
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/command ")) {
+    skillNotice = "Use /commands to list proposals, /command show <id> to inspect one, then /command approve <id> or /command reject <id>. Commands run with your OS user permissions and are not sandboxed."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   const skillCommand = /^\/skill\s+(on|off)\s+([a-z0-9.-]+)\/([a-z0-9-]+)$/.exec(content)
   if (skillCommand) {
     await setSkill(skillCommand[1] === "on", skillCommand[2], skillCommand[3])
@@ -392,7 +433,7 @@ async function sendMessage(value: string) {
     })
     if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
     renderChat(await historyResponse.json() as ChatTurn[])
-    await notifyPendingWorkspaceEdits()
+    await notifyPendingProposals()
     status.content = `● ${exchange.provider}  ·  ${exchange.model}`
     status.fg = "#a7f3d0"
   } catch (error) {
@@ -513,17 +554,28 @@ async function showWorkspaceEdits() {
   }
 }
 
-async function notifyPendingWorkspaceEdits() {
+async function notifyPendingProposals() {
   if (!activeSession) return
   try {
+    const notices: string[] = []
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
       signal: controller.signal,
     })
-    if (!response.ok) return
-    const edits = await response.json() as WorkspaceEditSummary[]
-    const pending = edits.filter((edit) => edit.status === "pending")
-    if (pending.length === 0) return
-    skillNotice = `${pending.length} workspace edit proposal${pending.length === 1 ? "" : "s"} need your review. Type /patches to inspect them. No files have changed.`
+    if (response.ok) {
+      const edits = await response.json() as WorkspaceEditSummary[]
+      const pending = edits.filter((edit) => edit.status === "pending")
+      if (pending.length > 0) notices.push(`${pending.length} workspace edit proposal${pending.length === 1 ? "" : "s"} need review. Type /patches to inspect them. No files have changed.`)
+    }
+    const commandResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands`, {
+      signal: controller.signal,
+    })
+    if (commandResponse.ok) {
+      const commands = await commandResponse.json() as ShellCommandSummary[]
+      const pending = commands.filter((item) => item.status === "pending")
+      if (pending.length > 0) notices.push(`${pending.length} shell command proposal${pending.length === 1 ? "" : "s"} need review. Type /commands to inspect them. Approval runs commands with your OS user permissions and inherited environment, without a sandbox.`)
+    }
+    if (notices.length === 0) return
+    skillNotice = notices.join("\n\n")
     renderChat(chatMessages)
   } catch {
     // Keep chat usable when the optional proposal notification cannot be loaded.
@@ -568,6 +620,59 @@ async function actOnWorkspaceEdit(action: "approve" | "reject", editId: string) 
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not ${action} workspace edit: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function showShellCommands() {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands`, { signal: controller.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const commands = await response.json() as ShellCommandSummary[]
+    skillNotice = commands.length
+      ? `SHELL COMMAND PROPOSALS\n${commands.map((item) => `${item.status.toUpperCase()}  ${item.id}\n${safeTerminalText(item.command)}\nCWD: ${safeTerminalText(item.cwd)} · timeout ${item.timeout_seconds}s${item.status === "pending" ? `\nInspect: /command show ${item.id}` : item.status === "uncertain" ? "\nExecution was interrupted. Inspect workspace state; Veasel will not rerun it." : ""}`).join("\n\n")}`
+      : "No shell command proposals. Veasel shows the exact command and waits for explicit approval. Commands run with your OS user permissions and have no sandbox."
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load shell command proposals: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function showShellCommand(commandId: string) {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands/${commandId}`, { signal: controller.signal })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const item = await response.json() as ShellCommandSummary
+    if (item.status === "pending") reviewedShellCommandIds.add(item.id)
+    skillNotice = `REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${safeTerminalText(item.command)}\nCWD: ${safeTerminalText(item.cwd)} · timeout ${item.timeout_seconds}s\nRunner: ${process.platform === "win32" ? "COMSPEC" : "/bin/sh"} · non-interactive stdin\nRuns as your OS user, inherits its environment, and has filesystem and network access without a sandbox. Review every effect before approval.${item.status === "pending" ? `\nType /command approve ${item.id} or /command reject ${item.id}.` : item.output ? `\n\n${safeTerminalText(item.output)}` : ""}`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not inspect shell command: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function actOnShellCommand(action: "approve" | "reject", commandId: string) {
+  if (!activeSession) return
+  if (!reviewedShellCommandIds.has(commandId)) {
+    skillNotice = `Inspect the exact command first with /command show ${commandId}.`
+    renderChat(chatMessages)
+    return
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands/${commandId}/${action}`, { method: "POST", signal: controller.signal })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const result = await response.json() as ShellCommandSummary
+    reviewedShellCommandIds.delete(commandId)
+    skillNotice = action === "approve"
+      ? `Command ${result.status} · exit ${result.exit_code}\n${safeTerminalText(result.output || "(no output)")}\n\nInspect workspace effects before continuing with the agent.`
+      : `Rejected shell command ${commandId}. It was not executed.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not ${action} shell command: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

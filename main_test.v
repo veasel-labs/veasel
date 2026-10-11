@@ -124,6 +124,77 @@ fn test_session_mcp_trust_limit_allows_updates_but_rejects_an_extra_server() {
 	assert !session_can_trust_plugin_mcp_server(active, 'another-plugin', 'server')
 }
 
+fn test_shell_command_requires_review_and_is_marked_uncertain_after_restart() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-store-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	db_path := os.join_path(root, 'veasel.sqlite3')
+	mut store := open_store(db_path) or { panic(err) }
+	session := store.create_session(SessionInput{ title: 'Shell approval', directory: root }) or { panic(err) }
+	draft := prepare_shell_command(root, 'touch must-not-run', '.', 10) or { panic(err) }
+	proposal := store.create_shell_command(session.id, draft) or { panic(err) }
+	assert !os.exists(os.join_path(root, 'must-not-run'))
+	_ := store.begin_shell_command(session.id, proposal.id) or {
+		assert err.msg().contains('reviewed')
+		ShellCommandSummary{}
+	}
+	reviewed := store.review_shell_command(session.id, proposal.id) or { panic(err) }
+	assert reviewed.status == 'pending'
+	running := store.begin_shell_command(session.id, proposal.id) or { panic(err) }
+	assert running.status == 'running'
+	store.close() or { panic(err) }
+	mut recovered := open_store(db_path) or { panic(err) }
+	defer { recovered.close() or {} }
+	commands := recovered.shell_commands(session.id) or { panic(err) }
+	assert commands.len == 1
+	assert commands[0].status == 'uncertain'
+	assert !os.exists(os.join_path(root, 'must-not-run'))
+}
+
+fn test_shell_command_rejects_workspace_escape_and_invalid_limits() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-path-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	_ := prepare_shell_command(root, 'echo safe', '../', 5) or { return }
+	assert false, 'parent traversal must be rejected'
+}
+
+fn test_shell_command_rejects_terminal_spoofing_controls() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-control-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	_ := prepare_shell_command(root, 'echo safe\nrm -rf .', '.', 5) or { return }
+	assert false, 'multiline commands must be rejected so the review text is unambiguous'
+}
+
+fn test_shell_command_rejects_unicode_line_separators() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-separator-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	_ := prepare_shell_command(root, 'echo safe\u2028rm -rf .', '.', 5) or { return }
+	assert false, 'Unicode line separators must not alter reviewed command rendering'
+}
+
+fn test_shell_command_rejects_zero_width_formatting_characters() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-format-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	_ := prepare_shell_command(root, 'echo safe\u200B-hidden', '.', 5) or { return }
+	assert false, 'invisible Unicode formatting characters must not alter reviewed command rendering'
+}
+
+fn test_shell_command_registry_rejects_work_after_shutdown_starts() {
+	store := open_store(':memory:') or { panic(err) }
+	mut app := new_app(store, os.temp_dir())
+	assert app.begin_shell_operation()
+	app.close_shell_operations()
+	assert !app.begin_shell_operation()
+	app.finish_shell_operation()
+	app.wait_for_shell_operations()
+	app.close()
+	store.close() or { panic(err) }
+}
+
 fn test_workspace_edit_approval_is_durable_single_use_and_recovered_after_restart() {
 	root := os.join_path(os.temp_dir(), 'veasel-edit-store-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

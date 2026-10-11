@@ -59,6 +59,12 @@ class MockProvider(BaseHTTPRequestHandler):
 
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        provider_kind = (
+            "openai" if self.headers.get("Authorization") == f"Bearer {API_KEYS['openai-compatible']}" else
+            "anthropic" if self.headers.get("x-api-key") == API_KEYS["anthropic"] else
+            "gemini" if self.headers.get("x-goog-api-key") == API_KEYS["gemini"] else
+            "unknown"
+        )
         if self.path == "/redirect/v1/chat/completions":
             self.send_response(302)
             self.send_header("Location", "/v1/chat/completions")
@@ -204,7 +210,7 @@ class MockProvider(BaseHTTPRequestHandler):
             user_text = next((part.get("text", "") for part in last_parts if part.get("text")), "")
             is_tool_follow_up = any("functionResponse" in part for part in last_parts)
             if (
-                self.path != "/v1beta/models/smoke-model:generateContent"
+                self.path != "/v1beta/models/smoke-model:streamGenerateContent?alt=sse"
                 or not is_session_system(
                     payload.get("systemInstruction", {}).get("parts", [])[0].get("text")
                 )
@@ -279,6 +285,92 @@ class MockProvider(BaseHTTPRequestHandler):
                 body = {"candidates": [{"content": {"role": "model", "parts": [{"text": REPLY}]}}]}
         else:
             self.send_error(401)
+            return
+
+        if payload.get("stream") or ":streamGenerateContent" in self.path:
+            if user_text == "Wait for cancellation":
+                print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
+                if not SLOW_RESPONSE_RELEASE.wait(timeout=20):
+                    self.send_error(504)
+                    return
+            frames = []
+            if provider_kind == "openai":
+                message = body["choices"][0]["message"]
+                content = message.get("content") or ""
+                if content:
+                    midpoint = max(1, len(content) // 2)
+                    for part in (content[:midpoint], content[midpoint:]):
+                        if part:
+                            frames.append("data: " + json.dumps({"choices": [{"delta": {"content": part}}]}) + "\n\n")
+                for call in message.get("tool_calls", []):
+                    function = call["function"]
+                    arguments = function["arguments"]
+                    split_at = max(1, len(arguments) // 2)
+                    frames.append("data: " + json.dumps({"choices": [{"delta": {"tool_calls": [{
+                        "index": 0, "id": call["id"][:8], "type": call["type"],
+                        "function": {"name": function["name"][:8], "arguments": arguments[:split_at]},
+                    }]}}]}) + "\n\n")
+                    frames.append("data: " + json.dumps({"choices": [{"delta": {"tool_calls": [{
+                        "index": 0, "id": call["id"][8:],
+                        "function": {"name": function["name"][8:], "arguments": arguments[split_at:]},
+                    }]}}]}) + "\n\n")
+                frames.append("data: [DONE]\n\n")
+            elif provider_kind == "anthropic":
+                frames.append("event: message_start\ndata: " + json.dumps({"type": "message_start"}) + "\n\n")
+                for index, block in enumerate(body["content"]):
+                    frames.append("event: content_block_start\ndata: " + json.dumps({
+                        "type": "content_block_start", "index": index,
+                        "content_block": {key: value for key, value in block.items() if key != "input"} | ({"input": {}} if block["type"] == "tool_use" else {}),
+                    }) + "\n\n")
+                    if block["type"] == "text":
+                        text = block["text"]
+                        midpoint = max(1, len(text) // 2)
+                        for part in (text[:midpoint], text[midpoint:]):
+                            if part:
+                                frames.append("event: content_block_delta\ndata: " + json.dumps({
+                                    "type": "content_block_delta", "index": index,
+                                    "delta": {"type": "text_delta", "text": part},
+                                }) + "\n\n")
+                    elif block["type"] == "tool_use":
+                        encoded_input = json.dumps(block["input"], separators=(",", ":"))
+                        midpoint = max(1, len(encoded_input) // 2)
+                        for part in (encoded_input[:midpoint], encoded_input[midpoint:]):
+                            if part:
+                                frames.append("event: content_block_delta\ndata: " + json.dumps({
+                                    "type": "content_block_delta", "index": index,
+                                    "delta": {"type": "input_json_delta", "partial_json": part},
+                                }) + "\n\n")
+                    frames.append("event: content_block_stop\ndata: " + json.dumps({"type": "content_block_stop", "index": index}) + "\n\n")
+                frames.extend([
+                    "event: message_delta\ndata: " + json.dumps({"type": "message_delta"}) + "\n\n",
+                    "event: message_stop\ndata: " + json.dumps({"type": "message_stop"}) + "\n\n",
+                ])
+            elif provider_kind == "gemini":
+                for candidate in body["candidates"]:
+                    for part in candidate["content"]["parts"]:
+                        if "text" in part:
+                            text = part["text"]
+                            midpoint = max(1, len(text) // 2)
+                            for chunk in (text[:midpoint], text[midpoint:]):
+                                if chunk:
+                                    frames.append("data: " + json.dumps({"candidates": [{"content": {"role": "model", "parts": [{"text": chunk}]}}]}) + "\n\n")
+                        else:
+                            frames.append("data: " + json.dumps({"candidates": [{"content": {"role": "model", "parts": [part]}}]}) + "\n\n")
+            encoded_stream = "".join(frames).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(encoded_stream)))
+            self.end_headers()
+            for frame in frames:
+                frame_bytes = frame.encode()
+                midpoint = max(1, len(frame_bytes) // 2)
+                try:
+                    self.wfile.write(frame_bytes[:midpoint])
+                    self.wfile.flush()
+                    self.wfile.write(frame_bytes[midpoint:])
+                    self.wfile.flush()
+                except BrokenPipeError:
+                    return
             return
 
         encoded = json.dumps(body).encode()

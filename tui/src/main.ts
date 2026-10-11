@@ -213,6 +213,7 @@ let activeTurnId: string | undefined
 let activeTurnController: AbortController | undefined
 let activeTurnCancelled = false
 let chatMessages: ChatTurn[] = []
+let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
 const reviewedShellCommandIds = new Set<string>()
@@ -274,6 +275,9 @@ function renderChat(messages: ChatTurn[]) {
       const label = message.role === "assistant" ? "VEASEL" : "YOU"
       return `${label}\n${safeTerminalText(message.content)}`
     }).join("\n\n"))
+    + (streamingAssistantText
+      ? `\n\nVEASEL  ·  ${activeTurnId ? "streaming" : "partial response"}\n${safeTerminalText(streamingAssistantText)}`
+      : "")
 }
 
 function safeTerminalText(value: string) {
@@ -282,6 +286,7 @@ function safeTerminalText(value: string) {
 
 async function openSession(session: Session) {
   activeSession = session
+  streamingAssistantText = ""
   reviewedShellCommandIds.clear()
   skillNotice = ""
   reviewedEditIds.clear()
@@ -413,6 +418,7 @@ async function sendMessage(value: string) {
   activeTurnId = crypto.randomUUID()
   activeTurnController = new AbortController()
   activeTurnCancelled = false
+  streamingAssistantText = ""
   const operationId = activeTurnId
   const turnController = activeTurnController
   chatInput.value = ""
@@ -432,6 +438,7 @@ async function sendMessage(value: string) {
       signal: controller.signal,
     })
     if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
+    streamingAssistantText = ""
     renderChat(await historyResponse.json() as ChatTurn[])
     await notifyPendingProposals()
     status.content = `● ${exchange.provider}  ·  ${exchange.model}`
@@ -449,6 +456,7 @@ async function sendMessage(value: string) {
     sendingMessage = false
     activeTurnId = undefined
     activeTurnController = undefined
+    if (streamingAssistantText) renderChat(chatMessages)
     chatInput?.focus()
   }
 }
@@ -741,13 +749,35 @@ async function consumeEvents() {
         const blocks = buffer.split(/\r?\n\r?\n/)
         buffer = blocks.pop() ?? ""
         for (const block of blocks) {
+          let refreshSessionsForEvent = false
           for (const line of block.split(/\r?\n/)) {
             if (line.startsWith("id:")) lastEventId = line.slice(3).trim()
             if (line.startsWith("event:") && line.slice(6).trim() !== "heartbeat") {
-              status.content = `● live  ·  ${line.slice(6).trim()}`
+              const eventType = line.slice(6).trim()
+              refreshSessionsForEvent ||= eventType !== "assistant.delta"
+              status.content = `● live  ·  ${eventType}`
+              if (eventType === "assistant.delta" && activeSession && activeTurnId) {
+                const data = block.split(/\r?\n/).filter((item) => item.startsWith("data:"))
+                  .map((item) => item.slice(5).trimStart()).join("\n")
+                try {
+                  const event = JSON.parse(data) as {
+                    session_id?: string
+                    data?: { operation_id?: string; delta?: string }
+                  }
+                  const delta = event.data?.delta
+                  if (event.session_id === activeSession.id
+                    && event.data?.operation_id === activeTurnId
+                    && typeof delta === "string" && delta.length > 0) {
+                    streamingAssistantText += delta
+                    renderChat(chatMessages)
+                  }
+                } catch {
+                  // Ignore malformed event payloads; the persisted turn remains authoritative.
+                }
+              }
             }
           }
-          void refreshSessions()
+          if (refreshSessionsForEvent) void refreshSessions()
         }
       }
       if (!controller.signal.aborted) {

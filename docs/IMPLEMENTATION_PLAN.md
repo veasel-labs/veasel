@@ -46,7 +46,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ### Milestone 2 — first real coding agent
 
-- [x] OpenAI-compatible, Anthropic, and Gemini provider adapters with bounded synchronous completion transport.
+- [x] OpenAI-compatible, Anthropic, and Gemini provider adapters with bounded SSE streaming, incremental durable assistant events, TUI rendering, and complete response/tool-call aggregation.
 - [x] SQLite-backed session chat history and a TUI conversation composer.
 - [x] Persist user/assistant exchanges atomically and restore recent history when reopening a session.
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
@@ -61,7 +61,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   TUI requires opening the exact command, working directory, and timeout before
   approval; execution limits and recovery behavior are documented in
   [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
-- [ ] Deliver streaming model responses and cancellation through the API, event store, and TUI.
+- [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
+- [ ] Stop an in-flight provider socket immediately when cancellation arrives before its first response chunk; the pinned `net.http.fetch` API exposes bounded timeouts and progress callbacks but no external socket cancellation handle.
 - [ ] Complete an end-to-end coding task against a disposable fixture repository, including diff review, tests, and a denied unapproved effect.
 
 ### Milestone 3 — persistent execution

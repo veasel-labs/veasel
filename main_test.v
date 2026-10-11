@@ -324,6 +324,69 @@ fn test_session_store_event_cursor_replays_only_newer_events() {
 	assert next_events[0].session_id != first.id
 }
 
+fn test_assistant_delta_events_persist_operation_and_text_for_replay() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Streaming', directory: '/tmp/streaming' }) or {
+		panic(err)
+	}
+	operation_id := '123e4567-e89b-42d3-a456-426614174000'
+	store.record_assistant_delta(session.id, operation_id, 'hello ') or { panic(err) }
+	store.record_assistant_delta(session.id, operation_id, 'world') or { panic(err) }
+	events := store.events_after(0) or { panic(err) }
+	assert events.len == 3
+	assert events[1].type == 'assistant.delta'
+	assert events[1].session_id == session.id
+	assert events[1].data.operation_id == operation_id
+	assert events[1].data.delta == 'hello '
+	assert events[2].data.delta == 'world'
+}
+
+struct ProviderSSETestState {
+mut:
+	messages []string
+}
+
+fn test_provider_sse_decoder_handles_split_crlf_and_multiline_data() {
+	mut state := &ProviderSSETestState{}
+	callback := fn [mut state] (data string) ! {
+		state.messages << data
+	}
+	mut decoder := ProviderSSEDecoder{
+		on_data: callback
+	}
+	decoder.feed('event: message\r\ndata: first\r') or { panic(err) }
+	decoder.feed('\n\r\ndata: second\ndata: third\n\n') or { panic(err) }
+	decoder.feed('data: fourth\rdata: fifth\r\r') or { panic(err) }
+	decoder.finish() or { panic(err) }
+	assert state.messages == ['first', 'second\nthird', 'fourth\nfifth']
+}
+
+fn test_provider_sse_decoder_ignores_non_data_fields_and_flushes_final_frame() {
+	mut state := &ProviderSSETestState{}
+	callback := fn [mut state] (data string) ! {
+		state.messages << data
+	}
+	mut decoder := ProviderSSEDecoder{
+		on_data: callback
+	}
+	decoder.feed(': comment\nid: 4\nretry: 1000\ndata: [DONE]') or { panic(err) }
+	decoder.finish() or { panic(err) }
+	assert state.messages == ['[DONE]']
+}
+
+fn test_provider_sse_decoder_rejects_oversized_unterminated_frames() {
+	mut decoder := ProviderSSEDecoder{
+		on_data: fn (_ string) ! {}
+	}
+	too_large := 'x'.repeat(max_provider_response_bytes + 1)
+	decoder.feed(too_large) or {
+		assert err.msg() == 'stream frame size limit exceeded'
+		return
+	}
+	assert false, 'expected oversized stream frame to fail'
+}
+
 fn test_session_plugin_skills_persist_and_emit_only_state_changes() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

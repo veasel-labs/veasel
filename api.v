@@ -14,6 +14,49 @@ const max_active_turn_operations = 32
 const max_active_shell_commands = 2
 const session_turn_lock_stripes = 64
 const max_agent_turn_duration = 2 * time.minute
+const assistant_event_batch_bytes = 16
+
+struct AssistantDeltaBuffer {
+	store        &Store
+	session_id   string
+	operation_id string
+	mu           sync.Mutex
+mut:
+	text   string
+	closed bool
+}
+
+fn (mut buffer AssistantDeltaBuffer) append(delta string) ! {
+	buffer.mu.lock()
+	defer {
+		buffer.mu.unlock()
+	}
+	if buffer.closed {
+		return
+	}
+	buffer.text += delta
+	if buffer.text.len >= assistant_event_batch_bytes {
+		buffer.persist_pending()!
+	}
+}
+
+fn (mut buffer AssistantDeltaBuffer) close_and_flush() ! {
+	buffer.mu.lock()
+	defer {
+		buffer.mu.unlock()
+	}
+	buffer.closed = true
+	buffer.persist_pending()!
+}
+
+fn (mut buffer AssistantDeltaBuffer) persist_pending() ! {
+	if buffer.text.len == 0 {
+		return
+	}
+	mut store := buffer.store
+	store.record_assistant_delta(buffer.session_id, buffer.operation_id, buffer.text)!
+	buffer.text = ''
+}
 
 struct APIError {
 pub:
@@ -193,7 +236,7 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 			mut provider_workers := workers
 			provider_workers.done()
 		}
-		result := complete_with_turn_context(mut turn_ctx, input.messages, [])
+		result := complete_with_turn_context(mut turn_ctx, input.messages, [], ignore_provider_text_delta)
 		result_chan <- result
 	}(slots, workers, mut turn_ctx, input, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
@@ -201,7 +244,7 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	messages []ChatMessage,
-	tools []AgentToolDefinition) !CompletionOutput {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
@@ -212,16 +255,16 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	}
 	result_chan := chan ProviderTurnResult{cap: 1}
 	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, mut turn_ctx vcontext.Context, messages []ChatMessage,
-		tools []AgentToolDefinition, result_chan chan ProviderTurnResult) {
+		tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
 			provider_slots.post()
 			mut provider_workers := workers
 			provider_workers.done()
 		}
-		result := complete_with_turn_context(mut turn_ctx, messages, tools)
+		result := complete_with_turn_context(mut turn_ctx, messages, tools, on_text_delta)
 		result_chan <- result
-	}(slots, workers, mut turn_ctx, messages.clone(), tools.clone(), result_chan)
+	}(slots, workers, mut turn_ctx, messages.clone(), tools.clone(), on_text_delta, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
@@ -838,7 +881,19 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		}
 	}
 	messages << user_message
-	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id) or {
+	mut delta_buffer := &AssistantDeltaBuffer{
+		store:        app.store
+		session_id:   id
+		operation_id: operation_id
+	}
+	on_text_delta := fn [mut delta_buffer] (delta string) ! {
+		delta_buffer.append(delta)!
+	}
+	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
+		on_text_delta) or {
+		delta_buffer.close_and_flush() or {
+			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
+		}
 		if err.msg() in ['cancelled', 'deadline_exceeded'] {
 			if err.msg() == 'cancelled' {
 				return json_conflict_error(mut ctx, err.msg())
@@ -864,6 +919,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		return ctx.json(APIError{
 			error: 'Model provider request failed'
 		})
+	}
+	delta_buffer.close_and_flush() or {
+		eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
+		return json_server_error(mut ctx, 'Unable to persist streamed assistant response')
 	}
 	if context_error := turn_context_error(mut turn_ctx) {
 		if context_error == 'cancelled' {

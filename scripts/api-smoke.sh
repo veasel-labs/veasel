@@ -226,6 +226,10 @@ for provider in openai-compatible anthropic gemini; do
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq "\"provider\":\"$provider\"" "$work_dir/response" || fail "$provider session response reported the wrong provider"
+	timeout 2s curl -NsS -H 'Last-Event-ID: 0' "$api/v1/events" >"$work_dir/provider-events" 2>/dev/null || [[ "$?" -eq 124 ]]
+	grep -Fq 'event: assistant.delta' "$work_dir/provider-events" || fail "$provider did not persist assistant streaming events"
+	grep -Fq '"operation_id":"' "$work_dir/provider-events" || fail "$provider streaming events omitted the operation identifier"
+	grep -Fq '"delta":"Provider ' "$work_dir/provider-events" || fail "$provider streaming events omitted incremental text"
 	if [[ "$provider" == openai-compatible ]]; then
 		operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 		curl -sS -o "$work_dir/cancelled-turn-response" -w '%{http_code}' \

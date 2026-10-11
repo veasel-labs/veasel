@@ -47,8 +47,10 @@ The audited `vlib` does not supply a general SQLite migration runner, a
 high-level Git API, indexed source search, a portable recursive file watcher,
 OS keychain storage, telemetry exporters, or complete high-level TUI widgets.
 Veasel must either own a narrow adapter with tests or select a dependency for a
-documented reason. Provider streaming, process-tree cancellation, terminal
-compatibility, and SQLite native-library packaging need platform validation.
+documented reason. Provider SSE now uses `net.http.Request.on_progress_body`;
+provider streaming behavior still needs platform validation. Process-tree
+cancellation, terminal compatibility, and SQLite native-library packaging also
+need platform validation.
 
 ## Current foundation imports
 

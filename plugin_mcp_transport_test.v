@@ -40,17 +40,23 @@ fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() 
 		'  let result;\n' +
 		"  if (request.method === 'initialize') result = { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'fixture', version: '1.0.0' } };\n" +
 		"  else if (request.method === 'tools/list') result = { tools: [{ name: 'persist', description: 'Write or read plugin data.', inputSchema: { type: 'object', properties: { action: { type: 'string' } }, required: ['action'], additionalProperties: false } }] };\n" +
-		"  else if (request.method === 'tools/call') { const action = request.params.arguments.action; const state = join(process.env.PLUGIN_DATA, 'state.txt'); if (action === 'write') writeFileSync(state, 'survives-restart'); const persisted = action === 'read' ? readFileSync(state, 'utf8') : 'written'; result = { content: [{ type: 'text', text: [process.env.PLUGIN_ROOT, process.env.PLUGIN_DATA, process.env.VEASEL_PLUGIN_TEST_SECRET || 'filtered', persisted].join('|') }], isError: false }; }\n" +
+		"  else if (request.method === 'tools/call') { const action = request.params.arguments.action; const state = join(process.env.PLUGIN_DATA, 'state.txt'); if (action === 'write') writeFileSync(state, 'survives-restart'); const persisted = action === 'read' ? readFileSync(state, 'utf8') : 'written'; result = { content: [{ type: 'text', text: [process.env.PLUGIN_ROOT, process.env.PLUGIN_DATA, process.cwd(), process.env.VEASEL_PLUGIN_TEST_ROOT, process.env.VEASEL_PLUGIN_TEST_DATA, process.env.VEASEL_PLUGIN_TEST_SECRET || 'filtered', persisted].join('|') }], isError: false }; }\n" +
 		'  else result = {};\n' +
 		"  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\\n');\n" +
 		'}\n'
 	os.write_file(script, fixture) or { panic(err) }
+	root_placeholder := '$' + '{PLUGIN_ROOT}'
+	data_placeholder := '$' + '{PLUGIN_DATA}'
 	server := PluginMCPServer{
 		name:      'fixture'
 		transport: 'stdio'
 		command:   node
-		args:      [script]
-		cwd:       './'
+		args:      ['${root_placeholder}/fixture.mjs']
+		env:       {
+			'VEASEL_PLUGIN_TEST_ROOT': '${root_placeholder}/from-env'
+			'VEASEL_PLUGIN_TEST_DATA': '${data_placeholder}/from-env'
+		}
+		cwd:       data_placeholder
 	}
 	first_write := plugin_mcp_persistence_call(root, data, server, 'write')
 	$if !windows {
@@ -60,13 +66,26 @@ fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() 
 	second_read := plugin_mcp_persistence_call(root, data, server, 'read')
 	root_expected := os.real_path(root)
 	data_expected := os.real_path(data)
-	assert first_write.contains(root_expected)
-	assert first_write.contains(data_expected)
-	assert first_write.contains('filtered')
-	assert !first_write.contains('host-only-secret')
-	assert second_read.contains('survives-restart')
-	assert second_read.contains('filtered')
-	assert !second_read.contains('host-only-secret')
+	root_env_expected := os.join_path(root_expected, 'from-env')
+	data_env_expected := os.join_path(data_expected, 'from-env')
+	first_values := first_write.split('|')
+	assert first_values.len == 7
+	assert first_values[0] == root_expected
+	assert first_values[1] == data_expected
+	assert first_values[2] == data_expected
+	assert first_values[3] == root_env_expected
+	assert first_values[4] == data_env_expected
+	assert first_values[5] == 'filtered'
+	assert first_values[6] == 'written'
+	second_values := second_read.split('|')
+	assert second_values.len == 7
+	assert second_values[0] == root_expected
+	assert second_values[1] == data_expected
+	assert second_values[2] == data_expected
+	assert second_values[3] == root_env_expected
+	assert second_values[4] == data_env_expected
+	assert second_values[5] == 'filtered'
+	assert second_values[6] == 'survives-restart'
 }
 
 fn plugin_mcp_persistence_call(root string, data string, server PluginMCPServer, action string) string {

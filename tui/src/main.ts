@@ -29,6 +29,19 @@ type ChatExchange = {
   model: string
 }
 
+type SessionTurnAccepted = {
+  operation_id: string
+  status: "running"
+}
+
+type SessionTurnCompletion = {
+  operation_id?: string
+  status?: string
+  provider?: string
+  model?: string
+  error?: string
+}
+
 type PluginCatalog = {
   plugins: Array<{
     name: string
@@ -229,11 +242,13 @@ let sendingMessage = false
 let activeTurnId: string | undefined
 let activeTurnController: AbortController | undefined
 let activeTurnCancelled = false
+let pendingUserMessage = ""
 let chatMessages: ChatTurn[] = []
 let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
 const reviewedShellCommandIds = new Set<string>()
+const handledTurnCompletionIds = new Set<string>()
 
 function renderSessions() {
   if (sessions.length === 0) {
@@ -292,6 +307,9 @@ function renderChat(messages: ChatTurn[]) {
       const label = message.role === "assistant" ? "VEASEL" : "YOU"
       return `${label}\n${safeTerminalText(message.content)}`
     }).join("\n\n"))
+    + (pendingUserMessage
+      ? `\n\nYOU  ·  sending\n${safeTerminalText(pendingUserMessage)}`
+      : "")
     + (streamingAssistantText
       ? `\n\nVEASEL  ·  ${activeTurnId ? "streaming" : "partial response"}\n${safeTerminalText(streamingAssistantText)}`
       : "")
@@ -309,6 +327,7 @@ function safeTerminalReviewText(value: string) {
 async function openSession(session: Session) {
   activeSession = session
   streamingAssistantText = ""
+  pendingUserMessage = ""
   reviewedShellCommandIds.clear()
   skillNotice = ""
   reviewedEditIds.clear()
@@ -457,9 +476,12 @@ async function sendMessage(value: string) {
   activeTurnId = crypto.randomUUID()
   activeTurnController = new AbortController()
   activeTurnCancelled = false
+  pendingUserMessage = content
   streamingAssistantText = ""
+  renderChat(chatMessages)
   const operationId = activeTurnId
   const turnController = activeTurnController
+  let awaitingAsyncCompletion = false
   chatInput.value = ""
   chatInput.blur()
   status.content = "● Veasel is thinking…"
@@ -467,10 +489,20 @@ async function sendMessage(value: string) {
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-veasel-operation-id": operationId },
+      headers: {
+        "content-type": "application/json",
+        "x-veasel-operation-id": operationId,
+        prefer: "respond-async",
+      },
       body: JSON.stringify({ content }),
       signal: AbortSignal.any([controller.signal, turnController.signal]),
     })
+    if (response.status === 202) {
+      const accepted = await response.json() as SessionTurnAccepted
+      if (accepted.operation_id !== operationId) throw new Error("Server returned a different operation ID")
+      if (activeTurnId === operationId) awaitingAsyncCompletion = true
+      return
+    }
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     const exchange = await response.json() as ChatExchange
     const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
@@ -492,12 +524,78 @@ async function sendMessage(value: string) {
     status.content = `● message failed  ·  ${error instanceof Error ? error.message : "request failed"}`
     status.fg = "#f28b82"
   } finally {
+    if (!awaitingAsyncCompletion && activeTurnId === operationId) {
+      sendingMessage = false
+      pendingUserMessage = ""
+      activeTurnId = undefined
+      activeTurnController = undefined
+      if (streamingAssistantText) renderChat(chatMessages)
+      chatInput?.focus()
+    }
+  }
+}
+
+async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurnCompletion) {
+  const operationId = completion.operation_id
+  if (!operationId || handledTurnCompletionIds.has(operationId)) return
+  handledTurnCompletionIds.add(operationId)
+  if (handledTurnCompletionIds.size > 128) {
+    const oldest = handledTurnCompletionIds.values().next().value
+    if (oldest) handledTurnCompletionIds.delete(oldest)
+  }
+  if (activeTurnId !== operationId) {
+    if (activeSession?.id === sessionId) {
+      try {
+        const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
+          signal: controller.signal,
+        })
+        if (historyResponse.ok) renderChat(await historyResponse.json() as ChatTurn[])
+      } catch {
+        // Reopening the session reloads its durable history if this refresh fails.
+      }
+    }
+    return
+  }
+  if (activeSession?.id !== sessionId) {
+    pendingUserMessage = ""
+    streamingAssistantText = ""
     sendingMessage = false
     activeTurnId = undefined
     activeTurnController = undefined
-    if (streamingAssistantText) renderChat(chatMessages)
-    chatInput?.focus()
+    activeTurnCancelled = false
+    return
   }
+  pendingUserMessage = ""
+  streamingAssistantText = ""
+  const userCancelled = activeTurnCancelled
+  sendingMessage = false
+  activeTurnId = undefined
+  activeTurnController = undefined
+  activeTurnCancelled = false
+  if (completion.status === "completed") {
+    try {
+      const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
+        signal: controller.signal,
+      })
+      if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
+      renderChat(await historyResponse.json() as ChatTurn[])
+      await notifyPendingProposals()
+      status.content = `● ${completion.provider ?? "provider"}  ·  ${completion.model ?? "assistant"}`
+      status.fg = "#a7f3d0"
+    } catch (error) {
+      status.content = `● turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`
+      status.fg = "#f3c969"
+    }
+  } else if (completion.status === "cancelled") {
+    renderChat(chatMessages)
+    status.content = userCancelled ? "● response cancelled" : "● turn cancelled"
+    status.fg = "#f3c969"
+  } else {
+    renderChat(chatMessages)
+    status.content = `● message failed  ·  ${completion.error ?? "assistant turn failed"}`
+    status.fg = "#f28b82"
+  }
+  chatInput?.focus()
 }
 
 async function cancelActiveTurn() {
@@ -873,13 +971,14 @@ async function consumeEvents() {
               const eventType = line.slice(6).trim()
               refreshSessionsForEvent ||= eventType !== "assistant.delta"
               status.content = `● live  ·  ${eventType}`
-              if (eventType === "assistant.delta" || eventType === "plugin.mcp_tool_call_pending") {
+              if (eventType === "assistant.delta" || eventType === "plugin.mcp_tool_call_pending"
+                || eventType === "session.turn_completed") {
                 const data = block.split(/\r?\n/).filter((item) => item.startsWith("data:"))
                   .map((item) => item.slice(5).trimStart()).join("\n")
                 try {
                   const event = JSON.parse(data) as {
                     session_id?: string
-                    data?: { operation_id?: string; delta?: string }
+                    data?: SessionTurnCompletion & { delta?: string }
                   }
                   if (eventType === "plugin.mcp_tool_call_pending" && event.session_id === activeSession?.id) {
                     void notifyPendingMcpToolCalls()
@@ -891,6 +990,8 @@ async function consumeEvents() {
                       streamingAssistantText += delta
                       renderChat(chatMessages)
                     }
+                  } else if (eventType === "session.turn_completed" && event.session_id) {
+                    void finishAsyncSessionTurn(event.session_id, event.data ?? {})
                   }
                 } catch {
                   // Ignore malformed event payloads; the persisted turn remains authoritative.

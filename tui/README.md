@@ -10,10 +10,13 @@ run `bun run start`. From the repository root, `v run . tui` starts the same
 client. Start the V server separately with `v run . serve`. Set
 `VEASEL_API_URL` when the backend listens on another loopback port.
 
-The initial client can list and refresh sessions, create one for the current
-working directory, inspect its metadata, and reconnect to the replayable event
-stream. It reports that agent execution is unavailable rather than simulating
-an agent response.
+The client can list and refresh sessions, create one for the current working
+directory, inspect its metadata, and reconnect to the replayable event stream.
+It sends chat turns with `Prefer: respond-async`, renders durable assistant
+deltas while the operation runs, and reloads the committed exchange after its
+`session.turn_completed` event. This releases an HTTP worker while the model or
+a human MCP approval is pending. Operations run in the server process and are
+cancelled during shutdown; durable job recovery is not implemented.
 
 The startup portrait is a pixel-art adaptation of Veasel, the V language
 mascot. The original mascot is by the V contributors; this adaptation is

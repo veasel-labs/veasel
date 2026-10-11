@@ -659,7 +659,9 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	session := store.create_session(SessionInput{ title: 'Chat', directory: '/tmp/chat' }) or {
 		panic(err)
 	}
-	exchange := store.append_exchange(session.id, 'What is this?', 'A test reply.') or { panic(err) }
+	exchange := store.append_exchange(session.id, '', 'What is this?', 'A test reply.', '', '') or {
+		panic(err)
+	}
 	assert exchange.len == 2
 	assert exchange[0].role == 'user'
 	assert exchange[0].content == 'What is this?'
@@ -671,6 +673,43 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	assert events.len == 3
 	assert events[1].type == 'message.created'
 	assert events[2].type == 'message.created'
+}
+
+fn test_async_session_turn_completion_event_commits_with_exchange() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Async chat', directory: '/tmp/chat' }) or {
+		panic(err)
+	}
+	operation_id := 'b1f21cb9-6f34-43d6-b924-7e8b71d9b307'
+	_ = store.append_exchange(session.id, operation_id, 'Review this change', 'Looks good.',
+		'openai-compatible', 'fixture-model') or { panic(err) }
+	events := store.events_after(0) or { panic(err) }
+	completion := events[events.len - 1]
+	assert completion.type == 'session.turn_completed'
+	assert completion.session_id == session.id
+	assert completion.data.operation_id == operation_id
+	assert completion.data.status == 'completed'
+	assert completion.data.provider == 'openai-compatible'
+	assert completion.data.model == 'fixture-model'
+}
+
+fn test_failed_session_turn_completion_event_is_persisted() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Async chat', directory: '/tmp/chat' }) or {
+		panic(err)
+	}
+	operation_id := '7df3b3f9-68ad-466d-a115-7c8c285d1999'
+	store.record_session_turn_completion(session.id, operation_id, 'cancelled', 'Turn cancelled.') or {
+		panic(err)
+	}
+	events := store.events_after(0) or { panic(err) }
+	completion := events[events.len - 1]
+	assert completion.type == 'session.turn_completed'
+	assert completion.data.operation_id == operation_id
+	assert completion.data.status == 'cancelled'
+	assert completion.data.error == 'Turn cancelled.'
 }
 
 fn test_model_endpoint_requires_tls_or_exact_loopback() {

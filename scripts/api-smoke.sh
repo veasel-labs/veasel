@@ -87,6 +87,51 @@ expect_status() {
 	[[ "$actual" == "$expected" ]] || fail "expected HTTP $expected, got $actual ($(cat "$work_dir/response"))"
 }
 
+start_mcp_turn() {
+	local content="$1"
+	local operation_id
+	operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+	expect_status 202 -H 'Prefer: respond-async' -H 'content-type: application/json' \
+		-H "X-Veasel-Operation-ID: $operation_id" -d "{\"content\":\"$content\"}" \
+		"$api/v1/sessions/$session_id/messages"
+	grep -Fq "\"operation_id\":\"$operation_id\"" "$work_dir/response" \
+		|| fail 'async session response did not return its operation ID'
+	printf '%s' "$operation_id"
+}
+
+get_turn_completion_status() {
+	python3 - "$work_dir/data/veasel.sqlite3" "$session_id" "$1" <<'PY'
+import json
+import sqlite3
+import sys
+
+database, session_id, operation_id = sys.argv[1:]
+connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+rows = connection.execute(
+    "SELECT data FROM events WHERE type = 'session.turn_completed' AND session_id = ? ORDER BY id DESC",
+    (session_id,),
+).fetchall()
+for (encoded,) in rows:
+    event = json.loads(encoded)
+    if event.get("operation_id") == operation_id:
+        print(event.get("status", ""))
+        break
+PY
+}
+
+wait_for_turn_completion() {
+	local operation_id="$1"
+	local expected_status="$2"
+	local status
+	for ((attempt = 0; attempt < 150; attempt++)); do
+		status="$(get_turn_completion_status "$operation_id")"
+		if [[ "$status" == "$expected_status" ]]; then return; fi
+		if [[ -n "$status" ]]; then fail "session turn ended as $status; expected $expected_status"; fi
+		sleep 0.1
+	done
+	fail "session turn $operation_id did not emit a completion event"
+}
+
 start_server() {
 	if [[ -n "${1:-}" ]]; then
 		provider_base="/v1"
@@ -384,28 +429,13 @@ expect_status 200 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true}' \
 	"$api/v1/sessions/$session_id/mcp-servers"
 rm -f "$plugin_dir/effect.txt"
-curl -sS -o "$work_dir/mcp-approved-response" -w '%{http_code}' \
-	-H 'content-type: application/json' -d '{"content":"Call MCP effect"}' \
-	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-approved-status" &
-mcp_turn_pid=$!
-printf 'Smoke: approved MCP message curl started (pid %s)\n' "$mcp_turn_pid"
+mcp_operation_id="$(start_mcp_turn 'Call MCP effect')"
 for ((attempt = 0; attempt < 100; attempt++)); do
-	if ! curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"; then
-		ps -o pid,ppid,stat,wchan:32,args -p "$mcp_turn_pid" >&2 || true
-		if curl --max-time 2 -fsS "$api/v1/health" >"$work_dir/mcp-health"; then
-			printf 'Smoke: health probe succeeded during MCP poll failure\n' >&2
-		else
-			printf 'Smoke: health probe failed during MCP poll failure\n' >&2
-		fi
-		cat "$work_dir/mcp-approved-status" "$work_dir/mcp-approved-response" >&2 2>/dev/null || true
-		fail 'unable to poll MCP approval status'
-	fi
+	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP approval status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
-	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then
-		wait "$mcp_turn_pid" 2>/dev/null || true
-		fail "provider turn ended before MCP approval was created (HTTP $(cat "$work_dir/mcp-approved-status" 2>/dev/null || true)): $(cat "$work_dir/mcp-approved-response" 2>/dev/null || true)"
-	fi
+	turn_status="$(get_turn_completion_status "$mcp_operation_id")"
+	[[ -z "$turn_status" ]] || fail "provider turn completed ($turn_status) before MCP approval was created"
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'provider MCP call did not pause for approval'
@@ -417,64 +447,48 @@ expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
 grep -Fq 'approved-effect' "$work_dir/response" || fail 'MCP call inspection omitted the exact arguments'
 expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
 grep -Fq '"status":"approved"' "$work_dir/response" || fail 'MCP call approval was not persisted'
-wait "$mcp_turn_pid"
-[[ "$(cat "$work_dir/mcp-approved-status")" == 200 ]] || fail 'approved MCP provider turn did not finish successfully'
-grep -Fq 'MCP effect completed.' "$work_dir/mcp-approved-response" || fail 'approved MCP result did not resume the provider turn'
+wait_for_turn_completion "$mcp_operation_id" completed
+curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-approved-messages"
+grep -Fq 'MCP effect completed.' "$work_dir/mcp-approved-messages" || fail 'approved MCP result did not resume the provider turn'
 [[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'approved MCP tool did not produce exactly the expected fixture effect'
 printf 'Smoke: MCP approval path passed; exercising rejection\n'
 
-curl -sS -o "$work_dir/mcp-rejected-response" -w '%{http_code}' \
-	-H 'content-type: application/json' -d '{"content":"Reject MCP effect"}' \
-	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-rejected-status" &
-mcp_turn_pid=$!
-printf 'Smoke: rejected MCP message curl started (pid %s)\n' "$mcp_turn_pid"
+mcp_operation_id="$(start_mcp_turn 'Reject MCP effect')"
 for ((attempt = 0; attempt < 100; attempt++)); do
 	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll rejected MCP call status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
-	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then
-		wait "$mcp_turn_pid" 2>/dev/null || true
-		fail "provider turn ended before MCP approval was created (HTTP $(cat "$work_dir/mcp-rejected-status" 2>/dev/null || true)): $(cat "$work_dir/mcp-rejected-response" 2>/dev/null || true)"
-	fi
+	turn_status="$(get_turn_completion_status "$mcp_operation_id")"
+	[[ -z "$turn_status" ]] || fail "provider turn completed ($turn_status) before rejected MCP approval was created"
 	sleep 0.1
 done
-if [[ -z "$mcp_call_id" ]]; then
-	ps -o pid,ppid,stat,wchan:32,args -p "$mcp_turn_pid" >&2 || true
-	cat "$work_dir/mcp-rejected-status" "$work_dir/mcp-rejected-response" >&2 2>/dev/null || true
-	cat "$work_dir/mcp-calls" >&2 2>/dev/null || true
-	fail 'second provider MCP call did not pause for approval'
-fi
+[[ -n "$mcp_call_id" ]] || fail 'second provider MCP call did not pause for approval'
 printf 'Smoke: MCP rejection call discovered; rejecting\n'
 expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
 expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/reject"
 grep -Fq '"status":"rejected"' "$work_dir/response" || fail 'MCP call rejection was not persisted'
-wait "$mcp_turn_pid"
-[[ "$(cat "$work_dir/mcp-rejected-status")" == 200 ]] || fail 'rejected MCP provider turn did not finish successfully'
-grep -Fq 'MCP request rejected.' "$work_dir/mcp-rejected-response" || fail 'provider did not receive the MCP rejection result'
+wait_for_turn_completion "$mcp_operation_id" completed
+curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-rejected-messages"
+grep -Fq 'MCP request rejected.' "$work_dir/mcp-rejected-messages" || fail 'provider did not receive the MCP rejection result'
 [[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'rejected MCP tool changed the fixture effect'
 printf 'Smoke: MCP rejection path passed; exercising MCP isError persistence\n'
 
-curl -sS -o "$work_dir/mcp-error-response" -w '%{http_code}' \
-	-H 'content-type: application/json' -d '{"content":"Fail MCP effect"}' \
-	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-error-status" &
-mcp_turn_pid=$!
+mcp_operation_id="$(start_mcp_turn 'Fail MCP effect')"
 for ((attempt = 0; attempt < 100; attempt++)); do
 	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll MCP error approval status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
 	[[ -n "$mcp_call_id" ]] && break
-	if ! jobs -pr | grep -Fqx "$mcp_turn_pid"; then
-		wait "$mcp_turn_pid" 2>/dev/null || true
-		fail "provider turn ended before MCP approval was created (HTTP $(cat "$work_dir/mcp-error-status" 2>/dev/null || true)): $(cat "$work_dir/mcp-error-response" 2>/dev/null || true)"
-	fi
+	turn_status="$(get_turn_completion_status "$mcp_operation_id")"
+	[[ -z "$turn_status" ]] || fail "provider turn completed ($turn_status) before MCP error approval was created"
 	sleep 0.1
 done
 [[ -n "$mcp_call_id" ]] || fail 'provider MCP error call did not pause for approval'
 printf 'Smoke: MCP error call discovered; inspecting and approving\n'
 expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
 expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/approve"
-wait "$mcp_turn_pid"
-[[ "$(cat "$work_dir/mcp-error-status")" == 200 ]] || fail 'MCP tool error provider turn did not finish successfully'
-grep -Fq 'MCP tool reported an error.' "$work_dir/mcp-error-response" || fail 'provider did not receive the MCP tool error result'
+wait_for_turn_completion "$mcp_operation_id" completed
+curl -fsS "$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-error-messages"
+grep -Fq 'MCP tool reported an error.' "$work_dir/mcp-error-messages" || fail 'provider did not receive the MCP tool error result'
 curl -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls"
 python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); assert any(item["id"] == sys.argv[2] and item["status"] == "failed" for item in calls)' "$work_dir/mcp-calls" "$mcp_call_id" || fail 'MCP isError result was not persisted as failed'
 [[ "$(cat "$plugin_dir/effect.txt")" == 'approved-effect' ]] || fail 'MCP error fixture unexpectedly changed the effect'

@@ -27,10 +27,17 @@ inherit its environment, and have no OS sandbox; they can access files and
 network credentials available to that user. Execution is limited to 300 seconds
 and 64 KiB of captured output. Interrupted commands are never replayed.
 Session turns through all three provider adapters stream text deltas through the
-replayable `/v1/events` endpoint. The TUI renders them while the final API
+replayable `/v1/events` endpoint. The TUI renders them while a synchronous API
 response retains the complete assistant text and provider tool calls. Tool
 arguments are assembled before the agent executes them.
-Background jobs remain in progress.
+The API supports `Prefer: respond-async` for clients that need the request
+worker released while a model or human MCP approval is pending. It returns an
+operation ID with `202 Accepted`; clients follow `assistant.delta` and the
+terminal `session.turn_completed` event, then reload the committed session
+history. This opt-in execution is process-local and is cancelled during server
+shutdown; durable jobs and restart recovery remain future work. Requests without
+the preference retain the synchronous response contract.
+Durable, restart-resilient background jobs remain in progress.
 Local Agent Plugins can be discovered, their validated Skills enabled per
 session, and trusted stdio or Streamable HTTP MCP servers exposed as provider
 tools. Stdio processes run with the current user's privileges and without an OS

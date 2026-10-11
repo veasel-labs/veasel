@@ -1,14 +1,12 @@
 module main
 
 import os
-import runtime
 import veb
 
 const default_port = 4097
 const product_version = $d('veasel_version', '0.1.0-dev')
 
 fn serve(port int, data_dir string) ! {
-	eprintln('veasel: runtime reports ${runtime.nr_cpus()} HTTP worker(s) and ${runtime.nr_jobs()} V job(s)')
 	mut store := open_store(os.join_path(data_dir, 'veasel.sqlite3'))!
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }

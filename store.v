@@ -42,6 +42,10 @@ struct EventData {
 pub:
 	operation_id string @[omitempty]
 	delta        string @[omitempty]
+	status       string @[omitempty]
+	provider     string @[omitempty]
+	model        string @[omitempty]
+	error        string @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -906,7 +910,8 @@ fn (mut store Store) messages_for_session(session_id string, limit int) ![]ChatT
 	return messages
 }
 
-fn (mut store Store) append_exchange(session_id string, user_content string, assistant_content string) ![]ChatTurn {
+fn (mut store Store) append_exchange(session_id string, operation_id string, user_content string,
+	assistant_content string, provider string, model string) ![]ChatTurn {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -938,6 +943,21 @@ fn (mut store Store) append_exchange(session_id string, user_content string, ass
 			return error('unable to persist chat event')
 		}
 	}
+	if operation_id.len > 0 {
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'session.turn_completed',
+			session_id,
+			json2.encode[EventData](EventData{
+				operation_id: operation_id
+				status:       'completed'
+				provider:     provider
+				model:        model
+			}),
+		]) or {
+			store.db.rollback() or {}
+			return error('unable to persist session turn completion')
+		}
+	}
 	store.db.commit() or {
 		store.db.rollback() or {}
 		return error('unable to commit chat exchange')
@@ -956,6 +976,43 @@ fn (mut store Store) append_exchange(session_id string, user_content string, ass
 	}
 	result = result.reverse()
 	return result
+}
+
+fn (mut store Store) record_session_turn_completion(session_id string, operation_id string,
+	status string, public_error string) ! {
+	if !validate_operation_id(operation_id) || operation_id.len == 0
+		|| status !in ['failed', 'cancelled'] || public_error.len > 1024 {
+		return error('invalid session turn completion')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id) or {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('session not found')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.turn_completed',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id: operation_id
+			status:       status
+			error:        public_error
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist session turn completion')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session turn completion')
+	}
 }
 
 fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEditDraft) !WorkspaceEditProposal {

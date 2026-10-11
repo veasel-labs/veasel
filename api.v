@@ -865,10 +865,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	skill_context := load_session_skill_context(app.plugin_directory, active_skills) or {
 		return json_server_error(mut ctx, 'Unable to load an enabled plugin skill')
 	}
-	if skill_context.len > 0 {
+	if skill_context.instructions.len > 0 {
 		messages[0] = ChatMessage{
 			role:    'system'
-			content: messages[0].content + '\n\n' + skill_context
+			content: messages[0].content + '\n\n' + skill_context.instructions
 		}
 	}
 	history := app.store.messages_for_session(id, max_chat_messages - 2) or {
@@ -890,7 +890,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		delta_buffer.append(delta)!
 	}
 	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
-		on_text_delta) or {
+		skill_context.tool_policy, on_text_delta) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
 		}

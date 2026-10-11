@@ -821,10 +821,17 @@ components:
           items: { $ref: '#/components/schemas/PluginDiagnostic' }
     PluginSkillSummary:
       type: object
-      required: [name, description]
+      required: [name, description, allowed_tools_declared, allowed_tools]
       properties:
         name: { type: string }
         description: { type: string }
+        allowed_tools_declared:
+          type: boolean
+          description: True when the skill declares the experimental Agent Skills allowed-tools field, including when its list is empty.
+        allowed_tools:
+          type: array
+          description: Sorted, deduplicated tool names declared by the skill. An empty list with allowed_tools_declared true restricts the skill to no tools.
+          items: { type: string }
     PluginMCPServerSummary:
       type: object
       required: [name, transport, command, url_origin, header_count, header_names]

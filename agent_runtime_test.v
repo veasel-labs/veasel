@@ -4,6 +4,56 @@ import json2
 import os
 import uuid
 
+fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
+	root := os.join_path(os.temp_dir(), 'veasel-skill-tool-policy-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'source.txt')
+	os.write_file(path, 'must remain unchanged') or { panic(err) }
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(root, 'plugins')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	session := store.create_session(SessionInput{
+		title:     'Restricted skill tools'
+		directory: root
+	}) or { panic(err) }
+	policy := agent_tool_policy_for_skills([PluginSkill{
+		name:                   'read-only'
+		allowed_tools:          'workspace_read_file fabricated_tool'
+		allowed_tools_declared: true
+	}])
+	advertised := restrict_agent_tools(workspace_agent_tools(), policy)
+	assert advertised.map(it.name) == ['workspace_read_file']
+	mut mcp_connections := []PluginMCPConnection{}
+	denied_edit := execute_agent_tool_if_allowed(app, root, session.id, ProviderToolCall{
+		id:       'denied-edit'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"source.txt","content":"changed"}'
+		}
+	}, policy, {}, mut mcp_connections)
+	assert denied_edit.contains('active Agent Skill tool restrictions')
+	assert os.read_file(path) or { panic(err) } == 'must remain unchanged'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
+	assert (store.shell_commands(session.id) or { panic(err) }).len == 0
+	denied_mcp := execute_agent_tool_if_allowed(app, root, session.id, ProviderToolCall{
+		id:       'denied-mcp'
+		function: ProviderFunctionCall{
+			name:      'mcp_trusted_action'
+			arguments: '{}'
+		}
+	}, policy, {
+		'mcp_trusted_action': PluginMCPToolBinding{
+			connection_index: 0
+			native_name:      'action'
+		}
+	}, mut mcp_connections)
+	assert denied_mcp.contains('active Agent Skill tool restrictions')
+}
+
 fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_approval() {
 	root := os.join_path(os.temp_dir(), 'veasel-agent-tools-${uuid.new_v4().str()}')
 	os.mkdir_all(os.join_path(root, 'src')) or { panic(err) }

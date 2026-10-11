@@ -87,8 +87,15 @@ fn workspace_agent_tools() []AgentToolDefinition {
 	]
 }
 
+fn restrict_agent_tools(tools []AgentToolDefinition, policy AgentToolPolicy) []AgentToolDefinition {
+	if !policy.restricted {
+		return tools
+	}
+	return tools.filter(policy.allows(it.name))
+}
+
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
-	session_id string, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	session_id string, tool_policy AgentToolPolicy, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -108,6 +115,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	}
 	mut tools := workspace_agent_tools()
 	tools << mcp_tools
+	tools = restrict_agent_tools(tools, tool_policy)
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
@@ -152,11 +160,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		tool_calls += output.tool_calls.len
 		for call in output.tool_calls {
-			result := if binding := mcp_bindings[call.function.name] {
-				execute_plugin_mcp_tool(mut mcp_connections, binding, call.function.arguments)
-			} else {
-				execute_workspace_agent_tool(app, root, session_id, call)
-			}
+			result := execute_agent_tool_if_allowed(app, root, session_id, call, tool_policy,
+				mcp_bindings, mut mcp_connections)
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
@@ -171,6 +176,20 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 	}
 	return error('agent tool round limit reached')
+}
+
+fn execute_agent_tool_if_allowed(app &App, root string, session_id string, call ProviderToolCall,
+	policy AgentToolPolicy, mcp_bindings map[string]PluginMCPToolBinding,
+	mut mcp_connections []PluginMCPConnection) string {
+	if !policy.allows(call.function.name) {
+		return json2.encode[AgentToolError](AgentToolError{
+			error: 'Tool is not available under the active Agent Skill tool restrictions.'
+		})
+	}
+	if binding := mcp_bindings[call.function.name] {
+		return execute_plugin_mcp_tool(mut mcp_connections, binding, call.function.arguments)
+	}
+	return execute_workspace_agent_tool(app, root, session_id, call)
 }
 
 fn agent_context_bytes(messages []ChatMessage) int {

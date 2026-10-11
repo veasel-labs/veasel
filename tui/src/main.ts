@@ -32,7 +32,7 @@ type ChatExchange = {
 type PluginCatalog = {
   plugins: Array<{
     name: string
-    skills: Array<{ name: string; description: string }>
+    skills: Array<{ name: string; description: string; allowed_tools_declared: boolean; allowed_tools: string[] }>
     mcp_servers: Array<{ name: string; transport: string; command: string; url_origin: string; header_count: number; header_names: string[] }>
   }>
 }
@@ -490,10 +490,13 @@ async function showSkills() {
     const enabled = new Set(active.map((item) => `${item.plugin_name}/${item.skill_name}`))
     const lines = catalog.plugins.flatMap((plugin) => plugin.skills.map((skill) => {
       const key = `${plugin.name}/${skill.name}`
-      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}\n  ${skill.description}`
+      const restriction = skill.allowed_tools_declared
+        ? `\n  Tool access: ${skill.allowed_tools.length > 0 ? skill.allowed_tools.join(", ") : "none"}`
+        : ""
+      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}\n  ${skill.description}${restriction}`
     }))
     skillNotice = lines.length > 0
-      ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>.`
+      ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>. A declared tool list only restricts tools already available to this session; approval rules still apply.`
       : "No Agent Plugin skills found. Add a package with plugin.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
     renderChat(chatMessages)
   } catch (error) {

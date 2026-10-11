@@ -80,8 +80,11 @@ redirects. Tool arguments and results are sent to the configured model provider.
 A stdio process is launched for discovery and remains available for the model
 turn; only `PLUGIN_DATA` persists between turns.
 Skill instructions are treated as untrusted reference context and reloaded
-from disk for each turn. Install only plugins you trust. Agent Plugins support
-is experimental and does not claim full v1.0.0 conformance.
+from disk for each turn. Experimental Skill `allowed-tools` declarations can
+only restrict exact Veasel tool names for the active session; they never add
+tools or bypass MCP trust, file approval, or shell approval. Install only
+plugins you trust. Agent Plugins support is experimental and does not claim
+full v1.0.0 conformance.
 
 The initial completion adapters support `openai-compatible` (the default),
 `anthropic`, and `gemini`. Set `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, and a

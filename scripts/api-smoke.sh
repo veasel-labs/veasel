@@ -417,6 +417,7 @@ curl -sS -o "$work_dir/mcp-rejected-response" -w '%{http_code}' \
 	-H 'content-type: application/json' -d '{"content":"Reject MCP effect"}' \
 	"$api/v1/sessions/$session_id/messages" >"$work_dir/mcp-rejected-status" &
 mcp_turn_pid=$!
+printf 'Smoke: rejected MCP message curl started (pid %s)\n' "$mcp_turn_pid"
 for ((attempt = 0; attempt < 100; attempt++)); do
 	curl --max-time 10 -fsS "$api/v1/sessions/$session_id/mcp-tool-calls" >"$work_dir/mcp-calls" || fail 'unable to poll rejected MCP call status'
 	mcp_call_id="$(python3 -c 'import json,sys; calls=json.load(open(sys.argv[1])); print(next((item["id"] for item in calls if item["status"] == "pending"), ""))' "$work_dir/mcp-calls")"
@@ -427,7 +428,12 @@ for ((attempt = 0; attempt < 100; attempt++)); do
 	fi
 	sleep 0.1
 done
-[[ -n "$mcp_call_id" ]] || fail 'second provider MCP call did not pause for approval'
+if [[ -z "$mcp_call_id" ]]; then
+	ps -o pid,ppid,stat,wchan:32,args -p "$mcp_turn_pid" >&2 || true
+	cat "$work_dir/mcp-rejected-status" "$work_dir/mcp-rejected-response" >&2 2>/dev/null || true
+	cat "$work_dir/mcp-calls" >&2 2>/dev/null || true
+	fail 'second provider MCP call did not pause for approval'
+fi
 printf 'Smoke: MCP rejection call discovered; rejecting\n'
 expect_status 200 "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id"
 expect_status 200 -X POST "$api/v1/sessions/$session_id/mcp-tool-calls/$mcp_call_id/reject"

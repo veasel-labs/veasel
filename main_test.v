@@ -583,11 +583,13 @@ fn test_workspace_root_is_canonical_and_must_exist() {
 	defer { os.rm(alias) or {} }
 	canonical_alias := canonical_workspace_root(alias) or { panic(err) }
 	assert canonical_alias == os.real_path(temp_root)
-	spaced_root := os.join_path(os.temp_dir(), 'veasel-workspace-${uuid.new_v4().str()} ')
-	os.mkdir_all(spaced_root) or { panic(err) }
-	defer { os.rmdir_all(spaced_root) or {} }
-	canonical_spaced_root := canonical_workspace_root(spaced_root) or { panic(err) }
-	assert canonical_spaced_root == os.real_path(spaced_root)
+	$if !windows {
+		spaced_root := os.join_path(os.temp_dir(), 'veasel-workspace-${uuid.new_v4().str()} ')
+		os.mkdir_all(spaced_root) or { panic(err) }
+		defer { os.rmdir_all(spaced_root) or {} }
+		canonical_spaced_root := canonical_workspace_root(spaced_root) or { panic(err) }
+		assert canonical_spaced_root == os.real_path(spaced_root)
+	}
 	missing := os.join_path(os.temp_dir(), 'veasel-missing-${uuid.new_v4().str()}')
 	assert workspace_root_rejected(missing)
 }

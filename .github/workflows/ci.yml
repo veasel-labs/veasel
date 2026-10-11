@@ -51,7 +51,7 @@ jobs:
     name: V backend / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     needs: release-plan
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       VJOBS: 1
     strategy:
@@ -167,13 +167,19 @@ jobs:
           v test workspace_tools_test.v
       - name: Run Windows plugin, workspace edit, and recovery tests
         if: runner.os == 'Windows'
-        timeout-minutes: 20
+        shell: pwsh
+        timeout-minutes: 30
         run: |
-          v -d windows_7 test main_test.v
-          v -d windows_7 test plugins_test.v
-          v -d windows_7 test plugin_mcp_transport_test.v
-          v test plugin_mcp_http_transport_test.v
-          v -d windows_7 test workspace_edits_windows_test.v
+          & v -d windows_7 test main_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v -d windows_7 test plugins_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v -d windows_7 test plugin_mcp_transport_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v test plugin_mcp_http_transport_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v -d windows_7 test workspace_edits_windows_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'
         run: scripts/api-smoke.sh

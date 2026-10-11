@@ -149,6 +149,10 @@ pub struct Context {
 }
 
 pub fn (mut ctx Context) before_request() {
+	if ctx.req.url.contains('/mcp-tool-calls')
+		|| ctx.req.method == .post && ctx.req.url.contains('/messages') {
+		eprintln('veasel: request middleware ${ctx.req.method} ${ctx.req.url}')
+	}
 	host := ctx.req.header.get_custom('Host', exact: false) or { '' }
 	if !is_loopback_host(host) {
 		ctx.res.set_status(.forbidden)
@@ -795,6 +799,7 @@ pub fn (app &App) get_session_messages(mut ctx Context, id string) veb.Result {
 
 @['/v1/sessions/:id/messages'; post]
 pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
+	eprintln('veasel: session message handler started')
 	if ctx.req.data.len > max_chat_input_bytes + 1024 {
 		return json_request_error(mut ctx, 'Request body exceeds the size limit')
 	}

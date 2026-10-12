@@ -13,16 +13,29 @@ that provenance with its result and records its own compile command.
 | macOS | `clang` | Matches V's macOS release build convention. |
 | Windows | `gcc` | The Windows build links V's bundled SQLite object compiled by GCC; using the same compiler avoids mixing incompatible object formats/toolchains. |
 
-The command form is `v -cc <compiler> -prod ...`. `-prod` enables V's
-production optimization profile and turns additional warnings into errors.
-The pinned [V build help](https://github.com/vlang/v/blob/ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf/vlib/v/help/build/build.txt)
-and [compiler notes](https://github.com/vlang/v/blob/ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf/vlib/v/README.md)
+The command form is `v -cc <compiler> -prod ...`. Release builds also pass
+`-d "veasel_version=<planned version>"`, which embeds the version calculated by
+the release workflow into `--version` and the health endpoint. `-prod` enables
+V's production optimization profile and turns additional warnings into errors.
+The pinned [V build help](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/help/build/build.txt)
+and [compiler notes](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/README.md)
 describe optimization and LTO choices as part of that profile, including
 `-O3 -flto` for generated C units under 8 MiB and `-O2 -flto` for units at or
 above 8 MiB. Clang also uses a bounded inline threshold for large units. Veasel
 does not duplicate those choices with extra `-cflags`; V applies them as part
 of `-prod`. This keeps compiler defaults owned by the pinned V revision and
 avoids changing the profile between a release binary and a benchmark build.
+
+Advance `.v-version` only after the pinned compiler builds Veasel across all
+release targets. On 2026-10-12, V HEAD `02cf4bd2243e40e1d4bd4ea7b8956dd4832b3fc0`
+and revision `9494950d9d6482e70913c70446ccbf8c47f418b7` failed to bootstrap on
+Windows in `vlang/setup-v` because `S_IFMT`, `S_IFDIR`, `S_IFREG`, and related
+CRT constants were undeclared. The current candidate,
+`cbe6ea8bbbc30ff7630eac5f507809182bfa027c`, is the parent of V commit
+`aae3f51f7d298138ea605e67c3fc8fd87f7335da`, which changed C header emission;
+this is a compatibility boundary to test, not a confirmed root cause. CI must
+validate the candidate on the Windows release path before merge. Revisit the
+pin after upstream resolves the compiler bootstrap failure.
 
 The selected compilers, commands, and toolchain versions are explicit data in
 CI artifacts. This makes the build profile auditable even though hosted runner
@@ -51,7 +64,7 @@ compatibility with Debian 12 and newer glibc distributions.
 - `-autofree` is not applied globally; the V documentation says the feature is
   not production ready.
 - `-prealloc` and related arena behavior are used by V for its own compiler
-  self-build, as shown in V's [PGO build script](https://github.com/vlang/v/blob/ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf/vlib/v/build_pgo.sh),
+  self-build, as shown in V's [PGO build script](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/build_pgo.sh),
   not recommended as a generic application setting.
 - `-compress` is an artifact-size option shown for specialized static
   distributions; Veasel does not yet have a measured static-link profile.
@@ -73,18 +86,22 @@ memory under V's production profile. It is a deterministic runtime microbench,
 not an agent-quality or end-to-end coding benchmark. Hosted timings are noisy;
 use the report for same-runner trend evidence and preserve toolchain metadata.
 
-Build the same profile locally with the compiler for the host:
+Set `VROOT` to the source directory for the exact V commit in `.v-version`,
+and set `VEASEL_VERSION` to the version you want embedded. Then build the same
+profile locally with the compiler for the host:
 
 ```sh
+: "${VROOT:?Set VROOT to the V source directory pinned in .v-version}"
+export PATH="$VROOT:$PATH"
 mkdir -p dist
 v run "$VROOT/vlib/db/sqlite/install_thirdparty_sqlite.vsh" # Linux
 mkdir -p /tmp/veasel-empty-pkgconfig
+VEASEL_VERSION="${VEASEL_VERSION:-0.1.0-dev}"
 PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig \
-  v -cc gcc -prod -o dist/veasel .     # Linux
-v -cc clang -prod -o dist/veasel .     # macOS
+  v -cc gcc -prod -d "veasel_version=$VEASEL_VERSION" -o dist/veasel . # Linux
+v -cc clang -prod -d "veasel_version=$VEASEL_VERSION" -o dist/veasel . # macOS
 ```
 
-Set `VROOT` to the source directory of the exact V revision in `.v-version`.
 The Linux release profile must be built on Ubuntu 22.04 to preserve the
 documented glibc baseline. Windows builds use the V SQLite amalgamation too;
 see the CI workflow for the GCC object build required by that target.
@@ -94,7 +111,7 @@ details as CI:
 
 ```sh
 VEASEL_BUILD_CC=gcc VEASEL_BUILD_COMMIT="$(git rev-parse HEAD)" \
-  VEASEL_BUILD_FLAGS='PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig -cc gcc -prod -o dist/veasel .' \
+  VEASEL_BUILD_FLAGS='PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig -cc gcc -prod -d veasel_version=0.1.0-dev -o dist/veasel .' \
   node scripts/build-manifest.mjs dist/veasel dist/build.json
 ```
 

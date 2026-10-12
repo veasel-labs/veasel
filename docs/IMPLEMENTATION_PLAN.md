@@ -172,7 +172,10 @@ honoring its license and attribution.
 - Milestone 1 is complete only for the local Linux x64 development environment;
   macOS, Windows, Linux musl, concurrent client and production reliability
   checks remain open.
-- V's SQLite module uses native SQLite linkage. CI and packaging must verify
-  platform-specific headers/libraries rather than assuming zero system needs.
+- V's SQLite module can link system SQLite when `pkg-config` discovers it. The
+  release build isolates that lookup and bundles SQLite on Linux and Windows;
+  macOS uses its system SQLite. The Veasel binary still uses the platform C
+  runtime, but it needs no separately installed V runtime or Linux SQLite
+  shared library. CI checks these platform-specific linkage guarantees.
 - SSE and SQLite behavior must be tested under concurrent clients before the
   server claims durable or restart-resilient background execution.

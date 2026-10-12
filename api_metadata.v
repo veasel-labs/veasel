@@ -65,3 +65,32 @@ pub fn (app &App) update_model_settings(mut ctx Context) veb.Result {
 	}
 	return ctx.json(state.view())
 }
+
+@['/v1/config/models'; get]
+pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
+	provider := ctx.query['provider'] or {
+		return json_request_error(mut ctx, 'provider query parameter is required')
+	}
+	if provider.len > 100 {
+		return json_request_error(mut ctx, 'provider identifier is invalid')
+	}
+	config := app.provider_model_config(provider, '') or {
+		return json_request_error(mut ctx, 'Configure credentials for this provider before listing models')
+	}
+	models := fetch_provider_models(config) or {
+		ctx.res.set_status(.bad_gateway)
+		return ctx.json(APIError{
+			error: 'Unable to retrieve model list from the configured provider endpoint'
+		})
+	}
+	return ctx.json(ModelCatalogView{
+		provider: provider
+		models:   models
+	})
+}
+
+struct ModelCatalogView {
+pub:
+	provider string
+	models   []ModelCatalogEntry
+}

@@ -372,6 +372,23 @@ EOF
 	grep -Fq 'chat.cancel' "$work_dir/configured-capabilities" || fail "$provider chat cancellation capability is missing"
 	grep -Fq 'agent.tools.workspace_readonly' "$work_dir/configured-capabilities" || fail "$provider workspace tool capability is missing"
 	grep -Fq 'agent.tools.skill_read_resource' "$work_dir/configured-capabilities" || fail "$provider skill resource capability is missing"
+	expect_status 200 "$api/v1/config/models?provider=$provider"
+	python3 - "$work_dir/response" "$provider" <<'PY'
+import json
+import sys
+
+catalog = json.load(open(sys.argv[1], encoding="utf-8"))
+assert catalog["provider"] == sys.argv[2]
+models = {model["id"]: model["name"] for model in catalog["models"]}
+expected = {
+    "openai-compatible": ("smoke-model", "smoke-model"),
+    "anthropic": ("claude-fixture", "Claude Fixture"),
+    "gemini": ("gemini-fixture", "Gemini Fixture"),
+}[sys.argv[2]]
+assert models.get(expected[0]) == expected[1], models
+if sys.argv[2] == "gemini":
+    assert "embed-fixture" not in models
+PY
 	expect_status 200 -H 'content-type: application/json' \
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"

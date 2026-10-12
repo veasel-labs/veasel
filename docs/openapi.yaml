@@ -60,6 +60,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/config/models:
+    get:
+      operationId: listProviderModels
+      description: Fetches a bounded model list from the selected provider's configured endpoint. The request uses the provider credential held by the server; response bodies and credentials are not logged. Redirects and retries are disabled.
+      parameters:
+        - name: provider
+          in: query
+          required: true
+          schema: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: Provider model IDs and display names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogView'
+        '400':
+          description: Provider is invalid or credentials are not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Provider endpoint did not return a supported model catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/plugins:
     get:
       operationId: listAgentPlugins
@@ -1093,6 +1121,19 @@ components:
               base_url: { type: string }
               environment_key: { type: string }
               requires_api_key: { type: boolean }
+    ModelCatalogView:
+      type: object
+      required: [provider, models]
+      properties:
+        provider: { type: string }
+        models:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
     PluginCatalog:
       type: object
       required: [plugins, diagnostics]

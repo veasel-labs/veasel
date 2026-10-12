@@ -13,6 +13,8 @@ const max_chat_input_bytes = 100_000
 const max_model_output_tokens = 4096
 const max_provider_response_bytes = 1_000_000
 const max_provider_stream_bytes = 16_000_000
+const max_provider_model_catalog_bytes = 1_000_000
+const max_provider_model_catalog_entries = 500
 
 pub struct ChatMessage {
 pub:
@@ -35,6 +37,40 @@ pub:
 	provider string
 	model    string
 	content  string
+}
+
+pub struct ModelCatalogEntry {
+pub:
+	id   string
+	name string
+}
+
+struct OpenAIModelCatalog {
+	data []OpenAIModelCatalogEntry
+}
+
+struct OpenAIModelCatalogEntry {
+	id   string
+	name string
+}
+
+struct AnthropicModelCatalog {
+	data []AnthropicModelCatalogEntry
+}
+
+struct AnthropicModelCatalogEntry {
+	id           string
+	display_name string @[json: 'display_name']
+}
+
+struct GeminiModelCatalog {
+	models []GeminiModelCatalogEntry
+}
+
+struct GeminiModelCatalogEntry {
+	name                         string
+	display_name                 string   @[json: 'displayName']
+	supported_generation_methods []string @[json: 'supportedGenerationMethods']
 }
 
 pub struct ProviderToolCall {
@@ -143,6 +179,103 @@ struct ModelConfig {
 	base_url string
 	model    string
 	api_key  string
+}
+
+fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
+	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
+	url := '${secure_endpoint(config.base_url)!}/models'
+	mut headers := http.new_header(key: .accept, value: 'application/json')
+	match info.protocol {
+		'openai-compatible' {
+			if config.api_key.len > 0 {
+				headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
+			}
+		}
+		'anthropic' {
+			headers.add_custom('x-api-key', config.api_key)!
+			headers.add_custom('anthropic-version', '2023-06-01')!
+		}
+		'gemini' {
+			headers.add_custom('x-goog-api-key', config.api_key)!
+		}
+		else { return error('unsupported model provider') }
+	}
+	response := http.fetch(
+		method:               .get
+		url:                  url
+		header:               headers
+		read_timeout:         5 * time.second
+		write_timeout:        2 * time.second
+		max_retries:          1
+		allow_redirect:       false
+		stop_receiving_limit: max_provider_model_catalog_bytes
+	) or { return error('model catalog request failed') }
+	if response.status_code < 200 || response.status_code >= 300 {
+		return error('model catalog endpoint returned HTTP ${response.status_code}')
+	}
+	if response.body.len > max_provider_model_catalog_bytes {
+		return error('model catalog response is too large')
+	}
+	return parse_provider_model_catalog(info.protocol, response.body)
+}
+
+fn parse_provider_model_catalog(protocol string, body string) ![]ModelCatalogEntry {
+	mut models := []ModelCatalogEntry{}
+	match protocol {
+		'openai-compatible' {
+			catalog := json2.decode[OpenAIModelCatalog](body) or {
+				return error('model catalog response is invalid')
+			}
+			for item in catalog.data {
+				append_model_catalog_entry(mut models, item.id, item.name)
+			}
+		}
+		'anthropic' {
+			catalog := json2.decode[AnthropicModelCatalog](body) or {
+				return error('model catalog response is invalid')
+			}
+			for item in catalog.data {
+				append_model_catalog_entry(mut models, item.id, item.display_name)
+			}
+		}
+		'gemini' {
+			catalog := json2.decode[GeminiModelCatalog](body) or {
+				return error('model catalog response is invalid')
+			}
+			for item in catalog.models {
+				if 'generateContent' !in item.supported_generation_methods {
+					continue
+				}
+				id := if item.name.starts_with('models/') {
+					item.name['models/'.len..]
+				} else {
+					item.name
+				}
+				append_model_catalog_entry(mut models, id, item.display_name)
+			}
+		}
+		else { return error('unsupported model protocol') }
+	}
+	if models.len > max_provider_model_catalog_entries {
+		models = models[..max_provider_model_catalog_entries]
+	}
+	return models
+}
+
+fn append_model_catalog_entry(mut models []ModelCatalogEntry, id string, name string) {
+	clean_id := id.trim_space()
+	if clean_id.len == 0 || clean_id.len > 200 || models.len >= max_provider_model_catalog_entries {
+		return
+	}
+	for existing in models {
+		if existing.id == clean_id {
+			return
+		}
+	}
+	models << ModelCatalogEntry{
+		id:   clean_id
+		name: if name.trim_space().len > 0 { name.trim_space() } else { clean_id }
+	}
 }
 
 interface ModelProvider {

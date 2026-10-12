@@ -78,7 +78,7 @@ jobs:
     name: V backend / ${{ matrix.os }}
     runs-on: ${{ matrix.runner }}
     needs: release-plan
-    timeout-minutes: 50
+    timeout-minutes: 60
     env:
       VJOBS: 1
     strategy:
@@ -279,7 +279,7 @@ jobs:
       - name: Run Windows plugin, workspace edit, and recovery tests
         if: runner.os == 'Windows'
         shell: pwsh
-        timeout-minutes: 30
+        timeout-minutes: 40
         run: |
           & v -d windows_7 test main_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

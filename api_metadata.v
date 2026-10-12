@@ -1,6 +1,7 @@
 module main
 
 import veb
+import json2
 
 struct Health {
 pub:
@@ -29,7 +30,7 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		'workspace.read', 'workspace.search', 'workspace.edits.review', 'workspace.edits.approve',
 		'workspace.edits.reject', 'workspace.commands.propose', 'workspace.commands.review',
 		'workspace.commands.approve', 'workspace.commands.reject']
-	if configured_model() != none {
+	if app.configured_model() != none {
 		features << 'chat.complete'
 		features << 'chat.cancel'
 		features << 'agent.tools.workspace_readonly'
@@ -41,4 +42,25 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		api_version: 'v1'
 		features:    features
 	})
+}
+
+@['/v1/config/model'; get]
+pub fn (app &App) get_model_settings(mut ctx Context) veb.Result {
+	mut state := app.model_settings
+	return ctx.json(state.view())
+}
+
+@['/v1/config/model'; post]
+pub fn (app &App) update_model_settings(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 8_192 {
+		return json_request_error(mut ctx, 'model settings request is too large')
+	}
+	input := json2.decode[ModelSettingsInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'model settings request is invalid')
+	}
+	mut state := app.model_settings
+	state.update(input) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(state.view())
 }

@@ -179,6 +179,7 @@ pub:
 	store                 &Store
 	plugin_directory      string
 	plugin_data_directory string
+	model_settings        &ModelSettingsState
 }
 
 fn new_app(store &Store, plugin_directory string) &App {
@@ -190,6 +191,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		store:                    store
 		plugin_directory:         plugin_directory
 		plugin_data_directory:    os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
+		model_settings:           new_model_settings_state(store.model_settings_path())
 		session_turn_locks:       session_turn_locks
 		operation_registry:       &TurnOperationRegistry{
 			mutex:            sync.new_mutex()
@@ -225,6 +227,7 @@ fn session_can_trust_plugin_mcp_server(active []SessionPluginMCPServer, plugin_n
 
 fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 	input CompletionInput) !CompletionOutput {
+	config := app.model_config()!
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
@@ -237,7 +240,7 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 	// Keep a worker-local copy of the interface value. Sharing the mutable
 	// interface header with the waiting goroutine races method dispatch.
 	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, turn_ctx vcontext.Context, input CompletionInput,
-		result_chan chan ProviderTurnResult) {
+		config ModelConfig, result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
 			provider_slots.post()
@@ -245,15 +248,16 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 			provider_workers.done()
 		}
 		mut worker_ctx := turn_ctx
-		result := complete_with_turn_context(mut worker_ctx, input.messages, [], ignore_provider_text_delta)
+		result := complete_with_turn_context(mut worker_ctx, input.messages, [], ignore_provider_text_delta, config)
 		result_chan <- result
-	}(slots, workers, turn_ctx, input, result_chan)
+	}(slots, workers, turn_ctx, input, config, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	config := app.model_config()!
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
@@ -266,7 +270,8 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	// As above, pass Context by value so this goroutine owns its interface
 	// header while the caller waits on the operation.
 	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, turn_ctx vcontext.Context, messages []ChatMessage,
-		tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, result_chan chan ProviderTurnResult) {
+		tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig,
+		result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
 			provider_slots.post()
@@ -274,9 +279,9 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 			provider_workers.done()
 		}
 		mut worker_ctx := turn_ctx
-		result := complete_with_turn_context(mut worker_ctx, messages, tools, on_text_delta)
+		result := complete_with_turn_context(mut worker_ctx, messages, tools, on_text_delta, config)
 		result_chan <- result
-	}(slots, workers, turn_ctx, messages.clone(), tools.clone(), on_text_delta, result_chan)
+	}(slots, workers, turn_ctx, messages.clone(), tools.clone(), on_text_delta, config, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
@@ -683,10 +688,10 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 	validate_messages(input.messages) or {
 		return json_request_error(mut ctx, err.msg())
 	}
-	if configured_model() == none {
+	if app.configured_model() == none {
 		ctx.res.set_status(.service_unavailable)
 		return ctx.json(APIError{
-			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
+			error: 'Configure a provider, model, and API key in the TUI or through environment variables'
 		})
 	}
 	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }
@@ -874,10 +879,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'session not found'
 		})
 	}
-	if configured_model() == none {
+	if app.configured_model() == none {
 		ctx.res.set_status(.service_unavailable)
 		return ctx.json(APIError{
-			error: 'Configure VEASEL_MODEL_PROVIDER, VEASEL_MODEL, and the provider API key to use chat completions'
+			error: 'Configure a provider, model, and API key in the TUI or through environment variables'
 		})
 	}
 	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }

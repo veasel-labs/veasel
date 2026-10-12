@@ -38,6 +38,14 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_veasel_provider("google", "google/gemini-test"), ("gemini", "gemini-test"))
         self.assertEqual(
             _veasel_provider(
+                "openai",
+                "openai/gpt-test",
+                "openai-compatible",
+            ),
+            ("openai-compatible", "gpt-test"),
+        )
+        self.assertEqual(
+            _veasel_provider(
                 "openai-compatible",
                 "openai-compatible/gpt-test",
                 "openai-compatible",
@@ -49,7 +57,7 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "does not match"):
             _veasel_provider("openai", "anthropic/model")
         with self.assertRaisesRegex(ValueError, "override must match"):
-            _veasel_provider("openai", "openai/model", "openai-compatible")
+            _veasel_provider("anthropic", "anthropic/model", "openai-compatible")
 
     def test_harbor_factory_loads_documented_import_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -104,6 +112,7 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
             await agent.install(environment)
 
         command = str(environment.calls[-1]["command"])
+        self.assertIn("glibc 2.35 or newer", command)
         self.assertIn("releases/download/v1.2.3/veasel-Linux.tar.gz", command)
         self.assertIn("SHA256SUMS", command)
         self.assertIn("hashlib.sha256", command)

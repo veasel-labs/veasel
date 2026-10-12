@@ -6,17 +6,29 @@ back its messages and events. It uses V's production compiler mode and an
 in-memory SQLite database so the sample isolates application/database work
 from filesystem and network latency.
 
-Run it from the repository root with the pinned V compiler:
+Build the release binary first, as documented in
+[`../docs/V_BUILD_PROFILE.md`](../docs/V_BUILD_PROFILE.md). Then run the
+benchmark from the repository root with the same compiler and production
+profile:
 
 ```sh
-VEASEL_RUN_BENCHMARK=1 VJOBS=1 v -prod test store_benchmark_test.v
+VEASEL_RUN_BENCHMARK=1 VJOBS=1 \
+VEASEL_BENCH_BUILD_MANIFEST=dist/build.json \
+VEASEL_BENCH_COMMAND='v -cc gcc -prod test store_benchmark_test.v' \
+VEASEL_BENCH_OUTPUT=/tmp/session-store.json \
+  v -cc gcc -prod test store_benchmark_test.v
 ```
 
 Set `VEASEL_BENCH_ITERATIONS` to an integer from 1 to 10,000; the default is
 500. Output is one JSON record with operations, iteration count, throughput,
-and elapsed time. GitHub Actions retains the record for CI runs. Compare runs
-on the same operating system and hardware; hosted-runner timings are noisy and
-are reports, not a pass/fail performance promise.
+elapsed time, compile command, and release-build provenance. GitHub Actions
+retains the record for CI runs. Release binaries and this benchmark use the
+same platform compiler and `-prod` profile; see
+[`../docs/V_BUILD_PROFILE.md`](../docs/V_BUILD_PROFILE.md). Compare runs on the
+same operating system, architecture, compiler, and hardware; hosted-runner
+timings are noisy and are reports, not a pass/fail performance promise. The
+benchmark only measures in-memory SQLite session work. It is not evidence of
+agent task success, model efficiency, or end-to-end latency.
 
 ## Local CLI startup comparison
 

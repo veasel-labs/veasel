@@ -60,6 +60,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            binary: dist/veasel
+          - os: macos-latest
+            cc: clang
+            binary: dist/veasel
+          - os: windows-latest
+            cc: gcc
+            binary: dist/veasel.exe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: vlang/setup-v@663cc08827d1fc0532ee755b4dedbb183c11d06a # v1.7
@@ -116,7 +126,10 @@ jobs:
         working-directory: tui
       - name: Build backend on Unix
         if: runner.os != 'Windows'
-        run: v -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" -prod -o dist/veasel .
+        run: >-
+          v -cc ${{ matrix.cc }} -prod
+          -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}"
+          -o dist/veasel .
       - name: Verify Unix binary version
         if: runner.os != 'Windows'
         env:
@@ -137,8 +150,24 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Item -LiteralPath $sqlite_object | Format-List FullName,Length
           if (-not (Test-Path $sqlite_object)) { throw "V SQLite object was not created: $sqlite_object" }
-          & v -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" -prod -o dist/veasel.exe .
+          $build_args = @(
+            '-cc', 'gcc', '-prod', '-d',
+            "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}",
+            '-o', 'dist/veasel.exe', '.'
+          )
+          & v @build_args
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Write build provenance
+        env:
+          VEASEL_BUILD_COMMIT: ${{ github.sha }}
+          VEASEL_BUILD_CC: ${{ matrix.cc }}
+          VEASEL_RUNNER_OS: ${{ runner.os }}
+          VEASEL_RUNNER_ARCH: ${{ runner.arch }}
+          VEASEL_BUILD_FLAGS: >-
+            -cc ${{ matrix.cc }} -prod
+            -d veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}
+            -o ${{ matrix.binary }} .
+        run: node scripts/build-manifest.mjs "${{ matrix.binary }}" dist/build.json
       - name: Verify Windows binary version
         if: runner.os == 'Windows'
         shell: pwsh
@@ -192,16 +221,22 @@ jobs:
         run: scripts/api-smoke.sh
       - name: Benchmark SQLite session round trips
         if: runner.os == 'Linux'
+        env:
+          VEASEL_RUN_BENCHMARK: "1"
+          VEASEL_BENCH_OUTPUT: benchmark-results/session-store.json
+          VEASEL_BENCH_BUILD_MANIFEST: dist/build.json
+          VEASEL_BENCH_COMMAND: >-
+            v -cc ${{ matrix.cc }} -prod test store_benchmark_test.v
         run: |
           mkdir -p benchmark-results
-          VEASEL_RUN_BENCHMARK=1 VEASEL_BENCH_OUTPUT=benchmark-results/session-store.json v -prod test store_benchmark_test.v
+          v -cc ${{ matrix.cc }} -prod test store_benchmark_test.v
           cat benchmark-results/session-store.json
       - name: Package Unix binary
         if: runner.os != 'Windows'
-        run: tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel tui
+        run: tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel tui build.json
       - name: Package Windows binary
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/veasel.exe,dist/tui -DestinationPath dist/veasel-Windows.zip
+        run: Compress-Archive -Path dist/veasel.exe,dist/tui,dist/build.json -DestinationPath dist/veasel-Windows.zip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: veasel-${{ runner.os }}

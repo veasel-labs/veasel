@@ -10,9 +10,12 @@ The release job calculates a semantic version from the last `v*` tag (or the
 version in `v.mod` before the first tag), compiles Linux, macOS, and Windows
 archives with that exact version, and publishes the V backend, bundled
 terminal-client source/dependencies, SHA-256 sums, and a JSON source/asset
-manifest together. `veasel serve` runs without Bun; `veasel tui` requires Bun
-1.4.2 or newer. A failed check or platform build prevents publication. There
-is no manual upload or tag-cutting step.
+manifest together. Each platform archive includes `build.json`, which records
+the V revision, V and C compiler versions, target, exact build arguments, and
+the executable SHA-256. Release commands and compiler selection are documented
+in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). `veasel serve` runs without Bun;
+`veasel tui` requires Bun 1.4.2 or newer. A failed check or platform build
+prevents publication. There is no manual upload or tag-cutting step.
 
 These automated builds are prereleases while the product remains under active
 development. They are not stable compatibility promises. The mascot artwork

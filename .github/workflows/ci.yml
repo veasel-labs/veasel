@@ -200,6 +200,7 @@ jobs:
           v test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
           v test agent_runtime_test.v
+          v test headless_cli_test.v
           v test workspace_tools_test.v
       - name: Run Windows plugin, workspace edit, and recovery tests
         if: runner.os == 'Windows'
@@ -213,6 +214,8 @@ jobs:
           & v -d windows_7 test plugin_mcp_transport_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v test plugin_mcp_http_transport_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v -d windows_7 test headless_cli_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -d windows_7 test workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

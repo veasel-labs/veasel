@@ -52,6 +52,12 @@ def is_session_system(content):
 
 class MockProvider(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/hold-slow-response":
+            SLOW_RESPONSE_RELEASE.clear()
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if self.path != "/release-slow-response":
             self.send_error(404)
             return

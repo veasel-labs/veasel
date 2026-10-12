@@ -79,6 +79,25 @@ unauthenticated loopback HTTP address.
 The API also rejects non-loopback `Host` values and browser `Origin` headers
 outside loopback hosts.
 
+Run a non-interactive turn with the same provider configuration, local server,
+session database, agent loop, and approval rules:
+
+```sh
+veasel run --prompt "Explain the request flow in this repository" --workspace . --json
+```
+
+The command creates a durable session, submits an asynchronous turn, polls its
+operation state, and emits a JSON object containing the session and operation
+IDs, provider/model, completion status, and assistant response. Continue a
+conversation with `--session <uuid>`; its prior turns are loaded by the shared
+runtime. The wait limit defaults to 30 minutes and is configurable from 1 second
+to 24 hours. On timeout, the command requests cancellation and reports both IDs;
+provider transports can take time to finish cleanup, so inspect the operation in
+the TUI before retrying. Headless mode does not approve or apply proposed edits,
+shell commands, or MCP calls; those still require the existing explicit review
+flow. It supports unattended read-only tasks, but it is not yet a benchmark
+harness that automatically applies patches.
+
 Agent Plugin packages are discovered from `$VEASEL_PLUGIN_DIR` or
 `$VEASEL_DATA_DIR/plugins`. In the TUI, use `/skills` to list discovered
 Skills, `/skill on <plugin>/<skill>` to add one to the active session, and

@@ -122,6 +122,16 @@ pub:
 	status       string
 }
 
+struct SessionOperationResult {
+pub:
+	session_id   string
+	operation_id string
+	status       string
+	provider     string
+	model        string
+	content      string
+}
+
 struct CompletionResponse {
 pub:
 	provider string
@@ -773,6 +783,38 @@ pub fn (app &App) get_session_operation(mut ctx Context, id string, operation_id
 		})
 	}
 	return ctx.json(operation)
+}
+
+@['/v1/sessions/:id/operations/:operation_id/result'; get]
+pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
+	operation_id string) veb.Result {
+	canonical_id := canonical_operation_id(operation_id) or {
+		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
+	}
+	mut store := app.store
+	operation := store.get_session_operation(id, canonical_id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session operation not found'
+		})
+	}
+	if operation.status != 'completed' {
+		ctx.res.set_status(.conflict)
+		return ctx.json(APIError{
+			error: 'session operation is ${operation.status}'
+		})
+	}
+	content := store.assistant_text_for_operation(id, canonical_id) or {
+		return json_server_error(mut ctx, 'Unable to read assistant operation result')
+	}
+	return ctx.json(SessionOperationResult{
+		session_id:   id
+		operation_id: canonical_id
+		status:       operation.status
+		provider:     operation.provider
+		model:        operation.model
+		content:      content
+	})
 }
 
 @['/v1/sessions/:id/operations/:operation_id/cancel'; post]

@@ -185,6 +185,29 @@ jobs:
           if ($help_text -notmatch '(?m)^Examples:$') {
             throw 'Binary help is missing executable examples.'
           }
+          $env:VEASEL_PORT = '41873'
+          $env:VEASEL_DATA_DIR = Join-Path $env:RUNNER_TEMP "veasel-serve-help-$([guid]::NewGuid())"
+          $serve_stdout = Join-Path $env:RUNNER_TEMP 'veasel-serve-help.stdout'
+          $serve_stderr = Join-Path $env:RUNNER_TEMP 'veasel-serve-help.stderr'
+          $serve_process = Start-Process -FilePath 'dist/veasel.exe' -ArgumentList @('serve', '--help') `
+            -NoNewWindow -PassThru -RedirectStandardOutput $serve_stdout -RedirectStandardError $serve_stderr
+          if (-not $serve_process.WaitForExit(5000)) {
+            $serve_process.Kill()
+            throw 'serve --help did not exit without starting the backend.'
+          }
+          if ($serve_process.ExitCode -ne 0) {
+            Get-Content $serve_stderr
+            throw "serve --help exited with $($serve_process.ExitCode)."
+          }
+          $serve_help = Get-Content $serve_stdout -Raw
+          if ($serve_help -notmatch '(?m)^Usage: veasel serve$') {
+            throw 'serve --help did not print its command usage.'
+          }
+          if (Test-Path $env:VEASEL_DATA_DIR) {
+            throw 'serve --help unexpectedly initialized backend data.'
+          }
+          Remove-Item Env:VEASEL_PORT
+          Remove-Item Env:VEASEL_DATA_DIR
       - name: Bundle terminal client on Unix
         if: runner.os != 'Windows'
         run: cp -R tui dist/tui

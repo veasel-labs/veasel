@@ -187,6 +187,10 @@ cd "$repo_root"
 "$work_dir/veasel" --help >"$work_dir/help"
 expected_version="$(sed -n '1s/^Veasel Code //p' "$work_dir/help")"
 [[ -n "$expected_version" ]] || fail 'CLI version is missing from help output'
+timeout --foreground -k 2s 5s env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/serve-help-data" \
+	"$work_dir/veasel" serve --help >"$work_dir/serve-help"
+grep -Fq 'Usage: veasel serve' "$work_dir/serve-help" || fail 'serve help is missing'
+[[ ! -e "$work_dir/serve-help-data" ]] || fail 'serve help unexpectedly initialized backend data'
 start_server
 expect_status 403 -H 'Host: attacker.example' "$api/v1/health"
 

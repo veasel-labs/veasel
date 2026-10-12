@@ -79,6 +79,9 @@ fail() {
 	if [[ -f "$work_dir/headless.log" ]]; then
 		cat "$work_dir/headless.log" >&2
 	fi
+	if [[ -f "$work_dir/headless-continuation.log" ]]; then
+		cat "$work_dir/headless-continuation.log" >&2
+	fi
 	if [[ -f "$work_dir/headless-result" ]]; then
 		cat "$work_dir/headless-result" >&2
 	fi
@@ -372,6 +375,32 @@ PY
 		curl -fsS "$api/v1/sessions/$headless_session_id/messages" >"$work_dir/headless-messages"
 		grep -Fq '"content":"Say hello"' "$work_dir/headless-messages" || fail 'headless user turn was not persisted'
 		grep -Fq '"content":"Provider fixture reply"' "$work_dir/headless-messages" || fail 'headless assistant turn was not persisted'
+		printf 'Smoke: continuing the same headless session with an independent operation ID\n'
+		env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
+			"$work_dir/veasel" run --prompt 'Say hello' --session "$headless_session_id" --json \
+			>"$work_dir/headless-continuation-result" 2>"$work_dir/headless-continuation.log" \
+			|| fail 'headless session continuation failed'
+		python3 - "$work_dir/headless-continuation-result" "$headless_session_id" \
+			"$work_dir/headless-result" <<'PY'
+import json
+import sys
+
+continued = json.load(open(sys.argv[1], encoding="utf-8"))
+first = json.load(open(sys.argv[3], encoding="utf-8"))
+assert continued["status"] == "completed", continued
+assert continued["session_id"] == sys.argv[2], continued
+assert continued["operation_id"] != first["operation_id"], continued
+assert continued["response"] == "Provider fixture reply", continued
+PY
+		curl -fsS "$api/v1/sessions/$headless_session_id/messages" >"$work_dir/headless-messages"
+		python3 - "$work_dir/headless-messages" <<'PY'
+import json
+import sys
+
+messages = json.load(open(sys.argv[1], encoding="utf-8"))
+assert sum(message["role"] == "user" and message["content"] == "Say hello" for message in messages) == 2
+assert sum(message["role"] == "assistant" and message["content"] == "Provider fixture reply" for message in messages) == 2
+PY
 	fi
 	event_cursor="$(python3 -c 'import sqlite3, sys; db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True); print(db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0])' "$work_dir/data/veasel.sqlite3")"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \

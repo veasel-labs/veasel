@@ -70,7 +70,7 @@ Press `s` on the home screen, or enter `/models` in an open session, to search
 and choose a provider in the keyboard-driven settings list, then configure its
 model, endpoint, and API key. Presets
 cover Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
-endpoints including [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, Groq, Hugging Face,
+endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
 Hyperbolic, Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, OpenRouter,
 Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
 xAI, [Z.AI](https://docs.z.ai/), Cloudflare Workers AI, [Atomic Chat](https://opencode.ai/docs/providers/), llama.cpp, LM Studio, LocalAI, and vLLM. Local

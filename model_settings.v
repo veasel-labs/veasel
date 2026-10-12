@@ -8,7 +8,7 @@ const supported_model_providers = ['openai-compatible', 'openai', 'anthropic', '
 	'groq', 'together', 'fireworks', 'mistral', 'openrouter', 'xai', 'cerebras', 'perplexity',
 	'deepinfra', 'venice', 'ollama', 'hyperbolic', 'moonshot', 'nvidia', 'siliconflow', 'sambanova',
 	'novita', 'nebius', 'huggingface', 'vercel', 'cloudflare-workers-ai', 'llama-cpp', 'lmstudio',
-	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai']
+	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai', '302-ai', 'gmi-cloud']
 
 pub struct ModelProviderInfo {
 pub:
@@ -23,7 +23,9 @@ pub:
 
 fn model_provider_catalog() []ModelProviderInfo {
 	return [
+		ModelProviderInfo{ id: '302-ai', name: '302.AI', description: 'Multi-model gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.302.ai/v1', environment_key: '302AI_API_KEY' },
 		ModelProviderInfo{ id: 'dashscope', name: 'Alibaba Cloud Model Studio', description: 'Qwen and hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://dashscope-us.aliyuncs.com/compatible-mode/v1', environment_key: 'DASHSCOPE_API_KEY' },
+		ModelProviderInfo{ id: 'gmi-cloud', name: 'GMI Cloud', description: 'Hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.gmi-serving.com/v1', environment_key: 'GMI_API_KEY' },
 		ModelProviderInfo{ id: 'anthropic', name: 'Anthropic', description: 'Claude models · native Messages API', protocol: 'anthropic', base_url: 'https://api.anthropic.com/v1', environment_key: 'ANTHROPIC_API_KEY' },
 		ModelProviderInfo{ id: 'atomic-chat', name: 'Atomic Chat', description: 'Local models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:1337/v1', requires_api_key: false },
 		ModelProviderInfo{ id: 'cerebras', name: 'Cerebras', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cerebras.ai/v1', environment_key: 'CEREBRAS_API_KEY' },

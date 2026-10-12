@@ -1109,6 +1109,8 @@ components:
             - atomic-chat
             - dashscope
             - zai
+            - 302-ai
+            - gmi-cloud
         model:
           type: string
           minLength: 1
@@ -1164,6 +1166,8 @@ components:
             - atomic-chat
             - dashscope
             - zai
+            - 302-ai
+            - gmi-cloud
         profiles:
           type: object
           additionalProperties:

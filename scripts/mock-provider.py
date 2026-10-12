@@ -12,11 +12,13 @@ API_KEYS = {
     "openai-compatible": "veasel-openai-key",
     "dashscope": "veasel-dashscope-key",
     "zai": "veasel-zai-key",
+    "302-ai": "veasel-302-ai-key",
+    "gmi-cloud": "veasel-gmi-cloud-key",
     "anthropic": "veasel-anthropic-key",
     "gemini": "veasel-gemini-key",
 }
 OPENAI_COMPATIBLE_API_KEYS = {
-    API_KEYS[provider] for provider in ("openai-compatible", "dashscope", "zai")
+    API_KEYS[provider] for provider in ("openai-compatible", "dashscope", "zai", "302-ai", "gmi-cloud")
 }
 
 

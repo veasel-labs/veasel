@@ -14,11 +14,13 @@ API_KEYS = {
     "zai": "veasel-zai-key",
     "302-ai": "veasel-302-ai-key",
     "gmi-cloud": "veasel-gmi-cloud-key",
+    "minimax": "veasel-minimax-key",
+    "scaleway": "veasel-scaleway-key",
     "anthropic": "veasel-anthropic-key",
     "gemini": "veasel-gemini-key",
 }
 OPENAI_COMPATIBLE_API_KEYS = {
-    API_KEYS[provider] for provider in ("openai-compatible", "dashscope", "zai", "302-ai", "gmi-cloud")
+    API_KEYS[provider] for provider in ("openai-compatible", "dashscope", "zai", "302-ai", "gmi-cloud", "minimax", "scaleway")
 }
 
 

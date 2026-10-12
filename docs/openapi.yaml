@@ -1111,6 +1111,8 @@ components:
             - zai
             - 302-ai
             - gmi-cloud
+            - minimax
+            - scaleway
         model:
           type: string
           minLength: 1
@@ -1168,6 +1170,8 @@ components:
             - zai
             - 302-ai
             - gmi-cloud
+            - minimax
+            - scaleway
         profiles:
           type: object
           additionalProperties:

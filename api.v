@@ -824,10 +824,33 @@ pub fn (app &App) get_session_messages(mut ctx Context, id string) veb.Result {
 			error: 'session not found'
 		})
 	}
-	messages := app.store.messages_for_session(id, 100) or {
+	before_id, limit := parse_session_history_query(ctx.query) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	messages := app.store.messages_page_for_session(id, limit, before_id) or {
 		return json_server_error(mut ctx, 'Unable to read session messages')
 	}
 	return ctx.json(messages)
+}
+
+fn parse_session_history_query(query map[string]string) !(int, int) {
+	mut limit := max_session_history_page_size
+	if raw_limit := query['limit'] {
+		limit = strconv.atoi(raw_limit) or {
+			return error('limit must be an integer from 1 to ${max_session_history_page_size}')
+		}
+		if limit < 1 || limit > max_session_history_page_size {
+			return error('limit must be an integer from 1 to ${max_session_history_page_size}')
+		}
+	}
+	mut before_id := 0
+	if raw_before_id := query['before'] {
+		before_id = strconv.atoi(raw_before_id) or { return error('before must be a positive message ID') }
+		if before_id < 1 {
+			return error('before must be a positive message ID')
+		}
+	}
+	return before_id, limit
 }
 
 @['/v1/sessions/:id/messages'; post]

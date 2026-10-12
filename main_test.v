@@ -675,6 +675,33 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	assert events[2].type == 'message.created'
 }
 
+fn test_chat_history_pages_use_an_exclusive_message_cursor() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Paged chat', directory: '/tmp/chat' }) or {
+		panic(err)
+	}
+	for index in 0 .. 3 {
+		_ = store.append_exchange(session.id, '', 'Question ${index}', 'Answer ${index}', '', '') or {
+			panic(err)
+		}
+	}
+	latest := store.messages_page_for_session(session.id, 2, 0) or { panic(err) }
+	assert latest.len == 2
+	assert latest[0].content == 'Question 2'
+	assert latest[1].content == 'Answer 2'
+	previous := store.messages_page_for_session(session.id, 2, latest[0].id) or { panic(err) }
+	assert previous.len == 2
+	assert previous[0].content == 'Question 1'
+	assert previous[1].content == 'Answer 1'
+	mut invalid_cursor_rejected := false
+	_ = store.messages_page_for_session(session.id, 2, -1) or {
+		invalid_cursor_rejected = true
+		[]ChatTurn{}
+	}
+	assert invalid_cursor_rejected
+}
+
 fn test_async_session_turn_completion_event_commits_with_exchange() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

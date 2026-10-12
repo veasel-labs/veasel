@@ -110,7 +110,23 @@ paths:
           format: uuid
     get:
       operationId: listSessionMessages
-      description: Returns up to the latest 100 persisted turns in chronological order.
+      description: Returns up to 100 persisted messages in chronological order, newest page first. Use the first message ID from a page as the exclusive before cursor to fetch the preceding page. Omitting before returns the latest page; limit defaults to 100.
+      parameters:
+        - in: query
+          name: before
+          required: false
+          description: Positive message ID; return messages with lower IDs.
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: limit
+          required: false
+          description: Page size, default 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
       responses:
         '200':
           description: Session chat history.
@@ -120,6 +136,12 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ChatTurn'
+        '400':
+          description: Invalid cursor or page size.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           description: Session not found.
           content:

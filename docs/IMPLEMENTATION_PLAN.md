@@ -72,7 +72,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   terminal success with chat history, and classify active work as `uncertain`
   after restart without replaying provider calls or tool effects.
 - [ ] Durable queued jobs, cancellation across server restarts, bounded job
-  retention, history listing, token usage, and operation observability.
+  retention, token usage, and operation observability.
+- [x] Add bounded, cursor-paginated session chat history while retaining the
+  latest-100 default response for existing clients.
 - [ ] Recovery classification; require human intervention for uncertain effects.
 - [ ] Execution history, token usage, and observability.
 

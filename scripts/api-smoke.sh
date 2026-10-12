@@ -179,6 +179,7 @@ start_server() {
 			VEASEL_MODEL_PROVIDER="$1" VEASEL_MODEL=smoke-model \
 			OPENAI_API_KEY=veasel-openai-key ANTHROPIC_API_KEY=veasel-anthropic-key \
 			GEMINI_API_KEY=veasel-gemini-key \
+			DASHSCOPE_API_KEY=veasel-dashscope-key ZAI_API_KEY=veasel-zai-key \
 			VEASEL_MODEL_BASE_URL="http://127.0.0.1:$(cat "$work_dir/provider.port")${provider_base}" \
 			"$work_dir/veasel" serve >"$work_dir/server.log" 2>&1 &
 	else
@@ -355,7 +356,7 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 	sleep 0.1
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
-for provider in openai-compatible anthropic gemini; do
+for provider in openai-compatible anthropic gemini dashscope zai; do
 	printf 'Smoke: provider workflow starting (%s)\n' "$provider"
 	rm -f "$work_dir/workspace/approved-effect.txt"
 	cat >"$work_dir/workspace/src/main.v" <<'EOF'
@@ -384,6 +385,8 @@ expected = {
     "openai-compatible": ("smoke-model", "smoke-model"),
     "anthropic": ("claude-fixture", "Claude Fixture"),
     "gemini": ("gemini-fixture", "Gemini Fixture"),
+    "dashscope": ("smoke-model", "smoke-model"),
+    "zai": ("smoke-model", "smoke-model"),
 }[sys.argv[2]]
 assert models.get(expected[0]) == expected[1], models
 if sys.argv[2] == "gemini":
@@ -827,8 +830,11 @@ import sys
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["active_provider"] == "openai-compatible"
 providers = {provider["id"]: provider for provider in settings["providers"]}
-assert len(providers) >= 25
+assert len(providers) >= 33
 assert providers["ollama"]["requires_api_key"] is False
+assert providers["atomic-chat"]["requires_api_key"] is False
+assert providers["dashscope"]["environment_key"] == "DASHSCOPE_API_KEY"
+assert providers["zai"]["protocol"] == "openai-compatible"
 assert providers["deepseek"]["protocol"] == "openai-compatible"
 assert providers["anthropic"]["protocol"] == "anthropic"
 profile = settings["profiles"]["openai-compatible"]

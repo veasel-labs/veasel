@@ -127,7 +127,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
-- [x] Deliver a server-owned 25-provider catalog and keyboard-navigable TUI
+- [x] Deliver a server-owned 33-provider catalog and keyboard-navigable TUI
   provider picker with protocol descriptions, environment-key hints, editable
   endpoints, and a local no-key Ollama profile. OpenAI-compatible presets use
   the shared Chat Completions transport; provider-specific auth and SDK features

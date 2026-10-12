@@ -1075,7 +1075,40 @@ components:
       properties:
         provider:
           type: string
-          enum: [openai-compatible, openai, anthropic, gemini, deepseek, groq, together, fireworks, mistral, openrouter, xai, cerebras, perplexity, deepinfra, venice, ollama, hyperbolic, moonshot, nvidia, siliconflow, sambanova, novita, nebius, huggingface, vercel]
+          enum:
+            - openai-compatible
+            - openai
+            - anthropic
+            - gemini
+            - deepseek
+            - groq
+            - together
+            - fireworks
+            - mistral
+            - openrouter
+            - xai
+            - cerebras
+            - perplexity
+            - deepinfra
+            - venice
+            - ollama
+            - hyperbolic
+            - moonshot
+            - nvidia
+            - siliconflow
+            - sambanova
+            - novita
+            - nebius
+            - huggingface
+            - vercel
+            - cloudflare-workers-ai
+            - llama-cpp
+            - lmstudio
+            - localai
+            - vllm
+            - atomic-chat
+            - dashscope
+            - zai
         model:
           type: string
           minLength: 1
@@ -1097,7 +1130,40 @@ components:
       properties:
         active_provider:
           type: string
-          enum: [openai-compatible, openai, anthropic, gemini, deepseek, groq, together, fireworks, mistral, openrouter, xai, cerebras, perplexity, deepinfra, venice, ollama, hyperbolic, moonshot, nvidia, siliconflow, sambanova, novita, nebius, huggingface, vercel]
+          enum:
+            - openai-compatible
+            - openai
+            - anthropic
+            - gemini
+            - deepseek
+            - groq
+            - together
+            - fireworks
+            - mistral
+            - openrouter
+            - xai
+            - cerebras
+            - perplexity
+            - deepinfra
+            - venice
+            - ollama
+            - hyperbolic
+            - moonshot
+            - nvidia
+            - siliconflow
+            - sambanova
+            - novita
+            - nebius
+            - huggingface
+            - vercel
+            - cloudflare-workers-ai
+            - llama-cpp
+            - lmstudio
+            - localai
+            - vllm
+            - atomic-chat
+            - dashscope
+            - zai
         profiles:
           type: object
           additionalProperties:

@@ -63,7 +63,7 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 		assert provider.name.len > 0
 		assert provider.description.len > 0
 		assert provider.base_url.starts_with('https://')
-			|| provider.id in ['ollama', 'llama-cpp', 'lmstudio', 'localai', 'vllm']
+			|| provider.id in ['atomic-chat', 'ollama', 'llama-cpp', 'lmstudio', 'localai', 'vllm']
 		assert provider.protocol in ['anthropic', 'gemini', 'openai-compatible']
 	}
 	assert seen['openai-compatible']
@@ -72,6 +72,18 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['deepseek']
 	assert seen['openrouter']
 	assert seen['ollama']
+	assert seen['atomic-chat']
+	assert seen['dashscope']
+	assert seen['zai']
+	atomic_chat := model_provider_info('atomic-chat') or { panic('Atomic Chat missing') }
+	assert atomic_chat.base_url == 'http://127.0.0.1:1337/v1'
+	assert !atomic_chat.requires_api_key
+	dashscope := model_provider_info('dashscope') or { panic('DashScope missing') }
+	assert dashscope.environment_key == 'DASHSCOPE_API_KEY'
+	assert dashscope.protocol == 'openai-compatible'
+	zai := model_provider_info('zai') or { panic('Z.AI missing') }
+	assert zai.base_url == 'https://api.z.ai/api/paas/v4'
+	assert zai.protocol == 'openai-compatible'
 	ollama := model_provider_info('ollama') or { panic('Ollama missing from catalog') }
 	assert !ollama.requires_api_key
 	for provider in ['llama-cpp', 'lmstudio', 'localai', 'vllm'] {
@@ -85,6 +97,13 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	}
 	assert cloudflare.requires_api_key
 	assert cloudflare.base_url.contains('/accounts/YOUR_ACCOUNT_ID/ai/v1')
+}
+
+fn test_provider_catalog_ids_are_declared_in_openapi() {
+	openapi := os.read_file('docs/openapi.yaml') or { panic(err) }
+	for provider in supported_model_providers {
+		assert openapi.contains('- ${provider}')
+	}
 }
 
 fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
@@ -110,6 +129,8 @@ fn test_provider_environment_key_uses_catalog_mapping() {
 		'xai':                   'XAI_API_KEY'
 		'vercel':                'AI_GATEWAY_API_KEY'
 		'cloudflare-workers-ai': 'CLOUDFLARE_API_TOKEN'
+		'dashscope':             'DASHSCOPE_API_KEY'
+		'zai':                   'ZAI_API_KEY'
 	} {
 		os.setenv(key, 'fixture-${provider}-key', true)
 		defer { os.unsetenv(key) }

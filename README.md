@@ -56,24 +56,26 @@ actions.
 
 ## Development
 
-Start the V API in one terminal. For example, using Gemini:
+Build the V backend and choose a model directly in the TUI:
 
 ```sh
-export VEASEL_MODEL_PROVIDER=gemini
-export VEASEL_MODEL=your-model-name
-export GEMINI_API_KEY=your-api-key
-v run . serve
+v run .
 ```
 
-Then launch the TUI from the repository in a second terminal:
-
-```sh
-v run . tui
-```
-
-The server defaults to `127.0.0.1:4097`. Set `VEASEL_DATA_DIR` to choose the
-directory for `veasel.sqlite3`. Remote binding is not implemented. The TUI
-accepts `VEASEL_API_URL` only for an unauthenticated loopback HTTP address.
+With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
+starts `veasel serve` and waits for its health endpoint before opening the TUI.
+Press `s` on the home screen, or enter `/models` in an open session, to choose a
+provider, model, endpoint, and API key. Provider profiles are stored in
+`$VEASEL_DATA_DIR/model-settings.json` with owner-only file permissions on
+POSIX systems. Keys are stored locally in plaintext; use environment-based keys
+if your machine's local storage policy requires OS-managed secret storage.
+Saved provider/model/endpoint profiles take precedence over corresponding
+configuration variables; provider API-key environment variables take
+precedence over a saved key. Use a separate `VEASEL_DATA_DIR` for isolated
+headless configuration.
+`veasel serve` remains available to run the backend by itself, and `veasel tui`
+also starts or reuses the backend. The TUI accepts `VEASEL_API_URL` only for an
+unauthenticated loopback HTTP address.
 The API also rejects non-loopback `Host` values and browser `Origin` headers
 outside loopback hosts.
 
@@ -104,12 +106,13 @@ they never add tools or bypass MCP trust, file approval, or shell approval.
 Install only plugins you trust. Agent Plugins support is experimental and does
 not claim full v1.0.0 conformance.
 
-The initial completion adapters support `openai-compatible` (the default),
-`anthropic`, and `gemini`. Set `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, and a
-provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`;
-`VEASEL_MODEL_API_KEY` can override these). `VEASEL_MODEL_BASE_URL` defaults to
-the selected provider's API root; custom endpoints must use HTTPS or loopback
-HTTP. Keys are read only by the V backend and are never returned by the API.
+The completion adapters support `openai-compatible`, `openai`, `anthropic`,
+and `gemini`. Configure provider profiles in the TUI, or use
+`VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, `VEASEL_MODEL_BASE_URL`, and a provider
+key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`; the shared
+`VEASEL_MODEL_API_KEY` also works). Environment configuration remains available
+for scripts and headless use. Custom endpoints must use HTTPS or loopback HTTP.
+Keys are never returned by the API.
 The TUI sends messages through `/v1/sessions/:id/messages` and reloads the
 persisted conversation when a session opens. Enter `/history older` in a
 session to load its preceding 100 messages without losing the visible history.

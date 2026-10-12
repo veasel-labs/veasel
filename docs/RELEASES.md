@@ -17,6 +17,10 @@ in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). `veasel serve` runs without Bun;
 `veasel tui` requires Bun 1.4.2 or newer. A failed check or platform build
 prevents publication. There is no manual upload or tag-cutting step.
 
+The no-argument `veasel` command and `veasel tui` start a local server when its
+health endpoint is not already responding, then launch the bundled TUI. The TUI
+requires Bun 1.4.2 or newer.
+
 These automated builds are prereleases while the product remains under active
 development. They are not stable compatibility promises. The mascot artwork
 licensing restriction documented in `THIRD_PARTY_NOTICES.md` also applies to

@@ -588,4 +588,36 @@ expect_status 502 -H 'content-type: application/json' \
 	-d '{"messages":[{"role":"user","content":"Say hello"}]}' "$api/v1/chat/completions"
 grep -Fq 'Model provider request failed' "$work_dir/response" || fail 'provider redirect response was not rejected'
 
+printf 'Smoke: model settings API redaction and persistence\n'
+curl -fsS "$api/v1/config/model" >"$work_dir/model-settings-before"
+expect_status 400 -H 'content-type: application/json' \
+	-d '{"provider":"unsupported","model":"smoke-model","base_url":"https://example.com"}' \
+	"$api/v1/config/model"
+expect_status 200 -X POST -H 'content-type: application/json' \
+	-d '{"provider":"openai-compatible","model":"settings-smoke-model","base_url":"http://127.0.0.1:1/v1","api_key":"smoke-only-model-key"}' \
+	"$api/v1/config/model"
+grep -Fq '"api_key_saved":true' "$work_dir/response" || fail 'saved API key presence is missing from settings response'
+! grep -Fq 'smoke-only-model-key' "$work_dir/response" || fail 'settings API exposed the saved API key'
+[[ "$(stat -c '%a' "$work_dir/data/model-settings.json")" == '600' ]] || fail 'model settings file is not owner-only'
+grep -Fq 'smoke-only-model-key' "$work_dir/data/model-settings.json" || fail 'saved model key was not persisted'
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+server_pid=""
+start_server openai-compatible redirect
+curl -fsS "$api/v1/config/model" >"$work_dir/model-settings-after"
+python3 - "$work_dir/model-settings-after" <<'PY'
+import json
+import sys
+
+settings = json.load(open(sys.argv[1], encoding="utf-8"))
+assert settings["active_provider"] == "openai-compatible"
+profile = settings["profiles"]["openai-compatible"]
+assert profile["model"] == "settings-smoke-model"
+assert profile["api_key_saved"] is True
+assert "api_key" not in profile
+assert "smoke-only-model-key" not in json.dumps(settings)
+PY
+grep -Fq 'smoke-only-model-key' "$work_dir/data/model-settings.json" || fail 'model key was lost after server restart'
+! grep -Fq 'smoke-only-model-key' "$work_dir/server.log" || fail 'server logs exposed the model API key'
+
 printf 'API and provider smoke passed\n'

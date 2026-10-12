@@ -77,8 +77,9 @@ pub:
 @[heap]
 struct Store {
 mut:
-	mu sync.Mutex
-	db sqlite.DB
+	mu   sync.Mutex
+	db   sqlite.DB
+	path string
 }
 
 struct InterruptedWorkspaceEdit {
@@ -488,8 +489,16 @@ fn open_store(path string) !&Store {
 		}
 	}
 	return &Store{
-		db: db
+		db:   db
+		path: path
 	}
+}
+
+fn (store &Store) model_settings_path() string {
+	if store.path == ':memory:' {
+		return ''
+	}
+	return os.join_path(os.dir(store.path), 'model-settings.json')
 }
 
 fn (mut store Store) create_shell_command(session_id string, draft ShellCommandDraft) !ShellCommandSummary {

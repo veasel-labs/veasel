@@ -5,6 +5,7 @@ export type HelpItem = {
 
 export const helpItems: HelpItem[] = [
   { command: "/help, /?", description: "Show this guide." },
+  { command: "s · /models", description: "Configure your provider and model from the home screen or a session." },
   { command: "/skills · /skill on|off <plugin>/<skill>", description: "List or manage session Skills." },
   { command: "/mcp · /mcp calls", description: "List servers or calls waiting for review." },
   { command: "/mcp call show|approve|reject <id>", description: "Inspect arguments, then approve once or reject." },
@@ -19,6 +20,10 @@ export function unknownSlashCommand(input: string): string | undefined {
   return command.startsWith("/") ? command : undefined
 }
 
+export function isModelSettingsCommand(input: string): boolean {
+  return input.trim() === "/models"
+}
+
 export function renderHelp(compact = false) {
   if (compact) {
     return [
@@ -26,6 +31,7 @@ export function renderHelp(compact = false) {
       "/help advanced  Show command syntax",
       "/skills · /mcp · /patches · /commands",
       "/history older  Load earlier messages",
+      "s · /models  Configure provider and model",
       "Files go to your provider. Review diffs and MCP calls.",
       "Approved shell runs as you without a sandbox.",
     ].join("\n")

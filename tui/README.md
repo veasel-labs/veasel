@@ -12,6 +12,8 @@ client. Start the V server separately with `v run . serve`. Set
 
 The client can list and refresh sessions, create one for the current working
 directory, inspect its metadata, and reconnect to the replayable event stream.
+Enter `/help` inside a session to see available commands, keyboard shortcuts,
+and the review steps for file edits, shell commands, and MCP tool calls.
 It sends chat turns with `Prefer: respond-async`, renders durable assistant
 deltas while the operation runs, and reloads the committed exchange after its
 `session.turn_completed` event. This releases an HTTP worker while the model or

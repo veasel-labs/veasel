@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterModelProviders, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 const providers: ModelProvider[] = [
   { id: "anthropic", name: "Anthropic", description: "Claude models", protocol: "anthropic", base_url: "https://api.anthropic.com/v1", environment_key: "ANTHROPIC_API_KEY", requires_api_key: true },
@@ -20,5 +20,25 @@ describe("model provider picker", () => {
     expect(filterModelProviders(providers, "anthropic_api_key").map(({ id }) => id)).toEqual(["anthropic"])
     expect(filterModelProviders(providers, "local models").map(({ id }) => id)).toEqual(["ollama"])
     expect(filterModelProviders(providers, "chat completions").map(({ id }) => id)).toEqual(["deepseek"])
+  })
+})
+
+describe("provider model picker", () => {
+  const models: ModelCatalogEntry[] = [
+    { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+    { id: "gpt-5-codex", name: "GPT-5 Codex" },
+  ]
+
+  test("filters by model ID and display name", () => {
+    expect(filterModelCatalog(models, "CODEX").map(({ id }) => id)).toEqual(["gpt-5-codex"])
+    expect(filterModelCatalog(models, "sonnet").map(({ id }) => id)).toEqual(["claude-sonnet-4"])
+  })
+
+  test("keeps all models for an empty query", () => {
+    expect(filterModelCatalog(models, " ")).toEqual(models)
+  })
+
+  test("removes terminal control and bidirectional formatting characters from labels", () => {
+    expect(safeModelCatalogText("safe\u001b[2J\u202Ename\u009b")).toBe("safe[2Jname")
   })
 })

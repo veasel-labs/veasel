@@ -54,6 +54,28 @@ def is_session_system(content):
 
 class MockProvider(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path in ("/v1/models", "/v1beta/models"):
+            if self.headers.get("Authorization") == f"Bearer {API_KEYS['openai-compatible']}":
+                payload = {"data": [{"id": "smoke-model", "object": "model", "owned_by": "fixture"}]}
+            elif self.headers.get("x-api-key") == API_KEYS["anthropic"]:
+                payload = {"data": [{"type": "model", "id": "claude-fixture", "display_name": "Claude Fixture"}]}
+            elif self.headers.get("x-goog-api-key") == API_KEYS["gemini"]:
+                payload = {
+                    "models": [
+                        {"name": "models/gemini-fixture", "displayName": "Gemini Fixture", "supportedGenerationMethods": ["generateContent"]},
+                        {"name": "models/embed-fixture", "displayName": "Embedding Fixture", "supportedGenerationMethods": ["embedContent"]},
+                    ]
+                }
+            else:
+                self.send_error(401)
+                return
+            encoded = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+            return
         if self.path == "/hold-slow-response":
             SLOW_RESPONSE_RELEASE.clear()
             self.send_response(204)

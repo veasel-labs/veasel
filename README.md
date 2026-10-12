@@ -74,6 +74,12 @@ Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice, and
 xAI. The list is delivered by the backend API so the TUI does not maintain a
 second provider catalog. Compatible presets use the same Chat Completions wire
 format; provider-specific features beyond that contract are not implied.
+After selecting a provider, Settings can request its available model IDs from the
+configured endpoint using that provider's saved or environment credential. This
+request only lists models; it does not send a prompt or start generation. If
+credentials are not configured, the endpoint does not expose a compatible model
+list, or the request fails, enter a model ID manually. Provider-returned labels
+are sanitized before they are rendered in the terminal.
 Ollama is the local no-key preset. Add other compatible services through the
 custom endpoint preset. Provider profiles are stored in
 `$VEASEL_DATA_DIR/model-settings.json` with owner-only file permissions on

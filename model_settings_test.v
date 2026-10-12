@@ -124,6 +124,47 @@ fn test_ollama_profile_builds_a_local_model_config_without_credentials() {
 	store.close() or { panic(err) }
 }
 
+fn test_provider_model_catalog_parsers() {
+	openai_models := parse_provider_model_catalog('openai-compatible',
+		'{"data":[{"id":"gpt-5","created":1,"object":"model","owned_by":"openai"},{"id":"fixture-model","name":"Fixture Model"}]}') or {
+		panic(err)
+	}
+	assert openai_models.len == 2
+	assert openai_models[0].id == 'gpt-5'
+	assert openai_models[0].name == 'gpt-5'
+	assert openai_models[1].name == 'Fixture Model'
+
+	claude_models := parse_provider_model_catalog('anthropic',
+		'{"data":[{"type":"model","id":"claude-sonnet","display_name":"Claude Sonnet","created_at":"2026-01-01T00:00:00Z"}]}') or {
+		panic(err)
+	}
+	assert claude_models.len == 1
+	assert claude_models[0].id == 'claude-sonnet'
+	assert claude_models[0].name == 'Claude Sonnet'
+
+	gemini_models := parse_provider_model_catalog('gemini',
+		'{"models":[{"name":"models/gemini-2.5-pro","displayName":"Gemini 2.5 Pro","supportedGenerationMethods":["generateContent"]},{"name":"models/text-embedding-004","displayName":"Embedding","supportedGenerationMethods":["embedContent"]}]}') or {
+		panic(err)
+	}
+	assert gemini_models.len == 1
+	assert gemini_models[0].id == 'gemini-2.5-pro'
+	assert gemini_models[0].name == 'Gemini 2.5 Pro'
+}
+
+fn test_provider_model_catalog_rejects_invalid_data_and_deduplicates() {
+	models := parse_provider_model_catalog('openai-compatible',
+		'{"data":[{"id":"gpt-5"},{"id":"gpt-5"},{"id":""},{"id":"${'x'.repeat(201)}"}]}') or {
+		panic(err)
+	}
+	assert models.len == 1
+	assert models[0].id == 'gpt-5'
+	parse_provider_model_catalog('gemini', '{invalid') or {
+		assert err.msg() == 'model catalog response is invalid'
+		return
+	}
+	assert false
+}
+
 fn test_model_settings_persistence_failure_does_not_change_active_configuration() {
 	root := os.join_path(os.temp_dir(), 'veasel-model-settings-${uuid.new_v4().str()}')
 	blocker := os.join_path(root, 'not-a-directory')

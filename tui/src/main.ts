@@ -11,7 +11,7 @@ import {
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
-import { filterModelProviders, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 type Session = {
   id: string
@@ -253,7 +253,12 @@ let settingsOpen = false
 let settingsInput: InputRenderable | undefined
 let settingsSecretIndicator: TextRenderable | undefined
 let settingsProviderSelect: SelectRenderable | undefined
+let settingsModelSelect: SelectRenderable | undefined
 let settingsProviderQuery = ""
+let settingsModelSearchQuery = ""
+let settingsModelCatalog: ModelCatalogEntry[] | undefined
+let settingsModelHint = ""
+let settingsManualModel = false
 let settingsStep = 0
 let settingsView: ModelSettingsView | undefined
 const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false }
@@ -1161,19 +1166,25 @@ function beginCreate() {
 
 const settingPrompts = [
   "Choose a provider. The model and endpoint can be changed in the next steps.",
-  "Model identifier (for example claude-sonnet-4-5 or gpt-5):",
+  "Choose a model exposed by this provider, or enter an ID manually.",
   "API base URL (must use HTTPS, except loopback HTTP):",
   "API key (hidden; Enter keeps a saved key, !clear removes it; optional for Ollama):",
 ]
 
 function closeSettings(message = "Settings unchanged.") {
   if (settingsProviderSelect) detail.remove(settingsProviderSelect)
+  if (settingsModelSelect) detail.remove(settingsModelSelect)
   if (settingsInput) detail.remove(settingsInput)
   if (settingsSecretIndicator) detail.remove(settingsSecretIndicator)
   settingsInput = undefined
   settingsSecretIndicator = undefined
   settingsProviderSelect = undefined
+  settingsModelSelect = undefined
   settingsProviderQuery = ""
+  settingsModelSearchQuery = ""
+  settingsModelCatalog = undefined
+  settingsModelHint = ""
+  settingsManualModel = false
   settingsValues.api_key = ""
   settingsOpen = false
   sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
@@ -1189,13 +1200,15 @@ function closeSettings(message = "Settings unchanged.") {
   }
 }
 
-function showSettingsStep() {
+function showSettingsStep(manualModel = false) {
   if (settingsProviderSelect) detail.remove(settingsProviderSelect)
+  if (settingsModelSelect) detail.remove(settingsModelSelect)
   if (settingsInput) detail.remove(settingsInput)
   if (settingsSecretIndicator) detail.remove(settingsSecretIndicator)
   settingsInput = undefined
   settingsSecretIndicator = undefined
   settingsProviderSelect = undefined
+  settingsModelSelect = undefined
   const active = settingsView?.active_provider ?? "openai-compatible"
   const providerInfo = settingsView?.providers.find((provider) => provider.id === settingsValues.provider)
   const prior = settingsView?.profiles[settingsValues.provider]
@@ -1247,10 +1260,60 @@ function showSettingsStep() {
       const profile = settingsView?.profiles[provider.id]
       settingsValues.model = profile?.model ?? ""
       settingsValues.base_url = profile?.base_url ?? provider.base_url
+      settingsModelCatalog = undefined
+      settingsModelSearchQuery = ""
+      settingsModelHint = ""
+      settingsManualModel = false
       settingsStep++
       showSettingsStep()
     })
     return
+  }
+  if (settingsStep === 1 && manualModel) settingsManualModel = true
+  if (settingsStep === 1 && !settingsManualModel) {
+    if (settingsModelCatalog === undefined) {
+      void loadProviderModels()
+      return
+    }
+    if (settingsModelCatalog.length > 0) {
+      const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
+      sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\n${settingPrompts[1]}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Esc cancels`
+      const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
+      const options = matches.map((model) => ({
+        name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
+        description: model.name === model.id ? "Provider model ID" : safeModelCatalogText(model.id),
+        value: model.id,
+      }))
+      options.push({ name: "Enter a model ID manually", description: "Use a model not returned by the provider catalog", value: "__manual_model_id__" })
+      const select = new SelectRenderable(renderer, {
+        id: "model-id-select",
+        width: "100%",
+        height: Math.min(18, options.length * 2 + 1),
+        options,
+        selectedIndex: selectedIndex >= 0 && selectedIndex < matches.length ? selectedIndex : 0,
+        backgroundColor: "#171c22",
+        focusedBackgroundColor: "#202832",
+        selectedBackgroundColor: "#293640",
+        selectedTextColor: "#a7f3d0",
+        descriptionColor: "#87949e",
+        showDescription: true,
+        showScrollIndicator: true,
+      })
+      settingsModelSelect = select
+      detail.add(select)
+      select.focus()
+      select.on(SelectRenderableEvents.ITEM_SELECTED, (_index, option) => {
+        if (option.value === "__manual_model_id__") {
+          showSettingsStep(true)
+          return
+        }
+        settingsValues.model = String(option.value ?? "")
+        settingsStep++
+        showSettingsStep()
+      })
+      return
+    }
+    sessionDetail.content += `\n\n${settingsModelHint}`
   }
   if (settingsStep === 3) {
     settingsSecretIndicator = new TextRenderable(renderer, {
@@ -1263,7 +1326,7 @@ function showSettingsStep() {
   const input = new InputRenderable(renderer, {
     id: `model-setting-${settingsStep}`,
     width: 58,
-    placeholder: settingsStep === 1 ? "model name" : "https://api.example.com/v1",
+    placeholder: settingsStep === 1 ? "e.g. claude-sonnet-4-5 or gpt-5" : "https://api.example.com/v1",
     backgroundColor: "#202832",
     focusedBackgroundColor: "#293640",
     textColor: "#e5e7eb",
@@ -1281,6 +1344,29 @@ function showSettingsStep() {
     settingsStep++
     showSettingsStep()
   })
+}
+
+async function loadProviderModels() {
+  const provider = settingsValues.provider
+  const providerName = settingsView?.providers.find((item) => item.id === provider)?.name ?? provider
+  sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\nLoading model IDs from ${providerName}…\n\nEsc cancels`
+  try {
+    const response = await fetch(`${apiBase}/v1/config/models?provider=${encodeURIComponent(provider)}`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error("provider model list unavailable")
+    const catalog = await response.json() as { provider: string; models: ModelCatalogEntry[] }
+    if (!settingsOpen || settingsStep !== 1 || settingsValues.provider !== provider) return
+    settingsModelCatalog = catalog.provider === provider ? catalog.models : []
+    settingsModelHint = settingsModelCatalog.length === 0
+      ? "No models were returned. Enter a model ID manually."
+      : "Provider model IDs loaded. Type to filter the list."
+  } catch {
+    if (!settingsOpen || settingsStep !== 1 || settingsValues.provider !== provider) return
+    settingsModelCatalog = []
+    settingsModelHint = "Live model discovery is unavailable. Enter a model ID manually."
+  }
+  showSettingsStep()
 }
 
 async function openSettings() {
@@ -1301,6 +1387,10 @@ async function openSettings() {
     settingsValues.api_key = ""
     settingsValues.clear_api_key = false
     settingsProviderQuery = ""
+    settingsModelCatalog = undefined
+    settingsModelSearchQuery = ""
+    settingsModelHint = ""
+    settingsManualModel = false
     showSettingsStep()
   } catch (error) {
     closeSettings(`could not load model settings · ${error instanceof Error ? error.message : "request failed"}`)
@@ -1338,6 +1428,18 @@ renderer.keyInput.on("keypress", (key) => {
       } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
         key.stopPropagation()
         settingsProviderQuery += key.sequence
+        showSettingsStep()
+      }
+      return
+    }
+    else if (settingsStep === 1 && settingsModelSelect) {
+      if (key.name === "backspace") {
+        key.stopPropagation()
+        settingsModelSearchQuery = [...settingsModelSearchQuery].slice(0, -1).join("")
+        showSettingsStep()
+      } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+        key.stopPropagation()
+        settingsModelSearchQuery = (settingsModelSearchQuery + key.sequence).slice(0, 200)
         showSettingsStep()
       }
       return

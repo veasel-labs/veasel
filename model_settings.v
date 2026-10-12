@@ -193,16 +193,20 @@ fn (app &App) model_config() !ModelConfig {
 	} else {
 		os.getenv_opt('VEASEL_MODEL_PROVIDER') or { active_provider }
 	}
-	profile := state.settings.profiles[provider] or { ModelProfile{} }
 	state.mu.unlock()
-	model := if profile.model.len > 0 {
-		profile.model
-	} else {
-		os.getenv_opt('VEASEL_MODEL') or { '' }
-	}
-	if model.trim_space().len == 0 || model.len > 200 {
+	config := app.provider_model_config(provider, os.getenv_opt('VEASEL_MODEL') or { '' })!
+	if config.model.trim_space().len == 0 || config.model.len > 200 {
 		return error('model is not configured')
 	}
+	return config
+}
+
+fn (app &App) provider_model_config(provider string, fallback_model string) !ModelConfig {
+	mut state := app.model_settings
+	state.mu.lock()
+	profile := state.settings.profiles[provider] or { ModelProfile{} }
+	state.mu.unlock()
+	model := if profile.model.len > 0 { profile.model } else { fallback_model }
 	api_key := provider_api_key(provider) or { profile.api_key }
 	base_url := if profile.base_url.len > 0 {
 		profile.base_url

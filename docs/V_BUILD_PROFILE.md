@@ -17,8 +17,8 @@ The command form is `v -cc <compiler> -prod ...`. Release builds also pass
 `-d "veasel_version=<planned version>"`, which embeds the version calculated by
 the release workflow into `--version` and the health endpoint. `-prod` enables
 V's production optimization profile and turns additional warnings into errors.
-The pinned [V build help](https://github.com/vlang/v/blob/9494950d9d6482e70913c70446ccbf8c47f418b7/vlib/v/help/build/build.txt)
-and [compiler notes](https://github.com/vlang/v/blob/9494950d9d6482e70913c70446ccbf8c47f418b7/vlib/v/README.md)
+The pinned [V build help](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/help/build/build.txt)
+and [compiler notes](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/README.md)
 describe optimization and LTO choices as part of that profile, including
 `-O3 -flto` for generated C units under 8 MiB and `-O2 -flto` for units at or
 above 8 MiB. Clang also uses a bounded inline threshold for large units. Veasel
@@ -28,12 +28,14 @@ avoids changing the profile between a release binary and a benchmark build.
 
 Advance `.v-version` only after the pinned compiler builds Veasel across all
 release targets. On 2026-10-12, V HEAD `02cf4bd2243e40e1d4bd4ea7b8956dd4832b3fc0`
-failed to bootstrap on Windows in `vlang/setup-v` because `S_IFMT`, `S_IFDIR`,
-`S_IFREG`, and related CRT constants were undeclared. The candidate fallback,
-`9494950d9d6482e70913c70446ccbf8c47f418b7`, is the parent of V commit
-`f6358ecff9cffbf2d8b03e6a09269aac7707e26c`. CI must validate that candidate on
-the Windows release path before merge. Revisit the pin after upstream resolves
-the compiler bootstrap failure.
+and revision `9494950d9d6482e70913c70446ccbf8c47f418b7` failed to bootstrap on
+Windows in `vlang/setup-v` because `S_IFMT`, `S_IFDIR`, `S_IFREG`, and related
+CRT constants were undeclared. The current candidate,
+`cbe6ea8bbbc30ff7630eac5f507809182bfa027c`, is the parent of V commit
+`aae3f51f7d298138ea605e67c3fc8fd87f7335da`, which changed C header emission;
+this is a compatibility boundary to test, not a confirmed root cause. CI must
+validate the candidate on the Windows release path before merge. Revisit the
+pin after upstream resolves the compiler bootstrap failure.
 
 The selected compilers, commands, and toolchain versions are explicit data in
 CI artifacts. This makes the build profile auditable even though hosted runner
@@ -62,7 +64,7 @@ compatibility with Debian 12 and newer glibc distributions.
 - `-autofree` is not applied globally; the V documentation says the feature is
   not production ready.
 - `-prealloc` and related arena behavior are used by V for its own compiler
-  self-build, as shown in V's [PGO build script](https://github.com/vlang/v/blob/9494950d9d6482e70913c70446ccbf8c47f418b7/vlib/v/build_pgo.sh),
+  self-build, as shown in V's [PGO build script](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/build_pgo.sh),
   not recommended as a generic application setting.
 - `-compress` is an artifact-size option shown for specialized static
   distributions; Veasel does not yet have a measured static-link profile.

@@ -10,9 +10,20 @@ from threading import Event
 
 API_KEYS = {
     "openai-compatible": "veasel-openai-key",
+    "dashscope": "veasel-dashscope-key",
+    "zai": "veasel-zai-key",
     "anthropic": "veasel-anthropic-key",
     "gemini": "veasel-gemini-key",
 }
+OPENAI_COMPATIBLE_API_KEYS = {
+    API_KEYS[provider] for provider in ("openai-compatible", "dashscope", "zai")
+}
+
+
+def has_openai_compatible_auth(value):
+    return value in {f"Bearer {key}" for key in OPENAI_COMPATIBLE_API_KEYS}
+
+
 REPLY = "Provider fixture reply"
 GREETING_EDIT = (
     "module fixture\n\n// workspace-search-sentinel\n"
@@ -55,7 +66,7 @@ def is_session_system(content):
 class MockProvider(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/v1/models", "/v1beta/models"):
-            if self.headers.get("Authorization") == f"Bearer {API_KEYS['openai-compatible']}":
+            if has_openai_compatible_auth(self.headers.get("Authorization")):
                 payload = {"data": [{"id": "smoke-model", "object": "model", "owned_by": "fixture"}]}
             elif self.headers.get("x-api-key") == API_KEYS["anthropic"]:
                 payload = {"data": [{"type": "model", "id": "claude-fixture", "display_name": "Claude Fixture"}]}
@@ -97,7 +108,7 @@ class MockProvider(BaseHTTPRequestHandler):
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         provider_kind = (
-            "openai" if self.headers.get("Authorization") == f"Bearer {API_KEYS['openai-compatible']}" else
+            "openai" if has_openai_compatible_auth(self.headers.get("Authorization")) else
             "anthropic" if self.headers.get("x-api-key") == API_KEYS["anthropic"] else
             "gemini" if self.headers.get("x-goog-api-key") == API_KEYS["gemini"] else
             "unknown"
@@ -109,7 +120,7 @@ class MockProvider(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if self.headers.get("Authorization") == f"Bearer {API_KEYS['openai-compatible']}":
+        if has_openai_compatible_auth(self.headers.get("Authorization")):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = last_message.get("content", "")

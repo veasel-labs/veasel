@@ -15,7 +15,9 @@ scope and status.
 The current vertical slice provides a V server with health/capability
 endpoints, SQLite-backed sessions and chat history, a replayable event stream,
 and an OpenTUI terminal client. When configured, sessions can chat through
-OpenAI-compatible, Anthropic, or Gemini APIs. Session chat can call bounded
+OpenAI-compatible, Anthropic, or Gemini APIs. The built-in catalog includes
+hosted providers such as Alibaba Cloud Model Studio and Z.AI, plus local
+OpenAI-compatible servers such as Atomic Chat. Session chat can call bounded
 workspace list/read/search tools and propose one-file replacements using
 provider-native tool calling for all three provider families. Proposed diffs
 are persisted for review; the TUI writes only after an explicit approval.
@@ -68,12 +70,14 @@ Press `s` on the home screen, or enter `/models` in an open session, to search
 and choose a provider in the keyboard-driven settings list, then configure its
 model, endpoint, and API key. Presets
 cover Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
-endpoints including Cerebras, DeepInfra, DeepSeek, Fireworks, Groq, Hugging Face,
+endpoints including [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, Groq, Hugging Face,
 Hyperbolic, Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, OpenRouter,
 Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
-xAI, Cloudflare Workers AI, llama.cpp, LM Studio, LocalAI, and vLLM. Local
+xAI, [Z.AI](https://docs.z.ai/), Cloudflare Workers AI, [Atomic Chat](https://opencode.ai/docs/providers/), llama.cpp, LM Studio, LocalAI, and vLLM. Local
 presets target loopback servers by default; Cloudflare requires replacing the
-account-ID placeholder in its endpoint. The list is delivered by the backend
+account-ID placeholder in its endpoint. Alibaba Cloud Model Studio defaults to
+its US Virginia endpoint; use the endpoint and API key for the same region. The
+list is delivered by the backend
 API so the TUI does not maintain a second provider catalog. Compatible presets
 use the same Chat Completions wire
 format; provider-specific features beyond that contract are not implied.

@@ -8,7 +8,7 @@ const supported_model_providers = ['openai-compatible', 'openai', 'anthropic', '
 	'groq', 'together', 'fireworks', 'mistral', 'openrouter', 'xai', 'cerebras', 'perplexity',
 	'deepinfra', 'venice', 'ollama', 'hyperbolic', 'moonshot', 'nvidia', 'siliconflow', 'sambanova',
 	'novita', 'nebius', 'huggingface', 'vercel', 'cloudflare-workers-ai', 'llama-cpp', 'lmstudio',
-	'localai', 'vllm']
+	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai']
 
 pub struct ModelProviderInfo {
 pub:
@@ -23,7 +23,9 @@ pub:
 
 fn model_provider_catalog() []ModelProviderInfo {
 	return [
+		ModelProviderInfo{ id: 'dashscope', name: 'Alibaba Cloud Model Studio', description: 'Qwen and hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://dashscope-us.aliyuncs.com/compatible-mode/v1', environment_key: 'DASHSCOPE_API_KEY' },
 		ModelProviderInfo{ id: 'anthropic', name: 'Anthropic', description: 'Claude models · native Messages API', protocol: 'anthropic', base_url: 'https://api.anthropic.com/v1', environment_key: 'ANTHROPIC_API_KEY' },
+		ModelProviderInfo{ id: 'atomic-chat', name: 'Atomic Chat', description: 'Local models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:1337/v1', requires_api_key: false },
 		ModelProviderInfo{ id: 'cerebras', name: 'Cerebras', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cerebras.ai/v1', environment_key: 'CEREBRAS_API_KEY' },
 		ModelProviderInfo{ id: 'cloudflare-workers-ai', name: 'Cloudflare Workers AI', description: 'Cloudflare hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1', environment_key: 'CLOUDFLARE_API_TOKEN' },
 		ModelProviderInfo{ id: 'deepinfra', name: 'DeepInfra', description: 'Hosted open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.deepinfra.com/v1/openai', environment_key: 'DEEPINFRA_API_KEY' },
@@ -53,6 +55,7 @@ fn model_provider_catalog() []ModelProviderInfo {
 		ModelProviderInfo{ id: 'venice', name: 'Venice AI', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.venice.ai/api/v1', environment_key: 'VENICE_API_KEY' },
 		ModelProviderInfo{ id: 'vllm', name: 'vLLM', description: 'Self-hosted inference server · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:8000/v1', requires_api_key: false },
 		ModelProviderInfo{ id: 'xai', name: 'xAI', description: 'Grok models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.x.ai/v1', environment_key: 'XAI_API_KEY' },
+		ModelProviderInfo{ id: 'zai', name: 'Z.AI', description: 'GLM models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.z.ai/api/paas/v4', environment_key: 'ZAI_API_KEY' },
 	]
 }
 

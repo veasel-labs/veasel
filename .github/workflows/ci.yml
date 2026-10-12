@@ -252,10 +252,10 @@ jobs:
           VEASEL_BENCH_OUTPUT: benchmark-results/session-store.json
           VEASEL_BENCH_BUILD_MANIFEST: dist/build.json
           VEASEL_BENCH_COMMAND: >-
-            v -cc ${{ matrix.cc }} -prod test store_benchmark_test.v
+            v -cc ${{ matrix.cc }} -prod -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" test store_benchmark_test.v
         run: |
           mkdir -p benchmark-results
-          v -cc ${{ matrix.cc }} -prod test store_benchmark_test.v
+          v -cc ${{ matrix.cc }} -prod -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" test store_benchmark_test.v
           cat benchmark-results/session-store.json
       - name: Package Unix binary
         if: runner.os != 'Windows'

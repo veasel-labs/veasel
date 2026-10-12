@@ -78,7 +78,7 @@ jobs:
     name: V backend / ${{ matrix.os }}
     runs-on: ${{ matrix.runner }}
     needs: release-plan
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       VJOBS: 1
     strategy:

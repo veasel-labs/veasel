@@ -78,6 +78,7 @@ class MockProvider(BaseHTTPRequestHandler):
             "gemini" if self.headers.get("x-goog-api-key") == API_KEYS["gemini"] else
             "unknown"
         )
+        is_cancellation_fixture_turn = False
         if self.path == "/redirect/v1/chat/completions":
             self.send_response(302)
             self.send_header("Location", "/v1/chat/completions")
@@ -88,6 +89,7 @@ class MockProvider(BaseHTTPRequestHandler):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = last_message.get("content", "")
+            is_cancellation_fixture_turn = user_text.startswith("Wait for cancellation ")
             is_tool_follow_up = last_message.get("role") == "tool"
             is_mcp_fixture_turn = any(
                 message.get("role") == "user" and message.get("content") in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect")
@@ -104,6 +106,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     or is_session_system(messages[0].get("content"))
                 )
                 or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                    and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
                 if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
@@ -332,8 +335,8 @@ class MockProvider(BaseHTTPRequestHandler):
             print(f"MCP_PROVIDER_RESPONSE: tool_calls={len(body.get('choices', [{}])[0].get('message', {}).get('tool_calls', []))}", flush=True)
 
         if payload.get("stream") or ":streamGenerateContent" in self.path:
-            if user_text == "Wait for cancellation":
-                print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
+            if user_text == "Wait for cancellation" or is_cancellation_fixture_turn:
+                print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
                 SLOW_RESPONSE_RELEASE.wait()
             frames = []
             if provider_kind == "openai":
@@ -416,8 +419,8 @@ class MockProvider(BaseHTTPRequestHandler):
             return
 
         encoded = json.dumps(body).encode()
-        if user_text == "Wait for cancellation":
-            print("SLOW_PROVIDER_REQUEST_STARTED", flush=True)
+        if user_text == "Wait for cancellation" or is_cancellation_fixture_turn:
+            print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
             SLOW_RESPONSE_RELEASE.wait()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")

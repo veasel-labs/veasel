@@ -2,6 +2,7 @@ module main
 
 import os
 import time
+import json2
 
 const benchmark_default_iterations = 500
 const benchmark_max_iterations = 10_000
@@ -42,7 +43,18 @@ fn test_benchmark_session_store() {
 	elapsed_us := stopwatch.elapsed().microseconds()
 	assert elapsed_us > 0
 	platform := os.uname()
-	result := '{"benchmark":"sqlite_session_roundtrip","iterations":${iterations},"sessions_per_second":${iterations * 1_000_000 / elapsed_us},"elapsed_microseconds":${elapsed_us},"database":"sqlite_in_memory","platform":"${platform.sysname} ${platform.machine}","product_version":"${product_version}","operations_per_iteration":"create session, persist exchange, load messages and events"}'
+	build_manifest_path := os.getenv('VEASEL_BENCH_BUILD_MANIFEST')
+	build_manifest := if build_manifest_path == '' {
+		'null'
+	} else {
+		os.read_file(build_manifest_path) or { panic('failed to read build manifest: ${err}') }
+	}
+	benchmark_command := json2.encode[string](os.getenv('VEASEL_BENCH_COMMAND'))
+	result := '{"benchmark":"sqlite_session_roundtrip","iterations":${iterations},' +
+		'"sessions_per_second":${iterations * 1_000_000 / elapsed_us},"elapsed_microseconds":${elapsed_us},' +
+		'"database":"sqlite_in_memory","platform":"${platform.sysname} ${platform.machine}",' +
+		'"product_version":"${product_version}","operations_per_iteration":"create session, persist exchange, load messages and events",' +
+		'"benchmark_command":${benchmark_command},"release_build":${build_manifest}}'
 	output_path := os.getenv('VEASEL_BENCH_OUTPUT')
 	if output_path == '' {
 		println(result)

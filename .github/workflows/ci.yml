@@ -262,6 +262,8 @@ jobs:
         working-directory: tui
       - run: bun run typecheck
         working-directory: tui
+      - run: bun run test
+        working-directory: tui
       - run: bun audit --audit-level=high
         working-directory: tui
 

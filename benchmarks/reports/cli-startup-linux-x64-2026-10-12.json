@@ -1,0 +1,137 @@
+{
+  "schema": "veasel-cli-startup-benchmark/v1",
+  "scope": "process launch plus local --version and --help commands; no model requests",
+  "generated_at": "2026-10-12T04:17:20.960Z",
+  "platform": "linux",
+  "architecture": "x64",
+  "runtime": "Node.js v22.22.0",
+  "warmups": 3,
+  "requested_samples": 30,
+  "timeout_ms": 15000,
+  "operations": {
+    "version": [
+      {
+        "id": "veasel-code",
+        "first_output_line": "Veasel Code 0.13.0-next.0",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 2.618,
+        "p50_ms": 3.034,
+        "p95_ms": 3.452,
+        "max_ms": 3.473,
+        "mean_ms": 3.059
+      },
+      {
+        "id": "claude-code",
+        "first_output_line": "2.1.285 (Claude Code)",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 9.602,
+        "p50_ms": 10.582,
+        "p95_ms": 12.331,
+        "max_ms": 14.597,
+        "mean_ms": 10.762
+      },
+      {
+        "id": "codex",
+        "first_output_line": "codex-cli 0.160.0",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 8.904,
+        "p50_ms": 9.446,
+        "p95_ms": 10.963,
+        "max_ms": 11.161,
+        "mean_ms": 9.603
+      },
+      {
+        "id": "opencode",
+        "first_output_line": "opencode v2.0.20",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 110.121,
+        "p50_ms": 115.589,
+        "p95_ms": 119.024,
+        "max_ms": 119.593,
+        "mean_ms": 115.287
+      },
+      {
+        "id": "pi",
+        "first_output_line": "0.85.1",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 263.561,
+        "p50_ms": 273.052,
+        "p95_ms": 283.435,
+        "max_ms": 286.595,
+        "mean_ms": 272.88
+      }
+    ],
+    "help": [
+      {
+        "id": "veasel-code",
+        "first_output_line": "Veasel Code 0.13.0-next.0",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 2.68,
+        "p50_ms": 3.07,
+        "p95_ms": 3.442,
+        "max_ms": 3.508,
+        "mean_ms": 3.071
+      },
+      {
+        "id": "claude-code",
+        "first_output_line": "Usage: claude [options] [command] [prompt]",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 83.948,
+        "p50_ms": 86.912,
+        "p95_ms": 93.886,
+        "max_ms": 94.015,
+        "mean_ms": 87.506
+      },
+      {
+        "id": "codex",
+        "first_output_line": "Codex CLI",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 9.196,
+        "p50_ms": 9.834,
+        "p95_ms": 10.828,
+        "max_ms": 11.881,
+        "mean_ms": 9.923
+      },
+      {
+        "id": "opencode",
+        "first_output_line": "DESCRIPTION",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 111.966,
+        "p50_ms": 116.229,
+        "p95_ms": 121.509,
+        "max_ms": 122.197,
+        "mean_ms": 116.878
+      },
+      {
+        "id": "pi",
+        "first_output_line": "pi - AI coding assistant with read, bash, edit, write tools",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 366.114,
+        "p50_ms": 377.94,
+        "p95_ms": 389.034,
+        "max_ms": 407.99,
+        "mean_ms": 378.644
+      }
+    ]
+  }
+}

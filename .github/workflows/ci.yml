@@ -37,6 +37,8 @@ jobs:
         working-directory: tools/release
       - run: npm test
         working-directory: tools/release
+      - name: Verify CLI benchmark syntax
+        run: node --check benchmarks/cli-startup.mjs
       - name: Calculate prerelease version
         id: plan
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

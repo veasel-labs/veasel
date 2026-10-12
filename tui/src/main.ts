@@ -7,19 +7,12 @@ import {
   createCliRenderer,
   fg,
 } from "@opentui/core"
+import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 
 type Session = {
   id: string
   title: string
   directory: string
-  created_at: string
-}
-
-type ChatTurn = {
-  id: number
-  session_id: string
-  role: "user" | "assistant"
-  content: string
   created_at: string
 }
 
@@ -116,6 +109,7 @@ if (
 const apiBase = apiUrl.origin
 const renderer = await createCliRenderer({ exitOnCtrlC: true })
 const controller = new AbortController()
+const chatHistoryPageSize = 100
 
 const shell = new BoxRenderable(renderer, {
   width: "100%",
@@ -244,6 +238,8 @@ let activeTurnController: AbortController | undefined
 let activeTurnCancelled = false
 let pendingUserMessage = ""
 let chatMessages: ChatTurn[] = []
+let chatHistoryHasOlder = false
+let chatHistoryLoading = false
 let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
@@ -313,6 +309,7 @@ function renderChat(messages: ChatTurn[]) {
     + (streamingAssistantText
       ? `\n\nVEASEL  ·  ${activeTurnId ? "streaming" : "partial response"}\n${safeTerminalText(streamingAssistantText)}`
       : "")
+    + (chatHistoryHasOlder ? "\n\n/history older · load earlier messages" : "")
 }
 
 function safeTerminalText(value: string) {
@@ -326,6 +323,9 @@ function safeTerminalReviewText(value: string) {
 
 async function openSession(session: Session) {
   activeSession = session
+  chatHistoryHasOlder = false
+  chatHistoryLoading = false
+  chatMessages = []
   streamingAssistantText = ""
   pendingUserMessage = ""
   reviewedShellCommandIds.clear()
@@ -336,7 +336,9 @@ async function openSession(session: Session) {
     signal: controller.signal,
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  renderChat(await response.json() as ChatTurn[])
+  const messages = await response.json() as ChatTurn[]
+  chatHistoryHasOlder = pageMayHaveOlder(messages, chatHistoryPageSize)
+  renderChat(messages)
   await notifyPendingProposals()
   if (!chatInput) {
     const input = new InputRenderable(renderer, {
@@ -362,6 +364,19 @@ async function sendMessage(value: string) {
   const content = value.trim()
   const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
   if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
+  if (content === "/history older") {
+    chatInput.value = ""
+    await loadOlderChatHistory()
+    chatInput.focus()
+    return
+  }
+  if (/^\/history(?:\s|$)/.test(content)) {
+    skillNotice = "Use /history older to load the preceding page of this session's chat history."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/skills") {
     await showSkills()
     chatInput.value = ""
@@ -510,7 +525,9 @@ async function sendMessage(value: string) {
     })
     if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
     streamingAssistantText = ""
-    renderChat(await historyResponse.json() as ChatTurn[])
+    const latest = await historyResponse.json() as ChatTurn[]
+    chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
+    renderChat(mergeChatTurns(chatMessages, latest))
     await notifyPendingProposals()
     status.content = `● ${exchange.provider}  ·  ${exchange.model}`
     status.fg = "#a7f3d0"
@@ -535,6 +552,43 @@ async function sendMessage(value: string) {
   }
 }
 
+async function loadOlderChatHistory() {
+  if (!activeSession || chatHistoryLoading) return
+  if (!chatHistoryHasOlder || chatMessages.length === 0) {
+    status.content = "● no earlier chat messages"
+    status.fg = "#87949e"
+    return
+  }
+  const sessionId = activeSession.id
+  const before = chatMessages[0].id
+  chatHistoryLoading = true
+  status.content = "● loading earlier messages…"
+  status.fg = "#f3c969"
+  try {
+    const response = await fetch(
+      `${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages?before=${before}&limit=${chatHistoryPageSize}`,
+      { signal: controller.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    const older = await response.json() as ChatTurn[]
+    if (activeSession?.id !== sessionId) return
+    chatHistoryHasOlder = pageMayHaveOlder(older, chatHistoryPageSize)
+    const previousCount = chatMessages.length
+    renderChat(mergeChatTurns(chatMessages, older))
+    const loadedCount = chatMessages.length - previousCount
+    status.content = loadedCount > 0
+      ? `● loaded ${loadedCount} earlier messages`
+      : "● no earlier chat messages"
+    status.fg = "#a7f3d0"
+  } catch (error) {
+    if (controller.signal.aborted) return
+    status.content = `● history load failed  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.fg = "#f28b82"
+  } finally {
+    chatHistoryLoading = false
+  }
+}
+
 async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurnCompletion) {
   const operationId = completion.operation_id
   if (!operationId || handledTurnCompletionIds.has(operationId)) return
@@ -553,7 +607,11 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
         const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
           signal: controller.signal,
         })
-        if (historyResponse.ok) renderChat(await historyResponse.json() as ChatTurn[])
+        if (historyResponse.ok) {
+          const latest = await historyResponse.json() as ChatTurn[]
+          chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
+          renderChat(mergeChatTurns(chatMessages, latest))
+        }
       } catch {
         // Reopening the session reloads its durable history if this refresh fails.
       }
@@ -582,7 +640,9 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
         signal: controller.signal,
       })
       if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
-      renderChat(await historyResponse.json() as ChatTurn[])
+      const latest = await historyResponse.json() as ChatTurn[]
+      chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
+      renderChat(mergeChatTurns(chatMessages, latest))
       await notifyPendingProposals()
       status.content = `● ${completion.provider ?? "provider"}  ·  ${completion.model ?? "assistant"}`
       status.fg = "#a7f3d0"

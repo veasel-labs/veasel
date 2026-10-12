@@ -111,7 +111,9 @@ provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`;
 the selected provider's API root; custom endpoints must use HTTPS or loopback
 HTTP. Keys are read only by the V backend and are never returned by the API.
 The TUI sends messages through `/v1/sessions/:id/messages` and reloads the
-persisted conversation when a session opens. Provider tool calls run with
+persisted conversation when a session opens. Enter `/history older` in a
+session to load its preceding 100 messages without losing the visible history.
+Provider tool calls run with
 bounded workspace list/read/search operations. Veasel can propose a complete
 single-file edit; the TUI shows its unified diff with `/patches` and
 `/patch show <id>`, and writes only after that diff has been opened and

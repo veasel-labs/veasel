@@ -9,7 +9,7 @@ that provenance with its result and records its own compile command.
 
 | Target runner | C compiler | Rationale |
 | --- | --- | --- |
-| Linux | `gcc` | Matches V's Linux release build convention. |
+| Linux (`ubuntu-22.04`) | `gcc` | Matches V's Linux release build convention and holds the glibc ABI baseline at 2.35 for Debian 12 and newer Linux environments. |
 | macOS | `clang` | Matches V's macOS release build convention. |
 | Windows | `gcc` | The Windows build links V's bundled SQLite object compiled by GCC; using the same compiler avoids mixing incompatible object formats/toolchains. |
 
@@ -29,6 +29,19 @@ CI artifacts. This makes the build profile auditable even though hosted runner
 images and compiler patch versions can change. Benchmark comparisons should
 only compare like target, architecture, and compiler profile; reports must
 retain each run's build manifest.
+
+Linux and Windows release builds use V's bundled SQLite amalgamation. Linux CI
+prepares it with V's `install_thirdparty_sqlite.vsh` script, which verifies the
+download size and SHA3 checksum published by SQLite. The build isolates
+`pkg-config` discovery so an installed system SQLite development package cannot
+silently switch the build back to dynamic SQLite linking. CI runs the Linux
+release executable in a Debian 12 container without installing SQLite and
+verifies `--version`.
+
+V's runtime is compiled into the Veasel executable; Veasel has no separately
+installed V runtime. Linux executables still use the platform's C library, so
+the release runner remains pinned to Ubuntu 22.04 (glibc 2.35) to retain
+compatibility with Debian 12 and newer glibc distributions.
 
 ## Flags deliberately not enabled
 
@@ -64,16 +77,24 @@ Build the same profile locally with the compiler for the host:
 
 ```sh
 mkdir -p dist
-v -cc gcc -prod -o dist/veasel .       # Linux
+v run "$VROOT/vlib/db/sqlite/install_thirdparty_sqlite.vsh" # Linux
+mkdir -p /tmp/veasel-empty-pkgconfig
+PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig \
+  v -cc gcc -prod -o dist/veasel .     # Linux
 v -cc clang -prod -o dist/veasel .     # macOS
 ```
+
+Set `VROOT` to the source directory of the exact V revision in `.v-version`.
+The Linux release profile must be built on Ubuntu 22.04 to preserve the
+documented glibc baseline. Windows builds use the V SQLite amalgamation too;
+see the CI workflow for the GCC object build required by that target.
 
 Write the provenance file so the benchmark can include the same toolchain
 details as CI:
 
 ```sh
 VEASEL_BUILD_CC=gcc VEASEL_BUILD_COMMIT="$(git rev-parse HEAD)" \
-  VEASEL_BUILD_FLAGS='-cc gcc -prod -o dist/veasel .' \
+  VEASEL_BUILD_FLAGS='PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig -cc gcc -prod -o dist/veasel .' \
   node scripts/build-manifest.mjs dist/veasel dist/build.json
 ```
 

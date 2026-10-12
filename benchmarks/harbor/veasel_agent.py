@@ -53,7 +53,9 @@ def _veasel_provider(
     if configured_provider != model_provider:
         raise ValueError("Harbor model provider does not match its model identifier")
     selected = normalize(provider_override) if provider_override else configured_provider
-    if selected != configured_provider:
+    if selected != configured_provider and not (
+        selected == "openai-compatible" and configured_provider == "openai"
+    ):
         raise ValueError("Veasel provider override must match Harbor's configured model provider")
     if selected not in {"openai", "anthropic", "gemini", "openai-compatible"}:
         raise ValueError(f"Veasel does not support Harbor provider {selected!r}")
@@ -101,6 +103,8 @@ class VeaselCode(BaseInstalledAgent):
         command = (
             "set -eu; command -v curl >/dev/null; command -v sha256sum >/dev/null; "
             "command -v tar >/dev/null; "
+            "python3 -c 'import platform,sys; name,version=platform.libc_ver(); parts=tuple(int(part) for part in version.split(\".\")[:2]); sys.exit(0 if name == \"glibc\" and parts >= (2, 35) else 1)' "
+            "|| { echo 'Veasel Linux releases require glibc 2.35 or newer' >&2; exit 2; }; "
             "test \"$(uname -s)\" = Linux; "
             "case \"$(uname -m)\" in x86_64|amd64) ;; *) echo 'unsupported Veasel Harbor architecture' >&2; exit 2 ;; esac; "
             f"mkdir -p \"{install_dir}\" \"$HOME/.local/bin\"; "
@@ -188,6 +192,9 @@ class VeaselCode(BaseInstalledAgent):
         result = "/logs/agent/veasel-result.json"
         command = (
             "set -eu; "
+            f"test \"${{VEASEL_MODEL_PROVIDER:-}}\" = {shlex.quote(provider)}; "
+            f"test \"${{VEASEL_MODEL:-}}\" = {shlex.quote(model)}; "
+            "test -n \"${VEASEL_MODEL_API_KEY:-}\"; "
             "mkdir -p /logs/agent \"$VEASEL_DATA_DIR\"; "
             "VEASEL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind((\"127.0.0.1\", 0)); print(s.getsockname()[1]); s.close()'); "
             "export VEASEL_PORT; "

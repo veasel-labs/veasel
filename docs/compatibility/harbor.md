@@ -10,7 +10,11 @@ The implementation uses `BaseInstalledAgent`,
 this class for CLIs installed and run inside the task environment.
 
 The adapter installs the exact Linux x86_64 Veasel release from the official
-GitHub release archive and verifies it against `SHA256SUMS`. It launches
+GitHub release archive and verifies it against `SHA256SUMS`. The Linux release
+is built on Ubuntu 22.04 to keep its glibc requirement compatible with Debian
+12. SQLite is included in the executable from V's checksum-verified bundled
+amalgamation, so the task image does not need a separate SQLite runtime
+package. The adapter requires glibc 2.35 or newer. It launches
 `veasel run` with an isolated data directory, a dynamically selected loopback
 port, explicit provider/model configuration, an ATIF trace destination, and
 the autonomous opt-in. It keeps provider usage and cost unavailable when the

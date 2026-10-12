@@ -334,6 +334,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/operations/{operation_id}/result:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+      - in: path
+        name: operation_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getSessionOperationResult
+      description: Returns the assistant text reconstructed from persisted deltas for this exact operation, avoiding ambiguity when turns share a session.
+      responses:
+        '200':
+          description: Completed assistant result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionOperationResult' }
+        '404':
+          description: Session operation was not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Operation has not completed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/operations/{operation_id}/cancel:
     parameters:
       - in: path
@@ -1380,6 +1409,16 @@ components:
         error: { type: string, maxLength: 1024 }
         created_at: { type: string }
         updated_at: { type: string }
+    SessionOperationResult:
+      type: object
+      required: [session_id, operation_id, status, provider, model, content]
+      properties:
+        session_id: { type: string, format: uuid }
+        operation_id: { type: string, format: uuid }
+        status: { type: string, const: completed }
+        provider: { type: string }
+        model: { type: string }
+        content: { type: string, maxLength: 16000000 }
     Error:
       type: object
       required: [error]

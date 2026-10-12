@@ -3,6 +3,7 @@ module main
 import db.sqlite
 import json2
 import os
+import strings
 import sync
 import uuid
 
@@ -331,6 +332,27 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit durable operation migration')
+		}
+	}
+	if current < 10 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin event lookup index migration')
+		}
+		db.exec('CREATE INDEX events_session_type_id ON events (session_id, type, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index session event lookups')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (10)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record event lookup index migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit event lookup index migration')
 		}
 	}
 	// Async session work is never replayed after restart: its provider request or
@@ -1049,6 +1071,31 @@ fn (mut store Store) events_after(after int) ![]Event {
 		}
 	}
 	return events
+}
+
+fn (mut store Store) assistant_text_for_operation(session_id string, operation_id string) !string {
+	if !validate_operation_id(operation_id) {
+		return error('invalid session operation identifier')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param_many("SELECT data FROM events WHERE type = 'assistant.delta' AND session_id = ? AND json_extract(data, '$.operation_id') = ? ORDER BY id",
+		[session_id, operation_id])!
+	mut text := strings.new_builder(1024)
+	mut total_bytes := 0
+	for row in rows {
+		event_data := json2.decode[EventData](row.val(0)) or {
+			return error('unable to read assistant result events')
+		}
+		if total_bytes + event_data.delta.len > max_provider_stream_bytes {
+			return error('assistant result exceeds the response size limit')
+		}
+		text.write_string(event_data.delta)
+		total_bytes += event_data.delta.len
+	}
+	return text.str()
 }
 
 fn (mut store Store) record_assistant_delta(session_id string, operation_id string, delta string) ! {

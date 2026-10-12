@@ -76,6 +76,12 @@ fail() {
 	if [[ -f "$work_dir/provider.log" ]]; then
 		cat "$work_dir/provider.log" >&2
 	fi
+	if [[ -f "$work_dir/headless.log" ]]; then
+		cat "$work_dir/headless.log" >&2
+	fi
+	if [[ -f "$work_dir/headless-result" ]]; then
+		cat "$work_dir/headless-result" >&2
+	fi
 	if [[ -f "$plugin_dir/requests.log" ]]; then
 		cat "$plugin_dir/requests.log" >&2
 	fi
@@ -342,6 +348,31 @@ EOF
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/response" || fail "$provider response did not reach the API client"
+	if [[ "$provider" == openai-compatible ]]; then
+		printf 'Smoke: exercising the headless CLI against the shared provider/runtime\n'
+		env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
+			"$work_dir/veasel" run --prompt 'Say hello' --workspace "$work_dir/workspace" --json \
+			>"$work_dir/headless-result" 2>"$work_dir/headless.log" || fail 'headless task command failed'
+		headless_session_id="$(python3 - "$work_dir/headless-result" "$session_id" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+existing_session_id = sys.argv[2]
+assert result["status"] == "completed", result
+assert result["provider"] == "openai-compatible", result
+assert result["model"] == "smoke-model", result
+assert result["response"] == "Provider fixture reply", result
+assert len(result["session_id"]) == 36, result
+assert len(result["operation_id"]) == 36, result
+assert result["session_id"] != existing_session_id, result
+print(result["session_id"])
+PY
+		)" || fail 'headless result was invalid'
+		curl -fsS "$api/v1/sessions/$headless_session_id/messages" >"$work_dir/headless-messages"
+		grep -Fq '"content":"Say hello"' "$work_dir/headless-messages" || fail 'headless user turn was not persisted'
+		grep -Fq '"content":"Provider fixture reply"' "$work_dir/headless-messages" || fail 'headless assistant turn was not persisted'
+	fi
 	event_cursor="$(python3 -c 'import sqlite3, sys; db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True); print(db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0])' "$work_dir/data/veasel.sqlite3")"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
 		"$api/v1/sessions/$session_id/messages"

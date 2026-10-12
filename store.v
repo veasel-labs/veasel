@@ -355,6 +355,27 @@ fn open_store(path string) !&Store {
 			return error('unable to commit event lookup index migration')
 		}
 	}
+	if current < 11 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin operation trace migration')
+		}
+		db.exec('CREATE TABLE operation_traces (operation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, trajectory_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create operation trace table')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (11)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record operation trace migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit operation trace migration')
+		}
+	}
 	// Async session work is never replayed after restart: its provider request or
 	// tool side effects may have completed without a durable response.
 	db.begin() or {
@@ -1098,6 +1119,22 @@ fn (mut store Store) assistant_text_for_operation(session_id string, operation_i
 	return text.str()
 }
 
+fn (mut store Store) operation_trace(session_id string, operation_id string) !string {
+	if !validate_operation_id(operation_id) {
+		return error('invalid session operation identifier')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param_many('SELECT trajectory_json FROM operation_traces WHERE session_id = ? AND operation_id = ?',
+		[session_id, operation_id])!
+	if rows.len != 1 {
+		return error('session operation trace not found')
+	}
+	return rows[0].val(0)
+}
+
 fn (mut store Store) record_assistant_delta(session_id string, operation_id string, delta string) ! {
 	if delta.len == 0 || delta.len > max_provider_response_bytes || !validate_operation_id(operation_id) {
 		return error('invalid streamed assistant delta')
@@ -1152,7 +1189,18 @@ fn (mut store Store) messages_page_for_session(session_id string, limit int, bef
 }
 
 fn (mut store Store) append_exchange(session_id string, operation_id string, user_content string,
-	assistant_content string, provider string, model string) ![]ChatTurn {
+	assistant_content string, provider string, model string, trajectory_json string) ![]ChatTurn {
+	if trajectory_json.len > max_provider_stream_bytes * 2 {
+		return error('operation trace exceeds the persistence size limit')
+	}
+	if trajectory_json.len > 0 {
+		if !validate_operation_id(operation_id) {
+			return error('operation trace is invalid')
+		}
+		_ := json2.decode[map[string]json2.Any](trajectory_json) or {
+			return error('operation trace is invalid')
+		}
+	}
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -1202,6 +1250,13 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		]) or {
 			store.db.rollback() or {}
 			return error('unable to persist session turn completion')
+		}
+		if trajectory_json.len > 0 {
+			_ = store.db.exec_param_many('INSERT INTO operation_traces (operation_id, session_id, trajectory_json) VALUES (?, ?, ?)',
+				[operation_id, session_id, trajectory_json]) or {
+				store.db.rollback() or {}
+				return error('unable to persist ATIF trajectory')
+			}
 		}
 	}
 	store.db.commit() or {

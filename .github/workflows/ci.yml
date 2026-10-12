@@ -223,6 +223,7 @@ jobs:
           v test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
           v test agent_runtime_test.v
+          v test atif_trace_test.v
           v test headless_cli_test.v
           v test workspace_tools_test.v
       - name: Run Windows plugin, workspace edit, and recovery tests
@@ -244,7 +245,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'
-        run: scripts/api-smoke.sh
+        env:
+          VEASEL_SMOKE_TRACE_ARTIFACT: benchmark-results/atif-smoke.json
+        run: |
+          mkdir -p benchmark-results
+          scripts/api-smoke.sh
+      - name: Checkout pinned Harbor trajectory validator
+        if: runner.os == 'Linux'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: harbor-framework/harbor
+          ref: dc933be707feafbb9efcdf092cb8a0e391332617
+          path: .ci/harbor
+          sparse-checkout: |
+            src/harbor
+      - name: Validate smoke trajectory with Harbor 0.24.0
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m venv .ci/python
+          .ci/python/bin/pip install --disable-pip-version-check 'pydantic==2.13.5'
+          .ci/python/bin/python scripts/validate-harbor-atif.py .ci/harbor benchmark-results/atif-smoke.json
       - name: Benchmark SQLite session round trips
         if: runner.os == 'Linux'
         env:

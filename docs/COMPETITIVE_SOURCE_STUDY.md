@@ -201,9 +201,11 @@ steps.
 
 1. Add a deterministic baseline for process startup, file search, context
    assembly, tool dispatch, session restore, and cancellation.
-2. Add a versioned trace with request counts, actual provider usage when
-   available, tool timings, lifecycle transitions, and explicit unavailable
-   values; redact secrets and source by default.
+2. Extend the opt-in ATIF v1.8 successful-turn trace with failed/cancelled
+   trajectories, request counts, actual provider usage when available, tool
+   timings, and lifecycle transitions; redact secrets and source by default.
+   The present trace includes model-visible system/session context and raw
+   tool I/O and must be treated as sensitive.
 3. Profile large-repository search/context workloads and compare simple
    traversal with syntax-aware maps before selecting an index design.
 4. Compare sequential and bounded parallel read-only tool execution with

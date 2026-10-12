@@ -73,7 +73,15 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   terminal success with chat history, and classify active work as `uncertain`
   after restart without replaying provider calls or tool effects.
 - [ ] Durable queued jobs, cancellation across server restarts, bounded job
-  retention, token usage, and operation observability.
+  retention, provider-reported token usage, and operation observability.
+- [x] Opt-in `veasel run --trace-file` export of successful turns as ATIF v1.8,
+  including the current prompt, provider model responses, tool-call arguments,
+  and tool observations. Collection is disabled unless a trace path is supplied.
+- [ ] Persist partial trajectories on failures/cancellation; add provider
+  usage/cost metadata only when adapters return authoritative values; redact
+  sensitive source/tool content. Linux CI validates a deterministic live-provider
+  fixture trace against Harbor 0.24.0 at pinned revision
+  `dc933be707feafbb9efcdf092cb8a0e391332617`.
 - [x] Add bounded, cursor-paginated session chat history while retaining the
   latest-100 default response for existing clients.
 - [ ] Recovery classification; require human intervention for uncertain effects.

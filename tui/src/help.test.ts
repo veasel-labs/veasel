@@ -9,7 +9,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("/patches · /patch show|approve|reject <id>")
     expect(help).toContain("/commands · /command show|approve|reject <id>")
     expect(help).toContain("/history older")
-    expect(help).toContain("Requested file excerpts go to your provider.")
+    expect(help).toContain("Files go to your provider.")
     expect(help).toContain("without a sandbox")
     expect(helpItems.length).toBeGreaterThan(5)
   })
@@ -17,6 +17,14 @@ describe("TUI quick help", () => {
   test("formats a single reusable guide with non-empty command descriptions", () => {
     expect(helpItems.every(({ command, description }) => command.startsWith("/") && description.length > 0)).toBe(true)
     expect(renderHelp().split("\n").length).toBeGreaterThan(helpItems.length)
+  })
+
+  test("keeps the small-screen guide concise and points to full syntax", () => {
+    const help = renderHelp(true)
+
+    expect(help).toContain("/help advanced")
+    expect(help).toContain("Files go to your provider.")
+    expect(help.split("\n")).toHaveLength(6)
   })
 
   test("identifies only messages that begin with an unknown slash command", () => {

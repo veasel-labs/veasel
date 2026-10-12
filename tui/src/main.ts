@@ -296,13 +296,18 @@ async function createSession(title: string) {
 
 function renderChat(messages: ChatTurn[]) {
   chatMessages = messages
+  const helpVisible = skillNotice.startsWith("VEASEL CODE / QUICK HELP")
+  header.visible = !helpVisible
+  sidebar.visible = !helpVisible
   portraitRenderable.content = activeSession ? "" : portraitText
   brandLabel.content = activeSession ? "" : "VEASEL CODE"
-  const heading = activeSession
+  const heading = activeSession && !helpVisible
     ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
     : ""
   sessionDetail.content = safeTerminalText(heading)
-    + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0
+    + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (helpVisible
+    ? ""
+    : messages.length === 0
     ? "Start with a question or describe a coding task."
     : messages.map((message) => {
       const label = message.role === "assistant" ? "VEASEL" : "YOU"
@@ -369,8 +374,8 @@ async function sendMessage(value: string) {
   const content = value.trim()
   const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
   if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
-  if (content === "/help" || content === "/?") {
-    skillNotice = renderHelp()
+  if (content === "/help" || content === "/?" || content === "/help advanced") {
+    skillNotice = renderHelp(content === "/help" && (process.stdout.rows ?? 40) < 30)
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -506,6 +511,7 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  skillNotice = ""
   sendingMessage = true
   activeTurnId = crypto.randomUUID()
   activeTurnController = new AbortController()

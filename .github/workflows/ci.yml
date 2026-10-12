@@ -215,6 +215,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v test plugin_mcp_http_transport_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v -d windows_7 test headless_cli_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -d windows_7 test workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Linux HTTP and persistence smoke

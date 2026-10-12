@@ -7,6 +7,14 @@ import sync
 import uuid
 import time
 
+fn test_serve_and_tui_help_are_available_without_starting_the_backend() {
+	assert command_help('serve').starts_with('Usage: veasel serve\n')
+	assert command_help('serve').contains('Start the local V backend only.')
+	assert command_help('tui').starts_with('Usage: veasel tui\n')
+	assert command_help('tui').contains('Start or reuse the local backend')
+	assert command_help('run').len == 0
+}
+
 fn test_session_turn_semaphores_serialize_the_same_session() {
 	store := open_store(':memory:') or { panic(err) }
 	defer {

@@ -90,9 +90,30 @@ fn launch_tui(port int) {
 	}
 }
 
+fn command_help(command string) string {
+	match command {
+		'serve' {
+			return 'Usage: veasel serve\n\nStart the local V backend only.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
+		}
+		'tui' {
+			return 'Usage: veasel tui\n\nStart or reuse the local backend, then open the terminal UI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
+		}
+		else {
+			return ''
+		}
+	}
+}
+
 fn main() {
 	args := os.args[1..]
 	command := if args.len > 0 { args[0] } else { 'tui' }
+	if args.len > 1 && args[1] in ['--help', '-h'] {
+		help := command_help(command)
+		if help.len > 0 {
+			println(help)
+			return
+		}
+	}
 	data_dir := os.getenv_opt('VEASEL_DATA_DIR') or {
 		os.join_path(os.home_dir(), '.local', 'share', 'veasel')
 	}

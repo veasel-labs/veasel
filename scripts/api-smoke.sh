@@ -450,29 +450,25 @@ PY
 		printf 'Smoke: testing provider cancellation\n'
 		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/hold-slow-response" >/dev/null \
 			|| fail 'slow provider fixture could not be held for cancellation'
-		slow_requests_before="$(grep -Fc 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || true)"
 		operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+		cancel_prompt="Wait for cancellation $operation_id"
 		curl -sS -o "$work_dir/cancelled-turn-response" -w '%{http_code}' \
 			-X POST -H 'content-type: application/json' -H "x-veasel-operation-id: $operation_id" \
-			-d '{"content":"Wait for cancellation"}' \
+			-d "{\"content\":\"$cancel_prompt\"}" \
 			"$api/v1/sessions/$session_id/messages" >"$work_dir/cancelled-turn-status" &
 		turn_pid=$!
 		for ((attempt = 0; attempt < 200; attempt++)); do
-			slow_requests_after="$(grep -Fc 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || true)"
-			(( slow_requests_after > slow_requests_before )) && break
+			grep -Fq "SLOW_PROVIDER_REQUEST_STARTED:$cancel_prompt" "$work_dir/provider.log" && break
 			sleep 0.05
 		done
-		(( slow_requests_after > slow_requests_before )) || fail 'slow provider request did not start'
+		grep -Fq "SLOW_PROVIDER_REQUEST_STARTED:$cancel_prompt" "$work_dir/provider.log" || fail 'slow provider cancellation request did not reach the provider'
 		cancel_status=""
 		for ((attempt = 0; attempt < 10; attempt++)); do
 			cancel_status="$(curl -sS -o "$work_dir/cancel-response" -w '%{http_code}' --max-time 1 \
 				-X POST "$api/v1/sessions/$session_id/operations/$operation_id/cancel" 2>/dev/null)" || cancel_status=""
 			[[ "$cancel_status" == 202 || "$cancel_status" == 404 ]] && break
 		done
-		[[ "$cancel_status" == 202 || "$cancel_status" == 404 ]] || fail "cancellation endpoint did not respond: ${cancel_status:-timeout}"
-		if [[ "$cancel_status" == 404 ]]; then
-			grep -Fq 'active operation not found' "$work_dir/cancel-response" || fail 'cancellation retry returned an unexpected 404'
-		fi
+		[[ "$cancel_status" == 202 ]] || fail "cancellation endpoint returned ${cancel_status:-no response}, expected 202 for an active provider request"
 		wait "$turn_pid"
 		cancelled_turn_status="$(cat "$work_dir/cancelled-turn-status")"
 		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"

@@ -19,22 +19,24 @@ export function unknownSlashCommand(input: string): string | undefined {
   return command.startsWith("/") ? command : undefined
 }
 
-export function renderHelp() {
+export function renderHelp(compact = false) {
+  if (compact) {
+    return [
+      "VEASEL CODE / QUICK HELP",
+      "/help advanced  Show command syntax",
+      "/skills · /mcp · /patches · /commands",
+      "/history older  Load earlier messages",
+      "Files go to your provider. Review diffs and MCP calls.",
+      "Approved shell runs as you without a sandbox.",
+    ].join("\n")
+  }
+
   const commands = helpItems
     .map(({ command, description }) => `${command}  ${description}`)
     .join("\n")
   return [
     "VEASEL CODE / QUICK HELP",
-    "Describe a coding task in plain language.",
-    "",
+    "Files go to your provider. Review diffs and MCP arguments; approved shell runs as you without a sandbox.",
     commands,
-    "",
-    "SHORTCUTS",
-    "n  new session   r  refresh sessions   ↑/↓ or j/k  navigate   Esc  cancel turn   q  quit",
-  "",
-  "SAFETY",
-  "Requested file excerpts go to your provider. Review diffs, exact shell commands, and MCP arguments before approval. Approved commands run as your user without a sandbox.",
-    "",
-    "Use /help whenever you need this guide again.",
   ].join("\n")
 }

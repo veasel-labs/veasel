@@ -335,39 +335,6 @@ struct GeminiCandidate {
 	content GeminiContent
 }
 
-fn model_config() !ModelConfig {
-	provider := os.getenv_opt('VEASEL_MODEL_PROVIDER') or { 'openai-compatible' }
-	raw_model := os.getenv_opt('VEASEL_MODEL') or { return error('model is not configured') }
-	model := raw_model.trim_space()
-	if model.trim_space().len == 0 || model.len > 200 {
-		return error('model configuration is invalid')
-	}
-	api_key := provider_api_key(provider) or {
-		return error('model credentials are not configured for ${provider}')
-	}
-	if api_key.trim_space().len == 0 {
-		return error('model credentials are not configured for ${provider}')
-	}
-	base_url := os.getenv_opt('VEASEL_MODEL_BASE_URL') or {
-		match provider {
-			'openai-compatible', 'openai' { 'https://api.openai.com/v1' }
-			'anthropic' { 'https://api.anthropic.com/v1' }
-			'gemini' { 'https://generativelanguage.googleapis.com/v1beta' }
-			else { return error('unsupported model provider') }
-		}
-	}
-	if provider !in ['openai-compatible', 'openai', 'anthropic', 'gemini'] {
-		return error('unsupported model provider')
-	}
-	validated_base_url := secure_endpoint(base_url)!
-	return ModelConfig{
-		provider: provider
-		base_url: validated_base_url
-		model:    model
-		api_key:  api_key
-	}
-}
-
 fn provider_api_key(provider string) ?string {
 	if shared_key := os.getenv_opt('VEASEL_MODEL_API_KEY') {
 		return shared_key
@@ -460,8 +427,8 @@ fn validate_messages(messages []ChatMessage) ! {
 }
 
 fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMessage,
-	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) ProviderTurnResult {
-	output := complete_with_tools(mut turn_ctx, messages, tools, on_text_delta) or {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) ProviderTurnResult {
+	output := complete_with_tools(mut turn_ctx, messages, tools, on_text_delta, config) or {
 		return ProviderTurnResult{
 			error: err.msg()
 		}
@@ -472,8 +439,7 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 }
 
 fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
-	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	config := model_config()!
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) !CompletionOutput {
 	provider := match config.provider {
 		'openai-compatible', 'openai' { ModelProvider(OpenAICompatibleProvider{}) }
 		'anthropic' { ModelProvider(AnthropicProvider{}) }
@@ -484,11 +450,6 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 }
 
 fn ignore_provider_text_delta(_ string) ! {}
-
-fn configured_model() ?string {
-	config := model_config() or { return none }
-	return config.model
-}
 
 fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage,

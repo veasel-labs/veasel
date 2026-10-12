@@ -27,6 +27,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Capabilities'
+  /v1/config/model:
+    get:
+      operationId: getModelSettings
+      description: Returns the active provider and saved model profiles. API keys are never returned; only api_key_saved is exposed.
+      responses:
+        '200':
+          description: Sanitized provider profiles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettingsView'
+    post:
+      operationId: updateModelSettings
+      description: Selects a provider and updates its model, endpoint, and optional API key. Empty api_key preserves an existing key; clear_api_key removes it. Credentials are stored locally with owner-only POSIX permissions, not encrypted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelSettingsInput'
+      responses:
+        '200':
+          description: Updated sanitized provider profiles.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelSettingsView'
+        '400':
+          description: Invalid provider, model, endpoint, or request body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/plugins:
     get:
       operationId: listAgentPlugins
@@ -977,6 +1010,44 @@ components:
           description: Includes agent.tools.skill_read_resource when model support is configured; the tool is exposed only while one or more Agent Skills are active in the session.
           items:
             type: string
+    ModelSettingsInput:
+      type: object
+      required: [provider, model, base_url]
+      properties:
+        provider:
+          type: string
+          enum: [openai-compatible, openai, anthropic, gemini]
+        model:
+          type: string
+          minLength: 1
+          maxLength: 200
+        base_url:
+          type: string
+          maxLength: 2048
+        api_key:
+          type: string
+          writeOnly: true
+          maxLength: 4096
+          description: Omit or send an empty string to preserve the saved key.
+        clear_api_key:
+          type: boolean
+          default: false
+    ModelSettingsView:
+      type: object
+      required: [active_provider, profiles]
+      properties:
+        active_provider:
+          type: string
+          enum: [openai-compatible, openai, anthropic, gemini]
+        profiles:
+          type: object
+          additionalProperties:
+            type: object
+            required: [model, base_url, api_key_saved]
+            properties:
+              model: { type: string }
+              base_url: { type: string }
+              api_key_saved: { type: boolean }
     PluginCatalog:
       type: object
       required: [plugins, diagnostics]

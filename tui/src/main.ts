@@ -8,7 +8,7 @@ import {
   fg,
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
-import { renderHelp, unknownSlashCommand } from "./help"
+import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 
 type Session = {
   id: string
@@ -16,6 +16,9 @@ type Session = {
   directory: string
   created_at: string
 }
+
+type ModelProfileView = { model: string; base_url: string; api_key_saved: boolean }
+type ModelSettingsView = { active_provider: string; profiles: Record<string, ModelProfileView> }
 
 type ChatExchange = {
   messages: ChatTurn[]
@@ -221,7 +224,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit",
+  content: "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -243,6 +246,12 @@ let pendingUserMessage = ""
 let chatMessages: ChatTurn[] = []
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
+let settingsOpen = false
+let settingsInput: InputRenderable | undefined
+let settingsSecretIndicator: TextRenderable | undefined
+let settingsStep = 0
+let settingsView: ModelSettingsView | undefined
+const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false }
 let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
@@ -364,6 +373,11 @@ async function openSession(session: Session) {
     chatInput = input
     detail.add(input)
     input.on(InputRenderableEvents.ENTER, (value) => {
+      if (isModelSettingsCommand(value)) {
+        input.value = ""
+        void openSettings()
+        return
+      }
       void sendMessage(value)
     })
   }
@@ -1140,7 +1154,143 @@ function beginCreate() {
   })
 }
 
+const settingPrompts = [
+  "Provider (openai-compatible, openai, anthropic, gemini):",
+  "Model identifier (for example claude-sonnet-4-5 or gpt-5):",
+  "API base URL (must use HTTPS, except loopback HTTP):",
+  "API key (hidden; leave blank to keep saved key, type !clear to remove):",
+]
+
+function closeSettings(message = "Settings unchanged.") {
+  if (settingsInput) detail.remove(settingsInput)
+  if (settingsSecretIndicator) detail.remove(settingsSecretIndicator)
+  settingsInput = undefined
+  settingsSecretIndicator = undefined
+  settingsValues.api_key = ""
+  settingsOpen = false
+  sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
+  status.content = `● ${message}`
+  status.fg = "#a7f3d0"
+  if (activeSession) {
+    const session = activeSession
+    chatInput = undefined
+    void openSession(session).catch(() => {
+      status.content = "● settings saved · unable to restore session view"
+      status.fg = "#f3c969"
+    })
+  }
+}
+
+function showSettingsStep() {
+  if (settingsInput) detail.remove(settingsInput)
+  if (settingsSecretIndicator) detail.remove(settingsSecretIndicator)
+  settingsInput = undefined
+  settingsSecretIndicator = undefined
+  const active = settingsView?.active_provider ?? "openai-compatible"
+  const prior = settingsView?.profiles[settingsValues.provider]
+  const hint = settingsStep === 3
+    ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."} Key characters are hidden.`
+    : ""
+  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${hint}\n\nEnter accepts · Esc cancels`
+  if (settingsStep === 3) {
+    settingsSecretIndicator = new TextRenderable(renderer, {
+      content: "",
+      fg: "#a7f3d0",
+    })
+    detail.add(settingsSecretIndicator)
+    return
+  }
+  const input = new InputRenderable(renderer, {
+    id: `model-setting-${settingsStep}`,
+    width: 58,
+    placeholder: settingsStep === 0 ? active : settingsStep === 1 ? "model name" : settingsStep === 2 ? "https://api.example.com/v1" : "••••••••",
+    backgroundColor: "#202832",
+    focusedBackgroundColor: "#293640",
+    textColor: "#e5e7eb",
+    focusedTextColor: "#ffffff",
+    cursorColor: "#a7f3d0",
+    maxLength: 512,
+  })
+  settingsInput = input
+  detail.add(input)
+  input.focus()
+  input.on(InputRenderableEvents.ENTER, (value) => {
+    const clean = value.trim()
+    if (settingsStep === 0) {
+      settingsValues.provider = clean || active
+      const profile = settingsView?.profiles[settingsValues.provider]
+      settingsValues.model = profile?.model ?? ""
+      settingsValues.base_url = profile?.base_url ?? ({ anthropic: "https://api.anthropic.com/v1", gemini: "https://generativelanguage.googleapis.com/v1beta", openai: "https://api.openai.com/v1", "openai-compatible": "https://api.openai.com/v1" }[settingsValues.provider] ?? "")
+    } else if (settingsStep === 1) settingsValues.model = clean || settingsValues.model
+    else if (settingsStep === 2) settingsValues.base_url = clean || settingsValues.base_url
+    settingsStep++
+    showSettingsStep()
+  })
+}
+
+async function openSettings() {
+  if (settingsOpen || creating || sendingMessage) return
+  settingsOpen = true
+  if (chatInput) {
+    detail.remove(chatInput)
+    chatInput = undefined
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/config/model`, { signal: controller.signal })
+    if (!response.ok) throw new Error("settings API unavailable")
+    settingsView = await response.json() as ModelSettingsView
+    settingsStep = 0
+    settingsValues.provider = settingsView.active_provider
+    settingsValues.model = ""
+    settingsValues.base_url = ""
+    settingsValues.api_key = ""
+    settingsValues.clear_api_key = false
+    showSettingsStep()
+  } catch (error) {
+    closeSettings(`could not load model settings · ${error instanceof Error ? error.message : "request failed"}`)
+  }
+}
+
+async function saveModelSettings() {
+  try {
+    const response = await fetch(`${apiBase}/v1/config/model`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(settingsValues),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { error?: string }
+      throw new Error(body.error ?? "settings were rejected")
+    }
+    settingsValues.api_key = ""
+    closeSettings(`saved ${settingsValues.provider} · ${settingsValues.model}`)
+  } catch (error) {
+    settingsValues.api_key = ""
+    closeSettings(`could not save settings · ${error instanceof Error ? error.message : "request failed"}`)
+  }
+}
+
 renderer.keyInput.on("keypress", (key) => {
+  if (settingsOpen) {
+    if (key.name === "escape") closeSettings()
+    else if (settingsStep === 3) {
+      key.stopPropagation()
+      if (key.name === "return" || key.name === "kpenter") {
+        settingsValues.clear_api_key = settingsValues.api_key === "!clear"
+        if (settingsValues.clear_api_key) settingsValues.api_key = ""
+        void saveModelSettings()
+      } else if (key.name === "backspace") {
+        settingsValues.api_key = [...settingsValues.api_key].slice(0, -1).join("")
+        if (settingsSecretIndicator) settingsSecretIndicator.content = "•".repeat([...settingsValues.api_key].length)
+      } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+        const remaining = Math.max(0, 4096 - settingsValues.api_key.length)
+        settingsValues.api_key += key.sequence.slice(0, remaining)
+        if (settingsSecretIndicator) settingsSecretIndicator.content = "•".repeat([...settingsValues.api_key].length)
+      }
+    }
+    return
+  }
   if (key.name === "q" && !creating) {
     key.stopPropagation()
     void cancelActiveTurn()
@@ -1176,6 +1326,7 @@ renderer.keyInput.on("keypress", (key) => {
     beginCreate()
   }
   else if (key.name === "r") void refreshSessions()
+  else if (key.name === "s") void openSettings()
   else if (key.name === "up" || key.name === "k") {
     selected = Math.max(0, selected - 1)
     renderSessions()
@@ -1189,6 +1340,16 @@ renderer.keyInput.on("keypress", (key) => {
       status.fg = "#f28b82"
     })
   }
+})
+
+renderer.keyInput.on("paste", (event) => {
+  if (!settingsOpen || settingsStep !== 3) return
+  event.preventDefault()
+  event.stopPropagation()
+  const pasted = new TextDecoder().decode(event.bytes).replace(/[\x00-\x1f\x7f-\x9f]/g, "")
+  const remaining = Math.max(0, 4096 - settingsValues.api_key.length)
+  settingsValues.api_key += pasted.slice(0, remaining)
+  if (settingsSecretIndicator) settingsSecretIndicator.content = "•".repeat([...settingsValues.api_key].length)
 })
 
 renderer.on("destroy", () => controller.abort())

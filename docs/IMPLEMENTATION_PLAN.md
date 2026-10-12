@@ -107,6 +107,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ### Milestone 5 — competitive experience
 
+- [x] Configure and persist multiple provider profiles from the TUI; keep API
+  keys out of responses and mask them in the input flow.
+- [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
+  invoked, then open the TUI.
+- [ ] Complete cross-platform validation of provider settings and automatic
+  backend startup in the pinned CI matrix.
 - [ ] Multi-agent isolation and orchestration.
 - [ ] Context retrieval, rich diff review, accessibility, and UX refinement.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and

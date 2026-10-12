@@ -82,6 +82,12 @@ fail() {
 	if [[ -f "$work_dir/headless-continuation.log" ]]; then
 		cat "$work_dir/headless-continuation.log" >&2
 	fi
+	if [[ -f "$work_dir/headless-timeout.log" ]]; then
+		cat "$work_dir/headless-timeout.log" >&2
+	fi
+	if [[ -f "$work_dir/headless-timeout-result" ]]; then
+		cat "$work_dir/headless-timeout-result" >&2
+	fi
 	if [[ -f "$work_dir/headless-result" ]]; then
 		cat "$work_dir/headless-result" >&2
 	fi
@@ -401,6 +407,29 @@ messages = json.load(open(sys.argv[1], encoding="utf-8"))
 assert sum(message["role"] == "user" and message["content"] == "Say hello" for message in messages) == 2
 assert sum(message["role"] == "assistant" and message["content"] == "Provider fixture reply" for message in messages) == 2
 PY
+		printf 'Smoke: checking headless timeout cancellation and operation IDs\n'
+		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/hold-slow-response" >/dev/null \
+			|| fail 'slow provider fixture could not be held'
+		if env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
+			"$work_dir/veasel" run --prompt 'Wait for cancellation' --workspace "$work_dir/workspace" \
+			--timeout 1 --json >"$work_dir/headless-timeout-result" 2>"$work_dir/headless-timeout.log"; then
+			fail 'headless task unexpectedly completed despite its one-second timeout'
+		else
+			headless_timeout_status=$?
+		fi
+		[[ "$headless_timeout_status" == 1 ]] || fail "headless timeout exited with ${headless_timeout_status}, expected 1"
+		python3 - "$work_dir/headless-timeout-result" <<'PY'
+import json
+import sys
+import uuid
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+assert result["status"] in {"cancelling", "cancelled", "timed_out"}, result
+assert str(uuid.UUID(result["session_id"])) == result["session_id"], result
+assert str(uuid.UUID(result["operation_id"])) == result["operation_id"], result
+PY
+		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/release-slow-response" >/dev/null \
+			|| fail 'slow provider fixture could not be released after headless cancellation'
 	fi
 	event_cursor="$(python3 -c 'import sqlite3, sys; db = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True); print(db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0])' "$work_dir/data/veasel.sqlite3")"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \

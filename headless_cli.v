@@ -20,6 +20,7 @@ mut:
 	session_id string
 	trace_file string
 	json       bool
+	autonomous bool
 	timeout    time.Duration = default_headless_timeout
 }
 
@@ -88,6 +89,9 @@ fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {
 			}
 			'--json' {
 				options.json = true
+			}
+			'--autonomous' {
+				options.autonomous = true
 			}
 			'--help', '-h' {
 				return error('help')
@@ -242,6 +246,7 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	response := headless_json_request(port, .post, '/v1/sessions/${session_id}/messages', json2.encode(ChatMessageInput{
 		content:       options.prompt
 		collect_trace: options.trace_file.len > 0
+		autonomous:    options.autonomous
 	}), true, operation_id) or {
 		return headless_failed_result(session_id, operation_id, 'unable to start model turn: ${err.msg()}')
 	}
@@ -329,7 +334,7 @@ fn headless_operation_result(session_id string, operation_id string,
 }
 
 fn print_headless_help() {
-	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 100 KB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to a full ATIF v1.8 trace at this path (private file)\n      --json            Emit a machine-readable result\n  -h, --help            Show this help\n\nThe headless command uses the same local server, provider configuration, session store,\nand approval rules as the TUI. Workspace edits, shell commands, and MCP calls remain\npending user approval; this command does not bypass approval policies. ATIF traces contain\nthe full model-visible conversation supplied for the turn, including earlier stored messages\nwhen --session is used, plus tool I/O. They may contain private instructions and source code;\nthe output file is created with owner-only permissions on platforms that support them. Traces\nare written only when --trace-file is explicitly supplied.')
+	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 100 KB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to a full ATIF v1.8 trace at this path (private file)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the full model-visible conversation and tool I/O; they may include\nprivate instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.')
 }
 
 fn execute_headless_command(port int, args []string) {
@@ -341,6 +346,9 @@ fn execute_headless_command(port int, args []string) {
 		eprintln('veasel: ${err.msg()}')
 		print_headless_help()
 		exit(2)
+	}
+	if options.autonomous {
+		os.setenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION', '1', true)
 	}
 	ensure_backend(port) or {
 		eprintln('veasel: ${err.msg()}')

@@ -38,17 +38,58 @@ derive costs from a guessed token count or a mutable pricing page.
 
 Only successful operations currently export a complete trajectory. Failed or
 cancelled operations do not yet preserve partial traces. File-edit, shell, and
-MCP proposals continue to require their normal explicit approval; this command
-does not enable autonomous side effects or a Harbor task-evaluation workflow.
-Therefore this export is an interoperability prerequisite, not a claim that
-Veasel is already a Harbor agent.
+MCP proposals continue to require their normal explicit approval by default.
+
+## Harbor installed agent
+
+`benchmarks/harbor/veasel_agent.py` is a custom Harbor `BaseInstalledAgent`
+adapter. It downloads an exact Veasel Linux x86_64 release, verifies its
+SHA-256 against the release checksum manifest, maps Harbor's model/provider
+selection to Veasel's supported providers, runs the headless task command, and
+stores the ATIF trajectory at Harbor's agent log path. Provider-reported token
+usage and cost remain unavailable and are not estimated.
+
+The adapter requires an exact release version and Harbor's custom-agent
+interface:
+
+```sh
+harbor run \
+  --dataset terminal-bench@<pinned-version> \
+  --agent benchmarks.harbor.veasel_agent:VeaselCode \
+  --ak veasel_version=<exact-veasel-version> \
+  --model <provider/model>
+```
+
+Harbor does not expose a universal `--n-trials` option. For repeated trials,
+use the benchmark's supported task/job configuration and run each trial from a
+reset task environment with a separately recorded job configuration; do not
+misuse retry attempts as independent trials.
+
+The adapter's `--autonomous` mode applies workspace edits and runs shell
+commands without human approval. It is enabled only for a task request when
+the server was started with `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`; the normal
+TUI and headless behavior stay approval-gated. This environment flag is an
+authorization opt-in, **not a sandbox**. Harbor must run the agent inside an
+isolated, disposable task container with no host mounts, no unrelated secrets,
+and only the required model credential. Autonomous shell subprocesses receive
+an allowlisted environment rather than the server's credential-bearing
+environment. They still have the task container's filesystem and network
+permissions. Do not enable autonomous execution against a developer workspace.
+
+The custom adapter is locally implemented and has not been merged into Harbor.
+The upstream project asks contributors to initiate design discussions before
+changes to interfaces or core logic and requires the human author to write the
+first and final PR drafts. External Harbor inclusion and benchmark results are
+therefore not claimed. No paid benchmark run has been started.
 
 ## Benchmark status
 
 The local SQLite and process-startup microbenchmarks measure deterministic
-runtime paths only. Harbor, Harbor Index, Terminal-Bench, SWE-bench, ProgramBench,
-and CodeClash task evaluations have not been run or submitted. Public dashboard
-results must remain empty until there are versioned, reproducible measurements.
+runtime paths only. The Harbor adapter has not yet been exercised against a
+paid or public task dataset. Harbor Index, Terminal-Bench, SWE-bench,
+ProgramBench, and CodeClash task evaluations have not been run or submitted.
+Public dashboard results must remain empty until there are versioned,
+reproducible measurements.
 
 Before adding context indexes, parallel tool calls, or automatic compaction,
 benchmark fixed fixtures and record both correctness and resource use. Every

@@ -63,7 +63,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
 - [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
 - [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist the operation before accepting, expose status for reconnect, and commit successful history, operation state, and terminal events atomically. Active work is classified as uncertain on restart and never replayed. The worker itself remains process-local.
-- [x] Add `veasel run` for non-interactive session turns using the shared server, provider, and agent runtime; persist and continue sessions, emit machine-readable JSON, and request cancellation on timeout. It keeps edit, shell, and MCP approvals intact, so it is not yet an unattended patch executor or benchmark adapter.
+- [x] Add `veasel run` for non-interactive session turns using the shared server, provider, and agent runtime; persist and continue sessions, emit machine-readable JSON, and request cancellation on timeout. Default edit, shell, and MCP approvals remain intact.
+- [x] Add an explicitly opt-in autonomous path for isolated benchmark tasks. The running server must opt in separately; ordinary CLI/TUI approval behavior remains unchanged. Autonomous file edits and shell commands retain durable proposal/result records, shell subprocesses receive an allowlisted environment, and MCP sessions are rejected. The API smoke validates both denied-by-default and opted-in fixture flows. This does not provide OS sandboxing.
 - [x] Complete an end-to-end coding task against a disposable fixture workspace for OpenAI-compatible, Anthropic, and Gemini providers: propose and inspect a greeting implementation, prove the workspace stays unchanged before approval, approve the diff, run its V test, and verify rejected or unreviewed edits and shell effects do not occur (`scripts/api-smoke.sh`).
 
 ### Milestone 3 — persistent execution
@@ -82,6 +83,14 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   sensitive source/tool content. Linux CI validates a deterministic live-provider
   fixture trace against Harbor 0.24.0 at pinned revision
   `dc933be707feafbb9efcdf092cb8a0e391332617`.
+- [x] Implement a custom Harbor 0.24.0 `BaseInstalledAgent` for exact Linux
+  x86_64 releases, checksum verification, supported provider mapping,
+  bounded headless execution, and ATIF trajectory export. Unit tests run
+  against Harbor's published 0.24.0 package and trajectory model.
+- [ ] Exercise the adapter end-to-end through `harbor run` in a disposable
+  task environment using a deterministic local provider; do not start a paid
+  benchmark until a budget is authorized. Only then prepare the upstream RFC
+  and contribution with the required human-authored PR drafts.
 - [x] Add bounded, cursor-paginated session chat history while retaining the
   latest-100 default response for existing clients.
 - [ ] Recovery classification; require human intervention for uncertain effects.

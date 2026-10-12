@@ -47,6 +47,7 @@ EOF
 port="${VEASEL_SMOKE_PORT:-$((30000 + $$ % 20000))}"
 api="http://127.0.0.1:${port}"
 server_pid=""
+autonomous_server_pid=""
 provider_pid=""
 
 # Every smoke request must fail with a useful error instead of hanging until the
@@ -63,6 +64,10 @@ cleanup() {
 	if [[ -n "$server_pid" ]]; then
 		kill "$server_pid" 2>/dev/null || true
 		wait "$server_pid" 2>/dev/null || true
+	fi
+	if [[ -n "$autonomous_server_pid" ]]; then
+		kill "$autonomous_server_pid" 2>/dev/null || true
+		wait "$autonomous_server_pid" 2>/dev/null || true
 	fi
 	if [[ -n "${VEASEL_KEEP_SMOKE_DIR:-}" ]]; then
 		printf 'Keeping smoke artifacts in %s\n' "$work_dir" >&2
@@ -427,6 +432,64 @@ assert trajectory["steps"][3]["message"] == "Found workspace-search-sentinel", t
 assert trajectory["extra"]["token_usage"] == "unavailable", trajectory
 assert trajectory["extra"]["cost"] == "unavailable", trajectory
 PY
+		printf 'Smoke: autonomous execution is rejected unless the server opts in\n'
+		if env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
+			"$work_dir/veasel" run --autonomous --prompt 'Autonomous workspace edit' \
+			--workspace "$work_dir/workspace" --json >"$work_dir/autonomous-denied.json" 2>"$work_dir/autonomous-denied.log"; then
+			fail 'headless autonomous execution unexpectedly used a server without the opt-in'
+		fi
+		python3 - "$work_dir/autonomous-denied.json" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+assert result["status"] == "failed", result
+assert "Autonomous tool execution is disabled" in result["error"], result
+PY
+		printf 'Smoke: applying a patch and running a shell command in the explicitly opted-in fixture server\n'
+		autonomous_port=$((port + 1))
+		autonomous_api="http://127.0.0.1:${autonomous_port}"
+		env VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 VEASEL_PORT="$autonomous_port" \
+			VEASEL_DATA_DIR="$work_dir/autonomous-data" VEASEL_PLUGIN_DIR="$work_dir/autonomous-plugins" \
+			VEASEL_MODEL_PROVIDER=openai-compatible VEASEL_MODEL=smoke-model \
+			VEASEL_MODEL_API_KEY=veasel-openai-key \
+			VEASEL_MODEL_BASE_URL="http://127.0.0.1:$(cat "$work_dir/provider.port")/v1" \
+			"$work_dir/veasel" serve >"$work_dir/autonomous-server.log" 2>&1 &
+		autonomous_server_pid=$!
+		for ((attempt = 0; attempt < 80; attempt++)); do
+			if command curl --connect-timeout 2 --max-time 2 -fsS \
+				"$autonomous_api/v1/health" >/dev/null 2>&1; then
+				break
+			fi
+			sleep 0.1
+		done
+		command curl --connect-timeout 2 --max-time 2 -fsS "$autonomous_api/v1/health" \
+			>/dev/null || fail 'autonomous fixture server did not become ready'
+		env VEASEL_PORT="$autonomous_port" VEASEL_DATA_DIR="$work_dir/autonomous-data" \
+			"$work_dir/veasel" run --autonomous --prompt 'Autonomous workspace edit' \
+			--workspace "$work_dir/workspace" --trace-file "$work_dir/autonomous-edit.json" --json \
+			>"$work_dir/autonomous-edit-result.json" 2>"$work_dir/autonomous-edit.log" \
+			|| fail 'autonomous workspace edit failed'
+		grep -Fq 'fn greet(name string)' "$work_dir/workspace/src/main.v" \
+			|| fail 'autonomous workspace edit did not update the fixture'
+		grep -Fq 'Applied by explicit autonomous benchmark policy' "$work_dir/autonomous-edit.json" \
+			|| fail 'autonomous ATIF trace omitted the edit result'
+		env VEASEL_PORT="$autonomous_port" VEASEL_DATA_DIR="$work_dir/autonomous-data" \
+			"$work_dir/veasel" run --autonomous --prompt 'Autonomous shell' \
+			--workspace "$work_dir/workspace" --trace-file "$work_dir/autonomous-shell.json" \
+			--json >"$work_dir/autonomous-shell-result.json" \
+			2>"$work_dir/autonomous-shell.log" || fail 'autonomous shell execution failed'
+		grep -Fq 'Autonomous shell completed.' "$work_dir/autonomous-shell-result.json" \
+			|| fail 'autonomous shell completion was not returned to the model'
+		grep -Fq 'autonomous-shell-ok' "$work_dir/autonomous-shell.json" \
+			|| fail 'autonomous shell output was not captured in the trace'
+		! grep -Fq 'veasel-openai-key' "$work_dir/autonomous-shell.json" \
+			|| fail 'provider credentials leaked into the autonomous shell result'
+		cat >"$work_dir/workspace/src/main.v" <<'EOF'
+module fixture
+
+// workspace-search-sentinel
+EOF
 		printf 'Smoke: continuing the same headless session with an independent operation ID\n'
 		env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
 			"$work_dir/veasel" run --prompt 'Say hello' --session "$headless_session_id" --json \

@@ -116,11 +116,14 @@ fn agent_skill_resource_tools(access []AgentSkillResourceAccess) []AgentToolDefi
 
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
 	session_id string, operation_id string, skill_context SessionSkillContext,
-	on_text_delta ProviderTextDeltaFn, collect_trace bool) !AgentTraceResult {
+	on_text_delta ProviderTextDeltaFn, collect_trace bool, autonomous bool) !AgentTraceResult {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
 	active_mcp_servers := app.store.session_plugin_mcp_servers(session_id)!
+	if autonomous && active_mcp_servers.len > 0 {
+		return error('autonomous benchmark mode does not allow session MCP servers')
+	}
 	if active_mcp_servers.len > 0 {
 		if !app.try_plugin_mcp_slot() {
 			return error('plugin_mcp_busy')
@@ -224,7 +227,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		mut trace_observations := []ATIFObservationResult{}
 		for call in output.tool_calls {
 			result := execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, operation_id,
-				call, skill_context, mcp_bindings, mut mcp_connections)!
+				call, skill_context, mcp_bindings, mut mcp_connections, autonomous)!
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
@@ -255,7 +258,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root string,
 	session_id string, operation_id string, call ProviderToolCall,
 	skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
-	mut mcp_connections []PluginMCPConnection) !string {
+	mut mcp_connections []PluginMCPConnection, autonomous bool) !string {
 	if !skill_context.tool_policy.allows(call.function.name) {
 		return json2.encode[AgentToolError](AgentToolError{
 			error: 'Tool is not available under the active Agent Skill tool restrictions.'
@@ -268,7 +271,105 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 		return app.execute_plugin_mcp_tool_with_approval(mut turn_ctx, session_id, operation_id,
 			binding, call.function.arguments, mut mcp_connections)!
 	}
+	if autonomous && call.function.name in ['workspace_propose_file_edit',
+		'workspace_propose_shell_command'] {
+		return execute_autonomous_workspace_agent_tool(app, root, session_id, call)
+	}
 	return execute_workspace_agent_tool(app, root, session_id, call)
+}
+
+fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id string,
+	call ProviderToolCall) string {
+	if call.function.name == 'workspace_propose_file_edit' {
+		tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'Tool arguments must be a JSON object.' })
+		}
+		path := string_tool_argument(tool_arguments, 'path') or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'A relative file path is required.' })
+		}
+		content := string_tool_argument(tool_arguments, 'content') or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'Proposed UTF-8 file content is required.' })
+		}
+		if tool_arguments.len != 2 {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'Unexpected tool argument.' })
+		}
+		draft := prepare_workspace_edit(root, path, content) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit is invalid or unavailable: ${err.msg()}' })
+		}
+		mut store := app.store
+		proposal := store.create_workspace_edit(session_id, draft) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not be saved.' })
+		}
+		store.review_workspace_edit(session_id, proposal.id) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not be recorded for application.' })
+		}
+		edit := store.begin_workspace_edit(session_id, proposal.id) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not begin safely.' })
+		}
+		apply_workspace_edit(root, edit) or {
+			message := err.msg()
+			status := if message.contains('changed after review') || message.contains('invalid segment')
+				|| message.contains('symbolic link') || message.contains('escapes') {
+				'conflict'
+			} else {
+				'interrupted'
+			}
+			store.finish_workspace_edit(session_id, proposal.id, status) or {}
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not be applied safely: ${message}' })
+		}
+		store.finish_workspace_edit(session_id, proposal.id, 'applied') or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The edit was applied but its outcome could not be recorded; inspect the workspace.' })
+		}
+		return json2.encode[AgentWorkspaceEditResult](AgentWorkspaceEditResult{
+			id:   proposal.id
+			path: proposal.path
+			note: 'Applied by explicit autonomous benchmark policy.'
+		})
+	}
+	if call.function.name == 'workspace_propose_shell_command' {
+		if !app.begin_shell_operation() {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'Veasel is shutting down and cannot start a command.' })
+		}
+		defer {
+			app.finish_shell_operation()
+		}
+		mut slots := app.shell_command_slots
+		if !slots.try_wait() {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'Shell execution capacity is full; retry after an active command finishes.' })
+		}
+		defer {
+			slots.post()
+		}
+		draft := parse_shell_tool_arguments(call.function.arguments, root) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command is invalid: ${err.msg()}' })
+		}
+		mut store := app.store
+		proposal := store.create_shell_command(session_id, draft) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command could not be recorded.' })
+		}
+		store.review_shell_command(session_id, proposal.id) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command could not be recorded for execution.' })
+		}
+		approved := store.begin_shell_command(session_id, proposal.id) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command could not begin safely.' })
+		}
+		result := run_approved_shell_command_with_policy(root, approved, true)
+		store.finish_shell_command(session_id, proposal.id, result) or {
+			return json2.encode[AgentToolError](AgentToolError{ error: 'The command finished but its result could not be recorded.' })
+		}
+		return json2.encode(ShellCommandSummary{
+			id:              proposal.id
+			command:         proposal.command
+			cwd:             proposal.cwd
+			timeout_seconds: proposal.timeout_seconds
+			status:          result.status
+			exit_code:       result.exit_code
+			output:          result.output
+			created_at:      proposal.created_at
+			updated_at:      proposal.updated_at
+		})
+	}
+	return json2.encode[AgentToolError](AgentToolError{ error: 'Tool is not available under autonomous benchmark policy.' })
 }
 
 fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Context,

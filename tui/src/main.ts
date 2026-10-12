@@ -8,6 +8,7 @@ import {
   fg,
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
+import { renderHelp, unknownSlashCommand } from "./help"
 
 type Session = {
   id: string
@@ -218,7 +219,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new   /skills   /mcp   /patches   /commands   /patch show|approve|reject   /command show|approve|reject   Esc cancel   ↑/↓   q quit",
+  content: "n new   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -364,6 +365,13 @@ async function sendMessage(value: string) {
   const content = value.trim()
   const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
   if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
+  if (content === "/help" || content === "/?") {
+    skillNotice = renderHelp()
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/history older") {
     chatInput.value = ""
     await loadOlderChatHistory()
@@ -482,6 +490,13 @@ async function sendMessage(value: string) {
   }
   if (content.startsWith("/skill ")) {
     skillNotice = "Use /skill on <plugin>/<skill> or /skill off <plugin>/<skill>."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (unknownSlashCommand(content)) {
+    skillNotice = `Unknown command: ${safeTerminalText(content)}\n\nType /help to see available commands. Messages to the model should start with normal text.`
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()

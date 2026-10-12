@@ -448,6 +448,9 @@ PY
 	grep -Fq 'Read skill reference smoke sentinel' "$work_dir/response" || fail "$provider could not read an active Agent Skill resource"
 	if [[ "$provider" == openai-compatible ]]; then
 		printf 'Smoke: testing provider cancellation\n'
+		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/hold-slow-response" >/dev/null \
+			|| fail 'slow provider fixture could not be held for cancellation'
+		slow_requests_before="$(grep -Fc 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || true)"
 		operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
 		curl -sS -o "$work_dir/cancelled-turn-response" -w '%{http_code}' \
 			-X POST -H 'content-type: application/json' -H "x-veasel-operation-id: $operation_id" \
@@ -455,10 +458,11 @@ PY
 			"$api/v1/sessions/$session_id/messages" >"$work_dir/cancelled-turn-status" &
 		turn_pid=$!
 		for ((attempt = 0; attempt < 200; attempt++)); do
-			grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" && break
+			slow_requests_after="$(grep -Fc 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || true)"
+			(( slow_requests_after > slow_requests_before )) && break
 			sleep 0.05
 		done
-		grep -Fq 'SLOW_PROVIDER_REQUEST_STARTED' "$work_dir/provider.log" || fail 'slow provider request did not start'
+		(( slow_requests_after > slow_requests_before )) || fail 'slow provider request did not start'
 		cancel_status=""
 		for ((attempt = 0; attempt < 10; attempt++)); do
 			cancel_status="$(curl -sS -o "$work_dir/cancel-response" -w '%{http_code}' --max-time 1 \

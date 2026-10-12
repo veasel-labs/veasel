@@ -43,6 +43,8 @@ SESSION_SYSTEM = (
 def is_session_system(content):
     if content in ("Be concise", SESSION_SYSTEM):
         return True
+    if "Autonomous benchmark execution is enabled by an explicit caller opt-in" in content:
+        return True
     return (
         content.startswith(SESSION_SYSTEM + "\n\nUser-enabled Agent Plugin skills")
         and "Skill: review-tools/review" in content
@@ -105,7 +107,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -113,13 +115,13 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text == "Try to read outside" else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
-                    "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
+                    "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit") else
                     "mcp_review_tools_effect_write" if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
                     "workspace_propose_shell_command"
                 )
@@ -146,6 +148,10 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = json.dumps({"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"})
                 elif user_text == "Propose workspace edit":
                     arguments = json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                elif user_text == "Autonomous workspace edit":
+                    arguments = json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                elif user_text == "Autonomous shell":
+                    arguments = json.dumps({"command": 'test -z "${VEASEL_MODEL_API_KEY:-}" && printf autonomous-shell-ok', "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Propose shell command":
                     arguments = json.dumps({"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Propose slow shell command":
@@ -162,8 +168,8 @@ class MockProvider(BaseHTTPRequestHandler):
                 }}]}
             elif is_tool_follow_up:
                 tool_result = last_message.get("content", "")
-                is_edit_result = "Stored for human review" in tool_result
-                is_shell_result = "No command was executed" in tool_result
+                is_edit_result = "Stored for human review" in tool_result or "Applied by explicit autonomous benchmark policy" in tool_result
+                is_shell_result = "No command was executed" in tool_result or "autonomous-shell-ok" in tool_result
                 is_mcp_result = "fixture effect" in tool_result or "fixture tool error" in tool_result or "rejected this MCP tool call" in tool_result
                 if "workspace-search-sentinel" not in tool_result and "Skill reference smoke sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result and not is_mcp_result:
                     self.reject(payload)
@@ -179,7 +185,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 ):
                     self.reject(payload)
                     return
-                final_text = "Proposed a shell command for review." if is_shell_result else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                final_text = "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if "Applied by explicit autonomous benchmark policy" in tool_result else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                 body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 body = {"choices": [{"message": {"role": "assistant", "content": REPLY}}]}

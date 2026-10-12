@@ -49,6 +49,31 @@ jobs:
         if: github.event_name != 'push' || github.ref != 'refs/heads/main'
         run: echo "released=false" >> "$GITHUB_OUTPUT"
 
+  harbor-adapter:
+    name: Harbor installed-agent adapter
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: benchmarks/harbor/requirements.in
+      - name: Install patched Python package installer
+        run: python -m pip install --disable-pip-version-check --upgrade 'pip==26.2.1'
+      - name: Install pinned Harbor agent API
+        run: python -m pip install --disable-pip-version-check -r benchmarks/harbor/requirements.in 'pip-audit==2.10.1'
+      - name: Audit Harbor adapter dependencies
+        run: python -m pip_audit --strict --progress-spinner off
+      - name: Validate Harbor adapter
+        run: |
+          python -m pip check
+          python -m py_compile benchmarks/harbor/veasel_agent.py
+          python -m unittest discover -s benchmarks/harbor -p 'test_*.py' -v
+
   backend:
     name: V backend / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -353,7 +378,7 @@ jobs:
   publish-prerelease:
     name: Publish verified prerelease
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-plan.outputs.released == 'true'
-    needs: [release-plan, backend, security, tui]
+    needs: [release-plan, backend, security, tui, harbor-adapter]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

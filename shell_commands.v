@@ -133,6 +133,11 @@ fn shell_text_has_unsafe_controls(value string) bool {
 }
 
 fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCommandResult {
+	return run_approved_shell_command_with_policy(root, command, false)
+}
+
+fn run_approved_shell_command_with_policy(root string, command ShellCommandSummary,
+	sanitize_environment bool) ShellCommandResult {
 	canonical_root := canonical_workspace_root(root) or {
 		return ShellCommandResult{
 			status:    'failed'
@@ -168,6 +173,9 @@ fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCom
 		}
 		mut process := os.new_process(shell)
 		process.set_args(['/D', '/S', '/C', command.command])
+		if sanitize_environment {
+			process.set_environment(autonomous_shell_environment())
+		}
 		process.set_stdin_path('NUL')
 		process.set_work_folder(os.join_path(canonical_root, verified.cwd))
 		process.set_redirect_stdio()
@@ -176,12 +184,39 @@ fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCom
 	} $else {
 		mut process := os.new_process('/bin/sh')
 		process.set_args(['-c', command.command])
+		if sanitize_environment {
+			process.set_environment(autonomous_shell_environment())
+		}
 		process.set_stdin_path('/dev/null')
 		process.set_work_folder(os.join_path(canonical_root, verified.cwd))
 		process.set_redirect_stdio()
 		process.use_pgroup = true
 		return collect_shell_process(mut process, command.timeout_seconds)
 	}
+}
+
+fn autonomous_shell_environment() map[string]string {
+	return autonomous_shell_environment_from(os.environ())
+}
+
+fn autonomous_shell_environment_from(current map[string]string) map[string]string {
+	mut filtered := map[string]string{}
+	$if windows {
+		allowed := ['PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE']
+		for key in allowed {
+			if value := current[key] {
+				filtered[key] = value
+			}
+		}
+	} $else {
+		allowed := ['PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES', 'TERM']
+		for key in allowed {
+			if value := current[key] {
+				filtered[key] = value
+			}
+		}
+	}
+	return filtered
 }
 
 fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellCommandResult {

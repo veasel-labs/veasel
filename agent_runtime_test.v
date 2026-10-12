@@ -134,7 +134,62 @@ fn execute_test_agent_tool(app &App, root string, session_id string, call Provid
 	mut turn_ctx, cancel := vcontext.with_timeout(mut background, time.second)
 	defer { cancel() }
 	return execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, 'test-operation', call,
-		skill_context, bindings, mut connections) or { panic(err) }
+		skill_context, bindings, mut connections, false) or { panic(err) }
+}
+
+fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_results() {
+	root := os.join_path(os.temp_dir(), 'veasel-autonomous-tools-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	file_path := os.join_path(root, 'target.txt')
+	os.write_file(file_path, 'before') or { panic(err) }
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	session := store.create_session(SessionInput{ title: 'Autonomous fixture', directory: root }) or {
+		panic(err)
+	}
+	edit := execute_autonomous_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'edit'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"target.txt","content":"after"}'
+		}
+	})
+	assert edit.contains('Applied by explicit autonomous benchmark policy')
+	assert os.read_file(file_path) or { panic(err) } == 'after'
+	edits := store.workspace_edits(session.id) or { panic(err) }
+	assert edits.len == 1
+	assert edits[0].status == 'applied'
+
+	command := execute_autonomous_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'command'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_shell_command'
+			arguments: '{"command":"printf benchmark-ok","cwd":".","timeout_seconds":5}'
+		}
+	})
+	assert command.contains('benchmark-ok')
+	assert command.contains('succeeded')
+	commands := store.shell_commands(session.id) or { panic(err) }
+	assert commands.len == 1
+	assert commands[0].status == 'succeeded'
+}
+
+fn test_autonomous_shell_environment_does_not_forward_credentials() {
+	environment := autonomous_shell_environment_from({
+		'PATH':                  'tools'
+		'HOME':                  '/tmp/home'
+		'VEASEL_MODEL_API_KEY':  'secret'
+		'OPENAI_API_KEY':        'secret'
+		'AWS_SECRET_ACCESS_KEY': 'secret'
+		'GITHUB_TOKEN':          'secret'
+	})
+	assert environment['PATH'] == 'tools'
+	assert environment['HOME'] == '/tmp/home'
+	assert !environment.keys().any(it.ends_with('_API_KEY') || it.contains('TOKEN') || it.contains('SECRET'))
 }
 
 fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_approval() {

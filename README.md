@@ -70,10 +70,14 @@ model, endpoint, and API key. Presets
 cover Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
 endpoints including Cerebras, DeepInfra, DeepSeek, Fireworks, Groq, Hugging Face,
 Hyperbolic, Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, OpenRouter,
-Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice, and
-xAI. The list is delivered by the backend API so the TUI does not maintain a
-second provider catalog. Compatible presets use the same Chat Completions wire
+Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
+xAI, Cloudflare Workers AI, llama.cpp, LM Studio, LocalAI, and vLLM. Local
+presets target loopback servers by default; Cloudflare requires replacing the
+account-ID placeholder in its endpoint. The list is delivered by the backend
+API so the TUI does not maintain a second provider catalog. Compatible presets
+use the same Chat Completions wire
 format; provider-specific features beyond that contract are not implied.
+The local presets target documented OpenAI-compatible servers: [LM Studio](https://lmstudio.ai/docs/developer/openai-compat), [llama.cpp](https://github.com/ggml-org/llama.cpp/tree/master/tools/server), [LocalAI](https://github.com/mudler/LocalAI/blob/master/docs/content/overview.md), and [vLLM](https://docs.vllm.ai/en/stable/serving/online_serving/openai_compatible_server/). [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/) needs an account-specific endpoint.
 After selecting a provider, Settings can request its available model IDs from the
 configured endpoint using that provider's saved or environment credential. This
 request only lists models; it does not send a prompt or start generation. If

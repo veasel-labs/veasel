@@ -62,7 +62,8 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 		seen[provider.id] = true
 		assert provider.name.len > 0
 		assert provider.description.len > 0
-		assert provider.base_url.starts_with('https://') || provider.id == 'ollama'
+		assert provider.base_url.starts_with('https://')
+			|| provider.id in ['ollama', 'llama-cpp', 'lmstudio', 'localai', 'vllm']
 		assert provider.protocol in ['anthropic', 'gemini', 'openai-compatible']
 	}
 	assert seen['openai-compatible']
@@ -73,6 +74,17 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['ollama']
 	ollama := model_provider_info('ollama') or { panic('Ollama missing from catalog') }
 	assert !ollama.requires_api_key
+	for provider in ['llama-cpp', 'lmstudio', 'localai', 'vllm'] {
+		info := model_provider_info(provider) or { panic('Local provider ${provider} missing from catalog') }
+		assert !info.requires_api_key
+		assert info.protocol == 'openai-compatible'
+		assert info.base_url.starts_with('http://127.0.0.1:')
+	}
+	cloudflare := model_provider_info('cloudflare-workers-ai') or {
+		panic('Cloudflare Workers AI missing from catalog')
+	}
+	assert cloudflare.requires_api_key
+	assert cloudflare.base_url.contains('/accounts/YOUR_ACCOUNT_ID/ai/v1')
 }
 
 fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
@@ -92,11 +104,12 @@ fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
 
 fn test_provider_environment_key_uses_catalog_mapping() {
 	for provider, key in {
-		'deepseek':   'DEEPSEEK_API_KEY'
-		'groq':       'GROQ_API_KEY'
-		'openrouter': 'OPENROUTER_API_KEY'
-		'xai':        'XAI_API_KEY'
-		'vercel':     'AI_GATEWAY_API_KEY'
+		'deepseek':              'DEEPSEEK_API_KEY'
+		'groq':                  'GROQ_API_KEY'
+		'openrouter':            'OPENROUTER_API_KEY'
+		'xai':                   'XAI_API_KEY'
+		'vercel':                'AI_GATEWAY_API_KEY'
+		'cloudflare-workers-ai': 'CLOUDFLARE_API_TOKEN'
 	} {
 		os.setenv(key, 'fixture-${provider}-key', true)
 		defer { os.unsetenv(key) }

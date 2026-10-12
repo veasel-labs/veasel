@@ -194,17 +194,27 @@ fn headless_completed_result(port int, session_id string, operation_id string,
 	}
 }
 
-fn run_headless_task(port int, options HeadlessRunOptions) !HeadlessRunResult {
+fn headless_failed_result(session_id string, operation_id string, message string) HeadlessRunResult {
+	return HeadlessRunResult{
+		session_id:   session_id
+		operation_id: operation_id
+		status:       'failed'
+		error:        message
+	}
+}
+
+fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	session_id := options.session_id
 	operation_id := uuid.new_v4().str()
 	response := headless_json_request(port, .post, '/v1/sessions/${session_id}/messages', json2.encode(ChatMessageInput{
 		content: options.prompt
 	}), true, operation_id) or {
-		return error('unable to start model turn: ${err.msg()}')
+		return headless_failed_result(session_id, operation_id, 'unable to start model turn: ${err.msg()}')
 	}
 	if response.status_code != 202 {
 		message := if response.body.len > 0 { response.body } else { 'empty response' }
-		return error('unable to start model turn (HTTP ${response.status_code}): ${message}')
+		return headless_failed_result(session_id, operation_id,
+			'unable to start model turn (HTTP ${response.status_code}): ${message}')
 	}
 	deadline := time.now().add(options.timeout)
 	for time.now() < deadline {
@@ -214,14 +224,18 @@ fn run_headless_task(port int, options HeadlessRunOptions) !HeadlessRunResult {
 			continue
 		}
 		if operation_response.status_code != 200 {
-			return error('unable to read model turn state (HTTP ${operation_response.status_code})')
+			return headless_failed_result(session_id, operation_id,
+				'unable to read model turn state (HTTP ${operation_response.status_code})')
 		}
 		operation := json2.decode[SessionOperation](operation_response.body) or {
-			return error('server returned an invalid operation response')
+			return headless_failed_result(session_id, operation_id,
+				'server returned an invalid operation response')
 		}
 		match operation.status {
 			'completed' {
-				return headless_completed_result(port, session_id, operation_id, operation)
+				return headless_completed_result(port, session_id, operation_id, operation) or {
+					headless_failed_result(session_id, operation_id, err.msg())
+				}
 			}
 			'failed', 'cancelled', 'uncertain' {
 				return headless_operation_result(session_id, operation_id, operation)
@@ -230,7 +244,8 @@ fn run_headless_task(port int, options HeadlessRunOptions) !HeadlessRunResult {
 				time.sleep(headless_poll_interval)
 			}
 			else {
-				return error('server returned an unknown model turn state')
+				return headless_failed_result(session_id, operation_id,
+					'server returned an unknown model turn state')
 			}
 		}
 	}
@@ -243,7 +258,9 @@ fn run_headless_task(port int, options HeadlessRunOptions) !HeadlessRunResult {
 	if operation_response.status_code == 200 {
 		operation := json2.decode[SessionOperation](operation_response.body) or { SessionOperation{} }
 		if operation.status == 'completed' {
-			return headless_completed_result(port, session_id, operation_id, operation)
+			return headless_completed_result(port, session_id, operation_id, operation) or {
+				headless_failed_result(session_id, operation_id, err.msg())
+			}
 		}
 		if operation.status in ['failed', 'cancelled', 'uncertain'] {
 			return headless_operation_result(session_id, operation_id, operation)
@@ -308,18 +325,7 @@ fn execute_headless_command(port int, args []string) {
 		}
 		exit(1)
 	}
-	result := run_headless_task(port, prepared_options) or {
-		if options.json {
-			println(json2.encode(HeadlessRunResult{
-				session_id: prepared_options.session_id
-				status:     'failed'
-				error:      err.msg()
-			}))
-		} else {
-			eprintln('veasel: ${err.msg()}')
-		}
-		exit(1)
-	}
+	result := run_headless_task(port, prepared_options)
 	if options.json {
 		println(json2.encode(result))
 	} else if result.status != 'completed' {

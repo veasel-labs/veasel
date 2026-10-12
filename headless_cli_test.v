@@ -122,3 +122,12 @@ fn test_headless_session_title_stays_within_byte_limit_without_splitting_unicode
 	assert title.len <= 200
 	assert title == 'é'.repeat(99)
 }
+
+fn test_headless_failures_keep_session_and_operation_identifiers() {
+	result := headless_failed_result('123e4567-e89b-42d3-a456-426614174000',
+		'123e4567-e89b-42d3-a456-426614174001', 'state request failed')
+	assert result.status == 'failed'
+	assert result.session_id == '123e4567-e89b-42d3-a456-426614174000'
+	assert result.operation_id == '123e4567-e89b-42d3-a456-426614174001'
+	assert result.error == 'state request failed'
+}

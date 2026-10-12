@@ -197,7 +197,9 @@ paths:
         operation resource; without this preference
         the request waits and returns the full ChatExchange. Send a unique
         X-Veasel-Operation-ID UUID to allow cancellation; turns have a
-        two-minute deadline.
+        two-minute deadline. Set collect_trace true to opt into persisting an
+        ATIF v1.8 trajectory for a successful operation; it includes the prompt
+        and tool I/O, and should be treated as sensitive workspace content.
       parameters:
         - in: header
           name: X-Veasel-Operation-ID
@@ -1036,7 +1038,7 @@ components:
           type: string
         features:
           type: array
-          description: Includes agent.tools.skill_read_resource when model support is configured; the tool is exposed only while one or more Agent Skills are active in the session.
+          description: Includes sessions.operations.trace.atif_v1_8 for opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_read_resource when model support is configured; the tool is exposed only while one or more Agent Skills are active in the session.
           items:
             type: string
     ModelSettingsInput:
@@ -1355,6 +1357,10 @@ components:
           type: string
           minLength: 1
           maxLength: 100000
+        collect_trace:
+          type: boolean
+          default: false
+          description: Opt into saving an ATIF v1.8 trajectory for this operation. It can contain sensitive prompt and workspace content; failed turns do not currently persist partial trajectories.
     ChatTurn:
       type: object
       required: [id, session_id, role, content, created_at]
@@ -1419,6 +1425,9 @@ components:
         provider: { type: string }
         model: { type: string }
         content: { type: string, maxLength: 16000000 }
+        trajectory:
+          type: string
+          description: Optional ATIF v1.8 JSON string, present only when collect_trace was requested and trajectory persistence succeeded.
     Error:
       type: object
       required: [error]

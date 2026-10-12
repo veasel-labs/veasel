@@ -18,6 +18,7 @@ mut:
 	prompt     string
 	workspace  string
 	session_id string
+	trace_file string
 	json       bool
 	timeout    time.Duration = default_headless_timeout
 }
@@ -31,6 +32,7 @@ pub:
 	model        string @[omitempty]
 	response     string @[omitempty]
 	error        string @[omitempty]
+	trace_file   string @[omitempty]
 }
 
 fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {
@@ -65,6 +67,13 @@ fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {
 					return error('--session must be a non-nil UUID')
 				}
 				options.session_id = parsed.str()
+			}
+			'--trace-file' {
+				index++
+				if index >= args.len || args[index].trim_space().len == 0 || options.trace_file.len > 0 {
+					return error('--trace-file expects one output path')
+				}
+				options.trace_file = args[index]
 			}
 			'--timeout' {
 				index++
@@ -170,7 +179,7 @@ fn ensure_headless_session(port int, mut options HeadlessRunOptions) ! {
 }
 
 fn headless_completed_result(port int, session_id string, operation_id string,
-	operation SessionOperation) !HeadlessRunResult {
+	operation SessionOperation, trace_file string) !HeadlessRunResult {
 	result_response := headless_json_request(port, .get,
 		'/v1/sessions/${session_id}/operations/${operation_id}/result', '', false, '') or {
 		return error('unable to read assistant result: ${err.msg()}')
@@ -184,6 +193,12 @@ fn headless_completed_result(port int, session_id string, operation_id string,
 	if result.session_id != session_id || result.operation_id != operation_id {
 		return error('server returned a result for a different operation')
 	}
+	if trace_file.len > 0 {
+		if result.trajectory.len == 0 {
+			return error('server completed the turn without an ATIF trajectory')
+		}
+		write_atif_trace_file(trace_file, result.trajectory)!
+	}
 	return HeadlessRunResult{
 		session_id:   session_id
 		operation_id: operation_id
@@ -191,6 +206,24 @@ fn headless_completed_result(port int, session_id string, operation_id string,
 		provider:     result.provider
 		model:        result.model
 		response:     result.content
+		trace_file:   if trace_file.len > 0 { trace_file } else { '' }
+	}
+}
+
+fn write_atif_trace_file(path string, trajectory string) ! {
+	temporary_path := '${path}.tmp-${uuid.new_v4().str()}'
+	mut file := os.open_file(temporary_path, 'w', 0o600) or {
+		return error('unable to write temporary ATIF trajectory: ${err.msg()}')
+	}
+	file.write_string(trajectory) or {
+		file.close()
+		os.rm(temporary_path) or {}
+		return error('unable to write temporary ATIF trajectory: ${err.msg()}')
+	}
+	file.close()
+	os.rename(temporary_path, path) or {
+		os.rm(temporary_path) or {}
+		return error('unable to publish ATIF trajectory at ${path}: ${err.msg()}')
 	}
 }
 
@@ -207,7 +240,8 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	session_id := options.session_id
 	operation_id := uuid.new_v4().str()
 	response := headless_json_request(port, .post, '/v1/sessions/${session_id}/messages', json2.encode(ChatMessageInput{
-		content: options.prompt
+		content:       options.prompt
+		collect_trace: options.trace_file.len > 0
 	}), true, operation_id) or {
 		return headless_failed_result(session_id, operation_id, 'unable to start model turn: ${err.msg()}')
 	}
@@ -233,7 +267,7 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 		}
 		match operation.status {
 			'completed' {
-				return headless_completed_result(port, session_id, operation_id, operation) or {
+				return headless_completed_result(port, session_id, operation_id, operation, options.trace_file) or {
 					headless_failed_result(session_id, operation_id, err.msg())
 				}
 			}
@@ -258,7 +292,7 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	if operation_response.status_code == 200 {
 		operation := json2.decode[SessionOperation](operation_response.body) or { SessionOperation{} }
 		if operation.status == 'completed' {
-			return headless_completed_result(port, session_id, operation_id, operation) or {
+			return headless_completed_result(port, session_id, operation_id, operation, options.trace_file) or {
 				headless_failed_result(session_id, operation_id, err.msg())
 			}
 		}
@@ -295,7 +329,7 @@ fn headless_operation_result(session_id string, operation_id string,
 }
 
 fn print_headless_help() {
-	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>  Task instructions (required; max 100 KB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid> Continue an existing session instead of creating one\n      --timeout <secs> Wait limit from 1 to 86400 seconds (default: 1800)\n      --json             Emit a machine-readable result\n  -h, --help            Show this help\n\nThe headless command uses the same local server, provider configuration, session store,\nand approval rules as the TUI. Workspace edits, shell commands, and MCP calls remain\npending user approval; this command does not bypass approval policies.')
+	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 100 KB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to a full ATIF v1.8 trace at this path (private file)\n      --json            Emit a machine-readable result\n  -h, --help            Show this help\n\nThe headless command uses the same local server, provider configuration, session store,\nand approval rules as the TUI. Workspace edits, shell commands, and MCP calls remain\npending user approval; this command does not bypass approval policies. ATIF traces contain\nthe full model-visible conversation supplied for the turn, including earlier stored messages\nwhen --session is used, plus tool I/O. They may contain private instructions and source code;\nthe output file is created with owner-only permissions on platforms that support them. Traces\nare written only when --trace-file is explicitly supplied.')
 }
 
 fn execute_headless_command(port int, args []string) {

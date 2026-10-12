@@ -64,7 +64,11 @@ cleanup() {
 		kill "$server_pid" 2>/dev/null || true
 		wait "$server_pid" 2>/dev/null || true
 	fi
-	rm -rf "$work_dir"
+	if [[ -n "${VEASEL_KEEP_SMOKE_DIR:-}" ]]; then
+		printf 'Keeping smoke artifacts in %s\n' "$work_dir" >&2
+	else
+		rm -rf "$work_dir"
+	fi
 }
 trap cleanup EXIT
 
@@ -81,6 +85,12 @@ fail() {
 	fi
 	if [[ -f "$work_dir/headless-continuation.log" ]]; then
 		cat "$work_dir/headless-continuation.log" >&2
+	fi
+	if [[ -f "$work_dir/headless-trace.log" ]]; then
+		cat "$work_dir/headless-trace.log" >&2
+	fi
+	if [[ -f "$work_dir/headless-trace-result" ]]; then
+		cat "$work_dir/headless-trace-result" >&2
 	fi
 	if [[ -f "$work_dir/headless-timeout.log" ]]; then
 		cat "$work_dir/headless-timeout.log" >&2
@@ -385,6 +395,38 @@ PY
 		curl -fsS "$api/v1/sessions/$headless_session_id/messages" >"$work_dir/headless-messages"
 		grep -Fq '"content":"Say hello"' "$work_dir/headless-messages" || fail 'headless user turn was not persisted'
 		grep -Fq '"content":"Provider fixture reply"' "$work_dir/headless-messages" || fail 'headless assistant turn was not persisted'
+		printf 'Smoke: exporting an opt-in ATIF trajectory from the live V runtime\n'
+		env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
+		"$work_dir/veasel" run --prompt 'Inspect workspace' --workspace "$work_dir/workspace" \
+			--trace-file "$work_dir/headless-trajectory.json" --json \
+			>"$work_dir/headless-trace-result" 2>"$work_dir/headless-trace.log" \
+			|| fail 'headless trace task command failed'
+		if [[ -n "${VEASEL_SMOKE_TRACE_ARTIFACT:-}" ]]; then
+			cp "$work_dir/headless-trajectory.json" "$VEASEL_SMOKE_TRACE_ARTIFACT"
+		fi
+		python3 - "$work_dir/headless-trace-result" "$work_dir/headless-trajectory.json" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+trajectory = json.load(open(sys.argv[2], encoding="utf-8"))
+assert result["status"] == "completed", result
+assert result["trace_file"] == sys.argv[2], result
+assert trajectory["schema_version"] == "ATIF-v1.8", trajectory
+assert trajectory["session_id"] == result["session_id"], trajectory
+assert trajectory["agent"]["name"] == "Veasel Code", trajectory
+assert trajectory["agent"]["model_name"] == "smoke-model", trajectory
+assert [step["source"] for step in trajectory["steps"]] == ["system", "user", "agent", "agent"], trajectory
+assert "You are Veasel Code" in trajectory["steps"][0]["message"], trajectory
+assert trajectory["steps"][1]["message"] == "Inspect workspace", trajectory
+tool_step = trajectory["steps"][2]
+assert tool_step["tool_calls"][0]["function_name"] == "workspace_search", tool_step
+assert tool_step["observation"]["results"][0]["source_call_id"] == tool_step["tool_calls"][0]["tool_call_id"], tool_step
+assert "workspace-search-sentinel" in tool_step["observation"]["results"][0]["content"], tool_step
+assert trajectory["steps"][3]["message"] == "Found workspace-search-sentinel", trajectory
+assert trajectory["extra"]["token_usage"] == "unavailable", trajectory
+assert trajectory["extra"]["cost"] == "unavailable", trajectory
+PY
 		printf 'Smoke: continuing the same headless session with an independent operation ID\n'
 		env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
 			"$work_dir/veasel" run --prompt 'Say hello' --session "$headless_session_id" --json \

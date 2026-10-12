@@ -667,7 +667,7 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	session := store.create_session(SessionInput{ title: 'Chat', directory: '/tmp/chat' }) or {
 		panic(err)
 	}
-	exchange := store.append_exchange(session.id, '', 'What is this?', 'A test reply.', '', '') or {
+	exchange := store.append_exchange(session.id, '', 'What is this?', 'A test reply.', '', '', '') or {
 		panic(err)
 	}
 	assert exchange.len == 2
@@ -690,7 +690,7 @@ fn test_chat_history_pages_use_an_exclusive_message_cursor() {
 		panic(err)
 	}
 	for index in 0 .. 3 {
-		_ = store.append_exchange(session.id, '', 'Question ${index}', 'Answer ${index}', '', '') or {
+		_ = store.append_exchange(session.id, '', 'Question ${index}', 'Answer ${index}', '', '', '') or {
 			panic(err)
 		}
 	}
@@ -718,7 +718,7 @@ fn test_async_session_turn_completion_event_commits_with_exchange() {
 	}
 	operation_id := 'b1f21cb9-6f34-43d6-b924-7e8b71d9b307'
 	_ = store.append_exchange(session.id, operation_id, 'Review this change', 'Looks good.',
-		'openai-compatible', 'fixture-model') or { panic(err) }
+		'openai-compatible', 'fixture-model', '') or { panic(err) }
 	events := store.events_after(0) or { panic(err) }
 	completion := events[events.len - 1]
 	assert completion.type == 'session.turn_completed'
@@ -771,7 +771,7 @@ fn test_session_operation_completion_commits_with_chat_history() {
 	operation_id := 'a21fdf7a-cd12-49a2-9617-f60cf12b824c'
 	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
 	_ = store.append_exchange(session.id, operation_id, 'Question', 'Answer', 'openai-compatible',
-		'fixture-model') or { panic(err) }
+		'fixture-model', '') or { panic(err) }
 	mut duplicate_rejected := false
 	_ = store.create_session_operation(session.id, operation_id) or {
 		duplicate_rejected = err.msg() == 'session operation already exists'

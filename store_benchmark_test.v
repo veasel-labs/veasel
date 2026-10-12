@@ -22,7 +22,7 @@ fn run_session_store_sample(iterations int) int {
 			directory: os.temp_dir()
 		}) or { panic('failed to create benchmark session: ${err}') }
 		_ = store.append_exchange(session.id, '', 'user prompt ${i}', 'assistant response ${i}',
-			'', '') or {
+			'', '', '') or {
 			panic('failed to persist benchmark exchange: ${err}')
 		}
 		messages := store.messages_for_session(session.id, 20) or {

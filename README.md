@@ -197,6 +197,8 @@ tracks the compatibility target and required evidence; Veasel's Agent Plugins
 integration remains experimental and does not claim full conformance.
 Release compiler selection, production flags, and benchmark build provenance
 are documented in [`docs/V_BUILD_PROFILE.md`](docs/V_BUILD_PROFILE.md).
+Headless ATIF export and the limits of current benchmark readiness are
+documented in [`docs/benchmarking.md`](docs/benchmarking.md).
 
 ## Licensing
 

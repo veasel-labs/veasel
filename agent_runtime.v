@@ -116,7 +116,7 @@ fn agent_skill_resource_tools(access []AgentSkillResourceAccess) []AgentToolDefi
 
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
 	session_id string, operation_id string, skill_context SessionSkillContext,
-	on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	on_text_delta ProviderTextDeltaFn, collect_trace bool) !AgentTraceResult {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -141,6 +141,22 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
+	mut trace_steps := []ATIFStep{}
+	if collect_trace {
+		for message in messages {
+			source := match message.role {
+				'system' { 'system' }
+				'user' { 'user' }
+				'assistant' { 'agent' }
+				else { continue }
+			}
+			trace_steps << ATIFStep{
+				step_id: trace_steps.len + 1
+				source:  source
+				message: message.content
+			}
+		}
+	}
 	for round in 0 .. max_agent_tool_rounds {
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
@@ -153,7 +169,18 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
 			}
-			return output
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id:    trace_steps.len + 1
+					source:     'agent'
+					model_name: output.model
+					message:    output.content
+				}
+			}
+			return AgentTraceResult{
+				output: output
+				steps:  trace_steps
+			}
 		}
 		if tool_calls + output.tool_calls.len > max_agent_tool_calls {
 			return error('agent tool call limit reached')
@@ -175,12 +202,26 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			}
 			seen_tool_call_ids[call.id] = true
 		}
+		mut trace_tool_calls := []ATIFToolCall{}
+		if collect_trace {
+			for call in output.tool_calls {
+				trace_tool_calls << atif_tool_call(call)!
+			}
+			trace_steps << ATIFStep{
+				step_id:    trace_steps.len + 1
+				source:     'agent'
+				model_name: output.model
+				message:    output.content
+				tool_calls: trace_tool_calls
+			}
+		}
 		messages << ChatMessage{
 			role:       'assistant'
 			content:    output.content
 			tool_calls: output.tool_calls
 		}
 		tool_calls += output.tool_calls.len
+		mut trace_observations := []ATIFObservationResult{}
 		for call in output.tool_calls {
 			result := execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, operation_id,
 				call, skill_context, mcp_bindings, mut mcp_connections)!
@@ -188,12 +229,23 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
 			}
+			if collect_trace {
+				trace_observations << ATIFObservationResult{
+					source_call_id: call.id
+					content:        result
+				}
+			}
 			messages << ChatMessage{
 				role:                  'tool'
 				name:                  call.function.name
 				tool_call_id:          call.id
 				provider_tool_call_id: call.provider_call_id
 				content:               result
+			}
+		}
+		if collect_trace {
+			trace_steps[trace_steps.len - 1].observation = ATIFObservation{
+				results: trace_observations
 			}
 		}
 	}

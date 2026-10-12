@@ -82,6 +82,40 @@ fn test_headless_cli_rejects_duplicate_prompt_and_unknown_flags() {
 	}
 }
 
+fn test_headless_cli_trace_export_is_explicit_and_validated() {
+	options := parse_headless_run_args(['--prompt', 'Task', '--trace-file', 'out/trace.json'],
+		'/tmp') or { panic(err) }
+	assert options.trace_file == 'out/trace.json'
+	if _ := parse_headless_run_args(['--prompt', 'Task', '--trace-file', ''], '/tmp') {
+		assert false
+	} else {
+		assert err.msg().contains('trace-file expects')
+	}
+	if _ := parse_headless_run_args(['--prompt', 'Task', '--trace-file', 'one', '--trace-file',
+		'two'],
+		'/tmp') {
+		assert false
+	} else {
+		assert err.msg().contains('trace-file expects')
+	}
+}
+
+fn test_headless_trace_file_write_publishes_complete_content() {
+	path := os.join_path(os.temp_dir(), 'veasel-trace-${os.getpid()}.json')
+	defer {
+		os.rm(path) or {}
+		os.rm('${path}.tmp') or {}
+	}
+	write_atif_trace_file(path, '{"schema_version":"ATIF-v1.8"}') or { panic(err) }
+	assert os.read_file(path) or { panic(err) } == '{"schema_version":"ATIF-v1.8"}'
+	$if !windows {
+		mode := os.stat(path)!.get_mode()
+		assert mode.owner.read && mode.owner.write
+		assert !mode.group.read && !mode.group.write && !mode.group.execute
+		assert !mode.others.read && !mode.others.write && !mode.others.execute
+	}
+}
+
 fn test_headless_cli_defaults_to_current_directory_when_requested() {
 	options := parse_headless_run_args(['--prompt', 'Task', '--workspace', os.getwd()], '/') or {
 		panic(err)

@@ -65,7 +65,8 @@ pub:
 
 struct ChatMessageInput {
 pub:
-	content string
+	content       string
+	collect_trace bool @[json: 'collect_trace'; omitempty]
 }
 
 struct PluginSkillSelectionInput {
@@ -130,6 +131,7 @@ pub:
 	provider     string
 	model        string
 	content      string
+	trajectory   string @[omitempty]
 }
 
 struct CompletionResponse {
@@ -814,6 +816,7 @@ pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
 		provider:     operation.provider
 		model:        operation.model
 		content:      content
+		trajectory:   app.store.operation_trace(id, canonical_id) or { '' }
 	})
 }
 
@@ -1117,8 +1120,8 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	on_text_delta := fn [mut delta_buffer] (delta string) ! {
 		delta_buffer.append(delta)!
 	}
-	output := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
-		operation_id, skill_context, on_text_delta) or {
+	result := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
+		operation_id, skill_context, on_text_delta, input.collect_trace) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
 		}
@@ -1131,8 +1134,15 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
+	output := result.output
+	mut trace_json := ''
+	if input.collect_trace {
+		trace_json = encode_atif_trace(id, product_version, output.model, result.steps) or {
+			return error('unable to encode ATIF trajectory')
+		}
+	}
 	persisted := app.store.append_exchange(id, operation_id, input.content, output.content,
-		output.provider, output.model) or {
+		output.provider, output.model, trace_json) or {
 		return error('unable to persist session messages')
 	}
 	return ChatExchange{

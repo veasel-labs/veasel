@@ -15,7 +15,7 @@ concurrency:
 jobs:
   release-plan:
     name: Version plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -51,7 +51,7 @@ jobs:
 
   harbor-adapter:
     name: Harbor installed-agent adapter
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -349,7 +349,7 @@ jobs:
 
   security:
     name: Security scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -385,7 +385,7 @@ jobs:
 
   tui:
     name: Terminal client
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -404,7 +404,7 @@ jobs:
     name: Publish verified prerelease
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-plan.outputs.released == 'true'
     needs: [release-plan, backend, security, tui, harbor-adapter]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write

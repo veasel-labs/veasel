@@ -15,7 +15,7 @@ concurrency:
 jobs:
   filesystem:
     name: Secrets, dependencies, and workflow configuration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read

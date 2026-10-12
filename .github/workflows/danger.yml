@@ -11,7 +11,7 @@ permissions:
 jobs:
   danger:
     name: TypeScript DangerJS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       # Run only policy code from the trusted PR base. Never execute the PR head

@@ -72,7 +72,7 @@ model, endpoint, and API key. Presets
 cover Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
 endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
 Hyperbolic, Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, OpenRouter,
-Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
+MiniMax, Perplexity, SambaNova, Scaleway Generative APIs, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
 xAI, [Z.AI](https://docs.z.ai/), Cloudflare Workers AI, [Atomic Chat](https://opencode.ai/docs/providers/), llama.cpp, LM Studio, LocalAI, and vLLM. Local
 presets target loopback servers by default; Cloudflare requires replacing the
 account-ID placeholder in its endpoint. Alibaba Cloud Model Studio defaults to

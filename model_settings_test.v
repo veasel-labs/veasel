@@ -77,6 +77,8 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['zai']
 	assert seen['302-ai']
 	assert seen['gmi-cloud']
+	assert seen['minimax']
+	assert seen['scaleway']
 	provider_302 := model_provider_info('302-ai') or { panic('302.AI missing') }
 	assert provider_302.base_url == 'https://api.302.ai/v1'
 	assert provider_302.environment_key == '302AI_API_KEY'
@@ -85,6 +87,12 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert gmi_cloud.base_url == 'https://api.gmi-serving.com/v1'
 	assert gmi_cloud.environment_key == 'GMI_API_KEY'
 	assert gmi_cloud.protocol == 'openai-compatible'
+	minimax := model_provider_info('minimax') or { panic('MiniMax missing') }
+	assert minimax.base_url == 'https://api.minimax.io/v1'
+	assert minimax.environment_key == 'MINIMAX_API_KEY'
+	scaleway := model_provider_info('scaleway') or { panic('Scaleway missing') }
+	assert scaleway.base_url == 'https://api.scaleway.ai/v1'
+	assert scaleway.environment_key == 'SCW_SECRET_KEY'
 	atomic_chat := model_provider_info('atomic-chat') or { panic('Atomic Chat missing') }
 	assert atomic_chat.base_url == 'http://127.0.0.1:1337/v1'
 	assert !atomic_chat.requires_api_key
@@ -143,6 +151,8 @@ fn test_provider_environment_key_uses_catalog_mapping() {
 		'zai':                   'ZAI_API_KEY'
 		'302-ai':                '302AI_API_KEY'
 		'gmi-cloud':             'GMI_API_KEY'
+		'minimax':               'MINIMAX_API_KEY'
+		'scaleway':              'SCW_SECRET_KEY'
 	} {
 		os.setenv(key, 'fixture-${provider}-key', true)
 		defer { os.unsetenv(key) }

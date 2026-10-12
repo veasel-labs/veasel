@@ -8,7 +8,7 @@ const supported_model_providers = ['openai-compatible', 'openai', 'anthropic', '
 	'groq', 'together', 'fireworks', 'mistral', 'openrouter', 'xai', 'cerebras', 'perplexity',
 	'deepinfra', 'venice', 'ollama', 'hyperbolic', 'moonshot', 'nvidia', 'siliconflow', 'sambanova',
 	'novita', 'nebius', 'huggingface', 'vercel', 'cloudflare-workers-ai', 'llama-cpp', 'lmstudio',
-	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai', '302-ai', 'gmi-cloud']
+	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai', '302-ai', 'gmi-cloud', 'minimax', 'scaleway']
 
 pub struct ModelProviderInfo {
 pub:
@@ -26,6 +26,7 @@ fn model_provider_catalog() []ModelProviderInfo {
 		ModelProviderInfo{ id: '302-ai', name: '302.AI', description: 'Multi-model gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.302.ai/v1', environment_key: '302AI_API_KEY' },
 		ModelProviderInfo{ id: 'dashscope', name: 'Alibaba Cloud Model Studio', description: 'Qwen and hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://dashscope-us.aliyuncs.com/compatible-mode/v1', environment_key: 'DASHSCOPE_API_KEY' },
 		ModelProviderInfo{ id: 'gmi-cloud', name: 'GMI Cloud', description: 'Hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.gmi-serving.com/v1', environment_key: 'GMI_API_KEY' },
+		ModelProviderInfo{ id: 'minimax', name: 'MiniMax', description: 'Agentic and coding models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.minimax.io/v1', environment_key: 'MINIMAX_API_KEY' },
 		ModelProviderInfo{ id: 'anthropic', name: 'Anthropic', description: 'Claude models · native Messages API', protocol: 'anthropic', base_url: 'https://api.anthropic.com/v1', environment_key: 'ANTHROPIC_API_KEY' },
 		ModelProviderInfo{ id: 'atomic-chat', name: 'Atomic Chat', description: 'Local models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:1337/v1', requires_api_key: false },
 		ModelProviderInfo{ id: 'cerebras', name: 'Cerebras', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cerebras.ai/v1', environment_key: 'CEREBRAS_API_KEY' },
@@ -51,6 +52,7 @@ fn model_provider_catalog() []ModelProviderInfo {
 		ModelProviderInfo{ id: 'openrouter', name: 'OpenRouter', description: 'Multi-provider routing · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://openrouter.ai/api/v1', environment_key: 'OPENROUTER_API_KEY' },
 		ModelProviderInfo{ id: 'perplexity', name: 'Perplexity', description: 'Sonar models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.perplexity.ai', environment_key: 'PERPLEXITY_API_KEY' },
 		ModelProviderInfo{ id: 'sambanova', name: 'SambaNova', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.sambanova.ai/v1', environment_key: 'SAMBANOVA_API_KEY' },
+		ModelProviderInfo{ id: 'scaleway', name: 'Scaleway Generative APIs', description: 'Hosted open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.scaleway.ai/v1', environment_key: 'SCW_SECRET_KEY' },
 		ModelProviderInfo{ id: 'siliconflow', name: 'SiliconFlow', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.siliconflow.com/v1', environment_key: 'SILICONFLOW_API_KEY' },
 		ModelProviderInfo{ id: 'together', name: 'Together AI', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.together.xyz/v1', environment_key: 'TOGETHER_API_KEY' },
 		ModelProviderInfo{ id: 'vercel', name: 'Vercel AI Gateway', description: 'Multi-provider gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://ai-gateway.vercel.sh/v1', environment_key: 'AI_GATEWAY_API_KEY' },

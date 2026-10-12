@@ -339,13 +339,9 @@ fn provider_api_key(provider string) ?string {
 	if shared_key := os.getenv_opt('VEASEL_MODEL_API_KEY') {
 		return shared_key
 	}
-	key_name := match provider {
-		'openai-compatible', 'openai' { 'OPENAI_API_KEY' }
-		'anthropic' { 'ANTHROPIC_API_KEY' }
-		'gemini' { 'GEMINI_API_KEY' }
-		else { return none }
-	}
-	return os.getenv_opt(key_name)
+	info := model_provider_info(provider) or { return none }
+	if info.environment_key == '' { return none }
+	return os.getenv_opt(info.environment_key)
 }
 
 fn secure_endpoint(base_url string) !string {
@@ -440,10 +436,17 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 
 fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) !CompletionOutput {
-	provider := match config.provider {
-		'openai-compatible', 'openai' { ModelProvider(OpenAICompatibleProvider{}) }
-		'anthropic' { ModelProvider(AnthropicProvider{}) }
-		'gemini' { ModelProvider(GeminiProvider{}) }
+	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
+	provider := match info.protocol {
+		'openai-compatible' {
+			ModelProvider(OpenAICompatibleProvider{})
+		}
+		'anthropic' {
+			ModelProvider(AnthropicProvider{})
+		}
+		'gemini' {
+			ModelProvider(GeminiProvider{})
+		}
 		else { return error('unsupported model provider') }
 	}
 	return provider.complete(mut turn_ctx, config, messages, tools, on_text_delta)
@@ -868,7 +871,9 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	headers.add_custom('Accept', 'text/event-stream')!
 	match auth {
 		.bearer {
-			headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
+			if config.api_key.len > 0 {
+				headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
+			}
 		}
 		.anthropic {
 			headers.add_custom('x-api-key', config.api_key)!

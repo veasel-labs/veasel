@@ -2,6 +2,8 @@ import {
   BoxRenderable,
   InputRenderable,
   InputRenderableEvents,
+  SelectRenderable,
+  SelectRenderableEvents,
   StyledText,
   TextRenderable,
   createCliRenderer,
@@ -9,6 +11,7 @@ import {
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
+import { filterModelProviders, type ModelProvider } from "./model-providers"
 
 type Session = {
   id: string
@@ -18,7 +21,7 @@ type Session = {
 }
 
 type ModelProfileView = { model: string; base_url: string; api_key_saved: boolean }
-type ModelSettingsView = { active_provider: string; profiles: Record<string, ModelProfileView> }
+type ModelSettingsView = { active_provider: string; profiles: Record<string, ModelProfileView>; providers: ModelProvider[] }
 
 type ChatExchange = {
   messages: ChatTurn[]
@@ -249,6 +252,8 @@ let chatHistoryLoading = false
 let settingsOpen = false
 let settingsInput: InputRenderable | undefined
 let settingsSecretIndicator: TextRenderable | undefined
+let settingsProviderSelect: SelectRenderable | undefined
+let settingsProviderQuery = ""
 let settingsStep = 0
 let settingsView: ModelSettingsView | undefined
 const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false }
@@ -1155,17 +1160,20 @@ function beginCreate() {
 }
 
 const settingPrompts = [
-  "Provider (openai-compatible, openai, anthropic, gemini):",
+  "Choose a provider. The model and endpoint can be changed in the next steps.",
   "Model identifier (for example claude-sonnet-4-5 or gpt-5):",
   "API base URL (must use HTTPS, except loopback HTTP):",
-  "API key (hidden; leave blank to keep saved key, type !clear to remove):",
+  "API key (hidden; Enter keeps a saved key, !clear removes it; optional for Ollama):",
 ]
 
 function closeSettings(message = "Settings unchanged.") {
+  if (settingsProviderSelect) detail.remove(settingsProviderSelect)
   if (settingsInput) detail.remove(settingsInput)
   if (settingsSecretIndicator) detail.remove(settingsSecretIndicator)
   settingsInput = undefined
   settingsSecretIndicator = undefined
+  settingsProviderSelect = undefined
+  settingsProviderQuery = ""
   settingsValues.api_key = ""
   settingsOpen = false
   sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
@@ -1182,16 +1190,68 @@ function closeSettings(message = "Settings unchanged.") {
 }
 
 function showSettingsStep() {
+  if (settingsProviderSelect) detail.remove(settingsProviderSelect)
   if (settingsInput) detail.remove(settingsInput)
   if (settingsSecretIndicator) detail.remove(settingsSecretIndicator)
   settingsInput = undefined
   settingsSecretIndicator = undefined
+  settingsProviderSelect = undefined
   const active = settingsView?.active_provider ?? "openai-compatible"
+  const providerInfo = settingsView?.providers.find((provider) => provider.id === settingsValues.provider)
   const prior = settingsView?.profiles[settingsValues.provider]
   const hint = settingsStep === 3
-    ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."} Key characters are hidden.`
+    ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."}${providerInfo?.environment_key ? ` Use ${providerInfo.environment_key} instead of saving a key.` : ""} Key characters are hidden.`
     : ""
-  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${hint}\n\nEnter accepts · Esc cancels`
+  const providerSearchHint = settingsStep === 0
+    ? `\n\nFilter  ${settingsProviderQuery || "type a provider name, ID, or key variable"}`
+    : ""
+  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${hint}\n\nEnter selects or accepts · Esc cancels`
+  if (settingsStep === 0) {
+    const catalog = settingsView?.providers ?? []
+    if (catalog.length === 0) {
+      sessionDetail.content += "\n\nThe server did not return a provider catalog. Update or restart the Veasel server."
+      return
+    }
+    const providers = filterModelProviders(catalog, settingsProviderQuery)
+    if (providers.length === 0) {
+      sessionDetail.content += "\n\nNo providers match this filter. Backspace clears characters."
+      return
+    }
+    const activeIndex = Math.max(0, providers.findIndex((provider) => provider.id === active))
+    const select = new SelectRenderable(renderer, {
+      id: "model-provider-select",
+      width: "100%",
+      height: Math.min(18, providers.length * 2 + 1),
+      options: providers.map((provider) => ({
+        name: `${settingsView?.profiles[provider.id]?.api_key_saved ? "◆" : "◇"}  ${provider.name}`,
+        description: `${provider.description}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
+        value: provider.id,
+      })),
+      selectedIndex: activeIndex,
+      backgroundColor: "#171c22",
+      focusedBackgroundColor: "#202832",
+      selectedBackgroundColor: "#293640",
+      selectedTextColor: "#a7f3d0",
+      descriptionColor: "#87949e",
+      showDescription: true,
+      showScrollIndicator: true,
+    })
+    settingsProviderSelect = select
+    detail.add(select)
+    select.focus()
+    select.on(SelectRenderableEvents.ITEM_SELECTED, (_index, option) => {
+      const providerId = String(option.value ?? "")
+      const provider = providers.find((item) => item.id === providerId)
+      if (!provider) return
+      settingsValues.provider = provider.id
+      const profile = settingsView?.profiles[provider.id]
+      settingsValues.model = profile?.model ?? ""
+      settingsValues.base_url = profile?.base_url ?? provider.base_url
+      settingsStep++
+      showSettingsStep()
+    })
+    return
+  }
   if (settingsStep === 3) {
     settingsSecretIndicator = new TextRenderable(renderer, {
       content: "",
@@ -1203,7 +1263,7 @@ function showSettingsStep() {
   const input = new InputRenderable(renderer, {
     id: `model-setting-${settingsStep}`,
     width: 58,
-    placeholder: settingsStep === 0 ? active : settingsStep === 1 ? "model name" : settingsStep === 2 ? "https://api.example.com/v1" : "••••••••",
+    placeholder: settingsStep === 1 ? "model name" : "https://api.example.com/v1",
     backgroundColor: "#202832",
     focusedBackgroundColor: "#293640",
     textColor: "#e5e7eb",
@@ -1216,12 +1276,7 @@ function showSettingsStep() {
   input.focus()
   input.on(InputRenderableEvents.ENTER, (value) => {
     const clean = value.trim()
-    if (settingsStep === 0) {
-      settingsValues.provider = clean || active
-      const profile = settingsView?.profiles[settingsValues.provider]
-      settingsValues.model = profile?.model ?? ""
-      settingsValues.base_url = profile?.base_url ?? ({ anthropic: "https://api.anthropic.com/v1", gemini: "https://generativelanguage.googleapis.com/v1beta", openai: "https://api.openai.com/v1", "openai-compatible": "https://api.openai.com/v1" }[settingsValues.provider] ?? "")
-    } else if (settingsStep === 1) settingsValues.model = clean || settingsValues.model
+    if (settingsStep === 1) settingsValues.model = clean || settingsValues.model
     else if (settingsStep === 2) settingsValues.base_url = clean || settingsValues.base_url
     settingsStep++
     showSettingsStep()
@@ -1245,6 +1300,7 @@ async function openSettings() {
     settingsValues.base_url = ""
     settingsValues.api_key = ""
     settingsValues.clear_api_key = false
+    settingsProviderQuery = ""
     showSettingsStep()
   } catch (error) {
     closeSettings(`could not load model settings · ${error instanceof Error ? error.message : "request failed"}`)
@@ -1274,6 +1330,18 @@ async function saveModelSettings() {
 renderer.keyInput.on("keypress", (key) => {
   if (settingsOpen) {
     if (key.name === "escape") closeSettings()
+    else if (settingsStep === 0) {
+      if (key.name === "backspace") {
+        key.stopPropagation()
+        settingsProviderQuery = [...settingsProviderQuery].slice(0, -1).join("")
+        showSettingsStep()
+      } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+        key.stopPropagation()
+        settingsProviderQuery += key.sequence
+        showSettingsStep()
+      }
+      return
+    }
     else if (settingsStep === 3) {
       key.stopPropagation()
       if (key.name === "return" || key.name === "kpenter") {

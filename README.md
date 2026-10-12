@@ -64,11 +64,25 @@ v run .
 
 With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
 starts `veasel serve` and waits for its health endpoint before opening the TUI.
-Press `s` on the home screen, or enter `/models` in an open session, to choose a
-provider, model, endpoint, and API key. Provider profiles are stored in
+Press `s` on the home screen, or enter `/models` in an open session, to search
+and choose a provider in the keyboard-driven settings list, then configure its
+model, endpoint, and API key. Presets
+cover Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
+endpoints including Cerebras, DeepInfra, DeepSeek, Fireworks, Groq, Hugging Face,
+Hyperbolic, Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, OpenRouter,
+Perplexity, SambaNova, SiliconFlow, Together AI, Vercel AI Gateway, Venice, and
+xAI. The list is delivered by the backend API so the TUI does not maintain a
+second provider catalog. Compatible presets use the same Chat Completions wire
+format; provider-specific features beyond that contract are not implied.
+Ollama is the local no-key preset. Add other compatible services through the
+custom endpoint preset. Provider profiles are stored in
 `$VEASEL_DATA_DIR/model-settings.json` with owner-only file permissions on
 POSIX systems. Keys are stored locally in plaintext; use environment-based keys
 if your machine's local storage policy requires OS-managed secret storage.
+Provider-specific environment variables are shown in the settings catalog and
+can be used instead of saving a key; `VEASEL_MODEL_API_KEY` remains the shared
+override. The catalog currently offers common OpenCode-style provider choices,
+not full feature parity with OpenCode's provider-specific auth and SDK support.
 Saved provider/model/endpoint profiles take precedence over corresponding
 configuration variables; provider API-key environment variables take
 precedence over a saved key. Use a separate `VEASEL_DATA_DIR` for isolated

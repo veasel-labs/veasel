@@ -4,7 +4,58 @@ import json2
 import os
 import sync
 
-const supported_model_providers = ['openai-compatible', 'openai', 'anthropic', 'gemini']
+const supported_model_providers = ['openai-compatible', 'openai', 'anthropic', 'gemini', 'deepseek',
+	'groq', 'together', 'fireworks', 'mistral', 'openrouter', 'xai', 'cerebras', 'perplexity',
+	'deepinfra', 'venice', 'ollama', 'hyperbolic', 'moonshot', 'nvidia', 'siliconflow', 'sambanova',
+	'novita', 'nebius', 'huggingface', 'vercel']
+
+pub struct ModelProviderInfo {
+pub:
+	id               string
+	name             string
+	description      string
+	protocol         string
+	base_url         string
+	environment_key  string
+	requires_api_key bool = true
+}
+
+fn model_provider_catalog() []ModelProviderInfo {
+	return [
+		ModelProviderInfo{ id: 'anthropic', name: 'Anthropic', description: 'Claude models · native Messages API', protocol: 'anthropic', base_url: 'https://api.anthropic.com/v1', environment_key: 'ANTHROPIC_API_KEY' },
+		ModelProviderInfo{ id: 'cerebras', name: 'Cerebras', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cerebras.ai/v1', environment_key: 'CEREBRAS_API_KEY' },
+		ModelProviderInfo{ id: 'deepinfra', name: 'DeepInfra', description: 'Hosted open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.deepinfra.com/v1/openai', environment_key: 'DEEPINFRA_API_KEY' },
+		ModelProviderInfo{ id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.deepseek.com/v1', environment_key: 'DEEPSEEK_API_KEY' },
+		ModelProviderInfo{ id: 'fireworks', name: 'Fireworks AI', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.fireworks.ai/inference/v1', environment_key: 'FIREWORKS_API_KEY' },
+		ModelProviderInfo{ id: 'gemini', name: 'Google Gemini', description: 'Gemini models · native Google Generative Language API', protocol: 'gemini', base_url: 'https://generativelanguage.googleapis.com/v1beta', environment_key: 'GEMINI_API_KEY' },
+		ModelProviderInfo{ id: 'groq', name: 'Groq', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.groq.com/openai/v1', environment_key: 'GROQ_API_KEY' },
+		ModelProviderInfo{ id: 'huggingface', name: 'Hugging Face', description: 'Inference Providers · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://router.huggingface.co/v1', environment_key: 'HF_TOKEN' },
+		ModelProviderInfo{ id: 'hyperbolic', name: 'Hyperbolic', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.hyperbolic.xyz/v1', environment_key: 'HYPERBOLIC_API_KEY' },
+		ModelProviderInfo{ id: 'mistral', name: 'Mistral AI', description: 'Mistral models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.mistral.ai/v1', environment_key: 'MISTRAL_API_KEY' },
+		ModelProviderInfo{ id: 'moonshot', name: 'Moonshot AI', description: 'Kimi models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.moonshot.ai/v1', environment_key: 'MOONSHOT_API_KEY' },
+		ModelProviderInfo{ id: 'nebius', name: 'Nebius AI Studio', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.studio.nebius.com/v1', environment_key: 'NEBIUS_API_KEY' },
+		ModelProviderInfo{ id: 'novita', name: 'Novita AI', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.novita.ai/v3/openai', environment_key: 'NOVITA_API_KEY' },
+		ModelProviderInfo{ id: 'nvidia', name: 'NVIDIA NIM', description: 'NIM endpoints · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://integrate.api.nvidia.com/v1', environment_key: 'NVIDIA_API_KEY' },
+		ModelProviderInfo{ id: 'ollama', name: 'Ollama', description: 'Local models · OpenAI-compatible API, no key required', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:11434/v1', requires_api_key: false },
+		ModelProviderInfo{ id: 'openai', name: 'OpenAI', description: 'GPT models · OpenAI Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.openai.com/v1', environment_key: 'OPENAI_API_KEY' },
+		ModelProviderInfo{ id: 'openai-compatible', name: 'OpenAI-compatible', description: 'Custom endpoint · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.openai.com/v1', environment_key: 'OPENAI_API_KEY' },
+		ModelProviderInfo{ id: 'openrouter', name: 'OpenRouter', description: 'Multi-provider routing · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://openrouter.ai/api/v1', environment_key: 'OPENROUTER_API_KEY' },
+		ModelProviderInfo{ id: 'perplexity', name: 'Perplexity', description: 'Sonar models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.perplexity.ai', environment_key: 'PERPLEXITY_API_KEY' },
+		ModelProviderInfo{ id: 'sambanova', name: 'SambaNova', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.sambanova.ai/v1', environment_key: 'SAMBANOVA_API_KEY' },
+		ModelProviderInfo{ id: 'siliconflow', name: 'SiliconFlow', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.siliconflow.com/v1', environment_key: 'SILICONFLOW_API_KEY' },
+		ModelProviderInfo{ id: 'together', name: 'Together AI', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.together.xyz/v1', environment_key: 'TOGETHER_API_KEY' },
+		ModelProviderInfo{ id: 'vercel', name: 'Vercel AI Gateway', description: 'Multi-provider gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://ai-gateway.vercel.sh/v1', environment_key: 'AI_GATEWAY_API_KEY' },
+		ModelProviderInfo{ id: 'venice', name: 'Venice AI', description: 'Open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.venice.ai/api/v1', environment_key: 'VENICE_API_KEY' },
+		ModelProviderInfo{ id: 'xai', name: 'xAI', description: 'Grok models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.x.ai/v1', environment_key: 'XAI_API_KEY' },
+	]
+}
+
+fn model_provider_info(provider string) ?ModelProviderInfo {
+	for info in model_provider_catalog() {
+		if info.id == provider { return info }
+	}
+	return none
+}
 
 struct ModelProfile {
 pub:
@@ -23,6 +74,7 @@ pub struct ModelSettingsView {
 pub:
 	active_provider string
 	profiles        map[string]ModelProfileView
+	providers       []ModelProviderInfo
 }
 
 pub struct ModelProfileView {
@@ -77,7 +129,11 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 			api_key_saved: profile.api_key.len > 0
 		}
 	}
-	return ModelSettingsView{ active_provider: state.settings.active_provider, profiles: profiles }
+	return ModelSettingsView{
+		active_provider: state.settings.active_provider
+		profiles:        profiles
+		providers:       model_provider_catalog()
+	}
 }
 
 fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
@@ -148,22 +204,18 @@ fn (app &App) model_config() !ModelConfig {
 		return error('model is not configured')
 	}
 	api_key := provider_api_key(provider) or { profile.api_key }
-	if api_key.trim_space().len == 0 {
-		return error('model credentials are not configured for ${provider}')
-	}
 	base_url := if profile.base_url.len > 0 {
 		profile.base_url
 	} else {
 		os.getenv_opt('VEASEL_MODEL_BASE_URL') or {
-			match provider {
-				'openai-compatible', 'openai' { 'https://api.openai.com/v1' }
-				'anthropic' { 'https://api.anthropic.com/v1' }
-				'gemini' { 'https://generativelanguage.googleapis.com/v1beta' }
-				else { return error('unsupported model provider') }
-			}
+			info := model_provider_info(provider) or { return error('unsupported model provider') }
+			info.base_url
 		}
 	}
-	if provider !in supported_model_providers { return error('unsupported model provider') }
+	info := model_provider_info(provider) or { return error('unsupported model provider') }
+	if info.requires_api_key && api_key.trim_space().len == 0 {
+		return error('model credentials are not configured for ${provider}')
+	}
 	return ModelConfig{ provider: provider, base_url: secure_endpoint(base_url)!, model: model.trim_space(), api_key: api_key }
 }
 

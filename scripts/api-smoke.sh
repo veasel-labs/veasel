@@ -809,6 +809,11 @@ import sys
 
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["active_provider"] == "openai-compatible"
+providers = {provider["id"]: provider for provider in settings["providers"]}
+assert len(providers) >= 25
+assert providers["ollama"]["requires_api_key"] is False
+assert providers["deepseek"]["protocol"] == "openai-compatible"
+assert providers["anthropic"]["protocol"] == "anthropic"
 profile = settings["profiles"]["openai-compatible"]
 assert profile["model"] == "settings-smoke-model"
 assert profile["api_key_saved"] is True

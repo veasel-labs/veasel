@@ -1047,7 +1047,7 @@ components:
       properties:
         provider:
           type: string
-          enum: [openai-compatible, openai, anthropic, gemini]
+          enum: [openai-compatible, openai, anthropic, gemini, deepseek, groq, together, fireworks, mistral, openrouter, xai, cerebras, perplexity, deepinfra, venice, ollama, hyperbolic, moonshot, nvidia, siliconflow, sambanova, novita, nebius, huggingface, vercel]
         model:
           type: string
           minLength: 1
@@ -1065,11 +1065,11 @@ components:
           default: false
     ModelSettingsView:
       type: object
-      required: [active_provider, profiles]
+      required: [active_provider, profiles, providers]
       properties:
         active_provider:
           type: string
-          enum: [openai-compatible, openai, anthropic, gemini]
+          enum: [openai-compatible, openai, anthropic, gemini, deepseek, groq, together, fireworks, mistral, openrouter, xai, cerebras, perplexity, deepinfra, venice, ollama, hyperbolic, moonshot, nvidia, siliconflow, sambanova, novita, nebius, huggingface, vercel]
         profiles:
           type: object
           additionalProperties:
@@ -1079,6 +1079,20 @@ components:
               model: { type: string }
               base_url: { type: string }
               api_key_saved: { type: boolean }
+        providers:
+          type: array
+          description: Built-in provider presets. OpenAI-compatible entries share the Chat Completions transport and can override the endpoint.
+          items:
+            type: object
+            required: [id, name, description, protocol, base_url, environment_key, requires_api_key]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
+              protocol: { type: string, enum: [openai-compatible, anthropic, gemini] }
+              base_url: { type: string }
+              environment_key: { type: string }
+              requires_api_key: { type: boolean }
     PluginCatalog:
       type: object
       required: [plugins, diagnostics]

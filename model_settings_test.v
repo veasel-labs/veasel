@@ -52,6 +52,78 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 	assert false
 }
 
+fn test_provider_catalog_includes_native_and_openai_compatible_options() {
+	catalog := model_provider_catalog()
+	assert catalog.len == supported_model_providers.len
+	mut seen := map[string]bool{}
+	for provider in catalog {
+		assert provider.id in supported_model_providers
+		assert !seen[provider.id]
+		seen[provider.id] = true
+		assert provider.name.len > 0
+		assert provider.description.len > 0
+		assert provider.base_url.starts_with('https://') || provider.id == 'ollama'
+		assert provider.protocol in ['anthropic', 'gemini', 'openai-compatible']
+	}
+	assert seen['openai-compatible']
+	assert seen['anthropic']
+	assert seen['gemini']
+	assert seen['deepseek']
+	assert seen['openrouter']
+	assert seen['ollama']
+	ollama := model_provider_info('ollama') or { panic('Ollama missing from catalog') }
+	assert !ollama.requires_api_key
+}
+
+fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
+	mut state := new_model_settings_state('')
+	state.update(ModelSettingsInput{
+		provider: 'groq'
+		model:    'fixture-model'
+		base_url: 'https://api.groq.com/openai/v1'
+		api_key:  'secret-fixture-key'
+	}) or { panic(err) }
+	view := state.view()
+	assert view.active_provider == 'groq'
+	assert view.providers.len == supported_model_providers.len
+	assert view.profiles['groq'].api_key_saved
+	assert !json2.encode(view).contains('secret-fixture-key')
+}
+
+fn test_provider_environment_key_uses_catalog_mapping() {
+	for provider, key in {
+		'deepseek':   'DEEPSEEK_API_KEY'
+		'groq':       'GROQ_API_KEY'
+		'openrouter': 'OPENROUTER_API_KEY'
+		'xai':        'XAI_API_KEY'
+		'vercel':     'AI_GATEWAY_API_KEY'
+	} {
+		os.setenv(key, 'fixture-${provider}-key', true)
+		defer { os.unsetenv(key) }
+		assert provider_api_key(provider) or { '' } == 'fixture-${provider}-key'
+	}
+}
+
+fn test_ollama_profile_builds_a_local_model_config_without_credentials() {
+	root := os.join_path(os.temp_dir(), 'veasel-ollama-settings-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'ollama'
+		model:    'qwen2.5-coder:7b'
+		base_url: 'http://127.0.0.1:11434/v1'
+	}) or { panic(err) }
+	config := app.model_config() or { panic(err) }
+	assert config.provider == 'ollama'
+	assert config.model == 'qwen2.5-coder:7b'
+	assert config.api_key == ''
+	assert config.base_url == 'http://127.0.0.1:11434/v1'
+	app.close()
+	store.close() or { panic(err) }
+}
+
 fn test_model_settings_persistence_failure_does_not_change_active_configuration() {
 	root := os.join_path(os.temp_dir(), 'veasel-model-settings-${uuid.new_v4().str()}')
 	blocker := os.join_path(root, 'not-a-directory')

@@ -173,6 +173,8 @@ gates required before repository tools are enabled. The pinned
 [`Agent Plugins v1.0.0 conformance plan`](docs/compatibility/agent-plugins.md)
 tracks the compatibility target and required evidence; Veasel's Agent Plugins
 integration remains experimental and does not claim full conformance.
+Release compiler selection, production flags, and benchmark build provenance
+are documented in [`docs/V_BUILD_PROFILE.md`](docs/V_BUILD_PROFILE.md).
 
 ## Licensing
 

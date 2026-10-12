@@ -75,6 +75,16 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['atomic-chat']
 	assert seen['dashscope']
 	assert seen['zai']
+	assert seen['302-ai']
+	assert seen['gmi-cloud']
+	provider_302 := model_provider_info('302-ai') or { panic('302.AI missing') }
+	assert provider_302.base_url == 'https://api.302.ai/v1'
+	assert provider_302.environment_key == '302AI_API_KEY'
+	assert provider_302.protocol == 'openai-compatible'
+	gmi_cloud := model_provider_info('gmi-cloud') or { panic('GMI Cloud missing') }
+	assert gmi_cloud.base_url == 'https://api.gmi-serving.com/v1'
+	assert gmi_cloud.environment_key == 'GMI_API_KEY'
+	assert gmi_cloud.protocol == 'openai-compatible'
 	atomic_chat := model_provider_info('atomic-chat') or { panic('Atomic Chat missing') }
 	assert atomic_chat.base_url == 'http://127.0.0.1:1337/v1'
 	assert !atomic_chat.requires_api_key
@@ -131,6 +141,8 @@ fn test_provider_environment_key_uses_catalog_mapping() {
 		'cloudflare-workers-ai': 'CLOUDFLARE_API_TOKEN'
 		'dashscope':             'DASHSCOPE_API_KEY'
 		'zai':                   'ZAI_API_KEY'
+		'302-ai':                '302AI_API_KEY'
+		'gmi-cloud':             'GMI_API_KEY'
 	} {
 		os.setenv(key, 'fixture-${provider}-key', true)
 		defer { os.unsetenv(key) }

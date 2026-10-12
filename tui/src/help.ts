@@ -31,9 +31,9 @@ export function renderHelp() {
     "",
     "SHORTCUTS",
     "n  new session   r  refresh sessions   ↑/↓ or j/k  navigate   Esc  cancel turn   q  quit",
-    "",
-    "SAFETY",
-    "Review file diffs, exact shell commands, and MCP arguments before approval. Shell runs as your user without a sandbox.",
+  "",
+  "SAFETY",
+  "Requested file excerpts go to your provider. Review diffs, exact shell commands, and MCP arguments before approval. Approved commands run as your user without a sandbox.",
     "",
     "Use /help whenever you need this guide again.",
   ].join("\n")

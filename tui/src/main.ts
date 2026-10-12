@@ -195,8 +195,10 @@ const portraitText = new StyledText(portrait.flatMap((row) => [
   ...[...row].map((pixel) => fg(pixelColors[pixel] ?? "#171c22")(pixel === " " ? "  " : "██")),
   fg("#171c22")("\n"),
 ]))
-detail.add(new TextRenderable(renderer, { content: portraitText }))
-detail.add(new TextRenderable(renderer, { content: "VEASEL CODE", fg: "#a7f3d0" }))
+const portraitRenderable = new TextRenderable(renderer, { content: portraitText })
+detail.add(portraitRenderable)
+const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: "#a7f3d0" })
+detail.add(brandLabel)
 const sessionDetail = new TextRenderable(renderer, {
   content: "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again.",
   fg: "#b9c2ca",
@@ -294,8 +296,10 @@ async function createSession(title: string) {
 
 function renderChat(messages: ChatTurn[]) {
   chatMessages = messages
+  portraitRenderable.content = activeSession ? "" : portraitText
+  brandLabel.content = activeSession ? "" : "VEASEL CODE"
   const heading = activeSession
-    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nFile excerpts requested by Veasel are sent to your configured model provider. Proposed replacements and commands stay local until review and approval. Approved shell commands inherit the server environment, run as your OS user, and are not sandboxed.\n\n`
+    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
     : ""
   sessionDetail.content = safeTerminalText(heading)
     + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0

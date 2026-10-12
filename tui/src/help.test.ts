@@ -9,6 +9,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("/patches · /patch show|approve|reject <id>")
     expect(help).toContain("/commands · /command show|approve|reject <id>")
     expect(help).toContain("/history older")
+    expect(help).toContain("Requested file excerpts go to your provider.")
     expect(help).toContain("without a sandbox")
     expect(helpItems.length).toBeGreaterThan(5)
   })

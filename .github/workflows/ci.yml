@@ -151,13 +151,19 @@ jobs:
       - name: Install terminal client dependencies
         run: bun install --frozen-lockfile
         working-directory: tui
-      - name: Build backend on Unix
-        if: runner.os != 'Windows'
+      - name: Build Linux backend with bundled SQLite
+        if: runner.os == 'Linux'
         run: |
           mkdir -p "$RUNNER_TEMP/no-pkgconfig"
           export PKG_CONFIG_PATH=""
           export PKG_CONFIG_LIBDIR="$RUNNER_TEMP/no-pkgconfig"
-          v -cc ${{ matrix.cc }} -prod \
+          v -cc gcc -prod \
+            -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" \
+            -o dist/veasel .
+      - name: Build macOS backend with system SQLite
+        if: runner.os == 'macOS'
+        run: |
+          v -cc clang -prod \
             -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" \
             -o dist/veasel .
       - name: Verify Unix binary version

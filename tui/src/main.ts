@@ -8,6 +8,7 @@ import {
   fg,
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
+import { renderHelp, unknownSlashCommand } from "./help"
 
 type Session = {
   id: string
@@ -194,8 +195,10 @@ const portraitText = new StyledText(portrait.flatMap((row) => [
   ...[...row].map((pixel) => fg(pixelColors[pixel] ?? "#171c22")(pixel === " " ? "  " : "██")),
   fg("#171c22")("\n"),
 ]))
-detail.add(new TextRenderable(renderer, { content: portraitText }))
-detail.add(new TextRenderable(renderer, { content: "VEASEL CODE", fg: "#a7f3d0" }))
+const portraitRenderable = new TextRenderable(renderer, { content: portraitText })
+detail.add(portraitRenderable)
+const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: "#a7f3d0" })
+detail.add(brandLabel)
 const sessionDetail = new TextRenderable(renderer, {
   content: "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again.",
   fg: "#b9c2ca",
@@ -218,7 +221,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 footer.add(new TextRenderable(renderer, {
-  content: "n new   /skills   /mcp   /patches   /commands   /patch show|approve|reject   /command show|approve|reject   Esc cancel   ↑/↓   q quit",
+  content: "n new   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit",
   fg: "#87949e",
 }))
 shell.add(header)
@@ -293,11 +296,18 @@ async function createSession(title: string) {
 
 function renderChat(messages: ChatTurn[]) {
   chatMessages = messages
-  const heading = activeSession
-    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\nWORKSPACE / DATA FLOW\nFile excerpts requested by Veasel are sent to your configured model provider. Proposed replacements and commands stay local until review and approval. Approved shell commands inherit the server environment, run as your OS user, and are not sandboxed.\n\n`
+  const helpVisible = skillNotice.startsWith("VEASEL CODE / QUICK HELP")
+  header.visible = !helpVisible
+  sidebar.visible = !helpVisible
+  portraitRenderable.content = activeSession ? "" : portraitText
+  brandLabel.content = activeSession ? "" : "VEASEL CODE"
+  const heading = activeSession && !helpVisible
+    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
     : ""
   sessionDetail.content = safeTerminalText(heading)
-    + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (messages.length === 0
+    + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (helpVisible
+    ? ""
+    : messages.length === 0
     ? "Start with a question or describe a coding task."
     : messages.map((message) => {
       const label = message.role === "assistant" ? "VEASEL" : "YOU"
@@ -364,6 +374,13 @@ async function sendMessage(value: string) {
   const content = value.trim()
   const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
   if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
+  if (content === "/help" || content === "/?" || content === "/help advanced") {
+    skillNotice = renderHelp(content === "/help" && (process.stdout.rows ?? 40) < 30)
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/history older") {
     chatInput.value = ""
     await loadOlderChatHistory()
@@ -487,6 +504,14 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (unknownSlashCommand(content)) {
+    skillNotice = `Unknown command: ${safeTerminalText(content)}\n\nType /help to see available commands. Messages to the model should start with normal text.`
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  skillNotice = ""
   sendingMessage = true
   activeTurnId = crypto.randomUUID()
   activeTurnController = new AbortController()

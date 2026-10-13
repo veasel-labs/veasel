@@ -45,6 +45,7 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def test_provider_mapping_is_explicit(self) -> None:
         self.assertEqual(_veasel_provider("openai", "openai/gpt-test"), ("openai", "gpt-test"))
+        self.assertEqual(_veasel_provider("meta", "meta/muse-wonder-1.0"), ("meta", "muse-wonder-1.0"))
         self.assertEqual(_veasel_provider("google", "google/gemini-test"), ("gemini", "gemini-test"))
         self.assertEqual(
             _veasel_provider(

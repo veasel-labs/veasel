@@ -2,7 +2,7 @@ export type ModelProvider = {
   id: string
   name: string
   description: string
-  protocol: "openai-compatible" | "anthropic" | "gemini"
+  protocol: "openai-compatible" | "openai-responses" | "anthropic" | "gemini"
   base_url: string
   environment_key: string
   documentation_url?: string

@@ -219,9 +219,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			}
 		}
 		messages << ChatMessage{
-			role:       'assistant'
-			content:    output.content
-			tool_calls: output.tool_calls
+			role:             'assistant'
+			content:          output.content
+			tool_calls:       output.tool_calls
+			provider_context: output.provider_context
 		}
 		tool_calls += output.tool_calls.len
 		mut trace_observations := []ATIFObservationResult{}
@@ -496,6 +497,9 @@ fn agent_context_bytes(messages []ChatMessage) int {
 	for message in messages {
 		total += message.content.len
 		total += message.name.len + message.tool_call_id.len + message.provider_tool_call_id.len
+		for context_item in message.provider_context {
+			total += context_item.len
+		}
 		for call in message.tool_calls {
 			total += call.function.arguments.len
 			total += call.id.len + call.provider_call_id.len + call.provider_signature.len

@@ -1111,6 +1111,7 @@ components:
             - zai
             - 302-ai
             - gmi-cloud
+            - meta
             - minimax
             - scaleway
             - baseten
@@ -1215,6 +1216,7 @@ components:
             - zai
             - 302-ai
             - gmi-cloud
+            - meta
             - minimax
             - scaleway
             - baseten
@@ -1273,7 +1275,7 @@ components:
               api_key_saved: { type: boolean }
         providers:
           type: array
-          description: Built-in provider presets. OpenAI-compatible entries share the Chat Completions transport and can override the endpoint.
+          description: Built-in provider presets. OpenAI-compatible entries share Chat Completions; Meta Model API uses Responses. Endpoints can be overridden.
           items:
             type: object
             required: [id, name, description, protocol, base_url, environment_key, requires_api_key]
@@ -1281,7 +1283,7 @@ components:
               id: { type: string }
               name: { type: string }
               description: { type: string }
-              protocol: { type: string, enum: [openai-compatible, anthropic, gemini] }
+              protocol: { type: string, enum: [openai-compatible, openai-responses, anthropic, gemini] }
               base_url: { type: string }
               environment_key: { type: string }
               documentation_url: { type: string }

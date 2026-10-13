@@ -7,6 +7,69 @@ import sync
 import uuid
 import time
 
+fn test_openai_responses_history_replays_encrypted_reasoning_and_tool_outputs() {
+	messages := [
+		ChatMessage{ role: 'system', content: 'system instruction' },
+		ChatMessage{ role: 'user', content: 'inspect this repository' },
+		ChatMessage{
+			role:             'assistant'
+			content:          'I will inspect the repository.'
+			provider_context: ['{"type":"reasoning","id":"rs_fixture","summary":[],"encrypted_content":"opaque"}']
+			tool_calls:       [ProviderToolCall{
+				id:               'call_fixture'
+				provider_call_id: 'fc_fixture'
+				function:         ProviderFunctionCall{
+					name:      'workspace_search'
+					arguments: '{"query":"needle"}'
+				}
+			}]
+		},
+		ChatMessage{
+			role:         'tool'
+			tool_call_id: 'call_fixture'
+			content:      '{"matches":[]}'
+		},
+	]
+	input := openai_responses_input(messages) or { panic(err) }
+	assert !json2.encode[ChatMessage](messages[2]).contains('opaque')
+	assert input.len == 6
+	assert input[2].as_map()['type'] or { panic('reasoning item type missing') } == json2.Any('reasoning')
+	assert input[2].as_map()['encrypted_content'] or { panic('reasoning ciphertext missing') } == json2.Any('opaque')
+	assert input[3].as_map()['phase'] or { panic('assistant phase missing') } == json2.Any('commentary')
+	assert input[4].as_map()['call_id'] or { panic('function call ID missing') } == json2.Any('call_fixture')
+	assert input[5].as_map()['type'] or { panic('tool output type missing') } == json2.Any('function_call_output')
+	assert input[5].as_map()['call_id'] or { panic('tool output call ID missing') } == json2.Any('call_fixture')
+	assert input[5].as_map()['output'] or { panic('tool output missing') } == json2.Any('{"matches":[]}')
+}
+
+fn test_openai_responses_history_rejects_overlong_function_call_ids() {
+	messages := [ChatMessage{
+		role:         'tool'
+		tool_call_id: 'x'.repeat(65)
+		content:      '{}'
+	}]
+	openai_responses_input(messages) or {
+		assert err.msg() == 'provider tool call ID is invalid for Responses API'
+		return
+	}
+	assert false
+}
+
+fn test_openai_responses_failures_read_top_level_and_response_errors() {
+	top_level := json2.decode[OpenAIResponsesEvent]('{"type":"error","error":{"message":"request rejected"}}') or {
+		panic(err)
+	}
+	assert openai_responses_failure_message(top_level) == 'request rejected'
+
+	failed := json2.decode[OpenAIResponsesEvent]('{"type":"response.failed","response":{"error":{"message":"model unavailable"}}}') or {
+		panic(err)
+	}
+	assert openai_responses_failure_message(failed) == 'model unavailable'
+
+	empty := OpenAIResponsesEvent{}
+	assert openai_responses_failure_message(empty) == 'provider response failed'
+}
+
 fn test_serve_and_tui_help_are_available_without_starting_the_backend() {
 	assert command_help('serve').starts_with('Usage: veasel serve\n')
 	assert command_help('serve').contains('Start the local V backend only.')

@@ -9,6 +9,7 @@ from threading import Event
 
 
 API_KEYS = {
+    "meta": "veasel-meta-key",
     "openai-compatible": "veasel-openai-key",
     "dashscope": "veasel-dashscope-key",
     "zai": "veasel-zai-key",
@@ -83,7 +84,9 @@ def is_session_system(content):
 class MockProvider(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/v1/models", "/v1beta/models"):
-            if has_openai_compatible_auth(self.headers.get("Authorization")):
+            if self.headers.get("Authorization") == f"Bearer {API_KEYS['meta']}":
+                payload = {"data": [{"id": "muse-wonder-1.0"}, {"id": "muse-spark-1.3"}]}
+            elif has_openai_compatible_auth(self.headers.get("Authorization")):
                 payload = {"data": [{"id": "smoke-model", "object": "model", "owned_by": "fixture"}]}
             elif self.headers.get("x-api-key") == API_KEYS["anthropic"]:
                 payload = {"data": [{"type": "model", "id": "claude-fixture", "display_name": "Claude Fixture"}]}
@@ -125,6 +128,7 @@ class MockProvider(BaseHTTPRequestHandler):
     def do_POST(self):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         provider_kind = (
+            "meta" if self.headers.get("Authorization") == f"Bearer {API_KEYS['meta']}" else
             "openai" if has_openai_compatible_auth(self.headers.get("Authorization")) else
             "anthropic" if self.headers.get("x-api-key") == API_KEYS["anthropic"] else
             "gemini" if self.headers.get("x-goog-api-key") == API_KEYS["gemini"] else
@@ -137,7 +141,76 @@ class MockProvider(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if has_openai_compatible_auth(self.headers.get("Authorization")):
+        if provider_kind == "meta":
+            input_items = payload.get("input", [])
+            user_texts = [item.get("content", "") for item in input_items
+                          if item.get("type") == "message" and item.get("role") == "user"]
+            user_text = user_texts[-1] if user_texts else ""
+            is_tool_follow_up = bool(input_items) and input_items[-1].get("type") == "function_call_output"
+            if (
+                self.path != "/v1/responses"
+                or payload.get("model") not in ("muse-wonder-1.0", "muse-spark-1.3")
+                or payload.get("max_output_tokens") != 4096
+                or payload.get("store") is not False
+                or payload.get("reasoning") != {"effort": "high", "summary": "auto"}
+                or payload.get("include") != ["reasoning.encrypted_content"]
+                or not input_items
+                or input_items[0].get("role") != "system"
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                    and not is_tool_follow_up)
+            ):
+                self.reject(payload)
+                return
+            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+                requested_tool = (
+                    "workspace_search" if user_text == "Inspect workspace" else
+                    "workspace_read_file" if user_text == "Try to read outside" else
+                    "agent_skill_read_resource" if user_text == "Read skill reference" else
+                    "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit") else
+                    "workspace_propose_shell_command" if user_text in ("Propose shell command", "Propose slow shell command", "Autonomous shell") else
+                    next((tool.get("name", "") for tool in payload.get("tools", []) if tool.get("name", "").startswith("mcp_review-tools_effect_write_")), "")
+                )
+                if not requested_tool or not any(tool.get("name") == requested_tool for tool in payload.get("tools", [])):
+                    self.reject(payload)
+                    return
+                args = (
+                    {"query": "workspace-search-sentinel"} if user_text == "Inspect workspace" else
+                    {"path": "../outside/secret.txt"} if user_text == "Try to read outside" else
+                    {"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"} if user_text == "Read skill reference" else
+                    {"path": "src/main.v", "content": GREETING_EDIT} if user_text in ("Propose workspace edit", "Autonomous workspace edit") else
+                    {"command": "test -z \\\"${VEASEL_MODEL_API_KEY:-}\\\" && printf autonomous-shell-ok", "cwd": ".", "timeout_seconds": 10} if user_text == "Autonomous shell" else
+                    {"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10} if user_text in ("Propose shell command", "Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
+                    {"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1}
+                )
+                for tool in payload.get("tools", []):
+                    if tool.get("name") == requested_tool and "parameters" not in tool:
+                        self.reject(payload)
+                        return
+                body = {"id": "resp-fixture", "model": payload["model"], "status": "completed", "output": [
+                    {"id": "rs-fixture", "type": "reasoning", "summary": [], "encrypted_content": "fixture-encrypted-reasoning"},
+                    {"id": "fc-item-1", "call_id": "meta-call-1", "type": "function_call", "name": requested_tool,
+                     "arguments": json.dumps(args, separators=(",", ":")), "status": "completed"},
+                ]}
+            elif is_tool_follow_up:
+                reasoning = next((item for item in input_items if item.get("type") == "reasoning"), None)
+                call = next((item for item in input_items if item.get("type") == "function_call"), None)
+                result = input_items[-1]
+                if not reasoning or reasoning.get("encrypted_content") != "fixture-encrypted-reasoning" or not call or call.get("call_id") != result.get("call_id"):
+                    self.reject(payload)
+                    return
+                result_text = result.get("output", "")
+                if "workspace-search-sentinel" not in result_text and "Skill reference smoke sentinel" not in result_text and "error" not in result_text and "Stored for human review" not in result_text and "No command was executed" not in result_text:
+                    self.reject(payload)
+                    return
+                final_text = "Found workspace-search-sentinel" if "workspace-search-sentinel" in result_text else "Proposed a shell command for review." if "No command was executed" in result_text else "Proposed a file edit for review." if "Stored for human review" in result_text else "The requested path was rejected."
+                body = {"id": "resp-fixture-2", "model": payload["model"], "status": "completed", "output": [
+                    {"id": "msg-fixture", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": final_text}]}
+                ]}
+            else:
+                body = {"id": "resp-fixture", "model": payload["model"], "status": "completed", "output": [
+                    {"id": "msg-fixture", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": REPLY}]}
+                ]}
+        elif has_openai_compatible_auth(self.headers.get("Authorization")):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = last_message.get("content", "")
@@ -395,7 +468,16 @@ class MockProvider(BaseHTTPRequestHandler):
                 print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
                 SLOW_RESPONSE_RELEASE.wait()
             frames = []
-            if provider_kind == "openai":
+            if provider_kind == "meta":
+                text = next((part["text"] for item in body["output"] if item.get("type") == "message"
+                             for part in item.get("content", []) if part.get("type") == "output_text"), "")
+                if text:
+                    midpoint = max(1, len(text) // 2)
+                    for part in (text[:midpoint], text[midpoint:]):
+                        if part:
+                            frames.append("data: " + json.dumps({"type": "response.output_text.delta", "delta": part}) + "\n\n")
+                frames.append("data: " + json.dumps({"type": "response.completed", "response": body}) + "\n\n")
+            elif provider_kind == "openai":
                 message = body["choices"][0]["message"]
                 content = message.get("content") or ""
                 if content:

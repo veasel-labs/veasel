@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterModelCatalog, filterModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 const providers: ModelProvider[] = [
   { id: "meta", name: "Meta Model API", description: "Muse Wonder and Muse Spark · OpenAI Responses API", protocol: "openai-responses", base_url: "https://api.meta.ai/v1", environment_key: "MODEL_API_KEY", documentation_url: "https://dev.meta.ai/docs/coding-agents", requires_api_key: true },
@@ -23,6 +23,12 @@ describe("model provider picker", () => {
     expect(filterModelProviders(providers, "anthropic_api_key").map(({ id }) => id)).toEqual(["anthropic"])
     expect(filterModelProviders(providers, "local models").map(({ id }) => id)).toEqual(["ollama"])
     expect(filterModelProviders(providers, "chat completions").map(({ id }) => id)).toEqual(["deepseek"])
+  })
+
+  test("puts the active and configured providers before the rest without mutating the catalog", () => {
+    const ordered = prioritizeModelProviders(providers, "deepseek", new Set(["meta"]))
+    expect(ordered.map(({ id }) => id)).toEqual(["deepseek", "meta", "anthropic", "ollama"])
+    expect(providers.map(({ id }) => id)).toEqual(["meta", "anthropic", "deepseek", "ollama"])
   })
 })
 

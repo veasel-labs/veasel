@@ -11,7 +11,7 @@ import {
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
-import { filterModelCatalog, filterModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 type Session = {
   id: string
@@ -1226,7 +1226,16 @@ function showSettingsStep(manualModel = false) {
       sessionDetail.content += "\n\nThe server did not return a provider catalog. Update or restart the Veasel server."
       return
     }
-    const providers = filterModelProviders(catalog, settingsProviderQuery)
+    const configuredProviders = new Set(
+      Object.entries(settingsView?.profiles ?? {})
+        .filter(([, profile]) => profile.api_key_saved)
+        .map(([providerId]) => providerId),
+    )
+    const providers = prioritizeModelProviders(
+      filterModelProviders(catalog, settingsProviderQuery),
+      active,
+      configuredProviders,
+    )
     if (providers.length === 0) {
       sessionDetail.content += "\n\nNo providers match this filter. Backspace clears characters."
       return
@@ -1237,8 +1246,8 @@ function showSettingsStep(manualModel = false) {
       width: "100%",
       height: Math.min(18, providers.length * 2 + 1),
       options: providers.map((provider) => ({
-        name: `${settingsView?.profiles[provider.id]?.api_key_saved ? "◆" : "◇"}  ${provider.name}`,
-        description: `${provider.description}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
+        name: `${provider.id === active ? "●" : settingsView?.profiles[provider.id]?.api_key_saved ? "◆" : "◇"}  ${provider.name}`,
+        description: `${provider.id === active ? "Active · " : ""}${provider.description}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
         value: provider.id,
       })),
       selectedIndex: activeIndex,

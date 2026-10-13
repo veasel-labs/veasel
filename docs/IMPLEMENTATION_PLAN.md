@@ -131,19 +131,21 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
-- [x] Deliver a server-owned 83-preset provider catalog and keyboard-navigable TUI
+- [x] Deliver a server-owned 84-preset provider catalog and keyboard-navigable TUI
   provider picker with protocol descriptions, environment-key hints, editable
   endpoints, and a local no-key Ollama profile. OpenAI-compatible presets use
   the shared Chat Completions transport; provider-specific auth and SDK features
   remain out of scope until implemented and tested. Thirty-six compatible
   endpoints are generated from a pinned Models.dev selection; see
   [PROVIDERS.md](PROVIDERS.md) and `tools/provider-catalog/`.
-- [x] Add Meta Model API as an OpenAI Responses provider with Muse model
-  discovery, `MODEL_API_KEY`, streamed text and tools, and stateless encrypted
-  reasoning replay. `scripts/api-smoke.sh` exercises the provider and tool loop
-  against a local fixture. Veasel currently limits input to 100,000 bytes and
-  each response to 4,096 output tokens; it does not yet consume the full Muse
-  context window or report authoritative token usage/cost.
+- [x] Add Meta Model API and a separate OpenAI Responses preset alongside the
+  existing OpenAI Chat Completions profile. Muse/GPT model discovery, streamed
+  text and tools, and encrypted reasoning replay work for reasoning-capable
+  models; OpenAI reasoning parameters are omitted for unsupported model
+  families. `scripts/api-smoke.sh` exercises both OpenAI transports against
+  local fixtures. Veasel currently limits input to 100,000 bytes
+  and each response to 4,096 output tokens; it does not yet consume the full
+  Muse context window or report authoritative token usage/cost.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

@@ -68,11 +68,11 @@ With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
 starts `veasel serve` and waits for its health endpoint before opening the TUI.
 Press `s` on the home screen, or enter `/models` in an open session, to search
 and choose a provider in the keyboard-driven settings list, then configure its
-model, endpoint, and API key. The server currently supplies 83 presets,
+model, endpoint, and API key. The server currently supplies 84 presets,
 including Meta Model API; see the
 [complete provider catalog and its scope](docs/PROVIDERS.md). Presets cover
-Meta Muse, Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
-endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
+Meta Muse, Anthropic, Gemini, OpenAI Chat Completions and OpenAI Responses,
+plus compatible endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
 Baseten, Cortecs, DigitalOcean, FrogBot, Helicone, Hyperbolic, IO.NET, LLM Gateway,
 Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, Ollama Cloud, OpenRouter,
 MiniMax, Perplexity, SambaNova, Scaleway Generative APIs, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
@@ -158,8 +158,12 @@ they never add tools or bypass MCP trust, file approval, or shell approval.
 Install only plugins you trust. Agent Plugins support is experimental and does
 not claim full v1.0.0 conformance.
 
-The completion adapters support `openai-compatible`, Meta's `openai-responses`,
-`anthropic`, and `gemini`. Configure provider profiles in the TUI, or use
+The completion adapters support `openai-compatible`, OpenAI's separate Chat
+Completions and Responses presets, Meta's Responses API, `anthropic`, and
+`gemini`. Choose OpenAI Responses for GPT-5 and Codex models; reasoning options
+are omitted for models that do not support them. Existing OpenAI Chat
+Completions configurations remain available. Configure provider profiles in
+the TUI, or use
 `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, `VEASEL_MODEL_BASE_URL`, and a provider
 key (`MODEL_API_KEY` for Meta, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
 `GEMINI_API_KEY`; the shared `VEASEL_MODEL_API_KEY` also works). Environment

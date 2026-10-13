@@ -182,6 +182,11 @@ start_server() {
 			DASHSCOPE_API_KEY=veasel-dashscope-key ZAI_API_KEY=veasel-zai-key \
 			302AI_API_KEY=veasel-302-ai-key GMI_API_KEY=veasel-gmi-cloud-key \
 			MINIMAX_API_KEY=veasel-minimax-key SCW_SECRET_KEY=veasel-scaleway-key \
+			BASETEN_API_KEY=veasel-baseten-key CORTECS_API_KEY=veasel-cortecs-key \
+			DIGITALOCEAN_ACCESS_TOKEN=veasel-digitalocean-key FROGBOT_API_KEY=veasel-frogbot-key \
+			HELICONE_API_KEY=veasel-helicone-key IOINTELLIGENCE_API_KEY=veasel-ionet-key \
+			LLMGATEWAY_API_KEY=veasel-llmgateway-key OLLAMA_API_KEY=veasel-ollama-cloud-key \
+			ZENMUX_API_KEY=veasel-zenmux-key \
 			VEASEL_MODEL_BASE_URL="http://127.0.0.1:$(cat "$work_dir/provider.port")${provider_base}" \
 			"$work_dir/veasel" serve >"$work_dir/server.log" 2>&1 &
 	else
@@ -358,7 +363,7 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 	sleep 0.1
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
-for provider in openai-compatible anthropic gemini dashscope zai 302-ai gmi-cloud minimax scaleway; do
+for provider in openai-compatible anthropic gemini dashscope zai 302-ai gmi-cloud minimax scaleway baseten cortecs digitalocean frogbot helicone io-net llmgateway ollama-cloud zenmux; do
 	printf 'Smoke: provider workflow starting (%s)\n' "$provider"
 	rm -f "$work_dir/workspace/approved-effect.txt"
 	cat >"$work_dir/workspace/src/main.v" <<'EOF'
@@ -393,6 +398,15 @@ expected = {
     "gmi-cloud": ("smoke-model", "smoke-model"),
     "minimax": ("smoke-model", "smoke-model"),
     "scaleway": ("smoke-model", "smoke-model"),
+    "baseten": ("smoke-model", "smoke-model"),
+    "cortecs": ("smoke-model", "smoke-model"),
+    "digitalocean": ("smoke-model", "smoke-model"),
+    "frogbot": ("smoke-model", "smoke-model"),
+    "helicone": ("smoke-model", "smoke-model"),
+    "io-net": ("smoke-model", "smoke-model"),
+    "llmgateway": ("smoke-model", "smoke-model"),
+    "ollama-cloud": ("smoke-model", "smoke-model"),
+    "zenmux": ("smoke-model", "smoke-model"),
 }[sys.argv[2]]
 assert models.get(expected[0]) == expected[1], models
 if sys.argv[2] == "gemini":
@@ -836,7 +850,7 @@ import sys
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["active_provider"] == "openai-compatible"
 providers = {provider["id"]: provider for provider in settings["providers"]}
-assert len(providers) >= 37
+assert len(providers) >= 46
 assert providers["ollama"]["requires_api_key"] is False
 assert providers["atomic-chat"]["requires_api_key"] is False
 assert providers["dashscope"]["environment_key"] == "DASHSCOPE_API_KEY"
@@ -845,6 +859,15 @@ assert providers["302-ai"]["environment_key"] == "302AI_API_KEY"
 assert providers["gmi-cloud"]["environment_key"] == "GMI_API_KEY"
 assert providers["minimax"]["environment_key"] == "MINIMAX_API_KEY"
 assert providers["scaleway"]["environment_key"] == "SCW_SECRET_KEY"
+assert providers["baseten"]["environment_key"] == "BASETEN_API_KEY"
+assert providers["cortecs"]["environment_key"] == "CORTECS_API_KEY"
+assert providers["digitalocean"]["environment_key"] == "DIGITALOCEAN_ACCESS_TOKEN"
+assert providers["frogbot"]["environment_key"] == "FROGBOT_API_KEY"
+assert providers["helicone"]["environment_key"] == "HELICONE_API_KEY"
+assert providers["io-net"]["environment_key"] == "IOINTELLIGENCE_API_KEY"
+assert providers["llmgateway"]["environment_key"] == "LLMGATEWAY_API_KEY"
+assert providers["ollama-cloud"]["environment_key"] == "OLLAMA_API_KEY"
+assert providers["zenmux"]["environment_key"] == "ZENMUX_API_KEY"
 assert providers["deepseek"]["protocol"] == "openai-compatible"
 assert providers["anthropic"]["protocol"] == "anthropic"
 profile = settings["profiles"]["openai-compatible"]

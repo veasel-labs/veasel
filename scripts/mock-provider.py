@@ -16,11 +16,24 @@ API_KEYS = {
     "gmi-cloud": "veasel-gmi-cloud-key",
     "minimax": "veasel-minimax-key",
     "scaleway": "veasel-scaleway-key",
+    "baseten": "veasel-baseten-key",
+    "cortecs": "veasel-cortecs-key",
+    "digitalocean": "veasel-digitalocean-key",
+    "frogbot": "veasel-frogbot-key",
+    "helicone": "veasel-helicone-key",
+    "io-net": "veasel-ionet-key",
+    "llmgateway": "veasel-llmgateway-key",
+    "ollama-cloud": "veasel-ollama-cloud-key",
+    "zenmux": "veasel-zenmux-key",
     "anthropic": "veasel-anthropic-key",
     "gemini": "veasel-gemini-key",
 }
 OPENAI_COMPATIBLE_API_KEYS = {
-    API_KEYS[provider] for provider in ("openai-compatible", "dashscope", "zai", "302-ai", "gmi-cloud", "minimax", "scaleway")
+    API_KEYS[provider] for provider in (
+        "openai-compatible", "dashscope", "zai", "302-ai", "gmi-cloud", "minimax", "scaleway",
+        "baseten", "cortecs", "digitalocean", "frogbot", "helicone", "io-net", "llmgateway",
+        "ollama-cloud", "zenmux"
+    )
 }
 
 

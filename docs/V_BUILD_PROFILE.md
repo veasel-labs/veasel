@@ -106,13 +106,36 @@ The Linux release profile must be built on Ubuntu 22.04 to preserve the
 documented glibc baseline. Windows builds use the V SQLite amalgamation too;
 see the CI workflow for the GCC object build required by that target.
 
+## Standalone terminal client
+
+CI pins Bun 1.4.2 to build the TypeScript/OpenTUI client as a standalone
+`veasel-tui` executable for Linux x64, macOS arm64, and Windows x64. The build
+embeds the Bun runtime and client assets; end users do not install Bun. The
+binary still uses the operating system's normal C runtime libraries. On Linux,
+CI checks that the executable resolves its shared libraries and does not
+introduce external ICU or C++ runtime dependencies. `build.json` records the
+TUI binary hash, Bun build version, and target alongside backend provenance.
+
+The local Linux build equivalent, after installing the pinned V and Bun
+toolchains, is:
+
+```sh
+export VEASEL_TUI_VERSION="${VEASEL_VERSION:-0.1.0-dev}"
+export VEASEL_TUI_TARGET=bun-linux-x64
+export VEASEL_TUI_BUN_VERSION="$(bun --version)"
+bun run --cwd tui build:standalone -- "$VEASEL_TUI_TARGET" ../dist/veasel-tui
+```
+
 Write the provenance file so the benchmark can include the same toolchain
 details as CI:
 
 ```sh
-VEASEL_BUILD_CC=gcc VEASEL_BUILD_COMMIT="$(git rev-parse HEAD)" \
-  VEASEL_BUILD_FLAGS='PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig -cc gcc -prod -d veasel_version=0.1.0-dev -o dist/veasel .' \
-  node scripts/build-manifest.mjs dist/veasel dist/build.json
+export VEASEL_BUILD_CC=gcc
+export VEASEL_BUILD_COMMIT="$(git rev-parse HEAD)"
+export VEASEL_TUI_TARGET=bun-linux-x64
+export VEASEL_TUI_BUN_VERSION="$(bun --version)"
+export VEASEL_BUILD_FLAGS='PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR=/tmp/veasel-empty-pkgconfig -cc gcc -prod -d veasel_version=0.1.0-dev -o dist/veasel .'
+node scripts/build-manifest.mjs dist/veasel dist/veasel-tui dist/build.json
 ```
 
 Use `clang` and the matching output path in both the build and manifest command

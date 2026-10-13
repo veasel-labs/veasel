@@ -54,7 +54,8 @@ actions.
 
 - The V compiler revision pinned in `.v-version` (CI installs the exact revision)
 - SQLite development headers/library as required by V's `db.sqlite`
-- Bun 1.3.14 or newer for the OpenTUI terminal client (not needed by the backend)
+- Bun 1.4.2 or newer to develop the OpenTUI client; release archives include a
+  standalone TUI executable and do not need Bun installed
 
 ## Development
 
@@ -66,9 +67,16 @@ v run .
 
 With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
 starts `veasel serve` and waits for its health endpoint before opening the TUI.
-Press `s` on the home screen, or enter `/models` in an open session, to search
-and choose a provider in the keyboard-driven settings list, then configure its
-model, endpoint, and API key. The server currently supplies 84 presets,
+In a source checkout, the development TUI runs through Bun. Release archives
+include a standalone `veasel-tui` executable beside the V backend, so installed
+`veasel` commands do not need a separate Bun installation.
+Press `s` on the home screen, or enter `/models` in an open session, to open
+provider settings. Search by name, ID, protocol, or credential variable; press
+Tab to browse all, configured, local, specialized-API, or OpenAI-compatible
+providers. The active model and credential availability appear in the picker.
+After choosing a provider, Veasel discovers its live model list before saving
+the selected model and connection settings. The server currently supplies 84
+endpoint presets,
 including Meta Model API; see the
 [complete provider catalog and its scope](docs/PROVIDERS.md). Presets cover
 Meta Muse, Anthropic, Gemini, OpenAI Chat Completions and OpenAI Responses,

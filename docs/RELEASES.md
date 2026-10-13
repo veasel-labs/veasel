@@ -8,18 +8,19 @@ commits do not publish a release.
 
 The release job calculates a semantic version from the last `v*` tag (or the
 version in `v.mod` before the first tag), compiles Linux, macOS, and Windows
-archives with that exact version, and publishes the V backend, bundled
-terminal-client source/dependencies, SHA-256 sums, and a JSON source/asset
-manifest together. Each platform archive includes `build.json`, which records
-the V revision, V and C compiler versions, target, exact build arguments, and
-the executable SHA-256. Release commands and compiler selection are documented
-in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). `veasel serve` runs without Bun;
-`veasel tui` requires Bun 1.4.2 or newer. A failed check or platform build
-prevents publication. There is no manual upload or tag-cutting step.
+archives with that exact version, and publishes the V backend, a standalone
+terminal-client executable, SHA-256 sums, and a JSON source/asset manifest
+together. Each platform archive includes `build.json`, which records the V
+revision, V and C compiler versions, target, exact backend build arguments, and
+the SHA-256 hashes and build targets for both executables. Release commands
+and compiler selection are documented in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md).
+Bun is a build-time dependency for the TypeScript TUI; release archives do not
+require Bun at runtime. A failed check or platform build prevents publication.
+There is no manual upload or tag-cutting step.
 
 The no-argument `veasel` command and `veasel tui` start a local server when its
-health endpoint is not already responding, then launch the bundled TUI. The TUI
-requires Bun 1.4.2 or newer.
+health endpoint is not already responding, then launch the bundled standalone
+TUI executable beside the V backend.
 
 These automated builds are prereleases while the product remains under active
 development. They are not stable compatibility promises. The mascot artwork
@@ -32,7 +33,8 @@ Download the archive, `SHA256SUMS`, and `release.json` from the same GitHub
 release. Check the archive digest against the matching entry in
 `SHA256SUMS`; the manifest records the release tag, source commit, platform,
 and digest. Linux and macOS downloads are `.tar.gz`; Windows is `.zip`. Extract
-the archive and run `veasel --help`. Install Bun to launch its terminal client.
+the archive and run `veasel --help`. Launch the terminal client with `veasel`;
+no separate Bun installation is needed.
 
 ## Version rules
 

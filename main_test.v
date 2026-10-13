@@ -473,6 +473,17 @@ fn test_tui_directory_is_resolved_next_to_the_executable() {
 	assert tui_directory_for_executable(executable) == os.real_path(tui_dir)
 }
 
+fn test_tui_standalone_executable_is_resolved_next_to_the_backend() {
+	root := os.join_path(os.temp_dir(), 'veasel-bundle-${uuid.new_v4().str()}')
+	defer { os.rmdir_all(root) or {} }
+	executable := os.join_path(root, $if windows { 'veasel.exe' } $else { 'veasel' })
+	os.mkdir_all(root) or { panic(err) }
+	os.write_file(executable, 'binary fixture') or { panic(err) }
+	name := $if windows { 'veasel-tui.exe' } $else { 'veasel-tui' }
+
+	assert tui_executable_for_executable(executable) == os.join_path(os.real_path(root), name)
+}
+
 fn test_session_store_persists_session_and_creation_event() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

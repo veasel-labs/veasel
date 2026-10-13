@@ -11,7 +11,19 @@ import {
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
-import { filterModelCatalog, filterModelProviders, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
+import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
+
+const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
+const tuiCliAction = parseTuiCliAction(process.argv)
+if (tuiCliAction === "help") {
+  console.log(formatTuiHelp(tuiVersion))
+  process.exit(0)
+}
+if (tuiCliAction === "version") {
+  console.log(formatTuiVersion(tuiVersion))
+  process.exit(0)
+}
 
 type Session = {
   id: string
@@ -226,10 +238,11 @@ const footer = new BoxRenderable(renderer, {
 })
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
-footer.add(new TextRenderable(renderer, {
+const footerHint = new TextRenderable(renderer, {
   content: "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit",
   fg: "#87949e",
-}))
+})
+footer.add(footerHint)
 shell.add(header)
 shell.add(body)
 shell.add(footer)
@@ -255,6 +268,7 @@ let settingsSecretIndicator: TextRenderable | undefined
 let settingsProviderSelect: SelectRenderable | undefined
 let settingsModelSelect: SelectRenderable | undefined
 let settingsProviderQuery = ""
+let settingsProviderScope: ProviderPickerScope = "all"
 let settingsModelSearchQuery = ""
 let settingsModelCatalog: ModelCatalogEntry[] | undefined
 let settingsModelHint = ""
@@ -1186,12 +1200,17 @@ function closeSettings(message = "Settings unchanged.") {
   settingsProviderSelect = undefined
   settingsModelSelect = undefined
   settingsProviderQuery = ""
+  settingsProviderScope = "all"
   settingsModelSearchQuery = ""
   settingsModelCatalog = undefined
   settingsModelHint = ""
   settingsManualModel = false
   settingsValues.api_key = ""
   settingsOpen = false
+  sidebar.visible = true
+  portraitRenderable.visible = !activeSession
+  brandLabel.visible = !activeSession
+  footerHint.content = "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit"
   sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
   status.content = `● ${message}`
   status.fg = "#a7f3d0"
@@ -1222,24 +1241,33 @@ function showSettingsStep(manualModel = false) {
     ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."}${providerInfo?.environment_key ? ` Use ${providerInfo.environment_key} instead of saving a key.` : ""} Key characters are hidden.`
     : ""
   const providerSearchHint = settingsStep === 0
-    ? `\n\nFilter  ${settingsProviderQuery || "type a provider name, ID, or key variable"}`
+    ? `\n\n${providerPickerScopeLabel(settingsProviderScope)} providers · ${settingsProviderQuery ? `Filter: ${settingsProviderQuery}` : "type to search"}`
     : ""
   const navigationHint = settingsStep === 0
     ? "Enter selects · Esc cancels"
     : "Enter continues · Ctrl+B goes back · Esc cancels"
   sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
+  status.content = `● provider settings · ${settingsStep + 1}/4`
+  status.fg = "#a7f3d0"
+  footerHint.content = settingsStep === 0
+    ? "Tab changes group · type to search · Enter configures · Esc closes"
+    : settingsStep === 3
+      ? "Type to filter · Enter selects · Ctrl+B goes back · Esc cancels"
+      : settingsStep === 2
+        ? "Type API key (hidden) · Enter discovers models · Ctrl+B back · Esc cancels"
+        : "Enter checks connection · Ctrl+B goes back · Esc cancels"
   if (settingsStep === 0) {
     const catalog = settingsView?.providers ?? []
     if (catalog.length === 0) {
       sessionDetail.content += "\n\nThe server did not return a provider catalog. Update or restart the Veasel server."
+      footerHint.content = "Provider catalog unavailable · Esc closes"
       return
     }
     const configuredProviders = new Set(settingsView?.configured_providers ?? [])
-    const providers = prioritizeModelProviders(
-      filterModelProviders(catalog, settingsProviderQuery),
-      active,
-      configuredProviders,
-    )
+    const matches = filterModelProviders(catalog, settingsProviderQuery, settingsProviderScope, configuredProviders, settingsView?.profiles)
+    const providers = prioritizeModelProviders(matches, active, configuredProviders)
+    sessionDetail.content = `MODEL SETTINGS  /  1 OF 4  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingPrompts[0]}${providerSearchHint}`
+    status.content = `● ${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`
     if (providers.length === 0) {
       sessionDetail.content += "\n\nNo providers match this filter. Backspace clears characters."
       return
@@ -1248,10 +1276,10 @@ function showSettingsStep(manualModel = false) {
     const select = new SelectRenderable(renderer, {
       id: "model-provider-select",
       width: "100%",
-      height: Math.min(18, providers.length * 2 + 1),
+      height: Math.min(10, providers.length * 2 + 1),
       options: providers.map((provider) => ({
         name: `${provider.id === active ? "●" : configuredProviders.has(provider.id) ? "◆" : "◇"}  ${provider.name}`,
-        description: `${provider.id === active ? "Active" : configuredProviders.has(provider.id) ? "Credential available" : provider.requires_api_key ? "Credential needed" : "No key needed"} · ${provider.description}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
+        description: `${provider.id === active ? `Active${settingsView?.profiles[provider.id]?.model ? ` · ${settingsView.profiles[provider.id].model}` : ""}` : configuredProviders.has(provider.id) ? "Credential available" : provider.requires_api_key ? "Credential needed" : "No key needed"} · ${provider.description.slice(0, 52)}${provider.description.length > 52 ? "…" : ""}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
         value: provider.id,
       })),
       selectedIndex: activeIndex,
@@ -1296,6 +1324,7 @@ function showSettingsStep(manualModel = false) {
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
       sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\n${settingPrompts[3]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
+      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · type search · Enter select · Ctrl+B back · Esc cancel`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
@@ -1306,7 +1335,7 @@ function showSettingsStep(manualModel = false) {
       const select = new SelectRenderable(renderer, {
         id: "model-id-select",
         width: "100%",
-        height: Math.min(18, options.length * 2 + 1),
+        height: Math.min(10, options.length * 2 + 1),
         options,
         selectedIndex: selectedIndex >= 0 && selectedIndex < matches.length ? selectedIndex : 0,
         backgroundColor: "#171c22",
@@ -1382,6 +1411,7 @@ async function loadProviderModels() {
   const providerName = providerInfo?.name ?? provider
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
   sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\nChecking ${providerName} and discovering models…${providerGuide}\n\nCtrl+B goes back · Esc cancels`
+  footerHint.content = `Checking ${safeTerminalText(providerName)} · discovering models · Esc cancels`
   try {
     const response = await fetch(`${apiBase}/v1/config/models`, {
       method: "POST",
@@ -1417,6 +1447,11 @@ async function loadProviderModels() {
 async function openSettings() {
   if (settingsOpen || creating || sendingMessage) return
   settingsOpen = true
+  status.content = "● provider settings"
+  status.fg = "#a7f3d0"
+  sidebar.visible = false
+  portraitRenderable.visible = false
+  brandLabel.visible = false
   if (chatInput) {
     detail.remove(chatInput)
     chatInput = undefined
@@ -1432,6 +1467,7 @@ async function openSettings() {
     settingsValues.api_key = ""
     settingsValues.clear_api_key = false
     settingsProviderQuery = ""
+    settingsProviderScope = "all"
     settingsModelCatalog = undefined
     settingsModelSearchQuery = ""
     settingsModelHint = ""
@@ -1480,7 +1516,11 @@ renderer.keyInput.on("keypress", (key) => {
       showSettingsStep()
     }
     else if (settingsStep === 0) {
-      if (key.name === "backspace") {
+      if (key.name === "tab") {
+        key.stopPropagation()
+        settingsProviderScope = moveProviderPickerScope(settingsProviderScope, key.shift ? -1 : 1)
+        showSettingsStep()
+      } else if (key.name === "backspace") {
         key.stopPropagation()
         settingsProviderQuery = [...settingsProviderQuery].slice(0, -1).join("")
         showSettingsStep()

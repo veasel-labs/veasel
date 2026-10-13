@@ -3,12 +3,13 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-const [binaryPath, outputPath] = process.argv.slice(2);
-if (!binaryPath || !outputPath || !process.env.VEASEL_BUILD_CC) {
-  throw new Error("usage: node scripts/build-manifest.mjs <binary> <output> (VEASEL_BUILD_CC required)");
+const [binaryPath, tuiBinaryPath, outputPath] = process.argv.slice(2);
+if (!binaryPath || !tuiBinaryPath || !outputPath || !process.env.VEASEL_BUILD_CC) {
+  throw new Error("usage: node scripts/build-manifest.mjs <binary> <tui-binary> <output> (VEASEL_BUILD_CC required)");
 }
 
 const binary = readFileSync(binaryPath);
+const tuiBinary = readFileSync(tuiBinaryPath);
 const compiler = process.env.VEASEL_BUILD_CC;
 const compilerVersion = execFileSync(compiler, ["--version"], { encoding: "utf8" })
   .split(/\r?\n/, 1)[0];
@@ -29,6 +30,10 @@ const manifest = {
   },
   binary: binaryPath.replaceAll("\\", "/").split("/").at(-1),
   binary_sha256: createHash("sha256").update(binary).digest("hex"),
+  tui_binary: tuiBinaryPath.replaceAll("\\", "/").split("/").at(-1),
+  tui_binary_sha256: createHash("sha256").update(tuiBinary).digest("hex"),
+  tui_build_target: process.env.VEASEL_TUI_TARGET ?? "unknown",
+  tui_bun_version: process.env.VEASEL_TUI_BUN_VERSION ?? "unknown",
 };
 
 const destination = resolve(outputPath);

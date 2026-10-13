@@ -5,7 +5,8 @@
   "scripts": {
     "start": "bun run src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build:standalone": "bun run scripts/build-standalone.ts"
   },
   "dependencies": {
     "@opentui/core": "0.5.17"

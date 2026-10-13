@@ -71,10 +71,12 @@ function renderV() {
   let idLine = "const supported_model_providers = ["
   for (const [index, id] of idParts.entries()) {
     const part = `${id}${index < idParts.length - 1 ? ", " : ""}`
-    // The pinned V formatter wraps this boundary one item earlier than its
-    // generic width threshold. Keep the generated declaration formatter-stable.
-    const beforeOciFormatterBreak = id === "'oci'" && idLine.endsWith("'nvidia', ")
-    if (idLine.length + part.length > 103 || beforeOciFormatterBreak) {
+    // The pinned V formatter wraps these two boundaries one item earlier than
+    // the generic width threshold. Keep the generated declaration stable.
+    const formatterBoundary =
+      (id === "'oci'" && idLine.endsWith("'nvidia', ")) ||
+      (id === "'tinfoil'" && idLine.endsWith("'the-grid-ai', "))
+    if (idLine.length + part.length > 103 || formatterBoundary) {
       idLines.push(idLine.trimEnd())
       idLine = `\t${part}`
     } else {

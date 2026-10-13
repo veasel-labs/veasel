@@ -225,8 +225,10 @@ class MockProvider(BaseHTTPRequestHandler):
                     final_text = "Proposed a shell command for review."
                 elif "Stored for human review" in result_text:
                     final_text = "Proposed a file edit for review."
+                elif "error" in result_text:
+                    final_text = "The path was rejected."
                 else:
-                    final_text = "The requested path was rejected."
+                    final_text = "The path was rejected."
                 body = {"id": "resp-fixture-2", "model": payload["model"], "status": "completed", "output": [
                     {"id": "msg-fixture", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": final_text}]}
                 ]}

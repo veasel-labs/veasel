@@ -30,7 +30,12 @@ trajectory contains the full model-visible conversation passed to the turn: with
 system instructions and the current prompt. It also includes model responses,
 provider tool-call arguments, and tool observations. These may include private
 instructions, source, or tool output; store the file as a sensitive artifact and
-sanitize it before publication. The CLI creates the trace with owner-only file
+sanitize it before publication. Before any trajectory is encoded, stored or
+written, Veasel redacts credentials from messages, tool-call arguments and
+observations: values of sensitive environment variables, recognized credential
+token shapes, and values assigned to credential field names are replaced with
+`[REDACTED]`, and the trace carries `extra.redaction: "credentials"`. Redaction
+targets credentials only — source code and private instructions remain. The CLI creates the trace with owner-only file
 permissions on platforms that support them. The current provider interfaces do
 not expose authoritative usage or cost for every model,
 so those values are omitted and marked unavailable in the trace metadata. Never

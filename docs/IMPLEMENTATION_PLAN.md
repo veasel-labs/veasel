@@ -78,13 +78,16 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Opt-in `veasel run --trace-file` export of successful turns as ATIF v1.8,
   including the current prompt, provider model responses, tool-call arguments,
   and tool observations. Collection is disabled unless a trace path is supplied.
-- [ ] Persist partial trajectories on failures/cancellation (done: partial
+- [x] Persist partial trajectories on failures/cancellation (partial
   steps are stored with a `failed`/`cancelled` outcome and returned by the
   operation result endpoint when trace collection was enabled); add provider
   usage/cost metadata only when adapters return authoritative values (usage
   done: all four adapters report token counts, aggregated into ATIF
   `final_metrics`; cost still unavailable, providers return no prices); redact
-  sensitive source/tool content. Linux CI validates a deterministic live-provider
+  credentials from trace content (done: at ATIF encode time, sensitive
+  environment values, credential token shapes and credential-named fields in
+  text and structured arguments are replaced with `[REDACTED]`, marked with
+  `extra.redaction: "credentials"`; source content remains by design). Linux CI validates a deterministic live-provider
   fixture trace against Harbor 0.24.0 at pinned revision
   `dc933be707feafbb9efcdf092cb8a0e391332617`.
 - [x] Implement a custom Harbor 0.24.0 `BaseInstalledAgent` for exact Linux

@@ -271,6 +271,7 @@ jobs:
         timeout-minutes: 10
         run: |
           v test main_test.v
+          v test model_settings_test.v
           v test plugins_test.v
           v test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
@@ -285,6 +286,8 @@ jobs:
         run: |
           & v -d windows_7 test main_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & v test model_settings_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -d windows_7 test plugins_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -d windows_7 test plugin_mcp_transport_test.v
@@ -295,6 +298,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -d windows_7 test workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run macOS provider settings tests
+        if: runner.os == 'macOS'
+        run: v test model_settings_test.v
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'
         env:

@@ -526,7 +526,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     for part in (text[:midpoint], text[midpoint:]):
                         if part:
                             frames.append("data: " + json.dumps({"type": "response.output_text.delta", "delta": part}) + "\n\n")
-                frames.append("data: " + json.dumps({"type": "response.completed", "response": body}) + "\n\n")
+                frames.append("data: " + json.dumps({"type": "response.completed", "response": body | {"usage": {"input_tokens": 12, "output_tokens": 6, "total_tokens": 18}}}) + "\n\n")
             elif provider_kind == "openai":
                 message = body["choices"][0]["message"]
                 content = message.get("content") or ""
@@ -547,9 +547,10 @@ class MockProvider(BaseHTTPRequestHandler):
                         "index": 0, "id": call["id"][8:],
                         "function": {"name": function["name"][8:], "arguments": arguments[split_at:]},
                     }]}}]}) + "\n\n")
+                frames.append("data: " + json.dumps({"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18}}) + "\n\n")
                 frames.append("data: [DONE]\n\n")
             elif provider_kind == "anthropic":
-                frames.append("event: message_start\ndata: " + json.dumps({"type": "message_start"}) + "\n\n")
+                frames.append("event: message_start\ndata: " + json.dumps({"type": "message_start", "message": {"usage": {"input_tokens": 12}}}) + "\n\n")
                 for index, block in enumerate(body["content"]):
                     frames.append("event: content_block_start\ndata: " + json.dumps({
                         "type": "content_block_start", "index": index,
@@ -575,10 +576,11 @@ class MockProvider(BaseHTTPRequestHandler):
                                 }) + "\n\n")
                     frames.append("event: content_block_stop\ndata: " + json.dumps({"type": "content_block_stop", "index": index}) + "\n\n")
                 frames.extend([
-                    "event: message_delta\ndata: " + json.dumps({"type": "message_delta"}) + "\n\n",
+                    "event: message_delta\ndata: " + json.dumps({"type": "message_delta", "usage": {"output_tokens": 6}}) + "\n\n",
                     "event: message_stop\ndata: " + json.dumps({"type": "message_stop"}) + "\n\n",
                 ])
             elif provider_kind == "gemini":
+                frames.append("data: " + json.dumps({"candidates": [], "usageMetadata": {"promptTokenCount": 12, "candidatesTokenCount": 6, "totalTokenCount": 18}}) + "\n\n")
                 for candidate in body["candidates"]:
                     for part in candidate["content"]["parts"]:
                         if "text" in part:

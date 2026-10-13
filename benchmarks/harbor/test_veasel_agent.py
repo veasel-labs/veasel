@@ -97,6 +97,7 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"$HOME/.local/bin/veasel" serve', command)
         self.assertIn("--autonomous", command)
         self.assertIn("--trace-file /logs/agent/trajectory.json", command)
+        self.assertIn("/logs/agent/veasel-server.log", command)
         self.assertIn("trap 'kill", command)
         self.assertEqual(call["timeout_sec"], 1830)
         subprocess.run(["bash", "-n"], input=command, text=True, check=True)

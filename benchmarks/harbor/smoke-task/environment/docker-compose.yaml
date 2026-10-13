@@ -1,0 +1,3 @@
+services:
+  main:
+    command: ["bash", "-lc", "python3 /usr/local/bin/veasel-harbor-model-fixture.py >/tmp/veasel-harbor-model-fixture.log 2>&1 & exec sleep infinity"]

@@ -87,10 +87,14 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   x86_64 releases, checksum verification, supported provider mapping,
   bounded headless execution, and ATIF trajectory export. Unit tests run
   against Harbor's published 0.24.0 package and trajectory model.
-- [ ] Exercise the adapter end-to-end through `harbor run` in a disposable
-  task environment using a deterministic local provider; do not start a paid
-  benchmark until a budget is authorized. Only then prepare the upstream RFC
-  and contribution with the required human-authored PR drafts.
+- [x] Exercise the adapter end-to-end through `harbor run` in a disposable
+  task environment using a deterministic local provider. The checked-in smoke
+  fixture completed one trial with reward 1.0 and a Harbor-validated four-step
+  ATIF v1.8 trajectory. This is adapter plumbing evidence, not a benchmark
+  score. Do not start a paid benchmark until a budget is authorized.
+- [ ] Prepare the Harbor upstream design discussion and contribution only after
+  following its current policy, including the required human-authored first and
+  final PR drafts.
 - [x] Add bounded, cursor-paginated session chat history while retaining the
   latest-100 default response for existing clients.
 - [ ] Recovery classification; require human intervention for uncertain effects.

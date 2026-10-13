@@ -1059,6 +1059,7 @@ fn (app &App) start_async_session_message(operation_id string, turn_done chan in
 }
 
 fn (app &App) record_session_turn_failure(id string, operation_id string, message string) {
+	eprintln('veasel: assistant turn failed (${message})')
 	status, public_error := session_turn_failure(message)
 	mut store := app.store
 	store.record_session_turn_completion(id, operation_id, status, public_error) or {

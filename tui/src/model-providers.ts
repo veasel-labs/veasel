@@ -30,6 +30,18 @@ export function filterModelProviders(providers: ModelProvider[], query: string) 
   ].join(" ").toLocaleLowerCase().includes(needle))
 }
 
+export function prioritizeModelProviders(
+  providers: ModelProvider[],
+  activeProvider: string,
+  configuredProviders: Set<string>,
+) {
+  return [...providers].sort((left, right) => {
+    const priority = (provider: ModelProvider) =>
+      provider.id === activeProvider ? 0 : configuredProviders.has(provider.id) ? 1 : 2
+    return priority(left) - priority(right)
+  })
+}
+
 export function filterModelCatalog(models: ModelCatalogEntry[], query: string) {
   const needle = query.trim().toLocaleLowerCase()
   if (!needle) return models

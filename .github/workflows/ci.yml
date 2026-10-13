@@ -283,20 +283,12 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 50
+        env:
+          VJOBS: 2
         run: |
-          & v -d windows_7 test main_test.v
+          & v -cc gcc -d windows_7 test main_test.v plugins_test.v plugin_mcp_transport_test.v headless_cli_test.v workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v test model_settings_test.v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -d windows_7 test plugins_test.v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -d windows_7 test plugin_mcp_transport_test.v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v test plugin_mcp_http_transport_test.v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -d windows_7 test headless_cli_test.v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -d windows_7 test workspace_edits_windows_test.v
+          & v -cc gcc test model_settings_test.v plugin_mcp_http_transport_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run macOS provider settings tests
         if: runner.os == 'macOS'

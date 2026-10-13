@@ -88,6 +88,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    post:
+      operationId: discoverProviderModels
+      description: Fetches models before a profile is saved. Credentials and an optional endpoint override are accepted in the request body only; this operation never persists settings and never returns credentials. Requests use bounded timeouts and response size, and redirects are disabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelCatalogInput'
+      responses:
+        '200':
+          description: Provider model IDs and display names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelCatalogView'
+        '400':
+          description: Provider, endpoint, credentials, or request body is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '502':
+          description: Provider endpoint did not return a supported model catalog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/plugins:
     get:
       operationId: listAgentPlugins
@@ -1288,6 +1316,10 @@ components:
               environment_key: { type: string }
               documentation_url: { type: string }
               requires_api_key: { type: boolean }
+        configured_providers:
+          type: array
+          description: Provider IDs with a saved or environment credential. Secret values are never included.
+          items: { type: string }
     ModelCatalogView:
       type: object
       required: [provider, models]
@@ -1301,6 +1333,29 @@ components:
             properties:
               id: { type: string }
               name: { type: string }
+    ModelCatalogInput:
+      type: object
+      additionalProperties: false
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Provider catalog ID.
+        base_url:
+          type: string
+          maxLength: 2048
+          description: Optional HTTPS or loopback HTTP endpoint override.
+        api_key:
+          type: string
+          writeOnly: true
+          maxLength: 4096
+          description: Optional transient key used for this discovery request. Not persisted or returned.
+        clear_api_key:
+          type: boolean
+          default: false
+          description: Ignore an existing saved key during discovery; a provider environment key still takes precedence.
     PluginCatalog:
       type: object
       required: [plugins, diagnostics]

@@ -416,6 +416,23 @@ assert models.get(expected[0]) == expected[1], models
 if sys.argv[2] == "gemini":
     assert "embed-fixture" not in models
 PY
+	if [[ "$provider" == meta ]]; then
+		model_api_endpoint="http://127.0.0.1:$(cat "$work_dir/provider.port")/v1"
+		expect_status 200 -X POST -H 'content-type: application/json' \
+			-d "{\"provider\":\"meta\",\"base_url\":\"$model_api_endpoint\",\"api_key\":\"veasel-meta-key\"}" \
+			"$api/v1/config/models"
+		grep -Fq 'muse-wonder-1.0' "$work_dir/response" \
+			|| fail 'transient Meta credentials did not discover Muse models'
+		curl -fsS "$api/v1/config/model" >"$work_dir/model-settings-after-discovery"
+		python3 - "$work_dir/model-settings-after-discovery" <<'PY'
+import json
+import sys
+
+settings = json.load(open(sys.argv[1], encoding="utf-8"))
+assert settings["profiles"] == {}, settings
+assert "veasel-meta-key" not in json.dumps(settings)
+PY
+	fi
 	expect_status 200 -H 'content-type: application/json' \
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"

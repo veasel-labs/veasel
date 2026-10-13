@@ -89,6 +89,29 @@ pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
 	})
 }
 
+@['/v1/config/models'; post]
+pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 8_192 {
+		return json_request_error(mut ctx, 'model catalog request is too large')
+	}
+	input := json2.decode[ModelCatalogInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'model catalog request is invalid')
+	}
+	config := app.provider_catalog_model_config(input) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	models := fetch_provider_models(config) or {
+		ctx.res.set_status(.bad_gateway)
+		return ctx.json(APIError{
+			error: 'Unable to retrieve model list from the configured provider endpoint'
+		})
+	}
+	return ctx.json(ModelCatalogView{
+		provider: config.provider
+		models:   models
+	})
+}
+
 struct ModelCatalogView {
 pub:
 	provider string

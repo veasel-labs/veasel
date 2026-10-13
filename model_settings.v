@@ -38,9 +38,10 @@ mut:
 
 pub struct ModelSettingsView {
 pub:
-	active_provider string
-	profiles        map[string]ModelProfileView
-	providers       []ModelProviderInfo
+	active_provider      string
+	profiles             map[string]ModelProfileView
+	providers            []ModelProviderInfo
+	configured_providers []string
 }
 
 pub struct ModelProfileView {
@@ -54,6 +55,17 @@ struct ModelSettingsInput {
 pub:
 	provider      string
 	model         string
+	base_url      string
+	api_key       string
+	clear_api_key bool
+}
+
+// ModelCatalogInput lets a client discover models before saving a provider
+// profile. Credentials are accepted only in the request body and are never
+// persisted by this operation.
+struct ModelCatalogInput {
+pub:
+	provider      string
 	base_url      string
 	api_key       string
 	clear_api_key bool
@@ -95,10 +107,21 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 			api_key_saved: profile.api_key.len > 0
 		}
 	}
+	mut configured_providers := []string{}
+	for info in model_provider_catalog() {
+		profile := state.settings.profiles[info.id] or { ModelProfile{} }
+		api_key := non_empty_environment_value('VEASEL_MODEL_API_KEY') or {
+			non_empty_environment_value(info.environment_key) or { profile.api_key }
+		}
+		if api_key.trim_space().len > 0 {
+			configured_providers << info.id
+		}
+	}
 	return ModelSettingsView{
-		active_provider: state.settings.active_provider
-		profiles:        profiles
-		providers:       model_provider_catalog()
+		active_provider:      state.settings.active_provider
+		profiles:             profiles
+		providers:            model_provider_catalog()
+		configured_providers: configured_providers
 	}
 }
 
@@ -168,13 +191,35 @@ fn (app &App) model_config() !ModelConfig {
 }
 
 fn (app &App) provider_model_config(provider string, fallback_model string) !ModelConfig {
+	return app.resolve_provider_model_config(provider, fallback_model, '', '', false)
+}
+
+fn (app &App) provider_catalog_model_config(input ModelCatalogInput) !ModelConfig {
+	if input.provider.trim_space().len == 0 || input.provider.len > 100 || input.base_url.len > 2_048
+		|| input.api_key.len > 4_096 {
+		return error('model catalog request is invalid')
+	}
+	return app.resolve_provider_model_config(input.provider, '', input.base_url, input.api_key,
+		input.clear_api_key)
+}
+
+fn (app &App) resolve_provider_model_config(provider string, fallback_model string, endpoint_override string,
+	key_override string, clear_saved_key bool) !ModelConfig {
 	mut state := app.model_settings
 	state.mu.lock()
 	profile := state.settings.profiles[provider] or { ModelProfile{} }
 	state.mu.unlock()
 	model := if profile.model.len > 0 { profile.model } else { fallback_model }
-	api_key := provider_api_key(provider) or { profile.api_key }
-	base_url := if profile.base_url.len > 0 {
+	api_key := if key_override.len > 0 {
+		key_override
+	} else if clear_saved_key {
+		provider_api_key(provider) or { '' }
+	} else {
+		provider_api_key(provider) or { profile.api_key }
+	}
+	base_url := if endpoint_override.trim_space().len > 0 {
+		endpoint_override
+	} else if profile.base_url.len > 0 {
 		profile.base_url
 	} else {
 		os.getenv_opt('VEASEL_MODEL_BASE_URL') or {

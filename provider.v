@@ -186,6 +186,7 @@ struct ModelConfig {
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
 	url := '${secure_endpoint(config.base_url)!}/models'
+	verify := provider_tls_verify_path(url)!
 	mut headers := http.new_header(key: .accept, value: 'application/json')
 	match info.protocol {
 		'openai-compatible', 'openai-responses' {
@@ -211,6 +212,8 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 		max_retries:          1
 		allow_redirect:       false
 		stop_receiving_limit: max_provider_model_catalog_bytes
+		validate:             true
+		verify:               verify
 	) or { return error('model catalog request failed') }
 	if response.status_code < 200 || response.status_code >= 300 {
 		return error('model catalog endpoint returned HTTP ${response.status_code}')
@@ -544,12 +547,54 @@ struct GeminiCandidate {
 }
 
 fn provider_api_key(provider string) ?string {
-	if shared_key := os.getenv_opt('VEASEL_MODEL_API_KEY') {
+	if shared_key := non_empty_environment_value('VEASEL_MODEL_API_KEY') {
 		return shared_key
 	}
 	info := model_provider_info(provider) or { return none }
 	if info.environment_key == '' { return none }
-	return os.getenv_opt(info.environment_key)
+	return non_empty_environment_value(info.environment_key)
+}
+
+fn provider_tls_verify_path(url string) !string {
+	parsed := urllib.parse(url) or { return error('model endpoint is invalid') }
+	if parsed.scheme.to_lower() != 'https' {
+		return ''
+	}
+	$if windows {
+		// V's HTTP backend uses Windows Schannel and the OS certificate store.
+		return ''
+	}
+	if configured := os.getenv_opt('SSL_CERT_FILE') {
+		if os.is_file(configured) {
+			return configured
+		}
+		return error('SSL_CERT_FILE does not point to a readable CA bundle')
+	}
+	for candidate in [
+		'/etc/ssl/certs/ca-certificates.crt',
+		'/etc/ssl/cert.pem',
+		'/etc/pki/tls/certs/ca-bundle.crt',
+		'/etc/ssl/ca-bundle.pem',
+		'/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem',
+		'/usr/local/share/certs/ca-root-nss.crt',
+		'/usr/local/etc/ca-certificates/cert.pem',
+		'/opt/homebrew/etc/ca-certificates/cert.pem',
+		'/usr/local/etc/openssl@3/cert.pem',
+		'/opt/homebrew/etc/openssl@3/cert.pem',
+	] {
+		if os.is_file(candidate) {
+			return candidate
+		}
+	}
+	return error('system CA bundle not found; install ca-certificates or set SSL_CERT_FILE')
+}
+
+fn non_empty_environment_value(name string) ?string {
+	value := os.getenv_opt(name) or { return none }
+	if value.trim_space().len == 0 {
+		return none
+	}
+	return value
 }
 
 fn secure_endpoint(base_url string) !string {
@@ -1282,6 +1327,7 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 		max_retries:          1
 		stop_receiving_limit: max_provider_stream_bytes + 1
 		validate:             true
+		verify:               provider_tls_verify_path(url)!
 		on_progress_body:     fn [mut stream_state, turn_ctx] (_ &http.Request, chunk []u8, _ u64, _ u64, status_code int) ! {
 			stream_state.bytes += chunk.len
 			if stream_state.bytes > max_provider_stream_bytes {

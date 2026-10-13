@@ -148,6 +148,10 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 
 fn test_provider_catalog_ids_are_declared_in_openapi() {
 	openapi := os.read_file('docs/openapi.yaml') or { panic(err) }
+	assert openapi.contains('operationId: discoverProviderModels')
+	assert openapi.contains("$ref: '#/components/schemas/ModelCatalogInput'")
+	assert openapi.contains('Optional transient key used for this discovery request')
+	assert openapi.contains('configured_providers:')
 	for provider in supported_model_providers {
 		assert openapi.contains('- ${provider}')
 	}
@@ -167,7 +171,24 @@ fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
 	assert view.active_provider == 'groq'
 	assert view.providers.len == supported_model_providers.len
 	assert view.profiles['groq'].api_key_saved
+	assert 'groq' in view.configured_providers
 	assert !json2.encode(view).contains('secret-fixture-key')
+}
+
+fn test_model_settings_view_marks_environment_credentials_without_exposing_them() {
+	prior := os.getenv('MODEL_API_KEY')
+	os.setenv('MODEL_API_KEY', 'fixture-environment-secret', true)
+	defer {
+		if prior == '' {
+			os.unsetenv('MODEL_API_KEY')
+		} else {
+			os.setenv('MODEL_API_KEY', prior, true)
+		}
+	}
+	state := new_model_settings_state('')
+	view := state.view()
+	assert 'meta' in view.configured_providers
+	assert !json2.encode(view).contains('fixture-environment-secret')
 }
 
 fn test_provider_environment_key_uses_catalog_mapping() {
@@ -210,6 +231,47 @@ fn test_provider_environment_key_uses_catalog_mapping() {
 		} else {
 			os.setenv(info.environment_key, prior, true)
 		}
+	}
+}
+
+fn test_provider_api_key_ignores_empty_environment_values() {
+	prior_shared_key := os.getenv('VEASEL_MODEL_API_KEY')
+	prior_provider_key := os.getenv('MODEL_API_KEY')
+	os.setenv('VEASEL_MODEL_API_KEY', '', true)
+	os.setenv('MODEL_API_KEY', '', true)
+	defer {
+		if prior_shared_key == '' {
+			os.unsetenv('VEASEL_MODEL_API_KEY')
+		} else {
+			os.setenv('VEASEL_MODEL_API_KEY', prior_shared_key, true)
+		}
+		if prior_provider_key == '' {
+			os.unsetenv('MODEL_API_KEY')
+		} else {
+			os.setenv('MODEL_API_KEY', prior_provider_key, true)
+		}
+	}
+	assert provider_api_key('meta') or { '' } == ''
+}
+
+fn test_provider_https_uses_system_ca_bundle_and_http_needs_none() {
+	prior := os.getenv('SSL_CERT_FILE')
+	os.unsetenv('SSL_CERT_FILE')
+	defer {
+		if prior == '' {
+			os.unsetenv('SSL_CERT_FILE')
+		} else {
+			os.setenv('SSL_CERT_FILE', prior, true)
+		}
+	}
+	assert provider_tls_verify_path('http://127.0.0.1:4097/v1')! == ''
+	$if windows {
+		assert provider_tls_verify_path('https://api.meta.ai/v1')! == ''
+		assert provider_tls_verify_path('HTTPS://api.meta.ai/v1')! == ''
+	} $else {
+		ca_bundle := provider_tls_verify_path('https://api.meta.ai/v1')!
+		assert os.is_file(ca_bundle)
+		assert provider_tls_verify_path('HTTPS://api.meta.ai/v1')! == ca_bundle
 	}
 }
 
@@ -261,6 +323,110 @@ fn test_provider_model_catalog_parsers() {
 	meta_models := parse_provider_model_catalog('openai-responses',
 		'{"data":[{"id":"muse-wonder-1.0"},{"id":"muse-spark-1.3"}]}') or { panic(err) }
 	assert meta_models.map(it.id) == ['muse-wonder-1.0', 'muse-spark-1.3']
+}
+
+fn test_provider_model_discovery_accepts_unsaved_credentials_without_persisting_them() {
+	root := os.join_path(os.temp_dir(), 'veasel-model-discovery-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	config := app.provider_catalog_model_config(ModelCatalogInput{
+		provider: 'meta'
+		base_url: 'http://127.0.0.1:19123/v1'
+		api_key:  'transient-discovery-key'
+	}) or { panic(err) }
+	assert config.provider == 'meta'
+	assert config.base_url == 'http://127.0.0.1:19123/v1'
+	assert config.api_key == 'transient-discovery-key'
+	assert app.model_settings.view().profiles.len == 0
+	assert !json2.encode(app.model_settings.view()).contains('transient-discovery-key')
+	app.close()
+	store.close() or { panic(err) }
+}
+
+fn test_provider_model_discovery_uses_transient_credentials_before_saved_or_environment_keys() {
+	root := os.join_path(os.temp_dir(), 'veasel-model-discovery-credentials-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	prior_environment_key := os.getenv('MODEL_API_KEY')
+	prior_shared_key := os.getenv('VEASEL_MODEL_API_KEY')
+	os.unsetenv('VEASEL_MODEL_API_KEY')
+	os.setenv('MODEL_API_KEY', 'fixture-environment-key', true)
+	defer {
+		if prior_shared_key == '' {
+			os.unsetenv('VEASEL_MODEL_API_KEY')
+		} else {
+			os.setenv('VEASEL_MODEL_API_KEY', prior_shared_key, true)
+		}
+		if prior_environment_key == '' {
+			os.unsetenv('MODEL_API_KEY')
+		} else {
+			os.setenv('MODEL_API_KEY', prior_environment_key, true)
+		}
+	}
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'meta'
+		model:    'muse-saved-model'
+		base_url: 'https://api.meta.ai/v1'
+		api_key:  'fixture-saved-key'
+	}) or { panic(err) }
+	config := app.provider_catalog_model_config(ModelCatalogInput{
+		provider: 'meta'
+		base_url: 'http://127.0.0.1:19123/v1'
+		api_key:  'fixture-transient-key'
+	}) or { panic(err) }
+	assert config.api_key == 'fixture-transient-key'
+	assert config.base_url == 'http://127.0.0.1:19123/v1'
+	view := app.model_settings.view()
+	assert view.profiles['meta'].model == 'muse-saved-model'
+	assert view.profiles['meta'].base_url == 'https://api.meta.ai/v1'
+	assert !json2.encode(view).contains('fixture-transient-key')
+	assert !json2.encode(view).contains('fixture-environment-key')
+	os.unsetenv('MODEL_API_KEY')
+	mut clear_rejected := false
+	app.provider_catalog_model_config(ModelCatalogInput{
+		provider:      'meta'
+		base_url:      'http://127.0.0.1:19123/v1'
+		clear_api_key: true
+	}) or {
+		clear_rejected = true
+		assert err.msg().contains('credentials are not configured')
+	}
+	assert clear_rejected
+	app.close()
+	store.close() or { panic(err) }
+}
+
+fn test_provider_model_discovery_rejects_insecure_or_oversized_overrides() {
+	root := os.join_path(os.temp_dir(), 'veasel-model-discovery-validation-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.provider_catalog_model_config(ModelCatalogInput{
+		provider: 'meta'
+		base_url: 'http://192.0.2.1/v1'
+		api_key:  'fixture-key'
+	}) or {
+		assert err.msg().contains('must use HTTPS or loopback HTTP')
+		mut oversized_rejected := false
+		app.provider_catalog_model_config(ModelCatalogInput{
+			provider: 'meta'
+			base_url: 'https://models.example.com/${'x'.repeat(2_100)}'
+			api_key:  'fixture-key'
+		}) or {
+			oversized_rejected = true
+			assert err.msg() == 'model catalog request is invalid'
+		}
+		assert oversized_rejected
+		app.close()
+		store.close() or { panic(err) }
+		return
+	}
+	assert false
 }
 
 fn test_provider_model_catalog_rejects_invalid_data_and_deduplicates() {

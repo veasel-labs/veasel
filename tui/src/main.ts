@@ -21,7 +21,7 @@ type Session = {
 }
 
 type ModelProfileView = { model: string; base_url: string; api_key_saved: boolean }
-type ModelSettingsView = { active_provider: string; profiles: Record<string, ModelProfileView>; providers: ModelProvider[] }
+type ModelSettingsView = { active_provider: string; profiles: Record<string, ModelProfileView>; providers: ModelProvider[]; configured_providers?: string[] }
 
 type ChatExchange = {
   messages: ChatTurn[]
@@ -261,6 +261,8 @@ let settingsModelHint = ""
 let settingsManualModel = false
 let settingsStep = 0
 let settingsView: ModelSettingsView | undefined
+let settingsCatalogRequestId = 0
+let settingsCatalogController: AbortController | undefined
 const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false }
 let streamingAssistantText = ""
 let skillNotice = ""
@@ -1165,13 +1167,16 @@ function beginCreate() {
 }
 
 const settingPrompts = [
-  "Choose a provider. The model and endpoint can be changed in the next steps.",
-  "Choose a model exposed by this provider, or enter an ID manually.",
-  "API base URL (must use HTTPS, except loopback HTTP):",
-  "API key (hidden; Enter keeps a saved key, !clear removes it; optional for Ollama):",
+	"Choose a provider. Models will be discovered after the connection details.",
+	"API base URL (must use HTTPS, except loopback HTTP; Enter keeps the provider default):",
+	"API key (hidden; Enter keeps a saved key, !clear removes it; optional for local providers):",
+	"Choose a model returned by this provider, or enter an ID manually.",
 ]
 
 function closeSettings(message = "Settings unchanged.") {
+  settingsCatalogRequestId++
+  settingsCatalogController?.abort()
+  settingsCatalogController = undefined
   if (settingsProviderSelect) detail.remove(settingsProviderSelect)
   if (settingsModelSelect) detail.remove(settingsModelSelect)
   if (settingsInput) detail.remove(settingsInput)
@@ -1213,24 +1218,23 @@ function showSettingsStep(manualModel = false) {
   const providerInfo = settingsView?.providers.find((provider) => provider.id === settingsValues.provider)
   const prior = settingsView?.profiles[settingsValues.provider]
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
-  const hint = settingsStep === 3
+  const hint = settingsStep === 2
     ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."}${providerInfo?.environment_key ? ` Use ${providerInfo.environment_key} instead of saving a key.` : ""} Key characters are hidden.`
     : ""
   const providerSearchHint = settingsStep === 0
     ? `\n\nFilter  ${settingsProviderQuery || "type a provider name, ID, or key variable"}`
     : ""
-  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\nEnter selects or accepts · Esc cancels`
+  const navigationHint = settingsStep === 0
+    ? "Enter selects · Esc cancels"
+    : "Enter continues · Ctrl+B goes back · Esc cancels"
+  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
   if (settingsStep === 0) {
     const catalog = settingsView?.providers ?? []
     if (catalog.length === 0) {
       sessionDetail.content += "\n\nThe server did not return a provider catalog. Update or restart the Veasel server."
       return
     }
-    const configuredProviders = new Set(
-      Object.entries(settingsView?.profiles ?? {})
-        .filter(([, profile]) => profile.api_key_saved)
-        .map(([providerId]) => providerId),
-    )
+    const configuredProviders = new Set(settingsView?.configured_providers ?? [])
     const providers = prioritizeModelProviders(
       filterModelProviders(catalog, settingsProviderQuery),
       active,
@@ -1246,8 +1250,8 @@ function showSettingsStep(manualModel = false) {
       width: "100%",
       height: Math.min(18, providers.length * 2 + 1),
       options: providers.map((provider) => ({
-        name: `${provider.id === active ? "●" : settingsView?.profiles[provider.id]?.api_key_saved ? "◆" : "◇"}  ${provider.name}`,
-        description: `${provider.id === active ? "Active · " : ""}${provider.description}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
+        name: `${provider.id === active ? "●" : configuredProviders.has(provider.id) ? "◆" : "◇"}  ${provider.name}`,
+        description: `${provider.id === active ? "Active" : configuredProviders.has(provider.id) ? "Credential available" : provider.requires_api_key ? "Credential needed" : "No key needed"} · ${provider.description}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
         value: provider.id,
       })),
       selectedIndex: activeIndex,
@@ -1266,6 +1270,10 @@ function showSettingsStep(manualModel = false) {
       const providerId = String(option.value ?? "")
       const provider = providers.find((item) => item.id === providerId)
       if (!provider) return
+      if (settingsValues.provider !== provider.id) {
+        settingsValues.api_key = ""
+        settingsValues.clear_api_key = false
+      }
       settingsValues.provider = provider.id
       const profile = settingsView?.profiles[provider.id]
       settingsValues.model = profile?.model ?? ""
@@ -1279,15 +1287,15 @@ function showSettingsStep(manualModel = false) {
     })
     return
   }
-  if (settingsStep === 1 && manualModel) settingsManualModel = true
-  if (settingsStep === 1 && !settingsManualModel) {
+  if (settingsStep === 3 && manualModel) settingsManualModel = true
+  if (settingsStep === 3 && !settingsManualModel) {
     if (settingsModelCatalog === undefined) {
       void loadProviderModels()
       return
     }
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
-      sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\n${settingPrompts[1]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Esc cancels`
+      sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\n${settingPrompts[3]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
@@ -1318,16 +1326,15 @@ function showSettingsStep(manualModel = false) {
           return
         }
         settingsValues.model = String(option.value ?? "")
-        settingsStep++
-        showSettingsStep()
+        void saveModelSettings()
       })
       return
     }
     sessionDetail.content += `\n\n${settingsModelHint}`
   }
-  if (settingsStep === 3) {
+  if (settingsStep === 2) {
     settingsSecretIndicator = new TextRenderable(renderer, {
-      content: "",
+      content: "•".repeat([...settingsValues.api_key].length),
       fg: "#a7f3d0",
     })
     detail.add(settingsSecretIndicator)
@@ -1336,7 +1343,7 @@ function showSettingsStep(manualModel = false) {
   const input = new InputRenderable(renderer, {
     id: `model-setting-${settingsStep}`,
     width: 58,
-    placeholder: settingsStep === 1 ? "e.g. claude-sonnet-4-5 or gpt-5" : "https://api.example.com/v1",
+    placeholder: settingsStep === 3 ? "e.g. claude-sonnet-4-5 or gpt-5" : "https://api.example.com/v1",
     backgroundColor: "#202832",
     focusedBackgroundColor: "#293640",
     textColor: "#e5e7eb",
@@ -1349,35 +1356,61 @@ function showSettingsStep(manualModel = false) {
   input.focus()
   input.on(InputRenderableEvents.ENTER, (value) => {
     const clean = value.trim()
-    if (settingsStep === 1) settingsValues.model = clean || settingsValues.model
-    else if (settingsStep === 2) settingsValues.base_url = clean || settingsValues.base_url
+    if (settingsStep === 1) settingsValues.base_url = clean || settingsValues.base_url
+    else if (settingsStep === 3) {
+      settingsValues.model = clean || settingsValues.model
+      if (!settingsValues.model) {
+        settingsModelHint = "Enter a model ID or go back and choose a provider model."
+        showSettingsStep(true)
+        return
+      }
+      void saveModelSettings()
+      return
+    }
     settingsStep++
     showSettingsStep()
   })
 }
 
 async function loadProviderModels() {
+  settingsCatalogController?.abort()
+  const requestId = ++settingsCatalogRequestId
+  const requestController = new AbortController()
+  settingsCatalogController = requestController
   const provider = settingsValues.provider
   const providerInfo = settingsView?.providers.find((item) => item.id === provider)
   const providerName = providerInfo?.name ?? provider
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
-  sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\nLoading model IDs from ${providerName}…${providerGuide}\n\nEsc cancels`
+  sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\nChecking ${providerName} and discovering models…${providerGuide}\n\nCtrl+B goes back · Esc cancels`
   try {
-    const response = await fetch(`${apiBase}/v1/config/models?provider=${encodeURIComponent(provider)}`, {
-      signal: controller.signal,
+    const response = await fetch(`${apiBase}/v1/config/models`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider,
+        base_url: settingsValues.base_url,
+        api_key: settingsValues.clear_api_key ? "" : settingsValues.api_key,
+        clear_api_key: settingsValues.clear_api_key,
+      }),
+      signal: requestController.signal,
     })
-    if (!response.ok) throw new Error("provider model list unavailable")
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { error?: string }
+      throw new Error(body.error ?? `HTTP ${response.status}`)
+    }
     const catalog = await response.json() as { provider: string; models: ModelCatalogEntry[] }
-    if (!settingsOpen || settingsStep !== 1 || settingsValues.provider !== provider) return
+    if (requestId !== settingsCatalogRequestId || !settingsOpen || settingsStep !== 3 || settingsValues.provider !== provider) return
     settingsModelCatalog = catalog.provider === provider ? catalog.models : []
     settingsModelHint = settingsModelCatalog.length === 0
-      ? "No models were returned. Enter a model ID manually."
-      : "Provider model IDs loaded. Type to filter the list."
-  } catch {
-    if (!settingsOpen || settingsStep !== 1 || settingsValues.provider !== provider) return
+      ? "The connection worked, but no model IDs were returned. Enter a model ID manually."
+      : "Connected · model IDs are ready. Type to filter the list."
+  } catch (error) {
+    if (requestId !== settingsCatalogRequestId || !settingsOpen || settingsStep !== 3 || settingsValues.provider !== provider) return
     settingsModelCatalog = []
-    settingsModelHint = "Live model discovery is unavailable. Enter a model ID manually."
+    settingsModelHint = `Model discovery failed: ${error instanceof Error ? error.message : "request failed"}. Enter a model ID manually.`
   }
+  if (requestId !== settingsCatalogRequestId) return
+  settingsCatalogController = undefined
   showSettingsStep()
 }
 
@@ -1414,7 +1447,10 @@ async function saveModelSettings() {
     const response = await fetch(`${apiBase}/v1/config/model`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(settingsValues),
+      body: JSON.stringify({
+        ...settingsValues,
+        api_key: settingsValues.clear_api_key ? "" : settingsValues.api_key,
+      }),
       signal: controller.signal,
     })
     if (!response.ok) {
@@ -1432,6 +1468,17 @@ async function saveModelSettings() {
 renderer.keyInput.on("keypress", (key) => {
   if (settingsOpen) {
     if (key.name === "escape") closeSettings()
+    else if (key.ctrl && key.name === "b" && settingsStep > 0) {
+      key.stopPropagation()
+      settingsCatalogRequestId++
+      settingsCatalogController?.abort()
+      settingsCatalogController = undefined
+      settingsStep--
+      settingsModelCatalog = undefined
+      settingsModelSearchQuery = ""
+      settingsManualModel = false
+      showSettingsStep()
+    }
     else if (settingsStep === 0) {
       if (key.name === "backspace") {
         key.stopPropagation()
@@ -1444,7 +1491,7 @@ renderer.keyInput.on("keypress", (key) => {
       }
       return
     }
-    else if (settingsStep === 1 && settingsModelSelect) {
+    else if (settingsStep === 3 && settingsModelSelect) {
       if (key.name === "backspace") {
         key.stopPropagation()
         settingsModelSearchQuery = [...settingsModelSearchQuery].slice(0, -1).join("")
@@ -1456,16 +1503,25 @@ renderer.keyInput.on("keypress", (key) => {
       }
       return
     }
-    else if (settingsStep === 3) {
+    else if (settingsStep === 2) {
       key.stopPropagation()
       if (key.name === "return" || key.name === "kpenter") {
         settingsValues.clear_api_key = settingsValues.api_key === "!clear"
-        if (settingsValues.clear_api_key) settingsValues.api_key = ""
-        void saveModelSettings()
+        settingsStep++
+        settingsModelCatalog = undefined
+        settingsModelSearchQuery = ""
+        showSettingsStep()
       } else if (key.name === "backspace") {
-        settingsValues.api_key = [...settingsValues.api_key].slice(0, -1).join("")
+        settingsValues.api_key = settingsValues.clear_api_key
+          ? ""
+          : [...settingsValues.api_key].slice(0, -1).join("")
+        settingsValues.clear_api_key = false
         if (settingsSecretIndicator) settingsSecretIndicator.content = "•".repeat([...settingsValues.api_key].length)
       } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+        if (settingsValues.clear_api_key) {
+          settingsValues.api_key = ""
+          settingsValues.clear_api_key = false
+        }
         const remaining = Math.max(0, 4096 - settingsValues.api_key.length)
         settingsValues.api_key += key.sequence.slice(0, remaining)
         if (settingsSecretIndicator) settingsSecretIndicator.content = "•".repeat([...settingsValues.api_key].length)
@@ -1525,9 +1581,13 @@ renderer.keyInput.on("keypress", (key) => {
 })
 
 renderer.keyInput.on("paste", (event) => {
-  if (!settingsOpen || settingsStep !== 3) return
+  if (!settingsOpen || settingsStep !== 2) return
   event.preventDefault()
   event.stopPropagation()
+  if (settingsValues.clear_api_key) {
+    settingsValues.api_key = ""
+    settingsValues.clear_api_key = false
+  }
   const pasted = new TextDecoder().decode(event.bytes).replace(/[\x00-\x1f\x7f-\x9f]/g, "")
   const remaining = Math.max(0, 4096 - settingsValues.api_key.length)
   settingsValues.api_key += pasted.slice(0, remaining)

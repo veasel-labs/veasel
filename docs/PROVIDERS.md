@@ -9,6 +9,8 @@ Models.dev entries are selected from [anomalyco/models.dev](https://github.com/a
 
 The Models.dev selection filter requires its OpenAI-compatible adapter marker, an HTTPS API base URL, exactly one credential variable, and no unresolved URL template. Presets are not live-availability guarantees; endpoint access, account eligibility, model IDs, regional settings, and tool support depend on each provider. The openai-compatible preset remains available for custom endpoints. Local presets target loopback by default. Meta's live model discovery lists the models enabled for the configured Model API account; the documented coding choices include Muse Wonder 1.0 and Muse Spark 1.3. Veasel currently sends text and tool schemas, uses high reasoning with automatic summaries, and caps each model response at 4,096 output tokens.
 
+If live model discovery fails, Veasel reports safe upstream status details without returning the provider response body or submitted credential. HTTP 401 means the provider rejected the key; 403 means the account or model lacks access; 404 usually means the configured endpoint has no model-list route, so enter a model ID manually; 429 means the provider rate-limited the request. Other failures keep a generic message to avoid exposing provider response data.
+
 | Provider | ID | Protocol used by Veasel | Default API endpoint | Credential | Reference |
 |---|---|---|---|---|---|
 | 302.AI | 302-ai | openai-compatible | https://api.302.ai/v1 | 302AI_API_KEY | — |

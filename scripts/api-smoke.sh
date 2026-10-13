@@ -423,6 +423,22 @@ PY
 			"$api/v1/config/models"
 		grep -Fq 'muse-wonder-1.0' "$work_dir/response" \
 			|| fail 'transient Meta credentials did not discover Muse models'
+		for error_case in \
+			'401 invalid-fixture-key Provider rejected the API key' \
+			'403 veasel-meta-forbidden-key Provider denied model-list access' \
+			'404 veasel-meta-missing-catalog-key enter a model ID manually' \
+			'429 veasel-meta-rate-limited-key rate-limited model discovery'; do
+			read -r upstream_status fixture_key expected_message <<<"$error_case"
+			expect_status 502 -X POST -H 'content-type: application/json' \
+				-d "{\"provider\":\"meta\",\"base_url\":\"$model_api_endpoint\",\"api_key\":\"$fixture_key\"}" \
+				"$api/v1/config/models"
+			grep -Fq "HTTP $upstream_status" "$work_dir/response" \
+				|| fail "Meta HTTP $upstream_status failure lost the upstream status"
+			grep -Fq "$expected_message" "$work_dir/response" \
+				|| fail "Meta HTTP $upstream_status failure did not show actionable model discovery guidance"
+			! grep -Fq "$fixture_key" "$work_dir/response" \
+				|| fail "model catalog HTTP $upstream_status error echoed the submitted API key"
+		done
 		curl -fsS "$api/v1/config/model" >"$work_dir/model-settings-after-discovery"
 		python3 - "$work_dir/model-settings-after-discovery" <<'PY'
 import json

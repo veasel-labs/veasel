@@ -84,7 +84,17 @@ def is_session_system(content):
 class MockProvider(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/v1/models", "/v1beta/models"):
-            if self.headers.get("Authorization") == f"Bearer {API_KEYS['meta']}":
+            authorization = self.headers.get("Authorization")
+            simulated_error = {
+                "Bearer invalid-fixture-key": 401,
+                "Bearer veasel-meta-forbidden-key": 403,
+                "Bearer veasel-meta-missing-catalog-key": 404,
+                "Bearer veasel-meta-rate-limited-key": 429,
+            }.get(authorization)
+            if simulated_error is not None:
+                self.send_error(simulated_error)
+                return
+            if authorization == f"Bearer {API_KEYS['meta']}":
                 payload = {"data": [{"id": "muse-wonder-1.0"}, {"id": "muse-spark-1.3"}]}
             elif has_openai_compatible_auth(self.headers.get("Authorization")):
                 payload = {"data": [{"id": "smoke-model", "object": "model", "owned_by": "fixture"}]}

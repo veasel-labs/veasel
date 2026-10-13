@@ -7,6 +7,17 @@
   "filter": "Models.dev npm = @ai-sdk/openai-compatible; HTTPS API URL; exactly one environment credential variable; no URL template",
   "providers": [
     {
+      "id": "meta",
+      "name": "Meta Model API",
+      "description": "Muse Wonder and Muse Spark · OpenAI Responses API",
+      "protocol": "openai-responses",
+      "api": "https://api.meta.ai/v1",
+      "environment_key": "MODEL_API_KEY",
+      "requires_api_key": true,
+      "documentation_url": "https://dev.meta.ai/docs/coding-agents",
+      "source": "veasel-curated"
+    },
+    {
       "id": "302-ai",
       "name": "302.AI",
       "description": "Multi-model gateway · OpenAI-compatible Chat Completions",

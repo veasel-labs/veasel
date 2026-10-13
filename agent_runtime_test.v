@@ -390,6 +390,16 @@ fn test_provider_tool_transcripts_preserve_native_context() {
 	assert !public_completion.contains('tool_calls')
 }
 
+fn test_agent_context_byte_limit_accounts_for_opaque_provider_context() {
+	messages := [
+		ChatMessage{
+			role:             'assistant'
+			provider_context: ['opaque-reasoning-context']
+		},
+	]
+	assert agent_context_bytes(messages) == 'opaque-reasoning-context'.len
+}
+
 fn test_approved_shell_command_revalidates_reviewed_working_directory() {
 	root := os.join_path(os.temp_dir(), 'veasel-shell-cwd-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

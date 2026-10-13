@@ -57,7 +57,7 @@ def _veasel_provider(
         selected == "openai-compatible" and configured_provider == "openai"
     ):
         raise ValueError("Veasel provider override must match Harbor's configured model provider")
-    if selected not in {"openai", "anthropic", "gemini", "openai-compatible"}:
+    if selected not in {"openai", "anthropic", "gemini", "openai-compatible", "meta"}:
         raise ValueError(f"Veasel does not support Harbor provider {selected!r}")
     if not model:
         raise ValueError("Harbor model identifier must not be empty")

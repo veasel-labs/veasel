@@ -174,10 +174,13 @@ start_server() {
 		provider_base="/v1"
 		[[ "$1" == gemini ]] && provider_base="/v1beta"
 		[[ "${2:-}" == redirect ]] && provider_base="/redirect/v1"
+		provider_model=smoke-model
+		[[ "$1" == meta ]] && provider_model=muse-wonder-1.0
 		env -u VEASEL_MODEL_API_KEY VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
 			VEASEL_PLUGIN_DIR="$work_dir/plugins" \
-			VEASEL_MODEL_PROVIDER="$1" VEASEL_MODEL=smoke-model \
+			VEASEL_MODEL_PROVIDER="$1" VEASEL_MODEL="$provider_model" \
 			OPENAI_API_KEY=veasel-openai-key ANTHROPIC_API_KEY=veasel-anthropic-key \
+			MODEL_API_KEY=veasel-meta-key \
 			GEMINI_API_KEY=veasel-gemini-key \
 			DASHSCOPE_API_KEY=veasel-dashscope-key ZAI_API_KEY=veasel-zai-key \
 			302AI_API_KEY=veasel-302-ai-key GMI_API_KEY=veasel-gmi-cloud-key \
@@ -363,7 +366,7 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 	sleep 0.1
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
-for provider in openai-compatible anthropic gemini dashscope zai 302-ai gmi-cloud minimax scaleway baseten cortecs digitalocean frogbot helicone io-net llmgateway ollama-cloud zenmux; do
+for provider in openai-compatible anthropic gemini meta dashscope zai 302-ai gmi-cloud minimax scaleway baseten cortecs digitalocean frogbot helicone io-net llmgateway ollama-cloud zenmux; do
 	printf 'Smoke: provider workflow starting (%s)\n' "$provider"
 	rm -f "$work_dir/workspace/approved-effect.txt"
 	cat >"$work_dir/workspace/src/main.v" <<'EOF'
@@ -392,6 +395,7 @@ expected = {
     "openai-compatible": ("smoke-model", "smoke-model"),
     "anthropic": ("claude-fixture", "Claude Fixture"),
     "gemini": ("gemini-fixture", "Gemini Fixture"),
+    "meta": ("muse-wonder-1.0", "muse-wonder-1.0"),
     "dashscope": ("smoke-model", "smoke-model"),
     "zai": ("smoke-model", "smoke-model"),
     "302-ai": ("smoke-model", "smoke-model"),
@@ -416,6 +420,10 @@ PY
 		-d '{"messages":[{"role":"system","content":"Be concise"},{"role":"user","content":"Say hello"}]}' \
 		"$api/v1/chat/completions"
 	grep -Fq '"content":"Provider fixture reply"' "$work_dir/response" || fail "$provider response did not reach the API client"
+	if [[ "$provider" == meta ]]; then
+		grep -Fq '"model":"muse-wonder-1.0"' "$work_dir/response" \
+			|| fail 'Meta response did not preserve the selected Muse model ID'
+	fi
 	if [[ "$provider" == openai-compatible ]]; then
 		printf 'Smoke: exercising the headless CLI against the shared provider/runtime\n'
 		env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \
@@ -850,7 +858,7 @@ import sys
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["active_provider"] == "openai-compatible"
 providers = {provider["id"]: provider for provider in settings["providers"]}
-assert len(providers) == 82
+assert len(providers) == 83
 assert providers["ollama"]["requires_api_key"] is False
 assert providers["atomic-chat"]["requires_api_key"] is False
 assert providers["dashscope"]["environment_key"] == "DASHSCOPE_API_KEY"
@@ -870,6 +878,8 @@ assert providers["ollama-cloud"]["environment_key"] == "OLLAMA_API_KEY"
 assert providers["zenmux"]["environment_key"] == "ZENMUX_API_KEY"
 assert providers["poe"]["documentation_url"] == "https://creator.poe.com/docs/external-applications/openai-compatible-api"
 assert providers["deepseek"]["protocol"] == "openai-compatible"
+assert providers["meta"]["protocol"] == "openai-responses"
+assert providers["meta"]["environment_key"] == "MODEL_API_KEY"
 assert providers["anthropic"]["protocol"] == "anthropic"
 profile = settings["profiles"]["openai-compatible"]
 assert profile["model"] == "settings-smoke-model"

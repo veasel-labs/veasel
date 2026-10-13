@@ -24,6 +24,7 @@ pub:
 	tool_call_id          string             @[json: 'tool_call_id'; omitempty]
 	provider_tool_call_id string             @[json: 'provider_tool_call_id'; omitempty]
 	tool_calls            []ProviderToolCall @[json: 'tool_calls'; omitempty]
+	provider_context      []string           @[json: '-']
 }
 
 pub struct CompletionInput {
@@ -34,9 +35,10 @@ pub:
 pub struct CompletionOutput {
 	tool_calls []ProviderToolCall
 pub:
-	provider string
-	model    string
-	content  string
+	provider         string
+	model            string
+	content          string
+	provider_context []string @[json: '-']
 }
 
 pub struct ModelCatalogEntry {
@@ -186,7 +188,7 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	url := '${secure_endpoint(config.base_url)!}/models'
 	mut headers := http.new_header(key: .accept, value: 'application/json')
 	match info.protocol {
-		'openai-compatible' {
+		'openai-compatible', 'openai-responses' {
 			if config.api_key.len > 0 {
 				headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
 			}
@@ -222,7 +224,7 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 fn parse_provider_model_catalog(protocol string, body string) ![]ModelCatalogEntry {
 	mut models := []ModelCatalogEntry{}
 	match protocol {
-		'openai-compatible' {
+		'openai-compatible', 'openai-responses' {
 			catalog := json2.decode[OpenAIModelCatalog](body) or {
 				return error('model catalog response is invalid')
 			}
@@ -290,6 +292,8 @@ struct ProviderTurnResult {
 
 struct OpenAICompatibleProvider {}
 
+struct OpenAIResponsesProvider {}
+
 struct AnthropicProvider {}
 
 struct GeminiProvider {}
@@ -301,6 +305,77 @@ struct OpenAIRequest {
 	tools       []OpenAITool @[omitempty]
 	tool_choice string       @[omitempty]
 	stream      bool
+}
+
+struct OpenAIResponsesRequest {
+	model               string
+	max_output_tokens   int
+	input               []json2.Any
+	tools               []OpenAIResponsesTool @[omitempty]
+	tool_choice         string                @[omitempty]
+	parallel_tool_calls bool                  @[omitempty]
+	stream              bool
+	store               bool
+	include             []string                 @[omitempty]
+	reasoning           OpenAIResponsesReasoning @[omitempty]
+}
+
+struct OpenAIResponsesReasoning {
+	effort  string
+	summary string @[omitempty]
+}
+
+struct OpenAIResponsesTool {
+	type        string = 'function'
+	name        string
+	description string @[omitempty]
+	parameters  json2.Any
+}
+
+struct OpenAIResponsesEvent {
+	type     string
+	delta    string
+	response OpenAIResponsesResponse
+	error    OpenAIResponsesError
+}
+
+struct OpenAIResponsesError {
+	message string
+}
+
+struct OpenAIResponsesResponse {
+	id          string
+	model       string
+	status      string
+	output_text string
+	output      []OpenAIResponsesOutputItem
+	error       OpenAIResponsesError
+}
+
+struct OpenAIResponsesOutputItem {
+	id                string
+	type              string
+	call_id           string
+	name              string
+	arguments         string
+	role              string
+	phase             string
+	content           []OpenAIResponsesOutputContent
+	summary           []json2.Any
+	encrypted_content string
+}
+
+struct OpenAIResponsesOutputContent {
+	type string
+	text string
+}
+
+struct OpenAIResponsesStreamOutput {
+mut:
+	content_parts []string
+	response      OpenAIResponsesResponse
+	failure       string
+	completed     bool
 }
 
 struct OpenAITool {
@@ -574,6 +649,9 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 		'openai-compatible' {
 			ModelProvider(OpenAICompatibleProvider{})
 		}
+		'openai-responses' {
+			ModelProvider(OpenAIResponsesProvider{})
+		}
 		'anthropic' {
 			ModelProvider(AnthropicProvider{})
 		}
@@ -673,6 +751,178 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 		content:    content
 		tool_calls: tool_calls
 	}
+}
+
+fn (provider OpenAIResponsesProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
+	messages []ChatMessage, tools []AgentToolDefinition,
+	on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	input := openai_responses_input(messages)!
+	mut response_tools := []OpenAIResponsesTool{cap: tools.len}
+	for tool in tools {
+		response_tools << OpenAIResponsesTool{
+			name:        tool.name
+			description: tool.description
+			parameters:  provider_tool_parameters(tool)
+		}
+	}
+	request := OpenAIResponsesRequest{
+		model:               config.model
+		max_output_tokens:   max_model_output_tokens
+		input:               input
+		tools:               response_tools
+		tool_choice:         if tools.len > 0 { 'auto' } else { '' }
+		parallel_tool_calls: tools.len > 1
+		stream:              true
+		store:               false
+		include:             ['reasoning.encrypted_content']
+		reasoning:           OpenAIResponsesReasoning{
+			effort:  'high'
+			summary: 'auto'
+		}
+	}
+	mut stream_state := &OpenAIResponsesStreamOutput{}
+	callback := fn [mut stream_state, on_text_delta] (data string) ! {
+		if data == '[DONE]' { return }
+		event := json2.decode[OpenAIResponsesEvent](data) or {
+			return error('response_parse')
+		}
+		match event.type {
+			'response.output_text.delta' {
+				if event.delta != '' {
+					stream_state.content_parts << event.delta
+					on_text_delta(event.delta)!
+				}
+			}
+			'response.completed' {
+				stream_state.response = event.response
+				stream_state.completed = true
+			}
+			'response.failed', 'error' {
+				stream_state.failure = openai_responses_failure_message(event)
+			}
+			else {}
+		}
+	}
+	post_model_sse(mut turn_ctx, '${secure_endpoint(config.base_url)!}/responses', config,
+		json2.encode[OpenAIResponsesRequest](request), .bearer, callback)!
+	if stream_state.failure != '' { return error(stream_state.failure) }
+	if !stream_state.completed { return error('provider response ended before completion') }
+	mut content := stream_state.content_parts.join('')
+	mut tool_calls := []ProviderToolCall{}
+	mut provider_context := []string{}
+	for item in stream_state.response.output {
+		match item.type {
+			'reasoning' {
+				if item.encrypted_content != '' {
+					mut context_item := map[string]json2.Any{
+						'type':              json2.Any('reasoning')
+						'summary':           json2.Any(item.summary)
+						'encrypted_content': json2.Any(item.encrypted_content)
+					}
+					if item.id != '' { context_item['id'] = json2.Any(item.id) }
+					provider_context << json2.encode[map[string]json2.Any](context_item)
+				}
+			}
+			'function_call' {
+				if item.call_id.len == 0 || item.call_id.len > 64 || item.name.len == 0
+					|| item.arguments.len == 0 {
+					return error('provider returned an invalid function call')
+				}
+				json2.decode[map[string]json2.Any](item.arguments) or {
+					return error('invalid streamed tool arguments')
+				}
+				tool_calls << ProviderToolCall{
+					id:               item.call_id
+					provider_call_id: item.id
+					function:         ProviderFunctionCall{
+						name:      item.name
+						arguments: item.arguments
+					}
+				}
+			}
+			'message' {
+				if content.len == 0 {
+					for part in item.content {
+						if part.type == 'output_text' { content += part.text }
+					}
+				}
+			}
+			else {}
+		}
+	}
+	if content.trim_space().len == 0 && tool_calls.len == 0 {
+		return error('empty_response')
+	}
+	return CompletionOutput{
+		provider:         config.provider
+		model:            if stream_state.response.model.len > 0 {
+			stream_state.response.model
+		} else {
+			config.model
+		}
+		content:          content
+		tool_calls:       tool_calls
+		provider_context: provider_context
+	}
+}
+
+fn openai_responses_failure_message(event OpenAIResponsesEvent) string {
+	if event.error.message != '' { return event.error.message }
+	if event.response.error.message != '' { return event.response.error.message }
+	return 'provider response failed'
+}
+
+fn openai_responses_input(messages []ChatMessage) ![]json2.Any {
+	mut input := []json2.Any{}
+	for message in messages {
+		if message.role == 'assistant' {
+			for context_item in message.provider_context {
+				item := json2.decode[json2.Any](context_item) or {
+					return error('provider reasoning context is invalid')
+				}
+				input << item
+			}
+		}
+		if message.role == 'tool' {
+			if message.tool_call_id.len == 0 || message.tool_call_id.len > 64 {
+				return error('provider tool call ID is invalid for Responses API')
+			}
+			input << json2.Any({
+				'type':    json2.Any('function_call_output')
+				'call_id': json2.Any(message.tool_call_id)
+				'output':  json2.Any(message.content)
+			})
+			continue
+		}
+		if message.role !in ['system', 'user', 'assistant'] {
+			return error('provider message role is unsupported')
+		}
+		if message.content != '' {
+			mut item := map[string]json2.Any{
+				'type':    json2.Any('message')
+				'role':    json2.Any(message.role)
+				'content': json2.Any(message.content)
+			}
+			if message.role == 'assistant' && message.tool_calls.len > 0 {
+				item['phase'] = json2.Any('commentary')
+			}
+			input << json2.Any(item)
+		}
+		for call in message.tool_calls {
+			if call.id.len == 0 || call.id.len > 64 {
+				return error('provider tool call ID is invalid for Responses API')
+			}
+			mut item := map[string]json2.Any{
+				'type':      json2.Any('function_call')
+				'call_id':   json2.Any(call.id)
+				'name':      json2.Any(call.function.name)
+				'arguments': json2.Any(call.function.arguments)
+			}
+			if call.provider_call_id != '' { item['id'] = json2.Any(call.provider_call_id) }
+			input << json2.Any(item)
+		}
+	}
+	return input
 }
 
 fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,

@@ -15,11 +15,11 @@ scope and status.
 The current vertical slice provides a V server with health/capability
 endpoints, SQLite-backed sessions and chat history, a replayable event stream,
 and an OpenTUI terminal client. When configured, sessions can chat through
-OpenAI-compatible, Anthropic, or Gemini APIs. The built-in catalog includes
-hosted providers such as Alibaba Cloud Model Studio and Z.AI, plus local
+OpenAI-compatible, Meta Responses, Anthropic, or Gemini APIs. The built-in
+catalog includes hosted providers such as Alibaba Cloud Model Studio and Z.AI, plus local
 OpenAI-compatible servers such as Atomic Chat. Session chat can call bounded
 workspace list/read/search tools and propose one-file replacements using
-provider-native tool calling for all three provider families. Proposed diffs
+provider-native tool calling for all provider families. Proposed diffs
 are persisted for review; the TUI writes only after an explicit approval.
 Requested workspace content is sent to the configured model provider. Shell
 commands proposed by the model are stored for review and run only after the exact
@@ -28,7 +28,7 @@ approved. Approved commands run with the server process user's permissions,
 inherit its environment, and have no OS sandbox; they can access files and
 network credentials available to that user. Execution is limited to 300 seconds
 and 64 KiB of captured output. Interrupted commands are never replayed.
-Session turns through all three provider adapters stream text deltas through the
+Session turns through all provider adapters stream text deltas through the
 replayable `/v1/events` endpoint. The TUI renders them while a synchronous API
 response retains the complete assistant text and provider tool calls. Tool
 arguments are assembled before the agent executes them.
@@ -68,9 +68,10 @@ With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
 starts `veasel serve` and waits for its health endpoint before opening the TUI.
 Press `s` on the home screen, or enter `/models` in an open session, to search
 and choose a provider in the keyboard-driven settings list, then configure its
-model, endpoint, and API key. The server currently supplies 82 presets; see the
+model, endpoint, and API key. The server currently supplies 83 presets,
+including Meta Model API; see the
 [complete provider catalog and its scope](docs/PROVIDERS.md). Presets cover
-Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
+Meta Muse, Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
 endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
 Baseten, Cortecs, DigitalOcean, FrogBot, Helicone, Hyperbolic, IO.NET, LLM Gateway,
 Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, Ollama Cloud, OpenRouter,
@@ -155,13 +156,26 @@ they never add tools or bypass MCP trust, file approval, or shell approval.
 Install only plugins you trust. Agent Plugins support is experimental and does
 not claim full v1.0.0 conformance.
 
-The completion adapters support `openai-compatible`, `openai`, `anthropic`,
-and `gemini`. Configure provider profiles in the TUI, or use
+The completion adapters support `openai-compatible`, Meta's `openai-responses`,
+`anthropic`, and `gemini`. Configure provider profiles in the TUI, or use
 `VEASEL_MODEL_PROVIDER`, `VEASEL_MODEL`, `VEASEL_MODEL_BASE_URL`, and a provider
-key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`; the shared
-`VEASEL_MODEL_API_KEY` also works). Environment configuration remains available
-for scripts and headless use. Custom endpoints must use HTTPS or loopback HTTP.
-Keys are never returned by the API.
+key (`MODEL_API_KEY` for Meta, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
+`GEMINI_API_KEY`; the shared `VEASEL_MODEL_API_KEY` also works). Environment
+configuration remains available for scripts and headless use. Custom endpoints
+must use HTTPS or loopback HTTP.
+Keys are never returned by the API. For Meta, select `Meta Model API` in Settings
+and choose a model returned by the account's `/v1/models` catalog, such as
+`muse-wonder-1.0` or `muse-spark-1.3` when enabled. Veasel uses Responses with
+high reasoning, automatic reasoning summaries, encrypted reasoning replay, and
+a 4,096-token per-response output cap. The server currently limits submitted
+conversation input to 100,000 bytes; Veasel does not yet expose Meta's full
+1,048,576-token context window.
+For a Meta account, set `MODEL_API_KEY`, open Veasel's provider settings with
+`s` on the home screen (or `/models` in a session), select `meta`, and choose an
+account-enabled Muse model such as `muse-wonder-1.0` or `muse-spark-1.3`. The
+key can instead be entered in Settings; saved profile keys are stored locally
+in plaintext, so prefer the environment variable when that matters.
+
 The TUI sends messages through `/v1/sessions/:id/messages` and reloads the
 persisted conversation when a session opens. Enter `/history older` in a
 session to load its preceding 100 messages without losing the visible history.

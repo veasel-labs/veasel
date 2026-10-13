@@ -282,7 +282,7 @@ jobs:
       - name: Run Windows plugin, workspace edit, and recovery tests
         if: runner.os == 'Windows'
         shell: pwsh
-        timeout-minutes: 40
+        timeout-minutes: 50
         run: |
           & v -d windows_7 test main_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

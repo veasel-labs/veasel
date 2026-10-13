@@ -55,7 +55,7 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len
-	assert catalog.len == 82
+	assert catalog.len == 83
 	mut seen := map[string]bool{}
 	for provider in catalog {
 		assert provider.id in supported_model_providers
@@ -65,7 +65,7 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 		assert provider.description.len > 0
 		assert provider.base_url.starts_with('https://')
 			|| provider.id in ['atomic-chat', 'ollama', 'llama-cpp', 'lmstudio', 'localai', 'vllm']
-		assert provider.protocol in ['anthropic', 'gemini', 'openai-compatible']
+		assert provider.protocol in ['anthropic', 'gemini', 'openai-compatible', 'openai-responses']
 	}
 	assert seen['openai-compatible']
 	assert seen['anthropic']
@@ -76,6 +76,13 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['atomic-chat']
 	assert seen['dashscope']
 	assert seen['zai']
+	assert seen['meta']
+	meta := model_provider_info('meta') or { panic('Meta Model API missing') }
+	assert meta.name == 'Meta Model API'
+	assert meta.protocol == 'openai-responses'
+	assert meta.base_url == 'https://api.meta.ai/v1'
+	assert meta.environment_key == 'MODEL_API_KEY'
+	assert meta.documentation_url == 'https://dev.meta.ai/docs/coding-agents'
 	assert seen['302-ai']
 	assert seen['gmi-cloud']
 	assert seen['minimax']
@@ -145,6 +152,7 @@ fn test_provider_catalog_ids_are_declared_in_openapi() {
 		assert openapi.contains('- ${provider}')
 	}
 	assert openapi.contains('documentation_url: { type: string }')
+	assert openapi.contains('openai-responses')
 }
 
 fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
@@ -250,6 +258,9 @@ fn test_provider_model_catalog_parsers() {
 	assert gemini_models.len == 1
 	assert gemini_models[0].id == 'gemini-2.5-pro'
 	assert gemini_models[0].name == 'Gemini 2.5 Pro'
+	meta_models := parse_provider_model_catalog('openai-responses',
+		'{"data":[{"id":"muse-wonder-1.0"},{"id":"muse-spark-1.3"}]}') or { panic(err) }
+	assert meta_models.map(it.id) == ['muse-wonder-1.0', 'muse-spark-1.3']
 }
 
 fn test_provider_model_catalog_rejects_invalid_data_and_deduplicates() {

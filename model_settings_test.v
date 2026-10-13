@@ -164,6 +164,7 @@ fn test_provider_catalog_ids_are_declared_in_openapi() {
 	assert openapi.contains("$ref: '#/components/schemas/ModelCatalogInput'")
 	assert openapi.contains('Optional transient key used for this discovery request')
 	assert openapi.contains('configured_providers:')
+	assert openapi.contains('Chat-and-tool-compatible models exposed by the provider adapter')
 	for provider in supported_model_providers {
 		assert openapi.contains('- ${provider}')
 	}
@@ -335,6 +336,21 @@ fn test_provider_model_catalog_parsers() {
 	meta_models := parse_provider_model_catalog('openai-responses',
 		'{"data":[{"id":"muse-wonder-1.0"},{"id":"muse-spark-1.3"}]}') or { panic(err) }
 	assert meta_models.map(it.id) == ['muse-wonder-1.0', 'muse-spark-1.3']
+}
+
+fn test_meta_model_discovery_only_offers_coding_chat_families() {
+	models := [
+		'muse-wonder-1.0',
+		'muse-spark-1.3',
+		'muse-spark-1.3-contributor',
+		'muse-image-1.0',
+		'muse-voice-transcribe-1.0',
+		'sam-3.1',
+	].map(ModelCatalogEntry{ id: it, name: it })
+
+	meta_models := filter_provider_chat_models('meta', models)
+	assert meta_models.map(it.id) == ['muse-wonder-1.0', 'muse-spark-1.3', 'muse-spark-1.3-contributor']
+	assert filter_provider_chat_models('openai', models) == models
 }
 
 fn test_provider_model_discovery_accepts_unsaved_credentials_without_persisting_them() {

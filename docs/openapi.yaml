@@ -71,7 +71,7 @@ paths:
           schema: { type: string, maxLength: 100 }
       responses:
         '200':
-          description: Provider model IDs and display names.
+          description: Chat-and-tool-compatible provider model IDs and display names; unsupported model families may be omitted.
           content:
             application/json:
               schema:
@@ -99,7 +99,7 @@ paths:
               $ref: '#/components/schemas/ModelCatalogInput'
       responses:
         '200':
-          description: Provider model IDs and display names.
+          description: Chat-and-tool-compatible provider model IDs and display names; unsupported model families may be omitted.
           content:
             application/json:
               schema:
@@ -1329,6 +1329,7 @@ components:
         provider: { type: string }
         models:
           type: array
+          description: Chat-and-tool-compatible models exposed by the provider adapter. Unsupported output modalities may be omitted.
           items:
             type: object
             required: [id, name]

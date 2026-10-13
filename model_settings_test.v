@@ -55,6 +55,7 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len
+	assert catalog.len == 82
 	mut seen := map[string]bool{}
 	for provider in catalog {
 		assert provider.id in supported_model_providers
@@ -86,6 +87,19 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 		assert info.protocol == 'openai-compatible'
 		assert info.base_url.starts_with('https://')
 		assert info.environment_key != ''
+	}
+	for provider in ['abacus', 'above', 'ai-router', 'ai21', 'alibaba', 'alibaba-coding-plan',
+		'clarifai', 'cline-pass', 'crusoe', 'friendli', 'inference', 'kilo', 'llama', 'model-oracle-ai',
+		'modelscope', 'modal', 'moonshotai-cn', 'nano-gpt', 'nearai', 'oci', 'poe', 'poolside',
+		'qiniu-ai', 'sarvam', 'sensenova', 'siliconflow-cn', 'stackit', 'stepfun-ai', 'tencent-tokenhub',
+		'tinfoil', 'upstage', 'volcengine', 'vultr', 'xiaomi-token-plan-cn', 'zai-coding-plan',
+		'zhipuai-coding-plan'] {
+		assert seen[provider]
+		info := model_provider_info(provider) or { panic('${provider} missing') }
+		assert info.protocol == 'openai-compatible'
+		assert info.base_url.starts_with('https://')
+		assert info.environment_key != ''
+		assert info.documentation_url.starts_with('https://')
 	}
 	provider_302 := model_provider_info('302-ai') or { panic('302.AI missing') }
 	assert provider_302.base_url == 'https://api.302.ai/v1'
@@ -130,6 +144,7 @@ fn test_provider_catalog_ids_are_declared_in_openapi() {
 	for provider in supported_model_providers {
 		assert openapi.contains('- ${provider}')
 	}
+	assert openapi.contains('documentation_url: { type: string }')
 }
 
 fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
@@ -174,6 +189,19 @@ fn test_provider_environment_key_uses_catalog_mapping() {
 		os.setenv(key, 'fixture-${provider}-key', true)
 		defer { os.unsetenv(key) }
 		assert provider_api_key(provider) or { '' } == 'fixture-${provider}-key'
+	}
+	for info in model_provider_catalog() {
+		if info.documentation_url == '' {
+			continue
+		}
+		prior := os.getenv(info.environment_key)
+		os.setenv(info.environment_key, 'fixture-${info.id}-key', true)
+		assert provider_api_key(info.id) or { '' } == 'fixture-${info.id}-key'
+		if prior == '' {
+			os.unsetenv(info.environment_key)
+		} else {
+			os.setenv(info.environment_key, prior, true)
+		}
 	}
 }
 

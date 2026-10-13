@@ -850,7 +850,7 @@ import sys
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["active_provider"] == "openai-compatible"
 providers = {provider["id"]: provider for provider in settings["providers"]}
-assert len(providers) >= 46
+assert len(providers) == 82
 assert providers["ollama"]["requires_api_key"] is False
 assert providers["atomic-chat"]["requires_api_key"] is False
 assert providers["dashscope"]["environment_key"] == "DASHSCOPE_API_KEY"
@@ -868,6 +868,7 @@ assert providers["io-net"]["environment_key"] == "IOINTELLIGENCE_API_KEY"
 assert providers["llmgateway"]["environment_key"] == "LLMGATEWAY_API_KEY"
 assert providers["ollama-cloud"]["environment_key"] == "OLLAMA_API_KEY"
 assert providers["zenmux"]["environment_key"] == "ZENMUX_API_KEY"
+assert providers["poe"]["documentation_url"] == "https://creator.poe.com/docs/external-applications/openai-compatible-api"
 assert providers["deepseek"]["protocol"] == "openai-compatible"
 assert providers["anthropic"]["protocol"] == "anthropic"
 profile = settings["profiles"]["openai-compatible"]

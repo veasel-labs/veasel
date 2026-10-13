@@ -5,6 +5,7 @@ export type ModelProvider = {
   protocol: "openai-compatible" | "anthropic" | "gemini"
   base_url: string
   environment_key: string
+  documentation_url?: string
   requires_api_key: boolean
 }
 

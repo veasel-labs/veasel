@@ -10,7 +10,7 @@ listed capabilities.
 
 | Source | Inspection location / revision | What it contributes |
 |---|---|---|
-| V compiler and `vlib` | Veasel pins [`ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf`](https://github.com/vlang/v/commit/ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf) in `.v-version`; the local checkout was refreshed and the current upstream `master` was also inspected at [`ee46dc34dd496da7b8272ee26205abd5169df236`](https://github.com/vlang/v/commit/ee46dc34dd496da7b8272ee26205abd5169df236). | The release guidance follows the pinned commit until an updated V pin passes Veasel's cross-platform checks. Production build guidance and CI are documented in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). Upstream can move independently; recheck APIs and flags when updating `.v-version`. |
+| V compiler and `vlib` | Veasel pins [`cbe6ea8bbbc30ff7630eac5f507809182bfa027c`](https://github.com/vlang/v/commit/cbe6ea8bbbc30ff7630eac5f507809182bfa027c) in `.v-version`. On 2026-10-12 the separately maintained local compiler was updated with `v up` to [`7260a49f0a698ce13353f5ba2f18d4536050d978`](https://github.com/vlang/v/commit/7260a49f0a698ce13353f5ba2f18d4536050d978), V 0.5.2. | The pinned compiler remains the release/CI source of truth until an updated V pin passes Veasel's cross-platform checks. The latest local compiler is useful for forward-compatibility checks, but does not silently replace that pin. Production build guidance and CI are documented in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). Upstream can move independently; recheck APIs and flags when updating `.v-version`. |
 | `awesome-v` | Upstream [repository](https://github.com/vlang/awesome-v), CC0 list. No local checkout. | Discovery index for V libraries, CLI/TUI projects, databases, HTTP and terminal packages; listings are leads, not a quality or maintenance guarantee. |
 | `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch `add-mascot`. No local checkout. | Official Veasel mascot source. The startup pixel adaptation is included with attribution under CC BY-NC 4.0; commercial use requires separate permission. |
 | VSL | `~/.vmodules/vsl`, commit `a27f8ececf35ba91e58e71e3f6e707d2b609fc8e`, branch `main`. No tracked edits; two untracked V compiler cache directories were present and left untouched. | V-native modules, optional numerical/native backends, APIs with explicit backend expectations, module docs, examples, bounded local/CI testing. |
@@ -48,10 +48,10 @@ filesystem, search, diffs, MCP, terminal, logging, benchmarks and tests. Treat
 it as the dependency review gate for later milestones; it distinguishes
 missing high-level facilities from functionality V already supplies.
 
-For builds, the pinned compiler's [`production options`](https://github.com/vlang/v/blob/ea5156d504c627f3f9f1a5ee6d8c251ddd17abbf/vlib/v/help/build/build.txt)
+For builds, the pinned compiler's [`production options`](https://github.com/vlang/v/blob/cbe6ea8bbbc30ff7630eac5f507809182bfa027c/vlib/v/help/build/build.txt)
 enable production optimizations with `-prod`; it warns that some GCC versions
 newer than 12 have inlining problems and documents a targeted workaround. V's
-[official release workflow](https://github.com/vlang/v/blob/ee46dc34dd496da7b8272ee26205abd5169df236/.github/workflows/release_ci.yml)
+[official release workflow](https://github.com/vlang/v/blob/7260a49f0a698ce13353f5ba2f18d4536050d978/.github/workflows/release_ci.yml)
 chooses GCC for Linux, Clang for macOS, and MSVC for Windows, with `-prod`.
 V's own compiler uses extra allocator and PGO settings for self-builds, which
 do not transfer to a long-running application. Veasel records its selected

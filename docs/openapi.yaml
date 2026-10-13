@@ -1122,6 +1122,42 @@ components:
             - llmgateway
             - ollama-cloud
             - zenmux
+            - abacus
+            - above
+            - ai-router
+            - ai21
+            - alibaba
+            - alibaba-coding-plan
+            - clarifai
+            - cline-pass
+            - crusoe
+            - friendli
+            - inference
+            - kilo
+            - llama
+            - model-oracle-ai
+            - modelscope
+            - modal
+            - moonshotai-cn
+            - nano-gpt
+            - nearai
+            - oci
+            - poe
+            - poolside
+            - qiniu-ai
+            - sarvam
+            - sensenova
+            - siliconflow-cn
+            - stackit
+            - stepfun-ai
+            - tencent-tokenhub
+            - tinfoil
+            - upstage
+            - volcengine
+            - vultr
+            - xiaomi-token-plan-cn
+            - zai-coding-plan
+            - zhipuai-coding-plan
         model:
           type: string
           minLength: 1
@@ -1190,6 +1226,42 @@ components:
             - llmgateway
             - ollama-cloud
             - zenmux
+            - abacus
+            - above
+            - ai-router
+            - ai21
+            - alibaba
+            - alibaba-coding-plan
+            - clarifai
+            - cline-pass
+            - crusoe
+            - friendli
+            - inference
+            - kilo
+            - llama
+            - model-oracle-ai
+            - modelscope
+            - modal
+            - moonshotai-cn
+            - nano-gpt
+            - nearai
+            - oci
+            - poe
+            - poolside
+            - qiniu-ai
+            - sarvam
+            - sensenova
+            - siliconflow-cn
+            - stackit
+            - stepfun-ai
+            - tencent-tokenhub
+            - tinfoil
+            - upstage
+            - volcengine
+            - vultr
+            - xiaomi-token-plan-cn
+            - zai-coding-plan
+            - zhipuai-coding-plan
         profiles:
           type: object
           additionalProperties:
@@ -1212,6 +1284,7 @@ components:
               protocol: { type: string, enum: [openai-compatible, anthropic, gemini] }
               base_url: { type: string }
               environment_key: { type: string }
+              documentation_url: { type: string }
               requires_api_key: { type: boolean }
     ModelCatalogView:
       type: object

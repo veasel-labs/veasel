@@ -212,9 +212,8 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 // an explicit host capability, not a bundled V runtime dependency.
 fn run_linux_sandboxed_shell_command(root string, cwd string,
 	command ShellCommandSummary) ShellCommandResult {
-	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr',
-		'/etc', '/opt', '/boot', '/sys', '/proc', '/dev', '/run', '/bin', '/sbin', '/lib',
-		'/lib64'] {
+	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr', '/etc',
+		'/opt', '/boot', '/sys', '/proc', '/dev', '/run', '/bin', '/sbin', '/lib', '/lib64'] {
 		if root == broad_root {
 			return ShellCommandResult{
 				status:    'failed'
@@ -234,7 +233,9 @@ fn run_linux_sandboxed_shell_command(root string, cwd string,
 		'--unshare-all',
 		'--die-with-parent',
 		'--new-session',
-		'--ro-bind', '/', '/',
+		'--ro-bind',
+		'/',
+		'/',
 	]
 	for hidden_path in ['/home', '/root', '/run', '/mnt', '/media', '/tmp'] {
 		if os.is_dir(hidden_path) {

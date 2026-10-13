@@ -1212,13 +1212,14 @@ function showSettingsStep(manualModel = false) {
   const active = settingsView?.active_provider ?? "openai-compatible"
   const providerInfo = settingsView?.providers.find((provider) => provider.id === settingsValues.provider)
   const prior = settingsView?.profiles[settingsValues.provider]
+  const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
   const hint = settingsStep === 3
     ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."}${providerInfo?.environment_key ? ` Use ${providerInfo.environment_key} instead of saving a key.` : ""} Key characters are hidden.`
     : ""
   const providerSearchHint = settingsStep === 0
     ? `\n\nFilter  ${settingsProviderQuery || "type a provider name, ID, or key variable"}`
     : ""
-  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${hint}\n\nEnter selects or accepts · Esc cancels`
+  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\nEnter selects or accepts · Esc cancels`
   if (settingsStep === 0) {
     const catalog = settingsView?.providers ?? []
     if (catalog.length === 0) {
@@ -1277,7 +1278,7 @@ function showSettingsStep(manualModel = false) {
     }
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
-      sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\n${settingPrompts[1]}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Esc cancels`
+      sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\n${settingPrompts[1]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Esc cancels`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
@@ -1348,8 +1349,10 @@ function showSettingsStep(manualModel = false) {
 
 async function loadProviderModels() {
   const provider = settingsValues.provider
-  const providerName = settingsView?.providers.find((item) => item.id === provider)?.name ?? provider
-  sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\nLoading model IDs from ${providerName}…\n\nEsc cancels`
+  const providerInfo = settingsView?.providers.find((item) => item.id === provider)
+  const providerName = providerInfo?.name ?? provider
+  const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
+  sessionDetail.content = `MODEL SETTINGS  /  2 OF 4\n\nLoading model IDs from ${providerName}…${providerGuide}\n\nEsc cancels`
   try {
     const response = await fetch(`${apiBase}/v1/config/models?provider=${encodeURIComponent(provider)}`, {
       signal: controller.signal,

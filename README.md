@@ -68,13 +68,14 @@ With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
 starts `veasel serve` and waits for its health endpoint before opening the TUI.
 Press `s` on the home screen, or enter `/models` in an open session, to search
 and choose a provider in the keyboard-driven settings list, then configure its
-model, endpoint, and API key. Presets
-cover Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
+model, endpoint, and API key. The server currently supplies 82 presets; see the
+[complete provider catalog and its scope](docs/PROVIDERS.md). Presets cover
+Anthropic, Gemini, OpenAI, and OpenAI Chat Completions compatible
 endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
 Baseten, Cortecs, DigitalOcean, FrogBot, Helicone, Hyperbolic, IO.NET, LLM Gateway,
 Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, Ollama Cloud, OpenRouter,
 MiniMax, Perplexity, SambaNova, Scaleway Generative APIs, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
-xAI, [Z.AI](https://docs.z.ai/), Cloudflare Workers AI, [Atomic Chat](https://opencode.ai/docs/providers/), llama.cpp, LM Studio, LocalAI, and vLLM. Local
+xAI, [Z.AI](https://docs.z.ai/), Cloudflare Workers AI, [Atomic Chat](https://opencode.ai/docs/providers/), llama.cpp, LM Studio, LocalAI, vLLM, Poe, Poolside, ClinePass, AI21, Alibaba Coding Plan, Crusoe, Friendli, ModelScope, OCI Generative AI, Sarvam, Tencent TokenHub, Upstage, Volcengine Ark, Vultr, and others. Local
 presets target loopback servers by default; Cloudflare requires replacing the
 account-ID placeholder in its endpoint. Alibaba Cloud Model Studio defaults to
 its US Virginia endpoint; use the endpoint and API key for the same region. The

@@ -127,11 +127,13 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
-- [x] Deliver a server-owned 46-provider catalog and keyboard-navigable TUI
+- [x] Deliver a server-owned 82-preset provider catalog and keyboard-navigable TUI
   provider picker with protocol descriptions, environment-key hints, editable
   endpoints, and a local no-key Ollama profile. OpenAI-compatible presets use
   the shared Chat Completions transport; provider-specific auth and SDK features
-  remain out of scope until implemented and tested.
+  remain out of scope until implemented and tested. Thirty-six compatible
+  endpoints are generated from a pinned Models.dev selection; see
+  [PROVIDERS.md](PROVIDERS.md) and `tools/provider-catalog/`.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

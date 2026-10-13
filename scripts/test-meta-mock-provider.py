@@ -50,6 +50,7 @@ class MetaMockProviderTests(unittest.TestCase):
                 "include": ["reasoning.encrypted_content"],
                 "tools": [
                     {"type": "function", "name": "workspace_search", "parameters": {}},
+                    {"type": "function", "name": "workspace_read_file", "parameters": {}},
                     {"type": "function", "name": "agent_skill_read_resource", "parameters": {}},
                 ],
             }).encode(),
@@ -85,12 +86,26 @@ class MetaMockProviderTests(unittest.TestCase):
             "Found workspace-search-sentinel",
         )
 
-        skill_turn = follow_up + final_response["output"] + [
+        traversal_turn = follow_up + final_response["output"] + [
+            {"type": "message", "role": "user", "content": "Try to read outside"},
+        ]
+        traversal_response = self.post_response(traversal_turn)
+        traversal_call = next(item for item in traversal_response["output"] if item["type"] == "function_call")
+        self.assertEqual(traversal_call["call_id"], "meta-call-2")
+        traversal_follow_up = traversal_turn + traversal_response["output"] + [{
+            "type": "function_call_output",
+            "call_id": traversal_call["call_id"],
+            "output": '{"error":"The path was rejected."}',
+        }]
+        traversal_final = self.post_response(traversal_follow_up)
+        self.assertEqual(traversal_final["output"][0]["content"][0]["text"], "The path was rejected.")
+
+        skill_turn = traversal_follow_up + traversal_final["output"] + [
             {"type": "message", "role": "user", "content": "Read skill reference"},
         ]
         skill_response = self.post_response(skill_turn)
         skill_call = next(item for item in skill_response["output"] if item["type"] == "function_call")
-        self.assertEqual(skill_call["call_id"], "meta-call-2")
+        self.assertEqual(skill_call["call_id"], "meta-call-3")
         skill_follow_up = skill_turn + skill_response["output"] + [{
             "type": "function_call_output",
             "call_id": skill_call["call_id"],
@@ -104,7 +119,7 @@ class MetaMockProviderTests(unittest.TestCase):
         ]
         third_response = self.post_response(next_turn)
         third_call = next(item for item in third_response["output"] if item["type"] == "function_call")
-        self.assertEqual(third_call["call_id"], "meta-call-3")
+        self.assertEqual(third_call["call_id"], "meta-call-4")
 
 
 if __name__ == "__main__":

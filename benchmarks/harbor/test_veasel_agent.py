@@ -124,6 +124,11 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
             await agent.install(environment)
 
         command = str(environment.calls[-1]["command"])
+        self.assertTrue(any("bwrap" in str(call) for call in environment.calls))
+        self.assertEqual(
+            VeaselCode.SYSTEM_PACKAGES["bubblewrap"].packages["apt-get"],
+            ("bubblewrap",),
+        )
         self.assertIn("glibc 2.35 or newer", command)
         self.assertIn("releases/download/v1.2.3/veasel-Linux.tar.gz", command)
         self.assertIn("SHA256SUMS", command)

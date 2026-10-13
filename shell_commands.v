@@ -166,6 +166,17 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 			output:    'The reviewed working directory now resolves to a different path; no process was started.'
 		}
 	}
+	if sanitize_environment {
+		$if linux {
+			return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command)
+		} $else {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    'Autonomous shell execution is unavailable on this platform because Veasel cannot enforce its required operating-system sandbox.'
+			}
+		}
+	}
 	$if windows {
 		shell := os.getenv('COMSPEC')
 		if shell.len == 0 {
@@ -193,6 +204,74 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 		process.use_pgroup = true
 		return collect_shell_process(mut process, command.timeout_seconds)
 	}
+}
+
+// Autonomous benchmark commands run in a Linux mount and network namespace.
+// The host filesystem is read-only; only the selected workspace is writable.
+// User-home and common removable/runtime mount points are hidden. Bubblewrap is
+// an explicit host capability, not a bundled V runtime dependency.
+fn run_linux_sandboxed_shell_command(root string, cwd string,
+	command ShellCommandSummary) ShellCommandResult {
+	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr',
+		'/etc', '/opt', '/boot', '/sys', '/proc', '/dev', '/run', '/bin', '/sbin', '/lib',
+		'/lib64'] {
+		if root == broad_root {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    'Autonomous shell execution refused: the workspace root is too broad for the enforced sandbox.'
+			}
+		}
+	}
+	bwrap := os.find_abs_path_of_executable('bwrap') or {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    'Autonomous shell execution requires bubblewrap (bwrap); no unsandboxed fallback was started.'
+		}
+	}
+	mut args := [
+		'--unshare-all',
+		'--die-with-parent',
+		'--new-session',
+		'--ro-bind', '/', '/',
+	]
+	for hidden_path in ['/home', '/root', '/run', '/mnt', '/media', '/tmp'] {
+		if os.is_dir(hidden_path) {
+			args << '--tmpfs'
+			args << hidden_path
+		}
+	}
+	args << '--proc'
+	args << '/proc'
+	args << '--dev'
+	args << '/dev'
+	mut parent := ''
+	for component in root.split('/') {
+		if component.len == 0 { continue }
+		parent = if parent.len == 0 { '/${component}' } else { '${parent}/${component}' }
+		args << '--dir'
+		args << parent
+	}
+	args << '--bind'
+	args << root
+	args << root
+	args << '--chdir'
+	args << os.join_path(root, cwd)
+	args << '--'
+	args << '/bin/sh'
+	args << '-c'
+	args << command.command
+	mut process := os.new_process(bwrap)
+	process.set_args(args)
+	mut environment := autonomous_shell_environment()
+	environment['HOME'] = '/tmp'
+	environment['TMPDIR'] = '/tmp'
+	process.set_environment(environment)
+	process.set_stdin_path('/dev/null')
+	process.set_redirect_stdio()
+	process.use_pgroup = true
+	return collect_shell_process(mut process, command.timeout_seconds)
 }
 
 fn autonomous_shell_environment() map[string]string {

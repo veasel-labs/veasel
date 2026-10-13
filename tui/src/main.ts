@@ -1526,7 +1526,7 @@ renderer.keyInput.on("keypress", (key) => {
         showSettingsStep()
       } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
         key.stopPropagation()
-        settingsProviderQuery += key.sequence
+        settingsProviderQuery = (settingsProviderQuery + key.sequence).slice(0, 200)
         showSettingsStep()
       }
       return

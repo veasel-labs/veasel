@@ -306,6 +306,7 @@ jobs:
         env:
           VEASEL_SMOKE_TRACE_ARTIFACT: benchmark-results/atif-smoke.json
         run: |
+          python3 scripts/test-meta-mock-provider.py
           mkdir -p benchmark-results
           scripts/api-smoke.sh
       - name: Checkout pinned Harbor trajectory validator

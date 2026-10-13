@@ -161,7 +161,12 @@ class MockProvider(BaseHTTPRequestHandler):
             ):
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if not is_tool_follow_up and user_text in (
+                "Inspect workspace", "Try to read outside", "Read skill reference",
+                "Propose workspace edit", "Propose shell command", "Propose slow shell command",
+                "Autonomous workspace edit", "Autonomous shell", "Call MCP effect",
+                "Reject MCP effect", "Fail MCP effect",
+            ):
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text == "Try to read outside" else
@@ -196,8 +201,15 @@ class MockProvider(BaseHTTPRequestHandler):
                 ]}
             elif is_tool_follow_up:
                 reasoning = next((item for item in input_items if item.get("type") == "reasoning"), None)
-                call = next((item for item in input_items if item.get("type") == "function_call"), None)
                 result = input_items[-1]
+                call = next(
+                    (
+                        item for item in reversed(input_items[:-1])
+                        if item.get("type") == "function_call"
+                        and item.get("call_id") == result.get("call_id")
+                    ),
+                    None,
+                )
                 if not reasoning or reasoning.get("encrypted_content") != "fixture-encrypted-reasoning" or not call or call.get("call_id") != result.get("call_id"):
                     self.reject(payload)
                     return

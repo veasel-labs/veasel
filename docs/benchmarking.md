@@ -41,8 +41,11 @@ Successful operations export a complete trajectory with
 cancelled turn also preserves the steps captured before the failure as a
 partial trajectory with `extra.outcome` set to `"failed"` or `"cancelled"`;
 the operation result endpoint returns it, and `veasel run --trace-file`
-writes it alongside the failed result. Token usage and cost remain marked
-unavailable until provider adapters report authoritative values. File-edit,
+writes it alongside the failed result. When a provider adapter reports token
+usage, trajectories carry `extra.token_usage: "reported"` and a `final_metrics`
+object with the summed prompt, completion, and total token counts across the
+turn's model calls; cost remains marked unavailable because providers do not
+return authoritative prices. File-edit,
 shell, and MCP proposals continue to require their normal explicit approval
 by default.
 

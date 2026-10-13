@@ -81,7 +81,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [ ] Persist partial trajectories on failures/cancellation (done: partial
   steps are stored with a `failed`/`cancelled` outcome and returned by the
   operation result endpoint when trace collection was enabled); add provider
-  usage/cost metadata only when adapters return authoritative values; redact
+  usage/cost metadata only when adapters return authoritative values (usage
+  done: all four adapters report token counts, aggregated into ATIF
+  `final_metrics`; cost still unavailable, providers return no prices); redact
   sensitive source/tool content. Linux CI validates a deterministic live-provider
   fixture trace against Harbor 0.24.0 at pinned revision
   `dc933be707feafbb9efcdf092cb8a0e391332617`.

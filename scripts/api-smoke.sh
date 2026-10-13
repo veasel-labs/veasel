@@ -571,8 +571,9 @@ assert tool_step["tool_calls"][0]["function_name"] == "workspace_search", tool_s
 assert tool_step["observation"]["results"][0]["source_call_id"] == tool_step["tool_calls"][0]["tool_call_id"], tool_step
 assert "workspace-search-sentinel" in tool_step["observation"]["results"][0]["content"], tool_step
 assert trajectory["steps"][3]["message"] == "Found workspace-search-sentinel", trajectory
-assert trajectory["extra"]["token_usage"] == "unavailable", trajectory
+assert trajectory["extra"]["token_usage"] == "reported", trajectory
 assert trajectory["extra"]["cost"] == "unavailable", trajectory
+assert trajectory["final_metrics"] == {"total_prompt_tokens": 24, "total_completion_tokens": 12, "total_tokens": 36}, trajectory
 PY
 		printf 'Smoke: autonomous execution is rejected unless the server opts in\n'
 		if env VEASEL_PORT="$port" VEASEL_DATA_DIR="$work_dir/data" \

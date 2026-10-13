@@ -1193,7 +1193,8 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	output := result.output
 	mut trace_json := ''
 	if input.collect_trace {
-		trace_json = encode_atif_trace(id, product_version, output.model, result.steps) or {
+		trace_json = encode_atif_trace_with_usage(id, product_version, output.model, result.steps,
+			'completed', result.usage) or {
 			return error('unable to encode ATIF trajectory')
 		}
 	}

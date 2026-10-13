@@ -159,6 +159,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			}
 		}
 	}
+	mut trace_usage := ProviderUsage{}
 	for round in 0 .. max_agent_tool_rounds {
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
@@ -167,6 +168,14 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent context size limit reached')
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools, on_text_delta)!
+		if output.usage.reported {
+			trace_usage = ProviderUsage{
+				input_tokens:  trace_usage.input_tokens + output.usage.input_tokens
+				output_tokens: trace_usage.output_tokens + output.usage.output_tokens
+				total_tokens:  trace_usage.total_tokens + output.usage.total_tokens
+				reported:      true
+			}
+		}
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
@@ -182,6 +191,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return AgentTraceResult{
 				output: output
 				steps:  trace_steps
+				usage:  trace_usage
 			}
 		}
 		if tool_calls + output.tool_calls.len > max_agent_tool_calls {

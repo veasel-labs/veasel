@@ -221,7 +221,22 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	if response.body.len > max_provider_model_catalog_bytes {
 		return error('model catalog response is too large')
 	}
-	return parse_provider_model_catalog(info.protocol, response.body)
+	models := parse_provider_model_catalog(info.protocol, response.body)!
+	return filter_provider_chat_models(config.provider, models)
+}
+
+fn filter_provider_chat_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
+	if provider != 'meta' {
+		return models
+	}
+	mut compatible := []ModelCatalogEntry{cap: models.len}
+	for model in models {
+		id := model.id.to_lower()
+		if id.starts_with('muse-wonder-') || id.starts_with('muse-spark-') {
+			compatible << model
+		}
+	}
+	return compatible
 }
 
 fn parse_provider_model_catalog(protocol string, body string) ![]ModelCatalogEntry {

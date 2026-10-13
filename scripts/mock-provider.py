@@ -96,7 +96,15 @@ class MockProvider(BaseHTTPRequestHandler):
                 self.send_error(simulated_error)
                 return
             if authorization == f"Bearer {API_KEYS['meta']}":
-                payload = {"data": [{"id": "muse-wonder-1.0"}, {"id": "muse-spark-1.3"}]}
+                payload = {
+                    "data": [
+                        {"id": "muse-wonder-1.0"},
+                        {"id": "muse-spark-1.3"},
+                        {"id": "muse-image-1.0"},
+                        {"id": "muse-voice-transcribe-1.0"},
+                        {"id": "sam-3.1"},
+                    ]
+                }
             elif authorization == f"Bearer {API_KEYS['openai-responses']}":
                 payload = {"data": [{"id": "gpt-5.1-codex", "object": "model", "owned_by": "fixture"}]}
             elif has_openai_compatible_auth(self.headers.get("Authorization")):

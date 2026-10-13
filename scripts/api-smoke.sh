@@ -420,6 +420,9 @@ expected = {
     "zenmux": ("smoke-model", "smoke-model"),
 }[sys.argv[2]]
 assert models.get(expected[0]) == expected[1], models
+if sys.argv[2] == "meta":
+    assert {"muse-wonder-1.0", "muse-spark-1.3"} <= models.keys(), models
+    assert not {"muse-image-1.0", "muse-voice-transcribe-1.0", "sam-3.1"} & models.keys(), models
 if sys.argv[2] == "gemini":
     assert "embed-fixture" not in models
 PY
@@ -428,8 +431,14 @@ PY
 		expect_status 200 -X POST -H 'content-type: application/json' \
 			-d "{\"provider\":\"meta\",\"base_url\":\"$model_api_endpoint\",\"api_key\":\"veasel-meta-key\"}" \
 			"$api/v1/config/models"
-		grep -Fq 'muse-wonder-1.0' "$work_dir/response" \
-			|| fail 'transient Meta credentials did not discover Muse models'
+		python3 - "$work_dir/response" <<'PY'
+import json
+import sys
+
+models = {model["id"] for model in json.load(open(sys.argv[1], encoding="utf-8"))["models"]}
+assert {"muse-wonder-1.0", "muse-spark-1.3"} <= models, models
+assert not {"muse-image-1.0", "muse-voice-transcribe-1.0", "sam-3.1"} & models, models
+PY
 		for error_case in \
 			'401 invalid-fixture-key Provider rejected the API key' \
 			'403 veasel-meta-forbidden-key Provider denied model-list access' \

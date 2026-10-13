@@ -24,10 +24,16 @@ are persisted for review; the TUI writes only after an explicit approval.
 Requested workspace content is sent to the configured model provider. Shell
 commands proposed by the model are stored for review and run only after the exact
 command, working directory, and timeout have been opened and explicitly
-approved. Approved commands run with the server process user's permissions,
-inherit its environment, and have no OS sandbox; they can access files and
-network credentials available to that user. Execution is limited to 300 seconds
-and 64 KiB of captured output. Interrupted commands are never replayed.
+approved. Manually approved commands run with the server process user's
+permissions and are not OS-sandboxed; inspect their filesystem, network, and
+credential effects before approval. Autonomous benchmark shell commands are
+Linux-only, require Bubblewrap, and fail closed without it. They run with the
+host filesystem read-only, the selected workspace writable, common private and
+mounted paths hidden, networking disabled, and a filtered environment. Execution
+is limited to 300 seconds and 64 KiB of captured output. Interrupted commands
+are never replayed. This is best-effort containment, not a VM boundary; readable
+host paths outside the masks remain visible, and hard links already inside the
+workspace can still reference host inodes.
 Session turns through all provider adapters stream text deltas through the
 replayable `/v1/events` endpoint. The TUI renders them while a synchronous API
 response retains the complete assistant text and provider tool calls. Tool

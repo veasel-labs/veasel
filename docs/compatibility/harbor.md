@@ -9,8 +9,10 @@ The implementation uses `BaseInstalledAgent`,
 `AgentContext`/`Trajectory`. Harbor's current custom-agent guide recommends
 this class for CLIs installed and run inside the task environment.
 
-The adapter installs the exact Linux x86_64 Veasel release from the official
-GitHub release archive and verifies it against `SHA256SUMS`. The Linux release
+The adapter installs Bubblewrap plus the exact Linux x86_64 Veasel release
+from the official GitHub release archive and verifies it against `SHA256SUMS`.
+Autonomous shell calls require the Bubblewrap mount and network namespaces; a
+task fails closed if they are unavailable. The Linux release
 is built on Ubuntu 22.04 to keep its glibc requirement compatible with Debian
 12. SQLite is included in the executable from V's checksum-verified bundled
 amalgamation, so the task image does not need a separate SQLite runtime

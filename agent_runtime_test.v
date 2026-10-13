@@ -192,6 +192,35 @@ fn test_autonomous_shell_environment_does_not_forward_credentials() {
 	assert !environment.keys().any(it.ends_with('_API_KEY') || it.contains('TOKEN') || it.contains('SECRET'))
 }
 
+fn test_autonomous_shell_runs_in_fail_closed_linux_sandbox() {
+	parent := os.join_path(os.temp_dir(), 'veasel-autonomous-sandbox-${uuid.new_v4().str()}')
+	root := os.join_path(parent, 'workspace')
+	os.mkdir_all(parent) or { panic(err) }
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	outside_secret := os.join_path(parent, 'outside-secret.txt')
+	os.write_file(outside_secret, 'must stay hidden') or { panic(err) }
+	$if linux {
+		result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
+			command:         'touch sandbox-write.txt; test ! -e "${outside_secret}"; test ! -e /run/user; printf sandbox-ok'
+			cwd:             '.'
+			timeout_seconds: 5
+		}, true)
+		assert result.status == 'succeeded', result.output
+		assert result.output.contains('sandbox-ok')
+		assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
+		assert os.read_file(outside_secret) or { panic(err) } == 'must stay hidden'
+	} $else {
+		result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
+			command:         'printf must-not-run'
+			cwd:             '.'
+			timeout_seconds: 5
+		}, true)
+		assert result.status == 'failed'
+		assert !result.output.contains('must-not-run')
+	}
+}
+
 fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_approval() {
 	root := os.join_path(os.temp_dir(), 'veasel-agent-tools-${uuid.new_v4().str()}')
 	os.mkdir_all(os.join_path(root, 'src')) or { panic(err) }

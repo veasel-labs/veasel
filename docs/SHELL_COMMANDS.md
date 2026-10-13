@@ -18,13 +18,23 @@ for already approved commands to finish, subject to their configured timeout.
 If the server is forcibly terminated, a running child may outlive the server;
 its persisted state is `uncertain` at the next startup and it is not replayed.
 
-The runner uses `/bin/sh -c` on POSIX systems and `%COMSPEC% /D /S /C` on
-Windows. Standard input is non-interactive. Commands run as the Veasel server's
-OS user, inherit its environment (including credentials), and can access files
-and network services available to that user. Veasel does not sandbox shell
-execution; workspace cwd validation only checks the initial working directory,
-and a command can subsequently access paths outside it. Do not approve a
-command whose filesystem, network, or credential effects you have not reviewed.
+Manually approved commands use `/bin/sh -c` on POSIX systems and `%COMSPEC% /D
+/S /C` on Windows. Standard input is non-interactive. These commands run as the
+Veasel server's OS user, inherit its environment (including credentials), and
+can access files and network services available to that user. Workspace cwd
+validation only checks the initial working directory; a command can access
+paths outside it. Do not approve a command whose filesystem, network, or
+credential effects you have not reviewed.
+
+The separately opt-in autonomous benchmark path is supported only on Linux. It
+requires Bubblewrap (`bwrap`) and fails closed if the executable or namespace
+setup is unavailable. Its command runs with the host filesystem read-only, the
+chosen workspace writable, `/home`, `/root`, `/run`, `/mnt`, `/media`, and `/tmp`
+masked where present, and networking isolated. The subprocess receives a
+filtered environment. Do not treat this as a VM or a boundary against a hostile
+kernel: other host-readable files outside the masked paths can still be read,
+and hard links already in the workspace can refer to host inodes. Manually
+approved commands and MCP stdio processes do not use this sandbox.
 
 Commands are limited to 8 KiB of single-line UTF-8 text, a workspace-relative
 existing working directory, a timeout from 1 to 300 seconds, two concurrent

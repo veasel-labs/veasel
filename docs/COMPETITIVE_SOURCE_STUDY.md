@@ -59,10 +59,11 @@ concerns.
 
 **Useful principle:** persist intent before effects; preserve deterministic
 history even when execution is concurrent; distinguish authorization from
-containment. Veasel already persists proposed changes and operation state, but
-shell runs as the server user without an OS sandbox. Do not claim Codex-level
-sandboxing. A future Veasel sandbox needs platform-specific escape tests and
-must fail closed when enforcement is unavailable.
+containment. Veasel persists proposed changes and operation state. Manually
+approved shell still runs without an OS sandbox; autonomous Linux shell uses a
+Bubblewrap mount/network namespace and fails closed if it cannot start. This is
+best-effort containment and does not provide Codex-level sandbox guarantees;
+platform-specific escape testing and stronger workspace isolation remain open.
 
 ### mini-SWE-agent — a baseline small enough to falsify complexity
 

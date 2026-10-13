@@ -1,8 +1,8 @@
 """Harbor installed-agent adapter for Veasel Code.
 
-This adapter deliberately requires an exact Veasel release. Harbor task
-containers are the security boundary: autonomous shell commands are not an OS
-sandbox and this adapter must never run on a developer host workspace.
+This adapter deliberately requires an exact Veasel release and Bubblewrap.
+Harbor supplies the disposable task environment; Veasel additionally contains
+autonomous shell commands with its Linux filesystem and network namespace.
 """
 
 from __future__ import annotations
@@ -16,7 +16,11 @@ from typing import Annotated, override
 
 from pydantic import Field
 
-from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
+from harbor.agents.installed.base import (
+    BaseInstalledAgent,
+    PackageSpec,
+    with_prompt_template,
+)
 from harbor.agents.model_connection import ModelConnectionSpec
 from harbor.agents.options import Cli, InstalledAgentOptions
 from harbor.environments.base import BaseEnvironment
@@ -67,6 +71,18 @@ def _veasel_provider(
 class VeaselCode(BaseInstalledAgent):
     """Run the Veasel CLI inside Harbor's disposable task environment."""
 
+    SYSTEM_PACKAGES = {
+        **BaseInstalledAgent.SYSTEM_PACKAGES,
+        "bubblewrap": PackageSpec(
+            commands=("bwrap",),
+            packages={
+                "apt-get": ("bubblewrap",),
+                "dnf": ("bubblewrap",),
+                "yum": ("bubblewrap",),
+                "apk": ("bubblewrap",),
+            },
+        ),
+    }
     MODEL_CONNECTION = ModelConnectionSpec(passthrough=True)
     options_model = VeaselOptions
 
@@ -94,7 +110,7 @@ class VeaselCode(BaseInstalledAgent):
     @override
     async def install(self, environment: BaseEnvironment) -> None:
         await self.ensure_system_dependencies(
-            environment, ("curl", "coreutils", "tar", "python3")
+            environment, ("bubblewrap", "curl", "coreutils", "tar", "python3")
         )
         version = self.veasel_version
         archive = "veasel-Linux.tar.gz"

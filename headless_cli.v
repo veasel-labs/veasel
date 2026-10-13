@@ -277,7 +277,7 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 				}
 			}
 			'failed', 'cancelled', 'uncertain' {
-				return headless_operation_result(session_id, operation_id, operation)
+				return headless_operation_result(port, session_id, operation_id, operation, options.trace_file)
 			}
 			'running', 'cancelling' {
 				time.sleep(headless_poll_interval)
@@ -302,7 +302,7 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 			}
 		}
 		if operation.status in ['failed', 'cancelled', 'uncertain'] {
-			return headless_operation_result(session_id, operation_id, operation)
+			return headless_operation_result(port, session_id, operation_id, operation, options.trace_file)
 		}
 	}
 	if cancel_response.status_code != 202 {
@@ -321,8 +321,31 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	}
 }
 
-fn headless_operation_result(session_id string, operation_id string,
-	operation SessionOperation) HeadlessRunResult {
+fn headless_operation_result(port int, session_id string, operation_id string,
+	operation SessionOperation, trace_file string) HeadlessRunResult {
+	mut written_trace := ''
+	if trace_file.len > 0 && operation.status in ['failed', 'cancelled'] {
+		response := headless_json_request(port, .get,
+			'/v1/sessions/${session_id}/operations/${operation_id}/result', '', false, '') or {
+			http.Response{}
+		}
+		if response.status_code == 200 {
+			result := json2.decode[SessionOperationResult](response.body) or {
+				SessionOperationResult{}
+			}
+			if result.trajectory.len > 0 {
+				write_atif_trace_file(trace_file, result.trajectory) or {
+					return HeadlessRunResult{
+						session_id:   session_id
+						operation_id: operation_id
+						status:       'failed'
+						error:        'unable to write partial ATIF trajectory: ${err.msg()}'
+					}
+				}
+				written_trace = trace_file
+			}
+		}
+	}
 	return HeadlessRunResult{
 		session_id:   session_id
 		operation_id: operation_id
@@ -330,11 +353,12 @@ fn headless_operation_result(session_id string, operation_id string,
 		provider:     operation.provider
 		model:        operation.model
 		error:        operation.error
+		trace_file:   written_trace
 	}
 }
 
 fn print_headless_help() {
-	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 100 KB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to a full ATIF v1.8 trace at this path (private file)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the full model-visible conversation and tool I/O; they may include\nprivate instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.')
+	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 100 KB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to an ATIF v1.8 trace at this path (private file; partial on failure/cancellation)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the full model-visible conversation and tool I/O; they may include\nprivate instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.')
 }
 
 fn execute_headless_command(port int, args []string) {

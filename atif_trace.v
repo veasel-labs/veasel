@@ -62,8 +62,15 @@ fn atif_tool_call(call ProviderToolCall) !ATIFToolCall {
 }
 
 fn encode_atif_trace(session_id string, version string, model string, steps []ATIFStep) !string {
+	return encode_atif_trace_with_outcome(session_id, version, model, steps, 'completed')
+}
+
+fn encode_atif_trace_with_outcome(session_id string, version string, model string, steps []ATIFStep, outcome string) !string {
 	if steps.len == 0 {
 		return error('cannot export an empty ATIF trajectory')
+	}
+	if outcome !in ['completed', 'failed', 'cancelled'] {
+		return error('invalid ATIF trajectory outcome')
 	}
 	return json2.encode(ATIFTrajectory{
 		session_id: session_id
@@ -74,6 +81,7 @@ fn encode_atif_trace(session_id string, version string, model string, steps []AT
 		steps:      steps
 		extra:      {
 			'veasel_trace_schema': json2.Any('veasel-trace-v1')
+			'outcome':             json2.Any(outcome)
 			'token_usage':         json2.Any('unavailable')
 			'cost':                json2.Any('unavailable')
 		}

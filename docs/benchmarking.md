@@ -36,9 +36,15 @@ not expose authoritative usage or cost for every model,
 so those values are omitted and marked unavailable in the trace metadata. Never
 derive costs from a guessed token count or a mutable pricing page.
 
-Only successful operations currently export a complete trajectory. Failed or
-cancelled operations do not yet preserve partial traces. File-edit, shell, and
-MCP proposals continue to require their normal explicit approval by default.
+Successful operations export a complete trajectory with
+`extra.outcome: "completed"`. When trace collection is enabled, a failed or
+cancelled turn also preserves the steps captured before the failure as a
+partial trajectory with `extra.outcome` set to `"failed"` or `"cancelled"`;
+the operation result endpoint returns it, and `veasel run --trace-file`
+writes it alongside the failed result. Token usage and cost remain marked
+unavailable until provider adapters report authoritative values. File-edit,
+shell, and MCP proposals continue to require their normal explicit approval
+by default.
 
 ## Harbor installed agent
 

@@ -85,3 +85,46 @@ fn test_operation_trace_store_is_session_scoped_and_migrated() {
 		assert err.msg().contains('operation trace is invalid')
 	}
 }
+
+fn test_atif_trace_encodes_partial_outcome() {
+	encoded := encode_atif_trace_with_outcome('session-1', '0.1.0', 'fixture-model', [
+		ATIFStep{
+			step_id: 1
+			source:  'user'
+			message: 'Read src/main.v'
+		},
+	], 'failed') or { panic(err) }
+	trajectory := json2.decode[map[string]json2.Any](encoded) or { panic(err) }
+	extra := json2.decode[map[string]json2.Any]((trajectory['extra'] or {
+		json2.Any('{}')
+	}).str()) or { panic(err) }
+	assert (extra['outcome'] or { json2.Any('') }) == json2.Any('failed')
+	assert (extra['token_usage'] or { json2.Any('') }) == json2.Any('unavailable')
+}
+
+fn test_operation_trace_records_partial_trajectory() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	one := store.create_session(SessionInput{ title: 'one', directory: '/' }) or { panic(err) }
+	two := store.create_session(SessionInput{ title: 'two', directory: '/' }) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	store.create_session_operation(one.id, operation_id) or { panic(err) }
+	store.record_operation_trace(one.id, operation_id, '{"schema_version":"ATIF-v1.8"}') or {
+		panic(err)
+	}
+	assert store.operation_trace(one.id, operation_id) or { panic(err) } == '{"schema_version":"ATIF-v1.8"}'
+	assert store.operation_trace(two.id, operation_id) or { '' } == ''
+	if _ := store.record_operation_trace(one.id, operation_id, '{"schema_version":"ATIF-v1.8"}') {
+		assert false
+	}
+	if _ := store.record_operation_trace(one.id, 'invalid', '{"schema_version":"ATIF-v1.8"}') {
+		assert false
+	} else {
+		assert err.msg().contains('operation trace is invalid')
+	}
+	if _ := store.record_operation_trace(one.id, uuid.new_v4().str(), 'not json') {
+		assert false
+	} else {
+		assert err.msg().contains('operation trace is invalid')
+	}
+}

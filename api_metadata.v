@@ -80,7 +80,7 @@ pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
 	models := fetch_provider_models(config) or {
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
-			error: 'Unable to retrieve model list from the configured provider endpoint'
+			error: model_catalog_error_message(err.msg())
 		})
 	}
 	return ctx.json(ModelCatalogView{
@@ -103,13 +103,33 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 	models := fetch_provider_models(config) or {
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
-			error: 'Unable to retrieve model list from the configured provider endpoint'
+			error: model_catalog_error_message(err.msg())
 		})
 	}
 	return ctx.json(ModelCatalogView{
 		provider: config.provider
 		models:   models
 	})
+}
+
+fn model_catalog_error_message(provider_error string) string {
+	match provider_error {
+		'model catalog endpoint returned HTTP 401' {
+			return 'Provider rejected the API key (HTTP 401). Check the key and account.'
+		}
+		'model catalog endpoint returned HTTP 403' {
+			return 'Provider denied model-list access (HTTP 403). Check model access and account permissions.'
+		}
+		'model catalog endpoint returned HTTP 404' {
+			return 'Provider model-list endpoint returned HTTP 404. Check the endpoint or enter a model ID manually.'
+		}
+		'model catalog endpoint returned HTTP 429' {
+			return 'Provider rate-limited model discovery (HTTP 429). Wait before trying again.'
+		}
+		else {
+			return 'Unable to retrieve model list from the configured provider endpoint.'
+		}
+	}
 }
 
 struct ModelCatalogView {

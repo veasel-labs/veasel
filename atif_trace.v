@@ -85,19 +85,23 @@ fn encode_atif_trace_with_usage(session_id string, version string, model string,
 		metrics['total_prompt_tokens'] = json2.Any(usage.input_tokens)
 		metrics['total_completion_tokens'] = json2.Any(usage.output_tokens)
 	}
+	// Every encoded trajectory is credential-redacted first: this encoder is
+	// the single path used for stored traces and headless trace files alike.
+	redacted_steps := redact_trace_steps(steps, trace_secret_env_values())
 	return json2.encode(ATIFTrajectory{
 		session_id:    session_id
 		agent:         ATIFAgent{
 			version:    version
 			model_name: model
 		}
-		steps:         steps
+		steps:         redacted_steps
 		final_metrics: metrics
 		extra:         {
 			'veasel_trace_schema': json2.Any('veasel-trace-v1')
 			'outcome':             json2.Any(outcome)
 			'token_usage':         json2.Any(if usage.reported { 'reported' } else { 'unavailable' })
 			'cost':                json2.Any('unavailable')
+			'redaction':           json2.Any('credentials')
 		}
 	})
 }

@@ -186,9 +186,12 @@ class MockProvider(BaseHTTPRequestHandler):
                     if tool.get("name") == requested_tool and "parameters" not in tool:
                         self.reject(payload)
                         return
+                call_index = 1 + sum(
+                    item.get("type") == "function_call" for item in input_items
+                )
                 body = {"id": "resp-fixture", "model": payload["model"], "status": "completed", "output": [
                     {"id": "rs-fixture", "type": "reasoning", "summary": [], "encrypted_content": "fixture-encrypted-reasoning"},
-                    {"id": "fc-item-1", "call_id": "meta-call-1", "type": "function_call", "name": requested_tool,
+                    {"id": f"fc-item-{call_index}", "call_id": f"meta-call-{call_index}", "type": "function_call", "name": requested_tool,
                      "arguments": json.dumps(args, separators=(",", ":")), "status": "completed"},
                 ]}
             elif is_tool_follow_up:

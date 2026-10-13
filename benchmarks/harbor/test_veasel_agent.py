@@ -33,6 +33,16 @@ class RecordingEnvironment:
 
 
 class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
+    def test_smoke_task_runs_without_root_privileges(self) -> None:
+        dockerfile = Path(__file__).parent / "smoke-task/environment/Dockerfile"
+        instructions = {
+            line.strip().split(maxsplit=1)[0]: line.strip().split(maxsplit=1)[1]
+            for line in dockerfile.read_text().splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+
+        self.assertEqual(instructions.get("USER"), "veasel")
+
     def test_provider_mapping_is_explicit(self) -> None:
         self.assertEqual(_veasel_provider("openai", "openai/gpt-test"), ("openai", "gpt-test"))
         self.assertEqual(_veasel_provider("google", "google/gemini-test"), ("gemini", "gemini-test"))

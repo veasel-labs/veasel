@@ -3,7 +3,8 @@
 This deterministic, one-trial task verifies the installed-agent path without a
 paid model account. Its in-container OpenAI-compatible fixture emits a fixed
 streaming tool call; the verifier checks the resulting file. Harbor runs Veasel
-in its disposable task container and validates the exported ATIF trajectory.
+as an unprivileged user in its disposable task container and validates the
+exported ATIF trajectory.
 
 This is an integration smoke test, not a coding benchmark or leaderboard result.
 It measures neither model capability nor Veasel performance. The task needs

@@ -133,7 +133,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   keys out of responses and mask them in the input flow.
 - [x] Deliver a server-owned 84-preset provider catalog and keyboard-navigable TUI
   provider picker with protocol descriptions, environment-key hints, editable
-  endpoints, and a local no-key Ollama profile. OpenAI-compatible presets use
+  endpoints, live model discovery, and a local no-key Ollama profile. The picker
+  can filter configured credentials, loopback-local endpoints, specialized API
+  protocols, and OpenAI-compatible endpoints while preserving text search.
+  OpenAI-compatible presets use
   the shared Chat Completions transport; provider-specific auth and SDK features
   remain out of scope until implemented and tested. Thirty-six compatible
   endpoints are generated from a pinned Models.dev selection; see

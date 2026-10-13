@@ -92,14 +92,20 @@ jobs:
             runner: ubuntu-22.04
             cc: gcc
             binary: dist/veasel
+            tui_target: bun-linux-x64
+            tui_binary: dist/veasel-tui
           - os: macOS
             runner: macos-latest
             cc: clang
             binary: dist/veasel
+            tui_target: bun-darwin-arm64
+            tui_binary: dist/veasel-tui
           - os: Windows
             runner: windows-latest
             cc: gcc
             binary: dist/veasel.exe
+            tui_target: bun-windows-x64
+            tui_binary: dist/veasel-tui.exe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: vlang/setup-v@663cc08827d1fc0532ee755b4dedbb183c11d06a # v1.7
@@ -209,17 +215,45 @@ jobs:
           )
           & v @build_args
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record Bun build version
+        shell: bash
+        run: echo "VEASEL_TUI_BUN_VERSION=$(bun --version)" >> "$GITHUB_ENV"
+      - name: Build standalone terminal client
+        working-directory: tui
+        env:
+          VEASEL_TUI_VERSION: ${{ needs.release-plan.outputs.version || '0.1.0-dev' }}
+        run: bun run build:standalone -- "${{ matrix.tui_target }}" "../${{ matrix.tui_binary }}"
+      - name: Verify standalone terminal client
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.release-plan.outputs.version || '0.1.0-dev' }}
+          TUI_BINARY: ${{ matrix.tui_binary }}
+        run: test "$("$TUI_BINARY" --version)" = "Veasel Code Terminal $EXPECTED_VERSION"
+      - name: Verify standalone Linux TUI runtime dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          TUI_BINARY: ${{ matrix.tui_binary }}
+        run: |
+          dependencies="$RUNNER_TEMP/veasel-tui-ldd.txt"
+          ldd "$TUI_BINARY" > "$dependencies"
+          if grep -Eq 'not found|libicu|libstdc\+\+' "$dependencies"; then
+            cat "$dependencies"
+            echo 'The standalone TUI has unresolved or non-baseline runtime dependencies.' >&2
+            exit 1
+          fi
       - name: Write build provenance
         env:
           VEASEL_BUILD_COMMIT: ${{ github.sha }}
           VEASEL_BUILD_CC: ${{ matrix.cc }}
           VEASEL_RUNNER_OS: ${{ runner.os }}
           VEASEL_RUNNER_ARCH: ${{ runner.arch }}
+          VEASEL_TUI_TARGET: ${{ matrix.tui_target }}
           VEASEL_BUILD_FLAGS: >-
             -cc ${{ matrix.cc }} -prod
             -d veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}
             -o ${{ matrix.binary }} .
-        run: node scripts/build-manifest.mjs "${{ matrix.binary }}" dist/build.json
+        run: node scripts/build-manifest.mjs "${{ matrix.binary }}" "${{ matrix.tui_binary }}" dist/build.json
       - name: Verify Windows binary version
         if: runner.os == 'Windows'
         shell: pwsh
@@ -260,12 +294,6 @@ jobs:
           }
           Remove-Item Env:VEASEL_PORT
           Remove-Item Env:VEASEL_DATA_DIR
-      - name: Bundle terminal client on Unix
-        if: runner.os != 'Windows'
-        run: cp -R tui dist/tui
-      - name: Bundle terminal client on Windows
-        if: runner.os == 'Windows'
-        run: Copy-Item -Path tui -Destination dist/tui -Recurse
       - name: Run Linux domain tests
         if: runner.os == 'Linux'
         timeout-minutes: 10
@@ -304,6 +332,9 @@ jobs:
           python3 scripts/test-meta-mock-provider.py
           mkdir -p benchmark-results
           scripts/api-smoke.sh
+      - name: Run standalone TUI integration smoke
+        if: runner.os == 'Linux'
+        run: python3 scripts/standalone-tui-smoke.py --server dist/veasel --tui dist/veasel-tui
       - name: Checkout pinned Harbor trajectory validator
         if: runner.os == 'Linux'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -331,12 +362,15 @@ jobs:
           mkdir -p benchmark-results
           v -cc ${{ matrix.cc }} -prod -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" test store_benchmark_test.v
           cat benchmark-results/session-store.json
-      - name: Package Unix binary
+      - name: Package Unix binaries
         if: runner.os != 'Windows'
-        run: tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel tui build.json
-      - name: Package Windows binary
+        run: |
+          tui_binary_name="${{ matrix.tui_binary }}"
+          tui_binary_name="${tui_binary_name#dist/}"
+          tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel "$tui_binary_name" build.json
+      - name: Package Windows binaries
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/veasel.exe,dist/tui,dist/build.json -DestinationPath dist/veasel-Windows.zip
+        run: Compress-Archive -Path dist/veasel.exe,dist/veasel-tui.exe,dist/build.json -DestinationPath dist/veasel-Windows.zip
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: veasel-${{ runner.os }}

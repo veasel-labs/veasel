@@ -73,17 +73,30 @@ fn tui_directory_for_executable(executable_path string) string {
 	return os.join_path(os.dir(executable), 'tui')
 }
 
+fn tui_executable_for_executable(executable_path string) string {
+	executable := os.real_path(executable_path)
+	name := $if windows { 'veasel-tui.exe' } $else { 'veasel-tui' }
+	return os.join_path(os.dir(executable), name)
+}
+
 fn launch_tui(port int) {
 	ensure_backend(port) or {
 		eprintln('veasel: ${err.msg()}')
 		exit(1)
 	}
+	os.setenv('VEASEL_PROJECT_DIR', os.getwd(), true)
+	tui_executable := tui_executable_for_executable(os.executable())
+	if os.is_file(tui_executable) {
+		os.execvp(tui_executable, []) or {
+			eprintln('veasel: unable to start the bundled TUI: ${err}')
+			exit(1)
+		}
+	}
 	tui_dir := tui_directory_for_executable(os.executable())
 	if !os.is_file(os.join_path(tui_dir, 'package.json')) {
-		eprintln('veasel: the TUI package is missing at ${tui_dir}')
+		eprintln('veasel: the bundled TUI is missing at ${tui_executable}; development client not found at ${tui_dir}')
 		exit(1)
 	}
-	os.setenv('VEASEL_PROJECT_DIR', os.getwd(), true)
 	os.execvp('bun', ['run', '--cwd', tui_dir, 'start']) or {
 		eprintln('veasel: unable to start the TUI: ${err}')
 		exit(1)

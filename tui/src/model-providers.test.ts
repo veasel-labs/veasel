@@ -30,6 +30,10 @@ describe("model provider picker", () => {
     expect(filterModelProviders([closeMatch, providers[0]], "muse").map(({ id }) => id)).toEqual(["meta", "museai"])
   })
 
+  test("rejects oversized fragments without computing edit distance", () => {
+    expect(filterModelProviders(providers, "x".repeat(4_096))).toEqual([])
+  })
+
   test("matches protocol, environment variable, and description", () => {
     expect(filterModelProviders(providers, "muse").map(({ id }) => id)).toEqual(["meta"])
     expect(filterModelProviders(providers, "MODEL_API_KEY").map(({ id }) => id)).toEqual(["meta"])

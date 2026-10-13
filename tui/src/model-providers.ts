@@ -120,8 +120,9 @@ function tokenMatchScore(query: string, candidate: string): number | undefined {
   // prefix/substring matches for them and allow one typo per four characters
   // for longer queries, including transposed characters.
   if (query.length < 4) return undefined
-  const distance = optimalStringAlignmentDistance(query, candidate)
   const maximumDistance = query.length < 8 ? 1 : Math.floor(query.length / 4)
+  if (Math.abs(query.length - candidate.length) > maximumDistance) return undefined
+  const distance = optimalStringAlignmentDistance(query, candidate)
   if (distance > maximumDistance) return undefined
   return 500 - distance * 32 - Math.abs(candidate.length - query.length) * 2
 }

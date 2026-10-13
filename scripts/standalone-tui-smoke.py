@@ -71,7 +71,7 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
 
         os.write(terminal, b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
-        for _ in range(4):
+        for _ in range(5):
             os.write(terminal, b"\t")
             deadline = time.monotonic() + 0.2
             while time.monotonic() < deadline:
@@ -84,6 +84,10 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
                 finished, status = os.waitpid(child, os.WNOHANG)
                 if finished:
                     raise RuntimeError(f"standalone TUI exited while cycling provider groups (status={status})")
+
+        output.clear()
+        os.write(terminal, b"anthorpic")
+        wait_for_markers((b"1/210", b"Anthropic"), 5, "typo-tolerant provider search")
 
         os.write(terminal, b"\x1b")
         time.sleep(0.1)

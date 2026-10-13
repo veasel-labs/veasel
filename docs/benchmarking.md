@@ -82,12 +82,34 @@ changes to interfaces or core logic and requires the human author to write the
 first and final PR drafts. External Harbor inclusion and benchmark results are
 therefore not claimed. No paid benchmark run has been started.
 
+### Reproduce the deterministic installed-agent smoke
+
+The one-task fixture at `benchmarks/harbor/smoke-task` exercises the complete
+Harbor `harbor run` path, including verified release installation, provider
+selection, streamed tool calls, autonomous edit application inside the Harbor
+task container, verification, and ATIF export. It uses an in-container fixed
+OpenAI-compatible fixture and a dummy key, so it does not call or bill an LLM
+provider. Docker and network access are still needed to build the task image
+and fetch the exact Veasel release.
+
+```sh
+VEASEL_VERSION=<exact-published-release> benchmarks/harbor/smoke.sh
+```
+
+The first successful run used Veasel `0.20.0-next.0`, Harbor `0.24.0`, and
+returned reward `1.0` for one completed trial. Harbor validated the resulting
+four-step `ATIF-v1.8` trajectory. This smoke proves adapter and artifact
+plumbing only; it is not a capability score, a performance result, or a public
+benchmark submission. Inspect local job artifacts before sharing them because
+trajectories may contain prompts and workspace data.
+
 ## Benchmark status
 
 The local SQLite and process-startup microbenchmarks measure deterministic
-runtime paths only. The Harbor adapter has not yet been exercised against a
-paid or public task dataset. Harbor Index, Terminal-Bench, SWE-bench,
-ProgramBench, and CodeClash task evaluations have not been run or submitted.
+runtime paths only. The Harbor adapter's deterministic one-task smoke has
+passed, but it has not been exercised against a paid or public task dataset.
+Harbor Index, Terminal-Bench, SWE-bench, ProgramBench, and CodeClash task
+evaluations have not been run or submitted.
 Public dashboard results must remain empty until there are versioned,
 reproducible measurements.
 

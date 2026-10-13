@@ -1,0 +1,32 @@
+schema_version = "1.4"
+artifacts = []
+
+[task]
+name = "veasel-labs/veasel-harbor-local-e2e"
+version = "1.0.0"
+description = "Local deterministic smoke task for the Veasel Harbor installed agent."
+keywords = []
+[[task.authors]]
+name = "Veasel Labs"
+
+[metadata]
+
+[verifier]
+timeout_sec = 600.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 600.0
+os = "linux"
+mcp_servers = []
+
+[environment.env]
+
+
+[solution.env]

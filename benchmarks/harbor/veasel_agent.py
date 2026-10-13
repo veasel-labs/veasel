@@ -198,7 +198,7 @@ class VeaselCode(BaseInstalledAgent):
             "mkdir -p /logs/agent \"$VEASEL_DATA_DIR\"; "
             "VEASEL_PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind((\"127.0.0.1\", 0)); print(s.getsockname()[1]); s.close()'); "
             "export VEASEL_PORT; "
-            f"server_log={shlex.quote(env['VEASEL_DATA_DIR'] + '/server.log')}; "
+            "server_log=/logs/agent/veasel-server.log; "
             f"\"$HOME/.local/bin/veasel\" serve >\"$server_log\" 2>&1 & server_pid=$!; "
             "trap 'kill \"$server_pid\" 2>/dev/null || true; wait \"$server_pid\" 2>/dev/null || true' EXIT; "
             "attempt=0; until curl --fail --silent --show-error \"http://127.0.0.1:$VEASEL_PORT/v1/health\" >/dev/null; do "
@@ -207,7 +207,10 @@ class VeaselCode(BaseInstalledAgent):
             f"--timeout {timeout} --workspace \"$PWD\" "
             f"--trace-file {shlex.quote(str(trace))} "
             f"--prompt {shlex.quote(instruction)} "
-            f">{shlex.quote(result)} 2>&1; run_status=$?; set -e; cat {shlex.quote(result)}; exit \"$run_status\""
+            f">{shlex.quote(result)} 2>&1; run_status=$?; set -e; "
+            f"cat {shlex.quote(result)}; "
+            "if [ \"$run_status\" -ne 0 ]; then cat \"$server_log\" >&2; fi; "
+            "exit \"$run_status\""
         )
         await self.exec_as_agent(environment, command=command, env=env, timeout_sec=timeout + 30)
 

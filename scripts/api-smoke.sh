@@ -911,7 +911,7 @@ import sys
 settings = json.load(open(sys.argv[1], encoding="utf-8"))
 assert settings["active_provider"] == "openai-compatible"
 providers = {provider["id"]: provider for provider in settings["providers"]}
-assert len(providers) == 84
+assert len(providers) == 210
 assert providers["ollama"]["requires_api_key"] is False
 assert providers["atomic-chat"]["requires_api_key"] is False
 assert providers["dashscope"]["environment_key"] == "DASHSCOPE_API_KEY"
@@ -922,6 +922,9 @@ assert providers["minimax"]["environment_key"] == "MINIMAX_API_KEY"
 assert providers["scaleway"]["environment_key"] == "SCW_SECRET_KEY"
 assert providers["baseten"]["environment_key"] == "BASETEN_API_KEY"
 assert providers["cortecs"]["environment_key"] == "CORTECS_API_KEY"
+assert providers["agentrouter"]["environment_key"] == "AGENTROUTER_API_KEY"
+assert providers["aimlapi"]["environment_key"] == "AIMLAPI_API_KEY"
+assert providers["bailing"]["environment_key"] == "BAILING_API_TOKEN"
 assert providers["digitalocean"]["environment_key"] == "DIGITALOCEAN_ACCESS_TOKEN"
 assert providers["frogbot"]["environment_key"] == "FROGBOT_API_KEY"
 assert providers["helicone"]["environment_key"] == "HELICONE_API_KEY"

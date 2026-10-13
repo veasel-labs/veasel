@@ -55,7 +55,7 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len
-	assert catalog.len == 84
+	assert catalog.len == 210
 	mut seen := map[string]bool{}
 	for provider in catalog {
 		assert provider.id in supported_model_providers
@@ -78,6 +78,9 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['zai']
 	assert seen['meta']
 	assert seen['openai']
+	assert seen['agentrouter']
+	assert seen['aimlapi']
+	assert seen['bailing']
 	openai := model_provider_info('openai') or { panic('OpenAI missing') }
 	assert openai.protocol == 'openai-compatible'
 	assert openai.base_url == 'https://api.openai.com/v1'

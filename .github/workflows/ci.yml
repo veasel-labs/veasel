@@ -75,6 +75,7 @@ jobs:
           python -m pip check
           python -m py_compile benchmarks/harbor/veasel_agent.py
           python -m unittest discover -s benchmarks/harbor -p 'test_*.py' -v
+          python -m unittest discover -s tools/provider-catalog -p 'test_*.py' -v
 
   backend:
     name: V backend / ${{ matrix.os }}

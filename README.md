@@ -81,20 +81,16 @@ provider settings. Search by name, ID, protocol, or credential variable; press
 Tab to browse all, configured, local, specialized-API, or OpenAI-compatible
 providers. The active model and credential availability appear in the picker.
 After choosing a provider, Veasel discovers its live model list before saving
-the selected model and connection settings. The server currently supplies 84
-endpoint presets,
-including Meta Model API; see the
-[complete provider catalog and its scope](docs/PROVIDERS.md). Presets cover
-Meta Muse, Anthropic, Gemini, OpenAI Chat Completions and OpenAI Responses,
-plus compatible endpoints including [302.AI](https://doc-en.302.ai/5030894m0), [Alibaba Cloud Model Studio](https://help.aliyun.com/en/model-studio/compatibility-of-openai-with-dashscope), Cerebras, DeepInfra, DeepSeek, Fireworks, [GMI Cloud](https://www.gmicloud.ai/en/developers), Groq, Hugging Face,
-Baseten, Cortecs, DigitalOcean, FrogBot, Helicone, Hyperbolic, IO.NET, LLM Gateway,
-Mistral, Moonshot, Nebius, NVIDIA NIM, Novita, Ollama, Ollama Cloud, OpenRouter,
-MiniMax, Perplexity, SambaNova, Scaleway Generative APIs, SiliconFlow, Together AI, Vercel AI Gateway, Venice,
-xAI, [Z.AI](https://docs.z.ai/), Cloudflare Workers AI, [Atomic Chat](https://opencode.ai/docs/providers/), llama.cpp, LM Studio, LocalAI, vLLM, Poe, Poolside, ClinePass, AI21, Alibaba Coding Plan, Crusoe, Friendli, ModelScope, OCI Generative AI, Sarvam, Tencent TokenHub, Upstage, Volcengine Ark, Vultr, and others. Local
-presets target loopback servers by default; Cloudflare requires replacing the
-account-ID placeholder in its endpoint. Alibaba Cloud Model Studio defaults to
-its US Virginia endpoint; use the endpoint and API key for the same region. The
-list is delivered by the backend
+the selected model and connection settings. The server currently supplies 210
+endpoint presets, including 178 OpenAI-compatible endpoints generated from a
+pinned Models.dev snapshot and native Meta Muse, Anthropic, Gemini, OpenAI
+Responses, and local-server presets. See the
+[complete provider catalog and its scope](docs/PROVIDERS.md). The preset count
+does not mean 210 independent protocol implementations: the Models.dev entries
+share Veasel's OpenAI-compatible transport. Local presets target loopback
+servers by default; Cloudflare requires replacing the account-ID placeholder
+in its endpoint. Alibaba Cloud Model Studio defaults to its US Virginia
+endpoint; use the endpoint and API key for the same region. The list is delivered by the backend
 API so the TUI does not maintain a second provider catalog. Compatible presets
 use the same Chat Completions wire
 format; provider-specific features beyond that contract are not implied.

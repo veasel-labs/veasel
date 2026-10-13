@@ -131,15 +131,15 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
-- [x] Deliver a server-owned 84-preset provider catalog and keyboard-navigable TUI
+- [x] Deliver a server-owned 210-preset provider catalog and keyboard-navigable TUI
   provider picker with protocol descriptions, environment-key hints, editable
   endpoints, live model discovery, and a local no-key Ollama profile. The picker
   can filter configured credentials, loopback-local endpoints, specialized API
   protocols, and OpenAI-compatible endpoints while preserving text search.
   OpenAI-compatible presets use
   the shared Chat Completions transport; provider-specific auth and SDK features
-  remain out of scope until implemented and tested. Thirty-six compatible
-  endpoints are generated from a pinned Models.dev selection; see
+  remain out of scope until implemented and tested. One hundred seventy-eight
+  compatible endpoints are generated from a pinned Models.dev snapshot; see
   [PROVIDERS.md](PROVIDERS.md) and `tools/provider-catalog/`.
 - [x] Add Meta Model API and a separate OpenAI Responses preset alongside the
   existing OpenAI Chat Completions profile. Muse/GPT model discovery, streamed

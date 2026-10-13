@@ -71,7 +71,7 @@ function renderV() {
   let idLine = "const supported_model_providers = ["
   for (const [index, id] of idParts.entries()) {
     const part = `${id}${index < idParts.length - 1 ? ", " : ""}`
-    if (idLine.length + part.length > 96) {
+    if (idLine.length + part.length > 97) {
       idLines.push(idLine.trimEnd())
       idLine = `\t${part}`
     } else {

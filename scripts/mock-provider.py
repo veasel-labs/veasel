@@ -11,6 +11,7 @@ from threading import Event
 API_KEYS = {
     "meta": "veasel-meta-key",
     "openai-compatible": "veasel-openai-key",
+    "openai-responses": "veasel-openai-responses-key",
     "dashscope": "veasel-dashscope-key",
     "zai": "veasel-zai-key",
     "302-ai": "veasel-302-ai-key",
@@ -31,7 +32,7 @@ API_KEYS = {
 }
 OPENAI_COMPATIBLE_API_KEYS = {
     API_KEYS[provider] for provider in (
-        "openai-compatible", "dashscope", "zai", "302-ai", "gmi-cloud", "minimax", "scaleway",
+        "openai-compatible", "openai-responses", "dashscope", "zai", "302-ai", "gmi-cloud", "minimax", "scaleway",
         "baseten", "cortecs", "digitalocean", "frogbot", "helicone", "io-net", "llmgateway",
         "ollama-cloud", "zenmux"
     )
@@ -96,6 +97,8 @@ class MockProvider(BaseHTTPRequestHandler):
                 return
             if authorization == f"Bearer {API_KEYS['meta']}":
                 payload = {"data": [{"id": "muse-wonder-1.0"}, {"id": "muse-spark-1.3"}]}
+            elif authorization == f"Bearer {API_KEYS['openai-responses']}":
+                payload = {"data": [{"id": "gpt-5.1-codex", "object": "model", "owned_by": "fixture"}]}
             elif has_openai_compatible_auth(self.headers.get("Authorization")):
                 payload = {"data": [{"id": "smoke-model", "object": "model", "owned_by": "fixture"}]}
             elif self.headers.get("x-api-key") == API_KEYS["anthropic"]:
@@ -139,6 +142,7 @@ class MockProvider(BaseHTTPRequestHandler):
         payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         provider_kind = (
             "meta" if self.headers.get("Authorization") == f"Bearer {API_KEYS['meta']}" else
+            "openai-responses" if self.path == "/v1/responses" and has_openai_compatible_auth(self.headers.get("Authorization")) else
             "openai" if has_openai_compatible_auth(self.headers.get("Authorization")) else
             "anthropic" if self.headers.get("x-api-key") == API_KEYS["anthropic"] else
             "gemini" if self.headers.get("x-goog-api-key") == API_KEYS["gemini"] else
@@ -151,7 +155,7 @@ class MockProvider(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if provider_kind == "meta":
+        if provider_kind in ("meta", "openai-responses"):
             input_items = payload.get("input", [])
             user_texts = [item.get("content", "") for item in input_items
                           if item.get("type") == "message" and item.get("role") == "user"]
@@ -159,11 +163,13 @@ class MockProvider(BaseHTTPRequestHandler):
             is_tool_follow_up = bool(input_items) and input_items[-1].get("type") == "function_call_output"
             if (
                 self.path != "/v1/responses"
-                or payload.get("model") not in ("muse-wonder-1.0", "muse-spark-1.3")
+                or payload.get("model") not in (("muse-wonder-1.0", "muse-spark-1.3") if provider_kind == "meta" else ("gpt-5.1-codex",) if provider_kind == "openai-responses" else ("smoke-model",))
                 or payload.get("max_output_tokens") != 4096
                 or payload.get("store") is not False
-                or payload.get("reasoning") != {"effort": "high", "summary": "auto"}
-                or payload.get("include") != ["reasoning.encrypted_content"]
+                or (provider_kind == "meta" and payload.get("reasoning") != {"effort": "high", "summary": "auto"})
+                or (provider_kind == "meta" and payload.get("include") != ["reasoning.encrypted_content"])
+                or (provider_kind == "openai-responses" and payload.get("reasoning") != {"effort": "high", "summary": "auto"})
+                or (provider_kind == "openai-responses" and payload.get("include") != ["reasoning.encrypted_content"])
                 or not input_items
                 or input_items[0].get("role") != "system"
                 or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
@@ -205,7 +211,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     item.get("type") == "function_call" for item in input_items
                 )
                 body = {"id": "resp-fixture", "model": payload["model"], "status": "completed", "output": [
-                    {"id": "rs-fixture", "type": "reasoning", "summary": [], "encrypted_content": "fixture-encrypted-reasoning"},
+                    *([{"id": "rs-fixture", "type": "reasoning", "summary": [], "encrypted_content": "fixture-encrypted-reasoning"}] if payload.get("include") else []),
                     {"id": f"fc-item-{call_index}", "call_id": f"meta-call-{call_index}", "type": "function_call", "name": requested_tool,
                      "arguments": json.dumps(args, separators=(",", ":")), "status": "completed"},
                 ]}
@@ -220,7 +226,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     ),
                     None,
                 )
-                if not reasoning or reasoning.get("encrypted_content") != "fixture-encrypted-reasoning" or not call or call.get("call_id") != result.get("call_id"):
+                if (payload.get("include") and (not reasoning or reasoning.get("encrypted_content") != "fixture-encrypted-reasoning")) or not call or call.get("call_id") != result.get("call_id"):
                     self.reject(payload)
                     return
                 result_text = result.get("output", "")
@@ -504,7 +510,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
                 SLOW_RESPONSE_RELEASE.wait()
             frames = []
-            if provider_kind == "meta":
+            if provider_kind in ("meta", "openai-responses"):
                 text = next((part["text"] for item in body["output"] if item.get("type") == "message"
                              for part in item.get("content", []) if part.get("type") == "output_text"), "")
                 if text:

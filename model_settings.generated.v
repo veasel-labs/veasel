@@ -9,10 +9,10 @@ const supported_model_providers = ['302-ai', 'abacus', 'above', 'ai-router', 'ai
 	'hyperbolic', 'inference', 'io-net', 'kilo', 'llama', 'llama-cpp', 'llmgateway', 'lmstudio',
 	'localai', 'meta', 'minimax', 'mistral', 'modal', 'model-oracle-ai', 'modelscope', 'moonshot',
 	'moonshotai-cn', 'nano-gpt', 'nearai', 'nebius', 'novita', 'nvidia', 'oci', 'ollama', 'ollama-cloud',
-	'openai', 'openai-compatible', 'openrouter', 'perplexity', 'poe', 'poolside', 'qiniu-ai',
-	'sambanova', 'sarvam', 'scaleway', 'sensenova', 'siliconflow', 'siliconflow-cn', 'stackit',
-	'stepfun-ai', 'tencent-tokenhub', 'tinfoil', 'together', 'upstage', 'venice', 'vercel', 'vllm',
-	'volcengine', 'vultr', 'xai', 'xiaomi-token-plan-cn', 'zai', 'zai-coding-plan', 'zenmux',
+	'openai', 'openai-compatible', 'openai-responses', 'openrouter', 'perplexity', 'poe', 'poolside',
+	'qiniu-ai', 'sambanova', 'sarvam', 'scaleway', 'sensenova', 'siliconflow', 'siliconflow-cn',
+	'stackit', 'stepfun-ai', 'tencent-tokenhub', 'tinfoil', 'together', 'upstage', 'venice', 'vercel',
+	'vllm', 'volcengine', 'vultr', 'xai', 'xiaomi-token-plan-cn', 'zai', 'zai-coding-plan', 'zenmux',
 	'zhipuai-coding-plan']
 
 fn model_provider_catalog() []ModelProviderInfo {
@@ -72,6 +72,7 @@ fn model_provider_catalog() []ModelProviderInfo {
 		ModelProviderInfo{ id: 'ollama-cloud', name: 'Ollama Cloud', description: 'Hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://ollama.com/v1', environment_key: 'OLLAMA_API_KEY', documentation_url: '', requires_api_key: true },
 		ModelProviderInfo{ id: 'openai', name: 'OpenAI', description: 'GPT models · OpenAI Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.openai.com/v1', environment_key: 'OPENAI_API_KEY', documentation_url: '', requires_api_key: true },
 		ModelProviderInfo{ id: 'openai-compatible', name: 'OpenAI-compatible', description: 'Custom endpoint · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.openai.com/v1', environment_key: 'OPENAI_API_KEY', documentation_url: '', requires_api_key: true },
+		ModelProviderInfo{ id: 'openai-responses', name: 'OpenAI Responses', description: 'GPT-5 and Codex models · OpenAI Responses API', protocol: 'openai-responses', base_url: 'https://api.openai.com/v1', environment_key: 'OPENAI_API_KEY', documentation_url: 'https://platform.openai.com/docs/api-reference/responses', requires_api_key: true },
 		ModelProviderInfo{ id: 'openrouter', name: 'OpenRouter', description: 'Multi-provider routing · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://openrouter.ai/api/v1', environment_key: 'OPENROUTER_API_KEY', documentation_url: '', requires_api_key: true },
 		ModelProviderInfo{ id: 'perplexity', name: 'Perplexity', description: 'Sonar models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.perplexity.ai', environment_key: 'PERPLEXITY_API_KEY', documentation_url: '', requires_api_key: true },
 		ModelProviderInfo{ id: 'poe', name: 'Poe', description: 'OpenAI-compatible Chat Completions · Models.dev catalog', protocol: 'openai-compatible', base_url: 'https://api.poe.com/v1', environment_key: 'POE_API_KEY', documentation_url: 'https://creator.poe.com/docs/external-applications/openai-compatible-api', requires_api_key: true },

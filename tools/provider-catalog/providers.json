@@ -381,6 +381,17 @@
       "source": "veasel-curated"
     },
     {
+      "id": "openai-responses",
+      "name": "OpenAI Responses",
+      "description": "GPT-5 and Codex models · OpenAI Responses API",
+      "protocol": "openai-responses",
+      "api": "https://api.openai.com/v1",
+      "environment_key": "OPENAI_API_KEY",
+      "requires_api_key": true,
+      "documentation_url": "https://platform.openai.com/docs/api-reference/responses",
+      "source": "veasel-curated"
+    },
+    {
       "id": "openai-compatible",
       "name": "OpenAI-compatible",
       "description": "Custom endpoint · OpenAI-compatible Chat Completions",

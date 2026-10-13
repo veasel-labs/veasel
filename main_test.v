@@ -70,6 +70,40 @@ fn test_openai_responses_failures_read_top_level_and_response_errors() {
 	assert openai_responses_failure_message(empty) == 'provider response failed'
 }
 
+fn test_openai_responses_reasoning_is_limited_to_supported_models() {
+	assert openai_responses_model_supports_reasoning('meta', 'muse-wonder-1.0')
+	assert openai_responses_model_supports_reasoning('openai', 'gpt-5.1-codex')
+	assert openai_responses_model_supports_reasoning('openai', 'o3')
+	assert openai_responses_model_supports_reasoning('openai', 'o4-mini')
+	assert openai_responses_model_supports_reasoning('openai', 'codex-mini-latest')
+	assert !openai_responses_model_supports_reasoning('openai', 'gpt-4.1')
+	assert !openai_responses_model_supports_reasoning('openai', 'gpt-4o')
+	assert openai_responses_include('meta', 'muse-wonder-1.0') == ['reasoning.encrypted_content']
+	assert openai_responses_include('openai', 'gpt-5.1-codex') == ['reasoning.encrypted_content']
+	assert openai_responses_include('openai-responses', 'gpt-4.1') == []
+	openai_responses_reasoning('openai', 'gpt-4.1') or { return }
+	assert false
+	codex_reasoning := openai_responses_reasoning('openai', 'gpt-5.1-codex') or {
+		panic('Codex reasoning settings missing')
+	}
+	assert codex_reasoning.effort == 'high'
+	assert codex_reasoning.summary == 'auto'
+	legacy_payload := json2.decode[map[string]json2.Any](json2.encode(OpenAIResponsesRequest{
+		model:     'gpt-4.1'
+		include:   openai_responses_include('openai', 'gpt-4.1')
+		reasoning: openai_responses_reasoning('openai', 'gpt-4.1')
+	})) or { panic(err) }
+	assert 'reasoning' !in legacy_payload
+	assert 'include' !in legacy_payload
+	codex_payload := json2.decode[map[string]json2.Any](json2.encode(OpenAIResponsesRequest{
+		model:     'gpt-5.1-codex'
+		include:   openai_responses_include('openai', 'gpt-5.1-codex')
+		reasoning: openai_responses_reasoning('openai', 'gpt-5.1-codex')
+	})) or { panic(err) }
+	assert 'reasoning' in codex_payload
+	assert 'include' in codex_payload
+}
+
 fn test_serve_and_tui_help_are_available_without_starting_the_backend() {
 	assert command_help('serve').starts_with('Usage: veasel serve\n')
 	assert command_help('serve').contains('Start the local V backend only.')

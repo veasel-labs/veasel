@@ -319,8 +319,8 @@ struct OpenAIResponsesRequest {
 	parallel_tool_calls bool                  @[omitempty]
 	stream              bool
 	store               bool
-	include             []string                 @[omitempty]
-	reasoning           OpenAIResponsesReasoning @[omitempty]
+	include             []string                  @[omitempty]
+	reasoning           ?OpenAIResponsesReasoning @[omitempty]
 }
 
 struct OpenAIResponsesReasoning {
@@ -819,11 +819,8 @@ fn (provider OpenAIResponsesProvider) complete(mut turn_ctx vcontext.Context, co
 		parallel_tool_calls: tools.len > 1
 		stream:              true
 		store:               false
-		include:             ['reasoning.encrypted_content']
-		reasoning:           OpenAIResponsesReasoning{
-			effort:  'high'
-			summary: 'auto'
-		}
+		include:             openai_responses_include(config.provider, config.model)
+		reasoning:           openai_responses_reasoning(config.provider, config.model)
 	}
 	mut stream_state := &OpenAIResponsesStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {
@@ -908,6 +905,32 @@ fn (provider OpenAIResponsesProvider) complete(mut turn_ctx vcontext.Context, co
 		content:          content
 		tool_calls:       tool_calls
 		provider_context: provider_context
+	}
+}
+
+fn openai_responses_model_supports_reasoning(provider string, model string) bool {
+	if provider == 'meta' {
+		return true
+	}
+	model_id := model.to_lower()
+	return model_id.starts_with('gpt-5') || model_id.starts_with('o1') || model_id.starts_with('o3')
+		|| model_id.starts_with('o4') || model_id.starts_with('codex-')
+}
+
+fn openai_responses_include(provider string, model string) []string {
+	if openai_responses_model_supports_reasoning(provider, model) {
+		return ['reasoning.encrypted_content']
+	}
+	return []
+}
+
+fn openai_responses_reasoning(provider string, model string) ?OpenAIResponsesReasoning {
+	if !openai_responses_model_supports_reasoning(provider, model) {
+		return none
+	}
+	return OpenAIResponsesReasoning{
+		effort:  'high'
+		summary: 'auto'
 	}
 }
 

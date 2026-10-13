@@ -55,7 +55,7 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len
-	assert catalog.len == 83
+	assert catalog.len == 84
 	mut seen := map[string]bool{}
 	for provider in catalog {
 		assert provider.id in supported_model_providers
@@ -77,6 +77,18 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['dashscope']
 	assert seen['zai']
 	assert seen['meta']
+	assert seen['openai']
+	openai := model_provider_info('openai') or { panic('OpenAI missing') }
+	assert openai.protocol == 'openai-compatible'
+	assert openai.base_url == 'https://api.openai.com/v1'
+	assert openai.environment_key == 'OPENAI_API_KEY'
+	openai_responses := model_provider_info('openai-responses') or {
+		panic('OpenAI Responses preset missing')
+	}
+	assert openai_responses.protocol == 'openai-responses'
+	assert openai_responses.base_url == 'https://api.openai.com/v1'
+	assert openai_responses.environment_key == 'OPENAI_API_KEY'
+	assert openai_responses.documentation_url == 'https://platform.openai.com/docs/api-reference/responses'
 	meta := model_provider_info('meta') or { panic('Meta Model API missing') }
 	assert meta.name == 'Meta Model API'
 	assert meta.protocol == 'openai-responses'

@@ -319,7 +319,7 @@ struct OpenAIResponsesRequest {
 	parallel_tool_calls bool                  @[omitempty]
 	stream              bool
 	store               bool
-	include             []string                 @[omitempty]
+	include             []string                  @[omitempty]
 	reasoning           ?OpenAIResponsesReasoning @[omitempty]
 }
 

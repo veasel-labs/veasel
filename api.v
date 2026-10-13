@@ -804,6 +804,20 @@ pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
 		})
 	}
 	if operation.status != 'completed' {
+		// A failed or cancelled turn has no assistant result, but its partial
+		// trajectory (when one was collected) remains available on its own.
+		if operation.status in ['failed', 'cancelled'] {
+			if trace := app.store.operation_trace(id, canonical_id) {
+				return ctx.json(SessionOperationResult{
+					session_id:   id
+					operation_id: canonical_id
+					status:       operation.status
+					provider:     operation.provider
+					model:        operation.model
+					trajectory:   trace
+				})
+			}
+		}
 		ctx.res.set_status(.conflict)
 		return ctx.json(APIError{
 			error: 'session operation is ${operation.status}'
@@ -1058,6 +1072,28 @@ fn (app &App) start_async_session_message(operation_id string, turn_done chan in
 	}(app, operation_id, turn_done, cancel, id, session, input)
 }
 
+// persist_partial_trace keeps the steps captured before a turn failed or was
+// cancelled, marked with that outcome. The original turn error is unchanged;
+// a trace persistence problem is only logged.
+fn (app &App) persist_partial_trace(id string, operation_id string, steps []ATIFStep, message string) {
+	status, _ := session_turn_failure(message)
+	outcome := if status == 'cancelled' { 'cancelled' } else { 'failed' }
+	mut model := ''
+	for step in steps {
+		if step.model_name.len > 0 {
+			model = step.model_name
+		}
+	}
+	trace_json := encode_atif_trace_with_outcome(id, product_version, model, steps, outcome) or {
+		eprintln('veasel: unable to encode partial ATIF trajectory (${err.msg()})')
+		return
+	}
+	mut store := app.store
+	store.record_operation_trace(id, operation_id, trace_json) or {
+		eprintln('veasel: unable to persist partial ATIF trajectory (${err.msg()})')
+	}
+}
+
 fn (app &App) record_session_turn_failure(id string, operation_id string, message string) {
 	eprintln('veasel: assistant turn failed (${message})')
 	status, public_error := session_turn_failure(message)
@@ -1135,10 +1171,15 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	on_text_delta := fn [mut delta_buffer] (delta string) ! {
 		delta_buffer.append(delta)!
 	}
+	mut partial_trace_steps := []ATIFStep{}
 	result := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
-		operation_id, skill_context, on_text_delta, input.collect_trace, input.autonomous) or {
+		operation_id, skill_context, on_text_delta, mut partial_trace_steps, input.collect_trace,
+		input.autonomous) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
+		}
+		if input.collect_trace && partial_trace_steps.len > 0 {
+			app.persist_partial_trace(id, operation_id, partial_trace_steps, err.msg())
 		}
 		return err
 	}

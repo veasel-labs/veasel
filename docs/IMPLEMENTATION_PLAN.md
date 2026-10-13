@@ -78,7 +78,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Opt-in `veasel run --trace-file` export of successful turns as ATIF v1.8,
   including the current prompt, provider model responses, tool-call arguments,
   and tool observations. Collection is disabled unless a trace path is supplied.
-- [ ] Persist partial trajectories on failures/cancellation; add provider
+- [ ] Persist partial trajectories on failures/cancellation (done: partial
+  steps are stored with a `failed`/`cancelled` outcome and returned by the
+  operation result endpoint when trace collection was enabled); add provider
   usage/cost metadata only when adapters return authoritative values; redact
   sensitive source/tool content. Linux CI validates a deterministic live-provider
   fixture trace against Harbor 0.24.0 at pinned revision

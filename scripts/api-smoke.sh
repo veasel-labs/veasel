@@ -721,6 +721,47 @@ PY
 		[[ "$cancelled_turn_status" == 409 ]] || fail "cancelled provider request returned HTTP ${cancelled_turn_status:-no response}, expected 409 ($(cat "$work_dir/cancelled-turn-response"))"
 		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/release-slow-response" >/dev/null || fail 'slow provider fixture could not be released'
 		printf 'Smoke: provider cancellation passed\n'
+		printf 'Smoke: checking partial ATIF trajectory for a cancelled async turn\n'
+		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/hold-slow-response" >/dev/null \
+			|| fail 'slow provider fixture could not be held for partial trace'
+		partial_operation_id="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+		partial_prompt="Wait for cancellation $partial_operation_id"
+		expect_status 202 -X POST -H 'content-type: application/json' -H 'Prefer: respond-async' \
+			-H "x-veasel-operation-id: $partial_operation_id" \
+			-d "{\"content\":\"$partial_prompt\",\"collect_trace\":true}" \
+			"$api/v1/sessions/$session_id/messages"
+		for ((attempt = 0; attempt < 200; attempt++)); do
+			grep -Fq "SLOW_PROVIDER_REQUEST_STARTED:$partial_prompt" "$work_dir/provider.log" && break
+			sleep 0.05
+		done
+		grep -Fq "SLOW_PROVIDER_REQUEST_STARTED:$partial_prompt" "$work_dir/provider.log" \
+			|| fail 'partial trace provider request did not reach the provider'
+		expect_status 202 -X POST "$api/v1/sessions/$session_id/operations/$partial_operation_id/cancel"
+		partial_status=""
+		for ((attempt = 0; attempt < 200; attempt++)); do
+			curl -fsS "$api/v1/sessions/$session_id/operations/$partial_operation_id" >"$work_dir/partial-operation" 2>/dev/null || true
+			partial_status="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$work_dir/partial-operation" 2>/dev/null || true)"
+			[[ "$partial_status" == cancelled || "$partial_status" == failed ]] && break
+			sleep 0.05
+		done
+		[[ "$partial_status" == cancelled ]] || fail "partial trace operation ended as ${partial_status:-unknown}, expected cancelled"
+		curl -fsS "http://127.0.0.1:$(cat "$work_dir/provider.port")/release-slow-response" >/dev/null \
+			|| fail 'slow provider fixture could not be released after partial trace'
+		curl -fsS "$api/v1/sessions/$session_id/operations/$partial_operation_id/result" >"$work_dir/cancelled-partial-trace" \
+			|| fail 'cancelled turn did not expose its partial ATIF trajectory'
+		python3 - "$work_dir/cancelled-partial-trace" "$partial_prompt" <<'PY' || fail 'cancelled partial ATIF trajectory was invalid'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+assert result["status"] == "cancelled", result
+trajectory = json.loads(result["trajectory"])
+assert trajectory["schema_version"] == "ATIF-v1.8", trajectory
+assert trajectory["extra"]["outcome"] == "cancelled", trajectory
+assert trajectory["extra"]["token_usage"] == "unavailable", trajectory
+messages = [step["message"] for step in trajectory["steps"]]
+assert sys.argv[2] in messages, messages
+PY
 	fi
 	printf 'Smoke: testing provider workspace tools (%s)\n' "$provider"
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Inspect workspace"}' \

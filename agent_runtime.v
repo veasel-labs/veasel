@@ -116,7 +116,7 @@ fn agent_skill_resource_tools(access []AgentSkillResourceAccess) []AgentToolDefi
 
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
 	session_id string, operation_id string, skill_context SessionSkillContext,
-	on_text_delta ProviderTextDeltaFn, collect_trace bool, autonomous bool) !AgentTraceResult {
+	on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep, collect_trace bool, autonomous bool) !AgentTraceResult {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -144,7 +144,6 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
-	mut trace_steps := []ATIFStep{}
 	if collect_trace {
 		for message in messages {
 			source := match message.role {

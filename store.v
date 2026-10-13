@@ -1135,6 +1135,27 @@ fn (mut store Store) operation_trace(session_id string, operation_id string) !st
 	return rows[0].val(0)
 }
 
+// record_operation_trace persists a trajectory independently of a completed
+// exchange, so failed or cancelled turns keep their partial trace. It rejects
+// a second trace for the same operation instead of replacing the first one.
+fn (mut store Store) record_operation_trace(session_id string, operation_id string, trajectory_json string) ! {
+	if trajectory_json.len == 0 || trajectory_json.len > max_provider_stream_bytes * 2
+		|| !validate_operation_id(operation_id) {
+		return error('operation trace is invalid')
+	}
+	_ := json2.decode[map[string]json2.Any](trajectory_json) or {
+		return error('operation trace is invalid')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	_ = store.db.exec_param_many('INSERT INTO operation_traces (operation_id, session_id, trajectory_json) VALUES (?, ?, ?)',
+		[operation_id, session_id, trajectory_json]) or {
+		return error('unable to persist ATIF trajectory')
+	}
+}
+
 fn (mut store Store) record_assistant_delta(session_id string, operation_id string, delta string) ! {
 	if delta.len == 0 || delta.len > max_provider_response_bytes || !validate_operation_id(operation_id) {
 		return error('invalid streamed assistant delta')

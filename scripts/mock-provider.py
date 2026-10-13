@@ -217,7 +217,16 @@ class MockProvider(BaseHTTPRequestHandler):
                 if "workspace-search-sentinel" not in result_text and "Skill reference smoke sentinel" not in result_text and "error" not in result_text and "Stored for human review" not in result_text and "No command was executed" not in result_text:
                     self.reject(payload)
                     return
-                final_text = "Found workspace-search-sentinel" if "workspace-search-sentinel" in result_text else "Proposed a shell command for review." if "No command was executed" in result_text else "Proposed a file edit for review." if "Stored for human review" in result_text else "The requested path was rejected."
+                if "workspace-search-sentinel" in result_text:
+                    final_text = "Found workspace-search-sentinel"
+                elif "Skill reference smoke sentinel" in result_text:
+                    final_text = "Read skill reference smoke sentinel"
+                elif "No command was executed" in result_text:
+                    final_text = "Proposed a shell command for review."
+                elif "Stored for human review" in result_text:
+                    final_text = "Proposed a file edit for review."
+                else:
+                    final_text = "The requested path was rejected."
                 body = {"id": "resp-fixture-2", "model": payload["model"], "status": "completed", "output": [
                     {"id": "msg-fixture", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": final_text}]}
                 ]}

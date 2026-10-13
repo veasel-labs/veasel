@@ -48,7 +48,10 @@ class MetaMockProviderTests(unittest.TestCase):
                 "store": False,
                 "reasoning": {"effort": "high", "summary": "auto"},
                 "include": ["reasoning.encrypted_content"],
-                "tools": [{"type": "function", "name": "workspace_search", "parameters": {}}],
+                "tools": [
+                    {"type": "function", "name": "workspace_search", "parameters": {}},
+                    {"type": "function", "name": "agent_skill_read_resource", "parameters": {}},
+                ],
             }).encode(),
             headers={
                 "Authorization": "Bearer veasel-meta-key",
@@ -82,12 +85,26 @@ class MetaMockProviderTests(unittest.TestCase):
             "Found workspace-search-sentinel",
         )
 
-        next_turn = follow_up + final_response["output"] + [
+        skill_turn = follow_up + final_response["output"] + [
+            {"type": "message", "role": "user", "content": "Read skill reference"},
+        ]
+        skill_response = self.post_response(skill_turn)
+        skill_call = next(item for item in skill_response["output"] if item["type"] == "function_call")
+        self.assertEqual(skill_call["call_id"], "meta-call-2")
+        skill_follow_up = skill_turn + skill_response["output"] + [{
+            "type": "function_call_output",
+            "call_id": skill_call["call_id"],
+            "output": "Skill reference smoke sentinel",
+        }]
+        skill_final = self.post_response(skill_follow_up)
+        self.assertEqual(skill_final["output"][0]["content"][0]["text"], "Read skill reference smoke sentinel")
+
+        next_turn = skill_follow_up + skill_final["output"] + [
             {"type": "message", "role": "user", "content": "Inspect workspace"},
         ]
-        second_response = self.post_response(next_turn)
-        second_call = next(item for item in second_response["output"] if item["type"] == "function_call")
-        self.assertEqual(second_call["call_id"], "meta-call-2")
+        third_response = self.post_response(next_turn)
+        third_call = next(item for item in third_response["output"] if item["type"] == "function_call")
+        self.assertEqual(third_call["call_id"], "meta-call-3")
 
 
 if __name__ == "__main__":

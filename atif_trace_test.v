@@ -154,7 +154,7 @@ fn test_atif_trace_encodes_reported_usage_metrics() {
 	}).str()) or { panic(err) }
 	assert (metrics['total_prompt_tokens'] or { json2.Any(0) }).int() == 24
 	assert (metrics['total_completion_tokens'] or { json2.Any(0) }).int() == 12
-	assert (metrics['total_tokens'] or { json2.Any(0) }).int() == 36
+	assert 'total_tokens' !in metrics
 	without_usage := encode_atif_trace('session-1', '0.1.0', 'fixture-model', [
 		ATIFStep{
 			step_id: 1

@@ -80,9 +80,10 @@ fn encode_atif_trace_with_usage(session_id string, version string, model string,
 	}
 	mut metrics := map[string]json2.Any{}
 	if usage.reported {
+		// ATIF final_metrics has no total_tokens field; the total is the sum
+		// of the two reported counts below.
 		metrics['total_prompt_tokens'] = json2.Any(usage.input_tokens)
 		metrics['total_completion_tokens'] = json2.Any(usage.output_tokens)
-		metrics['total_tokens'] = json2.Any(usage.total_tokens)
 	}
 	return json2.encode(ATIFTrajectory{
 		session_id:    session_id

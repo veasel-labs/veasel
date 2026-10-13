@@ -49,6 +49,7 @@ api="http://127.0.0.1:${port}"
 server_pid=""
 autonomous_server_pid=""
 provider_pid=""
+cold_server_pid=""
 
 # Every smoke request must fail with a useful error instead of hanging until the
 # GitHub Actions job timeout. Individual calls may override max-time when needed.
@@ -64,6 +65,9 @@ cleanup() {
 	if [[ -n "$server_pid" ]]; then
 		kill "$server_pid" 2>/dev/null || true
 		wait "$server_pid" 2>/dev/null || true
+	fi
+	if [[ -n "$cold_server_pid" ]]; then
+		kill "$cold_server_pid" 2>/dev/null || true
 	fi
 	if [[ -n "$autonomous_server_pid" ]]; then
 		kill "$autonomous_server_pid" 2>/dev/null || true
@@ -371,6 +375,29 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 	sleep 0.1
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
+
+printf 'Smoke: checking JSON output when veasel run starts a cold backend\n'
+cold_port=$((20000 + $$ % 10000))
+env VEASEL_PORT="$cold_port" VEASEL_DATA_DIR="$work_dir/cold-data" \
+	VEASEL_PLUGIN_DIR="$work_dir/plugins" VEASEL_MODEL_PROVIDER=openai-compatible \
+	VEASEL_MODEL=smoke-model OPENAI_API_KEY=veasel-openai-key \
+	VEASEL_MODEL_BASE_URL="http://127.0.0.1:$(cat "$work_dir/provider.port")/v1" \
+	"$work_dir/veasel" run --prompt 'Say hello' --workspace "$work_dir/workspace" --json \
+	>"$work_dir/cold-headless-result" 2>"$work_dir/cold-headless.log" \
+	|| fail 'cold-start headless task command failed'
+python3 - "$work_dir/cold-headless-result" <<'PY'
+import json
+import sys
+
+result = json.load(open(sys.argv[1], encoding="utf-8"))
+assert result["status"] == "completed", result
+assert result["provider"] == "openai-compatible", result
+assert result["model"] == "smoke-model", result
+assert result["response"] == "Provider fixture reply", result
+PY
+cold_server_pid="$(pgrep -f -x "$work_dir/veasel serve" | head -n 1 || true)"
+[[ -n "$cold_server_pid" ]] || fail 'cold-start backend process was not found for cleanup'
+
 for provider in openai-compatible openai openai-responses anthropic gemini meta dashscope zai 302-ai gmi-cloud minimax scaleway baseten cortecs digitalocean frogbot helicone io-net llmgateway ollama-cloud zenmux; do
 	printf 'Smoke: provider workflow starting (%s)\n' "$provider"
 	rm -f "$work_dir/workspace/approved-effect.txt"

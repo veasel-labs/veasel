@@ -39,13 +39,37 @@ fn backend_is_healthy(port int) bool {
 	return health.healthy
 }
 
+fn spawn_backend_server(mut process os.Process) ! {
+	// Veb and fasthttp write their startup banners directly to stdout. A child
+	// backend inherits the CLI's stdout by default, which corrupts `veasel run
+	// --json` when that command starts the backend itself. Give the child a
+	// duplicate of stderr for stdout while spawning, then restore the CLI's
+	// original stdout before it emits its own result.
+	original_stdout_fd := os.fd_dup(1)
+	if original_stdout_fd < 0 {
+		return error('unable to preserve stdout while starting the Veasel server')
+	}
+	flush_stdout()
+	if os.fd_dup2(2, 1) < 0 {
+		os.fd_close(original_stdout_fd)
+		return error('unable to redirect server startup output')
+	}
+	process.run()
+	restore_result := os.fd_dup2(original_stdout_fd, 1)
+	os.fd_close(original_stdout_fd)
+	if restore_result < 0 {
+		return error('unable to restore stdout after starting the Veasel server')
+	}
+	flush_stdout()
+}
+
 fn ensure_backend(port int) ! {
 	if backend_is_healthy(port) {
 		return
 	}
 	mut process := os.new_process(os.executable())
 	process.set_args(['serve'])
-	process.run()
+	spawn_backend_server(mut process)!
 	for _ in 0 .. 150 {
 		if backend_is_healthy(port) {
 			return

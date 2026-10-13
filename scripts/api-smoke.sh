@@ -44,7 +44,11 @@ EOF
 cat >"$plugin_dir/skills/review/references/REFERENCE.md" <<'EOF'
 Skill reference smoke sentinel.
 EOF
-port="${VEASEL_SMOKE_PORT:-$((30000 + $$ % 20000))}"
+free_port() {
+	python3 -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()'
+}
+
+port="${VEASEL_SMOKE_PORT:-$(free_port)}"
 api="http://127.0.0.1:${port}"
 server_pid=""
 autonomous_server_pid=""
@@ -174,6 +178,13 @@ wait_for_turn_completion() {
 }
 
 start_server() {
+	# Reusing one port across every restart can collide with a lingering
+	# listener from the previous server, so take a fresh ephemeral port
+	# unless the caller pinned one explicitly.
+	if [[ -z "${VEASEL_SMOKE_PORT:-}" ]]; then
+		port="$(free_port)"
+		api="http://127.0.0.1:${port}"
+	fi
 	if [[ -n "${1:-}" ]]; then
 		provider_base="/v1"
 		[[ "$1" == gemini ]] && provider_base="/v1beta"
@@ -210,6 +221,9 @@ start_server() {
 	for ((attempt = 0; attempt < 80; attempt++)); do
 		if curl -fsS "$api/v1/health" >"$work_dir/health" 2>/dev/null; then
 			return
+		fi
+		if ! kill -0 "$server_pid" 2>/dev/null; then
+			break
 		fi
 		sleep 0.1
 	done
@@ -377,7 +391,7 @@ done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
 
 printf 'Smoke: checking JSON output when veasel run starts a cold backend\n'
-cold_port=$((20000 + $$ % 10000))
+cold_port="$(free_port)"
 env VEASEL_PORT="$cold_port" VEASEL_DATA_DIR="$work_dir/cold-data" \
 	VEASEL_PLUGIN_DIR="$work_dir/plugins" VEASEL_MODEL_PROVIDER=openai-compatible \
 	VEASEL_MODEL=smoke-model OPENAI_API_KEY=veasel-openai-key \
@@ -575,7 +589,7 @@ assert result["status"] == "failed", result
 assert "Autonomous tool execution is disabled" in result["error"], result
 PY
 		printf 'Smoke: applying a patch and running a shell command in the explicitly opted-in fixture server\n'
-		autonomous_port=$((port + 1))
+		autonomous_port="$(free_port)"
 		autonomous_api="http://127.0.0.1:${autonomous_port}"
 		env VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 VEASEL_PORT="$autonomous_port" \
 			VEASEL_DATA_DIR="$work_dir/autonomous-data" VEASEL_PLUGIN_DIR="$work_dir/autonomous-plugins" \

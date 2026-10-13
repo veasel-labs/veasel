@@ -12,6 +12,7 @@ export type ModelProvider = {
 export type ModelCatalogEntry = { id: string; name: string }
 export type ProviderEndpoints = Record<string, { base_url: string }>
 export type ProviderPickerScope = "all" | "configured" | "local" | "specialized" | "compatible"
+type SearchField = { values: string[]; weight: number }
 
 export const providerPickerScopes: ProviderPickerScope[] = ["all", "configured", "local", "specialized", "compatible"]
 
@@ -53,23 +54,99 @@ export function filterModelProviders(
   configuredProviders: Set<string> = new Set(),
   profiles: ProviderEndpoints = {},
 ) {
-  const needle = query.trim().toLocaleLowerCase()
-  return providers.filter((provider) => {
+  const needle = normalizeQuery(query)
+  const matches = providers.flatMap((provider, index) => {
     const inScope = scope === "all"
       || (scope === "configured" && configuredProviders.has(provider.id))
       || (scope === "local" && isLoopbackEndpoint(profiles[provider.id]?.base_url || provider.base_url))
       || (scope === "specialized" && provider.protocol !== "openai-compatible")
       || (scope === "compatible" && provider.protocol === "openai-compatible")
-    if (!inScope) return false
-    if (!needle) return true
-    return [
-      provider.name,
-      provider.id,
-      provider.description,
-      provider.environment_key,
-      provider.protocol,
-    ].join(" ").toLocaleLowerCase().includes(needle)
+    if (!inScope) return []
+    if (!needle) return [{ provider, index, score: 0 }]
+    const score = searchScore(needle, [
+      { values: [provider.id, provider.name], weight: 120 },
+      { values: [provider.description, provider.protocol], weight: 40 },
+      { values: [provider.environment_key], weight: 0 },
+    ])
+    return score === undefined ? [] : [{ provider, index, score }]
   })
+  if (needle) {
+    matches.sort((left, right) => right.score - left.score || left.index - right.index)
+  }
+  return matches.map(({ provider }) => provider)
+}
+
+function normalizeQuery(query: string) {
+  return tokenize([query.trim()])
+}
+
+function tokenize(values: string[]) {
+  const tokens = values.flatMap((value) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+  return [...new Set(tokens)]
+}
+
+function searchScore(query: string[], fields: SearchField[]): number | undefined {
+  let bestFieldScore: number | undefined
+  for (const field of fields) {
+    // Keep each search group's terms together: "model api key" must match the
+    // credential-variable field, not unrelated words from a provider summary.
+    const candidates = tokenize(field.values)
+    let total = field.weight
+    let matchedAll = true
+    for (const queryToken of query) {
+      let bestTokenScore: number | undefined
+      for (const candidate of candidates) {
+        const score = tokenMatchScore(queryToken, candidate)
+        if (score !== undefined) bestTokenScore = Math.max(bestTokenScore ?? 0, score)
+      }
+      if (bestTokenScore === undefined) {
+        matchedAll = false
+        break
+      }
+      total += bestTokenScore
+    }
+    if (matchedAll) bestFieldScore = Math.max(bestFieldScore ?? 0, total)
+  }
+  return bestFieldScore
+}
+
+function tokenMatchScore(query: string, candidate: string): number | undefined {
+  if (candidate === query) return 1_000
+  const position = candidate.indexOf(query)
+  if (position === 0) return 800 - (candidate.length - query.length)
+  if (position > 0) return 700 - position * 4 - (candidate.length - query.length)
+
+  // Short fragments are common across unrelated provider names. Require exact
+  // prefix/substring matches for them and allow one typo per four characters
+  // for longer queries, including transposed characters.
+  if (query.length < 4) return undefined
+  const distance = optimalStringAlignmentDistance(query, candidate)
+  const maximumDistance = query.length < 8 ? 1 : Math.floor(query.length / 4)
+  if (distance > maximumDistance) return undefined
+  return 500 - distance * 32 - Math.abs(candidate.length - query.length) * 2
+}
+
+function optimalStringAlignmentDistance(left: string, right: string) {
+  const rows = left.length + 1
+  const columns = right.length + 1
+  const distance = Array.from({ length: rows }, () => Array<number>(columns).fill(0))
+  for (let row = 0; row < rows; row++) distance[row][0] = row
+  for (let column = 0; column < columns; column++) distance[0][column] = column
+
+  for (let row = 1; row < rows; row++) {
+    for (let column = 1; column < columns; column++) {
+      const substitution = left[row - 1] === right[column - 1] ? 0 : 1
+      distance[row][column] = Math.min(
+        distance[row - 1][column] + 1,
+        distance[row][column - 1] + 1,
+        distance[row - 1][column - 1] + substitution,
+      )
+      if (row > 1 && column > 1 && left[row - 1] === right[column - 2] && left[row - 2] === right[column - 1]) {
+        distance[row][column] = Math.min(distance[row][column], distance[row - 2][column - 2] + substitution)
+      }
+    }
+  }
+  return distance[left.length][right.length]
 }
 
 export function prioritizeModelProviders(
@@ -85,7 +162,10 @@ export function prioritizeModelProviders(
 }
 
 export function filterModelCatalog(models: ModelCatalogEntry[], query: string) {
-  const needle = query.trim().toLocaleLowerCase()
-  if (!needle) return models
-  return models.filter((model) => `${model.id} ${model.name}`.toLocaleLowerCase().includes(needle))
+  const needle = normalizeQuery(query)
+  if (!needle.length) return models
+  return models.flatMap((model, index) => {
+    const score = searchScore(needle, [{ values: [model.id, model.name], weight: 0 }])
+    return score === undefined ? [] : [{ model, index, score }]
+  }).sort((left, right) => right.score - left.score || left.index - right.index).map(({ model }) => model)
 }

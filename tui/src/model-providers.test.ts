@@ -17,6 +17,19 @@ describe("model provider picker", () => {
     expect(filterModelProviders(providers, "DEEP").map(({ id }) => id)).toEqual(["deepseek"])
   })
 
+  test("tolerates short typos and ranks exact names ahead of fuzzy matches", () => {
+    expect(filterModelProviders(providers, "anthorpic").map(({ id }) => id)).toEqual(["anthropic"])
+    expect(filterModelProviders(providers, "muse wonder").map(({ id }) => id)).toEqual(["meta"])
+    expect(filterModelProviders(providers, "deepseak").map(({ id }) => id)).toEqual(["deepseek"])
+    const closeMatch: ModelProvider = {
+      ...providers[0],
+      id: "museai",
+      name: "MuseAI",
+      description: "Compatible model API",
+    }
+    expect(filterModelProviders([closeMatch, providers[0]], "muse").map(({ id }) => id)).toEqual(["meta", "museai"])
+  })
+
   test("matches protocol, environment variable, and description", () => {
     expect(filterModelProviders(providers, "muse").map(({ id }) => id)).toEqual(["meta"])
     expect(filterModelProviders(providers, "MODEL_API_KEY").map(({ id }) => id)).toEqual(["meta"])
@@ -62,6 +75,29 @@ describe("provider model picker", () => {
     expect(filterModelCatalog(models, "WONDER").map(({ id }) => id)).toEqual(["muse-wonder-1.0"])
     expect(filterModelCatalog(models, "CODEX").map(({ id }) => id)).toEqual(["gpt-5-codex"])
     expect(filterModelCatalog(models, "sonnet").map(({ id }) => id)).toEqual(["claude-sonnet-4"])
+  })
+
+  test("matches transposed characters and ranks exact model prefixes first", () => {
+    const candidates = [
+      ...models,
+      { id: "muse-wonder-1-preview", name: "Muse Wonder Preview" },
+      { id: "musa-wonder-1-preview", name: "Musa Wonder Preview" },
+      { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
+    ]
+    expect(filterModelCatalog(candidates, "muse wonder").map(({ id }) => id)).toEqual([
+      "muse-wonder-1.0",
+      "muse-wonder-1-preview",
+      "musa-wonder-1-preview",
+    ])
+    expect(filterModelCatalog(candidates, "claud sonnet").map(({ id }) => id)).toEqual([
+      "claude-sonnet-4",
+      "claude-sonnet-4-5",
+    ])
+    expect(filterModelCatalog(candidates, "muse-wodner").map(({ id }) => id)).toEqual([
+      "muse-wonder-1.0",
+      "muse-wonder-1-preview",
+      "musa-wonder-1-preview",
+    ])
   })
 
   test("keeps all models for an empty query", () => {

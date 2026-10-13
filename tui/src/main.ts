@@ -1241,7 +1241,7 @@ function showSettingsStep(manualModel = false) {
     ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."}${providerInfo?.environment_key ? ` Use ${providerInfo.environment_key} instead of saving a key.` : ""} Key characters are hidden.`
     : ""
   const providerSearchHint = settingsStep === 0
-    ? `\n\n${providerPickerScopeLabel(settingsProviderScope)} providers · ${settingsProviderQuery ? `Filter: ${settingsProviderQuery}` : "type to search"}`
+    ? `\n\n${providerPickerScopeLabel(settingsProviderScope)} providers · ${settingsProviderQuery ? `Filter: ${settingsProviderQuery}` : "search by name, model, or key"}`
     : ""
   const navigationHint = settingsStep === 0
     ? "Enter selects · Esc cancels"
@@ -1250,7 +1250,7 @@ function showSettingsStep(manualModel = false) {
   status.content = `● provider settings · ${settingsStep + 1}/4`
   status.fg = "#a7f3d0"
   footerHint.content = settingsStep === 0
-    ? "Tab changes group · type to search · Enter configures · Esc closes"
+    ? "Tab group · search handles typos · Enter configure · Esc close"
     : settingsStep === 3
       ? "Type to filter · Enter selects · Ctrl+B goes back · Esc cancels"
       : settingsStep === 2
@@ -1324,7 +1324,7 @@ function showSettingsStep(manualModel = false) {
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
       sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\n${settingPrompts[3]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
-      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · type search · Enter select · Ctrl+B back · Esc cancel`
+      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · search handles typos · Enter select · Ctrl+B back · Esc cancel`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),

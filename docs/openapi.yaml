@@ -1113,6 +1113,15 @@ components:
             - gmi-cloud
             - minimax
             - scaleway
+            - baseten
+            - cortecs
+            - digitalocean
+            - frogbot
+            - helicone
+            - io-net
+            - llmgateway
+            - ollama-cloud
+            - zenmux
         model:
           type: string
           minLength: 1
@@ -1172,6 +1181,15 @@ components:
             - gmi-cloud
             - minimax
             - scaleway
+            - baseten
+            - cortecs
+            - digitalocean
+            - frogbot
+            - helicone
+            - io-net
+            - llmgateway
+            - ollama-cloud
+            - zenmux
         profiles:
           type: object
           additionalProperties:

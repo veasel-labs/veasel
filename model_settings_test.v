@@ -79,6 +79,14 @@ fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	assert seen['gmi-cloud']
 	assert seen['minimax']
 	assert seen['scaleway']
+	for provider in ['baseten', 'cortecs', 'digitalocean', 'frogbot', 'helicone', 'io-net', 'llmgateway',
+		'ollama-cloud', 'zenmux'] {
+		assert seen[provider]
+		info := model_provider_info(provider) or { panic('${provider} missing') }
+		assert info.protocol == 'openai-compatible'
+		assert info.base_url.starts_with('https://')
+		assert info.environment_key != ''
+	}
 	provider_302 := model_provider_info('302-ai') or { panic('302.AI missing') }
 	assert provider_302.base_url == 'https://api.302.ai/v1'
 	assert provider_302.environment_key == '302AI_API_KEY'
@@ -153,6 +161,15 @@ fn test_provider_environment_key_uses_catalog_mapping() {
 		'gmi-cloud':             'GMI_API_KEY'
 		'minimax':               'MINIMAX_API_KEY'
 		'scaleway':              'SCW_SECRET_KEY'
+		'baseten':               'BASETEN_API_KEY'
+		'cortecs':               'CORTECS_API_KEY'
+		'digitalocean':          'DIGITALOCEAN_ACCESS_TOKEN'
+		'frogbot':               'FROGBOT_API_KEY'
+		'helicone':              'HELICONE_API_KEY'
+		'io-net':                'IOINTELLIGENCE_API_KEY'
+		'llmgateway':            'LLMGATEWAY_API_KEY'
+		'ollama-cloud':          'OLLAMA_API_KEY'
+		'zenmux':                'ZENMUX_API_KEY'
 	} {
 		os.setenv(key, 'fixture-${provider}-key', true)
 		defer { os.unsetenv(key) }

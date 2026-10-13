@@ -8,7 +8,9 @@ const supported_model_providers = ['openai-compatible', 'openai', 'anthropic', '
 	'groq', 'together', 'fireworks', 'mistral', 'openrouter', 'xai', 'cerebras', 'perplexity',
 	'deepinfra', 'venice', 'ollama', 'hyperbolic', 'moonshot', 'nvidia', 'siliconflow', 'sambanova',
 	'novita', 'nebius', 'huggingface', 'vercel', 'cloudflare-workers-ai', 'llama-cpp', 'lmstudio',
-	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai', '302-ai', 'gmi-cloud', 'minimax', 'scaleway']
+	'localai', 'vllm', 'atomic-chat', 'dashscope', 'zai', '302-ai', 'gmi-cloud', 'minimax', 'scaleway',
+	'baseten', 'cortecs', 'digitalocean', 'frogbot', 'helicone', 'io-net', 'llmgateway', 'ollama-cloud',
+	'zenmux']
 
 pub struct ModelProviderInfo {
 pub:
@@ -24,9 +26,17 @@ pub:
 fn model_provider_catalog() []ModelProviderInfo {
 	return [
 		ModelProviderInfo{ id: '302-ai', name: '302.AI', description: 'Multi-model gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.302.ai/v1', environment_key: '302AI_API_KEY' },
+		ModelProviderInfo{ id: 'baseten', name: 'Baseten', description: 'Deployed models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://inference.baseten.co/v1', environment_key: 'BASETEN_API_KEY' },
 		ModelProviderInfo{ id: 'dashscope', name: 'Alibaba Cloud Model Studio', description: 'Qwen and hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://dashscope-us.aliyuncs.com/compatible-mode/v1', environment_key: 'DASHSCOPE_API_KEY' },
+		ModelProviderInfo{ id: 'cortecs', name: 'Cortecs', description: 'Hosted open models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cortecs.ai/v1', environment_key: 'CORTECS_API_KEY' },
+		ModelProviderInfo{ id: 'digitalocean', name: 'DigitalOcean', description: 'Inference Engine · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://inference.do-ai.run/v1', environment_key: 'DIGITALOCEAN_ACCESS_TOKEN' },
 		ModelProviderInfo{ id: 'gmi-cloud', name: 'GMI Cloud', description: 'Hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.gmi-serving.com/v1', environment_key: 'GMI_API_KEY' },
+		ModelProviderInfo{ id: 'frogbot', name: 'FrogBot', description: 'Hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://app.frogbot.ai/api/v1', environment_key: 'FROGBOT_API_KEY' },
+		ModelProviderInfo{ id: 'helicone', name: 'Helicone AI Gateway', description: 'Model gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://ai-gateway.helicone.ai/v1', environment_key: 'HELICONE_API_KEY' },
+		ModelProviderInfo{ id: 'io-net', name: 'IO.NET', description: 'Inference endpoints · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.intelligence.io.solutions/api/v1', environment_key: 'IOINTELLIGENCE_API_KEY' },
+		ModelProviderInfo{ id: 'llmgateway', name: 'LLM Gateway', description: 'Multi-model gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.llmgateway.io/v1', environment_key: 'LLMGATEWAY_API_KEY' },
 		ModelProviderInfo{ id: 'minimax', name: 'MiniMax', description: 'Agentic and coding models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.minimax.io/v1', environment_key: 'MINIMAX_API_KEY' },
+		ModelProviderInfo{ id: 'ollama-cloud', name: 'Ollama Cloud', description: 'Hosted models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://ollama.com/v1', environment_key: 'OLLAMA_API_KEY' },
 		ModelProviderInfo{ id: 'anthropic', name: 'Anthropic', description: 'Claude models · native Messages API', protocol: 'anthropic', base_url: 'https://api.anthropic.com/v1', environment_key: 'ANTHROPIC_API_KEY' },
 		ModelProviderInfo{ id: 'atomic-chat', name: 'Atomic Chat', description: 'Local models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:1337/v1', requires_api_key: false },
 		ModelProviderInfo{ id: 'cerebras', name: 'Cerebras', description: 'Fast inference · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.cerebras.ai/v1', environment_key: 'CEREBRAS_API_KEY' },
@@ -60,6 +70,7 @@ fn model_provider_catalog() []ModelProviderInfo {
 		ModelProviderInfo{ id: 'vllm', name: 'vLLM', description: 'Self-hosted inference server · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'http://127.0.0.1:8000/v1', requires_api_key: false },
 		ModelProviderInfo{ id: 'xai', name: 'xAI', description: 'Grok models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.x.ai/v1', environment_key: 'XAI_API_KEY' },
 		ModelProviderInfo{ id: 'zai', name: 'Z.AI', description: 'GLM models · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://api.z.ai/api/paas/v4', environment_key: 'ZAI_API_KEY' },
+		ModelProviderInfo{ id: 'zenmux', name: 'ZenMux', description: 'Multi-model gateway · OpenAI-compatible Chat Completions', protocol: 'openai-compatible', base_url: 'https://zenmux.ai/api/v1', environment_key: 'ZENMUX_API_KEY' },
 	]
 }
 

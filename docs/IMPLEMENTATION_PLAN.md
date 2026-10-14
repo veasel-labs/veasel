@@ -126,8 +126,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
   manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,
   placeholder expansion, failure isolation, and per-call MCP consent have
-  substantial implementation and fixture coverage; the remaining gaps are
-  tracked individually in [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
+  substantial implementation and fixture coverage. The client namespace
+  `com.veasel.code` records an optional `display_name` and whether its
+  directory stays inside the package; it does not install plugins or read
+  that directory. The remaining gaps are tracked individually in
+  [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
   persist per-session activation, include bounded instructions as untrusted
   model context, and let the model read bounded resources from active Skill

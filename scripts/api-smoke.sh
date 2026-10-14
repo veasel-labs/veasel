@@ -7,6 +7,7 @@ mkdir "$work_dir/workspace"
 plugin_dir="$work_dir/plugins/review-package"
 mkdir -p "$plugin_dir/skills/review"
 mkdir -p "$plugin_dir/skills/review/references"
+mkdir -p "$plugin_dir/com.veasel.code"
 mkdir -p "$work_dir/workspace/src" "$work_dir/outside"
 cat >"$work_dir/workspace/README.md" <<'EOF'
 Veasel workspace smoke fixture.
@@ -28,7 +29,7 @@ outside-root-secret
 EOF
 ln -s "$work_dir/outside" "$work_dir/workspace/outside-link"
 cat >"$plugin_dir/plugin.json" <<'EOF'
-{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"review-tools","version":"1.0.0","description":"Fixture plugin for API smoke tests."}
+{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"review-tools","version":"1.0.0","description":"Fixture plugin for API smoke tests.","extensions":{"com.veasel.code":{"display_name":"Review tools"}}}
 EOF
 cat >"$plugin_dir/mcp.json" <<'EOF'
 {"$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json","mcpServers":{"catalog-http":{"type":"streamable-http","url":"https://catalog.example.invalid/private/path?token=smoke-only-secret","headers":{"Authorization":"Bearer smoke-only-secret"}}}}
@@ -43,6 +44,9 @@ Fixture skill instructions for verifying session activation.
 EOF
 cat >"$plugin_dir/skills/review/references/REFERENCE.md" <<'EOF'
 Skill reference smoke sentinel.
+EOF
+cat >"$plugin_dir/com.veasel.code/note.txt" <<'EOF'
+extension-secret-sentinel
 EOF
 free_port() {
 	python3 -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()'
@@ -273,8 +277,10 @@ server = next(item for item in plugin['mcp_servers'] if item['name'] == 'catalog
 assert server['url_origin'] == 'https://catalog.example.invalid'
 assert server['header_count'] == 1
 assert server['header_names'] == ['Authorization']
+assert plugin['veasel_extension'] == {'display_name': 'Review tools', 'has_directory': True}
 assert 'private/path' not in json.dumps(catalog)
 assert 'smoke-only-secret' not in json.dumps(catalog)
+assert 'extension-secret-sentinel' not in json.dumps(catalog)
 PY
 expect_status 400 -H 'content-type: application/json' -d '{"messages":[{"role":"assistant","content":"not a user turn"}]}' "$api/v1/chat/completions"
 expect_status 403 -H 'Origin: http://attacker.example' -H 'content-type: application/json' \

@@ -22,7 +22,7 @@
       "repository": "https://example.invalid/repo",
       "license": "MIT",
       "keywords": ["review", "testing"],
-      "extensions": { "com.veasel.code": { "channel": "stable" } }
+      "extensions": { "com.veasel.code": { "display_name": "Review tools" } }
     }
   },
   {
@@ -43,6 +43,26 @@
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "bad-extensions",
       "extensions": []
+    }
+  },
+  {
+    "name": "unsupported Veasel extension field is ignored",
+    "accepted": true,
+    "diagnostics": ["Ignoring unsupported Veasel extension field `channel`"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "extra-extension-field",
+      "extensions": { "com.veasel.code": { "display_name": "Review tools", "channel": "stable" } }
+    }
+  },
+  {
+    "name": "invalid Veasel extension label is ignored",
+    "accepted": true,
+    "diagnostics": ["Ignoring invalid Veasel extension display_name"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "bad-extension-label",
+      "extensions": { "com.veasel.code": { "display_name": "bad\nname" } }
     }
   },
   {

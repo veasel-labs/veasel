@@ -64,6 +64,7 @@ type SessionTurnCompletion = {
 type PluginCatalog = {
   plugins: Array<{
     name: string
+    veasel_extension?: { display_name?: string; has_directory?: boolean }
     skills: Array<{ name: string; description: string; allowed_tools_declared: boolean; allowed_tools: string[] }>
     mcp_servers: Array<{ name: string; transport: string; command: string; url_origin: string; header_count: number; header_names: string[] }>
   }>
@@ -780,10 +781,12 @@ async function showSkills() {
     const enabled = new Set(active.map((item) => `${item.plugin_name}/${item.skill_name}`))
     const lines = catalog.plugins.flatMap((plugin) => plugin.skills.map((skill) => {
       const key = `${plugin.name}/${skill.name}`
+      const displayName = plugin.veasel_extension?.display_name
+      const label = displayName ? `\n  Shown as: ${safeTerminalText(displayName)}` : ""
       const restriction = skill.allowed_tools_declared
         ? `\n  Tool access: ${skill.allowed_tools.length > 0 ? skill.allowed_tools.join(", ") : "none"}`
         : ""
-      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}\n  ${skill.description}${restriction}`
+      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}${label}\n  ${skill.description}${restriction}`
     }))
     skillNotice = lines.length > 0
       ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>. Active skills can let the model read bounded text resources from their own folder; files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`

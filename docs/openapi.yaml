@@ -1652,6 +1652,19 @@ components:
         diagnostics:
           type: array
           items: { $ref: '#/components/schemas/PluginDiagnostic' }
+        veasel_extension:
+          $ref: '#/components/schemas/VeaselCodeExtension'
+          description: Present only when the package declares a valid Veasel client extension. Omitted otherwise.
+    VeaselCodeExtension:
+      type: object
+      additionalProperties: false
+      properties:
+        display_name:
+          type: string
+          description: Optional label from extensions["com.veasel.code"]. It does not replace the plugin name used in commands.
+        has_directory:
+          type: boolean
+          description: True when a com.veasel.code directory resolves inside the package. Contents are not returned or executed.
     PluginSkillSummary:
       type: object
       required: [name, description, allowed_tools_declared, allowed_tools]

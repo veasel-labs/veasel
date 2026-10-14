@@ -12,14 +12,21 @@ pub:
 	diagnostics []PluginDiagnostic
 }
 
+pub struct VeaselCodeExtension {
+pub:
+	display_name  string @[json: 'display_name']
+	has_directory bool   @[json: 'has_directory']
+}
+
 pub struct PluginCatalogEntry {
 pub:
-	name        string
-	version     string
-	description string
-	skills      []PluginSkillSummary
-	mcp_servers []PluginMCPServerSummary
-	diagnostics []PluginDiagnostic
+	name             string
+	version          string
+	description      string
+	skills           []PluginSkillSummary
+	mcp_servers      []PluginMCPServerSummary
+	diagnostics      []PluginDiagnostic
+	veasel_extension VeaselCodeExtension @[json: 'veasel_extension'; omitempty]
 }
 
 pub struct PluginSkillSummary {
@@ -96,13 +103,21 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 				header_names: header_names
 			}
 		}
+		mut extension := VeaselCodeExtension{}
+		if plugin.manifest.veasel_display_name.len > 0 || plugin.veasel_has_directory {
+			extension = VeaselCodeExtension{
+				display_name:  plugin.manifest.veasel_display_name
+				has_directory: plugin.veasel_has_directory
+			}
+		}
 		plugins << PluginCatalogEntry{
-			name:        plugin.manifest.name
-			version:     plugin.manifest.version
-			description: plugin.manifest.description
-			skills:      skills
-			mcp_servers: mcp_servers
-			diagnostics: plugin.diagnostics
+			name:             plugin.manifest.name
+			version:          plugin.manifest.version
+			description:      plugin.manifest.description
+			skills:           skills
+			mcp_servers:      mcp_servers
+			diagnostics:      plugin.diagnostics
+			veasel_extension: extension
 		}
 	}
 	return PluginCatalog{

@@ -8,6 +8,8 @@ import yaml
 const plugin_manifest_schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json'
 const plugin_mcp_schema = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json'
 const plugin_schema_key = '$' + 'schema'
+const veasel_extension_namespace = 'com.veasel.code'
+const max_veasel_extension_display_name_len = 64
 const max_plugin_manifest_bytes = 1_000_000
 const max_plugin_skill_bytes = 1_000_000
 const max_plugin_skill_resource_bytes = 512_000
@@ -23,18 +25,20 @@ pub:
 	root     string
 	manifest PluginManifest
 pub mut:
-	skills      []PluginSkill
-	mcp_servers []PluginMCPServer
-	diagnostics []PluginDiagnostic
+	skills               []PluginSkill
+	mcp_servers          []PluginMCPServer
+	diagnostics          []PluginDiagnostic
+	veasel_has_directory bool
 }
 
 struct PluginManifest {
 pub:
-	name        string
-	version     string
-	description string
-	license     string
-	root_fields map[string]json2.Any
+	name                string
+	version             string
+	description         string
+	license             string
+	veasel_display_name string
+	root_fields         map[string]json2.Any
 }
 
 struct PluginSkill {
@@ -149,6 +153,7 @@ fn load_agent_plugin(directory string) !AgentPlugin {
 		manifest:    manifest
 		diagnostics: diagnostics
 	}
+	load_veasel_code_directory(root, mut plugin)
 	load_plugin_skills(root, mut plugin)
 	load_plugin_mcp(root, fields, mut plugin)
 	for index in 0 .. plugin.mcp_servers.len {
@@ -209,6 +214,7 @@ fn parse_plugin_manifest(fields map[string]json2.Any) !(PluginManifest, []Plugin
 			return error('plugin keywords must be an array')
 		}
 	}
+	mut veasel_display_name := ''
 	if extensions := fields['extensions'] {
 		if extensions !is map[string]json2.Any {
 			diagnostics << PluginDiagnostic{
@@ -217,22 +223,91 @@ fn parse_plugin_manifest(fields map[string]json2.Any) !(PluginManifest, []Plugin
 			}
 		} else {
 			for namespace, value in extensions {
-				if namespace == 'com.veasel.code' && value !is map[string]json2.Any {
+				if namespace != veasel_extension_namespace {
+					continue
+				}
+				if value !is map[string]json2.Any {
 					diagnostics << PluginDiagnostic{
-						component: namespace
+						component: veasel_extension_namespace
 						message:   'Ignoring invalid Veasel extension data'
 					}
+					continue
 				}
+				label, label_diagnostics := veasel_extension_display_name(value as map[string]json2.Any)
+				veasel_display_name = label
+				diagnostics << label_diagnostics
 			}
 		}
 	}
 	return PluginManifest{
-		name:        name
-		version:     optional['version']
-		description: optional['description']
-		license:     optional['license']
-		root_fields: fields
+		name:                name
+		version:             optional['version']
+		description:         optional['description']
+		license:             optional['license']
+		veasel_display_name: veasel_display_name
+		root_fields:         fields
 	}, diagnostics
+}
+
+// veasel_extension_display_name reads only the documented label. Other keys in
+// the owned namespace are ignored so a future field cannot change loading.
+fn veasel_extension_display_name(value map[string]json2.Any) (string, []PluginDiagnostic) {
+	mut diagnostics := []PluginDiagnostic{}
+	mut display_name := ''
+	for key, raw in value {
+		if key != 'display_name' {
+			diagnostics << PluginDiagnostic{
+				component: veasel_extension_namespace
+				message:   'Ignoring unsupported Veasel extension field `${key}`'
+			}
+			continue
+		}
+		if raw !is string || !is_safe_veasel_extension_label((raw as string).trim_space()) {
+			diagnostics << PluginDiagnostic{
+				component: veasel_extension_namespace
+				message:   'Ignoring invalid Veasel extension display_name'
+			}
+			continue
+		}
+		display_name = (raw as string).trim_space()
+	}
+	return display_name, diagnostics
+}
+
+fn is_safe_veasel_extension_label(value string) bool {
+	if value.len < 1 || value.len > max_veasel_extension_display_name_len {
+		return false
+	}
+	for character in value {
+		if character < ` ` || character == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// load_veasel_code_directory records whether the exact client directory is
+// contained in the package. It does not list, read, or execute the contents.
+fn load_veasel_code_directory(root string, mut plugin AgentPlugin) {
+	candidate := os.join_path(root, veasel_extension_namespace)
+	if !os.exists(candidate) {
+		return
+	}
+	resolved := plugin_path(root, veasel_extension_namespace) or {
+		plugin.diagnostics << PluginDiagnostic{
+			component: veasel_extension_namespace
+			message:   'Ignoring Veasel extension directory outside the plugin root'
+		}
+		return
+	}
+	if !os.is_dir(resolved) {
+		plugin.diagnostics << PluginDiagnostic{
+			component: veasel_extension_namespace
+			message:   'Ignoring Veasel extension path that is not a directory'
+		}
+		return
+	}
+	plugin.veasel_has_directory = true
 }
 
 fn plugin_required_string(fields map[string]json2.Any, key string) !string {

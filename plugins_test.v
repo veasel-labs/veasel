@@ -164,6 +164,80 @@ fn test_agent_plugin_manifest_enforces_closed_schema_and_nonfatal_exceptions() {
 	assert diagnostics.any(it.message.contains('non-object extensions'))
 }
 
+fn test_veasel_code_extension_reads_label_and_contained_directory() {
+	root := os.join_path(os.temp_dir(), 'veasel-plugin-extension-${uuid.new_v4().str()}')
+	external := os.join_path(os.temp_dir(), 'veasel-plugin-extension-external-${uuid.new_v4().str()}')
+	package_dir := os.join_path(root, 'review-package')
+	os.mkdir_all(package_dir) or { panic(err) }
+	os.mkdir_all(external) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(external) or {}
+	}
+	extension_dir := os.join_path(package_dir, veasel_extension_namespace)
+	os.mkdir_all(extension_dir) or { panic(err) }
+	os.write_file(os.join_path(extension_dir, 'note.txt'), 'extension-secret-sentinel') or { panic(err) }
+	os.write_file(os.join_path(external, 'secret.txt'), 'outside-extension-secret') or { panic(err) }
+	manifest := '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"review-tools","extensions":{"' + veasel_extension_namespace + '":{"display_name":" Review tools ","channel":"stable"}}}'
+	os.write_file(os.join_path(package_dir, 'plugin.json'), manifest) or { panic(err) }
+
+	plugin := load_agent_plugin(package_dir) or { panic(err) }
+	assert plugin.manifest.veasel_display_name == 'Review tools'
+	assert plugin.veasel_has_directory
+	assert plugin.diagnostics.any(it.message.contains('Ignoring unsupported Veasel extension field `channel`'))
+	assert !json2.encode(plugin.diagnostics).contains('extension-secret-sentinel')
+
+	catalog := discover_agent_plugins(root) or { panic(err) }
+	entry := catalog.plugins.filter(it.name == 'review-tools')
+	assert entry.len == 1
+	assert entry[0].veasel_extension.display_name == 'Review tools'
+	assert entry[0].veasel_extension.has_directory
+	encoded := json2.encode(catalog)
+	assert encoded.contains('"display_name":"Review tools"')
+	assert encoded.contains('"has_directory":true')
+	assert !encoded.contains('extension-secret-sentinel')
+	assert !encoded.contains('outside-extension-secret')
+	assert !encoded.contains(external)
+
+	plain := load_agent_plugin_text(os.join_path(root, 'plain'), '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"plain-tools"}')
+	assert plain.manifest.veasel_display_name == ''
+	assert !plain.veasel_has_directory
+	plain_catalog := discover_agent_plugins(root) or { panic(err) }
+	plain_encoded := json2.encode(plain_catalog.plugins.filter(it.name == 'plain-tools'))
+	assert !plain_encoded.contains('veasel_extension')
+
+	invalid := load_agent_plugin_text(os.join_path(root, 'invalid-label'), '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"invalid-label","extensions":{"' + veasel_extension_namespace + '":{"display_name":"bad\\nname"}}}')
+	assert invalid.manifest.veasel_display_name == ''
+	assert invalid.diagnostics.any(it.message.contains('Ignoring invalid Veasel extension display_name'))
+
+	file_package := os.join_path(root, 'file-package')
+	os.mkdir_all(file_package) or { panic(err) }
+	os.write_file(os.join_path(file_package, 'plugin.json'), '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"file-tools"}') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(file_package, veasel_extension_namespace), 'not-a-directory') or { panic(err) }
+	file_plugin := load_agent_plugin(file_package) or { panic(err) }
+	assert !file_plugin.veasel_has_directory
+	assert file_plugin.diagnostics.any(it.message.contains('not a directory'))
+
+	escape_package := os.join_path(root, 'escape-package')
+	os.mkdir_all(escape_package) or { panic(err) }
+	os.write_file(os.join_path(escape_package, 'plugin.json'), '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"escape-tools"}') or {
+		panic(err)
+	}
+	os.symlink(external, os.join_path(escape_package, veasel_extension_namespace)) or { panic(err) }
+	escape_plugin := load_agent_plugin(escape_package) or { panic(err) }
+	assert !escape_plugin.veasel_has_directory
+	assert escape_plugin.diagnostics.any(it.message.contains('outside the plugin root'))
+	assert !json2.encode(escape_plugin.diagnostics).contains('outside-extension-secret')
+}
+
+fn load_agent_plugin_text(directory string, manifest string) AgentPlugin {
+	os.mkdir_all(directory) or { panic(err) }
+	os.write_file(os.join_path(directory, 'plugin.json'), manifest) or { panic(err) }
+	return load_agent_plugin(directory) or { panic(err) }
+}
+
 fn test_agent_plugin_manifest_failure_prevents_component_discovery() {
 	root := os.join_path(os.temp_dir(), 'veasel-plugin-invalid-manifest-${uuid.new_v4().str()}')
 	os.mkdir_all(os.join_path(root, 'skills', 'review')) or { panic(err) }

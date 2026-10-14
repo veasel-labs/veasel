@@ -13,6 +13,7 @@ import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
+import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
 const tuiCliAction = parseTuiCliAction(process.argv)
@@ -32,7 +33,7 @@ type Session = {
   created_at: string
 }
 
-type ModelProfileView = { model: string; base_url: string; api_key_saved: boolean }
+type ModelProfileView = { model: string; base_url: string; api_key_saved: boolean; max_output_tokens: number }
 type ModelSettingsView = { active_provider: string; profiles: Record<string, ModelProfileView>; providers: ModelProvider[]; configured_providers?: string[] }
 
 type ChatExchange = {
@@ -226,6 +227,11 @@ detail.add(sessionDetail)
 body.add(sidebar)
 body.add(detail)
 
+// TextRenderable.content returns StyledText, so `+=` would render "[object Object]".
+function appendSessionDetail(text: string) {
+  sessionDetail.content = sessionDetail.plainText + text
+}
+
 const footer = new BoxRenderable(renderer, {
   height: 3,
   flexDirection: "row",
@@ -277,7 +283,7 @@ let settingsStep = 0
 let settingsView: ModelSettingsView | undefined
 let settingsCatalogRequestId = 0
 let settingsCatalogController: AbortController | undefined
-const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false }
+const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false, max_output_tokens: 4096 }
 let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
@@ -1185,6 +1191,7 @@ const settingPrompts = [
 	"API base URL (must use HTTPS, except loopback HTTP; Enter keeps the provider default):",
 	"API key (hidden; Enter keeps a saved key, !clear removes it; optional for local providers):",
 	"Choose a model returned by this provider, or enter an ID manually.",
+	"Maximum generated tokens (0 uses the default: 4,096 tokens, or Meta's own limit for Meta; Meta counts reasoning tokens in it):",
 ]
 
 function closeSettings(message = "Settings unchanged.") {
@@ -1246,30 +1253,32 @@ function showSettingsStep(manualModel = false) {
   const navigationHint = settingsStep === 0
     ? "Enter selects · Esc cancels"
     : "Enter continues · Ctrl+B goes back · Esc cancels"
-  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 4\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
-  status.content = `● provider settings · ${settingsStep + 1}/4`
+  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 5\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
+  status.content = `● provider settings · ${settingsStep + 1}/5`
   status.fg = "#a7f3d0"
   footerHint.content = settingsStep === 0
     ? "Tab group · search handles typos · Enter configure · Esc close"
     : settingsStep === 3
       ? "Type to filter · Enter selects · Ctrl+B goes back · Esc cancels"
+      : settingsStep === 4
+        ? "Enter keeps this budget · Ctrl+B back · Esc cancels"
       : settingsStep === 2
         ? "Type API key (hidden) · Enter discovers models · Ctrl+B back · Esc cancels"
         : "Enter checks connection · Ctrl+B goes back · Esc cancels"
   if (settingsStep === 0) {
     const catalog = settingsView?.providers ?? []
     if (catalog.length === 0) {
-      sessionDetail.content += "\n\nThe server did not return a provider catalog. Update or restart the Veasel server."
+      appendSessionDetail("\n\nThe server did not return a provider catalog. Update or restart the Veasel server.")
       footerHint.content = "Provider catalog unavailable · Esc closes"
       return
     }
     const configuredProviders = new Set(settingsView?.configured_providers ?? [])
     const matches = filterModelProviders(catalog, settingsProviderQuery, settingsProviderScope, configuredProviders, settingsView?.profiles)
     const providers = prioritizeModelProviders(matches, active, configuredProviders)
-    sessionDetail.content = `MODEL SETTINGS  /  1 OF 4  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingPrompts[0]}${providerSearchHint}`
+    sessionDetail.content = `MODEL SETTINGS  /  1 OF 5  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingPrompts[0]}${providerSearchHint}`
     status.content = `● ${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`
     if (providers.length === 0) {
-      sessionDetail.content += "\n\nNo providers match this filter. Backspace clears characters."
+      appendSessionDetail("\n\nNo providers match this filter. Backspace clears characters.")
       return
     }
     const activeIndex = Math.max(0, providers.findIndex((provider) => provider.id === active))
@@ -1306,6 +1315,7 @@ function showSettingsStep(manualModel = false) {
       const profile = settingsView?.profiles[provider.id]
       settingsValues.model = profile?.model ?? ""
       settingsValues.base_url = profile?.base_url ?? provider.base_url
+      settingsValues.max_output_tokens = initialOutputTokenBudget(provider.id, profile?.max_output_tokens)
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
       settingsModelHint = ""
@@ -1323,7 +1333,7 @@ function showSettingsStep(manualModel = false) {
     }
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
-      sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\n${settingPrompts[3]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
+      sessionDetail.content = `MODEL SETTINGS  /  4 OF 5\n\n${settingPrompts[3]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
       footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · search handles typos · Enter select · Ctrl+B back · Esc cancel`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
@@ -1355,11 +1365,13 @@ function showSettingsStep(manualModel = false) {
           return
         }
         settingsValues.model = String(option.value ?? "")
-        void saveModelSettings()
+        settingsModelHint = ""
+        settingsStep = 4
+        showSettingsStep()
       })
       return
     }
-    sessionDetail.content += `\n\n${settingsModelHint}`
+    appendSessionDetail(`\n\n${settingsModelHint}`)
   }
   if (settingsStep === 2) {
     settingsSecretIndicator = new TextRenderable(renderer, {
@@ -1367,6 +1379,35 @@ function showSettingsStep(manualModel = false) {
       fg: "#a7f3d0",
     })
     detail.add(settingsSecretIndicator)
+    return
+  }
+  if (settingsStep === 4) {
+    const input = new InputRenderable(renderer, {
+      id: "model-output-token-budget",
+      width: 24,
+      placeholder: "0, 4096, 8192…",
+      backgroundColor: "#202832",
+      focusedBackgroundColor: "#293640",
+      textColor: "#e5e7eb",
+      focusedTextColor: "#ffffff",
+      cursorColor: "#a7f3d0",
+      maxLength: 7,
+    })
+    settingsInput = input
+    detail.add(input)
+    input.focus()
+    input.on(InputRenderableEvents.ENTER, (value) => {
+      const clean = value.trim()
+      const budget = clean ? parseOutputTokenBudget(clean) : settingsValues.max_output_tokens
+      if (budget === undefined) {
+        settingsModelHint = "Use 0 or a whole number from 16 to 131072."
+        showSettingsStep()
+        return
+      }
+      settingsValues.max_output_tokens = budget
+      void saveModelSettings()
+    })
+    appendSessionDetail(`\n\nCurrent budget: ${settingsValues.max_output_tokens === 0 ? (settingsValues.provider === "meta" ? "Meta default (field omitted)" : "default (4,096 tokens)") : `${settingsValues.max_output_tokens.toLocaleString()} tokens`}${settingsModelHint ? `\n\n${settingsModelHint}` : ""}`)
     return
   }
   const input = new InputRenderable(renderer, {
@@ -1393,7 +1434,9 @@ function showSettingsStep(manualModel = false) {
         showSettingsStep(true)
         return
       }
-      void saveModelSettings()
+      settingsModelHint = ""
+      settingsStep = 4
+      showSettingsStep()
       return
     }
     settingsStep++
@@ -1410,7 +1453,7 @@ async function loadProviderModels() {
   const providerInfo = settingsView?.providers.find((item) => item.id === provider)
   const providerName = providerInfo?.name ?? provider
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
-  sessionDetail.content = `MODEL SETTINGS  /  4 OF 4\n\nChecking ${providerName} and discovering models…${providerGuide}\n\nCtrl+B goes back · Esc cancels`
+  sessionDetail.content = `MODEL SETTINGS  /  4 OF 5\n\nChecking ${providerName} and discovering models…${providerGuide}\n\nCtrl+B goes back · Esc cancels`
   footerHint.content = `Checking ${safeTerminalText(providerName)} · discovering models · Esc cancels`
   try {
     const response = await fetch(`${apiBase}/v1/config/models`, {
@@ -1437,7 +1480,7 @@ async function loadProviderModels() {
   } catch (error) {
     if (requestId !== settingsCatalogRequestId || !settingsOpen || settingsStep !== 3 || settingsValues.provider !== provider) return
     settingsModelCatalog = []
-    settingsModelHint = `Model discovery failed: ${error instanceof Error ? error.message : "request failed"}. Enter a model ID manually.`
+    settingsModelHint = `Model discovery failed: ${error instanceof Error ? error.message.replace(/\.$/, "") : "request failed"}. Enter a model ID manually.`
   }
   if (requestId !== settingsCatalogRequestId) return
   settingsCatalogController = undefined
@@ -1466,6 +1509,7 @@ async function openSettings() {
     settingsValues.base_url = ""
     settingsValues.api_key = ""
     settingsValues.clear_api_key = false
+    settingsValues.max_output_tokens = initialOutputTokenBudget(settingsView.active_provider, settingsView.profiles[settingsView.active_provider]?.max_output_tokens)
     settingsProviderQuery = ""
     settingsProviderScope = "all"
     settingsModelCatalog = undefined
@@ -1512,7 +1556,7 @@ renderer.keyInput.on("keypress", (key) => {
       settingsStep--
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
-      settingsManualModel = false
+      if (settingsStep < 3) settingsManualModel = false
       showSettingsStep()
     }
     else if (settingsStep === 0) {

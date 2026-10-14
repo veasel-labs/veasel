@@ -20,12 +20,14 @@ fn test_model_settings_persist_and_never_expose_credentials() {
 	assert view.active_provider == 'anthropic'
 	assert view.profiles['anthropic'].model == 'claude-sonnet-4-5'
 	assert view.profiles['anthropic'].api_key_saved
+	assert view.profiles['anthropic'].max_output_tokens == 0
 	assert !json2.encode(view).contains('secret-token-value')
 
 	mut reloaded := new_model_settings_state(path)
 	assert reloaded.view().active_provider == 'anthropic'
 	assert reloaded.view().profiles['anthropic'].api_key_saved
 	assert reloaded.view().profiles['anthropic'].base_url == 'https://api.anthropic.com/v1'
+	assert reloaded.view().profiles['anthropic'].max_output_tokens == 0
 }
 
 fn test_model_settings_preserve_key_when_blank_and_support_explicit_clear() {
@@ -41,6 +43,65 @@ fn test_model_settings_preserve_key_when_blank_and_support_explicit_clear() {
 		panic(err)
 	}
 	assert state.settings.profiles['openai'].api_key == ''
+}
+
+fn test_model_settings_validate_and_preserve_output_token_budget() {
+	mut state := new_model_settings_state('')
+	state.update(ModelSettingsInput{
+		provider:          'meta'
+		model:             'muse-wonder-1.0'
+		base_url:          'https://api.meta.ai/v1'
+		max_output_tokens: 8192
+	}) or { panic(err) }
+	state.update(ModelSettingsInput{
+		provider: 'meta'
+		model:    'muse-wonder-1.0'
+		base_url: 'https://api.meta.ai/v1'
+		api_key:  'fixture-meta-key'
+	}) or { panic(err) }
+	assert state.view().profiles['meta'].max_output_tokens == 8192
+	for invalid in [-1, 1, 15, 131_073] {
+		state.update(ModelSettingsInput{
+			provider:          'meta'
+			model:             'muse-wonder-1.0'
+			base_url:          'https://api.meta.ai/v1'
+			max_output_tokens: invalid
+		}) or {
+			assert err.msg() == 'model settings are invalid'
+			continue
+		}
+		assert false, 'invalid output budget ${invalid} was accepted'
+	}
+	for valid in [0, 16, 131_072] {
+		state.update(ModelSettingsInput{
+			provider:          'meta'
+			model:             'muse-wonder-1.0'
+			base_url:          'https://api.meta.ai/v1'
+			max_output_tokens: valid
+		}) or { panic(err) }
+		assert state.view().profiles['meta'].max_output_tokens == valid
+	}
+}
+
+fn test_model_settings_view_sanitizes_legacy_or_corrupt_output_budget() {
+	mut state := new_model_settings_state('')
+	state.settings.profiles['meta'] = ModelProfile{
+		model:             'muse-wonder-1.0'
+		base_url:          'https://api.meta.ai/v1'
+		max_output_tokens: 1
+	}
+	assert state.view().profiles['meta'].max_output_tokens == 0
+}
+
+fn test_model_settings_input_distinguishes_omitted_budget_from_zero() {
+	omitted := json2.decode[ModelSettingsInput]('{"provider":"meta","model":"muse-wonder-1.0","base_url":"https://api.meta.ai/v1"}') or {
+		panic(err)
+	}
+	explicit_zero := json2.decode[ModelSettingsInput]('{"provider":"meta","model":"muse-wonder-1.0","base_url":"https://api.meta.ai/v1","max_output_tokens":0}') or {
+		panic(err)
+	}
+	assert (omitted.max_output_tokens or { -1 }) == -1
+	assert (explicit_zero.max_output_tokens or { -1 }) == 0
 }
 
 fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
@@ -307,6 +368,39 @@ fn test_ollama_profile_builds_a_local_model_config_without_credentials() {
 	assert config.model == 'qwen2.5-coder:7b'
 	assert config.api_key == ''
 	assert config.base_url == 'http://127.0.0.1:11434/v1'
+	app.close()
+	store.close() or { panic(err) }
+}
+
+fn test_provider_output_budget_uses_provider_default_and_custom_limits() {
+	root := os.join_path(os.temp_dir(), 'veasel-output-budget-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'meta'
+		model:    'muse-wonder-1.0'
+		base_url: 'https://api.meta.ai/v1'
+		api_key:  'fixture-meta-key'
+	}) or { panic(err) }
+	meta_default := app.model_config() or { panic(err) }
+	assert meta_default.max_output_tokens == 0
+	app.model_settings.update(ModelSettingsInput{
+		provider:          'meta'
+		model:             'muse-wonder-1.0'
+		base_url:          'https://api.meta.ai/v1'
+		api_key:           'fixture-meta-key'
+		max_output_tokens: 8192
+	}) or { panic(err) }
+	assert (app.model_config() or { panic(err) }).max_output_tokens == 8192
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'anthropic'
+		model:    'claude-sonnet-4-5'
+		base_url: 'https://api.anthropic.com/v1'
+		api_key:  'fixture-anthropic-key'
+	}) or { panic(err) }
+	assert (app.model_config() or { panic(err) }).max_output_tokens == max_model_output_tokens
 	app.close()
 	store.close() or { panic(err) }
 }

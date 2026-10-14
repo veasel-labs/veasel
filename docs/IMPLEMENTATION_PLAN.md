@@ -169,14 +169,16 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   families. `scripts/api-smoke.sh` exercises both OpenAI transports against
   local fixtures. Muse Wonder and Muse Spark advertise a 1,048,576-token
   context window ([Meta model docs](https://dev.meta.ai/docs/models)), while
-  Veasel currently limits input to 100,000 bytes and each response to 4,096
-  output tokens. The output cap includes Muse reasoning tokens ([Meta Responses
-  API](https://dev.meta.ai/docs/protocols/responses)); Veasel does not yet
-  consume the full Muse context window.
-  Provider-reported token usage is aggregated into opt-in ATIF `final_metrics`
-  (Milestone 3); cost remains unavailable because Veasel does not yet integrate
-  authoritative provider price schedules. Expanding context and generation
-  budgets safely is still open work.
+  Veasel currently limits submitted input to 100,000 bytes. Model settings now
+  expose a per-provider output budget (16–131,072 tokens); zero selects
+  Veasel's 4,096-token default, except Meta, which omits `max_output_tokens`
+  so Meta applies its own limit. Meta counts reasoning tokens in that budget
+  ([Meta Responses API](https://dev.meta.ai/docs/protocols/responses)).
+  Veasel still does not consume Muse's full advertised 1,048,576-token context
+  window. Provider-reported token usage is aggregated into opt-in ATIF
+  `final_metrics` (Milestone 3); cost remains unavailable because Veasel does not
+  yet integrate authoritative provider price schedules. Increasing input context
+  safely remains open work.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

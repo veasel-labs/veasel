@@ -1329,6 +1329,14 @@ components:
         clear_api_key:
           type: boolean
           default: false
+        max_output_tokens:
+          oneOf:
+            - type: integer
+              const: 0
+            - type: integer
+              minimum: 16
+              maximum: 131072
+          description: Optional generated-token limit. Omit to preserve the saved setting; 0 selects Veasel's 4,096-token default, except Meta, where Veasel omits the Responses API field so Meta applies its own limit.
     ModelSettingsView:
       type: object
       required: [active_provider, profiles, providers]
@@ -1550,11 +1558,15 @@ components:
           type: object
           additionalProperties:
             type: object
-            required: [model, base_url, api_key_saved]
+            required: [model, base_url, api_key_saved, max_output_tokens]
             properties:
               model: { type: string }
               base_url: { type: string }
               api_key_saved: { type: boolean }
+              max_output_tokens:
+                oneOf:
+                  - { type: integer, const: 0 }
+                  - { type: integer, minimum: 16, maximum: 131072 }
         providers:
           type: array
           description: Built-in provider presets. OpenAI-compatible entries share Chat Completions; OpenAI Responses and Meta Model API use Responses. Endpoints can be overridden.

@@ -95,6 +95,18 @@ fn test_openai_responses_reasoning_is_limited_to_supported_models() {
 	})) or { panic(err) }
 	assert 'reasoning' !in legacy_payload
 	assert 'include' !in legacy_payload
+	assert 'max_output_tokens' !in legacy_payload
+	provider_default_payload := json2.decode[map[string]json2.Any](json2.encode(OpenAIResponsesRequest{
+		model:             'muse-wonder-1.0'
+		max_output_tokens: none
+	})) or { panic(err) }
+	assert 'max_output_tokens' !in provider_default_payload
+	bounded_payload := json2.decode[map[string]json2.Any](json2.encode(OpenAIResponsesRequest{
+		model:             'muse-wonder-1.0'
+		max_output_tokens: 8192
+	})) or { panic(err) }
+	encoded_budget := bounded_payload['max_output_tokens'] or { panic('max output token budget missing') }
+	assert encoded_budget == json2.Any(8192)
 	codex_payload := json2.decode[map[string]json2.Any](json2.encode(OpenAIResponsesRequest{
 		model:     'gpt-5.1-codex'
 		include:   openai_responses_include('openai', 'gpt-5.1-codex')

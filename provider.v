@@ -11,6 +11,8 @@ import time
 const max_chat_messages = 64
 const max_chat_input_bytes = 100_000
 const max_model_output_tokens = 4096
+const min_configured_output_tokens = 16
+const max_configured_output_tokens = 131_072
 const max_provider_response_bytes = 1_000_000
 const max_provider_stream_bytes = 16_000_000
 const max_provider_model_catalog_bytes = 1_000_000
@@ -189,10 +191,11 @@ fn (mut decoder ProviderSSEDecoder) finish() ! {
 }
 
 struct ModelConfig {
-	provider string
-	base_url string
-	model    string
-	api_key  string
+	provider          string
+	base_url          string
+	model             string
+	api_key           string
+	max_output_tokens int
 }
 
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
@@ -344,7 +347,7 @@ struct OpenAIStreamOptions {
 
 struct OpenAIResponsesRequest {
 	model               string
-	max_output_tokens   int
+	max_output_tokens   ?int @[json: 'max_output_tokens'; omitempty]
 	input               []json2.Any
 	tools               []OpenAIResponsesTool @[omitempty]
 	tool_choice         string                @[omitempty]
@@ -794,7 +797,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 	}
 	request := OpenAIRequest{
 		model:       config.model
-		max_tokens:  max_model_output_tokens
+		max_tokens:  config.max_output_tokens
 		messages:    messages
 		tools:       openai_tools
 		tool_choice: if tools.len > 0 { 'auto' } else { '' }
@@ -893,7 +896,11 @@ fn (provider OpenAIResponsesProvider) complete(mut turn_ctx vcontext.Context, co
 	}
 	request := OpenAIResponsesRequest{
 		model:               config.model
-		max_output_tokens:   max_model_output_tokens
+		max_output_tokens:   if config.max_output_tokens > 0 {
+			config.max_output_tokens
+		} else {
+			none
+		}
 		input:               input
 		tools:               response_tools
 		tool_choice:         if tools.len > 0 { 'auto' } else { '' }
@@ -1100,7 +1107,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 	}
 	request := AnthropicRequest{
 		model:      config.model
-		max_tokens: max_model_output_tokens
+		max_tokens: config.max_output_tokens
 		system:     system
 		messages:   conversation
 		tools:      anthropic_tools
@@ -1201,7 +1208,7 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 		}
 		contents:           conversation
 		generation_config:  GeminiGenerationConfig{
-			max_output_tokens: max_model_output_tokens
+			max_output_tokens: config.max_output_tokens
 		}
 		tools:              if declarations.len > 0 {
 			[GeminiToolGroup{

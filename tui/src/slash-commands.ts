@@ -1,8 +1,26 @@
 export type SlashCommand = {
   name: string
   description: string
-  // Present when the command needs arguments; completion then stops after a trailing space.
+  // Present when the command needs arguments; name completion stops after a trailing space.
   usage?: string
+}
+
+export type SlashArgument = {
+  value: string
+  description: string
+}
+
+export type SlashCompletionContext = {
+  skills?: SlashArgument[]
+  mcpServers?: SlashArgument[]
+  mcpCalls?: SlashArgument[]
+  patches?: SlashArgument[]
+  commands?: SlashArgument[]
+}
+
+export type SlashSuggestion = SlashCommand & {
+  insert: string
+  run: boolean
 }
 
 export const slashCommands: SlashCommand[] = [
@@ -25,32 +43,132 @@ export const slashCommands: SlashCommand[] = [
 
 export const maxSlashSuggestions = 6
 
+const decisionChoices = [
+  { value: "show", description: "Inspect before deciding" },
+  { value: "approve", description: "Allow this one action" },
+  { value: "reject", description: "Refuse without running it" },
+]
+
+type ChoiceSpec = { kind: "choice"; choices: SlashArgument[] }
+type ValueSpec = { kind: "value"; values: (context: SlashCompletionContext) => SlashArgument[]; empty: string }
+type ArgSpec = ChoiceSpec | ValueSpec
+
+const argumentSpecs: Record<string, ArgSpec[]> = {
+  "/skill": [
+    { kind: "choice", choices: [{ value: "on", description: "Enable a Skill for this session" }, { value: "off", description: "Disable a Skill" }] },
+    { kind: "value", values: (context) => context.skills ?? [], empty: "No Skills are available yet" },
+  ],
+  "/mcp call": [
+    { kind: "choice", choices: decisionChoices },
+    { kind: "value", values: (context) => context.mcpCalls ?? [], empty: "No MCP calls are waiting" },
+  ],
+  "/mcp trust": [
+    { kind: "value", values: (context) => context.mcpServers ?? [], empty: "No MCP servers are available" },
+  ],
+  "/mcp untrust": [
+    { kind: "value", values: (context) => context.mcpServers ?? [], empty: "No MCP servers are available" },
+  ],
+  "/patch": [
+    { kind: "choice", choices: decisionChoices },
+    { kind: "value", values: (context) => context.patches ?? [], empty: "No file edits are waiting" },
+  ],
+  "/command": [
+    { kind: "choice", choices: decisionChoices },
+    { kind: "value", values: (context) => context.commands ?? [], empty: "No shell commands are waiting" },
+  ],
+}
+
 function normalize(input: string): string {
   return input.toLowerCase().replace(/\s+/g, " ").trimStart()
 }
 
-// Returns commands matching a partially typed slash command, best match first.
-// Suggestions stop once the user is typing arguments for a command that takes them.
-export function slashSuggestions(input: string, commands: SlashCommand[] = slashCommands): SlashCommand[] {
+function asSuggestion(command: SlashCommand): SlashSuggestion {
+  const insert = command.usage ? `${command.name} ` : command.name
+  return { ...command, insert, run: !command.usage }
+}
+
+function activeArgumentCommand(query: string): SlashCommand | undefined {
+  const matches = slashCommands.filter((command) =>
+    command.usage && argumentSpecs[command.name] && (query === command.name || query.startsWith(`${command.name} `))
+  )
+  matches.sort((left, right) => right.name.length - left.name.length)
+  return matches[0]
+}
+
+function filterArguments(values: SlashArgument[], typed: string): SlashArgument[] {
+  const needle = typed.toLowerCase()
+  if (!needle) return values
+  const prefix = values.filter((value) => value.value.toLowerCase().startsWith(needle))
+  const contains = values.filter((value) => !prefix.includes(value) && value.value.toLowerCase().includes(needle))
+  return [...prefix, ...contains]
+}
+
+function argumentSuggestions(command: SlashCommand, rest: string, context: SlashCompletionContext): SlashSuggestion[] {
+  const specs = argumentSpecs[command.name] ?? []
+  const typed = rest.replace(/\s+/g, " ")
+  const words = typed.trimEnd() === "" ? [] : typed.trimEnd().split(" ")
+  const finished = typed.endsWith(" ") ? words : words.slice(0, -1)
+  const spec = specs[finished.length]
+  if (!spec) return []
+  const partial = typed.endsWith(" ") ? "" : (words.at(-1) ?? "")
+  const stem = [command.name, ...finished].join(" ")
+  if (spec.kind === "choice") {
+    return filterArguments(spec.choices, partial).map((choice) => {
+      const more = specs.length > finished.length + 1
+      return {
+        name: `${stem} ${choice.value}`.replace(/\s+/g, " "),
+        description: choice.description,
+        insert: more ? `${stem} ${choice.value} ` : `${stem} ${choice.value}`,
+        run: !more,
+      }
+    })
+  }
+  const matches = filterArguments(spec.values(context), partial)
+  if (matches.length === 0) {
+    if (partial) return []
+    return [{
+      name: stem,
+      description: spec.empty,
+      insert: `${stem} `,
+      run: false,
+    }]
+  }
+  return matches.map((value) => ({
+    name: `${stem} ${value.value}`.replace(/\s+/g, " "),
+    description: value.description,
+    insert: `${stem} ${value.value}`,
+    run: true,
+  }))
+}
+
+// Returns commands or argument values matching a partially typed slash command.
+export function slashSuggestions(
+  input: string,
+  commands: SlashCommand[] = slashCommands,
+  context: SlashCompletionContext = {},
+): SlashSuggestion[] {
   const query = normalize(input)
   if (!query.startsWith("/")) return []
-  if (commands.some((command) => command.usage && query.startsWith(`${command.name} `))) return []
+  const argumentCommand = commands === slashCommands ? activeArgumentCommand(query) : undefined
+  if (argumentCommand && query.startsWith(`${argumentCommand.name} `)) {
+    return argumentSuggestions(argumentCommand, query.slice(argumentCommand.name.length + 1), context)
+  }
   const prefix = commands.filter((command) => command.name.startsWith(query.trimEnd()))
   const needle = query.slice(1).trim()
   const contains = needle
     ? commands.filter((command) => !prefix.includes(command) && command.name.slice(1).includes(needle))
     : []
   const exact = prefix.filter((command) => command.name === query.trimEnd())
-  return [...exact, ...prefix.filter((command) => !exact.includes(command)), ...contains]
+  return [...exact, ...prefix.filter((command) => !exact.includes(command)), ...contains].map(asSuggestion)
 }
 
-// Text placed in the composer when a suggestion is accepted.
-export function completeSlashCommand(command: SlashCommand): string {
+export function completeSlashCommand(command: { name: string; insert?: string; usage?: string }): string {
+  if (command.insert) return command.insert
   return command.usage ? `${command.name} ` : command.name
 }
 
-// Enter runs a suggestion directly only when it needs no arguments.
-export function runsOnAccept(command: SlashCommand): boolean {
+export function runsOnAccept(command: { run?: boolean; usage?: string }): boolean {
+  if (command.run !== undefined) return command.run
   return !command.usage
 }
 
@@ -59,9 +177,14 @@ export function moveSuggestion(index: number, delta: number, count: number): num
   return (((index + delta) % count) + count) % count
 }
 
-// Keeps the selected row visible inside a fixed-height suggestion window.
 export function suggestionWindow(selected: number, count: number, size = maxSlashSuggestions): { start: number; end: number } {
   if (count <= size) return { start: 0, end: count }
   const start = Math.min(Math.max(0, selected - size + 1), count - size)
   return { start, end: start + size }
+}
+
+export function slashContextNeeded(input: string): boolean {
+  const query = normalize(input)
+  const command = activeArgumentCommand(query)
+  return Boolean(command && query.startsWith(`${command.name} `))
 }

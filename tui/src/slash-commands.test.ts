@@ -35,10 +35,27 @@ describe("slashSuggestions", () => {
     expect(names("/trust")).toEqual(["/mcp trust", "/mcp untrust"])
   })
 
-  test("stops suggesting once arguments are being typed", () => {
-    expect(names("/patch ")).toEqual([])
-    expect(names("/mcp call show 1234")).toEqual([])
-    expect(names("/skill on review/lint")).toEqual([])
+  test("suggests subcommands and filters contextual values", () => {
+    expect(names("/patch ")).toEqual(["/patch show", "/patch approve", "/patch reject"])
+    expect(names("/patch sh")).toEqual(["/patch show"])
+    expect(names("/skill ")).toEqual(["/skill on", "/skill off"])
+    expect(names("/mcp call ")).toEqual(["/mcp call show", "/mcp call approve", "/mcp call reject"])
+    const patches = slashSuggestions("/patch show ", slashCommands, {
+      patches: [
+        { value: "11111111-1111-1111-1111-111111111111", description: "pending · src/main.v" },
+        { value: "22222222-2222-2222-2222-222222222222", description: "pending · README.md" },
+      ],
+    })
+    expect(patches.map((item) => item.description)).toEqual(["pending · src/main.v", "pending · README.md"])
+    expect(patches[0]?.insert).toBe("/patch show 11111111-1111-1111-1111-111111111111")
+    expect(patches[0]?.run).toBe(true)
+    expect(names("/patch show 2222")).toEqual([])
+    expect(slashSuggestions("/patch show 2222", slashCommands, {
+      patches: [{ value: "22222222-2222-2222-2222-222222222222", description: "pending · README.md" }],
+    }).map((item) => item.insert)).toEqual(["/patch show 22222222-2222-2222-2222-222222222222"])
+    expect(slashSuggestions("/skill on ", slashCommands, {
+      skills: [{ value: "review-tools/review", description: "Review changes" }],
+    }).map((item) => item.insert)).toEqual(["/skill on review-tools/review"])
   })
 
   test("returns nothing for an unknown command", () => {

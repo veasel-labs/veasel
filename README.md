@@ -141,6 +141,9 @@ shell commands, or MCP calls; those still require the existing explicit review
 flow. It supports unattended read-only tasks, but it is not yet a benchmark
 harness that automatically applies patches.
 
+In a session, typing `/` opens command suggestions: keep typing to filter,
+press Tab to complete, ↑/↓ to choose, Enter to run, and Esc to dismiss.
+
 Agent Plugin packages are discovered from `$VEASEL_PLUGIN_DIR` or
 `$VEASEL_DATA_DIR/plugins`. In the TUI, use `/skills` to list discovered
 Skills, `/skill on <plugin>/<skill>` to add one to the active session, and

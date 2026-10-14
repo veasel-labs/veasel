@@ -10,6 +10,7 @@ import {
   createCliRenderer,
   fg,
   type KeyEvent,
+  type TextChunk,
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
@@ -18,6 +19,7 @@ import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { completeSlashCommand, moveSuggestion, runsOnAccept, slashSuggestions, suggestionWindow, type SlashCommand } from "./slash-commands"
+import { transcriptSegments, type TranscriptTone } from "./transcript"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
 const tuiCliAction = parseTuiCliAction(process.argv)
@@ -350,25 +352,31 @@ function renderChat(messages: ChatTurn[]) {
   sidebar.visible = !helpVisible
   portraitRenderable.content = activeSession ? "" : portraitText
   brandLabel.content = activeSession ? "" : "VEASEL CODE"
-  const heading = activeSession && !helpVisible
-    ? `SESSION  /  ${activeSession.title}\n${activeSession.directory}\n\n`
-    : ""
-  sessionDetail.content = safeTerminalText(heading)
-    + (skillNotice ? `${safeTerminalText(skillNotice)}\n\n` : "") + (helpVisible
-    ? ""
-    : messages.length === 0
-    ? "Start with a question or describe a coding task."
-    : messages.map((message) => {
-      const label = message.role === "assistant" ? "VEASEL" : "YOU"
-      return `${label}\n${safeTerminalText(message.content)}`
-    }).join("\n\n"))
-    + (pendingUserMessage
-      ? `\n\nYOU  ·  sending\n${safeTerminalText(pendingUserMessage)}`
-      : "")
-    + (streamingAssistantText
-      ? `\n\nVEASEL  ·  ${activeTurnId ? "streaming" : "partial response"}\n${safeTerminalText(streamingAssistantText)}`
-      : "")
-    + (chatHistoryHasOlder ? "\n\n/history older · load earlier messages" : "")
+  const segments = transcriptSegments({
+    session: activeSession && !helpVisible
+      ? { title: safeTerminalText(activeSession.title), directory: safeTerminalText(activeSession.directory) }
+      : undefined,
+    notice: skillNotice ? safeTerminalText(skillNotice) : undefined,
+    messages: messages.map((message) => ({ role: message.role, content: safeTerminalText(message.content) })),
+    pendingUserMessage: safeTerminalText(pendingUserMessage),
+    streamingText: safeTerminalText(streamingAssistantText),
+    streaming: Boolean(activeTurnId),
+    hasOlder: chatHistoryHasOlder,
+    showMessages: !helpVisible,
+  })
+  sessionDetail.content = new StyledText(segments.map(({ text, tone }) => transcriptStyles[tone](text)))
+}
+
+const transcriptStyles: Record<TranscriptTone, (text: string) => TextChunk> = {
+  title: (text) => fg("#f4f1ea")(bold(text)),
+  meta: (text) => fg("#6b7785")(text),
+  notice: (text) => fg("#b9c2ca")(text),
+  userLabel: (text) => fg("#f3c969")(bold(text)),
+  userText: (text) => fg("#f5e6c8")(text),
+  assistantLabel: (text) => fg("#a7f3d0")(bold(text)),
+  assistantText: (text) => fg("#d6dde3")(text),
+  status: (text) => fg("#8a96a3")(text),
+  hint: (text) => fg("#8a96a3")(text),
 }
 
 function safeTerminalText(value: string) {

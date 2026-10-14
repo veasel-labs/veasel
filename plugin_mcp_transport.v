@@ -31,8 +31,9 @@ mut:
 // stdlib convenience constructor while keeping MCP JSON-RPC in vlib/mcp.
 struct PluginMCPTransport {
 mut:
-	process &os.Process
-	buffer  string
+	process          &os.Process
+	buffer           string
+	response_timeout time.Duration = plugin_mcp_response_timeout
 }
 
 fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server PluginMCPServer) !PluginMCPTransport {
@@ -93,7 +94,7 @@ fn (mut transport PluginMCPTransport) send(message string) ! {
 fn (mut transport PluginMCPTransport) receive() !string {
 	started := time.now()
 	for {
-		if time.since(started) > plugin_mcp_response_timeout {
+		if time.since(started) > transport.response_timeout {
 			return error('MCP server response timed out')
 		}
 		if transport.process.is_pending(.stderr) {

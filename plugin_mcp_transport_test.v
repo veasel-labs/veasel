@@ -3,6 +3,7 @@ module main
 import json2
 import mcp
 import os
+import time
 import uuid
 
 fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() {
@@ -221,4 +222,107 @@ fn test_trusted_session_mcp_tool_discovery_and_dispatch_keep_turn_state() {
 	assert first.contains('"text":"1"')
 	assert second.contains('"text":"2"')
 	assert third.contains('"text":"3"')
+}
+
+fn bad_mcp_server(node string, script string) PluginMCPServer {
+	return PluginMCPServer{
+		name:      'fixture'
+		transport: 'stdio'
+		command:   node
+		args:      [script]
+		cwd:       './'
+	}
+}
+
+fn mcp_bad_fixture_root(tag string) (string, string) {
+	root := os.join_path(os.temp_dir(), 'veasel-mcp-${tag}-${os.getpid()}')
+	data := os.join_path(os.temp_dir(), 'veasel-mcp-${tag}-data-${os.getpid()}')
+	os.mkdir_all(root) or { panic(err) }
+	os.mkdir_all(data) or { panic(err) }
+	return root, data
+}
+
+fn require_node_for_mcp_fixture() string {
+	return os.find_abs_path_of_executable('node') or {
+		if os.getenv('CI') == 'true' {
+			panic('Node.js is required to run the MCP process fixture in CI')
+		}
+		return ''
+	}
+}
+
+fn test_plugin_stdio_mcp_malformed_frame_fails_initialize() {
+	node := require_node_for_mcp_fixture()
+	if node.len == 0 {
+		return
+	}
+	root, data := mcp_bad_fixture_root('malformed')
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(data) or {}
+	}
+	script := os.join_path(root, 'fixture.mjs')
+	os.write_file(script, "import readline from 'node:readline';\n" +
+		'const lines = readline.createInterface({ input: process.stdin });\n' +
+		"for await (const line of lines) { process.stdout.write('this is not json\\n'); }\n") or {
+		panic(err)
+	}
+	mut client := new_plugin_mcp_client(root, data, bad_mcp_server(node, script)) or { panic(err) }
+	defer { client.close() }
+	mut failed := false
+	client.initialize() or { failed = true }
+	assert failed
+}
+
+fn test_plugin_stdio_mcp_oversized_frame_fails_receive() {
+	node := require_node_for_mcp_fixture()
+	if node.len == 0 {
+		return
+	}
+	root, data := mcp_bad_fixture_root('oversized')
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(data) or {}
+	}
+	script := os.join_path(root, 'fixture.mjs')
+	os.write_file(script, "import readline from 'node:readline';\n" +
+		'const lines = readline.createInterface({ input: process.stdin });\n' +
+		"for await (const line of lines) { process.stdout.write('x'.repeat(1000001) + '\\n'); }\n") or {
+		panic(err)
+	}
+	mut transport := start_plugin_mcp_transport(root, data, bad_mcp_server(node, script)) or {
+		panic(err)
+	}
+	defer { transport.close() }
+	transport.send('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}') or { panic(err) }
+	mut message := ''
+	transport.receive() or { message = err.msg() }
+	assert message.contains('frame size limit')
+}
+
+fn test_plugin_stdio_mcp_silent_server_times_out() {
+	node := require_node_for_mcp_fixture()
+	if node.len == 0 {
+		return
+	}
+	root, data := mcp_bad_fixture_root('silent')
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(data) or {}
+	}
+	script := os.join_path(root, 'fixture.mjs')
+	os.write_file(script, "import readline from 'node:readline';\n" +
+		'const lines = readline.createInterface({ input: process.stdin });\n' +
+		'for await (const line of lines) { }\n') or { panic(err) }
+	mut transport := start_plugin_mcp_transport(root, data, bad_mcp_server(node, script)) or {
+		panic(err)
+	}
+	defer { transport.close() }
+	transport.response_timeout = 300 * time.millisecond
+	transport.send('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}') or { panic(err) }
+	started := time.now()
+	mut message := ''
+	transport.receive() or { message = err.msg() }
+	assert message.contains('timed out')
+	assert time.since(started) < 10 * time.second
 }

@@ -471,6 +471,27 @@ fn test_app_rejects_provider_work_when_all_slots_are_busy() {
 	slots.post()
 }
 
+fn test_tui_backend_output_goes_to_the_server_log() {
+	$if windows {
+		return
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-server-log-${uuid.new_v4().str()}')
+	defer { os.rmdir_all(root) or {} }
+	log_path := server_log_path(root)
+	assert log_path == os.join_path(root, 'logs', 'server.log')
+	mut process := os.new_process('/bin/sh')
+	process.set_args(['-c', 'echo server-stdout; echo server-stderr >&2'])
+	spawn_backend_server(mut process, log_path) or { panic(err) }
+	process.wait()
+	process.close()
+	log := os.read_file(log_path) or { panic(err) }
+	assert log.contains('server-stdout')
+	assert log.contains('server-stderr')
+	// The CLI's own descriptors must be restored to their original targets.
+	assert os.fd_dup2(1, 1) == 1
+	assert os.fd_dup2(2, 2) == 2
+}
+
 fn test_tui_directory_is_resolved_next_to_the_executable() {
 	root := os.join_path(os.temp_dir(), 'veasel-bundle-${uuid.new_v4().str()}')
 	defer { os.rmdir_all(root) or {} }

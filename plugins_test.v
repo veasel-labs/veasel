@@ -298,6 +298,23 @@ fn test_plugin_paths_reject_traversal() {
 	assert !is_valid_skill_name('review.tools')
 }
 
+fn test_plugin_paths_reject_windows_junction_escape() {
+	$if windows {
+		root := os.join_path(os.temp_dir(), 'veasel-plugin-junction-${uuid.new_v4().str()}')
+		external := os.join_path(os.temp_dir(), 'veasel-plugin-junction-external-${uuid.new_v4().str()}')
+		os.mkdir_all(root) or { panic(err) }
+		defer { os.rmdir_all(root) or {} }
+		os.mkdir_all(external) or { panic(err) }
+		defer { os.rmdir_all(external) or {} }
+		os.write_file(os.join_path(root, 'plugin.json'), '{}') or { panic(err) }
+		os.write_file(os.join_path(external, 'secret.txt'), 'secret') or { panic(err) }
+		link := os.join_path(root, 'escape')
+		result := os.execute('cmd /c mklink /J "${link}" "${external}"')
+		assert result.exit_code == 0
+		assert plugin_path_rejected(root, 'escape/secret.txt')
+	}
+}
+
 fn test_agent_plugin_rejects_placeholders_in_http_url() {
 	assert plugin_url_rejected('https://example.com/mcp') == false
 	assert plugin_url_rejected('https://example.com/' + test_plugin_data_placeholder + '/mcp')

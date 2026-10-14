@@ -73,8 +73,13 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   session-scoped status resource for reconnecting clients, atomically commit
   terminal success with chat history, and classify active work as `uncertain`
   after restart without replaying provider calls or tool effects.
-- [ ] Durable queued jobs, cancellation across server restarts, bounded job
-  retention, provider-reported token usage, and operation observability.
+- [ ] Durable queued jobs and worker execution across server restarts, plus
+  bounded operation retention. Async operation state is persisted and
+  reconnectable, but workers remain process-local; interrupted operations are
+  classified and never replayed.
+- [x] Capture provider-reported token usage from all four adapters in opt-in
+  ATIF `final_metrics`. Veasel does not yet maintain authoritative,
+  versioned provider price schedules, so it does not calculate cost.
 - [x] Opt-in `veasel run --trace-file` export of successful turns as ATIF v1.8,
   including the current prompt, provider model responses, tool-call arguments,
   and tool observations. Collection is disabled unless a trace path is supplied.
@@ -110,16 +115,19 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   workspace state before continuing; durable single-use approvals are recovered
   after restart (`main_test.v`: restart/uncertain cases for shell, MCP, edits
   and session operations).
-- [ ] Execution history and observability (token usage is reported in ATIF
-  traces; see the Milestone 3 trace item above).
+- [ ] General execution history and runtime observability beyond opt-in ATIF
+  traces: provider usage is captured there, but Veasel does not yet expose a
+  durable usage dashboard or comprehensive runtime metrics.
 
 ### Milestone 4 — extensibility
 
 - [ ] Complete the typed tool and provider interfaces, safe Git/worktree APIs,
   and versioned agent definitions.
-- [ ] Implement Agent Plugins v1.0.0 client conformance for directory loading,
-  closed manifest validation, Skills, MCP stdio and Streamable HTTP, `PLUGIN_DATA`,
-  placeholder expansion, failure isolation, and `com.veasel.code` extensions.
+- [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
+  manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,
+  placeholder expansion, failure isolation, and per-call MCP consent have
+  substantial implementation and fixture coverage; the remaining gaps are
+  tracked individually in [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
   persist per-session activation, include bounded instructions as untrusted
   model context, and let the model read bounded resources from active Skill
@@ -159,11 +167,16 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   text and tools, and encrypted reasoning replay work for reasoning-capable
   models; OpenAI reasoning parameters are omitted for unsupported model
   families. `scripts/api-smoke.sh` exercises both OpenAI transports against
-  local fixtures. Veasel currently limits input to 100,000 bytes
-  and each response to 4,096 output tokens; it does not yet consume the full
-  Muse context window. Provider-reported token usage is aggregated into ATIF
-  `final_metrics` (Milestone 3); cost remains unavailable because providers
-  return no authoritative prices.
+  local fixtures. Muse Wonder and Muse Spark advertise a 1,048,576-token
+  context window ([Meta model docs](https://dev.meta.ai/docs/models)), while
+  Veasel currently limits input to 100,000 bytes and each response to 4,096
+  output tokens. The output cap includes Muse reasoning tokens ([Meta Responses
+  API](https://dev.meta.ai/docs/protocols/responses)); Veasel does not yet
+  consume the full Muse context window.
+  Provider-reported token usage is aggregated into opt-in ATIF `final_metrics`
+  (Milestone 3); cost remains unavailable because Veasel does not yet integrate
+  authoritative provider price schedules. Expanding context and generation
+  budgets safely is still open work.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

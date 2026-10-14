@@ -6,8 +6,10 @@ import {
   SelectRenderableEvents,
   StyledText,
   TextRenderable,
+  bold,
   createCliRenderer,
   fg,
+  type KeyEvent,
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
@@ -15,6 +17,7 @@ import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, prov
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
+import { completeSlashCommand, moveSuggestion, runsOnAccept, slashSuggestions, suggestionWindow, type SlashCommand } from "./slash-commands"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
 const tuiCliAction = parseTuiCliAction(process.argv)
@@ -258,6 +261,10 @@ renderer.root.add(shell)
 let sessions: Session[] = []
 let selected = 0
 let creating = false
+let slashMenu: TextRenderable | undefined
+let slashMatches: SlashCommand[] = []
+let slashSelected = 0
+let slashDismissedFor: string | undefined
 let titleInput: InputRenderable | undefined
 let activeSession: Session | undefined
 let chatInput: InputRenderable | undefined
@@ -405,7 +412,10 @@ async function openSession(session: Session) {
     })
     chatInput = input
     detail.add(input)
+    mountSlashMenu()
+    input.on(InputRenderableEvents.INPUT, () => updateSlashMenu(input.value))
     input.on(InputRenderableEvents.ENTER, (value) => {
+      resetSlashMenu()
       if (isModelSettingsCommand(value)) {
         input.value = ""
         void openSettings()
@@ -1499,6 +1509,7 @@ async function openSettings() {
   if (chatInput) {
     detail.remove(chatInput)
     chatInput = undefined
+    unmountSlashMenu()
   }
   try {
     const response = await fetch(`${apiBase}/v1/config/model`, { signal: controller.signal })
@@ -1544,6 +1555,110 @@ async function saveModelSettings() {
     settingsValues.api_key = ""
     closeSettings(`could not save settings · ${error instanceof Error ? error.message : "request failed"}`)
   }
+}
+
+function mountSlashMenu() {
+  unmountSlashMenu()
+  slashMenu = new TextRenderable(renderer, { id: "slash-menu", content: "", visible: false, wrapMode: "none" })
+  detail.add(slashMenu)
+}
+
+function unmountSlashMenu() {
+  if (slashMenu) detail.remove(slashMenu)
+  slashMenu = undefined
+  slashMatches = []
+  slashSelected = 0
+  slashDismissedFor = undefined
+}
+
+function resetSlashMenu() {
+  slashMatches = []
+  slashSelected = 0
+  slashDismissedFor = undefined
+  if (slashMenu) slashMenu.visible = false
+}
+
+function updateSlashMenu(value: string) {
+  if (!slashMenu) return
+  if (slashDismissedFor !== undefined && value !== slashDismissedFor) slashDismissedFor = undefined
+  const selectedName = slashMatches[slashSelected]?.name
+  slashMatches = slashDismissedFor === undefined ? slashSuggestions(value) : []
+  const kept = slashMatches.findIndex((command) => command.name === selectedName)
+  slashSelected = kept >= 0 ? kept : 0
+  renderSlashMenu()
+}
+
+function renderSlashMenu() {
+  if (!slashMenu) return
+  if (slashMatches.length === 0) {
+    slashMenu.visible = false
+    return
+  }
+  const { start, end } = suggestionWindow(slashSelected, slashMatches.length)
+  const width = Math.max(...slashMatches.map((command) => command.name.length))
+  const chunks = slashMatches.slice(start, end).flatMap((command, offset) => {
+    const selected = start + offset === slashSelected
+    const name = command.name.padEnd(width + 2)
+    return selected
+      ? [fg("#a7f3d0")(bold(` › ${name}`)), fg("#e5e7eb")(command.description), fg("#6b7785")(command.usage ? `  ${command.usage}` : ""), fg("#6b7785")("\n")]
+      : [fg("#b9c2ca")(`   ${name}`), fg("#6b7785")(`${command.description}\n`)]
+  })
+  const more = slashMatches.length > end - start ? `${slashSelected + 1}/${slashMatches.length} · ` : ""
+  chunks.push(fg("#6b7785")(`   ${more}Tab complete · ↑/↓ choose · Enter run · Esc dismiss`))
+  slashMenu.content = new StyledText(chunks)
+  slashMenu.visible = true
+}
+
+function setComposerValue(input: InputRenderable, value: string) {
+  input.value = value
+  input.cursorOffset = value.length
+  updateSlashMenu(value)
+}
+
+// Returns true when the key was consumed by the slash-command menu.
+function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
+  const selected = slashMatches[slashSelected]
+  if (!selected) return false
+  const consume = () => {
+    key.preventDefault()
+    key.stopPropagation()
+    return true
+  }
+  const alreadyCompleted = input.value.trim() === completeSlashCommand(selected).trim()
+  // Tab completes the selection; once completed, further Tabs cycle through matches.
+  if (key.name === "down" || (key.name === "tab" && !key.shift && alreadyCompleted && slashMatches.length > 1)) {
+    slashSelected = moveSuggestion(slashSelected, 1, slashMatches.length)
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "up" || (key.name === "tab" && key.shift)) {
+    slashSelected = moveSuggestion(slashSelected, -1, slashMatches.length)
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "tab") {
+    setComposerValue(input, completeSlashCommand(selected))
+    return consume()
+  }
+  if (key.name === "escape") {
+    slashDismissedFor = input.value
+    slashMatches = []
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "return" || key.name === "kpenter") {
+    const completion = completeSlashCommand(selected)
+    if (!runsOnAccept(selected)) {
+      setComposerValue(input, completion)
+      return consume()
+    }
+    if (input.value.trim().replace(/\s+/g, " ") === completion) return false
+    setComposerValue(input, completion)
+    consume()
+    input.submit()
+    return true
+  }
+  return false
 }
 
 renderer.keyInput.on("keypress", (key) => {
@@ -1631,6 +1746,7 @@ renderer.keyInput.on("keypress", (key) => {
     return
   }
   if (chatInput && activeSession) {
+    if (slashMatches.length > 0 && handleSlashMenuKey(key, chatInput)) return
     if (key.name === "escape") {
       if (sendingMessage) {
         key.stopPropagation()
@@ -1639,6 +1755,7 @@ renderer.keyInput.on("keypress", (key) => {
       }
       detail.remove(chatInput)
       chatInput = undefined
+      unmountSlashMenu()
       activeSession = undefined
       sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again."
     }

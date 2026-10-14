@@ -152,6 +152,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
+- [x] Suggest slash commands while typing `/` in the session composer: prefix
+  and substring filtering, descriptions and argument syntax, Tab to complete,
+  arrows to choose, Enter to run commands without arguments, and Esc to dismiss.
+  Unknown slash commands are still reported locally instead of being sent to
+  the model.
 - [x] Deliver a server-owned 210-preset provider catalog and keyboard-navigable TUI
   provider picker with protocol descriptions, environment-key hints, editable
   endpoints, live model discovery, and a local no-key Ollama profile. The picker

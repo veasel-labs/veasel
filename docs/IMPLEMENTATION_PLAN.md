@@ -104,7 +104,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   final PR drafts.
 - [x] Add bounded, cursor-paginated session chat history while retaining the
   latest-100 default response for existing clients.
-- [ ] Recovery classification; require human intervention for uncertain effects.
+- [x] Recovery classification; require human intervention for uncertain effects.
+  Operations, shell commands and MCP calls interrupted mid-flight are marked
+  `uncertain` (never replayed) and surfaces instruct the user to inspect
+  workspace state before continuing; durable single-use approvals are recovered
+  after restart (`main_test.v`: restart/uncertain cases for shell, MCP, edits
+  and session operations).
 - [ ] Execution history and observability (token usage is reported in ATIF
   traces; see the Milestone 3 trace item above).
 

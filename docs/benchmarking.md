@@ -36,10 +36,9 @@ observations: values of sensitive environment variables, recognized credential
 token shapes, and values assigned to credential field names are replaced with
 `[REDACTED]`, and the trace carries `extra.redaction: "credentials"`. Redaction
 targets credentials only — source code and private instructions remain. The CLI creates the trace with owner-only file
-permissions on platforms that support them. The current provider interfaces do
-not expose authoritative usage or cost for every model,
-so those values are omitted and marked unavailable in the trace metadata. Never
-derive costs from a guessed token count or a mutable pricing page.
+permissions on platforms that support them. When a provider returns no
+usage for a call, usage is marked unavailable in the trace metadata instead of
+estimated. Never derive costs from a guessed token count or a mutable pricing page.
 
 Successful operations export a complete trajectory with
 `extra.outcome: "completed"`. When trace collection is enabled, a failed or
@@ -48,8 +47,8 @@ partial trajectory with `extra.outcome` set to `"failed"` or `"cancelled"`;
 the operation result endpoint returns it, and `veasel run --trace-file`
 writes it alongside the failed result. When a provider adapter reports token
 usage, trajectories carry `extra.token_usage: "reported"` and a `final_metrics`
-object with the summed prompt, completion, and total token counts across the
-turn's model calls; cost remains marked unavailable because providers do not
+object with the summed prompt and completion token counts across the turn's
+model calls (the total is their sum; ATIF defines no total field); cost remains marked unavailable because providers do not
 return authoritative prices. File-edit,
 shell, and MCP proposals continue to require their normal explicit approval
 by default.
@@ -61,7 +60,8 @@ adapter. It downloads an exact Veasel Linux x86_64 release, verifies its
 SHA-256 against the release checksum manifest, maps Harbor's model/provider
 selection to Veasel's supported providers, runs the headless task command, and
 stores the ATIF trajectory at Harbor's agent log path. Provider-reported token
-usage and cost remain unavailable and are not estimated.
+usage is exported in `final_metrics` when the provider returns it; cost remains
+unavailable and is never estimated.
 
 The adapter requires an exact release version and Harbor's custom-agent
 interface:

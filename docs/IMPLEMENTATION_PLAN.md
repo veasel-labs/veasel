@@ -105,7 +105,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Add bounded, cursor-paginated session chat history while retaining the
   latest-100 default response for existing clients.
 - [ ] Recovery classification; require human intervention for uncertain effects.
-- [ ] Execution history, token usage, and observability.
+- [ ] Execution history and observability (token usage is reported in ATIF
+  traces; see the Milestone 3 trace item above).
 
 ### Milestone 4 — extensibility
 
@@ -155,7 +156,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   families. `scripts/api-smoke.sh` exercises both OpenAI transports against
   local fixtures. Veasel currently limits input to 100,000 bytes
   and each response to 4,096 output tokens; it does not yet consume the full
-  Muse context window or report authoritative token usage/cost.
+  Muse context window. Provider-reported token usage is aggregated into ATIF
+  `final_metrics` (Milestone 3); cost remains unavailable because providers
+  return no authoritative prices.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

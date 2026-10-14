@@ -18,7 +18,8 @@ import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, prov
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
-import { completeSlashCommand, moveSuggestion, runsOnAccept, slashSuggestions, suggestionWindow, type SlashCommand } from "./slash-commands"
+import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsPath, settingsProgress } from "./settings-flow"
+import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
@@ -265,7 +266,7 @@ let sessions: Session[] = []
 let selected = 0
 let creating = false
 let slashMenu: TextRenderable | undefined
-let slashMatches: SlashCommand[] = []
+let slashMatches: SlashSuggestion[] = []
 let slashSelected = 0
 let slashDismissedFor: string | undefined
 let titleInput: InputRenderable | undefined
@@ -295,6 +296,10 @@ let settingsView: ModelSettingsView | undefined
 let settingsCatalogRequestId = 0
 let settingsCatalogController: AbortController | undefined
 const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false, max_output_tokens: 4096 }
+let settingsEditEndpoint = false
+let slashContext: SlashCompletionContext = {}
+let slashContextLoading = false
+let slashContextAt = 0
 let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
@@ -1209,12 +1214,38 @@ function beginCreate() {
 }
 
 const settingPrompts = [
-	"Choose a provider. Models will be discovered after the connection details.",
-	"API base URL (must use HTTPS, except loopback HTTP; Enter keeps the provider default):",
-	"API key (hidden; Enter keeps a saved key, !clear removes it; optional for local providers):",
+	"Choose a provider. Veasel fills in the endpoint it already knows.",
+	"Custom endpoint. Enter keeps the endpoint Veasel is using. HTTPS is required except for loopback HTTP.",
+	"API key (hidden; Enter keeps a saved key, !clear removes it):",
 	"Choose a model returned by this provider, or enter an ID manually.",
 	"Maximum generated tokens (0 uses the default: 4,096 tokens, or Meta's own limit for Meta; Meta counts reasoning tokens in it):",
 ]
+
+function currentSettingsProvider() {
+  return settingsView?.providers.find((provider) => provider.id === settingsValues.provider)
+}
+
+function currentSettingsPath() {
+  return settingsPath(currentSettingsProvider(), { editEndpoint: settingsEditEndpoint })
+}
+
+function settingsTitle(step: number) {
+  const progress = settingsProgress(currentSettingsPath(), step)
+  return `MODEL SETTINGS  /  ${progress.index} OF ${progress.total}`
+}
+
+function knownEndpointNote() {
+  if (settingsStep === 0 || settingsStep === 1 || settingsEditEndpoint) return ""
+  const provider = currentSettingsProvider()
+  if (!provider || !providerHasKnownEndpoint(provider)) return ""
+  const host = endpointHost(settingsValues.base_url)
+  return host ? `\n\nEndpoint · ${host} · Ctrl+U to change` : ""
+}
+
+function advanceSettings() {
+  settingsStep = adjacentSettingsStep(currentSettingsPath(), settingsStep, 1)
+  showSettingsStep()
+}
 
 function closeSettings(message = "Settings unchanged.") {
   settingsCatalogRequestId++
@@ -1234,6 +1265,7 @@ function closeSettings(message = "Settings unchanged.") {
   settingsModelCatalog = undefined
   settingsModelHint = ""
   settingsManualModel = false
+  settingsEditEndpoint = false
   settingsValues.api_key = ""
   settingsOpen = false
   sidebar.visible = true
@@ -1275,18 +1307,19 @@ function showSettingsStep(manualModel = false) {
   const navigationHint = settingsStep === 0
     ? "Enter selects · Esc cancels"
     : "Enter continues · Ctrl+B goes back · Esc cancels"
-  sessionDetail.content = `MODEL SETTINGS  /  ${settingsStep + 1} OF 5\n\n${settingPrompts[settingsStep]}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
-  status.content = `● provider settings · ${settingsStep + 1}/5`
+  sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${settingPrompts[settingsStep]}${knownEndpointNote()}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
+  status.content = `● provider settings · ${settingsTitle(settingsStep).replace("MODEL SETTINGS  /  ", "")}`
   status.fg = "#a7f3d0"
+  const endpointHint = settingsStep > 0 && !settingsEditEndpoint && providerHasKnownEndpoint(providerInfo ?? { base_url: "" }) ? " · Ctrl+U endpoint" : ""
   footerHint.content = settingsStep === 0
     ? "Tab group · search handles typos · Enter configure · Esc close"
     : settingsStep === 3
-      ? "Type to filter · Enter selects · Ctrl+B goes back · Esc cancels"
+      ? `Type to filter · Enter selects · Ctrl+B back${endpointHint} · Esc cancels`
       : settingsStep === 4
-        ? "Enter keeps this budget · Ctrl+B back · Esc cancels"
+        ? `Enter keeps this budget · Ctrl+B back${endpointHint} · Esc cancels`
       : settingsStep === 2
-        ? "Type API key (hidden) · Enter discovers models · Ctrl+B back · Esc cancels"
-        : "Enter checks connection · Ctrl+B goes back · Esc cancels"
+        ? `Type API key (hidden) · Enter discovers models · Ctrl+B back${endpointHint} · Esc cancels`
+        : "Enter keeps this endpoint · Ctrl+B goes back · Esc cancels"
   if (settingsStep === 0) {
     const catalog = settingsView?.providers ?? []
     if (catalog.length === 0) {
@@ -1297,7 +1330,7 @@ function showSettingsStep(manualModel = false) {
     const configuredProviders = new Set(settingsView?.configured_providers ?? [])
     const matches = filterModelProviders(catalog, settingsProviderQuery, settingsProviderScope, configuredProviders, settingsView?.profiles)
     const providers = prioritizeModelProviders(matches, active, configuredProviders)
-    sessionDetail.content = `MODEL SETTINGS  /  1 OF 5  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingPrompts[0]}${providerSearchHint}`
+    sessionDetail.content = `${settingsTitle(0)}  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingPrompts[0]}${providerSearchHint}`
     status.content = `● ${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`
     if (providers.length === 0) {
       appendSessionDetail("\n\nNo providers match this filter. Backspace clears characters.")
@@ -1336,14 +1369,14 @@ function showSettingsStep(manualModel = false) {
       settingsValues.provider = provider.id
       const profile = settingsView?.profiles[provider.id]
       settingsValues.model = profile?.model ?? ""
-      settingsValues.base_url = profile?.base_url ?? provider.base_url
+      settingsValues.base_url = profile?.base_url || provider.base_url
+      settingsEditEndpoint = !providerHasKnownEndpoint(provider)
       settingsValues.max_output_tokens = initialOutputTokenBudget(provider.id, profile?.max_output_tokens)
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
       settingsModelHint = ""
       settingsManualModel = false
-      settingsStep++
-      showSettingsStep()
+      advanceSettings()
     })
     return
   }
@@ -1355,7 +1388,7 @@ function showSettingsStep(manualModel = false) {
     }
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
-      sessionDetail.content = `MODEL SETTINGS  /  4 OF 5\n\n${settingPrompts[3]}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
+      sessionDetail.content = `${settingsTitle(3)}\n\n${settingPrompts[3]}${knownEndpointNote()}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
       footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · search handles typos · Enter select · Ctrl+B back · Esc cancel`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
@@ -1461,8 +1494,7 @@ function showSettingsStep(manualModel = false) {
       showSettingsStep()
       return
     }
-    settingsStep++
-    showSettingsStep()
+    advanceSettings()
   })
 }
 
@@ -1475,7 +1507,7 @@ async function loadProviderModels() {
   const providerInfo = settingsView?.providers.find((item) => item.id === provider)
   const providerName = providerInfo?.name ?? provider
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
-  sessionDetail.content = `MODEL SETTINGS  /  4 OF 5\n\nChecking ${providerName} and discovering models…${providerGuide}\n\nCtrl+B goes back · Esc cancels`
+  sessionDetail.content = `${settingsTitle(3)}\n\nChecking ${providerName} and discovering models…${knownEndpointNote()}${providerGuide}\n\nCtrl+B goes back · Esc cancels`
   footerHint.content = `Checking ${safeTerminalText(providerName)} · discovering models · Esc cancels`
   try {
     const response = await fetch(`${apiBase}/v1/config/models`, {
@@ -1593,10 +1625,50 @@ function updateSlashMenu(value: string) {
   if (!slashMenu) return
   if (slashDismissedFor !== undefined && value !== slashDismissedFor) slashDismissedFor = undefined
   const selectedName = slashMatches[slashSelected]?.name
-  slashMatches = slashDismissedFor === undefined ? slashSuggestions(value) : []
+  slashMatches = slashDismissedFor === undefined ? slashSuggestions(value, slashCommands, slashContext) : []
   const kept = slashMatches.findIndex((command) => command.name === selectedName)
   slashSelected = kept >= 0 ? kept : 0
   renderSlashMenu()
+  if (slashContextNeeded(value) && !slashContextLoading && Date.now() - slashContextAt > 1500) {
+    void refreshSlashContext(value)
+  }
+}
+
+async function refreshSlashContext(typed: string) {
+  if (!activeSession || slashContextLoading) return
+  slashContextLoading = true
+  const sessionId = encodeURIComponent(activeSession.id)
+  try {
+    const [editsResponse, commandsResponse, callsResponse, pluginsResponse, serversResponse] = await Promise.all([
+      fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/edits`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/commands`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-tool-calls`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-servers`, { signal: controller.signal }),
+    ])
+    const edits = editsResponse.ok ? await editsResponse.json() as WorkspaceEditSummary[] : []
+    const commands = commandsResponse.ok ? await commandsResponse.json() as ShellCommandSummary[] : []
+    const calls = callsResponse.ok ? await callsResponse.json() as PluginMCPToolCallSummary[] : []
+    const plugins = pluginsResponse.ok ? await pluginsResponse.json() as PluginCatalog : { plugins: [] }
+    const trustedServers = serversResponse.ok ? await serversResponse.json() as SessionPluginMCPServer[] : []
+    const trusted = new Set(trustedServers.map((server) => `${server.plugin_name}/${server.server_name}`))
+    slashContext = {
+      patches: edits.filter((edit) => edit.status === "pending").map((edit) => ({ value: edit.id, description: `pending · ${edit.path}` })),
+      commands: commands.filter((item) => item.status === "pending").map((item) => ({ value: item.id, description: `pending · ${item.command}` })),
+      mcpCalls: calls.filter((call) => call.status === "pending").map((call) => ({ value: call.id, description: `pending · ${call.plugin_name}/${call.tool_name}` })),
+      skills: plugins.plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ value: `${plugin.name}/${skill.name}`, description: skill.description }))),
+      mcpServers: plugins.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
+        const value = `${plugin.name}/${server.name}`
+        return { value, description: trusted.has(value) ? `trusted · ${server.transport}` : server.transport }
+      })),
+    }
+  } catch {
+    // Subcommands still complete when the session lists cannot be loaded.
+  } finally {
+    slashContextAt = Date.now()
+    slashContextLoading = false
+  }
+  if (chatInput?.value === typed) updateSlashMenu(typed)
 }
 
 function renderSlashMenu() {
@@ -1675,12 +1747,19 @@ function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
 renderer.keyInput.on("keypress", (key) => {
   if (settingsOpen) {
     if (key.name === "escape") closeSettings()
+    else if (key.ctrl && key.name === "u" && settingsStep > 0 && settingsStep !== 1) {
+      key.stopPropagation()
+      settingsEditEndpoint = true
+      settingsStep = 1
+      showSettingsStep()
+    }
     else if (key.ctrl && key.name === "b" && settingsStep > 0) {
       key.stopPropagation()
       settingsCatalogRequestId++
       settingsCatalogController?.abort()
       settingsCatalogController = undefined
-      settingsStep--
+      const previous = adjacentSettingsStep(currentSettingsPath(), settingsStep, -1)
+      if (previous !== settingsStep) settingsStep = previous
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
       if (settingsStep < 3) settingsManualModel = false
@@ -1718,10 +1797,9 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       if (key.name === "return" || key.name === "kpenter") {
         settingsValues.clear_api_key = settingsValues.api_key === "!clear"
-        settingsStep++
         settingsModelCatalog = undefined
         settingsModelSearchQuery = ""
-        showSettingsStep()
+        advanceSettings()
       } else if (key.name === "backspace") {
         settingsValues.api_key = settingsValues.clear_api_key
           ? ""

@@ -95,8 +95,11 @@ API so the TUI does not maintain a second provider catalog. Compatible presets
 use the same Chat Completions wire
 format; provider-specific features beyond that contract are not implied.
 The local presets target documented OpenAI-compatible servers: [LM Studio](https://lmstudio.ai/docs/developer/openai-compat), [llama.cpp](https://github.com/ggml-org/llama.cpp/tree/master/tools/server), [LocalAI](https://github.com/mudler/LocalAI/blob/master/docs/content/overview.md), and [vLLM](https://docs.vllm.ai/en/stable/serving/online_serving/openai_compatible_server/). [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/) needs an account-specific endpoint.
-After selecting a provider, Settings asks for its endpoint and key, then checks
-the connection and discovers model IDs before saving the profile. The key is
+After selecting a provider, Settings uses that provider's catalog endpoint.
+It asks for an endpoint only when the catalog has none, or when the URL still
+contains a placeholder such as Cloudflare's account ID. Press Ctrl+U to change
+a filled-in endpoint. It then asks for a key only when the provider needs one,
+checks the connection, and discovers model IDs before saving the profile. The key is
 sent in the local API request body for discovery and is not persisted until you
 choose a model; saved and environment credentials are also supported. Discovery
 only lists models: it does not send a prompt or start generation. If the

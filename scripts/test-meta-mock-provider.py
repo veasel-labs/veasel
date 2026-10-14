@@ -44,7 +44,6 @@ class MetaMockProviderTests(unittest.TestCase):
             data=json.dumps({
                 "model": "muse-wonder-1.0",
                 "input": input_items,
-                "max_output_tokens": 4096,
                 "store": False,
                 "reasoning": {"effort": "high", "summary": "auto"},
                 "include": ["reasoning.encrypted_content"],

@@ -182,10 +182,12 @@ must use HTTPS or loopback HTTP.
 Keys are never returned by the API. For Meta, select `Meta Model API` in Settings
 and choose a model returned by the account's `/v1/models` catalog, such as
 `muse-wonder-1.0` or `muse-spark-1.3` when enabled. Veasel uses Responses with
-high reasoning, automatic reasoning summaries, encrypted reasoning replay, and
-a 4,096-token per-response output cap. The server currently limits submitted
-conversation input to 100,000 bytes; Veasel does not yet expose Meta's full
-1,048,576-token context window.
+high reasoning, automatic reasoning summaries, and encrypted reasoning replay.
+Model settings configure a maximum output-token budget; Meta's default omits
+`max_output_tokens` so the provider chooses its limit. Meta counts reasoning
+tokens against that budget. The server currently limits submitted conversation
+input to 100,000 bytes; Veasel does not yet expose Muse's full 1,048,576-token
+context window.
 For a Meta account, set `MODEL_API_KEY`, open Veasel's provider settings with
 `s` on the home screen (or `/models` in a session), select `meta`, and choose an
 account-enabled Muse model such as `muse-wonder-1.0` or `muse-spark-1.3`. The

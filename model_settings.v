@@ -25,9 +25,10 @@ fn model_provider_info(provider string) ?ModelProviderInfo {
 
 struct ModelProfile {
 pub:
-	model    string
-	base_url string
-	api_key  string
+	model             string
+	base_url          string
+	api_key           string
+	max_output_tokens int
 }
 
 struct PersistedModelSettings {
@@ -46,18 +47,20 @@ pub:
 
 pub struct ModelProfileView {
 pub:
-	model         string
-	base_url      string
-	api_key_saved bool
+	model             string
+	base_url          string
+	api_key_saved     bool
+	max_output_tokens int
 }
 
 struct ModelSettingsInput {
 pub:
-	provider      string
-	model         string
-	base_url      string
-	api_key       string
-	clear_api_key bool
+	provider          string
+	model             string
+	base_url          string
+	api_key           string
+	clear_api_key     bool
+	max_output_tokens ?int
 }
 
 // ModelCatalogInput lets a client discover models before saving a provider
@@ -101,10 +104,16 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 	defer { state.mu.unlock() }
 	mut profiles := map[string]ModelProfileView{}
 	for provider, profile in state.settings.profiles {
+		max_output_tokens := if valid_max_output_tokens(profile.max_output_tokens) {
+			profile.max_output_tokens
+		} else {
+			0
+		}
 		profiles[provider] = ModelProfileView{
-			model:         profile.model
-			base_url:      profile.base_url
-			api_key_saved: profile.api_key.len > 0
+			model:             profile.model
+			base_url:          profile.base_url
+			api_key_saved:     profile.api_key.len > 0
+			max_output_tokens: max_output_tokens
 		}
 	}
 	mut configured_providers := []string{}
@@ -138,6 +147,10 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 	state.mu.lock()
 	defer { state.mu.unlock() }
 	previous := state.settings.profiles[provider] or { ModelProfile{} }
+	max_output_tokens := input.max_output_tokens or { previous.max_output_tokens }
+	if !valid_max_output_tokens(max_output_tokens) {
+		return error('model settings are invalid')
+	}
 	key := if input.clear_api_key {
 		''
 	} else if input.api_key.len > 0 {
@@ -146,7 +159,12 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 		previous.api_key
 	}
 	mut profiles := state.settings.profiles.clone()
-	profiles[provider] = ModelProfile{ model: model, base_url: base_url, api_key: key }
+	profiles[provider] = ModelProfile{
+		model:             model
+		base_url:          base_url
+		api_key:           key
+		max_output_tokens: max_output_tokens
+	}
 	updated := PersistedModelSettings{ active_provider: provider, profiles: profiles }
 	state.persist(updated)!
 	state.settings = updated
@@ -231,7 +249,26 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	if info.requires_api_key && api_key.trim_space().len == 0 {
 		return error('model credentials are not configured for ${provider}')
 	}
-	return ModelConfig{ provider: provider, base_url: secure_endpoint(base_url)!, model: model.trim_space(), api_key: api_key }
+	max_output_tokens := if valid_max_output_tokens(profile.max_output_tokens)
+		&& profile.max_output_tokens > 0 {
+		profile.max_output_tokens
+	} else if provider == 'meta' {
+		0
+	} else {
+		max_model_output_tokens
+	}
+	return ModelConfig{
+		provider:          provider
+		base_url:          secure_endpoint(base_url)!
+		model:             model.trim_space()
+		api_key:           api_key
+		max_output_tokens: max_output_tokens
+	}
+}
+
+fn valid_max_output_tokens(value int) bool {
+	return value == 0 || value >= min_configured_output_tokens
+		&& value <= max_configured_output_tokens
 }
 
 fn (app &App) configured_model() ?string {

@@ -172,7 +172,8 @@ class MockProvider(BaseHTTPRequestHandler):
             if (
                 self.path != "/v1/responses"
                 or payload.get("model") not in (("muse-wonder-1.0", "muse-spark-1.3") if provider_kind == "meta" else ("gpt-5.1-codex",) if provider_kind == "openai-responses" else ("smoke-model",))
-                or payload.get("max_output_tokens") != 4096
+                or (provider_kind == "meta" and "max_output_tokens" in payload)
+                or (provider_kind != "meta" and payload.get("max_output_tokens") != 4096)
                 or payload.get("store") is not False
                 or (provider_kind == "meta" and payload.get("reasoning") != {"effort": "high", "summary": "auto"})
                 or (provider_kind == "meta" and payload.get("include") != ["reasoning.encrypted_content"])

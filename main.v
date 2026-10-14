@@ -39,7 +39,7 @@ fn backend_is_healthy(port int) bool {
 	return health.healthy
 }
 
-fn spawn_backend_server(mut process os.Process) ! {
+fn spawn_backend_server(mut process os.Process, log_path string) ! {
 	// Veb and fasthttp write their startup banners directly to stdout. A child
 	// backend inherits the CLI's stdout by default, which corrupts `veasel run
 	// --json` when that command starts the backend itself. Give the child a
@@ -50,6 +50,10 @@ fn spawn_backend_server(mut process os.Process) ! {
 		return error('unable to preserve stdout while starting the Veasel server')
 	}
 	flush_stdout()
+	if log_path.len > 0 {
+		spawn_backend_with_log(mut process, log_path, original_stdout_fd)!
+		return
+	}
 	if os.fd_dup2(2, 1) < 0 {
 		os.fd_close(original_stdout_fd)
 		return error('unable to redirect server startup output')
@@ -63,13 +67,49 @@ fn spawn_backend_server(mut process os.Process) ! {
 	flush_stdout()
 }
 
-fn ensure_backend(port int) ! {
+// The TUI owns the terminal, so a backend started for it writes stdout and
+// stderr to a log file instead; otherwise server diagnostics corrupt the screen.
+fn spawn_backend_with_log(mut process os.Process, log_path string, original_stdout_fd int) ! {
+	original_stderr_fd := os.fd_dup(2)
+	if original_stderr_fd < 0 {
+		os.fd_close(original_stdout_fd)
+		return error('unable to preserve stderr while starting the Veasel server')
+	}
+	os.mkdir_all(os.dir(log_path)) or {
+		os.fd_close(original_stdout_fd)
+		os.fd_close(original_stderr_fd)
+		return error('unable to create the server log directory: ${err}')
+	}
+	mut log_file := os.open_file(log_path, 'a', 0o600) or {
+		os.fd_close(original_stdout_fd)
+		os.fd_close(original_stderr_fd)
+		return error('unable to open the server log ${log_path}: ${err}')
+	}
+	flush_stderr()
+	redirected := os.fd_dup2(log_file.fd, 1) >= 0 && os.fd_dup2(log_file.fd, 2) >= 0
+	if redirected {
+		process.run()
+	}
+	restore_stdout := os.fd_dup2(original_stdout_fd, 1)
+	restore_stderr := os.fd_dup2(original_stderr_fd, 2)
+	os.fd_close(original_stdout_fd)
+	os.fd_close(original_stderr_fd)
+	log_file.close()
+	if !redirected {
+		return error('unable to redirect server output to ${log_path}')
+	}
+	if restore_stdout < 0 || restore_stderr < 0 {
+		return error('unable to restore terminal output after starting the Veasel server')
+	}
+}
+
+fn ensure_backend(port int, log_path string) ! {
 	if backend_is_healthy(port) {
 		return
 	}
 	mut process := os.new_process(os.executable())
 	process.set_args(['serve'])
-	spawn_backend_server(mut process)!
+	spawn_backend_server(mut process, log_path)!
 	for _ in 0 .. 150 {
 		if backend_is_healthy(port) {
 			return
@@ -80,6 +120,8 @@ fn ensure_backend(port int) ! {
 			process.close()
 			return error('Veasel server exited before becoming healthy${if message.len > 0 {
 				': ${message}'
+			} else if log_path.len > 0 {
+				'; see ${log_path}'
 			} else {
 				''
 			}}')
@@ -90,6 +132,10 @@ fn ensure_backend(port int) ! {
 	process.wait()
 	process.close()
 	return error('Veasel server did not become healthy on 127.0.0.1:${port} within 15 seconds')
+}
+
+fn server_log_path(data_dir string) string {
+	return os.join_path(data_dir, 'logs', 'server.log')
 }
 
 fn tui_directory_for_executable(executable_path string) string {
@@ -103,8 +149,8 @@ fn tui_executable_for_executable(executable_path string) string {
 	return os.join_path(os.dir(executable), name)
 }
 
-fn launch_tui(port int) {
-	ensure_backend(port) or {
+fn launch_tui(port int, data_dir string) {
+	ensure_backend(port, server_log_path(data_dir)) or {
 		eprintln('veasel: ${err.msg()}')
 		exit(1)
 	}
@@ -176,7 +222,7 @@ fn main() {
 			}
 		}
 		'tui' {
-			launch_tui(port)
+			launch_tui(port, data_dir)
 		}
 		'run' {
 			execute_headless_command(port, args[1..])

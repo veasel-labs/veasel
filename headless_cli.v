@@ -374,7 +374,7 @@ fn execute_headless_command(port int, args []string) {
 	if options.autonomous {
 		os.setenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION', '1', true)
 	}
-	ensure_backend(port) or {
+	ensure_backend(port, '') or {
 		eprintln('veasel: ${err.msg()}')
 		exit(1)
 	}

@@ -117,7 +117,9 @@ configuration variables; provider API-key environment variables take
 precedence over a saved key. Use a separate `VEASEL_DATA_DIR` for isolated
 headless configuration.
 `veasel serve` remains available to run the backend by itself, and `veasel tui`
-also starts or reuses the backend. The TUI accepts `VEASEL_API_URL` only for an
+also starts or reuses the backend. A backend started for the TUI writes its
+output to `$VEASEL_DATA_DIR/logs/server.log` (owner-only on POSIX) so server
+diagnostics do not draw over the terminal UI. The TUI accepts `VEASEL_API_URL` only for an
 unauthenticated loopback HTTP address.
 The API also rejects non-loopback `Host` values and browser `Origin` headers
 outside loopback hosts.

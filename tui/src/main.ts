@@ -13,6 +13,7 @@ import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
+import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
@@ -245,7 +246,7 @@ const footer = new BoxRenderable(renderer, {
 const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
 footer.add(status)
 const footerHint = new TextRenderable(renderer, {
-  content: "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit",
+  content: "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit (home)",
   fg: "#87949e",
 })
 footer.add(footerHint)
@@ -1217,7 +1218,7 @@ function closeSettings(message = "Settings unchanged.") {
   sidebar.visible = true
   portraitRenderable.visible = !activeSession
   brandLabel.visible = !activeSession
-  footerHint.content = "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit"
+  footerHint.content = "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit (home)"
   sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
   status.content = `● ${message}`
   status.fg = "#a7f3d0"
@@ -1613,7 +1614,7 @@ renderer.keyInput.on("keypress", (key) => {
     }
     return
   }
-  if (key.name === "q" && !creating) {
+  if (shouldQuitOnKey(key, { creatingSession: creating, composerActive: Boolean(chatInput && activeSession) })) {
     key.stopPropagation()
     void cancelActiveTurn()
     controller.abort()

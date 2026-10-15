@@ -177,6 +177,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
 		}
+		app.apply_session_compaction_if_due(mut messages, session_id, operation_id)!
 		if agent_context_bytes(messages) > max_agent_context_bytes {
 			return error('agent context size limit reached')
 		}
@@ -713,6 +714,20 @@ fn agent_context_bytes(messages []ChatMessage) int {
 		}
 	}
 	return total
+}
+
+// apply_session_compaction_if_due shrinks the in-flight provider request when
+// measured UTF-8 payload pressure rises. Durable chat rows stay intact; a
+// session.compaction event records measured before/after sizes.
+fn (app &App) apply_session_compaction_if_due(mut messages []ChatMessage, session_id string,
+	operation_id string) ! {
+	result := compact_session_messages(messages)
+	if !result.measurement.triggered {
+		return
+	}
+	messages = result.messages
+	mut store := app.store
+	store.record_session_compaction(session_id, operation_id, result.measurement, result.summary)!
 }
 
 fn execute_workspace_agent_tool(app &App, root string, session_id string,

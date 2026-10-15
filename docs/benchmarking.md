@@ -129,6 +129,8 @@ evaluations have not been run or submitted.
 Public dashboard results must remain empty until there are versioned,
 reproducible measurements.
 
-Before adding context indexes, parallel tool calls, or automatic compaction,
-benchmark fixed fixtures and record both correctness and resource use. Every
-optimization should have a reproducible baseline and post-change measurement.
+Extractive in-flight compaction is gated on measured UTF-8 payload bytes and
+fixture tests; before adding context indexes, parallel tool calls, or
+LLM/native summarizers, benchmark fixed fixtures and record both correctness
+and resource use. Every optimization should have a reproducible baseline and
+post-change measurement; never invent token or cost savings.

@@ -248,9 +248,18 @@ stack into the TypeScript client.
 At `b06c1f2cf1dea6af8748ddeee18c23587d2cb7c6`, Pi's durable session layer in
 `packages/durable/src/session/forks.ts` copies conversation-scoped documents
 under explicit `asOf`/`current` fork policies. Compaction is a separate
-conversation task. Veasel sessions are linear SQLite histories today; add
-forking only with a clear user workflow and restore tests. OpenCode-style
-automatic compaction is still deferred until token/task measurements justify it.
+conversation task (`packages/coding-agent/src/core/compaction/compaction.ts`)
+that cuts on measured context tokens, keeps recent turns, and appends a
+summary entry without deleting raw history. OpenCode
+`packages/core/src/session/compaction.ts` at
+`37df62f4a1b6d89187a1169187a6cef10557c0ca` similarly triggers on estimated
+context vs a model ceiling, keeps recent tokens, and may summarize via an LLM
+or native provider compaction. Veasel sessions remain linear SQLite histories;
+the runtime now applies a Veasel-native extractive compaction to the in-flight
+provider request under measured UTF-8 payload or message-count pressure, emits
+`session.compaction` with honest before/after byte bounds, and leaves durable
+chat rows intact. LLM/native summarizers and session forks stay deferred until
+provider-reported token and task measurements justify them.
 
 ## Benchmark integration implications
 

@@ -776,6 +776,11 @@ function applyTheme(next: Theme) {
   reviewDiffRenderable.addedBg = diffColors.addedBg
   reviewDiffRenderable.removedBg = diffColors.removedBg
   reviewDiffRenderable.contextBg = diffColors.contextBg
+  reviewDiffRenderable.addedContentBg = diffColors.addedContentBg
+  reviewDiffRenderable.removedContentBg = diffColors.removedContentBg
+  reviewDiffRenderable.contextContentBg = diffColors.contextContentBg
+  reviewDiffRenderable.selectionBg = diffColors.selectionBg
+  reviewDiffRenderable.selectionFg = diffColors.selectionFg
   reviewDiffSyntaxStyle.destroy()
   reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme)
   reviewDiffRenderable.syntaxStyle = reviewDiffSyntaxStyle
@@ -2374,6 +2379,11 @@ function syncReviewDiffRenderable(diff: string, path: string, hunkIndex = 0) {
   reviewDiffRenderable.addedBg = colors.addedBg
   reviewDiffRenderable.removedBg = colors.removedBg
   reviewDiffRenderable.contextBg = colors.contextBg
+  reviewDiffRenderable.addedContentBg = colors.addedContentBg
+  reviewDiffRenderable.removedContentBg = colors.removedContentBg
+  reviewDiffRenderable.contextContentBg = colors.contextContentBg
+  reviewDiffRenderable.selectionBg = colors.selectionBg
+  reviewDiffRenderable.selectionFg = colors.selectionFg
   reviewDiffRenderable.view = "split"
   reviewDiffRenderable.syncScroll = true
   reviewDiffRenderable.syntaxStyle = reviewDiffSyntaxStyle

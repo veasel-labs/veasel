@@ -16,6 +16,8 @@ pub:
 	reviewed_at    string
 	created_at     string
 	updated_at     string
+	// Applies if this trusted server uses stdio; HTTP calls ignore the wrap.
+	stdio_sandbox ReviewSandboxPreview
 }
 
 pub struct PluginMCPToolCallSummary {
@@ -30,6 +32,7 @@ pub:
 	reviewed_at     string
 	created_at      string
 	updated_at      string
+	stdio_sandbox   ReviewSandboxPreview
 }
 
 struct AgentPluginMCPCallResponse {

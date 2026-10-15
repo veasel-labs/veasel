@@ -10,6 +10,41 @@ fn test_approved_shell_sandbox_mode_parses_known_values() {
 	assert approved_shell_sandbox_mode_from('require') == .require
 	assert approved_shell_sandbox_mode_from('strict') == .require
 	assert approved_shell_sandbox_mode_from('unknown-value') == .auto
+	assert approved_shell_sandbox_mode_label(.off) == 'off'
+	assert approved_shell_sandbox_mode_label(.auto) == 'auto'
+	assert approved_shell_sandbox_mode_label(.require) == 'require'
+}
+
+fn test_shell_review_sandbox_preview_matches_capabilities() {
+	previous := os.getenv(shell_sandbox_mode_env)
+	defer {
+		if previous.len > 0 {
+			os.setenv(shell_sandbox_mode_env, previous, true)
+		} else {
+			os.unsetenv(shell_sandbox_mode_env)
+		}
+	}
+	os.setenv(shell_sandbox_mode_env, 'off', true)
+	off := shell_review_sandbox_preview()
+	assert off.mode == 'off'
+	assert !off.will_wrap
+	assert off.backend == 'none'
+	os.setenv(shell_sandbox_mode_env, 'auto', true)
+	preview := shell_review_sandbox_preview()
+	assert preview.mode == 'auto'
+	if shell_sandbox_bubblewrap_capability() {
+		assert preview.will_wrap
+		assert preview.backend == 'bubblewrap'
+	} else if shell_sandbox_seatbelt_capability() {
+		assert preview.will_wrap
+		assert preview.backend == 'seatbelt'
+	} else if shell_sandbox_windows_capability() {
+		assert preview.will_wrap
+		assert preview.backend == 'windows'
+	} else {
+		assert !preview.will_wrap
+		assert preview.backend == 'none'
+	}
 }
 
 fn test_approved_shell_sandbox_network_flag_parses_allowlist() {

@@ -58,6 +58,27 @@ fn mcp_stdio_sandbox_mode() ApprovedShellSandboxMode {
 	return approved_shell_sandbox_mode_from(raw)
 }
 
+fn mcp_stdio_review_sandbox_preview() ReviewSandboxPreview {
+	mode := mcp_stdio_sandbox_mode()
+	mut backend := 'none'
+	mut will_wrap := false
+	if mcp_stdio_sandbox_bubblewrap_capability() {
+		backend = 'bubblewrap'
+		will_wrap = true
+	} else if mcp_stdio_sandbox_seatbelt_capability() {
+		backend = 'seatbelt'
+		will_wrap = true
+	} else if mcp_stdio_sandbox_windows_capability() {
+		backend = 'windows'
+		will_wrap = true
+	}
+	return ReviewSandboxPreview{
+		mode:      approved_shell_sandbox_mode_label(mode)
+		will_wrap: will_wrap
+		backend:   backend
+	}
+}
+
 fn warn_mcp_stdio_unsandboxed_default() {
 	eprintln('veasel: trusted MCP stdio starts unsandboxed (VEASEL_MCP_STDIO_SANDBOX unset/off). Set VEASEL_MCP_STDIO_SANDBOX=auto or require for Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer when available. Default stays off.')
 }

@@ -128,10 +128,13 @@ is single-use; rejection is returned to the model as an error, with instructions
 not to retry unless the user asks. Pending/approved calls are cancelled at
 startup; running calls become uncertain and are never replayed. Each trusted
 server stays available for that model turn and closes afterward; only stdio
-`PLUGIN_DATA` persists between turns. Stdio processes run
-with the current user privileges without an OS sandbox. Tool arguments and results are
-sent to the configured provider. Selection is persisted and produces session
-events. Skill instructions are bounded, reloaded when composing each turn,
+`PLUGIN_DATA` persists between turns. Trusted stdio defaults to unsandboxed
+OS-user privileges (`VEASEL_MCP_STDIO_SANDBOX` unset/off; stderr warns). Opt-in
+`auto|require` may wrap stdio in Linux Bubblewrap, macOS Seatbelt, or Windows
+AppContainer when available; review payloads expose `stdio_sandbox` mode /
+`will_wrap` / `backend` so clients can show the same honesty as shell review.
+Tool arguments and results are sent to the configured provider. Selection is
+persisted and produces session events. Skill instructions are bounded, reloaded when composing each turn,
 and inserted into explicitly untrusted system context. When discovered skills
 are available, the turn exposes `agent_skill_load` with a bounded
 `<available_skills>` metadata catalog in the tool description so the model can
@@ -164,6 +167,18 @@ POSTs a registration body. Spike conclusion: current Streamable HTTP MCP
 targets work with pre-registered clients; DCR would expand redirect_uri /
 client-metadata attack surface without unblocking a shipped path. Reopen only
 when a required authorization server refuses pre-registered clients.
+
+## Local client readiness vs conformance claim
+
+**Local Agent Plugins client** (directory packages, Skills, MCP stdio/HTTP,
+links, component toggles, per-call consent, opt-in stdio sandbox) is
+substantially shipped with Linux/Windows fixture corpora. A product Build Board
+may label that local client **READY** when the matrix rows above are honest and
+automated.
+
+**Full Agent Plugins v1.0.0 conformance** remains a separate claim. Do not
+advertise cross-implementation conformance, a marketplace, or upstream fixture
+parity until the release gate below passes. DCR stays deferred.
 
 ## Release gate
 

@@ -19,6 +19,8 @@ export type TranscriptTone =
   | "codeBody"
   | "inlineCode"
   | "strong"
+  | "listMarker"
+  | "link"
   | "status"
   | "hint"
 
@@ -149,13 +151,35 @@ export function messageBodySegments(content: string, proseTone: TranscriptTone):
       segments.push({ text: `${line}${trailing}`, tone: "codeBody" })
       continue
     }
+    const list = /^(\s*)([-*+]|\d+\.)(\s+)(.*)$/.exec(line)
+    if (list) {
+      segments.push({ text: `${list[1]}${list[2]}${list[3]}`, tone: "listMarker" })
+      segments.push(...proseInlineSegments(list[4]!, proseTone, trailing))
+      continue
+    }
     segments.push(...proseInlineSegments(line, proseTone, trailing))
   }
   return segments
 }
 
-// Inline `code` and **strong** spans keep their markers in the text so the
-// transcript stays readable without color, while tones make them scannable.
+function nextInlineKind(rest: string): { next: number; kind: "code" | "bold" | "link" } | undefined {
+  const codeAt = rest.indexOf("`")
+  const boldAt = rest.indexOf("**")
+  const linkAt = rest.indexOf("[")
+  const candidates: Array<{ next: number; kind: "code" | "bold" | "link" }> = []
+  if (codeAt >= 0) candidates.push({ next: codeAt, kind: "code" })
+  if (boldAt >= 0) candidates.push({ next: boldAt, kind: "bold" })
+  if (linkAt >= 0 && /^\[[^\]]+\]\([^)]+\)/.test(rest.slice(linkAt))) {
+    candidates.push({ next: linkAt, kind: "link" })
+  }
+  if (candidates.length === 0) return undefined
+  candidates.sort((left, right) => left.next - right.next)
+  return candidates[0]
+}
+
+// Inline `code`, **strong**, and [label](url) spans keep their markers in the
+// text so the transcript stays readable without color, while tones make them
+// scannable during streaming.
 export function proseInlineSegments(
   line: string,
   proseTone: TranscriptTone,
@@ -164,39 +188,39 @@ export function proseInlineSegments(
   const segments: TranscriptSegment[] = []
   let rest = line
   while (rest.length > 0) {
-    const codeAt = rest.indexOf("`")
-    const boldAt = rest.indexOf("**")
-    let next = -1
-    let kind: "code" | "bold" | undefined
-    if (codeAt >= 0 && (boldAt < 0 || codeAt < boldAt)) {
-      next = codeAt
-      kind = "code"
-    } else if (boldAt >= 0) {
-      next = boldAt
-      kind = "bold"
-    }
-    if (kind === undefined || next < 0) {
+    const hit = nextInlineKind(rest)
+    if (!hit) {
       segments.push({ text: rest, tone: proseTone })
       break
     }
-    if (next > 0) segments.push({ text: rest.slice(0, next), tone: proseTone })
-    if (kind === "code") {
-      const close = rest.indexOf("`", next + 1)
+    if (hit.next > 0) segments.push({ text: rest.slice(0, hit.next), tone: proseTone })
+    if (hit.kind === "code") {
+      const close = rest.indexOf("`", hit.next + 1)
       if (close < 0) {
-        segments.push({ text: rest.slice(next), tone: proseTone })
+        segments.push({ text: rest.slice(hit.next), tone: proseTone })
         break
       }
-      segments.push({ text: rest.slice(next, close + 1), tone: "inlineCode" })
+      segments.push({ text: rest.slice(hit.next, close + 1), tone: "inlineCode" })
       rest = rest.slice(close + 1)
       continue
     }
-    const close = rest.indexOf("**", next + 2)
-    if (close < 0) {
-      segments.push({ text: rest.slice(next), tone: proseTone })
+    if (hit.kind === "bold") {
+      const close = rest.indexOf("**", hit.next + 2)
+      if (close < 0) {
+        segments.push({ text: rest.slice(hit.next), tone: proseTone })
+        break
+      }
+      segments.push({ text: rest.slice(hit.next, close + 2), tone: "strong" })
+      rest = rest.slice(close + 2)
+      continue
+    }
+    const linked = /^\[([^\]]+)\]\(([^)]+)\)/.exec(rest.slice(hit.next))
+    if (!linked) {
+      segments.push({ text: rest.slice(hit.next), tone: proseTone })
       break
     }
-    segments.push({ text: rest.slice(next, close + 2), tone: "strong" })
-    rest = rest.slice(close + 2)
+    segments.push({ text: linked[0]!, tone: "link" })
+    rest = rest.slice(hit.next + linked[0]!.length)
   }
   if (trailing) {
     if (segments.length === 0) segments.push({ text: trailing, tone: proseTone })

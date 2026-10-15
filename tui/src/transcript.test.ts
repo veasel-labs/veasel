@@ -119,6 +119,19 @@ describe("transcriptSegments", () => {
     }))).toBe(`◆ VEASEL\n${content}`)
   })
 
+  test("tones list markers and markdown links in streamed prose", () => {
+    const content = "- read [docs](https://example.com/docs)\n1. run `make`"
+    expect(messageBodySegments(content, "assistantText")).toEqual([
+      { text: "- ", tone: "listMarker" },
+      { text: "read ", tone: "assistantText" },
+      { text: "[docs](https://example.com/docs)\n", tone: "link" },
+      { text: "1. ", tone: "listMarker" },
+      { text: "run ", tone: "assistantText" },
+      { text: "`make`", tone: "inlineCode" },
+    ])
+    expect(transcriptPlainText(messageBodySegments(content, "assistantText"))).toBe(content)
+  })
+
   test("keeps system and tool roles distinct from the operator", () => {
     const segments = transcriptSegments({
       messages: [

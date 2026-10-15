@@ -1395,6 +1395,10 @@ fn test_chat_input_is_bounded_and_ends_with_user_turn() {
 	assert chat_input_rejected([ChatMessage{ role: 'assistant', content: 'Unprompted' }])
 	assert chat_input_rejected([ChatMessage{ role: 'tool', content: 'Not allowed' }])
 	assert chat_input_rejected([ChatMessage{ role: 'user', content: '   ' }])
+	assert chat_input_rejected([ChatMessage{
+		role:    'user'
+		content: 'before\0after'
+	}])
 }
 
 fn test_workspace_root_is_canonical_and_must_exist() {

@@ -546,7 +546,25 @@ fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Contex
 				}
 				mut store := app.store
 				store.begin_plugin_mcp_tool_call(session_id, call.id)!
+				cancel_done := chan int{cap: 1}
+				if binding.connection_index >= 0 && binding.connection_index < mcp_connections.len {
+					stdio := mcp_connections[binding.connection_index].stdio_transport
+					if !isnil(stdio) {
+						spawn watch_plugin_mcp_stdio_cancel(mut turn_ctx, stdio, cancel_done)
+					} else {
+						cancel_done <- 1
+					}
+				} else {
+					cancel_done <- 1
+				}
 				result := execute_plugin_mcp_tool(mut mcp_connections, binding, arguments)
+				_ = cancel_done.try_push(1) // ignore .not_ready/.closed; watcher may have exited
+				if context_error := turn_context_error(mut turn_ctx) {
+					if context_error == 'cancelled' {
+						store.finish_plugin_mcp_tool_call(session_id, call.id, 'cancelled') or {}
+						return error(context_error)
+					}
+				}
 				status := if plugin_mcp_tool_result_failed(result) { 'failed' } else { 'completed' }
 				store.finish_plugin_mcp_tool_call(session_id, call.id, status)!
 				return result

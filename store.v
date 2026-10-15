@@ -2245,7 +2245,7 @@ fn (mut store Store) begin_plugin_mcp_tool_call(session_id string, id string) ! 
 }
 
 fn (mut store Store) finish_plugin_mcp_tool_call(session_id string, id string, status string) ! {
-	if status !in ['completed', 'failed'] {
+	if status !in ['completed', 'failed', 'cancelled'] {
 		return error('invalid MCP tool call result status')
 	}
 	store.transition_plugin_mcp_tool_call(session_id, id, status, "status = 'running'",

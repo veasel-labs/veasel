@@ -1,5 +1,6 @@
 module main
 
+import context as vcontext
 import mcp
 import json2
 import os
@@ -24,19 +25,24 @@ struct PluginMCPToolBinding {
 
 struct PluginMCPConnection {
 mut:
-	client mcp.Client
+	client          mcp.Client
+	stdio_transport &PluginMCPTransport = unsafe { nil }
 }
 
 // PluginMCPTransport supplies the process configuration missing from the
 // stdlib convenience constructor while keeping MCP JSON-RPC in vlib/mcp.
+@[heap]
 struct PluginMCPTransport {
 mut:
-	process          &os.Process
-	buffer           string
-	response_timeout time.Duration = plugin_mcp_response_timeout
+	process            &os.Process
+	buffer             string
+	response_timeout   time.Duration = plugin_mcp_response_timeout
+	cancel_requested   bool
+	active_request_id  string
+	cancelled_notified bool
 }
 
-fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server PluginMCPServer) !PluginMCPTransport {
+fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server PluginMCPServer) !&PluginMCPTransport {
 	if server.transport != 'stdio' || server.command.len == 0 {
 		return error('unsupported Agent Plugin MCP server')
 	}
@@ -70,9 +76,43 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 		process.close()
 		return error('unable to start trusted Agent Plugin MCP server')
 	}
-	return PluginMCPTransport{
+	return &PluginMCPTransport{
 		process: process
 	}
+}
+
+fn plugin_mcp_jsonrpc_request_id_json(message string) string {
+	fields := json2.decode[map[string]json2.Any](message) or { return '' }
+	id := fields['id'] or { return '' }
+	method := fields['method'] or { return '' }
+	if method is string && (method as string).starts_with('notifications/') {
+		return ''
+	}
+	return json2.encode(id)
+}
+
+fn plugin_mcp_cancelled_notification(request_id_json string, reason string) string {
+	safe_reason := reason.replace('\\', '\\\\').replace('"', '\\"')
+	return '{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":${request_id_json},"reason":"${safe_reason}"}}'
+}
+
+fn (mut transport PluginMCPTransport) request_cancel() {
+	transport.cancel_requested = true
+}
+
+fn (mut transport PluginMCPTransport) emit_cancelled_notification() {
+	if transport.cancelled_notified || transport.active_request_id.len == 0 {
+		return
+	}
+	if !transport.process.is_alive() {
+		return
+	}
+	transport.cancelled_notified = true
+	notification := plugin_mcp_cancelled_notification(transport.active_request_id, 'turn cancelled')
+	if notification.len > max_plugin_mcp_frame_bytes {
+		return
+	}
+	transport.process.stdin_write(notification + '\n')
 }
 
 // overlay_plugin_environment applies configured server variables onto the
@@ -115,12 +155,24 @@ fn (mut transport PluginMCPTransport) send(message string) ! {
 	if message.contains('\n') || message.contains('\r') {
 		return error('MCP request contains invalid stdio framing')
 	}
+	if transport.cancel_requested {
+		return error('cancelled')
+	}
+	request_id := plugin_mcp_jsonrpc_request_id_json(message)
+	if request_id.len > 0 {
+		transport.active_request_id = request_id
+		transport.cancelled_notified = false
+	}
 	transport.process.stdin_write(message + '\n')
 }
 
 fn (mut transport PluginMCPTransport) receive() !string {
 	started := time.now()
 	for {
+		if transport.cancel_requested {
+			transport.emit_cancelled_notification()
+			return error('cancelled')
+		}
 		if time.since(started) > transport.response_timeout {
 			return error('MCP server response timed out')
 		}
@@ -166,19 +218,29 @@ fn (mut transport PluginMCPTransport) close() {
 	transport.process.close()
 }
 
-fn new_plugin_mcp_client(plugin_root string, plugin_data string, server PluginMCPServer) !mcp.Client {
+fn new_plugin_mcp_connection(plugin_root string, plugin_data string, server PluginMCPServer) !PluginMCPConnection {
 	match server.transport {
 		'stdio' {
-			transport := start_plugin_mcp_transport(plugin_root, plugin_data, server)!
-			return mcp.new_client(transport, mcp.ClientConfig{})
+			mut transport := start_plugin_mcp_transport(plugin_root, plugin_data, server)!
+			return PluginMCPConnection{
+				client:          mcp.new_client(transport, mcp.ClientConfig{})
+				stdio_transport: transport
+			}
 		}
 		'streamable-http' {
-			return new_plugin_mcp_http_client(server)
+			return PluginMCPConnection{
+				client: new_plugin_mcp_http_client(server)!
+			}
 		}
 		else {
 			return error('unsupported Agent Plugin MCP server')
 		}
 	}
+}
+
+fn new_plugin_mcp_client(plugin_root string, plugin_data string, server PluginMCPServer) !mcp.Client {
+	connection := new_plugin_mcp_connection(plugin_root, plugin_data, server)!
+	return connection.client
 }
 
 fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefinition, map[string]PluginMCPToolBinding, []PluginMCPConnection) {
@@ -206,13 +268,13 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 		} else {
 			os.join_path(app.plugin_data_directory, selected.plugin_name)
 		}
-		mut client := new_plugin_mcp_client(plugin_root, plugin_data, server) or {
+		mut connection := new_plugin_mcp_connection(plugin_root, plugin_data, server) or {
 			eprintln('veasel: trusted MCP server could not be started')
 			continue
 		}
-		client.initialize() or {
+		connection.client.initialize() or {
 			eprintln('veasel: trusted MCP server initialization failed')
-			client.close()
+			connection.client.close()
 			continue
 		}
 		connection_index := connections.len
@@ -220,7 +282,7 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 		mut cursor := ''
 		mut seen_cursors := map[string]bool{}
 		for page in 0 .. max_session_plugin_mcp_tool_pages {
-			result := request_plugin_mcp_tool_page(mut client, cursor) or {
+			result := request_plugin_mcp_tool_page(mut connection.client, cursor) or {
 				eprintln('veasel: trusted MCP server tool listing failed')
 				break
 			}
@@ -230,7 +292,7 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 			}
 			for value in tool_values as []json2.Any {
 				if definitions.len >= max_session_plugin_mcp_tools {
-					client.close()
+					connection.client.close()
 					close_plugin_mcp_connections(mut connections)
 					return error('session exceeds the trusted MCP tool limit')
 				}
@@ -303,11 +365,9 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 			cursor = next_cursor
 		}
 		if connection_has_tools {
-			connections << PluginMCPConnection{
-				client: client
-			}
+			connections << connection
 		} else {
-			client.close()
+			connection.client.close()
 		}
 	}
 	return definitions, bindings, connections
@@ -330,6 +390,24 @@ fn request_plugin_mcp_tool_page(mut client mcp.Client, cursor string) !map[strin
 fn close_plugin_mcp_connections(mut connections []PluginMCPConnection) {
 	for index in 0 .. connections.len {
 		connections[index].client.close()
+	}
+}
+
+fn watch_plugin_mcp_stdio_cancel(mut turn_ctx vcontext.Context, transport &PluginMCPTransport,
+	done chan int) {
+	for {
+		mut finished := 0
+		if done.try_pop(mut finished) == .success {
+			return
+		}
+		if context_error := turn_context_error(mut turn_ctx) {
+			if context_error == 'cancelled' {
+				mut active := transport
+				active.request_cancel()
+				return
+			}
+		}
+		time.sleep(50 * time.millisecond)
 	}
 }
 

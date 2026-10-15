@@ -74,5 +74,69 @@
       "mcpServers": {},
       "future": true
     }
+  },
+  {
+    "name": "HTTP URL with userinfo is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["user information"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://user:pass@tools.example.invalid/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "HTTP URL with fragment is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["fragment"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://tools.example.invalid/mcp#frag"
+        }
+      }
+    }
+  },
+  {
+    "name": "cleartext remote HTTP URL is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["HTTPS"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "http://tools.example.invalid/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "case-insensitive duplicate headers are skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["unique regardless of case"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://tools.example.invalid/mcp",
+          "headers": {
+            "X-Token": "a",
+            "x-token": "b"
+          }
+        }
+      }
+    }
   }
 ]

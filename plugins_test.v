@@ -718,7 +718,7 @@ fn test_agent_plugin_v1_mcp_fixture_corpus() {
 	fixtures := json2.decode[[]AgentPluginMCPFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins MCP fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins MCP fixtures: ${err.msg()}') }
-	assert fixtures.len >= 8
+	assert fixtures.len >= 12
 	manifest_json := '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"fixture"}'
 	manifest := json2.decode[map[string]json2.Any](manifest_json) or {
 		panic(err)

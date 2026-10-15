@@ -614,6 +614,12 @@ def main() -> None:
         screen.send("1", 0.35)  # back to Alpha
         screen.wait_for("session 1 of 20 selected", 4)
         screen.wait_for("● 1 Alpha", 4)
+        screen.send("G", 0.35)  # vim End → last session
+        screen.wait_for("session 20 of 20 selected", 4)
+        screen.wait_for("Lane-19", 4)
+        screen.send("g", 0.35)  # vim Home → first session
+        screen.wait_for("session 1 of 20 selected", 4)
+        screen.wait_for("● 1 Alpha", 4)
         screen.send("s", 0.5)
         screen.wait_for("Provider settings", 4)
         screen.wait_for("Tab cycles", 4)

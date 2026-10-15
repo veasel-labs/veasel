@@ -39,6 +39,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if openai_prompt_cache_enabled() {
 		features << 'provider.openai.prompt_cache'
 	}
+	if gemini_prompt_cache_enabled() && gemini_cached_content_name().len > 0 {
+		features << 'provider.gemini.prompt_cache'
+	}
 	if shell_sandbox_bubblewrap_capability() {
 		features << 'shell.sandbox.bubblewrap'
 	}

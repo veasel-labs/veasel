@@ -341,3 +341,141 @@ fn test_anthropic_request_keeps_tool_schemas_without_cache_markers() {
 		panic('missing type')
 	}.str() == 'ephemeral'
 }
+
+fn test_gemini_request_omits_cached_content_by_default() {
+	prior_mode := os.getenv_opt(gemini_prompt_cache_env) or { '' }
+	prior_name := os.getenv_opt(gemini_cached_content_env) or { '' }
+	os.unsetenv(gemini_prompt_cache_env)
+	os.unsetenv(gemini_cached_content_env)
+	defer {
+		if prior_mode.len == 0 {
+			os.unsetenv(gemini_prompt_cache_env)
+		} else {
+			os.setenv(gemini_prompt_cache_env, prior_mode, true)
+		}
+		if prior_name.len == 0 {
+			os.unsetenv(gemini_cached_content_env)
+		} else {
+			os.setenv(gemini_cached_content_env, prior_name, true)
+		}
+	}
+	request := build_gemini_request(ModelConfig{
+		provider:          'gemini'
+		model:             'gemini-fixture'
+		max_output_tokens: 64
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'Say hello'
+		},
+	], [])
+	payload := json2.encode[GeminiRequest](request)
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	assert 'cachedContent' !in root
+	assert gemini_prompt_cache_enabled() == true
+	assert gemini_cached_content_name() == ''
+}
+
+fn test_gemini_request_emits_cached_content_when_configured() {
+	prior_mode := os.getenv_opt(gemini_prompt_cache_env) or { '' }
+	prior_name := os.getenv_opt(gemini_cached_content_env) or { '' }
+	os.unsetenv(gemini_prompt_cache_env)
+	os.setenv(gemini_cached_content_env, 'cachedContents/veasel-fixture-cache', true)
+	defer {
+		if prior_mode.len == 0 {
+			os.unsetenv(gemini_prompt_cache_env)
+		} else {
+			os.setenv(gemini_prompt_cache_env, prior_mode, true)
+		}
+		if prior_name.len == 0 {
+			os.unsetenv(gemini_cached_content_env)
+		} else {
+			os.setenv(gemini_cached_content_env, prior_name, true)
+		}
+	}
+	request := build_gemini_request(ModelConfig{
+		provider:          'gemini'
+		model:             'gemini-fixture'
+		max_output_tokens: 64
+	}, [
+		ChatMessage{
+			role:    'system'
+			content: 'Be concise'
+		},
+		ChatMessage{
+			role:    'user'
+			content: 'Say hello'
+		},
+	], [])
+	payload := json2.encode[GeminiRequest](request)
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	assert root['cachedContent'] or { panic('missing cachedContent') }.str() == 'cachedContents/veasel-fixture-cache'
+	assert gemini_cached_content_name() == 'cachedContents/veasel-fixture-cache'
+}
+
+fn test_gemini_cached_content_name_prefixes_bare_ids() {
+	prior_name := os.getenv_opt(gemini_cached_content_env) or { '' }
+	os.setenv(gemini_cached_content_env, 'veasel-bare-id', true)
+	defer {
+		if prior_name.len == 0 {
+			os.unsetenv(gemini_cached_content_env)
+		} else {
+			os.setenv(gemini_cached_content_env, prior_name, true)
+		}
+	}
+	assert gemini_cached_content_name() == 'cachedContents/veasel-bare-id'
+}
+
+fn test_gemini_prompt_cache_off_suppresses_cached_content() {
+	prior_mode := os.getenv_opt(gemini_prompt_cache_env) or { '' }
+	prior_name := os.getenv_opt(gemini_cached_content_env) or { '' }
+	os.setenv(gemini_prompt_cache_env, 'off', true)
+	os.setenv(gemini_cached_content_env, 'cachedContents/ignored', true)
+	defer {
+		if prior_mode.len == 0 {
+			os.unsetenv(gemini_prompt_cache_env)
+		} else {
+			os.setenv(gemini_prompt_cache_env, prior_mode, true)
+		}
+		if prior_name.len == 0 {
+			os.unsetenv(gemini_cached_content_env)
+		} else {
+			os.setenv(gemini_cached_content_env, prior_name, true)
+		}
+	}
+	request := build_gemini_request(ModelConfig{
+		provider:          'gemini'
+		model:             'gemini-fixture'
+		max_output_tokens: 32
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'Hi'
+		},
+	], [])
+	payload := json2.encode[GeminiRequest](request)
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	assert 'cachedContent' !in root
+	assert gemini_prompt_cache_enabled() == false
+}
+
+fn test_gemini_cached_content_create_body_shape() {
+	body := build_gemini_cached_content_create('gemini-2.0-flash', 'veasel-prefix', 'Be concise',
+		[
+			GeminiContent{
+				role:  'user'
+				parts: [GeminiPart{
+					text: 'Remember the project rules.'
+				}]
+			},
+		], '')
+	payload := json2.encode[GeminiCachedContentCreate](body)
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	assert root['model'] or { panic('missing model') }.str() == 'models/gemini-2.0-flash'
+	assert root['displayName'] or { panic('missing displayName') }.str() == 'veasel-prefix'
+	assert root['ttl'] or { panic('missing ttl') }.str() == gemini_cached_content_ttl_default
+	system := (root['systemInstruction'] or { panic('missing systemInstruction') }).as_map()
+	parts := (system['parts'] or { panic('missing parts') }).as_array()
+	assert parts.len == 1
+	assert parts[0].as_map()['text'] or { panic('missing text') }.str() == 'Be concise'
+}

@@ -156,6 +156,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `provider.openai.prompt_cache` distinct from accounting. Not applied to Meta
   or generic openai-compatible gateways. Fixture evidence:
   `provider_cache_test.v`; pin: `docs/compatibility/prompt-cache-accounting.md`.
+- [x] Request-side Gemini explicit cache: emit `cachedContent` on generateContent
+  when `VEASEL_GEMINI_CACHED_CONTENT` names a resource (`VEASEL_GEMINI_PROMPT_CACHE=off`
+  disables); capability `provider.gemini.prompt_cache` only when configured.
+  Create/expire is not on the turn path; create-body encoder fixture-tested.
+  Pin: `docs/compatibility/prompt-cache-accounting.md`.
   Keys do not invent hit rates; hits remain provider-reported.
 
 ### Milestone 4 — extensibility

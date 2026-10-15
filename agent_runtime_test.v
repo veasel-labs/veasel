@@ -613,6 +613,57 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
 		'workspace_search', 'workspace_propose_file_edit', 'workspace_propose_shell_command']
+	assert agent_tool_allows_parallel_readonly('workspace_list_files')
+	assert agent_tool_allows_parallel_readonly('workspace_read_file')
+	assert agent_tool_allows_parallel_readonly('workspace_search')
+	assert !agent_tool_allows_parallel_readonly('workspace_propose_file_edit')
+	assert !agent_tool_allows_parallel_readonly('agent_skill_load')
+	assert !agent_tool_batch_allows_parallel_readonly([
+		ProviderToolCall{
+			id:       'solo'
+			function: ProviderFunctionCall{ name: 'workspace_read_file', arguments: '{"path":"src/main.v"}' }
+		},
+	])
+	assert !agent_tool_batch_allows_parallel_readonly([
+		ProviderToolCall{
+			id:       'read'
+			function: ProviderFunctionCall{ name: 'workspace_read_file', arguments: '{"path":"src/main.v"}' }
+		},
+		ProviderToolCall{
+			id:       'edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_propose_file_edit'
+				arguments: '{"path":"src/main.v","content":"x"}'
+			}
+		},
+	])
+	parallel_calls := [
+		ProviderToolCall{
+			id:       'list-p'
+			function: ProviderFunctionCall{ name: 'workspace_list_files', arguments: '{}' }
+		},
+		ProviderToolCall{
+			id:       'read-p'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'search-p'
+			function: ProviderFunctionCall{
+				name:      'workspace_search'
+				arguments: '{"query":"workspace-sentinel"}'
+			}
+		},
+	]
+	assert agent_tool_batch_allows_parallel_readonly(parallel_calls)
+	parallel_results := execute_parallel_readonly_workspace_tools(app, root, session.id, parallel_calls,
+		AgentToolPolicy{})
+	assert parallel_results.len == 3
+	assert parallel_results[0].contains('src/main.v')
+	assert parallel_results[1].contains('workspace-sentinel')
+	assert parallel_results[2].contains('workspace-sentinel')
 	listing := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'list-1'
 		function: ProviderFunctionCall{

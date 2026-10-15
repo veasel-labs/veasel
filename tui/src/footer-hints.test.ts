@@ -2,14 +2,16 @@ import { expect, test } from "bun:test"
 import { homeFilterFooterHint, homeFooterForFilter, homeFooterHint, sessionFooterHint } from "./footer-hints"
 
 test("home footer surfaces the discovery slash commands", () => {
-  for (const command of ["/connect", "/skills", "/mcp", "/theme"]) {
+  for (const command of ["/connect", "/skills", "/mcp"]) {
     expect(homeFooterHint).toContain(command)
   }
   expect(homeFooterHint).toContain("n new")
   expect(homeFooterHint).toContain("j/k")
+  expect(homeFooterHint).toContain("1-9")
   expect(homeFooterHint).toContain("type")
   expect(homeFooterHint).toContain("q quit")
   expect(homeFooterHint).not.toContain("Home/End") // Home/End stays in /help; footer budget prefers type-to-filter
+  expect(homeFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers 1-9 jump
   expect(homeFooterHint.length).toBeLessThanOrEqual(72)
 })
 

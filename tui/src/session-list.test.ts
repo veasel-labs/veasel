@@ -4,6 +4,7 @@ import {
   formatSessionFilterHeader,
   formatSessionList,
   moveSessionSelection,
+  sessionDigitIndex,
   sessionListCapacity,
   sessionListColumns,
   sessionSidebarWidth,
@@ -89,6 +90,16 @@ describe("filterSessionList", () => {
     expect(text).toContain("Selected 1 of 1")
     expect(text).toContain("● Alpha")
     expect(formatSessionList([], 0, { rows: 40, columns: 24, filter: "zzz" })).toContain("No sessions match")
+  })
+})
+
+describe("sessionDigitIndex", () => {
+  test("maps 1-9 onto visible slots and ignores out-of-range digits", () => {
+    expect(sessionDigitIndex("1", 20)).toBe(0)
+    expect(sessionDigitIndex("9", 20)).toBe(8)
+    expect(sessionDigitIndex("0", 20)).toBeUndefined()
+    expect(sessionDigitIndex("5", 3)).toBeUndefined()
+    expect(sessionDigitIndex("2", 0)).toBeUndefined()
   })
 })
 

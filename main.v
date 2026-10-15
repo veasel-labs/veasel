@@ -181,6 +181,9 @@ fn command_help(command string) string {
 		'tui' {
 			return 'Usage: veasel tui\n\nStart or reuse the local backend, then open the terminal UI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
 		}
+		'mcp' {
+			return 'Usage: veasel mcp <list|add|enable|disable|remove> [options]\n\nManage configured MCP servers through the local API (user or project scope).\nRun `veasel mcp --help` for full syntax. Trust and per-call approval stay in the TUI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
+		}
 		else {
 			return ''
 		}
@@ -207,7 +210,7 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel --version')
+		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel --version')
 		return
 	}
 	if command in ['--version', '-v', 'version'] {
@@ -226,6 +229,9 @@ fn main() {
 		}
 		'run' {
 			execute_headless_command(port, args[1..])
+		}
+		'mcp' {
+			execute_headless_mcp_command(port, args[1..])
 		}
 		else {
 			eprintln('unknown command: ${command}')

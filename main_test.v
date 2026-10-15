@@ -122,6 +122,8 @@ fn test_serve_and_tui_help_are_available_without_starting_the_backend() {
 	assert command_help('tui').starts_with('Usage: veasel tui\n')
 	assert command_help('tui').contains('Start or reuse the local backend')
 	assert command_help('run').len == 0
+	assert command_help('mcp').starts_with('Usage: veasel mcp ')
+	assert command_help('mcp').contains('Trust and per-call approval')
 }
 
 fn test_session_turn_semaphores_serialize_the_same_session() {

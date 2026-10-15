@@ -212,7 +212,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `.pi`, `.qwen`, `.github`, `.copilot`, XDG/CODEX_HOME, and `VEASEL_SKILLS_DIRS`)
   without `plugin.json`, expose `/v1/skills` plus synthetic `/v1/plugins`
   catalog entries, and keep `/skills` / `/skill` enablement on the same
-  metadata-first, never-auto-execute path.
+  metadata-first, never-auto-execute path. Headless `veasel skills list`
+  reads the discovery API without printing instruction bodies.
 - [x] Let the model load a discovered skill body on demand via `agent_skill_load`
   without prior session enablement (OpenCode-style progressive disclosure),
   sample relative resource paths, and read bounded UTF-8 resources for the rest

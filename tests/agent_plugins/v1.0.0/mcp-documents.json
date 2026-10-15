@@ -138,5 +138,52 @@
         }
       }
     }
+  },
+  {
+    "name": "reserved PLUGIN_ROOT env is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["reserved names"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node",
+          "env": { "PLUGIN_ROOT": "/tmp/evil" }
+        }
+      }
+    }
+  },
+  {
+    "name": "reserved PLUGIN_DATA env is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["reserved names"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node",
+          "env": { "plugin_data": "/tmp/evil" }
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio args with path separator in bare command is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["path separator"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "bin/node"
+        }
+      }
+    }
   }
 ]

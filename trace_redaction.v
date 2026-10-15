@@ -146,7 +146,9 @@ fn bytes_start_with(bytes []u8, at int, prefix string) bool {
 // values assigned to credential field names. Non-credential content (source
 // code, paths, ordinary prose) is preserved.
 fn redact_trace_text(text string, secrets []string) string {
-	mut redacted := redact_pem_blocks(text)
+	// Drop binary-unsafe NULs before credential redaction so ATIF JSON stays text-safe.
+	sanitized := text.replace('\0', '')
+	mut redacted := redact_pem_blocks(sanitized)
 	for secret in secrets {
 		if secret.len > 0 && redacted.contains(secret) {
 			redacted = redacted.replace(secret, trace_redaction_marker)

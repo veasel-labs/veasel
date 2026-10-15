@@ -144,6 +144,90 @@ fn test_standalone_skills_nested_malformed_symlink_and_platform_roots() {
 	assert roots.any(it.path == os.join_path(home, '.pi', 'agent', 'skills') && it.source == 'pi')
 }
 
+fn test_opencode_appdata_skills_directory_helper() {
+	assert opencode_appdata_skills_directory('') == none
+	assert opencode_appdata_skills_directory('   ') == none
+	path := opencode_appdata_skills_directory(os.join_path('C:', 'Users', 'veasel', 'AppData', 'Roaming')) or {
+		panic('expected APPDATA skills path')
+	}
+	assert path.ends_with(os.join_path('opencode', 'skills'))
+	assert path.contains('Roaming')
+}
+
+fn test_windows_opencode_appdata_skills_are_discovered() {
+	$if windows {
+		sandbox := os.join_path(os.temp_dir(), 'veasel-skills-appdata-${uuid.new_v4().str()}')
+		appdata := os.join_path(sandbox, 'AppData', 'Roaming')
+		home := os.join_path(sandbox, 'home')
+		project := os.join_path(sandbox, 'project')
+		os.mkdir_all(os.join_path(appdata, 'opencode', 'skills')) or { panic(err) }
+		os.mkdir_all(home) or { panic(err) }
+		os.mkdir_all(project) or { panic(err) }
+		defer { os.rmdir_all(sandbox) or {} }
+		write_standalone_skill(os.join_path(appdata, 'opencode', 'skills'), 'win-opencode',
+			'Windows APPDATA OpenCode skill.', 'APPDATA BODY')
+		prior_home := os.getenv('HOME')
+		prior_appdata := os.getenv('APPDATA')
+		prior_skills_dirs := os.getenv('VEASEL_SKILLS_DIRS')
+		prior_xdg := os.getenv('XDG_CONFIG_HOME')
+		had_appdata := 'APPDATA' in os.environ()
+		had_skills_dirs := 'VEASEL_SKILLS_DIRS' in os.environ()
+		had_xdg := 'XDG_CONFIG_HOME' in os.environ()
+		os.setenv('HOME', home, true)
+		os.setenv('APPDATA', appdata, true)
+		os.unsetenv('VEASEL_SKILLS_DIRS')
+		os.unsetenv('XDG_CONFIG_HOME')
+		defer {
+			os.setenv('HOME', prior_home, true)
+			if had_appdata {
+				os.setenv('APPDATA', prior_appdata, true)
+			} else {
+				os.unsetenv('APPDATA')
+			}
+			if had_skills_dirs {
+				os.setenv('VEASEL_SKILLS_DIRS', prior_skills_dirs, true)
+			} else {
+				os.unsetenv('VEASEL_SKILLS_DIRS')
+			}
+			if had_xdg {
+				os.setenv('XDG_CONFIG_HOME', prior_xdg, true)
+			} else {
+				os.unsetenv('XDG_CONFIG_HOME')
+			}
+		}
+		roots := user_skill_roots(home)
+		expected := opencode_appdata_skills_directory(appdata) or { panic(err) }
+		assert roots.any(it.path == expected && it.source == 'opencode' && it.label.contains('APPDATA'))
+		discovery := discover_standalone_agent_skills(project)
+		assert discovery.skills.any(it.name == 'win-opencode' && it.source == 'opencode' && it.scope == 'user')
+	}
+}
+
+fn test_standalone_skill_roots_reject_windows_junction_escape() {
+	$if windows {
+		root := os.join_path(os.temp_dir(), 'veasel-skills-junction-${uuid.new_v4().str()}')
+		external := os.join_path(os.temp_dir(), 'veasel-skills-junction-ext-${uuid.new_v4().str()}')
+		skills_root := os.join_path(root, '.agents', 'skills')
+		os.mkdir_all(skills_root) or { panic(err) }
+		os.mkdir_all(external) or { panic(err) }
+		defer {
+			os.rmdir_all(root) or {}
+			os.rmdir_all(external) or {}
+		}
+		write_standalone_skill(external, 'escape', 'Outside via junction.', 'ESCAPE BODY')
+		link := os.join_path(skills_root, 'escape')
+		result := os.execute('cmd /c mklink /J "${link}" "${external}"')
+		assert result.exit_code == 0
+		discovery := discover_standalone_agent_skills_from_roots([StandaloneSkillRoot{
+			path:   skills_root
+			source: 'agents'
+			scope:  'project'
+			label:  '.agents/skills'
+		}])
+		assert !discovery.skills.any(it.name == 'escape')
+	}
+}
+
 fn test_plugin_catalog_merges_standalone_skills_without_instruction_bodies() {
 	plugin_dir := os.join_path(os.temp_dir(), 'veasel-skills-plugins-${uuid.new_v4().str()}')
 	project := os.join_path(os.temp_dir(), 'veasel-skills-merge-${uuid.new_v4().str()}')

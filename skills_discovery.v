@@ -456,9 +456,9 @@ fn user_skill_roots(home string) []StandaloneSkillRoot {
 	}
 	$if windows {
 		if appdata := os.getenv_opt('APPDATA') {
-			if appdata.len > 0 {
+			if appdata_skills := opencode_appdata_skills_directory(appdata) {
 				roots << StandaloneSkillRoot{
-					path:   os.join_path(appdata, 'opencode', 'skills')
+					path:   appdata_skills
 					source: 'opencode'
 					scope:  'user'
 					label:  '%APPDATA%/opencode/skills'
@@ -511,6 +511,16 @@ fn opencode_skills_directory(home string) string {
 		}
 	}
 	return os.join_path(home, '.config', 'opencode', 'skills')
+}
+
+// opencode_appdata_skills_directory is the Windows OpenCode user skill root under
+// %APPDATA%. Empty or whitespace APPDATA yields none so callers can skip it.
+fn opencode_appdata_skills_directory(appdata string) ?string {
+	trimmed := appdata.trim_space()
+	if trimmed.len == 0 {
+		return none
+	}
+	return os.join_path(trimmed, 'opencode', 'skills')
 }
 
 fn expand_skill_home_path(path string) string {

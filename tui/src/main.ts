@@ -3560,8 +3560,27 @@ renderer.keyInput.on("keypress", (key) => {
         return
       }
     }
+    // g / G jump to first / last when unfiltered (vim edges). While filtering,
+    // g types into the query like any other letter.
+    if (
+      sessionFilterQuery.length === 0
+      && !key.ctrl
+      && !key.meta
+      && key.name === "g"
+    ) {
+      key.stopPropagation()
+      const visible = visibleSessions()
+      selected = moveSessionSelection(
+        selected,
+        visible.length,
+        key.shift ? "end" : "home",
+        1,
+      )
+      renderSessions()
+      return
+    }
     if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
-      const reserved = sessionFilterQuery.length === 0 && /^[nrsjkq]$/.test(key.sequence)
+      const reserved = sessionFilterQuery.length === 0 && /^[nrsjkqg]$/.test(key.sequence)
       if (!reserved) {
         key.stopPropagation()
         sessionFilterQuery = (sessionFilterQuery + key.sequence).slice(0, 200)

@@ -1011,6 +1011,11 @@ fn non_empty_environment_value(name string) ?string {
 }
 
 fn secure_endpoint(base_url string) !string {
+	for c in base_url {
+		if c < 32 || c == 127 {
+			return error('model endpoint is invalid')
+		}
+	}
 	base := base_url.trim_space().trim_right('/')
 	parsed := urllib.parse(base) or { return error('model endpoint is invalid') }
 	if base.contains('@') || base.contains(' ') || parsed.host == '' || parsed.raw_query != ''

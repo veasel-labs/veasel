@@ -129,7 +129,16 @@ fn test_model_settings_reject_control_bytes_in_model_or_api_key() {
 			api_key:  'sk-\0bad'
 		}) or {
 			assert err.msg() == 'model settings are invalid'
-			return
+			state.update(ModelSettingsInput{
+				provider: 'openai'
+				model:    'gpt-ok'
+				base_url: 'https://api.openai.com/v1\nbad'
+				api_key:  'sk-ok'
+			}) or {
+				assert err.msg() == 'model endpoint is invalid'
+				return
+			}
+			assert false
 		}
 		assert false
 	}

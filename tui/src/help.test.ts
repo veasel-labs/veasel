@@ -21,7 +21,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("Alt+D deletes from the cursor through the next word")
     expect(help).toContain("Ctrl+K deletes from the cursor to the end")
     expect(help).toContain("Ctrl+A / Ctrl+E jump to the start or end of the draft")
-    expect(help).toContain("Ctrl+← / Ctrl+→ move by words")
+    expect(help).toContain("Ctrl+← / Ctrl+→ or Alt+B / Alt+F move by words")
     expect(help).toContain("streaming · N chars")
     expect(help).toContain("it never clears the composer")
     expect(help).toContain("Selected N of M")

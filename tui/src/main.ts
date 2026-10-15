@@ -3542,14 +3542,27 @@ renderer.keyInput.on("keypress", (key) => {
       }
       return
     }
-    // Ctrl+← / Ctrl+→ move by words (readline / editor habit).
-    if (key.ctrl && (key.name === "left" || key.name === "right")) {
+    // Ctrl+← / Ctrl+→ and Alt+B / Alt+F (or Alt+← / Alt+→) move by words.
+    // Esc alone still cancels / leaves; these only match Alt letter/arrow forms.
+    const wordLeft =
+      (key.ctrl && key.name === "left")
+      || (key.meta && (key.name === "b" || key.name === "left"))
+      || key.sequence === "\x1bb"
+      || key.sequence === "\x1b[1;3D"
+      || key.sequence === "\x1b\x1b[D"
+    const wordRight =
+      (key.ctrl && key.name === "right")
+      || (key.meta && (key.name === "f" || key.name === "right"))
+      || key.sequence === "\x1bf"
+      || key.sequence === "\x1b[1;3C"
+      || key.sequence === "\x1b\x1b[C"
+    if (wordLeft || wordRight) {
       key.preventDefault()
       key.stopPropagation()
       chatInput.cursorOffset = moveWordCursor(
         chatInput.value,
         chatInput.cursorOffset,
-        key.name === "left" ? "backward" : "forward",
+        wordLeft ? "backward" : "forward",
       )
       chatInput.focus()
       return

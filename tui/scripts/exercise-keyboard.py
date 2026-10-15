@@ -860,6 +860,13 @@ def main() -> None:
         visible = screen.terminal.text()
         if "wordkill" in visible:
             raise AssertionError(f"Ctrl+W left the killed word on screen\n--- screen ---\n{visible}")
+        screen.send("again", 0.35)
+        screen.wait_for("pre-zxqy again", 4)
+        screen.send("\x1b\x7f", 0.45)  # Alt+Backspace also kills the last word
+        screen.wait_for("pre-zxqy ", 4)
+        visible = screen.terminal.text()
+        if "again" in visible:
+            raise AssertionError(f"Alt+Backspace left the killed word on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.45)  # Ctrl+U clears before Ctrl+K probe
         screen.wait_for("Ask Veasel", 4)
         screen.send("headTAIL", 0.4)

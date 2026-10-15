@@ -83,10 +83,12 @@ describe("provider setup path", () => {
     expect(providerSwitchNote("openai", "anthropic", "Anthropic")).toContain("Switching from openai → Anthropic")
     expect(settingsFooterHint(0, false, false)).toContain("Tab")
     expect(settingsFooterHint(0, false, false)).toContain("j/k")
+    expect(settingsFooterHint(0, false, false)).toContain("g/G")
     expect(settingsFooterHint(0, false, false)).toContain("1-9")
-    expect(settingsFooterHint(0, false, false)).toContain("Home/End")
+    expect(settingsFooterHint(0, false, false)).not.toContain("Home/End") // Home/End stays in /help; footer budget prefers g/G
     expect(settingsFooterHint(0, false, false)).toContain("Ctrl+L")
     expect(settingsFooterHint(3, false, false)).toContain("j/k")
+    expect(settingsFooterHint(3, false, false)).toContain("g/G")
     expect(settingsFooterHint(3, false, false)).toContain("1-9")
     expect(settingsFooterHint(3, false, false)).toContain("Ctrl+L")
     expect(settingsFooterHint(2, true, true)).toContain("Ctrl+U endpoint")

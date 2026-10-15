@@ -105,11 +105,11 @@ The working vertical slice includes:
 Honesty bounds that stay in the product voice:
 
 - Approved shell uses Bubblewrap on Linux (`shell.sandbox.bubblewrap`), Seatbelt
-  on macOS (`shell.sandbox.seatbelt`), or a Job Object wrap on Windows
+  on macOS (`shell.sandbox.seatbelt`), or AppContainer + Job Object on Windows
   (`shell.sandbox.windows`) when the backend is available; otherwise it falls
-  back unsandboxed. The Windows wrap is process-tree/resource containment, not
-  AppContainer filesystem/network isolation. MCP remains unsandboxed—inspect
-  effects before approval
+  back unsandboxed. Windows grants workspace ACL to the AppContainer SID and
+  denies network by default; it is not Codex-level WFP/LPAC. MCP remains
+  unsandboxed—inspect effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full

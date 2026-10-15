@@ -25,7 +25,7 @@ use this index when you need a specific contract or ledger.
 | Harbor adapter notes | [compatibility/harbor.md](compatibility/harbor.md) |
 | Linux Bubblewrap shell sandbox pin | [compatibility/shell-bubblewrap-sandbox.md](compatibility/shell-bubblewrap-sandbox.md) |
 | macOS Seatbelt shell sandbox pin | [compatibility/shell-seatbelt-sandbox.md](compatibility/shell-seatbelt-sandbox.md) |
-| Windows Job Object shell sandbox pin | [compatibility/shell-windows-job-sandbox.md](compatibility/shell-windows-job-sandbox.md) |
+| Windows AppContainer + Job Object shell sandbox pin | [compatibility/shell-windows-job-sandbox.md](compatibility/shell-windows-job-sandbox.md) |
 | Durable queued session operations | [compatibility/durable-queued-session-operations.md](compatibility/durable-queued-session-operations.md) |
 | Prompt-cache accounting + Anthropic request markers | [compatibility/prompt-cache-accounting.md](compatibility/prompt-cache-accounting.md) |
 | Competitive capability matrix | [COMPETITIVE_CAPABILITIES.md](COMPETITIVE_CAPABILITIES.md) |

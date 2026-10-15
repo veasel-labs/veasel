@@ -39,7 +39,7 @@ export function approvedShellSandboxWarning(capability: ApprovedShellSandboxCapa
     return "On macOS, approval still runs as your OS user inside Seatbelt (sandbox-exec): host readable, writes limited to the workspace and temp, home/Volumes reads denied outside the workspace, network isolated by default. Inherited environment may still carry credentials. Review every effect before approval."
   }
   if (capability === "windows") {
-    return "On Windows, approval still runs as your OS user inside a Job Object wrap: process-tree kill-on-close, active-process and job-memory caps, best-effort privilege strip. Filesystem and network are not AppContainer-isolated; inherited environment may still carry credentials. Review every effect before approval."
+    return "On Windows, approval still runs as your OS user inside AppContainer + Job Object: workspace ACL grant, network isolated by default, process-tree kill-on-close, active-process and job-memory caps. Not Codex-level WFP/LPAC; inherited environment may still carry credentials. Review every effect before approval."
   }
   return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox (platform sandbox unavailable or VEASEL_SHELL_SANDBOX=off). Review every effect before approval."
 }

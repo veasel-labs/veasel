@@ -36,7 +36,7 @@ Capability flags are advertised only when that platform will actually wrap:
 |---|---|
 | `shell.sandbox.bubblewrap` | Linux, mode not `off`, and `bwrap` on `PATH` |
 | `shell.sandbox.seatbelt` | macOS, mode not `off`, and `/usr/bin/sandbox-exec` present |
-| `shell.sandbox.windows` | Windows, mode not `off`, and Job Object wrap can be created |
+| `shell.sandbox.windows` | Windows, mode not `off`, and AppContainer + Job Object wrap can be created |
 
 Under `require`, missing backends fail closed with no unsandboxed fallback.
 Under `auto`, missing backends fall through unsandboxed and do **not**
@@ -81,27 +81,29 @@ Seatbelt via `sandbox-exec` is best-effort and may be constrained or deprecated
 by future macOS releases. It is not a VM. Inherited environment may still carry
 credentials. See [`compatibility/shell-seatbelt-sandbox.md`](compatibility/shell-seatbelt-sandbox.md).
 
-## Windows Job Object for approved commands
+## Windows AppContainer + Job Object for approved commands
 
-On Windows, when a Job Object can be created and `VEASEL_SHELL_SANDBOX` is not
-`off`, approved commands run through `%COMSPEC%` inside a Job Object with this
-default policy:
+On Windows, when an AppContainer profile and Job Object can be created and
+`VEASEL_SHELL_SANDBOX` is not `off`, approved commands run through `%COMSPEC%`
+inside an AppContainer composed with a Job Object:
 
 | Control | Default |
 |---|---|
+| AppContainer | Profile `VeaselApprovedShell` via `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` |
+| Workspace ACL | AppContainer SID granted read/write/execute/delete on the workspace directory only |
 | Process tree | Assigned to a Job Object before resume (`CREATE_SUSPENDED` → assign → resume) |
 | Lifetime | `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (descendants die when the job handle closes) |
 | Active processes | Cap of 64 |
 | Job memory | Cap of 512 MiB |
 | Breakaway | Not permitted |
-| Restricted token | Best-effort `DISABLE_MAX_PRIVILEGE` via `CreateProcessAsUser` when the OS allows; otherwise Job Object + ordinary `CreateProcess` |
-| Filesystem | **Not** isolated — still the OS user's ACL surface (not AppContainer) |
-| Network | **Not** isolated — `VEASEL_SHELL_SANDBOX_NETWORK` is ignored on Windows for now |
+| Network | Denied by default (no network capability SIDs); `VEASEL_SHELL_SANDBOX_NETWORK=allow` adds `internetClient` / related well-known SIDs |
 | Environment | Inherited from the Veasel process (may carry credentials) |
 | Capability flag | `shell.sandbox.windows` |
 
-This is process-tree / resource containment, not a VM and not AppContainer.
-See [`compatibility/shell-windows-job-sandbox.md`](compatibility/shell-windows-job-sandbox.md).
+This is AppContainer + Job Object containment, not a VM and not Codex-level WFP
+helper-service isolation. System paths that already allow ALL APPLICATION
+PACKAGES may remain readable/executable. See
+[`compatibility/shell-windows-job-sandbox.md`](compatibility/shell-windows-job-sandbox.md).
 
 ## Autonomous benchmark path
 

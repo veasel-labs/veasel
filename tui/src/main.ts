@@ -25,6 +25,11 @@ import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
+import { formatPendingReviewStatus, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
+
+function pendingReviewStatusColor(counts: PendingReviewCounts): string {
+  return totalPendingReviews(counts) > 0 ? "#f3c969" : "#a7f3d0"
+}
 import { formatReportedUsage, formatSessionUsageSummary, statusWithUsage, type SessionUsageSummary } from "./usage"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
@@ -662,8 +667,10 @@ async function sendMessage(value: string) {
     chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
     renderChat(mergeChatTurns(chatMessages, latest))
     await notifyPendingProposals()
-    status.content = statusWithUsage(exchange.provider, exchange.model, exchange)
-    status.fg = "#a7f3d0"
+    const completedStatus = statusWithUsage(exchange.provider, exchange.model, exchange)
+    const pendingCounts = await countPendingReviews()
+    status.content = statusWithPendingReviews(completedStatus, pendingCounts)
+    status.fg = pendingReviewStatusColor(pendingCounts)
   } catch (error) {
     if (activeTurnCancelled) {
       status.content = "● response cancelled"
@@ -822,8 +829,10 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   activeTurnCancelled = false
   if (completion.status === "completed") {
     if (historyLoaded) {
-      status.content = statusWithUsage(completion.provider ?? "provider", completion.model ?? "assistant", completion)
-      status.fg = "#a7f3d0"
+      const completedStatus = statusWithUsage(completion.provider ?? "provider", completion.model ?? "assistant", completion)
+      const pendingCounts = await countPendingReviews()
+      status.content = statusWithPendingReviews(completedStatus, pendingCounts)
+      status.fg = pendingReviewStatusColor(pendingCounts)
     }
   } else if (completion.status === "uncertain") {
     status.content = "● operation outcome uncertain · inspect the workspace before retrying"
@@ -982,6 +991,39 @@ async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
   }
 }
 
+async function countPendingReviews(): Promise<PendingReviewCounts> {
+  const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
+  if (!activeSession) return counts
+  try {
+    const [editsResponse, commandsResponse, mcpResponse] = await Promise.all([
+      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
+        signal: controller.signal,
+      }),
+      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands`, {
+        signal: controller.signal,
+      }),
+      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls`, {
+        signal: controller.signal,
+      }),
+    ])
+    if (editsResponse.ok) {
+      const edits = await editsResponse.json() as WorkspaceEditSummary[]
+      counts.edits = edits.filter((edit) => edit.status === "pending").length
+    }
+    if (commandsResponse.ok) {
+      const commands = await commandsResponse.json() as ShellCommandSummary[]
+      counts.commands = commands.filter((item) => item.status === "pending").length
+    }
+    if (mcpResponse.ok) {
+      const calls = await mcpResponse.json() as PluginMCPToolCallSummary[]
+      counts.mcp = calls.filter((call) => call.status === "pending").length
+    }
+  } catch {
+    // Optional counts must not break the active turn.
+  }
+  return counts
+}
+
 async function notifyPendingMcpToolCalls() {
   if (!activeSession) return
   try {
@@ -993,6 +1035,12 @@ async function notifyPendingMcpToolCalls() {
     const pending = calls.filter((call) => call.status === "pending")
     if (pending.length === 0) return
     skillNotice = `${pending.length} MCP tool call${pending.length === 1 ? "" : "s"} need review. The model turn is waiting and no pending call has reached its server. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`
+    const counts = await countPendingReviews()
+    const pendingStatus = formatPendingReviewStatus(counts)
+    if (pendingStatus) {
+      status.content = pendingStatus
+      status.fg = "#f3c969"
+    }
     chatInput?.focus()
     renderChat(chatMessages)
   } catch {
@@ -1029,25 +1077,24 @@ async function showWorkspaceEdits() {
 async function notifyPendingProposals() {
   if (!activeSession) return
   try {
+    const counts = await countPendingReviews()
     const notices: string[] = []
-    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
-      signal: controller.signal,
-    })
-    if (response.ok) {
-      const edits = await response.json() as WorkspaceEditSummary[]
-      const pending = edits.filter((edit) => edit.status === "pending")
-      if (pending.length > 0) notices.push(`${pending.length} workspace edit proposal${pending.length === 1 ? "" : "s"} need review. Type /patches to inspect them. No files have changed.`)
+    if (counts.edits > 0) {
+      notices.push(`${counts.edits} workspace edit proposal${counts.edits === 1 ? "" : "s"} need review. Type /patches to inspect them. No files have changed.`)
     }
-    const commandResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands`, {
-      signal: controller.signal,
-    })
-    if (commandResponse.ok) {
-      const commands = await commandResponse.json() as ShellCommandSummary[]
-      const pending = commands.filter((item) => item.status === "pending")
-      if (pending.length > 0) notices.push(`${pending.length} shell command proposal${pending.length === 1 ? "" : "s"} need review. Type /commands to inspect them. Approval runs commands with your OS user permissions and inherited environment, without a sandbox.`)
+    if (counts.commands > 0) {
+      notices.push(`${counts.commands} shell command proposal${counts.commands === 1 ? "" : "s"} need review. Type /commands to inspect them. Approval runs commands with your OS user permissions and inherited environment, without a sandbox.`)
+    }
+    if (counts.mcp > 0) {
+      notices.push(`${counts.mcp} MCP tool call${counts.mcp === 1 ? "" : "s"} need review. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`)
     }
     if (notices.length === 0) return
     skillNotice = notices.join("\n\n")
+    const pendingStatus = formatPendingReviewStatus(counts)
+    if (pendingStatus) {
+      status.content = pendingStatus
+      status.fg = "#f3c969"
+    }
     renderChat(chatMessages)
   } catch {
     // Keep chat usable when the optional proposal notification cannot be loaded.

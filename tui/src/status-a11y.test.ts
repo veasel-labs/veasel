@@ -5,6 +5,7 @@ import {
   formatErrorStatus,
   formatHomeFilterStatus,
   formatHomeSessionStatus,
+  formatOkStatus,
   formatStatusLine,
   formatStreamingBusyStatus,
   formatStreamingCharCount,
@@ -45,6 +46,12 @@ describe("status a11y glyphs", () => {
     expect(formatWarnStatus("pending review")).toBe("▲ attention  ·  pending review")
     expect(formatErrorStatus("message failed  ·  boom")).toBe("✖ error  ·  message failed  ·  boom")
     expect(formatErrorStatus("error  ·  already labeled")).toBe("✖ error  ·  already labeled")
+  })
+
+  test("marks success rows with spoken ok", () => {
+    expect(formatOkStatus("theme Mint")).toBe("● ok  ·  theme Mint")
+    expect(formatOkStatus("ok  ·  already labeled")).toBe("● ok  ·  already labeled")
+    expect(formatOkStatus("")).toBe("● ok")
   })
 
   test("marks cancelled turns with spoken cancelled instead of attention", () => {

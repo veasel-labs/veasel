@@ -48,6 +48,15 @@ export function formatStreamingBusyStatus(chars: number, options: BusyStatusOpti
   return formatBusyStatus(`streaming  ·  ${formatStreamingCharCount(chars)}`, options)
 }
 
+// Successful idle/action cues: ● plus spoken "ok" so success is not only a
+// green glyph when color is flat or the row is copied as text.
+export function formatOkStatus(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed) return formatStatusLine("ok", "ok")
+  if (/^ok\b/i.test(trimmed)) return formatStatusLine("ok", trimmed)
+  return formatStatusLine("ok", `ok  ·  ${trimmed}`)
+}
+
 export function formatWarnStatus(message: string): string {
   const trimmed = message.trim()
   if (!trimmed) return formatStatusLine("warn", "attention")

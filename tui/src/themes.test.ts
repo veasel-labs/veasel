@@ -100,8 +100,8 @@ describe("TUI themes", () => {
     expect(isThemeActionId("reload")).toBe(true)
     expect(isThemeActionId("open")).toBe(true)
     expect(isThemeActionId("mint")).toBe(false)
-    expect(formatThemeReloadStatus(1, 0)).toBe("● reloaded 1 custom theme  ·  /theme")
-    expect(formatThemeReloadStatus(0, 2)).toBe("● reloaded 0 custom themes  ·  2 JSON errors  ·  /theme")
+    expect(formatThemeReloadStatus(1, 0)).toBe("● ok  ·  reloaded 1 custom theme  ·  /theme")
+    expect(formatThemeReloadStatus(0, 2)).toBe("▲ attention  ·  reloaded 0 custom themes  ·  2 JSON errors  ·  /theme")
   })
 
   test("creates missing theme directories for /theme open", () => {
@@ -163,9 +163,9 @@ describe("TUI themes", () => {
 
   test("formats a preview status that names the saved theme", () => {
     expect(formatThemePreviewStatus("ember", "mint")).toBe(
-      "● preview Ember  ·  Enter keeps · Esc restores Mint",
+      "▲ attention  ·  preview Ember  ·  Enter keeps · Esc restores Mint",
     )
-    expect(formatThemePreviewStatus("mint", "mint")).toBe("● theme Mint  ·  saved")
+    expect(formatThemePreviewStatus("mint", "mint")).toBe("● ok  ·  theme Mint  ·  saved")
   })
 
   test("parses custom theme JSON that extends a builtin", () => {

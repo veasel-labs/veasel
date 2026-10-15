@@ -49,10 +49,15 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 		os.chmod(data, 0o700)!
 	}
 	cwd := resolve_plugin_cwd(root, data, server.cwd)!
-	mut env := plugin_mcp_base_environment()
+	mut configured := map[string]string{}
 	for key, value in server.env {
-		env[key] = expand_plugin_placeholders(value, root, data)
+		configured[key] = expand_plugin_placeholders(value, root, data)
 	}
+	mut case_insensitive := false
+	$if windows {
+		case_insensitive = true
+	}
+	mut env := overlay_plugin_environment(plugin_mcp_base_environment(), configured, case_insensitive)
 	env['PLUGIN_ROOT'] = root
 	env['PLUGIN_DATA'] = data
 	mut process := os.new_process(server.command)
@@ -68,6 +73,28 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	return PluginMCPTransport{
 		process: process
 	}
+}
+
+// overlay_plugin_environment applies configured server variables onto the
+// sanitized base. Windows environment names are case-insensitive, so a
+// configured `Path` replaces an inherited `PATH` instead of leaving both.
+fn overlay_plugin_environment(base map[string]string, configured map[string]string, case_insensitive bool) map[string]string {
+	mut env := base.clone()
+	for key, value in configured {
+		if case_insensitive {
+			mut remove := []string{}
+			for existing, _ in env {
+				if existing != key && existing.to_lower() == key.to_lower() {
+					remove << existing
+				}
+			}
+			for existing in remove {
+				env.delete(existing)
+			}
+		}
+		env[key] = value
+	}
+	return env
 }
 
 fn plugin_mcp_base_environment() map[string]string {

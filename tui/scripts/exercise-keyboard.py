@@ -475,6 +475,7 @@ def exercise_narrow(port: int) -> None:
     try:
         screen.wait_for("Alpha", 8)
         screen.wait_for("n new")
+        screen.wait_for("/skills")
         screen.wait_for("quit (home)")
         screen.send("s", 0.5)
         screen.wait_for("OpenAI")
@@ -499,6 +500,11 @@ def main() -> None:
     screen = Screen(master, rows, cols)
     try:
         screen.wait_for("Alpha", 8)
+        screen.wait_for("/skills")
+        screen.wait_for("/mcp")
+        screen.wait_for("/theme")
+        screen.wait_for("/map")
+        screen.wait_for("quit (home)")
         screen.send("s", 0.5)
         screen.wait_for("Choose a provider")
         screen.wait_for("1 OF 3")
@@ -530,6 +536,8 @@ def main() -> None:
             raise AssertionError("selected model and api key were not saved")
         screen.send("\r", 0.6)
         screen.wait_for("Ask Veasel")
+        screen.wait_for("Ctrl+R reviews")
+        screen.wait_for("/ commands")
         screen.send("/", 0.6)
         screen.wait_for("── guide ──")
         screen.wait_for("── setup ──")

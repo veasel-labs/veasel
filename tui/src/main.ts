@@ -16,6 +16,7 @@ import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
+import { homeFooterHint, sessionFooterHint } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
@@ -358,8 +359,6 @@ function appendSessionDetail(text: string) {
   sessionDetail.content = sessionDetail.plainText + text
 }
 
-const homeFooterHint = "n new · /connect · s models · /help · q quit (home)"
-
 function homeDetailContent(providersConfigured: boolean): string {
   if (!providersConfigured) {
     return "Your V-powered coding companion.\n\nConnect provider · /connect\nPaste an API key, save it on this machine, then pick a model. Or press s for full provider settings."
@@ -679,11 +678,12 @@ async function openSession(session: Session) {
   chatHistoryHasOlder = pageMayHaveOlder(messages, chatHistoryPageSize)
   renderChat(messages)
   await notifyPendingProposals()
+  footerHint.content = sessionFooterHint
   if (!chatInput) {
     const input = new InputRenderable(renderer, {
       id: "chat-composer",
       width: "100%",
-      placeholder: "Ask Veasel to explain or propose a workspace change…",
+      placeholder: "Ask Veasel to explain or propose a workspace change…  ·  type / for commands",
       ...composerStyle(),
       maxLength: 1_048_576,
     })

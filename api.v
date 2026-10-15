@@ -226,6 +226,7 @@ pub:
 	configured_mcp        &ConfiguredMCPState
 	plugin_components     &PluginComponentState
 	mcp_credentials       &MCPCredentialState
+	mcp_oauth_pending     &MCPOAuthPendingState
 	allow_autonomous      bool
 }
 
@@ -242,6 +243,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		configured_mcp:           new_configured_mcp_state(store.configured_mcp_path())
 		plugin_components:        new_plugin_component_state(store.plugin_components_path())
 		mcp_credentials:          new_mcp_credential_state(store.mcp_credentials_path())
+		mcp_oauth_pending:        new_mcp_oauth_pending_state(store.mcp_oauth_pending_path())
 		allow_autonomous:         os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		session_turn_locks:       session_turn_locks
 		operation_registry:       &TurnOperationRegistry{
@@ -775,6 +777,40 @@ pub fn (app &App) remove_mcp_credential(mut ctx Context, name string) veb.Result
 	return ctx.json(MCPCredentialRemoval{
 		removed: name
 	})
+}
+
+@['/v1/mcp-oauth/authorize'; post]
+pub fn (app &App) start_mcp_oauth(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 16_000 {
+		return json_request_error(mut ctx, 'OAuth authorize request exceeds the size limit')
+	}
+	input := decode_mcp_oauth_authorize_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	view := app.start_mcp_oauth_authorize(input) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(view)
+}
+
+@['/v1/mcp-oauth/complete'; post]
+pub fn (app &App) complete_mcp_oauth(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 16_000 {
+		return json_request_error(mut ctx, 'OAuth complete request exceeds the size limit')
+	}
+	input := decode_mcp_oauth_complete_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	view := app.complete_mcp_oauth_authorize(input) or {
+		if err.msg() == 'OAuth pending session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(view)
 }
 
 @['/v1/mcp-servers'; get]

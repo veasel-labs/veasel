@@ -200,6 +200,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/mcp-oauth/authorize:
+    post:
+      operationId: startMcpOauth
+      description: Starts an MCP OAuth authorization-code + PKCE S256 flow. Persists the PKCE verifier in owner-only `$VEASEL_DATA_DIR/mcp-oauth-pending.json`. Returns the browser authorize URL and state; never returns the code verifier. `redirect_uri` must be loopback HTTP. Capability `mcp.oauth`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPOAuthAuthorizeInput'
+      responses:
+        '200':
+          description: Authorize URL and public session fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPOAuthAuthorizeView'
+        '400':
+          description: Invalid endpoints, client_id, or redirect_uri.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/mcp-oauth/complete:
+    post:
+      operationId: completeMcpOauth
+      description: Completes a pending MCP OAuth flow with an authorization `code`+`state` or a full loopback `callback_url`. Exchanges the code at the token endpoint and upserts `Authorization: Bearer` into the named MCP credential. Secret token values are never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPOAuthCompleteInput'
+      responses:
+        '200':
+          description: Credential view after token upsert (header names only).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPCredentialView'
+        '400':
+          description: Invalid callback, exchange failure, or credential name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Pending OAuth session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/mcp-servers:
     get:
       operationId: listConfiguredMcpServers
@@ -2244,6 +2296,34 @@ components:
       required: [removed]
       properties:
         removed: { type: string }
+    MCPOAuthAuthorizeInput:
+      type: object
+      required: [credential, authorization_endpoint, token_endpoint, client_id, redirect_uri]
+      properties:
+        credential: { type: string, description: Named MCP credential that will receive Authorization Bearer after completion. }
+        authorization_endpoint: { type: string }
+        token_endpoint: { type: string }
+        client_id: { type: string }
+        redirect_uri: { type: string, description: Loopback HTTP redirect URI (127.0.0.1/localhost/::1). }
+        scope: { type: string }
+        resource: { type: string, description: Optional RFC 8707 resource parameter. }
+    MCPOAuthAuthorizeView:
+      type: object
+      required: [credential, state, authorize_url, redirect_uri, code_challenge_method]
+      properties:
+        credential: { type: string }
+        state: { type: string }
+        authorize_url: { type: string }
+        redirect_uri: { type: string }
+        code_challenge_method: { type: string, enum: [S256] }
+    MCPOAuthCompleteInput:
+      type: object
+      required: [credential]
+      properties:
+        credential: { type: string }
+        state: { type: string, description: Required when callback_url is omitted. }
+        code: { type: string, description: Required when callback_url is omitted. }
+        callback_url: { type: string, description: Full loopback redirect URL including query; alternative to code+state. }
     ConfiguredMCPEnableInput:
       type: object
       required: [enabled]

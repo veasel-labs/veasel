@@ -95,3 +95,18 @@ fn test_trace_redaction_keeps_short_env_values_and_prose() {
 	assert encoded.contains('A short note about token budgets and secret menus.')
 	assert !encoded.contains(trace_redaction_marker)
 }
+
+fn test_trace_redaction_replaces_a_pem_block_and_keeps_surrounding_text() {
+	text := 'before\n-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\nafter'
+	redacted := redact_trace_text(text, []string{})
+	assert !redacted.contains('BEGIN OPENSSH')
+	assert !redacted.contains('AAAA')
+	assert redacted.contains('before')
+	assert redacted.contains('after')
+	assert redacted.contains(trace_redaction_marker)
+}
+
+fn test_trace_redaction_leaves_an_unclosed_begin_marker() {
+	text := 'note -----BEGIN without an end'
+	assert redact_trace_text(text, []string{}) == text
+}

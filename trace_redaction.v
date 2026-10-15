@@ -146,13 +146,48 @@ fn bytes_start_with(bytes []u8, at int, prefix string) bool {
 // values assigned to credential field names. Non-credential content (source
 // code, paths, ordinary prose) is preserved.
 fn redact_trace_text(text string, secrets []string) string {
-	mut redacted := text
+	mut redacted := redact_pem_blocks(text)
 	for secret in secrets {
 		if secret.len > 0 && redacted.contains(secret) {
 			redacted = redacted.replace(secret, trace_redaction_marker)
 		}
 	}
 	return redact_assigned_secrets(redact_prefixed_tokens(redacted))
+}
+
+// redact_pem_blocks replaces a complete BEGIN/END block. An opening marker
+// without a matching END is left in place so a mention of the marker cannot
+// erase the rest of the trace.
+fn redact_pem_blocks(text string) string {
+	bytes := text.bytes()
+	mut out := []u8{cap: bytes.len}
+	mut i := 0
+	for i < bytes.len {
+		if bytes_start_with(bytes, i, '-----BEGIN') {
+			end_at := index_bytes_from(bytes, '-----END', i + 10)
+			close := if end_at >= 0 { index_bytes_from(bytes, '-----', end_at + 8) } else { -1 }
+			if close >= 0 {
+				out << trace_redaction_marker.bytes()
+				i = close + 5
+				continue
+			}
+		}
+		out << bytes[i]
+		i++
+	}
+	return out.bytestr()
+}
+
+fn index_bytes_from(bytes []u8, needle string, start int) int {
+	if start < 0 {
+		return -1
+	}
+	for i in start .. bytes.len {
+		if bytes_start_with(bytes, i, needle) {
+			return i
+		}
+	}
+	return -1
 }
 
 fn redact_prefixed_tokens(text string) string {

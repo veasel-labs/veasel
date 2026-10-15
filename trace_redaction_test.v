@@ -110,3 +110,9 @@ fn test_trace_redaction_leaves_an_unclosed_begin_marker() {
 	text := 'note -----BEGIN without an end'
 	assert redact_trace_text(text, []string{}) == text
 }
+
+fn test_trace_redaction_strips_nul_bytes() {
+	redacted := redact_trace_text('safe\0unsafe', []string{})
+	assert redacted == 'safeunsafe'
+	assert !redacted.contains('\0')
+}

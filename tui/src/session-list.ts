@@ -28,6 +28,15 @@ export function formatSessionFilterHeader(
   return `Filter  ${matched}/${total} match “${trimmed}” · Ctrl+L clear`
 }
 
+// Digits 1-9 jump to the Nth visible session (1-based). Returns undefined when
+// the key is not a jump digit or the list is shorter than that slot.
+export function sessionDigitIndex(digit: string, count: number): number | undefined {
+  if (!/^[1-9]$/.test(digit) || count <= 0) return undefined
+  const index = Number(digit) - 1
+  if (index >= count) return undefined
+  return index
+}
+
 export type SessionListMove = "up" | "down" | "home" | "end" | "pageup" | "pagedown"
 
 // Home/End and page keys jump without wrapping past the list edges, matching

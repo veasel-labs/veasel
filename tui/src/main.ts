@@ -47,7 +47,7 @@ import {
   moveSettingsListIndex,
 } from "./settings-flow"
 import { formatSettingsLoadError, formatSettingsSaveError } from "./settings-errors"
-import { filterSessionList, formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
+import { filterSessionList, formatSessionList, moveSessionSelection, sessionDigitIndex, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
@@ -3484,6 +3484,20 @@ renderer.keyInput.on("keypress", (key) => {
       selected = 0
       renderSessions()
       return
+    }
+    if (
+      sessionFilterQuery.length === 0
+      && !key.ctrl
+      && !key.meta
+      && /^[1-9]$/.test(key.sequence)
+    ) {
+      const jump = sessionDigitIndex(key.sequence, visibleSessions().length)
+      if (jump !== undefined) {
+        key.stopPropagation()
+        selected = jump
+        renderSessions()
+        return
+      }
     }
     if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
       const reserved = sessionFilterQuery.length === 0 && /^[nrsjkq]$/.test(key.sequence)

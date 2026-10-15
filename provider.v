@@ -24,6 +24,16 @@ const max_provider_model_catalog_entries = 500
 // to disable; `1h` requests the extended TTL. This only shapes requests—
 // cache hits still require provider-reported usage fields from the adapter.
 const anthropic_prompt_cache_env = 'VEASEL_ANTHROPIC_PROMPT_CACHE'
+// Request-side OpenAI prompt caching knobs for Chat Completions (`openai`) and
+// Responses (`openai-responses`) only. Default `auto` emits a stable
+// `prompt_cache_key` (override with VEASEL_OPENAI_PROMPT_CACHE_KEY; default
+// `veasel`). `24h` / `in_memory` also set `prompt_cache_retention`. `off`
+// omits both. Keys influence routing/accounting; they do not guarantee hits—
+// hits still require provider-reported usage fields from the adapter.
+const openai_prompt_cache_env = 'VEASEL_OPENAI_PROMPT_CACHE'
+const openai_prompt_cache_key_env = 'VEASEL_OPENAI_PROMPT_CACHE_KEY'
+const openai_prompt_cache_default_key = 'veasel'
+const openai_prompt_cache_key_max_bytes = 64
 
 pub struct ChatMessage {
 pub:
@@ -543,13 +553,15 @@ struct AnthropicProvider {}
 struct GeminiProvider {}
 
 struct OpenAIRequest {
-	model          string
-	max_tokens     int
-	messages       []ChatMessage
-	tools          []OpenAITool @[omitempty]
-	tool_choice    string       @[omitempty]
-	stream         bool
-	stream_options OpenAIStreamOptions
+	model                  string
+	max_tokens             int
+	messages               []ChatMessage
+	tools                  []OpenAITool @[omitempty]
+	tool_choice            string       @[omitempty]
+	stream                 bool
+	stream_options         OpenAIStreamOptions
+	prompt_cache_key       string @[json: 'prompt_cache_key'; omitempty]
+	prompt_cache_retention string @[json: 'prompt_cache_retention'; omitempty]
 }
 
 struct OpenAIStreamOptions {
@@ -557,16 +569,18 @@ struct OpenAIStreamOptions {
 }
 
 struct OpenAIResponsesRequest {
-	model               string
-	max_output_tokens   ?int @[json: 'max_output_tokens'; omitempty]
-	input               []json2.Any
-	tools               []OpenAIResponsesTool @[omitempty]
-	tool_choice         string                @[omitempty]
-	parallel_tool_calls bool                  @[omitempty]
-	stream              bool
-	store               bool
-	include             []string                  @[omitempty]
-	reasoning           ?OpenAIResponsesReasoning @[omitempty]
+	model                  string
+	max_output_tokens      ?int @[json: 'max_output_tokens'; omitempty]
+	input                  []json2.Any
+	tools                  []OpenAIResponsesTool @[omitempty]
+	tool_choice            string                @[omitempty]
+	parallel_tool_calls    bool                  @[omitempty]
+	stream                 bool
+	store                  bool
+	include                []string                  @[omitempty]
+	reasoning              ?OpenAIResponsesReasoning @[omitempty]
+	prompt_cache_key       string                    @[json: 'prompt_cache_key'; omitempty]
+	prompt_cache_retention string                    @[json: 'prompt_cache_retention'; omitempty]
 }
 
 struct OpenAIResponsesReasoning {
@@ -1035,24 +1049,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 	messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	url := '${secure_endpoint(config.base_url)!}/chat/completions'
-	mut openai_tools := []OpenAITool{cap: tools.len}
-	for tool in tools {
-		openai_tools << OpenAITool{
-			function: OpenAIFunction{
-				name:        tool.name
-				description: tool.description
-				parameters:  provider_tool_parameters(tool)
-			}
-		}
-	}
-	request := OpenAIRequest{
-		model:       config.model
-		max_tokens:  config.max_output_tokens
-		messages:    messages
-		tools:       openai_tools
-		tool_choice: if tools.len > 0 { 'auto' } else { '' }
-		stream:      true
-	}
+	request := build_openai_chat_request(config, messages, tools)
 	mut stream_state := &OpenAIStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {
 		if data == '[DONE]' {
@@ -1126,31 +1123,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 fn (provider OpenAIResponsesProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage, tools []AgentToolDefinition,
 	on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	input := openai_responses_input(messages)!
-	mut response_tools := []OpenAIResponsesTool{cap: tools.len}
-	for tool in tools {
-		response_tools << OpenAIResponsesTool{
-			name:        tool.name
-			description: tool.description
-			parameters:  provider_tool_parameters(tool)
-		}
-	}
-	request := OpenAIResponsesRequest{
-		model:               config.model
-		max_output_tokens:   if config.max_output_tokens > 0 {
-			config.max_output_tokens
-		} else {
-			none
-		}
-		input:               input
-		tools:               response_tools
-		tool_choice:         if tools.len > 0 { 'auto' } else { '' }
-		parallel_tool_calls: tools.len > 1
-		stream:              true
-		store:               false
-		include:             openai_responses_include(config.provider, config.model)
-		reasoning:           openai_responses_reasoning(config.provider, config.model)
-	}
+	request := build_openai_responses_request(config, messages, tools)!
 	mut stream_state := &OpenAIResponsesStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {
 		if data == '[DONE]' { return }
@@ -1471,6 +1444,105 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 		content:    stream_state.content.join('')
 		tool_calls: stream_state.tools
 		usage:      stream_state.usage
+	}
+}
+
+fn openai_prompt_cache_provider(provider string) bool {
+	return provider == 'openai' || provider == 'openai-responses'
+}
+
+fn openai_prompt_cache_mode() string {
+	raw := os.getenv_opt(openai_prompt_cache_env) or { 'auto' }
+	value := raw.trim_space().to_lower()
+	return match value {
+		'off', '0', 'false', 'no' { 'off' }
+		'24h' { '24h' }
+		'in_memory', 'in-memory' { 'in_memory' }
+		else { 'auto' }
+	}
+}
+
+fn openai_prompt_cache_enabled() bool {
+	return openai_prompt_cache_mode() != 'off'
+}
+
+fn openai_prompt_cache_key() string {
+	raw := os.getenv_opt(openai_prompt_cache_key_env) or { openai_prompt_cache_default_key }
+	key := raw.trim_space()
+	if key.len == 0 {
+		return openai_prompt_cache_default_key
+	}
+	if key.len > openai_prompt_cache_key_max_bytes {
+		return key[..openai_prompt_cache_key_max_bytes]
+	}
+	return key
+}
+
+fn openai_prompt_cache_fields(provider string) (string, string) {
+	if !openai_prompt_cache_provider(provider) || !openai_prompt_cache_enabled() {
+		return '', ''
+	}
+	key := openai_prompt_cache_key()
+	retention := match openai_prompt_cache_mode() {
+		'24h' { '24h' }
+		'in_memory' { 'in_memory' }
+		else { '' }
+	}
+	return key, retention
+}
+
+fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) OpenAIRequest {
+	mut openai_tools := []OpenAITool{cap: tools.len}
+	for tool in tools {
+		openai_tools << OpenAITool{
+			function: OpenAIFunction{
+				name:        tool.name
+				description: tool.description
+				parameters:  provider_tool_parameters(tool)
+			}
+		}
+	}
+	cache_key, cache_retention := openai_prompt_cache_fields(config.provider)
+	return OpenAIRequest{
+		model:                  config.model
+		max_tokens:             config.max_output_tokens
+		messages:               messages
+		tools:                  openai_tools
+		tool_choice:            if tools.len > 0 { 'auto' } else { '' }
+		stream:                 true
+		prompt_cache_key:       cache_key
+		prompt_cache_retention: cache_retention
+	}
+}
+
+fn build_openai_responses_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !OpenAIResponsesRequest {
+	input := openai_responses_input(messages)!
+	mut response_tools := []OpenAIResponsesTool{cap: tools.len}
+	for tool in tools {
+		response_tools << OpenAIResponsesTool{
+			name:        tool.name
+			description: tool.description
+			parameters:  provider_tool_parameters(tool)
+		}
+	}
+	cache_key, cache_retention := openai_prompt_cache_fields(config.provider)
+	return OpenAIResponsesRequest{
+		model:                  config.model
+		max_output_tokens:      if config.max_output_tokens > 0 {
+			config.max_output_tokens
+		} else {
+			none
+		}
+		input:                  input
+		tools:                  response_tools
+		tool_choice:            if tools.len > 0 { 'auto' } else { '' }
+		parallel_tool_calls:    tools.len > 1
+		stream:                 true
+		store:                  false
+		include:                openai_responses_include(config.provider, config.model)
+		reasoning:              openai_responses_reasoning(config.provider, config.model)
+		prompt_cache_key:       cache_key
+		prompt_cache_retention: cache_retention
 	}
 }
 

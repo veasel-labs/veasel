@@ -36,6 +36,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if anthropic_prompt_cache_enabled() {
 		features << 'provider.anthropic.prompt_cache'
 	}
+	if openai_prompt_cache_enabled() {
+		features << 'provider.openai.prompt_cache'
+	}
 	if shell_sandbox_bubblewrap_capability() {
 		features << 'shell.sandbox.bubblewrap'
 	}

@@ -16,6 +16,21 @@ $if windows {
 const max_workspace_edit_bytes = 512_000
 const max_workspace_edit_request_bytes = max_workspace_edit_bytes * 6 + 4_096
 const max_pending_workspace_edits = 20
+// Git lock basenames checked under the resolved git directory (including linked
+// worktree gitdirs). Presence means a concurrent git process may be mutating
+// the index or refs; Veasel refuses propose/apply until the lock clears.
+const workspace_git_lock_names = [
+	'index.lock',
+	'HEAD.lock',
+	'config.lock',
+	'packed-refs.lock',
+	'shallow.lock',
+	'COMMIT_EDITMSG.lock',
+	'MERGE_HEAD.lock',
+	'REBASE_HEAD.lock',
+	'CHERRY_PICK_HEAD.lock',
+	'REVERT_HEAD.lock',
+]
 
 pub struct WorkspaceEditProposal {
 pub:
@@ -67,6 +82,7 @@ fn prepare_workspace_edit(root string, relative_path string, content string) !Wo
 	if workspace_has_hidden_controls(content) {
 		return error('proposed file contains control characters that cannot be safely reviewed in the TUI')
 	}
+	refuse_workspace_edit_while_git_locked(root)!
 	path := resolve_workspace_edit_target(root, relative_path)!
 	create_file := !os.exists(path)
 	old_content := if create_file { '' } else { read_workspace_text_file(path)! }
@@ -156,6 +172,57 @@ fn workspace_has_hidden_controls(content string) bool {
 	return false
 }
 
+// refuse_workspace_edit_while_git_locked fails closed when a concurrent git
+// process holds a well-known lock under the workspace git directory (or a
+// linked worktree's gitdir). Non-git workspaces are unaffected.
+fn refuse_workspace_edit_while_git_locked(root string) ! {
+	git_directory := workspace_git_directory(root) or { return }
+	for name in workspace_git_lock_names {
+		lock_path := os.join_path(git_directory, name)
+		if os.exists(lock_path) {
+			return error('a concurrent git operation holds ${name}; wait for it to finish before proposing or applying edits')
+		}
+	}
+}
+
+// workspace_git_directory resolves the repository git directory for a session
+// workspace root. Ordinary repos use `<root>/.git`; linked worktrees use the
+// `gitdir:` path recorded in the `.git` file. Returns an error when the root is
+// not a git checkout or the gitdir cannot be resolved safely.
+fn workspace_git_directory(root string) !string {
+	canonical_root := canonical_workspace_root(root)!
+	dot_git := os.join_path(canonical_root, '.git')
+	if os.is_dir(dot_git) && !os.is_link(dot_git) {
+		return os.real_path(dot_git)
+	}
+	if !os.is_file(dot_git) || os.is_link(dot_git) {
+		return error('workspace is not a git checkout')
+	}
+	contents := os.read_file(dot_git) or { return error('unable to read .git worktree pointer') }
+	mut gitdir_value := ''
+	for line in contents.split_into_lines() {
+		trimmed := line.trim_space()
+		if trimmed.to_lower().starts_with('gitdir:') {
+			gitdir_value = trimmed[7..].trim_space()
+			break
+		}
+	}
+	if gitdir_value.len == 0 {
+		return error('workspace .git file is missing a gitdir path')
+	}
+	mut resolved := gitdir_value
+	if !os.is_abs_path(resolved) {
+		resolved = os.join_path(canonical_root, resolved)
+	}
+	if os.is_link(resolved) {
+		return error('workspace gitdir must not be a symbolic link')
+	}
+	if !os.is_dir(resolved) {
+		return error('workspace gitdir does not exist')
+	}
+	return os.real_path(resolved)
+}
+
 fn resolve_workspace_edit_target(root string, relative_path string) !string {
 	if relative_path.len == 0 || relative_path.len > 4_096 || os.is_abs_path(relative_path)
 		|| relative_path.contains('\x00') {
@@ -209,6 +276,7 @@ fn workspace_content_hash(content string) string {
 }
 
 fn apply_workspace_edit(root string, edit StoredWorkspaceEdit) ! {
+	refuse_workspace_edit_while_git_locked(root)!
 	path := resolve_workspace_edit_target(root, edit.path)!
 	create_file := !os.exists(path)
 	if create_file != edit.create_file {

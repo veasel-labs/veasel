@@ -460,6 +460,26 @@ fn test_gemini_request_emits_cached_content_when_configured() {
 	assert gemini_cached_content_name() == 'cachedContents/veasel-fixture-cache'
 }
 
+fn test_gemini_cached_content_name_rejects_unsafe_values() {
+	assert normalize_gemini_cached_content_name('veasel-ok')! == 'cachedContents/veasel-ok'
+	assert normalize_gemini_cached_content_name('cachedContents/veasel-ok')! == 'cachedContents/veasel-ok'
+	mut rejected := 0
+	for raw in ['', 'bad\0name', 'bad\nname', 'cachedContents/../escape', 'cachedContents/a/b',
+		'has space', 'a'.repeat(300)] {
+		_ = normalize_gemini_cached_content_name(raw) or {
+			rejected++
+			''
+		}
+	}
+	assert rejected == 7
+	assert normalize_gemini_cached_content_ttl('') == gemini_cached_content_ttl_default
+	assert normalize_gemini_cached_content_ttl('7200s') == '7200s'
+	assert normalize_gemini_cached_content_ttl('nope') == gemini_cached_content_ttl_default
+	assert normalize_gemini_cached_content_ttl('01s') == gemini_cached_content_ttl_default
+	assert normalize_gemini_cached_content_ttl('0s') == gemini_cached_content_ttl_default
+	assert normalize_gemini_cached_content_ttl('3600s\0') == gemini_cached_content_ttl_default
+}
+
 fn test_gemini_cached_content_name_prefixes_bare_ids() {
 	prior_name := os.getenv_opt(gemini_cached_content_env) or { '' }
 	os.setenv(gemini_cached_content_env, 'veasel-bare-id', true)

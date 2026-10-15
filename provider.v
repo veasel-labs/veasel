@@ -1522,14 +1522,56 @@ fn gemini_cached_content_name() string {
 		return ''
 	}
 	raw := os.getenv_opt(gemini_cached_content_env) or { '' }
+	name := normalize_gemini_cached_content_name(raw) or { return '' }
+	return name
+}
+
+fn normalize_gemini_cached_content_name(raw string) !string {
 	name := raw.trim_space()
 	if name.len == 0 {
-		return ''
+		return error('gemini cached content name is empty')
 	}
-	if name.starts_with(gemini_cached_content_prefix) {
-		return name
+	if name.len > 256 || name.contains('\0') || name.contains('\r') || name.contains('\n')
+		|| name.contains('..') || name.contains(' ') {
+		return error('gemini cached content name is invalid')
 	}
-	return gemini_cached_content_prefix + name.trim_left('/')
+	normalized := if name.starts_with(gemini_cached_content_prefix) {
+		name
+	} else {
+		gemini_cached_content_prefix + name.trim_left('/')
+	}
+	rest := normalized[gemini_cached_content_prefix.len..]
+	if rest.len == 0 || rest.contains('/') || rest.contains('\\') {
+		return error('gemini cached content name is invalid')
+	}
+	return normalized
+}
+
+fn normalize_gemini_cached_content_ttl(ttl string) string {
+	value := ttl.trim_space()
+	if value.len == 0 {
+		return gemini_cached_content_ttl_default
+	}
+	if value.len > 32 || value.contains('\0') || value.contains('\r') || value.contains('\n') {
+		return gemini_cached_content_ttl_default
+	}
+	// Gemini expects a duration like 3600s; reject other shapes fail-closed to default.
+	if value.len < 2 || !value.ends_with('s') {
+		return gemini_cached_content_ttl_default
+	}
+	digits := value[..value.len - 1]
+	if digits.len == 0 || (digits[0] == `0` && digits.len > 1) {
+		return gemini_cached_content_ttl_default
+	}
+	for c in digits {
+		if c < `0` || c > `9` {
+			return gemini_cached_content_ttl_default
+		}
+	}
+	if digits == '0' {
+		return gemini_cached_content_ttl_default
+	}
+	return value
 }
 
 fn build_gemini_cached_content_create(model string, display_name string, system string,
@@ -1539,19 +1581,21 @@ fn build_gemini_cached_content_create(model string, display_name string, system 
 	} else {
 		'models/' + model.trim_left('/')
 	}
-	ttl_value := if ttl.trim_space().len > 0 {
-		ttl.trim_space()
+	label := display_name.trim_space()
+	safe_label := if label.len == 0 || label.len > 128 || label.contains('\0')
+		|| label.contains('\r') || label.contains('\n') {
+		''
 	} else {
-		gemini_cached_content_ttl_default
+		label
 	}
 	return GeminiCachedContentCreate{
 		model:              model_name
-		display_name:       display_name.trim_space()
+		display_name:       safe_label
 		system_instruction: GeminiContent{
 			parts: if system.len > 0 { [GeminiPart{ text: system }] } else { [] }
 		}
 		contents:           contents
-		ttl:                ttl_value
+		ttl:                normalize_gemini_cached_content_ttl(ttl)
 	}
 }
 

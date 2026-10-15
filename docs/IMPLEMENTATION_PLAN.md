@@ -204,8 +204,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   directory.   Named Streamable HTTP credentials are available via `/v1/mcp-credentials`
   (`mcp.credentials`). Stdio emits `notifications/cancelled` when a turn is
   cancelled mid-call; Streamable HTTP cancels mid-body via progress callbacks.
-  Remaining gaps (interactive OAuth dance, TTFB-before-progress cancel) are
-  tracked in
+  Remaining gaps (interactive OAuth token exchange/API wiring,
+  TTFB-before-progress cancel) are tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
   Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
   including RFC 9728 `resource_metadata`, then best-effort fetch protected-
@@ -213,8 +213,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   (issuer/authorize/token endpoints) without forwarding MCP headers; GET
   notification streams append SSE `message` events into a dedicated
   notifications queue (not RPC pending) with mid-stream cancel, and trusted
-  HTTP connects best-effort listen after initialize. The authorization-code
-  dance remains open.
+  HTTP connects best-effort listen after initialize. Authorization-code +
+  PKCE S256 authorize URL construction, loopback redirect_uri validation,
+  and callback state/code parsing are shipped; token exchange and durable
+  token storage follow.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

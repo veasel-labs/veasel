@@ -30,7 +30,7 @@ import {
   type ApprovedShellSandboxCapability,
 } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
-import { formatPendingReviewStatus, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
+import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 
 import {
   formatReportedCacheUsage,
@@ -413,6 +413,7 @@ let activeTurnId: string | undefined
 let activeTurnController: AbortController | undefined
 let activeTurnCancelled = false
 let pendingUserMessage = ""
+let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let chatMessages: ChatTurn[] = []
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
@@ -1568,7 +1569,10 @@ async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
 
 async function countPendingReviews(): Promise<PendingReviewCounts> {
   const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
-  if (!activeSession) return counts
+  if (!activeSession) {
+    lastPendingCounts = counts
+    return counts
+  }
   try {
     const [editsResponse, commandsResponse, mcpResponse] = await Promise.all([
       fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
@@ -1596,6 +1600,7 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
   } catch {
     // Optional counts must not break the active turn.
   }
+  lastPendingCounts = counts
   return counts
 }
 
@@ -2594,6 +2599,16 @@ renderer.keyInput.on("keypress", (key) => {
   }
   if (chatInput && activeSession) {
     if (slashMatches.length > 0 && handleSlashMenuKey(key, chatInput)) return
+    if (key.ctrl && key.name === "r") {
+      const open = pendingReviewOpenCommand(lastPendingCounts)
+      if (open) {
+        key.preventDefault()
+        key.stopPropagation()
+        setComposerValue(chatInput, open)
+        chatInput.submit()
+        return
+      }
+    }
     if (key.name === "escape") {
       if (sendingMessage) {
         key.stopPropagation()

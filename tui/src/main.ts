@@ -79,7 +79,7 @@ import {
   stepComposerHistory,
   type ComposerHistory,
 } from "./composer-history"
-import { composerLineCursor, killLineForward, killWordBackward } from "./composer-edit"
+import { composerLineCursor, killLineForward, killWordBackward, moveWordCursor } from "./composer-edit"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
 import {
@@ -3513,6 +3513,18 @@ renderer.keyInput.on("keypress", (key) => {
         updateSlashMenu(edited.value)
         chatInput.focus()
       }
+      return
+    }
+    // Ctrl+← / Ctrl+→ move by words (readline / editor habit).
+    if (key.ctrl && (key.name === "left" || key.name === "right")) {
+      key.preventDefault()
+      key.stopPropagation()
+      chatInput.cursorOffset = moveWordCursor(
+        chatInput.value,
+        chatInput.cursorOffset,
+        key.name === "left" ? "backward" : "forward",
+      )
+      chatInput.focus()
       return
     }
     if (

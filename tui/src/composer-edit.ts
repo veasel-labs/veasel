@@ -33,3 +33,24 @@ export function killLineForward(
   if (pos >= value.length) return { value, cursor: pos }
   return { value: value.slice(0, pos), cursor: pos }
 }
+
+// Ctrl+← / Ctrl+→: move by whitespace-delimited words (readline / editor habit).
+export function moveWordCursor(
+  value: string,
+  cursor: number,
+  direction: "backward" | "forward",
+): number {
+  const pos = Math.min(Math.max(0, cursor), value.length)
+  if (direction === "backward") {
+    if (pos === 0) return 0
+    let index = pos
+    while (index > 0 && /\s/.test(value[index - 1]!)) index -= 1
+    while (index > 0 && !/\s/.test(value[index - 1]!)) index -= 1
+    return index
+  }
+  if (pos >= value.length) return value.length
+  let index = pos
+  while (index < value.length && !/\s/.test(value[index]!)) index += 1
+  while (index < value.length && /\s/.test(value[index]!)) index += 1
+  return index
+}

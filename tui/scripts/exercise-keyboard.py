@@ -2,8 +2,9 @@
 """Drive the real Veasel TUI against a loopback fixture.
 
 This checks the keyboard path that unit tests cannot see: provider setup,
-model discovery, slash arguments, a failed turn, cancellation, a session
-switch while completion data is still in flight, and a narrow terminal.
+model discovery, slash arguments, a failed turn, cancellation, a long session
+list that keeps the selection on screen, a session switch while completion
+data is still in flight, and a narrow terminal.
 """
 
 from __future__ import annotations
@@ -51,10 +52,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         if path == "/v1/sessions":
-            return self._json(200, [
+            sessions = [
                 {"id": SESSION, "title": "Alpha", "directory": "/tmp/alpha", "created_at": "2026-10-14 00:00:00"},
                 {"id": OTHER, "title": "Beta", "directory": "/tmp/beta", "created_at": "2026-10-14 00:00:01"},
-            ])
+            ]
+            for index in range(2, 20):
+                sessions.append({
+                    "id": f"33333333-3333-4333-8333-{index:012d}",
+                    "title": f"Lane-{index:02d}",
+                    "directory": f"/tmp/workspaces/very-long-directory/lane-{index:02d}",
+                    "created_at": "2026-10-14 00:00:02",
+                })
+            return self._json(200, sessions)
         if path == f"/v1/sessions/{SESSION}/messages":
             return self._json(200, state["messages"])
         if path == f"/v1/sessions/{OTHER}/messages":
@@ -499,6 +508,17 @@ def main() -> None:
         screen.wait_for("stop this")
         screen.send("\x1b", 0.45)
         screen.wait_for("quit (home)")
+        for _ in range(19):
+            screen.send("j", 0.04)
+        screen.wait_for("20/20", 4)
+        screen.wait_for("Lane-19")
+        visible = screen.terminal.text()
+        if "Alpha" in visible or "Beta" in visible:
+            raise AssertionError(f"session list left earlier rows on screen\n--- screen ---\n{visible}")
+        for _ in range(19):
+            screen.send("k", 0.04)
+        screen.wait_for("1/20", 4)
+        screen.wait_for("Alpha")
         state["hold_edits"] = True
         state["hold_other_edits"] = True
         screen.send("\r", 0.5)

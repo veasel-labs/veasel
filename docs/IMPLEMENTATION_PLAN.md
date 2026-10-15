@@ -242,6 +242,13 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `DELETE /v1/mcp-oauth/refresh` and `veasel mcp oauth clear-refresh` clear
   refresh metadata; deleting a credential also clears its refresh row.
   Credential views expose boolean `oauth_refresh` without secrets.
+  **OAuth Dynamic Client Registration (RFC 7591) is deferred:** authorize already
+  requires an explicit `client_id`; AS metadata may advertise
+  `registration_endpoint` for operator discovery, but Veasel does not POST
+  client registrations. Spike (2026-10-15): PKCE public-client + pre-registered
+  `client_id` covers the configured MCP servers we target; DCR adds redirect_uri
+  registration attack surface without unblocking a current product path. Revisit
+  only if a required authorization server refuses pre-registered clients.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

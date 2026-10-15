@@ -978,6 +978,100 @@ fn test_session_operation_survives_restart_and_uncertain_work_is_not_replayed() 
 	assert second_events.filter(it.type == 'session.turn_completed').len == 1
 }
 
+fn test_queued_session_operation_survives_restart_and_claims_to_completion() {
+	database := os.join_path(os.temp_dir(), 'veasel-queued-recovery-${uuid.new_v4().str()}.sqlite')
+	defer {
+		os.rm(database) or {}
+		os.rm('${database}-wal') or {}
+		os.rm('${database}-shm') or {}
+	}
+	operation_id := '7c2d8e91-4a5b-4c6d-9e0f-1a2b3c4d5e6f'
+	request_json := '{"content":"resume after restart","collect_trace":false,"autonomous":false}'
+	mut first := open_store(database) or { panic(err) }
+	session := first.create_session(SessionInput{
+		title:     'Durable queue'
+		directory: '/tmp/durable-queue'
+	}) or { panic(err) }
+	queued := first.enqueue_session_operation(session.id, operation_id, request_json) or {
+		panic(err)
+	}
+	assert queued.status == 'queued'
+	assert first.session_operation_request_json(session.id, operation_id) or { panic(err) } == request_json
+	first.close() or { panic(err) }
+
+	mut recovered := open_store(database) or { panic(err) }
+	still_queued := recovered.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert still_queued.status == 'queued'
+	assert still_queued.error == ''
+	queued_list := recovered.list_queued_session_operations() or { panic(err) }
+	assert queued_list.len == 1
+	assert queued_list[0].id == operation_id
+	listed := recovered.list_session_operations(session.id) or { panic(err) }
+	assert listed.len == 1
+	assert listed[0].status == 'queued'
+	claimed := recovered.claim_session_operation(session.id, operation_id) or { panic(err) }
+	assert claimed.status == 'running'
+	_ = recovered.append_exchange(session.id, operation_id, 'resume after restart', 'done',
+		'fixture', 'fixture-model', '', ProviderUsage{}) or { panic(err) }
+	completed := recovered.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert completed.status == 'completed'
+	events := recovered.events_after(0) or { panic(err) }
+	assert events.filter(it.type == 'session.turn_queued').len == 1
+	assert events.filter(it.type == 'session.turn_started').len == 1
+	assert events.filter(it.type == 'session.turn_completed').len == 1
+	assert events.filter(it.type == 'session.turn_completed')[0].data.status == 'completed'
+	recovered.close() or { panic(err) }
+}
+
+fn test_queued_session_operation_cancel_before_claim_is_terminal() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Cancel queued'
+		directory: '/tmp/cancel-queued'
+	}) or { panic(err) }
+	operation_id := '0f1e2d3c-4b5a-6978-90ab-cdef01234567'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"never run"}') or {
+		panic(err)
+	}
+	status := store.cancel_session_operation(session.id, operation_id) or { panic(err) }
+	assert status == 'cancelled'
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	mut claim_failed := false
+	_ = store.claim_session_operation(session.id, operation_id) or {
+		claim_failed = err.msg().contains('cancelled')
+		SessionOperation{}
+	}
+	assert claim_failed
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_claimed_queued_operation_becomes_uncertain_after_restart() {
+	database := os.join_path(os.temp_dir(), 'veasel-claimed-uncertain-${uuid.new_v4().str()}.sqlite')
+	defer {
+		os.rm(database) or {}
+		os.rm('${database}-wal') or {}
+		os.rm('${database}-shm') or {}
+	}
+	operation_id := 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+	mut first := open_store(database) or { panic(err) }
+	session := first.create_session(SessionInput{
+		title:     'Claimed then crash'
+		directory: '/tmp/claimed-crash'
+	}) or { panic(err) }
+	_ = first.enqueue_session_operation(session.id, operation_id, '{"content":"in flight"}') or {
+		panic(err)
+	}
+	_ = first.claim_session_operation(session.id, operation_id) or { panic(err) }
+	first.close() or { panic(err) }
+	mut recovered := open_store(database) or { panic(err) }
+	defer { recovered.close() or {} }
+	operation := recovered.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'uncertain'
+	assert recovered.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_session_operation_completion_commits_with_chat_history() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

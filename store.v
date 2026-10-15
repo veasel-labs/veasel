@@ -8,6 +8,7 @@ import sync
 import uuid
 
 const max_session_history_page_size = 100
+const max_retained_terminal_session_operations = 200
 
 pub struct Session {
 pub:
@@ -450,8 +451,58 @@ fn open_store(path string) !&Store {
 			return error('unable to commit operation usage migration')
 		}
 	}
-	// Async session work is never replayed after restart: its provider request or
-	// tool side effects may have completed without a durable response.
+	if current < 13 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin durable queue migration')
+		}
+		// Rebuild so CHECK accepts queued and request_json survives restarts for
+		// jobs that never claimed a worker. Running work still fails closed.
+		db.exec("CREATE TABLE session_operations_v13 (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'cancelling', 'completed', 'failed', 'cancelled', 'uncertain')), provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', request_json TEXT NOT NULL DEFAULT '', input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, usage_reported INTEGER NOT NULL DEFAULT 0 CHECK (usage_reported IN (0, 1)), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create durable queue operation table')
+		}
+		db.exec("INSERT INTO session_operations_v13 (id, session_id, status, provider, model, error, request_json, input_tokens, output_tokens, usage_reported, created_at, updated_at) SELECT id, session_id, status, provider, model, error, '', input_tokens, output_tokens, usage_reported, created_at, updated_at FROM session_operations") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to copy session operations for durable queue')
+		}
+		db.exec('DROP TABLE session_operations') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to replace session operations table')
+		}
+		db.exec('ALTER TABLE session_operations_v13 RENAME TO session_operations') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to rename durable queue operation table')
+		}
+		db.exec('CREATE INDEX session_operations_session_created ON session_operations (session_id, created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index session operations after durable queue migration')
+		}
+		db.exec('CREATE INDEX session_operations_status_created ON session_operations (status, created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index queued session operations')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (13)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record durable queue migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit durable queue migration')
+		}
+	}
+	// Running or cancelling work may have contacted a provider or started a tool
+	// effect without a durable result, so it becomes uncertain and is never
+	// replayed. Queued jobs never claimed a worker; their request_json is kept
+	// for honest resume after restart.
 	db.begin() or {
 		db.close() or {}
 		return error('unable to begin session operation recovery')
@@ -1052,6 +1103,25 @@ fn (mut store Store) get_session(id string) !Session {
 }
 
 fn (mut store Store) create_session_operation(session_id string, operation_id string) !SessionOperation {
+	// Test and recovery helpers create an already-claimed running row. Prefer
+	// enqueue_session_operation for durable Prefer: respond-async turns.
+	return store.insert_session_operation(session_id, operation_id, 'running', '', 'session.turn_started')
+}
+
+fn (mut store Store) enqueue_session_operation(session_id string, operation_id string,
+	request_json string) !SessionOperation {
+	if request_json.trim_space().len == 0 {
+		return error('queued session operation requires a request payload')
+	}
+	if request_json.len > max_chat_input_bytes + 2048 {
+		return error('queued session operation request exceeds the size limit')
+	}
+	return store.insert_session_operation(session_id, operation_id, 'queued', request_json,
+		'session.turn_queued')
+}
+
+fn (mut store Store) insert_session_operation(session_id string, operation_id string, status string,
+	request_json string, event_type string) !SessionOperation {
 	if !validate_operation_id(operation_id) {
 		return error('invalid session operation identifier')
 	}
@@ -1068,19 +1138,21 @@ fn (mut store Store) create_session_operation(session_id string, operation_id st
 		store.db.rollback() or {}
 		return error('session operation already exists')
 	}
-	_ = store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status) VALUES (?, ?, 'running')", [
+	_ = store.db.exec_param_many('INSERT INTO session_operations (id, session_id, status, request_json) VALUES (?, ?, ?, ?)', [
 		operation_id,
 		session_id,
+		status,
+		request_json,
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session operation')
 	}
 	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
-		'session.turn_started',
+		event_type,
 		session_id,
 		json2.encode[EventData](EventData{
 			operation_id: operation_id
-			status:       'running'
+			status:       status
 		}),
 	]) or {
 		store.db.rollback() or {}
@@ -1093,6 +1165,93 @@ fn (mut store Store) create_session_operation(session_id string, operation_id st
 	return store.session_operation_unlocked(session_id, operation_id)
 }
 
+fn (mut store Store) claim_session_operation(session_id string, operation_id string) !SessionOperation {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	updated := store.db.exec_param_many("UPDATE session_operations SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'queued'",
+		[session_id, operation_id]) or {
+		store.db.rollback() or {}
+		return error('unable to claim session operation')
+	}
+	_ = updated
+	rows := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?',
+		[session_id, operation_id]) or {
+		store.db.rollback() or {}
+		return error('unable to read claimed session operation')
+	}
+	if rows.len != 1 {
+		store.db.rollback() or {}
+		return error('session operation not found')
+	}
+	if rows[0].val(0) != 'running' {
+		store.db.rollback() or {}
+		return error('session operation is ${rows[0].val(0)}')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.turn_started',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id: operation_id
+			status:       'running'
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist session operation claim event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session operation claim')
+	}
+	return store.session_operation_unlocked(session_id, operation_id)
+}
+
+fn (mut store Store) session_operation_request_json(session_id string, operation_id string) !string {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param_many('SELECT request_json FROM session_operations WHERE session_id = ? AND id = ?',
+		[session_id, operation_id])!
+	if rows.len != 1 {
+		return error('session operation not found')
+	}
+	return rows[0].val(0)
+}
+
+fn (mut store Store) list_session_operations(session_id string) ![]SessionOperation {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id)!
+	if sessions.len != 1 {
+		return error('session not found')
+	}
+	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, created_at, updated_at FROM session_operations WHERE session_id = ? ORDER BY created_at ASC, id ASC',
+		session_id)!
+	mut operations := []SessionOperation{cap: rows.len}
+	for row in rows {
+		operations << store.session_operation_from_row(row)
+	}
+	return operations
+}
+
+fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY created_at ASC, id ASC")!
+	mut operations := []SessionOperation{cap: rows.len}
+	for row in rows {
+		operations << store.session_operation_from_row(row)
+	}
+	return operations
+}
+
 fn (mut store Store) get_session_operation(session_id string, operation_id string) !SessionOperation {
 	store.mu.lock()
 	defer {
@@ -1102,6 +1261,10 @@ fn (mut store Store) get_session_operation(session_id string, operation_id strin
 }
 
 fn (mut store Store) mark_session_operation_cancelling(session_id string, operation_id string) !string {
+	return store.cancel_session_operation(session_id, operation_id)
+}
+
+fn (mut store Store) cancel_session_operation(session_id string, operation_id string) !string {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -1115,13 +1278,63 @@ fn (mut store Store) mark_session_operation_cancelling(session_id string, operat
 		// persisted as async operations.
 		return 'cancelling'
 	}
-	store.db.exec_param_many("UPDATE session_operations SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'",
-		[session_id, operation_id])!
+	status := rows[0].val(0)
+	if status == 'queued' {
+		store.db.begin()!
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'cancelled', error = 'Cancelled before a worker claimed this queued turn.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'queued'",
+			[session_id, operation_id]) or {
+			store.db.rollback() or {}
+			return error('unable to cancel queued session operation')
+		}
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'session.turn_completed',
+			session_id,
+			json2.encode[EventData](EventData{
+				operation_id: operation_id
+				status:       'cancelled'
+				error:        'Cancelled before a worker claimed this queued turn.'
+			}),
+		]) or {
+			store.db.rollback() or {}
+			return error('unable to persist queued cancellation event')
+		}
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit queued cancellation')
+		}
+		store.prune_terminal_session_operations_unlocked(session_id)
+		return 'cancelled'
+	}
+	if status == 'running' {
+		store.db.exec_param_many("UPDATE session_operations SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'",
+			[session_id, operation_id])!
+	}
 	updated := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
 		operation_id,
 	])!
-	return if updated.len == 1 { updated[0].val(0) } else { rows[0].val(0) }
+	return if updated.len == 1 { updated[0].val(0) } else { status }
+}
+
+fn (mut store Store) prune_terminal_session_operations_unlocked(session_id string) {
+	count_rows := store.db.exec_param("SELECT COUNT(*) FROM session_operations WHERE session_id = ? AND status IN ('completed', 'failed', 'cancelled', 'uncertain')",
+		session_id) or { return }
+	if count_rows.len != 1 {
+		return
+	}
+	excess := count_rows[0].val(0).int() - max_retained_terminal_session_operations
+	if excess <= 0 {
+		return
+	}
+	old_rows := store.db.exec_param_many("SELECT id FROM session_operations WHERE session_id = ? AND status IN ('completed', 'failed', 'cancelled', 'uncertain') ORDER BY created_at ASC, id ASC LIMIT ?",
+		[session_id, excess.str()]) or { return }
+	for row in old_rows {
+		_ = store.db.exec_param('DELETE FROM operation_traces WHERE operation_id = ?', row.val(0)) or {
+			continue
+		}
+		_ = store.db.exec_param_many("DELETE FROM session_operations WHERE session_id = ? AND id = ? AND status IN ('completed', 'failed', 'cancelled', 'uncertain')",
+			[session_id, row.val(0)]) or { continue }
+	}
 }
 
 fn (mut store Store) session_operation_unlocked(session_id string, operation_id string) !SessionOperation {
@@ -1132,7 +1345,10 @@ fn (mut store Store) session_operation_unlocked(session_id string, operation_id 
 	if rows.len != 1 {
 		return error('session operation not found')
 	}
-	row := rows[0]
+	return store.session_operation_from_row(rows[0])
+}
+
+fn (store &Store) session_operation_from_row(row sqlite.Row) SessionOperation {
 	usage_reported := row.val(8) == '1'
 	return SessionOperation{
 		id:             row.val(0)
@@ -1494,6 +1710,9 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		store.db.rollback() or {}
 		return error('unable to commit chat exchange')
 	}
+	if operation_id.len > 0 {
+		store.prune_terminal_session_operations_unlocked(session_id)
+	}
 	rows := store.db.exec_param('SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 2',
 		session_id)!
 	mut result := []ChatTurn{cap: rows.len}
@@ -1566,7 +1785,7 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 		store.db.rollback() or {}
 		return error('unable to persist session turn completion')
 	}
-	_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')", [
+	_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('queued', 'running', 'cancelling')", [
 		status,
 		public_error,
 		operation_id,
@@ -1579,6 +1798,7 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 		store.db.rollback() or {}
 		return error('unable to commit session turn completion')
 	}
+	store.prune_terminal_session_operations_unlocked(session_id)
 }
 
 fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEditDraft) !WorkspaceEditProposal {

@@ -326,7 +326,12 @@ paths:
               $ref: '#/components/schemas/SendMessage'
       responses:
         '202':
-          description: The accepted turn is stored before the response. Query the session operation resource or follow session.turn_completed. After a restart, work without a recorded result is classified uncertain and is never replayed.
+          description: >-
+            The turn is persisted as queued with its request payload before the
+            response. Query the session operation resource, list operations, or
+            follow session.turn_queued / session.turn_started / session.turn_completed.
+            Queued jobs resume after restart. Running or cancelling work is
+            classified uncertain and is never replayed.
           headers:
             Preference-Applied:
               description: Confirms that respond-async was applied.
@@ -385,7 +390,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/operations:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listSessionOperations
+      description: >-
+        Lists durable session turn operations newest-last. Includes queued jobs
+        that survive restart and terminal statuses retained under the per-session
+        bound.
+      responses:
+        '200':
+          description: Session operations in creation order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionOperation'
+        '404':
+          description: Session was not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/operations/{operation_id}:
+
     parameters:
       - in: path
         name: id
@@ -397,7 +429,11 @@ paths:
         schema: { type: string, format: uuid }
     get:
       operationId: getSessionOperation
-      description: Returns durable async session turn status. The operation belongs to the session in the path. A server restart classifies active work as uncertain and never repeats provider or tool effects.
+      description: >-
+        Returns durable async session turn status. The operation belongs to the
+        session in the path. Queued jobs retain request payloads and resume after
+        restart. A server restart classifies running or cancelling work as
+        uncertain and never repeats provider or tool effects.
       responses:
         '200':
           description: Current operation status and safe terminal metadata.
@@ -1176,7 +1212,7 @@ components:
           type: string
         features:
           type: array
-          description: Includes sessions.operations.trace.atif_v1_8 for opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings. session.compaction.summarizer appears when VEASEL_SESSION_COMPACTION_SUMMARIZER is native or llm (structured local summary or one no-tools LLM completion with extractive fallback). workspace.repository_map and session.repository_map advertise the extractive repository map (GET /v1/sessions/{id}/workspace/map and optional turn injection); sizes are measured UTF-8 bytes plus a bytes/4 bound, not provider usage or tree-sitter/PageRank parity.
+          description: Includes sessions.operations.list and sessions.operations.durable_queue for Prefer respond-async turns that persist as queued, resume after restart, and expose GET /v1/sessions/{id}/operations. sessions.operations.trace.atif_v1_8 covers opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings. session.compaction.summarizer appears when VEASEL_SESSION_COMPACTION_SUMMARIZER is native or llm (structured local summary or one no-tools LLM completion with extractive fallback). workspace.repository_map and session.repository_map advertise the extractive repository map (GET /v1/sessions/{id}/workspace/map and optional turn injection); sizes are measured UTF-8 bytes plus a bytes/4 bound, not provider usage or tree-sitter/PageRank parity.
           items:
             type: string
     ModelSettingsInput:
@@ -2128,7 +2164,8 @@ components:
           format: uuid
         status:
           type: string
-          const: running
+          enum: [queued, running]
+          description: Prefer respond-async returns queued until a worker claims the durable job.
     SessionOperation:
       type: object
       required: [id, session_id, status, provider, model, error, created_at, updated_at]
@@ -2137,7 +2174,11 @@ components:
         session_id: { type: string, format: uuid }
         status:
           type: string
-          enum: [running, cancelling, completed, failed, cancelled, uncertain]
+          enum: [queued, running, cancelling, completed, failed, cancelled, uncertain]
+          description: >-
+            queued means the turn request is durable and waiting for a worker.
+            running/cancelling means a worker claimed it. After restart, queued
+            jobs resume; running/cancelling become uncertain and are never replayed.
         provider: { type: string }
         model: { type: string }
         error: { type: string, maxLength: 1024 }

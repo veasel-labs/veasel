@@ -247,6 +247,10 @@ fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCom
 
 fn run_approved_shell_command_with_policy(root string, command ShellCommandSummary,
 	sanitize_environment bool) ShellCommandResult {
+	// Reviewers may pass a non-canonical path (for example /var vs /private/var
+	// on macOS). Compare against real_path so equivalent roots still run, while
+	// rejecting a root that re-resolves to a different safe location.
+	expected_root := os.real_path(root)
 	canonical_root := canonical_workspace_root(root) or {
 		return ShellCommandResult{
 			status:    'failed'
@@ -254,7 +258,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 			output:    'The reviewed workspace root is no longer safe or available; no process was started.'
 		}
 	}
-	if canonical_root != root {
+	if canonical_root != expected_root {
 		return ShellCommandResult{
 			status:    'failed'
 			exit_code: -1

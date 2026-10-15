@@ -118,6 +118,12 @@ fail() {
 	if [[ -f "$work_dir/headless-result" ]]; then
 		cat "$work_dir/headless-result" >&2
 	fi
+	if [[ -f "$work_dir/cold-headless.log" ]]; then
+		cat "$work_dir/cold-headless.log" >&2
+	fi
+	if [[ -f "$work_dir/cold-headless-result" ]]; then
+		cat "$work_dir/cold-headless-result" >&2
+	fi
 	if [[ -f "$plugin_dir/requests.log" ]]; then
 		cat "$plugin_dir/requests.log" >&2
 	fi
@@ -395,13 +401,23 @@ for ((attempt = 0; attempt < 80; attempt++)); do
 	sleep 0.1
 done
 [[ -s "$work_dir/provider.port" ]] || fail 'mock model provider did not become ready'
+provider_port="$(cat "$work_dir/provider.port")"
+provider_ready=0
+for ((attempt = 0; attempt < 80; attempt++)); do
+	if (echo >/dev/tcp/127.0.0.1/"$provider_port") >/dev/null 2>&1; then
+		provider_ready=1
+		break
+	fi
+	sleep 0.1
+done
+[[ "$provider_ready" -eq 1 ]] || fail 'mock model provider port is not accepting connections'
 
 printf 'Smoke: checking JSON output when veasel run starts a cold backend\n'
 cold_port="$(free_port)"
 env VEASEL_PORT="$cold_port" VEASEL_DATA_DIR="$work_dir/cold-data" \
 	VEASEL_PLUGIN_DIR="$work_dir/plugins" VEASEL_MODEL_PROVIDER=openai-compatible \
 	VEASEL_MODEL=smoke-model OPENAI_API_KEY=veasel-openai-key \
-	VEASEL_MODEL_BASE_URL="http://127.0.0.1:$(cat "$work_dir/provider.port")/v1" \
+	VEASEL_MODEL_BASE_URL="http://127.0.0.1:${provider_port}/v1" \
 	"$work_dir/veasel" run --prompt 'Say hello' --workspace "$work_dir/workspace" --json \
 	>"$work_dir/cold-headless-result" 2>"$work_dir/cold-headless.log" \
 	|| fail 'cold-start headless task command failed'

@@ -27,8 +27,9 @@ entered model ID.
 It sends chat turns with `Prefer: respond-async`, renders durable assistant
 deltas while the operation runs, and reloads the committed exchange after its
 `session.turn_completed` event. This releases an HTTP worker while the model or
-a human MCP approval is pending. Operations run in the server process and are
-cancelled during shutdown; durable job recovery is not implemented.
+a human MCP approval is pending. Turns persist as `queued` before a worker
+claims them and resume after server restart; claimed mid-flight work becomes
+`uncertain` and is not replayed.
 
 The startup portrait is a pixel-art adaptation of Veasel, the V language
 mascot. The original mascot is by the V contributors; this adaptation is

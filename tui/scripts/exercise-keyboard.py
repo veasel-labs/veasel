@@ -731,6 +731,13 @@ def main() -> None:
         screen.wait_for("Ask Veasel", 4)
         if "VEASEL CODE / QUICK HELP" in screen.terminal.text():
             raise AssertionError("Esc did not dismiss the help notice")
+        screen.wait_for("?", 4)  # session footer advertises empty-composer ?
+        screen.send("?", 0.45)  # empty composer ? opens the same overlay as /help
+        screen.wait_for("VEASEL CODE / QUICK HELP", 4)
+        screen.send("\x1b", 0.4)
+        screen.wait_for("Ask Veasel", 4)
+        if "VEASEL CODE / QUICK HELP" in screen.terminal.text():
+            raise AssertionError("Esc did not dismiss help opened with ?")
         screen.wait_for("Ctrl+Y")
         # Description search: find /connect, MCP OAuth, and /theme without typing their names.
         screen.send("/key", 0.7)

@@ -3469,6 +3469,21 @@ renderer.keyInput.on("keypress", (key) => {
       renderChat(chatMessages)
       return
     }
+    // Empty composer: ? opens the quick help overlay (same as /help). Typing ?
+    // into a draft still inserts the character. Esc stays leave-after-cancel.
+    if (
+      slashMatches.length === 0
+      && chatInput.value.trim() === ""
+      && !key.ctrl
+      && !key.meta
+      && (key.sequence === "?" || key.name === "?")
+    ) {
+      key.preventDefault()
+      key.stopPropagation()
+      skillNotice = renderHelp((process.stdout.rows ?? 40) < 30)
+      renderChat(chatMessages)
+      return
+    }
     // Take over Ctrl+U before Input's delete-to-line-start so history recall
     // resets too; empty drafts are a no-op so settings-free sessions stay quiet.
     if ((key.ctrl && key.name === "u") || key.sequence === "\x15") {

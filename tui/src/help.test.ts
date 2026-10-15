@@ -17,6 +17,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("streaming below · End follows")
     expect(help).toContain("scrolled · End follows")
     expect(help).toContain("Ctrl+U clears the composer draft")
+    expect(help).toContain("? opens the quick help overlay")
     expect(help).toContain("Ctrl+W or Alt+Backspace deletes the word before the cursor")
     expect(help).toContain("Alt+D deletes from the cursor through the next word")
     expect(help).toContain("Ctrl+K deletes from the cursor to the end")

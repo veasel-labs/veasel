@@ -33,6 +33,7 @@ test("session footer surfaces reviews and the same discovery commands", () => {
   expect(sessionFooterHint).toContain("↑")
   expect(sessionFooterHint).toContain("Esc")
   expect(sessionFooterHint).toContain("Pg")
+  expect(sessionFooterHint).toContain("?") // empty-composer ? opens /help
   expect(sessionFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers Ctrl+W
   expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers Ctrl+W
   expect(sessionFooterHint.length).toBeLessThanOrEqual(72)

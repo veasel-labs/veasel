@@ -273,12 +273,33 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	return error('agent tool round limit reached')
 }
 
-fn messages_for_tool_budget_summary(messages []ChatMessage) []ChatMessage {
+fn tool_budget_summary_note_for(calls []ProviderToolCall) string {
+	mut names := []string{}
+	mut seen := map[string]bool{}
+	for call in calls {
+		name := call.function.name.trim_space()
+		if name.len == 0 || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names << name
+		if names.len == 8 {
+			break
+		}
+	}
+	if names.len == 0 {
+		return tool_budget_summary_note
+	}
+	return tool_budget_summary_note + ' Not run: ' + names.join(', ') + '.'
+}
+
+fn messages_for_tool_budget_summary(messages []ChatMessage, calls []ProviderToolCall) []ChatMessage {
+	note := tool_budget_summary_note_for(calls)
 	mut summary_messages := []ChatMessage{cap: messages.len + 1}
 	if messages.len > 0 && messages[0].role == 'system' {
 		summary_messages << ChatMessage{
 			role:    'system'
-			content: messages[0].content + '\n\n' + tool_budget_summary_note
+			content: messages[0].content + '\n\n' + note
 		}
 		for index in 1 .. messages.len {
 			summary_messages << messages[index]
@@ -287,7 +308,7 @@ fn messages_for_tool_budget_summary(messages []ChatMessage) []ChatMessage {
 	}
 	summary_messages << ChatMessage{
 		role:    'system'
-		content: tool_budget_summary_note
+		content: note
 	}
 	for message in messages {
 		summary_messages << message
@@ -298,7 +319,7 @@ fn messages_for_tool_budget_summary(messages []ChatMessage) []ChatMessage {
 fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, messages []ChatMessage,
 	blocked CompletionOutput, on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep,
 	mut trace_usage ProviderUsage, collect_trace bool) !AgentTraceResult {
-	summary_messages := messages_for_tool_budget_summary(messages)
+	summary_messages := messages_for_tool_budget_summary(messages, blocked.tool_calls)
 	if agent_context_bytes(summary_messages) > max_agent_context_bytes {
 		return error('agent tool round limit reached')
 	}

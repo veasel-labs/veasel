@@ -69,7 +69,7 @@ export function formatSessionList(
   for (let cursor = start; cursor < end; cursor++) {
     const session = sessions[cursor]
     if (!session) continue
-    const marker = cursor === index ? "›" : " "
+    const marker = cursor === index ? "●" : "○"
     const title = clipStart(clean(session.title) || "Untitled session", width - 2)
     const directory = clipEnd(clean(session.directory), width - 2)
     lines.push(`${marker} ${title}`, `  ${directory}`)

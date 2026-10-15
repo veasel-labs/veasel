@@ -47,6 +47,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/command", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", description: "Load earlier messages in this session" },
   { name: "/usage", description: "Show provider-reported token totals for this session" },
+  { name: "/theme", description: "List or switch TUI color themes", usage: "/theme <id>" },
 ]
 
 export const maxSlashSuggestions = 6
@@ -61,7 +62,18 @@ type ChoiceSpec = { kind: "choice"; choices: SlashArgument[] }
 type ValueSpec = { kind: "value"; values: (context: SlashCompletionContext) => SlashArgument[]; empty: string }
 type ArgSpec = ChoiceSpec | ValueSpec
 
+const themeChoices: SlashArgument[] = [
+  { value: "mint", description: "Charcoal panels with mint accents — the Veasel product look" },
+  { value: "ember", description: "Warm dark panels with amber focus cues" },
+  { value: "slate", description: "Cool blue-gray workspace with steel accents" },
+  { value: "mono", description: "High-contrast black and white with green only for status" },
+  { value: "aurora", description: "Deep teal field with cyan highlights" },
+]
+
 const argumentSpecs: Record<string, ArgSpec[]> = {
+  "/theme": [
+    { kind: "choice", choices: themeChoices },
+  ],
   "/skill": [
     { kind: "choice", choices: [{ value: "on", description: "Enable a Skill for this session" }, { value: "off", description: "Disable a Skill" }] },
     { kind: "value", values: (context) => context.skills ?? [], empty: "No Skills are available yet" },

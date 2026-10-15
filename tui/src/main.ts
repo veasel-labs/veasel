@@ -27,10 +27,80 @@ import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 import { formatPendingReviewStatus, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 
-function pendingReviewStatusColor(counts: PendingReviewCounts): string {
-  return totalPendingReviews(counts) > 0 ? "#f3c969" : "#a7f3d0"
-}
 import { formatReportedUsage, formatSessionUsageSummary, statusWithUsage, type SessionUsageSummary } from "./usage"
+import {
+  formatThemeList,
+  isThemeId,
+  loadThemeId,
+  resolveTheme,
+  saveThemeId,
+  type Theme,
+  type ThemeId,
+} from "./themes"
+
+let theme: Theme = resolveTheme(loadThemeId())
+
+function pendingReviewStatusColor(counts: PendingReviewCounts): string {
+  return totalPendingReviews(counts) > 0 ? theme.statusWarn : theme.statusOk
+}
+
+function shortHomePath(value: string): string {
+  const home = process.env.HOME?.trim()
+  if (home && (value === home || value.startsWith(`${home}/`))) {
+    return `~${value.slice(home.length)}`
+  }
+  return value
+}
+
+function headerMetaContent(): string {
+  const directory = activeSession?.directory
+    ?? process.env.VEASEL_PROJECT_DIR
+    ?? process.cwd()
+  return `${shortHomePath(directory)}  ·  ● LOCAL`
+}
+
+function buildPortraitText(active: Theme): StyledText {
+  return new StyledText(portrait.flatMap((row) => [
+    ...[...row].map((pixel) => fg(active.portrait[pixel as keyof Theme["portrait"]] ?? active.panelBg)(pixel === " " ? "  " : "██")),
+    fg(active.panelBg)("\n"),
+  ]))
+}
+
+function buildTranscriptStyles(active: Theme): Record<TranscriptTone, (text: string) => TextChunk> {
+  return {
+    title: (text) => fg(active.title)(bold(text)),
+    meta: (text) => fg(active.meta)(text),
+    notice: (text) => fg(active.notice)(text),
+    diffAdd: (text) => fg(active.diffAdd)(text),
+    diffRemove: (text) => fg(active.diffRemove)(text),
+    diffMeta: (text) => fg(active.diffMeta)(text),
+    userLabel: (text) => fg(active.userLabel)(bold(text)),
+    userText: (text) => fg(active.userText)(text),
+    assistantLabel: (text) => fg(active.assistantLabel)(bold(text)),
+    assistantText: (text) => fg(active.assistantText)(text),
+    status: (text) => fg(active.status)(text),
+    hint: (text) => fg(active.hint)(text),
+  }
+}
+
+function composerStyle() {
+  return {
+    backgroundColor: theme.inputBg,
+    focusedBackgroundColor: theme.inputFocusBg,
+    textColor: theme.inputText,
+    cursorColor: theme.cursor,
+  }
+}
+
+function selectStyle() {
+  return {
+    backgroundColor: theme.panelBg,
+    focusedBackgroundColor: theme.inputBg,
+    selectedBackgroundColor: theme.inputFocusBg,
+    selectedTextColor: theme.brand,
+    descriptionColor: theme.muted,
+  }
+}
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
 const tuiCliAction = parseTuiCliAction(process.argv)
@@ -155,59 +225,6 @@ const renderer = await createCliRenderer({ exitOnCtrlC: true })
 const controller = new AbortController()
 const chatHistoryPageSize = 100
 
-const shell = new BoxRenderable(renderer, {
-  width: "100%",
-  height: "100%",
-  flexDirection: "column",
-  backgroundColor: "#101318",
-  padding: 1,
-  gap: 1,
-})
-const header = new BoxRenderable(renderer, {
-  height: 3,
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "space-between",
-  paddingLeft: 1,
-  paddingRight: 1,
-  backgroundColor: "#1b222b",
-  borderStyle: "rounded",
-  borderColor: "#40534f",
-})
-header.add(new TextRenderable(renderer, { content: " VEASEL  /  CODE", fg: "#a7f3d0" }))
-header.add(new TextRenderable(renderer, { content: "local session workspace", fg: "#87949e" }))
-
-const body = new BoxRenderable(renderer, {
-  flexGrow: 1,
-  flexDirection: "row",
-  gap: 1,
-})
-const sidebar = new BoxRenderable(renderer, {
-  width: sessionSidebarWidth(process.stdout.columns ?? 80),
-  flexDirection: "column",
-  padding: 1,
-  gap: 1,
-  overflow: "hidden",
-  backgroundColor: "#171c22",
-  borderStyle: "rounded",
-  borderColor: "#303944",
-})
-sidebar.add(new TextRenderable(renderer, { content: "SESSIONS", fg: "#d6a7ff", wrapMode: "none" }))
-const sessionList = new TextRenderable(renderer, {
-  content: "Connecting to Veasel…",
-  fg: "#d4d8dc",
-  wrapMode: "none",
-})
-sidebar.add(sessionList)
-const detail = new BoxRenderable(renderer, {
-  flexGrow: 1,
-  flexDirection: "column",
-  padding: 2,
-  gap: 1,
-  backgroundColor: "#171c22",
-  borderStyle: "rounded",
-  borderColor: "#303944",
-})
 const portrait = [
   "    DDDDD     DDDDD    ",
   "   DLLLLD     DLLLLD   ",
@@ -226,26 +243,77 @@ const portrait = [
   "     DDDBBBBBBBDDD     ",
   "       DDDDDD       ",
 ]
-const pixelColors: Record<string, string> = {
-  D: "#202e3b",
-  B: "#4b6c88",
-  L: "#90b8db",
-  K: "#080b0f",
-  H: "#ffffff",
-  N: "#080b0f",
-  W: "#ffffff",
-}
-const portraitText = new StyledText(portrait.flatMap((row) => [
-  ...[...row].map((pixel) => fg(pixelColors[pixel] ?? "#171c22")(pixel === " " ? "  " : "██")),
-  fg("#171c22")("\n"),
-]))
+
+const shell = new BoxRenderable(renderer, {
+  width: "100%",
+  height: "100%",
+  flexDirection: "column",
+  backgroundColor: theme.shellBg,
+  padding: 1,
+  gap: 1,
+})
+const header = new BoxRenderable(renderer, {
+  height: 3,
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "space-between",
+  paddingLeft: 1,
+  paddingRight: 1,
+  backgroundColor: theme.headerBg,
+  borderStyle: "rounded",
+  borderColor: theme.headerBorder,
+})
+const headerTitle = new TextRenderable(renderer, { content: " VEASEL  /  CODE", fg: theme.headerTitle })
+const headerMeta = new TextRenderable(renderer, { content: "● LOCAL", fg: theme.headerMeta })
+header.add(headerTitle)
+header.add(headerMeta)
+
+const body = new BoxRenderable(renderer, {
+  flexGrow: 1,
+  flexDirection: "row",
+  gap: 1,
+})
+const sidebar = new BoxRenderable(renderer, {
+  width: sessionSidebarWidth(process.stdout.columns ?? 80),
+  flexDirection: "column",
+  padding: 1,
+  gap: 1,
+  overflow: "hidden",
+  backgroundColor: theme.panelBg,
+  borderStyle: "rounded",
+  borderColor: theme.panelBorder,
+})
+const sessionsLabel = new TextRenderable(renderer, { content: "SESSIONS", fg: theme.sidebarLabel, wrapMode: "none" })
+sidebar.add(sessionsLabel)
+const sessionList = new TextRenderable(renderer, {
+  content: "Connecting to Veasel…",
+  fg: theme.sidebarFg,
+  wrapMode: "none",
+})
+sidebar.add(sessionList)
+const sidebarBrand = new TextRenderable(renderer, {
+  content: "VEASEL CODE\nyour local workspace",
+  fg: theme.muted,
+  wrapMode: "word",
+})
+sidebar.add(sidebarBrand)
+const detail = new BoxRenderable(renderer, {
+  flexGrow: 1,
+  flexDirection: "column",
+  padding: 2,
+  gap: 1,
+  backgroundColor: theme.panelBg,
+  borderStyle: "rounded",
+  borderColor: theme.panelBorder,
+})
+let portraitText = buildPortraitText(theme)
 const portraitRenderable = new TextRenderable(renderer, { content: portraitText })
 detail.add(portraitRenderable)
-const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: "#a7f3d0" })
+const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: theme.brand })
 detail.add(brandLabel)
 const sessionDetail = new TextRenderable(renderer, {
   content: "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again.",
-  fg: "#b9c2ca",
+  fg: theme.body,
   wrapMode: "word",
 })
 detail.add(sessionDetail)
@@ -257,7 +325,7 @@ function appendSessionDetail(text: string) {
   sessionDetail.content = sessionDetail.plainText + text
 }
 
-const homeFooterHint = "n new · s models · /help · /skills · /mcp · /patches · q quit (home)"
+const homeFooterHint = "n new · s models · /theme · /help · q quit (home)"
 
 function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
   if (step === 0) return "Tab group · Enter configure · Esc close"
@@ -277,15 +345,15 @@ const footer = new BoxRenderable(renderer, {
   paddingLeft: 1,
   paddingRight: 1,
   overflow: "hidden",
-  backgroundColor: "#1b222b",
+  backgroundColor: theme.headerBg,
   borderStyle: "rounded",
-  borderColor: "#303944",
+  borderColor: theme.panelBorder,
 })
-const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969", wrapMode: "none" })
+const status = new TextRenderable(renderer, { content: "● connecting", fg: theme.statusWarn, wrapMode: "none" })
 footer.add(status)
 const footerHint = new TextRenderable(renderer, {
   content: homeFooterHint,
-  fg: "#87949e",
+  fg: theme.muted,
   wrapMode: "none",
 })
 footer.add(footerHint)
@@ -344,10 +412,71 @@ const handledTurnCompletionIds = new Set<string>()
 function renderSessions() {
   const terminalColumns = process.stdout.columns ?? 80
   sidebar.width = sessionSidebarWidth(terminalColumns)
-  sessionList.content = formatSessionList(sessions, selected, {
+  const count = String(sessions.length).padStart(2, "0")
+  sessionsLabel.content = sessions.length > 0 ? `SESSIONS  ${count}` : "SESSIONS"
+  sessionsLabel.fg = theme.sidebarLabel
+  const text = formatSessionList(sessions, selected, {
     rows: process.stdout.rows ?? 40,
     columns: sessionListColumns(terminalColumns),
   })
+  const chunks = text.split("\n").flatMap((line, index, lines) => {
+    const selectedLine = line.startsWith("●")
+    const color = selectedLine ? theme.sessionSelectedFg : theme.sidebarFg
+    const chunk = selectedLine ? fg(color)(bold(line)) : fg(color)(line)
+    return index < lines.length - 1 ? [chunk, fg(theme.sidebarFg)("\n")] : [chunk]
+  })
+  sessionList.content = new StyledText(chunks)
+  headerMeta.content = headerMetaContent()
+  headerMeta.fg = theme.headerMeta
+}
+
+function applyTheme(next: Theme) {
+  theme = next
+  shell.backgroundColor = theme.shellBg
+  header.backgroundColor = theme.headerBg
+  header.borderColor = theme.headerBorder
+  headerTitle.fg = theme.headerTitle
+  headerMeta.fg = theme.headerMeta
+  headerMeta.content = headerMetaContent()
+  sidebar.backgroundColor = theme.panelBg
+  sidebar.borderColor = theme.panelBorder
+  sessionsLabel.fg = theme.sidebarLabel
+  sidebarBrand.fg = theme.muted
+  detail.backgroundColor = theme.panelBg
+  detail.borderColor = theme.panelBorder
+  brandLabel.fg = theme.brand
+  sessionDetail.fg = theme.body
+  footer.backgroundColor = theme.headerBg
+  footer.borderColor = theme.panelBorder
+  footerHint.fg = theme.muted
+  portraitText = buildPortraitText(theme)
+  transcriptStyles = buildTranscriptStyles(theme)
+  if (!activeSession) portraitRenderable.content = portraitText
+  if (chatInput) {
+    const style = composerStyle()
+    chatInput.backgroundColor = style.backgroundColor
+    chatInput.focusedBackgroundColor = style.focusedBackgroundColor
+    chatInput.textColor = style.textColor
+    chatInput.cursorColor = style.cursorColor
+  }
+  if (titleInput) {
+    const style = composerStyle()
+    titleInput.backgroundColor = style.backgroundColor
+    titleInput.focusedBackgroundColor = style.focusedBackgroundColor
+    titleInput.textColor = style.textColor
+    titleInput.cursorColor = style.cursorColor
+  }
+  renderSessions()
+  renderChat(chatMessages)
+}
+
+function setTheme(id: ThemeId) {
+  saveThemeId(id)
+  applyTheme(resolveTheme(id))
+  skillNotice = formatThemeList(id)
+  renderChat(chatMessages)
+  status.content = `● theme ${resolveTheme(id).name}`
+  status.fg = theme.statusOk
 }
 
 async function refreshSessions() {
@@ -358,11 +487,11 @@ async function refreshSessions() {
     selected = Math.min(selected, Math.max(0, sessions.length - 1))
     renderSessions()
     status.content = `● connected  ·  ${sessions.length} session${sessions.length === 1 ? "" : "s"}`
-    status.fg = "#a7f3d0"
+    status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
     status.content = `● server unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
-    status.fg = "#f28b82"
+    status.fg = theme.statusError
   }
 }
 
@@ -405,20 +534,7 @@ function renderChat(messages: ChatTurn[]) {
   sessionDetail.content = new StyledText(segments.map(({ text, tone }) => transcriptStyles[tone](text)))
 }
 
-const transcriptStyles: Record<TranscriptTone, (text: string) => TextChunk> = {
-  title: (text) => fg("#f4f1ea")(bold(text)),
-  meta: (text) => fg("#6b7785")(text),
-  notice: (text) => fg("#b9c2ca")(text),
-  diffAdd: (text) => fg("#86efac")(text),
-  diffRemove: (text) => fg("#fca5a5")(text),
-  diffMeta: (text) => fg("#93c5fd")(text),
-  userLabel: (text) => fg("#f3c969")(bold(text)),
-  userText: (text) => fg("#f5e6c8")(text),
-  assistantLabel: (text) => fg("#a7f3d0")(bold(text)),
-  assistantText: (text) => fg("#d6dde3")(text),
-  status: (text) => fg("#8a96a3")(text),
-  hint: (text) => fg("#8a96a3")(text),
-}
+let transcriptStyles: Record<TranscriptTone, (text: string) => TextChunk> = buildTranscriptStyles(theme)
 
 function safeTerminalText(value: string) {
   return value.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
@@ -454,10 +570,7 @@ async function openSession(session: Session) {
       id: "chat-composer",
       width: "100%",
       placeholder: "Ask Veasel to explain or propose a workspace change…",
-      backgroundColor: "#202832",
-      focusedBackgroundColor: "#293640",
-      textColor: "#e5e7eb",
-      cursorColor: "#a7f3d0",
+      ...composerStyle(),
       maxLength: 1_048_576,
     })
     chatInput = input
@@ -496,6 +609,28 @@ async function sendMessage(value: string) {
   }
   if (content === "/usage") {
     await showSessionUsage()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content === "/theme") {
+    skillNotice = formatThemeList(theme.id)
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const themeMatch = content.match(/^\/theme\s+([a-z]+)$/i)
+  if (themeMatch) {
+    const id = themeMatch[1]!.toLowerCase()
+    if (!isThemeId(id)) {
+      skillNotice = `Unknown theme "${id}".\n\n${formatThemeList(theme.id)}`
+      renderChat(chatMessages)
+      chatInput.value = ""
+      chatInput.focus()
+      return
+    }
+    setTheme(id)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -638,7 +773,7 @@ async function sendMessage(value: string) {
   chatInput.value = ""
   chatInput.blur()
   status.content = "● Veasel is thinking…"
-  status.fg = "#f3c969"
+  status.fg = theme.statusWarn
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
       method: "POST",
@@ -674,12 +809,12 @@ async function sendMessage(value: string) {
   } catch (error) {
     if (activeTurnCancelled) {
       status.content = "● response cancelled"
-      status.fg = "#f3c969"
+      status.fg = theme.statusWarn
       return
     }
     if (controller.signal.aborted) return
     status.content = `● message failed  ·  ${error instanceof Error ? error.message : "request failed"}`
-    status.fg = "#f28b82"
+    status.fg = theme.statusError
   } finally {
     if (!awaitingAsyncCompletion && activeTurnId === operationId) {
       sendingMessage = false
@@ -705,11 +840,11 @@ async function showSessionUsage() {
     status.content = summary.usage_reported
       ? `● session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`
       : "● session usage  ·  no provider-reported tokens yet"
-    status.fg = "#a7f3d0"
+    status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
     status.content = `● usage unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
-    status.fg = "#f28b82"
+    status.fg = theme.statusError
   }
 }
 
@@ -717,14 +852,14 @@ async function loadOlderChatHistory() {
   if (!activeSession || chatHistoryLoading) return
   if (!chatHistoryHasOlder || chatMessages.length === 0) {
     status.content = "● no earlier chat messages"
-    status.fg = "#87949e"
+    status.fg = theme.muted
     return
   }
   const sessionId = activeSession.id
   const before = chatMessages[0].id
   chatHistoryLoading = true
   status.content = "● loading earlier messages…"
-  status.fg = "#f3c969"
+  status.fg = theme.statusWarn
   try {
     const response = await fetch(
       `${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages?before=${before}&limit=${chatHistoryPageSize}`,
@@ -740,11 +875,11 @@ async function loadOlderChatHistory() {
     status.content = loadedCount > 0
       ? `● loaded ${loadedCount} earlier messages`
       : "● no earlier chat messages"
-    status.fg = "#a7f3d0"
+    status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
     status.content = `● history load failed  ·  ${error instanceof Error ? error.message : "request failed"}`
-    status.fg = "#f28b82"
+    status.fg = theme.statusError
   } finally {
     chatHistoryLoading = false
   }
@@ -762,7 +897,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     if (activeSession?.id === sessionId) {
       if (completion.status === "uncertain") {
         status.content = "● operation outcome uncertain · inspect the workspace before retrying"
-        status.fg = "#f3c969"
+        status.fg = theme.statusWarn
       }
       try {
         const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
@@ -813,7 +948,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     if (activeSession?.id === sessionId) renderChat(chatMessages)
     if (completion.status === "completed") {
       status.content = `● turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`
-      status.fg = "#f3c969"
+      status.fg = theme.statusWarn
     }
   }
   if (activeSession?.id !== sessionId) {
@@ -836,13 +971,13 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     }
   } else if (completion.status === "uncertain") {
     status.content = "● operation outcome uncertain · inspect the workspace before retrying"
-    status.fg = "#f3c969"
+    status.fg = theme.statusWarn
   } else if (completion.status === "cancelled") {
     status.content = userCancelled ? "● response cancelled" : "● turn cancelled"
-    status.fg = "#f3c969"
+    status.fg = theme.statusWarn
   } else {
     status.content = `● message failed  ·  ${completion.error ?? "assistant turn failed"}`
-    status.fg = "#f28b82"
+    status.fg = theme.statusError
   }
   chatInput?.focus()
 }
@@ -851,7 +986,7 @@ async function cancelActiveTurn() {
   if (!activeSession || !activeTurnId || !activeTurnController || activeTurnCancelled) return
   activeTurnCancelled = true
   status.content = "● cancelling response…"
-  status.fg = "#f3c969"
+  status.fg = theme.statusWarn
   void fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/operations/${activeTurnId}/cancel`, {
     method: "POST",
   }).catch(() => undefined)
@@ -1039,7 +1174,7 @@ async function notifyPendingMcpToolCalls() {
     const pendingStatus = formatPendingReviewStatus(counts)
     if (pendingStatus) {
       status.content = pendingStatus
-      status.fg = "#f3c969"
+      status.fg = theme.statusWarn
     }
     chatInput?.focus()
     renderChat(chatMessages)
@@ -1093,7 +1228,7 @@ async function notifyPendingProposals() {
     const pendingStatus = formatPendingReviewStatus(counts)
     if (pendingStatus) {
       status.content = pendingStatus
-      status.fg = "#f3c969"
+      status.fg = theme.statusWarn
     }
     renderChat(chatMessages)
   } catch {
@@ -1261,7 +1396,7 @@ async function consumeEvents() {
       })
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
       status.content = "● connected  ·  listening for activity"
-      status.fg = "#a7f3d0"
+      status.fg = theme.statusOk
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
@@ -1312,13 +1447,13 @@ async function consumeEvents() {
       }
       if (!controller.signal.aborted) {
         status.content = "● reconnecting to event stream…"
-        status.fg = "#f3c969"
+        status.fg = theme.statusWarn
         await new Promise((resolve) => setTimeout(resolve, 1200))
       }
     } catch {
       if (controller.signal.aborted) return
       status.content = "● reconnecting to event stream…"
-      status.fg = "#f3c969"
+      status.fg = theme.statusWarn
       await new Promise((resolve) => setTimeout(resolve, 1200))
     }
   }
@@ -1332,10 +1467,7 @@ function beginCreate() {
     id: "session-title",
     width: 48,
     placeholder: "e.g. Refactor the parser",
-    backgroundColor: "#202832",
-    focusedBackgroundColor: "#293640",
-    textColor: "#e5e7eb",
-    cursorColor: "#a7f3d0",
+    ...composerStyle(),
     maxLength: 200,
   })
   titleInput = input
@@ -1350,7 +1482,7 @@ function beginCreate() {
     creating = false
     void createSession(title).catch((error) => {
       status.content = `● could not create session  ·  ${error instanceof Error ? error.message : "request failed"}`
-      status.fg = "#f28b82"
+      status.fg = theme.statusError
     })
   })
 }
@@ -1428,13 +1560,13 @@ function closeSettings(message = "Settings unchanged.") {
   footerHint.content = homeFooterHint
   sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
   status.content = `● ${message}`
-  status.fg = "#a7f3d0"
+  status.fg = theme.statusOk
   if (activeSession) {
     const session = activeSession
     chatInput = undefined
     void openSession(session).catch(() => {
       status.content = "● settings saved · unable to restore session view"
-      status.fg = "#f3c969"
+      status.fg = theme.statusWarn
     })
   }
 }
@@ -1463,7 +1595,7 @@ function showSettingsStep(manualModel = false) {
     : "Enter continues · Ctrl+B goes back · Esc cancels"
   sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${settingPrompts[settingsStep]}${knownEndpointNote()}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
   status.content = `● provider settings · ${settingsTitle(settingsStep).replace("MODEL SETTINGS  /  ", "")}`
-  status.fg = "#a7f3d0"
+  status.fg = theme.statusOk
   const endpointShortcut = settingsStep > 0 && !settingsEditEndpoint && providerHasKnownEndpoint(providerInfo ?? { base_url: "" })
   const budgetShortcut = settingsStep > 0 && settingsStep !== 4
   footerHint.content = settingsFooterHint(settingsStep, endpointShortcut, budgetShortcut)
@@ -1494,11 +1626,7 @@ function showSettingsStep(manualModel = false) {
         value: provider.id,
       })),
       selectedIndex: activeIndex,
-      backgroundColor: "#171c22",
-      focusedBackgroundColor: "#202832",
-      selectedBackgroundColor: "#293640",
-      selectedTextColor: "#a7f3d0",
-      descriptionColor: "#87949e",
+      ...selectStyle(),
       showDescription: true,
       showScrollIndicator: true,
     })
@@ -1550,11 +1678,7 @@ function showSettingsStep(manualModel = false) {
         height: Math.min(10, options.length * 2 + 1),
         options,
         selectedIndex: selectedIndex >= 0 && selectedIndex < matches.length ? selectedIndex : 0,
-        backgroundColor: "#171c22",
-        focusedBackgroundColor: "#202832",
-        selectedBackgroundColor: "#293640",
-        selectedTextColor: "#a7f3d0",
-        descriptionColor: "#87949e",
+        ...selectStyle(),
         showDescription: true,
         showScrollIndicator: true,
       })
@@ -1577,7 +1701,7 @@ function showSettingsStep(manualModel = false) {
   if (settingsStep === 2) {
     settingsSecretIndicator = new TextRenderable(renderer, {
       content: "•".repeat([...settingsValues.api_key].length),
-      fg: "#a7f3d0",
+      fg: theme.brand,
     })
     detail.add(settingsSecretIndicator)
     return
@@ -1587,11 +1711,8 @@ function showSettingsStep(manualModel = false) {
       id: "model-output-token-budget",
       width: 24,
       placeholder: "0, 4096, 8192…",
-      backgroundColor: "#202832",
-      focusedBackgroundColor: "#293640",
-      textColor: "#e5e7eb",
+      ...composerStyle(),
       focusedTextColor: "#ffffff",
-      cursorColor: "#a7f3d0",
       maxLength: 7,
     })
     settingsInput = input
@@ -1615,11 +1736,8 @@ function showSettingsStep(manualModel = false) {
     id: `model-setting-${settingsStep}`,
     width: 58,
     placeholder: settingsStep === 3 ? "e.g. claude-sonnet-4-5 or gpt-5" : "https://api.example.com/v1",
-    backgroundColor: "#202832",
-    focusedBackgroundColor: "#293640",
-    textColor: "#e5e7eb",
+    ...composerStyle(),
     focusedTextColor: "#ffffff",
-    cursorColor: "#a7f3d0",
     maxLength: 512,
   })
   settingsInput = input
@@ -1691,7 +1809,7 @@ async function openSettings() {
   if (settingsOpen || creating || sendingMessage) return
   settingsOpen = true
   status.content = "● provider settings"
-  status.fg = "#a7f3d0"
+  status.fg = theme.statusOk
   sidebar.visible = false
   portraitRenderable.visible = false
   brandLabel.visible = false
@@ -1841,11 +1959,11 @@ function renderSlashMenu() {
     const selected = start + offset === slashSelected
     const name = command.name.padEnd(width + 2)
     return selected
-      ? [fg("#a7f3d0")(bold(` › ${name}`)), fg("#e5e7eb")(command.description), fg("#6b7785")(command.usage ? `  ${command.usage}` : ""), fg("#6b7785")("\n")]
-      : [fg("#b9c2ca")(`   ${name}`), fg("#6b7785")(`${command.description}\n`)]
+      ? [fg(theme.brand)(bold(` › ${name}`)), fg(theme.inputText)(command.description), fg(theme.meta)(command.usage ? `  ${command.usage}` : ""), fg(theme.meta)("\n")]
+      : [fg(theme.body)(`   ${name}`), fg(theme.meta)(`${command.description}\n`)]
   })
   const more = slashMatches.length > end - start ? `${slashSelected + 1}/${slashMatches.length} · ` : ""
-  chunks.push(fg("#6b7785")(`   ${more}Tab complete · ↑/↓ choose · Enter run · Esc dismiss`))
+  chunks.push(fg(theme.meta)(`   ${more}Tab complete · ↑/↓ choose · Enter run · Esc dismiss`))
   slashMenu.content = new StyledText(chunks)
   slashMenu.visible = true
 }
@@ -2021,7 +2139,7 @@ renderer.keyInput.on("keypress", (key) => {
       footerHint.content = homeFooterHint
       sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again."
       status.content = "● connected"
-      status.fg = "#a7f3d0"
+      status.fg = theme.statusOk
     }
     return
   }
@@ -2041,7 +2159,7 @@ renderer.keyInput.on("keypress", (key) => {
     const session = sessions[selected]
     void openSession(session).catch((error) => {
       status.content = `● unable to open session  ·  ${error instanceof Error ? error.message : "request failed"}`
-      status.fg = "#f28b82"
+      status.fg = theme.statusError
     })
   }
 })

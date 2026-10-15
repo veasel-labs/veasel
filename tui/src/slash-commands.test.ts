@@ -36,6 +36,12 @@ describe("slashSuggestions", () => {
     expect(names("/trust")).toEqual(["/mcp trust", "/mcp untrust"])
   })
 
+  test("suggests theme ids for /theme", () => {
+    expect(names("/theme")[0]).toBe("/theme")
+    expect(names("/theme ")).toEqual(["/theme mint", "/theme ember", "/theme slate", "/theme mono", "/theme aurora"])
+    expect(names("/theme au")).toEqual(["/theme aurora"])
+  })
+
   test("suggests subcommands and filters contextual values", () => {
     expect(names("/patch ")).toEqual(["/patch show", "/patch approve", "/patch reject"])
     expect(names("/patch sh")).toEqual(["/patch show"])

@@ -10,7 +10,7 @@ export const homeFilterFooterHint =
   "type · Backspace · Ctrl+L clear · Esc clear · j/k · Enter · q quit"
 
 export const sessionFooterHint =
-  "Esc · ↑ · Pg · Ctrl+U · Ctrl+R · Ctrl+Y · /skills · /mcp · /theme · /map"
+  "Esc · ↑ · Pg · Ctrl+U · Ctrl+W · Ctrl+Y · /skills · /mcp · /map"
 
 export function homeFooterForFilter(filter: string): string {
   return filter.trim().length > 0 ? homeFilterFooterHint : homeFooterHint

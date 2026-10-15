@@ -663,9 +663,9 @@ def main() -> None:
         screen.send("\r", 0.6)
         screen.wait_for("Ask Veasel")
         screen.wait_for("openai/gpt-5", 6)
-        screen.wait_for("Ctrl+R")
         screen.wait_for("Ctrl+Y")
         screen.wait_for("Ctrl+U")
+        screen.wait_for("Ctrl+W")
         screen.wait_for("↑")
         screen.wait_for("Pg")
         screen.wait_for("/skills")
@@ -714,7 +714,7 @@ def main() -> None:
         screen.wait_for("/patches")
         screen.clear_line(7)  # "/theme "
         screen.wait_for("/patches")
-        screen.wait_for("Ctrl+R")
+        screen.wait_for("Ctrl+W")  # session footer (Ctrl+R stays in /help)
         screen.send("\x12", 0.7)  # Ctrl+R opens the first pending list
         screen.wait_for("WORKSPACE EDIT PROPOSALS", 4)
         screen.wait_for("aaaaaaaa-aaaa")
@@ -802,14 +802,26 @@ def main() -> None:
         screen.wait_for("Copied last reply", 4)
         screen.send("\x1b", 0.35)  # dismiss copy notice so the composer is alone
         screen.wait_for("Ask Veasel", 4)
-        screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
-        screen.send("!", 0.35)  # append so the recalled line is unique on screen
-        screen.wait_for("keep this prompt!", 4)
+        screen.send("zxqy wordkill", 0.45)  # unique draft (not in transcript)
+        screen.wait_for("zxqy wordkill", 4)
+        screen.send("\x17", 0.45)  # Ctrl+W kills the last word
+        screen.wait_for("zxqy ", 4)
+        visible = screen.terminal.text()
+        if "wordkill" in visible:
+            raise AssertionError(f"Ctrl+W left the killed word on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.45)  # Ctrl+U clears the composer draft
         screen.wait_for("Ask Veasel", 4)
         visible = screen.terminal.text()
-        if "keep this prompt!" in visible:
+        if "zxqy " in visible:
             raise AssertionError(f"Ctrl+U left the composer draft on screen\n--- screen ---\n{visible}")
+        screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
+        screen.send("!", 0.35)  # append so the recalled line is unique on screen
+        screen.wait_for("keep this prompt!", 4)
+        screen.send("\x15", 0.45)  # Ctrl+U clears the recalled draft
+        screen.wait_for("Ask Veasel", 4)
+        visible = screen.terminal.text()
+        if "keep this prompt!" in visible:
+            raise AssertionError(f"Ctrl+U left the recalled draft on screen\n--- screen ---\n{visible}")
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
         screen.wait_for("busy")

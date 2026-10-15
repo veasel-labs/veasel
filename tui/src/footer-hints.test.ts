@@ -24,14 +24,16 @@ test("home filter footer names clear keys within the column budget", () => {
 })
 
 test("session footer surfaces reviews and the same discovery commands", () => {
-  for (const command of ["/skills", "/mcp", "/theme", "/map"]) {
+  for (const command of ["/skills", "/mcp", "/map"]) {
     expect(sessionFooterHint).toContain(command)
   }
   expect(sessionFooterHint).toContain("Ctrl+U")
-  expect(sessionFooterHint).toContain("Ctrl+R")
+  expect(sessionFooterHint).toContain("Ctrl+W")
   expect(sessionFooterHint).toContain("Ctrl+Y")
   expect(sessionFooterHint).toContain("↑")
   expect(sessionFooterHint).toContain("Esc")
   expect(sessionFooterHint).toContain("Pg")
+  expect(sessionFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers Ctrl+W
+  expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers Ctrl+W
   expect(sessionFooterHint.length).toBeLessThanOrEqual(72)
 })

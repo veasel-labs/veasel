@@ -181,7 +181,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Request-side Gemini explicit cache: emit `cachedContent` on generateContent
   when `VEASEL_GEMINI_CACHED_CONTENT` names a resource (`VEASEL_GEMINI_PROMPT_CACHE=off`
   disables); capability `provider.gemini.prompt_cache` only when configured.
-  Create/expire is not on the turn path; create-body encoder fixture-tested.
+  Create/expire are explicit helpers (`create_gemini_cached_content` /
+  `expire_gemini_cached_content`) and are never called on the turn path;
+  fixture-tested over loopback HTTP plus create-body encoding.
   Pin: `docs/compatibility/prompt-cache-accounting.md`.
   Keys do not invent hit rates; hits remain provider-reported.
 

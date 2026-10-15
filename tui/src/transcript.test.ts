@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { assistantLabel, transcriptPlainText, transcriptSegments, userLabel } from "./transcript"
+import { assistantLabel, noticeSegments, transcriptPlainText, transcriptSegments, userLabel } from "./transcript"
 
 const session = { title: "fix tests", directory: "/work/app" }
 
@@ -43,6 +43,20 @@ describe("transcriptSegments", () => {
     expect(transcriptPlainText(transcriptSegments({ messages: [{ role: "user", content: "hi" }], hasOlder: true }))).toEndWith(
       "/history older · load earlier messages",
     )
+  })
+
+  test("tones unified diff lines without dropping their markers", () => {
+    const diff = "REVIEW\nsrc/main.v\n@@ -1 +1 @@\n context\n-old\n+new\n--- a/src/main.v\n+++ b/src/main.v"
+    const segments = noticeSegments(diff)
+    expect(transcriptPlainText(segments)).toBe(`${diff}\n\n`)
+    expect(segments).toContainEqual({ text: "-old\n", tone: "diffRemove" })
+    expect(segments).toContainEqual({ text: "+new\n", tone: "diffAdd" })
+    expect(segments).toContainEqual({ text: "@@ -1 +1 @@\n", tone: "diffMeta" })
+    expect(segments).toContainEqual({ text: "--- a/src/main.v\n", tone: "diffMeta" })
+    expect(segments).toContainEqual({ text: "+++ b/src/main.v\n\n", tone: "diffMeta" })
+    expect(noticeSegments("No workspace edit proposals.")).toEqual([
+      { text: "No workspace edit proposals.\n\n", tone: "notice" },
+    ])
   })
 
   test("renders notices and can hide messages behind the help guide", () => {

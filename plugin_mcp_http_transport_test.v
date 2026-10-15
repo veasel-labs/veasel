@@ -16,6 +16,20 @@ mut:
 
 fn (mut fixture PluginMCPHTTPFixture) handle(request http.Request) http.Response {
 	mut response := http.Response{}
+	if request.url == '/mcp' && request.method == .get {
+		if !(request.header.get(.accept) or { '' }).contains('text/event-stream') {
+			response.set_status(.bad_request)
+			response.body = 'Accept must include text/event-stream'
+			return response
+		}
+		response.header.set(.content_type, 'text/event-stream')
+		response.body = ': keepalive\nevent: endpoint\ndata: /events\n\nevent: message\ndata: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"fixture-notification"}}\n\n'
+		return response
+	}
+	if request.url == '/notifications-unsupported' && request.method == .get {
+		response.set_status(.method_not_allowed)
+		return response
+	}
 	if request.url == '/unauthorized' {
 		fixture.unauthorized_hits++
 		response.set_status(.unauthorized)
@@ -235,6 +249,58 @@ fn test_plugin_mcp_streamable_http_stateless_discovery_sse_tool_call_and_redirec
 fn plugin_mcp_http_transport_send_error(mut transport PluginMCPHTTPTransport, message string) string {
 	transport.send(message) or { return err.msg() }
 	return ''
+}
+
+fn test_plugin_mcp_http_get_notification_stream_appends_pending_messages() {
+	mut fixture := &PluginMCPHTTPFixture{}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut transport := new_plugin_mcp_http_transport(PluginMCPServer{
+		name:      'notify'
+		transport: 'streamable-http'
+		url:       'http://${server.addr}/mcp'
+		headers:   {
+			'X-Plugin-Token': 'fixture-token'
+		}
+	}) or { panic(err) }
+	count := transport.listen_notifications() or { panic(err) }
+	assert count == 1
+	message := transport.receive() or { panic(err) }
+	assert message.contains('notifications/message')
+	assert message.contains('fixture-notification')
+
+	mut unsupported := new_plugin_mcp_http_transport(PluginMCPServer{
+		name:      'no-stream'
+		transport: 'streamable-http'
+		url:       'http://${server.addr}/notifications-unsupported'
+	}) or { panic(err) }
+	assert unsupported.listen_notifications()! == 0
+
+	mut cancelled := new_plugin_mcp_http_transport(PluginMCPServer{
+		name:      'cancelled'
+		transport: 'streamable-http'
+		url:       'http://${server.addr}/mcp'
+	}) or { panic(err) }
+	cancelled.request_cancel()
+	cancelled.listen_notifications() or {
+		assert err.msg() == 'cancelled'
+		return
+	}
+	assert false, 'cancelled notification listen must fail'
 }
 
 fn test_plugin_mcp_http_sse_parser_is_bounded_and_skips_non_message_events() {

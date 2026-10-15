@@ -255,6 +255,83 @@ fn (mut transport PluginMCPHTTPTransport) receive() !string {
 	return message
 }
 
+// listen_notifications opens the Streamable HTTP GET notification stream and
+// appends completed SSE `message` events to pending. Long-lived streams abort
+// when cancel is requested via on_progress_body. Servers that answer 405/404
+// are treated as not offering a notification stream.
+fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
+	if transport.cancel_requested {
+		return error('cancelled')
+	}
+	mut header := http.new_header()
+	header.add_custom_map(plugin_mcp_http_user_headers(transport.headers))!
+	header.set(.accept, 'text/event-stream')
+	if transport.session_id.len > 0 {
+		header.set_custom('MCP-Session-Id', transport.session_id)!
+	}
+	if transport.protocol_version.len > 0 {
+		header.set_custom('MCP-Protocol-Version', transport.protocol_version)!
+	}
+	mut stream := &PluginMCPHTTPSseStream{}
+	before := transport.pending.len
+	response := http.fetch(
+		url:                  transport.url
+		method:               .get
+		header:               header
+		validate:             transport.url.starts_with('https://')
+		allow_redirect:       false
+		max_retries:          1
+		read_timeout:         plugin_mcp_http_response_timeout
+		write_timeout:        plugin_mcp_http_response_timeout
+		stop_copying_limit:   max_plugin_mcp_http_body_bytes + 1
+		stop_receiving_limit: max_plugin_mcp_http_body_bytes + 1
+		on_progress_body:     fn [mut transport, mut stream] (_ &http.Request, chunk []u8, _ u64, _ u64, _ int) ! {
+			if transport.cancel_requested {
+				return error('cancelled')
+			}
+			messages := stream.feed(chunk.bytestr())!
+			for message in messages {
+				if transport.pending.len >= max_plugin_mcp_http_messages {
+					return error('MCP HTTP SSE response exceeded the message count limit')
+				}
+				transport.pending << message
+			}
+		}
+	) or {
+		if err.msg() == 'cancelled' || transport.cancel_requested {
+			return error('cancelled')
+		}
+		return error(err.msg())
+	}
+	if response.status_code in [404, 405] {
+		return 0
+	}
+	if response.status_code == 401 {
+		www_authenticate := response.header.get(.www_authenticate) or { '' }
+		transport.record_http_auth_challenge(www_authenticate)
+		return error(transport.authorization_required_error())
+	}
+	if response.status_code in 300 .. 400 {
+		return error('MCP HTTP redirects are disabled to protect configured headers')
+	}
+	if response.status_code < 200 || response.status_code >= 300 {
+		return error('MCP HTTP notification stream returned status ${response.status_code}')
+	}
+	content_type := response.header.get(.content_type) or { 'text/event-stream' }
+	media_type := content_type.all_before(';').trim_space().to_lower()
+	if media_type.len > 0 && media_type != 'text/event-stream' {
+		return error('MCP HTTP notification stream used an unsupported content type')
+	}
+	tail := stream.finish()!
+	for message in tail {
+		if transport.pending.len >= max_plugin_mcp_http_messages {
+			return error('MCP HTTP SSE response exceeded the message count limit')
+		}
+		transport.pending << message
+	}
+	return transport.pending.len - before
+}
+
 fn (mut transport PluginMCPHTTPTransport) close() {
 	if transport.session_id.len == 0 {
 		return
@@ -357,28 +434,87 @@ fn plugin_mcp_json_string(fields map[string]json2.Any, key string) string {
 	return value as string
 }
 
-fn parse_plugin_mcp_http_sse(body string) ![]string {
+struct PluginMCPHTTPSseStream {
+mut:
+	carry      string
+	event_name string
+	data_lines []string
+	bytes      int
+}
+
+fn (mut stream PluginMCPHTTPSseStream) feed(chunk string) ![]string {
+	if chunk.len == 0 {
+		return []string{}
+	}
+	stream.bytes += chunk.len
+	if stream.bytes > max_plugin_mcp_http_body_bytes {
+		return error('MCP HTTP SSE response exceeds the message size limit')
+	}
+	text := stream.carry + chunk
+	stream.carry = ''
 	mut messages := []string{}
-	mut event_name := ''
-	mut data_lines := []string{}
-	for line in body.split_into_lines() {
+	mut start := 0
+	for start < text.len {
+		mut end := start
+		for end < text.len && text[end] != `\n` {
+			end++
+		}
+		if end >= text.len {
+			stream.carry = text[start..]
+			break
+		}
+		mut line := text[start..end]
+		start = end + 1
+		if line.ends_with('\r') {
+			line = line[..line.len - 1]
+		}
 		if line.len == 0 {
-			append_plugin_mcp_http_sse_event(mut messages, event_name, data_lines)!
-			event_name = ''
-			data_lines.clear()
+			append_plugin_mcp_http_sse_event(mut messages, stream.event_name, stream.data_lines)!
+			stream.event_name = ''
+			stream.data_lines.clear()
 			continue
 		}
 		if line.starts_with(':') {
 			continue
 		}
 		if line.starts_with('event:') {
-			event_name = line[6..].trim_space()
+			stream.event_name = line[6..].trim_space()
 		} else if line.starts_with('data:') {
 			data := line[5..]
-			data_lines << if data.starts_with(' ') { data[1..] } else { data }
+			stream.data_lines << if data.starts_with(' ') { data[1..] } else { data }
 		}
 	}
-	append_plugin_mcp_http_sse_event(mut messages, event_name, data_lines)!
+	return messages
+}
+
+fn (mut stream PluginMCPHTTPSseStream) finish() ![]string {
+	mut messages := []string{}
+	if stream.carry.len > 0 {
+		line := if stream.carry.ends_with('\r') {
+			stream.carry[..stream.carry.len - 1]
+		} else {
+			stream.carry
+		}
+		stream.carry = ''
+		if line.len > 0 && !line.starts_with(':') {
+			if line.starts_with('event:') {
+				stream.event_name = line[6..].trim_space()
+			} else if line.starts_with('data:') {
+				data := line[5..]
+				stream.data_lines << if data.starts_with(' ') { data[1..] } else { data }
+			}
+		}
+	}
+	append_plugin_mcp_http_sse_event(mut messages, stream.event_name, stream.data_lines)!
+	stream.event_name = ''
+	stream.data_lines.clear()
+	return messages
+}
+
+fn parse_plugin_mcp_http_sse(body string) ![]string {
+	mut stream := PluginMCPHTTPSseStream{}
+	mut messages := stream.feed(body)!
+	messages << stream.finish()!
 	if messages.len == 0 {
 		return error('MCP HTTP SSE response contained no message events')
 	}

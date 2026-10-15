@@ -20,7 +20,7 @@ import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
 import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
-import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
+import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import {
@@ -2435,12 +2435,26 @@ function renderSlashMenu() {
   }
   const { start, end } = suggestionWindow(slashSelected, slashMatches.length)
   const width = Math.max(...slashMatches.map((command) => command.name.length))
-  const chunks = slashMatches.slice(start, end).flatMap((command, offset) => {
+  const chunks: ReturnType<typeof fg>[] = []
+  let lastCategory = ""
+  slashMatches.slice(start, end).forEach((command, offset) => {
     const selected = start + offset === slashSelected
+    const category = slashCategoryLabel(command)
+    if (category !== lastCategory) {
+      chunks.push(fg(theme.meta)(`   ── ${category} ──\n`))
+      lastCategory = category
+    }
     const name = command.name.padEnd(width + 2)
-    return selected
-      ? [fg(theme.brand)(bold(` › ${name}`)), fg(theme.inputText)(command.description), fg(theme.meta)(command.usage ? `  ${command.usage}` : ""), fg(theme.meta)("\n")]
-      : [fg(theme.body)(`   ${name}`), fg(theme.meta)(`${command.description}\n`)]
+    if (selected) {
+      chunks.push(
+        fg(theme.brand)(bold(` › ${name}`)),
+        fg(theme.inputText)(command.description),
+        fg(theme.meta)(command.usage ? `  ${command.usage}` : ""),
+        fg(theme.meta)("\n"),
+      )
+    } else {
+      chunks.push(fg(theme.body)(`   ${name}`), fg(theme.meta)(`${command.description}\n`))
+    }
   })
   const more = slashMatches.length > end - start ? `${slashSelected + 1}/${slashMatches.length} · ` : ""
   chunks.push(fg(theme.meta)(`   ${more}Tab complete · ↑/↓ choose · Enter run · Esc dismiss`))

@@ -4,6 +4,7 @@ import {
   completeSlashCommand,
   moveSuggestion,
   runsOnAccept,
+  slashCategoryLabel,
   slashCommands,
   slashContextApplies,
   slashSuggestions,
@@ -17,6 +18,11 @@ describe("slashSuggestions", () => {
     expect(names("/")).toHaveLength(slashCommands.length)
     expect(names("")).toEqual([])
     expect(names("explain /mcp")).toEqual([])
+    expect(slashCommands.every((command) => Boolean(command.category))).toBe(true)
+    expect(slashCategoryLabel(slashCommands.find((command) => command.name === "/connect")!)).toBe("setup")
+    expect(slashCategoryLabel(slashCommands.find((command) => command.name === "/patches")!)).toBe("review")
+    expect(slashCategoryLabel(slashCommands.find((command) => command.name === "/mcp")!)).toBe("mcp")
+    expect(slashCategoryLabel(slashCommands.find((command) => command.name === "/skills")!)).toBe("skills")
   })
 
   test("filters by prefix and ranks an exact match first", () => {

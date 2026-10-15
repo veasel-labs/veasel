@@ -60,7 +60,7 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 	mut diagnostics := []PluginDiagnostic{}
 	mut names := map[string]bool{}
 	for entry in entries.sorted() {
-		package_path := plugin_path(root, entry) or {
+		package_path := resolve_plugin_package_directory(root, entry) or {
 			diagnostics << PluginDiagnostic{
 				component: entry
 				message:   'Skipping package outside the plugin directory'
@@ -113,6 +113,7 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 				has_directory: plugin.veasel_has_directory
 			}
 		}
+		origin := plugin_package_origin(root, entry)
 		plugins << PluginCatalogEntry{
 			name:             plugin.manifest.name
 			version:          plugin.manifest.version
@@ -121,6 +122,7 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 			mcp_servers:      mcp_servers
 			diagnostics:      plugin.diagnostics
 			veasel_extension: extension
+			origin:           origin
 		}
 	}
 	return PluginCatalog{
@@ -154,7 +156,7 @@ fn find_agent_skill(directory string, plugin_name string, skill_name string) !(s
 		return error('plugin directory exceeds the ${max_plugin_packages} package limit')
 	}
 	for entry in entries.sorted() {
-		package_path := plugin_path(root, entry) or { continue }
+		package_path := resolve_plugin_package_directory(root, entry) or { continue }
 		if !os.is_dir(package_path) {
 			continue
 		}
@@ -183,7 +185,7 @@ fn find_agent_mcp_server(directory string, plugin_name string, server_name strin
 		return error('plugin directory exceeds the ${max_plugin_packages} package limit')
 	}
 	for entry in entries.sorted() {
-		package_path := plugin_path(root, entry) or { continue }
+		package_path := resolve_plugin_package_directory(root, entry) or { continue }
 		if !os.is_dir(package_path) {
 			continue
 		}

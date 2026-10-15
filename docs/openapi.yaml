@@ -119,7 +119,7 @@ paths:
   /v1/plugins:
     get:
       operationId: listAgentPlugins
-      description: Discovers bounded local Agent Plugins and standalone Agent Skills, returning metadata without skill instruction bodies. Standalone skills appear as synthetic catalog entries with origin=standalone.
+      description: Discovers bounded local Agent Plugins and standalone Agent Skills, returning metadata without skill instruction bodies. Standalone skills appear as synthetic catalog entries with origin=standalone. Operator-managed symlink packages appear with origin=link.
       parameters:
         - in: query
           name: directory
@@ -135,6 +135,73 @@ paths:
                 $ref: '#/components/schemas/PluginCatalog'
         '500':
           description: Plugin directory could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/plugins/links:
+    get:
+      operationId: listPluginLinks
+      description: Lists operator-managed Agent Plugin directory links under the plugin directory. Returns absolute package paths for link management only; ordinary catalog responses still omit filesystem paths for package contents.
+      responses:
+        '200':
+          description: Managed plugin links and non-fatal diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginLinkCatalog'
+        '500':
+          description: Plugin directory could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      operationId: addPluginLink
+      description: Validates an absolute local Agent Plugin package outside the plugin directory and creates a symlink named after the package. Idempotent when the same target is already linked. PLUGIN_DATA for that plugin name is preserved across relinks. Does not install from the network.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginLinkInput'
+      responses:
+        '200':
+          description: Created or existing managed plugin link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginLink'
+        '400':
+          description: Invalid path, package, or conflicting entry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/plugins/links/{name}:
+    delete:
+      operationId: removePluginLink
+      description: Removes a managed plugin symlink by package name. Refuses to delete a non-link package directory. PLUGIN_DATA is left in place.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Link removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginLinkRemoval'
+        '400':
+          description: Name is invalid or the entry is not a managed link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Link not found.
           content:
             application/json:
               schema:
@@ -1775,7 +1842,39 @@ components:
           description: Present only when the package declares a valid Veasel client extension. Omitted otherwise.
         origin:
           type: string
-          description: Set to standalone for synthetic entries synthesized from discovered SKILL.md roots; omitted for Agent Plugin packages.
+          description: Set to standalone for synthetic SKILL.md entries, or link for operator-managed symlink packages; omitted for ordinary in-directory Agent Plugin packages.
+    PluginLinkCatalog:
+      type: object
+      required: [links, diagnostics]
+      properties:
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginLink'
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginDiagnostic'
+    PluginLink:
+      type: object
+      required: [name, path]
+      properties:
+        name: { type: string }
+        path:
+          type: string
+          description: Absolute filesystem path of the linked Agent Plugin package.
+    PluginLinkInput:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: Absolute path to a local Agent Plugin package directory outside the plugin directory.
+    PluginLinkRemoval:
+      type: object
+      required: [removed]
+      properties:
+        removed: { type: string }
     SkillsCatalog:
       type: object
       required: [skills, diagnostics, roots]

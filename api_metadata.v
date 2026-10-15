@@ -26,13 +26,13 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 @['/v1/capabilities'; get]
 pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay',
-		'plugins.catalog', 'skills.discovery', 'sessions.skills', 'sessions.mcp_servers',
-		'workspace.files', 'workspace.read', 'workspace.search', 'workspace.repository_map',
-		'workspace.edits.review', 'workspace.edits.approve', 'workspace.edits.reject',
-		'workspace.commands.propose', 'workspace.commands.review', 'workspace.commands.approve',
-		'workspace.commands.reject', 'sessions.operations.list', 'sessions.operations.result',
-		'sessions.operations.trace.atif_v1_8', 'sessions.operations.durable_queue',
-		'sessions.usage.prompt_cache']
+		'plugins.catalog', 'plugins.links', 'skills.discovery', 'sessions.skills',
+		'sessions.mcp_servers', 'workspace.files', 'workspace.read', 'workspace.search',
+		'workspace.repository_map', 'workspace.edits.review', 'workspace.edits.approve',
+		'workspace.edits.reject', 'workspace.commands.propose', 'workspace.commands.review',
+		'workspace.commands.approve', 'workspace.commands.reject', 'sessions.operations.list',
+		'sessions.operations.result', 'sessions.operations.trace.atif_v1_8',
+		'sessions.operations.durable_queue', 'sessions.usage.prompt_cache']
 	if anthropic_prompt_cache_enabled() {
 		features << 'provider.anthropic.prompt_cache'
 	}

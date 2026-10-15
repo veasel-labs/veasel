@@ -623,6 +623,41 @@ pub fn (app &App) list_plugins(mut ctx Context) veb.Result {
 	return ctx.json(catalog)
 }
 
+@['/v1/plugins/links'; get]
+pub fn (app &App) list_plugin_links_route(mut ctx Context) veb.Result {
+	catalog := list_plugin_links(app.plugin_directory) or {
+		return json_server_error(mut ctx, 'Unable to read plugin links')
+	}
+	return ctx.json(catalog)
+}
+
+@['/v1/plugins/links'; post]
+pub fn (app &App) add_plugin_link_route(mut ctx Context) veb.Result {
+	input := decode_plugin_link_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	link := add_plugin_link(app.plugin_directory, input.path) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(link)
+}
+
+@['/v1/plugins/links/:name'; delete]
+pub fn (app &App) remove_plugin_link_route(mut ctx Context, name string) veb.Result {
+	remove_plugin_link(app.plugin_directory, name) or {
+		if err.msg() == 'plugin link not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(PluginLinkRemoval{
+		removed: name
+	})
+}
+
 @['/v1/skills'; get]
 pub fn (app &App) list_discovered_skills(mut ctx Context) veb.Result {
 	project_directory := project_directory_for_skills(ctx.query['directory'] or { '' })

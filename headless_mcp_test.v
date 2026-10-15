@@ -43,6 +43,78 @@ fn test_headless_mcp_parses_list_add_toggle_and_remove() {
 	assert removed.name == 'echo-tools'
 }
 
+fn test_headless_mcp_parses_oauth_commands() {
+	authorize := parse_headless_mcp_args([
+		'oauth',
+		'authorize',
+		'mcp-token',
+		'--authorization-endpoint',
+		'https://auth.example/authorize',
+		'--token-endpoint',
+		'https://auth.example/token',
+		'--client-id',
+		'veasel-local',
+		'--listen',
+		'--scope',
+		'mcp:tools',
+		'--timeout',
+		'60',
+		'--json',
+	], '/tmp') or { panic(err) }
+	assert authorize.action == .oauth_authorize
+	assert authorize.credential == 'mcp-token'
+	assert authorize.authorization_endpoint == 'https://auth.example/authorize'
+	assert authorize.token_endpoint == 'https://auth.example/token'
+	assert authorize.client_id == 'veasel-local'
+	assert authorize.listen
+	assert authorize.timeout_seconds == 60
+	assert authorize.json
+
+	manual := parse_headless_mcp_args([
+		'oauth',
+		'authorize',
+		'mcp-token',
+		'--authorization-endpoint',
+		'https://auth.example/authorize',
+		'--token-endpoint',
+		'https://auth.example/token',
+		'--client-id',
+		'veasel-local',
+		'--redirect-uri',
+		'http://127.0.0.1:9/cb',
+	], '/tmp') or { panic(err) }
+	assert manual.redirect_uri == 'http://127.0.0.1:9/cb'
+	assert !manual.listen
+
+	complete := parse_headless_mcp_args([
+		'oauth',
+		'complete',
+		'mcp-token',
+		'--state',
+		'abc',
+		'--code',
+		'def',
+	], '/tmp') or { panic(err) }
+	assert complete.action == .oauth_complete
+	assert complete.credential == 'mcp-token'
+	assert complete.oauth_state == 'abc'
+	assert complete.oauth_code == 'def'
+
+	if _ := parse_headless_mcp_args([
+		'oauth',
+		'authorize',
+		'mcp-token',
+		'--authorization-endpoint',
+		'https://auth.example/authorize',
+		'--token-endpoint',
+		'https://auth.example/token',
+		'--client-id',
+		'veasel-local',
+	], '/tmp') {
+		assert false
+	}
+}
+
 fn test_headless_mcp_parses_credentials_commands() {
 	listed := parse_headless_mcp_args(['credentials', 'list', '--json'], '/tmp') or { panic(err) }
 	assert listed.action == .credentials_list

@@ -4,6 +4,7 @@ import json2
 import net.http
 import net.urllib
 import os
+import time
 
 // Headless configured-MCP management. Calls the same /v1/mcp-servers API as the
 // TUI. Does not trust servers, approve tool calls, or run install scripts.
@@ -17,25 +18,38 @@ enum HeadlessMcpAction {
 	credentials_list
 	credentials_set
 	credentials_remove
+	oauth_authorize
+	oauth_complete
 }
 
 struct HeadlessMcpOptions {
 mut:
-	action     HeadlessMcpAction
-	scope      string = configured_mcp_scope_user
-	directory  string
-	name       string
-	transport  string
-	command    string
-	args       []string
-	url        string
-	credential string
-	headers    map[string]string
-	json       bool
+	action                 HeadlessMcpAction
+	scope                  string = configured_mcp_scope_user
+	directory              string
+	name                   string
+	transport              string
+	command                string
+	args                   []string
+	url                    string
+	credential             string
+	headers                map[string]string
+	json                   bool
+	authorization_endpoint string
+	token_endpoint         string
+	client_id              string
+	redirect_uri           string
+	oauth_scope            string
+	resource               string
+	oauth_state            string
+	oauth_code             string
+	callback_url           string
+	listen                 bool
+	timeout_seconds        int = 180
 }
 
 fn print_headless_mcp_help() {
-	println('Usage: veasel mcp <list|add|enable|disable|remove|credentials> [options]\n\nCommands:\n  list [--directory <dir>] [--json]\n  add [user|project] stdio <name> <command> [args…]\n  add [user|project] http <name> <url> [--credential <name>]\n  enable|disable|remove [user|project] <name>\n  credentials list [--json]\n  credentials set <name> --header <Name>=<value> [--header …]\n  credentials remove <name>\n\nOptions:\n  -w, --directory <dir>  Workspace for project scope and list imports (default: cwd)\n      --json             Emit machine-readable JSON\n      --credential <n>   Named HTTP credential for streamable-http add\n      --header <N>=<v>   Header for credentials set (repeatable)\n  -h, --help             Show this help\n\nPersistence:\n  user         \$VEASEL_DATA_DIR/mcp-servers.json\n  project      <directory>/.veasel/mcp-servers.json\n  credentials  \$VEASEL_DATA_DIR/mcp-credentials.json\n\nList also reports read-only imports of portable .mcp.json and .cursor/mcp.json.\nTrust remains separate (TUI /mcp trust configured/<name>). No install scripts run.\nStdio processes use your OS privileges; MCP results go to the model provider.\nCredential values are never printed by list; only names and header names.')
+	println('Usage: veasel mcp <list|add|enable|disable|remove|credentials|oauth> [options]\n\nCommands:\n  list [--directory <dir>] [--json]\n  add [user|project] stdio <name> <command> [args…]\n  add [user|project] http <name> <url> [--credential <name>]\n  enable|disable|remove [user|project] <name>\n  credentials list [--json]\n  credentials set <name> --header <Name>=<value> [--header …]\n  credentials remove <name>\n  oauth authorize <credential> --authorization-endpoint <url> --token-endpoint <url> --client-id <id> (--listen | --redirect-uri <url>) [--scope <s>] [--resource <url>] [--timeout <sec>] [--json]\n  oauth complete <credential> (--callback-url <url> | --state <s> --code <c>) [--json]\n\nOptions:\n  -w, --directory <dir>  Workspace for project scope and list imports (default: cwd)\n      --json             Emit machine-readable JSON\n      --credential <n>   Named HTTP credential for streamable-http add\n      --header <N>=<v>   Header for credentials set (repeatable)\n      --listen           Start a 127.0.0.1 loopback listener, wait for the browser callback, and complete automatically\n  -h, --help             Show this help\n\nPersistence:\n  user         \$VEASEL_DATA_DIR/mcp-servers.json\n  project      <directory>/.veasel/mcp-servers.json\n  credentials  \$VEASEL_DATA_DIR/mcp-credentials.json\n  oauth pending \$VEASEL_DATA_DIR/mcp-oauth-pending.json (owner-only; never printed)\n\nList also reports read-only imports of portable .mcp.json and .cursor/mcp.json.\nTrust remains separate (TUI /mcp trust configured/<name>). No install scripts run.\nStdio processes use your OS privileges; MCP results go to the model provider.\nCredential and OAuth token values are never printed; only names and header names.')
 }
 
 fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
@@ -85,6 +99,27 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 				}
 				else {
 					return error('unknown mcp credentials command: ${sub}')
+				}
+			}
+		}
+		'oauth' {
+			if index >= args.len {
+				return error('mcp oauth expects authorize|complete')
+			}
+			sub := args[index]
+			index++
+			match sub {
+				'authorize' {
+					options.action = .oauth_authorize
+				}
+				'complete' {
+					options.action = .oauth_complete
+				}
+				'--help', '-h', 'help' {
+					return error('help')
+				}
+				else {
+					return error('unknown mcp oauth command: ${sub}')
 				}
 			}
 		}
@@ -138,6 +173,104 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 					index++
 					continue
 				}
+				'--authorization-endpoint' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--authorization-endpoint expects a URL')
+					}
+					options.authorization_endpoint = args[index].trim_space()
+					index++
+					continue
+				}
+				'--token-endpoint' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--token-endpoint expects a URL')
+					}
+					options.token_endpoint = args[index].trim_space()
+					index++
+					continue
+				}
+				'--client-id' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--client-id expects a value')
+					}
+					options.client_id = args[index].trim_space()
+					index++
+					continue
+				}
+				'--redirect-uri' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--redirect-uri expects a URL')
+					}
+					options.redirect_uri = args[index].trim_space()
+					index++
+					continue
+				}
+				'--scope' {
+					index++
+					if index >= args.len {
+						return error('--scope expects a value')
+					}
+					options.oauth_scope = args[index].trim_space()
+					index++
+					continue
+				}
+				'--resource' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--resource expects a URL')
+					}
+					options.resource = args[index].trim_space()
+					index++
+					continue
+				}
+				'--state' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--state expects a value')
+					}
+					options.oauth_state = args[index].trim_space()
+					index++
+					continue
+				}
+				'--code' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--code expects a value')
+					}
+					options.oauth_code = args[index].trim_space()
+					index++
+					continue
+				}
+				'--callback-url' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--callback-url expects a URL')
+					}
+					options.callback_url = args[index].trim_space()
+					index++
+					continue
+				}
+				'--listen' {
+					options.listen = true
+					index++
+					continue
+				}
+				'--timeout' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--timeout expects seconds')
+					}
+					options.timeout_seconds = args[index].int()
+					if options.timeout_seconds <= 0 || options.timeout_seconds > 3600 {
+						return error('--timeout must be between 1 and 3600 seconds')
+					}
+					index++
+					continue
+				}
 				'--help', '-h' {
 					return error('help')
 				}
@@ -180,6 +313,33 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 				return error('mcp credentials remove expects <name>')
 			}
 			options.name = positional[0]
+		}
+		.oauth_authorize {
+			if positional.len != 1 {
+				return error('mcp oauth authorize expects <credential>')
+			}
+			options.credential = positional[0]
+			if options.authorization_endpoint.len == 0 || options.token_endpoint.len == 0
+				|| options.client_id.len == 0 {
+				return error('mcp oauth authorize requires --authorization-endpoint, --token-endpoint, and --client-id')
+			}
+			if options.listen {
+				if options.redirect_uri.len > 0 {
+					return error('--listen does not accept --redirect-uri')
+				}
+			} else if options.redirect_uri.len == 0 {
+				return error('mcp oauth authorize requires --listen or --redirect-uri')
+			}
+		}
+		.oauth_complete {
+			if positional.len != 1 {
+				return error('mcp oauth complete expects <credential>')
+			}
+			options.credential = positional[0]
+			if options.callback_url.len == 0
+				&& (options.oauth_state.len == 0 || options.oauth_code.len == 0) {
+				return error('mcp oauth complete requires --callback-url or --state and --code')
+			}
 		}
 	}
 	if options.scope == configured_mcp_scope_project && options.directory.trim_space().len == 0 {
@@ -448,6 +608,102 @@ fn execute_headless_mcp_credentials_remove(port int, options HeadlessMcpOptions)
 	return 'Removed credential ${removal.removed}'
 }
 
+fn execute_headless_mcp_oauth_authorize(port int, options HeadlessMcpOptions) !string {
+	if options.listen {
+		return execute_headless_mcp_oauth_authorize_listen(port, options)
+	}
+	payload := MCPOAuthAuthorizeInput{
+		credential:             options.credential
+		authorization_endpoint: options.authorization_endpoint
+		token_endpoint:         options.token_endpoint
+		client_id:              options.client_id
+		redirect_uri:           options.redirect_uri
+		scope:                  options.oauth_scope
+		resource:               options.resource
+	}
+	response := headless_json_request(port, .post, '/v1/mcp-oauth/authorize', json2.encode(payload),
+		false, '') or { return error('unable to start MCP OAuth: ${err.msg()}') }
+	if response.status_code != 200 {
+		return error(headless_mcp_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	view := json2.decode[MCPOAuthAuthorizeView](response.body) or {
+		return error('server returned an invalid OAuth authorize response')
+	}
+	return 'Authorize MCP credential ${view.credential}\nState: ${view.state}\nRedirect: ${view.redirect_uri}\nOpen: ${view.authorize_url}\nThen run: veasel mcp oauth complete ${view.credential} --state ${view.state} --code <code>'
+}
+
+fn execute_headless_mcp_oauth_authorize_listen(port int, options HeadlessMcpOptions) !string {
+	mut listener := start_mcp_oauth_loopback_listener(mcp_oauth_loopback_default_path, options.timeout_seconds * time.second)!
+	payload := MCPOAuthAuthorizeInput{
+		credential:             options.credential
+		authorization_endpoint: options.authorization_endpoint
+		token_endpoint:         options.token_endpoint
+		client_id:              options.client_id
+		redirect_uri:           listener.redirect_uri()
+		scope:                  options.oauth_scope
+		resource:               options.resource
+	}
+	response := headless_json_request(port, .post, '/v1/mcp-oauth/authorize', json2.encode(payload),
+		false, '') or {
+		listener.close()
+		return error('unable to start MCP OAuth: ${err.msg()}')
+	}
+	if response.status_code != 200 {
+		listener.close()
+		return error(headless_mcp_api_error(response))
+	}
+	view := json2.decode[MCPOAuthAuthorizeView](response.body) or {
+		listener.close()
+		return error('server returned an invalid OAuth authorize response')
+	}
+	eprintln('Open this URL in a browser to authorize MCP credential `${options.credential}`:')
+	eprintln(view.authorize_url)
+	callback := listener.wait()!
+	if callback.error.len > 0 {
+		return error('OAuth authorization failed: ${callback.error}')
+	}
+	complete_response := headless_json_request(port, .post, '/v1/mcp-oauth/complete',
+		json2.encode(MCPOAuthCompleteInput{
+			credential: options.credential
+			state:      callback.state
+			code:       callback.code
+		}), false, '') or { return error('unable to complete MCP OAuth: ${err.msg()}') }
+	if complete_response.status_code != 200 {
+		return error(headless_mcp_api_error(complete_response))
+	}
+	if options.json {
+		return complete_response.body
+	}
+	cred := json2.decode[MCPCredentialView](complete_response.body) or {
+		return error('server returned an invalid credential response')
+	}
+	return 'Completed OAuth for credential ${cred.name} (headers: ${cred.header_names.join(', ')})'
+}
+
+fn execute_headless_mcp_oauth_complete(port int, options HeadlessMcpOptions) !string {
+	payload := MCPOAuthCompleteInput{
+		credential:   options.credential
+		state:        options.oauth_state
+		code:         options.oauth_code
+		callback_url: options.callback_url
+	}
+	response := headless_json_request(port, .post, '/v1/mcp-oauth/complete', json2.encode(payload),
+		false, '') or { return error('unable to complete MCP OAuth: ${err.msg()}') }
+	if response.status_code != 200 {
+		return error(headless_mcp_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	cred := json2.decode[MCPCredentialView](response.body) or {
+		return error('server returned an invalid credential response')
+	}
+	return 'Completed OAuth for credential ${cred.name} (headers: ${cred.header_names.join(', ')})'
+}
+
 fn execute_headless_mcp_command(port int, args []string) {
 	options := parse_headless_mcp_args(args, os.getwd()) or {
 		if err.msg() == 'help' {
@@ -507,6 +763,18 @@ fn execute_headless_mcp_command(port int, args []string) {
 		}
 		.credentials_remove {
 			execute_headless_mcp_credentials_remove(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.oauth_authorize {
+			execute_headless_mcp_oauth_authorize(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.oauth_complete {
+			execute_headless_mcp_oauth_complete(port, options) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

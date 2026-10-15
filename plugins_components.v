@@ -96,11 +96,23 @@ fn (store &Store) plugin_components_path() string {
 
 fn is_valid_plugin_component_plugin_name(name string) bool {
 	return is_valid_configured_mcp_name(name) || (name.len > 0 && name.len <= 64
-		&& !name.contains('/') && !name.contains('\\') && !name.contains('\x00'))
+		&& !plugin_component_name_has_unsafe_bytes(name))
 }
 
 fn is_valid_plugin_component_entry_name(name string) bool {
-	return name.len > 0 && name.len <= 256 && !name.contains('/') && !name.contains('\\') && !name.contains('\x00')
+	return name.len > 0 && name.len <= 256 && !plugin_component_name_has_unsafe_bytes(name)
+}
+
+fn plugin_component_name_has_unsafe_bytes(name string) bool {
+	if name.contains('/') || name.contains('\\') {
+		return true
+	}
+	for c in name {
+		if c < 32 || c == 127 {
+			return true
+		}
+	}
+	return false
 }
 
 fn (mut state PluginComponentState) is_enabled(plugin string, kind string, name string) bool {
@@ -244,10 +256,18 @@ fn decode_plugin_component_toggle_input(raw string) !PluginComponentToggleInput 
 		|| enabled_value !is bool {
 		return error('plugin, kind, and name must be strings; enabled must be a boolean')
 	}
+	plugin := plugin_value as string
+	name := name_value as string
+	if !is_valid_plugin_component_plugin_name(plugin) {
+		return error('plugin component plugin name is invalid')
+	}
+	if !is_valid_plugin_component_entry_name(name) {
+		return error('plugin component entry name is invalid')
+	}
 	return PluginComponentToggleInput{
-		plugin:  plugin_value as string
+		plugin:  plugin
 		kind:    kind_value as string
-		name:    name_value as string
+		name:    name
 		enabled: enabled_value as bool
 	}
 }

@@ -61,6 +61,7 @@ import {
   type ComposerHistory,
 } from "./composer-history"
 import { sessionEscapeAction } from "./session-escape"
+import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -499,6 +500,7 @@ let settingsEditEndpoint = false
 let settingsEditBudget = false
 let settingsDetourFrom: number | undefined
 let providersConfigured = false
+let activeModelLabel = ""
 let slashContext: SlashCompletionContext = {}
 let slashContextLoading = false
 let slashContextAt = 0
@@ -619,7 +621,11 @@ function restoreCommittedTheme() {
   applyTheme(resolveTheme(committedThemeId))
   // Prefer the pending-review cue over a theme-restored status when approvals wait.
   if (totalPendingReviews(lastPendingCounts) > 0) {
-    status.content = statusWithPendingReviews(`● theme ${resolveTheme(committedThemeId).name}`, lastPendingCounts)
+    status.content = statusWithPendingReviews(
+      `● theme ${resolveTheme(committedThemeId).name}`,
+      lastPendingCounts,
+      activeModelLabel || undefined,
+    )
     status.fg = theme.statusWarn
     return
   }
@@ -648,8 +654,13 @@ async function refreshProviderSetupHint() {
     const view = await response.json() as ModelSettingsView
     providersConfigured = (view.configured_providers?.length ?? 0) > 0
       || Object.keys(view.profiles ?? {}).length > 0
+    activeModelLabel = formatActiveModelLabel(view) ?? ""
     if (!settingsOpen && !activeSession) {
       sessionDetail.content = homeDetailContent(providersConfigured)
+    }
+    if (activeSession && !sendingMessage && totalPendingReviews(lastPendingCounts) === 0) {
+      status.content = formatListeningStatus(activeModelLabel || undefined)
+      status.fg = theme.statusOk
     }
   } catch {
     // Home still works without the settings probe.
@@ -1132,7 +1143,7 @@ async function sendMessage(value: string) {
     await notifyPendingProposals()
     const completedStatus = statusWithUsage(exchange.provider, exchange.model, exchange)
     const pendingCounts = await countPendingReviews()
-    status.content = statusWithPendingReviews(completedStatus, pendingCounts)
+    status.content = statusWithPendingReviews(completedStatus, pendingCounts, activeModelLabel || undefined)
     status.fg = pendingReviewStatusColor(pendingCounts)
   } catch (error) {
     if (activeTurnCancelled) {
@@ -1322,7 +1333,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     if (historyLoaded) {
       const completedStatus = statusWithUsage(completion.provider ?? "provider", completion.model ?? "assistant", completion)
       const pendingCounts = await countPendingReviews()
-      status.content = statusWithPendingReviews(completedStatus, pendingCounts)
+      status.content = statusWithPendingReviews(completedStatus, pendingCounts, activeModelLabel || undefined)
       status.fg = pendingReviewStatusColor(pendingCounts)
     }
   } else if (completion.status === "uncertain") {
@@ -1912,7 +1923,7 @@ async function notifyPendingMcpToolCalls() {
     if (pending.length === 0) return
     skillNotice = `${pending.length} MCP tool call${pending.length === 1 ? "" : "s"} need review. The model turn is waiting and no pending call has reached its server. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`
     const counts = await countPendingReviews()
-    const pendingStatus = formatPendingReviewStatus(counts)
+    const pendingStatus = formatPendingReviewStatus(counts, activeModelLabel || undefined)
     if (pendingStatus) {
       status.content = pendingStatus
       status.fg = theme.statusWarn
@@ -1974,7 +1985,7 @@ async function notifyPendingProposals() {
     }
     if (notices.length === 0) return
     skillNotice = notices.join("\n\n")
-    const pendingStatus = formatPendingReviewStatus(counts)
+    const pendingStatus = formatPendingReviewStatus(counts, activeModelLabel || undefined)
     if (pendingStatus) {
       status.content = pendingStatus
       status.fg = theme.statusWarn
@@ -2170,7 +2181,7 @@ async function consumeEvents() {
         signal: controller.signal,
       })
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
-      status.content = "● connected  ·  listening for activity"
+      status.content = formatListeningStatus(activeModelLabel || undefined)
       status.fg = theme.statusOk
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
@@ -2648,10 +2659,15 @@ async function saveModelSettings() {
     }
     settingsValues.api_key = ""
     providersConfigured = true
+    activeModelLabel = formatActiveModelLabel({
+      active_provider: settingsValues.provider,
+      profiles: { [settingsValues.provider]: { model: settingsValues.model } },
+    }) ?? ""
     const savedMessage = settingsMode === "connect"
       ? `connected ${settingsValues.provider}`
       : `saved ${settingsValues.provider} · ${settingsValues.model}`
     closeSettings(savedMessage)
+    void refreshProviderSetupHint()
   } catch (error) {
     settingsValues.api_key = ""
     closeSettings(`could not save settings · ${error instanceof Error ? error.message : "request failed"}`)

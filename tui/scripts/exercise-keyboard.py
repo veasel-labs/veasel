@@ -104,7 +104,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == f"/v1/sessions/{OTHER}/messages":
             return self._json(200, state["other_messages"])
         if path == "/v1/config/model":
-            return self._json(200, settings_view())
+            view = settings_view()
+            saved = state.get("saved") or {}
+            provider = saved.get("provider") or view["active_provider"]
+            view["active_provider"] = provider
+            if saved.get("model") is not None or saved.get("api_key") or saved.get("base_url"):
+                view["profiles"][provider] = {
+                    "model": saved.get("model", ""),
+                    "base_url": saved.get("base_url", ""),
+                    "api_key_saved": bool(saved.get("api_key")),
+                    "max_output_tokens": saved.get("max_output_tokens", 0),
+                }
+            return self._json(200, view)
         if path == f"/v1/sessions/{SESSION}/workspace/edits/{EDIT_ID}":
             return self._json(200, {
                 "id": EDIT_ID,
@@ -573,6 +584,7 @@ def main() -> None:
             raise AssertionError("selected model and api key were not saved")
         screen.send("\r", 0.6)
         screen.wait_for("Ask Veasel")
+        screen.wait_for("openai/gpt-5", 6)
         screen.wait_for("Ctrl+R")
         screen.wait_for("Ctrl+Y")
         screen.wait_for("↑ history")
@@ -610,7 +622,7 @@ def main() -> None:
         screen.wait_for("preview Ember", 4)
         screen.wait_for("Enter keeps")
         screen.send("\x1b", 0.35)  # Esc restores the saved theme and pending cue
-        screen.wait_for("review needed", 4)
+        screen.wait_for("openai/gpt-5", 4)
         screen.wait_for("/patches")
         screen.clear_line(7)  # "/theme "
         screen.wait_for("/patches")

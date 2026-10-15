@@ -19,6 +19,9 @@ describe("formatPendingReviewStatus", () => {
     expect(formatPendingReviewStatus({ edits: 1, commands: 0, mcp: 0 })).toBe(
       "▲ attention  ·  review needed  ·  1 pending  ·  1 edit  ·  /patches  ·  Ctrl+R",
     )
+    expect(formatPendingReviewStatus({ edits: 1, commands: 0, mcp: 0 }, "openai/gpt-5")).toBe(
+      "▲ attention  ·  openai/gpt-5  ·  1 pending  ·  1 edit  ·  /patches  ·  Ctrl+R",
+    )
     expect(formatPendingReviewStatus({ edits: 2, commands: 1, mcp: 3 })).toBe(
       "▲ attention  ·  review needed  ·  6 pending  ·  2 edits · 1 shell · 3 MCP  ·  /patches · /commands · /mcp calls  ·  Ctrl+R",
     )

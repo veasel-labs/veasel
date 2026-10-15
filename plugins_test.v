@@ -742,6 +742,11 @@ fn test_plugin_mcp_env_keys_reject_controls_spaces_and_case_fold_collisions() {
 	env['Path'] = '/tmp/a'
 	assert plugin_mcp_env_key_conflicts(env, 'PATH')
 	assert !plugin_mcp_env_key_conflicts(env, 'Pathext')
+	assert valid_plugin_mcp_env_value('plain-token')
+	assert !valid_plugin_mcp_env_value('bad\0value')
+	assert !valid_plugin_mcp_env_value('bad\rvalue')
+	assert !valid_plugin_mcp_env_value('bad\nvalue')
+	assert !valid_plugin_mcp_env_value('bad\tvalue')
 }
 
 fn test_agent_plugin_v1_mcp_fixture_corpus() {
@@ -749,7 +754,7 @@ fn test_agent_plugin_v1_mcp_fixture_corpus() {
 	fixtures := json2.decode[[]AgentPluginMCPFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins MCP fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins MCP fixtures: ${err.msg()}') }
-	assert fixtures.len >= 23
+	assert fixtures.len >= 24
 	manifest_json := '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"fixture"}'
 	manifest := json2.decode[map[string]json2.Any](manifest_json) or {
 		panic(err)

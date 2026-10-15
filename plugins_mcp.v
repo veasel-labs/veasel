@@ -146,8 +146,8 @@ fn parse_plugin_mcp_server(root string, name string, value json2.Any) !PluginMCP
 						return error('env entries must be unique regardless of case')
 					}
 					env_value := raw_value as string
-					if env_value.contains('\0') {
-						return error('environment values must not contain NUL bytes')
+					if !valid_plugin_mcp_env_value(env_value) {
+						return error('environment values must not contain control bytes')
 					}
 					env[key] = env_value
 				}
@@ -473,6 +473,17 @@ fn valid_plugin_mcp_env_key(key string) bool {
 	}
 	for c in key {
 		if c <= 32 || c == 127 {
+			return false
+		}
+	}
+	return true
+}
+
+// valid_plugin_mcp_env_value rejects ASCII controls so CreateProcess/env blocks
+// cannot be split by embedded CR/LF/NUL/TAB bytes.
+fn valid_plugin_mcp_env_value(value string) bool {
+	for c in value {
+		if c < 32 || c == 127 {
 			return false
 		}
 	}

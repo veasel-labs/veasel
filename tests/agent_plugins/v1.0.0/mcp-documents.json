@@ -292,6 +292,26 @@
     }
   },
   {
+    "name": "stdio env value with CR is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "control bytes"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node",
+          "env": {
+            "TOKEN": "bad\rvalue"
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "stdio env keys that differ only by case are skipped",
     "accepted": true,
     "servers": [],

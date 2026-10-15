@@ -198,11 +198,15 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 ### Milestone 4 — extensibility
 
 - [ ] Complete the typed tool and provider interfaces, safe Git/worktree APIs,
-  and versioned agent definitions. Workspace edit propose/apply already refuse
-  when well-known git lock files are present under the checkout `.git`
-  directory or a linked worktree `gitdir:` path (`workspace_edits.v`). Read-only
-  worktree listing is available via `GET /v1/sessions/{id}/workspace/git/worktrees`
-  (capability `workspace.git.worktrees`, filesystem-only). Create/remove use
+  and versioned agent definitions. **Deferred past Build Board READY (2026-10-15):**
+  git/worktree APIs already shipped; a meaningful typed-tool/provider or
+  versioned-agent-definition slice does not fit ≤2 PRs without a larger design
+  spike, so keep this open rather than partial scaffolding. Workspace edit
+  propose/apply already refuse when well-known git lock files are present under
+  the checkout `.git` directory or a linked worktree `gitdir:` path
+  (`workspace_edits.v`). Read-only worktree listing is available via
+  `GET /v1/sessions/{id}/workspace/git/worktrees` (capability
+  `workspace.git.worktrees`, filesystem-only). Create/remove use
   `POST`/`PATCH`/`DELETE` on the same path with argv-only `git worktree
   add|lock|unlock|remove` (bounded timeout; lock-aware; absolute paths).
   Headless `veasel worktrees list|add|remove|lock|unlock|prune` drives the same

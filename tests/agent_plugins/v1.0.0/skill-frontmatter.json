@@ -34,5 +34,41 @@
     "directory": "review-dir",
     "accepted": false,
     "content": "---\nname: review\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "missing description is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\n---\nInstructions."
+  },
+  {
+    "name": "empty description is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: '   '\n---\nInstructions."
+  },
+  {
+    "name": "uppercase skill name is rejected",
+    "directory": "Review",
+    "accepted": false,
+    "content": "---\nname: Review\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "allowed-tools must be a string",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nallowed-tools:\n  - workspace_read_file\n---\nInstructions."
+  },
+  {
+    "name": "empty compatibility is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\ncompatibility: ''\n---\nInstructions."
+  },
+  {
+    "name": "missing YAML frontmatter is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "name: review\ndescription: Review source changes.\nInstructions."
   }
 ]

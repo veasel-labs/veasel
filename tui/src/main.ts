@@ -43,6 +43,7 @@ import {
 } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
+import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
@@ -524,7 +525,7 @@ function renderSessions() {
     columns: sessionListColumns(terminalColumns),
   })
   const chunks = text.split("\n").flatMap((line, index, lines) => {
-    const selectedLine = line.startsWith("●")
+    const selectedLine = line.startsWith("●") || line.startsWith("Selected ")
     const color = selectedLine ? theme.sessionSelectedFg : theme.sidebarFg
     const chunk = selectedLine ? fg(color)(bold(line)) : fg(color)(line)
     return index < lines.length - 1 ? [chunk, fg(theme.sidebarFg)("\n")] : [chunk]
@@ -532,6 +533,10 @@ function renderSessions() {
   sessionList.content = new StyledText(chunks)
   headerMeta.content = headerMetaContent()
   headerMeta.fg = theme.headerMeta
+  if (!activeSession && !settingsOpen) {
+    status.content = formatHomeSessionStatus(selected, sessions.length)
+    status.fg = theme.statusOk
+  }
 }
 
 function applyTheme(next: Theme) {
@@ -658,16 +663,19 @@ async function refreshSessions() {
     sessions = await response.json() as Session[]
     selected = Math.min(selected, Math.max(0, sessions.length - 1))
     renderSessions()
-    status.content = `● connected  ·  ${sessions.length} session${sessions.length === 1 ? "" : "s"}`
-    status.fg = theme.statusOk
     if (!settingsOpen && !activeSession) {
+      status.content = formatHomeSessionStatus(selected, sessions.length)
+      status.fg = theme.statusOk
       sessionDetail.content = homeDetailContent(providersConfigured)
       void refreshProviderSetupHint()
       void refreshShellSandboxCapability()
+    } else if (!activeSession) {
+      status.content = formatHomeSessionStatus(selected, sessions.length)
+      status.fg = theme.statusOk
     }
   } catch (error) {
     if (controller.signal.aborted) return
-    status.content = `● server unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.content = formatStatusLine("error", `server unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`)
     status.fg = theme.statusError
   }
 }
@@ -2936,7 +2944,7 @@ renderer.keyInput.on("keypress", (key) => {
       brandLabel.visible = true
       footerHint.content = homeFooterHint
       sessionDetail.content = homeDetailContent(providersConfigured)
-      status.content = "● connected"
+      status.content = formatHomeSessionStatus(selected, sessions.length)
       status.fg = theme.statusOk
       void refreshProviderSetupHint()
     }

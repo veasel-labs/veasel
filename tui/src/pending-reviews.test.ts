@@ -17,10 +17,10 @@ describe("formatPendingReviewStatus", () => {
 
   test("lists each pending review family with the slash that opens it", () => {
     expect(formatPendingReviewStatus({ edits: 1, commands: 0, mcp: 0 })).toBe(
-      "● review needed  ·  1 edit  ·  /patches  ·  Ctrl+R",
+      "▲ attention  ·  review needed  ·  1 pending  ·  1 edit  ·  /patches  ·  Ctrl+R",
     )
     expect(formatPendingReviewStatus({ edits: 2, commands: 1, mcp: 3 })).toBe(
-      "● review needed  ·  2 edits · 1 shell · 3 MCP  ·  /patches · /commands · /mcp calls  ·  Ctrl+R",
+      "▲ attention  ·  review needed  ·  6 pending  ·  2 edits · 1 shell · 3 MCP  ·  /patches · /commands · /mcp calls  ·  Ctrl+R",
     )
     expect(pendingReviewActions({ edits: 2, commands: 1, mcp: 3 })).toEqual([
       "/patches",
@@ -35,7 +35,7 @@ describe("formatPendingReviewStatus", () => {
       edits: 1,
       commands: 0,
       mcp: 0,
-    })).toBe("● review needed  ·  1 edit  ·  /patches  ·  Ctrl+R")
+    })).toBe("▲ attention  ·  review needed  ·  1 pending  ·  1 edit  ·  /patches  ·  Ctrl+R")
     expect(statusWithPendingReviews("● openai-compatible  ·  fixture", {
       edits: 0,
       commands: 0,

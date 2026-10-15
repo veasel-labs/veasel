@@ -1,3 +1,5 @@
+import { formatStatusLine } from "./status-a11y"
+
 export type PendingReviewCounts = {
   edits: number
   commands: number
@@ -24,6 +26,7 @@ export function pendingReviewOpenCommand(counts: PendingReviewCounts): string | 
 // Compact footer text inspired by Crush's always-visible pending chrome.
 // Exact proposals still appear in the transcript notice. Actionable slash
 // commands stay in the cue so operators can jump without reopening /help.
+// The warn glyph plus the word "attention" keep the cue meaningful without color.
 export function formatPendingReviewStatus(counts: PendingReviewCounts): string | undefined {
   const parts: string[] = []
   if (counts.edits > 0) {
@@ -36,8 +39,12 @@ export function formatPendingReviewStatus(counts: PendingReviewCounts): string |
     parts.push(`${counts.mcp} MCP`)
   }
   if (parts.length === 0) return undefined
+  const total = totalPendingReviews(counts)
   const actions = pendingReviewActions(counts)
-  return `● review needed  ·  ${parts.join(" · ")}  ·  ${actions.join(" · ")}  ·  Ctrl+R`
+  return formatStatusLine(
+    "warn",
+    `attention  ·  review needed  ·  ${total} pending  ·  ${parts.join(" · ")}  ·  ${actions.join(" · ")}  ·  Ctrl+R`,
+  )
 }
 
 export function statusWithPendingReviews(

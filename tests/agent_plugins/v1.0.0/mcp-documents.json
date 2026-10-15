@@ -333,6 +333,26 @@
     }
   },
   {
+    "name": "HTTP header name with space is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "HTTP header is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "X Token": "Bearer token"
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "HTTP header value with CR is skipped",
     "accepted": true,
     "servers": [],

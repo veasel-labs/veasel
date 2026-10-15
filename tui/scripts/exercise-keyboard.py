@@ -959,6 +959,22 @@ def main() -> None:
             raise AssertionError(f"Alt+C left the uncapitalized draft on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.4)
         screen.wait_for("Ask Veasel", 4)
+        screen.send("mixCase", 0.35)
+        screen.wait_for("mixCase", 4)
+        screen.send("\x01", 0.3)
+        screen.send("\x1bu", 0.45)  # Alt+U → MIXCASE
+        screen.wait_for("MIXCASE", 4)
+        visible = screen.terminal.text()
+        if "mixCase" in visible:
+            raise AssertionError(f"Alt+U left the mixed-case draft on screen\n--- screen ---\n{visible}")
+        screen.send("\x01", 0.3)
+        screen.send("\x1bl", 0.45)  # Alt+L → mixcase
+        screen.wait_for("mixcase", 4)
+        visible = screen.terminal.text()
+        if "MIXCASE" in visible:
+            raise AssertionError(f"Alt+L left the uppercased draft on screen\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.4)
+        screen.wait_for("Ask Veasel", 4)
         screen.send("ml-one", 0.35)
         screen.wait_for("ml-one", 4)
         screen.send("\n", 0.4)  # Ctrl+J / linefeed inserts a newline (does not submit)

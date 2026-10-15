@@ -41,6 +41,15 @@ export function killWordForward(
   }
 }
 
+function nextWordSpan(value: string, cursor: number): { start: number; end: number } | undefined {
+  let pos = Math.min(Math.max(0, cursor), value.length)
+  while (pos < value.length && /\s/.test(value[pos]!)) pos += 1
+  if (pos >= value.length) return undefined
+  let end = pos
+  while (end < value.length && !/\s/.test(value[end]!)) end += 1
+  return { start: pos, end }
+}
+
 // Alt+C: capitalize the current or next word and move past it (readline
 // capitalize-word). Leading whitespace is skipped; the first letter is uppercased
 // and the rest of that word is left unchanged.
@@ -48,17 +57,52 @@ export function capitalizeWord(
   value: string,
   cursor: number,
 ): { value: string; cursor: number } {
-  let pos = Math.min(Math.max(0, cursor), value.length)
-  while (pos < value.length && /\s/.test(value[pos]!)) pos += 1
-  if (pos >= value.length) return { value, cursor: pos }
-  let end = pos
-  while (end < value.length && !/\s/.test(value[end]!)) end += 1
-  const word = value.slice(pos, end)
-  const first = word.slice(0, 1).toUpperCase()
-  const capped = first + word.slice(1)
+  const span = nextWordSpan(value, cursor)
+  if (!span) {
+    const pos = Math.min(Math.max(0, cursor), value.length)
+    return { value, cursor: pos }
+  }
+  const word = value.slice(span.start, span.end)
+  const capped = word.slice(0, 1).toUpperCase() + word.slice(1)
   return {
-    value: value.slice(0, pos) + capped + value.slice(end),
-    cursor: end,
+    value: value.slice(0, span.start) + capped + value.slice(span.end),
+    cursor: span.end,
+  }
+}
+
+// Alt+U: uppercase the current or next word and move past it (readline
+// upcase-word).
+export function upcaseWord(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } {
+  const span = nextWordSpan(value, cursor)
+  if (!span) {
+    const pos = Math.min(Math.max(0, cursor), value.length)
+    return { value, cursor: pos }
+  }
+  const word = value.slice(span.start, span.end).toUpperCase()
+  return {
+    value: value.slice(0, span.start) + word + value.slice(span.end),
+    cursor: span.end,
+  }
+}
+
+// Alt+L: lowercase the current or next word and move past it (readline
+// downcase-word).
+export function downcaseWord(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } {
+  const span = nextWordSpan(value, cursor)
+  if (!span) {
+    const pos = Math.min(Math.max(0, cursor), value.length)
+    return { value, cursor: pos }
+  }
+  const word = value.slice(span.start, span.end).toLowerCase()
+  return {
+    value: value.slice(0, span.start) + word + value.slice(span.end),
+    cursor: span.end,
   }
 }
 

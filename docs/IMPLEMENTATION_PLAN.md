@@ -299,7 +299,13 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   (`VEASEL_MCP_STDIO_SANDBOX=auto|require`; default `off` / unset = unsandboxed);
   capability `mcp.stdio.sandbox.bubblewrap` only when wrap will run; network
   shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest unsandboxed fallback under
-  auto; macOS/Windows MCP stdio remain unsandboxed with hard operator warnings.
+  auto.
+- [x] Opt-in macOS Seatbelt wrap for trusted MCP stdio under the same
+  `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.seatbelt` only
+  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest
+  unsandboxed fallback under auto; `require` fails closed without
+  `/usr/bin/sandbox-exec`. Windows MCP stdio remains unsandboxed under auto and
+  refuses to start under `require` (AppContainer parity still open).
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

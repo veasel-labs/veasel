@@ -68,6 +68,19 @@ fn mcp_stdio_sandbox_bubblewrap_capability() bool {
 	}
 }
 
+// mcp_stdio_sandbox_seatbelt_capability is true only when macOS Seatbelt will
+// actually wrap trusted stdio MCP processes for the current configuration.
+fn mcp_stdio_sandbox_seatbelt_capability() bool {
+	$if macos {
+		if mcp_stdio_sandbox_mode() == .off {
+			return false
+		}
+		return seatbelt_available()
+	} $else {
+		return false
+	}
+}
+
 fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server PluginMCPServer) !&PluginMCPTransport {
 	if server.transport != 'stdio' || server.command.len == 0 {
 		return error('unsupported Agent Plugin MCP server')
@@ -104,9 +117,19 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 				return error('Trusted MCP stdio requires bubblewrap (bwrap) because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
 			}
 		}
+	} $else $if macos {
+		if mode != .off {
+			if seatbelt_available() {
+				return start_plugin_mcp_transport_macos_sandboxed(root, data, cwd, server.command,
+					args, env)
+			}
+			if mode == .require {
+				return error('Trusted MCP stdio requires /usr/bin/sandbox-exec because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
+			}
+		}
 	} $else {
 		if mode == .require {
-			return error('VEASEL_MCP_STDIO_SANDBOX=require is only implemented for Linux Bubblewrap; refuse to start unsandboxed MCP stdio')
+			return error('VEASEL_MCP_STDIO_SANDBOX=require is only implemented for Linux Bubblewrap and macOS Seatbelt; refuse to start unsandboxed MCP stdio')
 		}
 	}
 	mut process := os.new_process(server.command)
@@ -118,6 +141,85 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	if process.status != .running {
 		process.close()
 		return error('unable to start trusted Agent Plugin MCP server')
+	}
+	return &PluginMCPTransport{
+		process: process
+	}
+}
+
+// macOS Seatbelt policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// - sandbox-exec only from /usr/bin/sandbox-exec
+// - default deny; host readable; writes limited to PLUGIN_ROOT, PLUGIN_DATA, and temp
+// - /Users, /var/root, and /Volumes denied except PLUGIN_ROOT/PLUGIN_DATA carve-outs
+// - network is shared (many MCP servers need outbound HTTPS); not a shell-style deny
+// - missing sandbox-exec under auto falls back unsandboxed and never pretends sandboxed
+fn macos_mcp_seatbelt_profile() string {
+	return [
+		'(version 1)',
+		'(deny default)',
+		'(allow process-exec)',
+		'(allow process-fork)',
+		'(allow signal (target self))',
+		'(allow process-info* (target self))',
+		'(allow sysctl-read)',
+		'(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))',
+		'(allow file-read-metadata)',
+		'(allow file-read*)',
+		'(allow file-write-data (require-all (literal "/dev/null") (vnode-type CHARACTER-DEVICE)))',
+		'(allow file-write* (subpath (param "PLUGIN_ROOT")))',
+		'(allow file-write* (subpath (param "PLUGIN_DATA")))',
+		'(allow file-write* (subpath "/private/tmp"))',
+		'(allow file-write* (subpath "/tmp"))',
+		'(allow file-write* (subpath "/private/var/folders"))',
+		'(allow file-write* (subpath "/var/folders"))',
+		'(deny file-read* file-write* (require-all (subpath "/Users") (require-not (subpath (param "PLUGIN_ROOT"))) (require-not (subpath (param "PLUGIN_DATA")))))',
+		'(deny file-read* file-write* (require-all (subpath "/var/root") (require-not (subpath (param "PLUGIN_ROOT"))) (require-not (subpath (param "PLUGIN_DATA")))))',
+		'(deny file-read* file-write* (require-all (subpath "/private/var/root") (require-not (subpath (param "PLUGIN_ROOT"))) (require-not (subpath (param "PLUGIN_DATA")))))',
+		'(deny file-read* file-write* (require-all (subpath "/Volumes") (require-not (subpath (param "PLUGIN_ROOT"))) (require-not (subpath (param "PLUGIN_DATA")))))',
+		'(allow network-outbound)',
+		'(allow network-inbound)',
+		'(allow system-socket)',
+	].join('\n')
+}
+
+fn start_plugin_mcp_transport_macos_sandboxed(root string, data string, cwd string, command string,
+	args []string, env map[string]string) !&PluginMCPTransport {
+	for broad_root in ['/', '/Users', '/System', '/Library', '/Applications', '/private', '/var',
+		'/usr', '/bin', '/sbin', '/etc', '/tmp', '/Volumes', '/Network', '/dev', '/cores'] {
+		if root == broad_root || data == broad_root {
+			return error('Trusted MCP stdio refused: PLUGIN_ROOT or PLUGIN_DATA is too broad for the sandbox')
+		}
+	}
+	if !seatbelt_available() {
+		return error('Trusted MCP stdio could not locate /usr/bin/sandbox-exec')
+	}
+	profile := macos_mcp_seatbelt_profile()
+	mut seatbelt_args := [
+		'-p',
+		profile,
+		'-DPLUGIN_ROOT=${root}',
+		'-DPLUGIN_DATA=${data}',
+		'--',
+		command,
+	]
+	for arg in args {
+		seatbelt_args << arg
+	}
+	mut sandboxed_env := env.clone()
+	sandboxed_env['HOME'] = data
+	tmpdir := os.temp_dir()
+	if tmpdir.len > 0 {
+		sandboxed_env['TMPDIR'] = tmpdir
+	}
+	mut process := os.new_process(macos_seatbelt_executable)
+	process.set_args(seatbelt_args)
+	process.set_work_folder(cwd)
+	process.set_environment(sandboxed_env)
+	process.set_redirect_stdio()
+	process.run()
+	if process.status != .running {
+		process.close()
+		return error('unable to start trusted Agent Plugin MCP server inside Seatbelt')
 	}
 	return &PluginMCPTransport{
 		process: process

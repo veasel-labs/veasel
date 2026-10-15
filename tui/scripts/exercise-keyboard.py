@@ -825,10 +825,13 @@ def main() -> None:
         screen.wait_for("{/} hunks", 4)
         screen.wait_for("alpha")
         screen.wait_for("beta")
+        screen.wait_for(" │ ", 4)  # short -/+ pair renders side-by-side at 100 cols
         screen.wait_for("a approve")
         reviewed = screen.terminal.text()
         if "TAIL-SENTINEL" in reviewed or "hunk-two-marker" in reviewed:
             raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
+        if "alpha" not in reviewed or "beta" not in reviewed or " │ " not in reviewed:
+            raise AssertionError(f"diff review missed side-by-side alpha/beta pair\n--- screen ---\n{reviewed}")
         screen.send("}", 0.5)  # next unified-diff hunk
         screen.wait_for("Hunk 2 of 2", 4)
         screen.wait_for("hunk-two-marker", 4)

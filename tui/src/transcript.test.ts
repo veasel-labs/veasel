@@ -68,9 +68,13 @@ describe("transcriptSegments", () => {
   test("tones unified diff lines without dropping their markers", () => {
     const diff = "REVIEW\nsrc/main.v\n@@ -1 +1 @@\n context\n-old\n+new\n--- a/src/main.v\n+++ b/src/main.v"
     const segments = noticeSegments(diff)
-    expect(transcriptPlainText(segments)).toBe(`${diff}\n\n`)
+    // Short -/+ pairs collapse to one side-by-side row when they fit.
+    expect(transcriptPlainText(segments)).toBe(
+      "REVIEW\nsrc/main.v\n@@ -1 +1 @@\n context\n-old │ +new\n--- a/src/main.v\n+++ b/src/main.v\n\n",
+    )
     expect(segments).toContainEqual({ text: "-", tone: "diffRemove" })
     expect(segments).toContainEqual({ text: "old", tone: "diffRemove" })
+    expect(segments).toContainEqual({ text: " │ ", tone: "diffMeta" })
     expect(segments).toContainEqual({ text: "+", tone: "diffAdd" })
     expect(segments).toContainEqual({ text: "new", tone: "diffAdd" })
     expect(segments).toContainEqual({ text: "@@ -1 +1 @@\n", tone: "diffMeta" })
@@ -80,6 +84,15 @@ describe("transcriptSegments", () => {
     expect(noticeSegments("No workspace edit proposals.")).toEqual([
       { text: "No workspace edit proposals.\n\n", tone: "notice" },
     ])
+  })
+
+  test("keeps wide word-diff pairs stacked when they cannot fit side-by-side", () => {
+    const left = `-${"x".repeat(40)}`
+    const right = `+${"y".repeat(40)}`
+    const notice = ["REVIEW", "@@ -1 +1 @@", left, right].join("\n")
+    const segments = noticeSegments(notice, { cols: 50 })
+    expect(transcriptPlainText(segments)).toBe(`${notice}\n\n`)
+    expect(segments).not.toContainEqual({ text: " │ ", tone: "diffMeta" })
   })
 
   test("renders notices and can hide messages behind the help guide", () => {

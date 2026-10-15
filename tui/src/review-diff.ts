@@ -160,3 +160,24 @@ export function isWordDiffPair(removedLine: string, addedLine: string): boolean 
   return removedLine.startsWith("-") && !removedLine.startsWith("---")
     && addedLine.startsWith("+") && !addedLine.startsWith("+++")
 }
+
+export const sideBySideGutter = " │ "
+
+// Column budget for `-body │ +body` (prefixes included). Wide enough terminals
+// get a one-row side-by-side; narrow ones keep the stacked unified pair.
+export function sideBySidePairWidth(removedBody: string, addedBody: string, gutter = sideBySideGutter): number {
+  return 1 + removedBody.length + gutter.length + 1 + addedBody.length
+}
+
+export function prefersSideBySideDiff(
+  removedLine: string,
+  addedLine: string,
+  cols: number,
+  gutter = sideBySideGutter,
+): boolean {
+  if (!isWordDiffPair(removedLine, addedLine)) return false
+  const left = removedLine.slice(1)
+  const right = addedLine.slice(1)
+  if (left.includes("\t") || right.includes("\t")) return false
+  return sideBySidePairWidth(left, right, gutter) <= Math.max(40, cols)
+}

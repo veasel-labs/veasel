@@ -3,10 +3,15 @@ import {
   adjacentSettingsStep,
   credentialStepCopy,
   endpointHost,
+  homeWorkspaceBlurb,
   providerHasKnownEndpoint,
+  providerSwitchNote,
   settingsBackTarget,
+  settingsFooterHint,
+  settingsModeIntro,
   settingsPath,
   settingsProgress,
+  settingsProviderStepPrompt,
 } from "./settings-flow"
 
 const openai = { base_url: "https://api.openai.com/v1", requires_api_key: true }
@@ -66,5 +71,17 @@ describe("provider setup path", () => {
     expect(copy.hint).toContain("Or set OPENAI_API_KEY on the server process")
     expect(copy.hint).not.toContain("instead of saving a key")
     expect(credentialStepCopy({ apiKeySaved: true }).hint).toContain("A key is already saved")
+  })
+
+  test("distinguishes quick connect from full provider settings", () => {
+    expect(settingsModeIntro("connect")).toContain("Quick connect")
+    expect(settingsModeIntro("models")).toContain("Ctrl+O")
+    expect(settingsProviderStepPrompt("connect")).toContain("Tab cycles")
+    expect(providerSwitchNote("openai", "openai", "OpenAI")).toBe("")
+    expect(providerSwitchNote("openai", "anthropic", "Anthropic")).toContain("Switching from openai → Anthropic")
+    expect(settingsFooterHint(0, false, false)).toContain("Tab scope")
+    expect(settingsFooterHint(2, true, true)).toContain("Ctrl+U endpoint")
+    expect(homeWorkspaceBlurb({ providersConfigured: false })).toContain("/connect")
+    expect(homeWorkspaceBlurb({ providersConfigured: true, modelLabel: "openai/gpt-5" })).toContain("Active model · openai/gpt-5")
   })
 })

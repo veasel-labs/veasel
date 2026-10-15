@@ -17,16 +17,18 @@ const plugin_mcp_http_close_timeout = 250 * time.millisecond
 @[heap]
 struct PluginMCPHTTPTransport {
 mut:
-	url                 string
-	headers             map[string]string
-	session_id          string
-	protocol_version    string
-	pending             []string
-	cancel_requested    bool
-	active_request_id   string
-	cancelled_notified  bool
-	last_auth_challenge MCPAuthChallenge
-	has_auth_challenge  bool
+	url                    string
+	headers                map[string]string
+	session_id             string
+	protocol_version       string
+	pending                []string
+	cancel_requested       bool
+	active_request_id      string
+	cancelled_notified     bool
+	last_auth_challenge    MCPAuthChallenge
+	has_auth_challenge     bool
+	last_resource_metadata MCPProtectedResourceMetadata
+	has_resource_metadata  bool
 }
 
 fn new_plugin_mcp_http_transport(server PluginMCPServer) !&PluginMCPHTTPTransport {
@@ -45,17 +47,33 @@ fn (mut transport PluginMCPHTTPTransport) request_cancel() {
 
 fn (mut transport PluginMCPHTTPTransport) record_http_auth_challenge(www_authenticate string) {
 	transport.has_auth_challenge = false
+	transport.has_resource_metadata = false
 	transport.last_auth_challenge = MCPAuthChallenge{}
+	transport.last_resource_metadata = MCPProtectedResourceMetadata{}
 	challenge := parse_www_authenticate_bearer(www_authenticate) or { return }
 	transport.last_auth_challenge = challenge
 	transport.has_auth_challenge = true
+	if challenge.resource_metadata.len == 0 {
+		return
+	}
+	// Best-effort RFC 9728 discovery. Never forwards configured MCP headers.
+	metadata := fetch_mcp_protected_resource_metadata(challenge.resource_metadata) or { return }
+	transport.last_resource_metadata = metadata
+	transport.has_resource_metadata = true
 }
 
 fn (transport &PluginMCPHTTPTransport) authorization_required_error() string {
-	if transport.has_auth_challenge {
-		return 'MCP HTTP authorization required (${mcp_auth_challenge_summary(transport.last_auth_challenge)})'
+	if !transport.has_auth_challenge {
+		return 'MCP HTTP authorization required'
 	}
-	return 'MCP HTTP authorization required'
+	mut detail := mcp_auth_challenge_summary(transport.last_auth_challenge)
+	if transport.has_resource_metadata {
+		meta := mcp_protected_resource_metadata_summary(transport.last_resource_metadata)
+		if meta.len > 0 {
+			detail += '; ${meta}'
+		}
+	}
+	return 'MCP HTTP authorization required (${detail})'
 }
 
 fn (mut transport PluginMCPHTTPTransport) emit_cancelled_notification() {

@@ -61,6 +61,22 @@ describe("TUI themes", () => {
     expect(themes.contrast.statusError).toBe("#990000")
   })
 
+  test("gives system and tool roles first-class colors distinct from meta/warn reuse", () => {
+    for (const theme of Object.values(themes)) {
+      expect(theme.systemLabel).toMatch(/^#[0-9a-fA-F]{6}$/)
+      expect(theme.systemText).toMatch(/^#[0-9a-fA-F]{6}$/)
+      expect(theme.toolLabel).toMatch(/^#[0-9a-fA-F]{6}$/)
+      expect(theme.toolText).toMatch(/^#[0-9a-fA-F]{6}$/)
+      // Labels stay distinct from each other so roles are not color-only twins.
+      expect(new Set([theme.userLabel, theme.assistantLabel, theme.systemLabel, theme.toolLabel]).size).toBe(4)
+    }
+    // Contrast keeps system blue and tool amber so color-blind-adjacent cues differ.
+    expect(themes.contrast.systemLabel).toBe("#0000aa")
+    expect(themes.contrast.toolLabel).toBe("#7a5200")
+    expect(themes.mint.systemLabel).not.toBe(themes.mint.meta)
+    expect(themes.mint.toolLabel).toBe(themes.mint.statusWarn)
+  })
+
   test("loads the saved theme id and falls back safely", () => {
     const home = "/tmp/veasel-theme-home"
     const env = { XDG_CONFIG_HOME: `${home}/.config` }

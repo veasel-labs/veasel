@@ -68,6 +68,10 @@ export type Theme = {
   userText: string
   assistantLabel: string
   assistantText: string
+  systemLabel: string
+  systemText: string
+  toolLabel: string
+  toolText: string
   status: string
   hint: string
   portrait: ThemePortrait
@@ -106,6 +110,10 @@ const colorKeys = [
   "userText",
   "assistantLabel",
   "assistantText",
+  "systemLabel",
+  "systemText",
+  "toolLabel",
+  "toolText",
   "status",
   "hint",
 ] as const
@@ -146,6 +154,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#e6e0f5",
     assistantLabel: "#9af7c9",
     assistantText: "#d6dde3",
+    systemLabel: "#7dd3fc",
+    systemText: "#a8b8c4",
+    toolLabel: "#e6c07b",
+    toolText: "#d4c4a8",
     status: "#8a96a3",
     hint: "#8a96a3",
     portrait: {
@@ -193,6 +205,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#f0e2c8",
     assistantLabel: "#f0b56a",
     assistantText: "#ddd4c8",
+    systemLabel: "#9ab4d4",
+    systemText: "#b8aea0",
+    toolLabel: "#d4a06a",
+    toolText: "#dcc8a8",
     status: "#9a9084",
     hint: "#9a9084",
     portrait: {
@@ -240,6 +256,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#dce3f5",
     assistantLabel: "#93c5fd",
     assistantText: "#d0d8e4",
+    systemLabel: "#cbd5e1",
+    systemText: "#94a3b8",
+    toolLabel: "#f3c969",
+    toolText: "#c8b896",
     status: "#8494a8",
     hint: "#8494a8",
     portrait: {
@@ -287,6 +307,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#e8e8e8",
     assistantLabel: "#7dffa0",
     assistantText: "#ececec",
+    systemLabel: "#a0c4ff",
+    systemText: "#b0b0b0",
+    toolLabel: "#f0d060",
+    toolText: "#d0c090",
     status: "#9a9a9a",
     hint: "#9a9a9a",
     portrait: {
@@ -334,6 +358,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#dde4ff",
     assistantLabel: "#5eead4",
     assistantText: "#d0e4e6",
+    systemLabel: "#67e8f9",
+    systemText: "#9bb5b8",
+    toolLabel: "#fbbf24",
+    toolText: "#d4c08a",
     status: "#7f9a9e",
     hint: "#7f9a9e",
     portrait: {
@@ -381,6 +409,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#1f1633",
     assistantLabel: "#0f6b4c",
     assistantText: "#1a2420",
+    systemLabel: "#1d4ed8",
+    systemText: "#334155",
+    toolLabel: "#9a6b00",
+    toolText: "#44403c",
     status: "#5a6b63",
     hint: "#5a6b63",
     portrait: {
@@ -428,6 +460,10 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     userText: "#000000",
     assistantLabel: "#006600",
     assistantText: "#000000",
+    systemLabel: "#0000aa",
+    systemText: "#000000",
+    toolLabel: "#7a5200",
+    toolText: "#000000",
     status: "#222222",
     hint: "#222222",
     portrait: {

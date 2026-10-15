@@ -46,7 +46,7 @@ import {
   moveSettingsListIndex,
 } from "./settings-flow"
 import { formatSettingsLoadError, formatSettingsSaveError } from "./settings-errors"
-import { formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
+import { filterSessionList, formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
@@ -466,6 +466,7 @@ renderer.root.add(shell)
 
 let sessions: Session[] = []
 let selected = 0
+let sessionFilterQuery = ""
 let creating = false
 let slashMenu: TextRenderable | undefined
 let slashMatches: SlashSuggestion[] = []
@@ -555,18 +556,27 @@ const reviewedEditIds = new Set<string>()
 const reviewedShellCommandIds = new Set<string>()
 const handledTurnCompletionIds = new Set<string>()
 
+function visibleSessions(): Session[] {
+  return filterSessionList(sessions, sessionFilterQuery)
+}
+
 function renderSessions() {
   const terminalColumns = process.stdout.columns ?? 80
   sidebar.width = sessionSidebarWidth(terminalColumns)
+  const visible = visibleSessions()
+  selected = visible.length === 0 ? 0 : Math.min(Math.max(0, selected), visible.length - 1)
   const count = String(sessions.length).padStart(2, "0")
-  sessionsLabel.content = sessions.length > 0 ? `SESSIONS  ${count}` : "SESSIONS"
+  const filterMark = sessionFilterQuery.trim() ? ` · ${visible.length}/${sessions.length}` : ""
+  sessionsLabel.content = sessions.length > 0 ? `SESSIONS  ${count}${filterMark}` : "SESSIONS"
   sessionsLabel.fg = theme.sidebarLabel
-  const text = formatSessionList(sessions, selected, {
+  const text = formatSessionList(visible, selected, {
     rows: process.stdout.rows ?? 40,
     columns: sessionListColumns(terminalColumns),
+    filter: sessionFilterQuery,
+    totalCount: sessions.length,
   })
   const chunks = text.split("\n").flatMap((line, index, lines) => {
-    const selectedLine = line.startsWith("●") || line.startsWith("Selected ")
+    const selectedLine = line.startsWith("●") || line.startsWith("Selected ") || line.startsWith("Filter  ")
     const color = selectedLine ? theme.sessionSelectedFg : theme.sidebarFg
     const chunk = selectedLine ? fg(color)(bold(line)) : fg(color)(line)
     return index < lines.length - 1 ? [chunk, fg(theme.sidebarFg)("\n")] : [chunk]
@@ -575,7 +585,9 @@ function renderSessions() {
   headerMeta.content = headerMetaContent()
   headerMeta.fg = theme.headerMeta
   if (!activeSession && !settingsOpen) {
-    status.content = formatHomeSessionStatus(selected, sessions.length)
+    status.content = sessionFilterQuery.trim()
+      ? formatStatusLine("ok", `connected  ·  ${visible.length} of ${sessions.length} sessions match “${sessionFilterQuery.trim()}”`)
+      : formatHomeSessionStatus(selected, sessions.length)
     status.fg = theme.statusOk
   }
 }
@@ -3359,6 +3371,39 @@ renderer.keyInput.on("keypress", (key) => {
     }
     return
   }
+  if (!activeSession && !settingsOpen) {
+    if (key.ctrl && key.name === "l") {
+      key.stopPropagation()
+      if (sessionFilterQuery.length > 0) {
+        sessionFilterQuery = ""
+        renderSessions()
+      }
+      return
+    }
+    if (sessionFilterQuery.length > 0 && key.name === "escape") {
+      key.stopPropagation()
+      sessionFilterQuery = ""
+      renderSessions()
+      return
+    }
+    if (key.name === "backspace" && sessionFilterQuery.length > 0) {
+      key.stopPropagation()
+      sessionFilterQuery = [...sessionFilterQuery].slice(0, -1).join("")
+      selected = 0
+      renderSessions()
+      return
+    }
+    if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+      const reserved = sessionFilterQuery.length === 0 && /^[nrsjkq]$/.test(key.sequence)
+      if (!reserved) {
+        key.stopPropagation()
+        sessionFilterQuery = (sessionFilterQuery + key.sequence).slice(0, 200)
+        selected = 0
+        renderSessions()
+        return
+      }
+    }
+  }
   if (key.name === "n") {
     key.stopPropagation()
     beginCreate()
@@ -3366,35 +3411,42 @@ renderer.keyInput.on("keypress", (key) => {
   else if (key.name === "r") void refreshSessions()
   else if (key.name === "s") void openSettings("models")
   else if (key.name === "up" || key.name === "k") {
-    selected = moveSessionSelection(selected, sessions.length, "up", 1)
+    const visible = visibleSessions()
+    selected = moveSessionSelection(selected, visible.length, "up", 1)
     renderSessions()
   } else if (key.name === "down" || key.name === "j") {
-    selected = moveSessionSelection(selected, sessions.length, "down", 1)
+    const visible = visibleSessions()
+    selected = moveSessionSelection(selected, visible.length, "down", 1)
     renderSessions()
   } else if (key.name === "home") {
-    selected = moveSessionSelection(selected, sessions.length, "home", 1)
+    const visible = visibleSessions()
+    selected = moveSessionSelection(selected, visible.length, "home", 1)
     renderSessions()
   } else if (key.name === "end") {
-    selected = moveSessionSelection(selected, sessions.length, "end", 1)
+    const visible = visibleSessions()
+    selected = moveSessionSelection(selected, visible.length, "end", 1)
     renderSessions()
   } else if (key.name === "pageup") {
+    const visible = visibleSessions()
     selected = moveSessionSelection(
       selected,
-      sessions.length,
+      visible.length,
       "pageup",
-      sessionListCapacity(process.stdout.rows ?? 40, sessions.length),
+      sessionListCapacity(process.stdout.rows ?? 40, visible.length),
     )
     renderSessions()
   } else if (key.name === "pagedown") {
+    const visible = visibleSessions()
     selected = moveSessionSelection(
       selected,
-      sessions.length,
+      visible.length,
       "pagedown",
-      sessionListCapacity(process.stdout.rows ?? 40, sessions.length),
+      sessionListCapacity(process.stdout.rows ?? 40, visible.length),
     )
     renderSessions()
-  } else if (key.name === "return" && sessions[selected]) {
-    const session = sessions[selected]
+  } else if (key.name === "return") {
+    const session = visibleSessions()[selected]
+    if (!session) return
     void openSession(session).catch((error) => {
       status.content = `● unable to open session  ·  ${error instanceof Error ? error.message : "request failed"}`
       status.fg = theme.statusError

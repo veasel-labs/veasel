@@ -7,8 +7,9 @@ test("home footer surfaces the discovery slash commands", () => {
   }
   expect(homeFooterHint).toContain("n new")
   expect(homeFooterHint).toContain("j/k")
-  expect(homeFooterHint).toContain("Home/End")
+  expect(homeFooterHint).toContain("type")
   expect(homeFooterHint).toContain("q quit")
+  expect(homeFooterHint).not.toContain("Home/End") // Home/End stays in /help; footer budget prefers type-to-filter
   expect(homeFooterHint.length).toBeLessThanOrEqual(72)
 })
 

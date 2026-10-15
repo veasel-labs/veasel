@@ -604,7 +604,7 @@ def main() -> None:
         screen.wait_for("/skills")
         screen.wait_for("/mcp")
         screen.wait_for("/theme")
-        screen.wait_for("Home/End")
+        screen.wait_for("type")
         screen.wait_for("q quit")
         screen.send("s", 0.5)
         screen.wait_for("Provider settings", 4)
@@ -805,6 +805,14 @@ def main() -> None:
         screen.send("\x1b", 0.35)  # dismiss notice overlay if any
         screen.send("\x1b", 0.45)  # leave session
         screen.wait_for("q quit")
+        screen.send("Lane-19", 0.55)  # type-to-filter home sessions
+        screen.wait_for("Filter  1/20 match", 4)
+        screen.wait_for("Lane-19")
+        visible = screen.terminal.text()
+        if "Alpha" in visible or "Beta" in visible:
+            raise AssertionError(f"session filter left unmatched rows on screen\n--- screen ---\n{visible}")
+        screen.send("\x0c", 0.4)  # Ctrl+L clears session filter
+        screen.wait_for("Alpha", 4)
         screen.send("\x1b[F", 0.35)  # End → last session
         screen.wait_for("Selected 20 of 20", 4)
         screen.wait_for("Lane-19")

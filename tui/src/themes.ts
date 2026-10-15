@@ -1,6 +1,7 @@
 import { homedir } from "node:os"
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { formatOkStatus, formatWarnStatus } from "./status-a11y"
 
 // Slash actions that are not theme ids. Keep these out of the custom-id shape
 // so /theme reload|open never collide with a user JSON file named reload.json.
@@ -818,7 +819,8 @@ export function formatThemeOpenNotice(result: EnsureThemeDirsResult, home = home
 export function formatThemeReloadStatus(loaded: number, errors: number): string {
   const parts = [`reloaded ${loaded} custom theme${loaded === 1 ? "" : "s"}`]
   if (errors > 0) parts.push(`${errors} JSON error${errors === 1 ? "" : "s"}`)
-  return `● ${parts.join("  ·  ")}  ·  /theme`
+  const message = `${parts.join("  ·  ")}  ·  /theme`
+  return errors > 0 ? formatWarnStatus(message) : formatOkStatus(message)
 }
 
 export function formatThemeLoadStatusHint(errors: string[]): string | undefined {
@@ -839,6 +841,6 @@ export function themeIdFromSlashSuggestion(name: string): ThemeId | undefined {
 
 export function formatThemePreviewStatus(id: ThemeId, savedId: ThemeId): string {
   const preview = resolveTheme(id)
-  if (id === savedId) return `● theme ${preview.name}  ·  saved`
-  return `● preview ${preview.name}  ·  Enter keeps · Esc restores ${resolveTheme(savedId).name}`
+  if (id === savedId) return formatOkStatus(`theme ${preview.name}  ·  saved`)
+  return formatWarnStatus(`preview ${preview.name}  ·  Enter keeps · Esc restores ${resolveTheme(savedId).name}`)
 }

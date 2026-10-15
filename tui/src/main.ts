@@ -138,7 +138,7 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
-import { formatBusyStatus, formatCancelledStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
+import { formatBusyStatus, formatCancelledStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatOkStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
 import {
   prefersReducedMotion,
   streamingCursorForMotion,
@@ -211,7 +211,7 @@ function openThemeDirectories(): void {
   const result = ensureThemeDirs({ projectDir: themeProjectDir })
   skillNotice = formatThemeOpenNotice(result)
   renderChat(chatMessages)
-  status.content = `● theme dirs ready  ·  /theme reload after editing JSON`
+  status.content = formatOkStatus("theme dirs ready  ·  /theme reload after editing JSON")
   status.fg = theme.statusOk
 }
 
@@ -804,8 +804,8 @@ function setTheme(id: ThemeId) {
   renderChat(chatMessages)
   const loadHint = formatThemeLoadStatusHint(customThemeLoad.errors)
   status.content = loadHint
-    ? `● theme ${resolveTheme(id).name}  ·  ${loadHint}`
-    : `● theme ${resolveTheme(id).name}`
+    ? formatWarnStatus(`theme ${resolveTheme(id).name}  ·  ${loadHint}`)
+    : formatOkStatus(`theme ${resolveTheme(id).name}`)
   status.fg = loadHint ? theme.statusWarn : theme.statusOk
 }
 
@@ -816,14 +816,14 @@ function restoreCommittedTheme() {
   // Prefer the pending-review cue over a theme-restored status when approvals wait.
   if (totalPendingReviews(lastPendingCounts) > 0) {
     status.content = statusWithPendingReviews(
-      `● theme ${resolveTheme(committedThemeId).name}`,
+      formatOkStatus(`theme ${resolveTheme(committedThemeId).name}`),
       lastPendingCounts,
       activeModelLabel || undefined,
     )
     status.fg = theme.statusWarn
     return
   }
-  status.content = `● theme ${resolveTheme(committedThemeId).name}`
+  status.content = formatOkStatus(`theme ${resolveTheme(committedThemeId).name}`)
   status.fg = theme.statusOk
 }
 
@@ -1140,7 +1140,7 @@ async function sendMessage(value: string) {
     renderChat(chatMessages)
     const loadHint = formatThemeLoadStatusHint(customThemeLoad.errors)
     if (loadHint) {
-      status.content = `● ${loadHint}`
+      status.content = formatWarnStatus(loadHint)
       status.fg = theme.statusWarn
     }
     chatInput.value = ""
@@ -1538,13 +1538,13 @@ async function showSessionUsage() {
     skillNotice = formatSessionUsageSummary(summary)
     renderChat(chatMessages)
     if (summary.usage_reported) {
-      let usageLine = `● session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`
+      let usageLine = `session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`
       if (summary.cache_reported) {
         usageLine += `  ·  ${formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0)}`
       }
-      status.content = usageLine
+      status.content = formatOkStatus(usageLine)
     } else {
-      status.content = "● session usage  ·  no provider-reported tokens yet"
+      status.content = formatOkStatus("session usage  ·  no provider-reported tokens yet")
     }
     status.fg = theme.statusOk
   } catch (error) {
@@ -1567,7 +1567,9 @@ async function showRepositoryMap(hint = "") {
     skillNotice = formatRepositoryMapSummary(map, hint)
     renderChat(chatMessages)
     const truncated = map.truncated ? " · truncated" : ""
-    status.content = `● repository map  ·  ${map.bytes} B · ${map.file_count} files · ${map.symbol_count} symbols${truncated}`
+    status.content = formatOkStatus(
+      `repository map  ·  ${map.bytes} B · ${map.file_count} files · ${map.symbol_count} symbols${truncated}`,
+    )
     status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
@@ -1579,7 +1581,7 @@ async function showRepositoryMap(hint = "") {
 async function loadOlderChatHistory() {
   if (!activeSession || chatHistoryLoading) return
   if (!chatHistoryHasOlder || chatMessages.length === 0) {
-    status.content = "● no earlier chat messages"
+    status.content = formatOkStatus("no earlier chat messages")
     status.fg = theme.muted
     return
   }

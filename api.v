@@ -136,6 +136,8 @@ pub:
 	cache_read_tokens     i64  @[omitempty]
 	cache_creation_tokens i64  @[omitempty]
 	cache_reported        bool @[omitempty]
+	reasoning_tokens      i64  @[omitempty]
+	reasoning_reported    bool @[omitempty]
 }
 
 struct SessionTurnAccepted {
@@ -159,6 +161,8 @@ pub:
 	cache_read_tokens     i64    @[omitempty]
 	cache_creation_tokens i64    @[omitempty]
 	cache_reported        bool   @[omitempty]
+	reasoning_tokens      i64    @[omitempty]
+	reasoning_reported    bool   @[omitempty]
 }
 
 struct CompletionResponse {
@@ -1173,6 +1177,12 @@ pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
 			0
 		}
 		cache_reported:        operation.cache_reported
+		reasoning_tokens:      if operation.reasoning_reported {
+			operation.reasoning_tokens
+		} else {
+			0
+		}
+		reasoning_reported:    operation.reasoning_reported
 	})
 }
 
@@ -1577,6 +1587,12 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 			0
 		}
 		cache_reported:        result.usage.cache_reported
+		reasoning_tokens:      if result.usage.reasoning_reported {
+			result.usage.reasoning_tokens
+		} else {
+			0
+		}
+		reasoning_reported:    result.usage.reasoning_reported
 	}
 }
 

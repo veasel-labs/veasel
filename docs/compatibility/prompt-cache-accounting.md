@@ -117,5 +117,5 @@ hits; hits appear only when the provider reports cache usage fields.
 | Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire management is not on the turn path (create body encoder fixture-tested) |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |
 | Models.dev-priced USD cost | Still unavailable |
-| Reasoning-token split | Not surfaced yet |
+| Reasoning-token split | Shipped as provider-reported `reasoning_tokens` / `reasoning_reported` (OpenAI Chat `completion_tokens_details.reasoning_tokens`, OpenAI Responses `output_tokens_details.reasoning_tokens`, Gemini `thoughtsTokenCount`); persisted on operations and session usage; never invented when keys are absent |
 | Claiming dollar savings without price pins | Forbidden |

@@ -40,6 +40,44 @@ fn test_openai_responses_usage_parses_cache_read_and_write() {
 	assert usage.cache_reported
 	assert usage.cache_read_tokens == 1500
 	assert usage.cache_creation_tokens == 100
+	assert !usage.reasoning_reported
+}
+
+fn test_openai_chat_usage_parses_reasoning_tokens() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 100,
+		"completion_tokens": 80,
+		"total_tokens": 180,
+		"completion_tokens_details": {"reasoning_tokens": 55}
+	}') or { panic(err) }
+	assert usage.reported
+	assert usage.output_tokens == 80
+	assert usage.reasoning_reported
+	assert usage.reasoning_tokens == 55
+}
+
+fn test_openai_responses_usage_parses_reasoning_tokens() {
+	usage := provider_usage_from_fixture_json('openai-responses', '{
+		"input_tokens": 200,
+		"output_tokens": 90,
+		"total_tokens": 290,
+		"output_tokens_details": {"reasoning_tokens": 40}
+	}') or { panic(err) }
+	assert usage.reported
+	assert usage.reasoning_reported
+	assert usage.reasoning_tokens == 40
+}
+
+fn test_gemini_usage_parses_thoughts_tokens() {
+	usage := provider_usage_from_fixture_json('gemini', '{
+		"promptTokenCount": 50,
+		"candidatesTokenCount": 20,
+		"totalTokenCount": 90,
+		"thoughtsTokenCount": 20
+	}') or { panic(err) }
+	assert usage.reported
+	assert usage.reasoning_reported
+	assert usage.reasoning_tokens == 20
 }
 
 fn test_anthropic_usage_parses_disjoint_cache_fields() {

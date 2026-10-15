@@ -83,6 +83,15 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
+		if input.autonomous && !app.allow_autonomous {
+			eprintln('veasel: rejecting queued operation ${operation.id}; autonomous policy disabled')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued autonomous turn cannot start because the isolated benchmark policy is disabled.') or {
+				eprintln('veasel: unable to reject queued autonomous operation ${operation.id}')
+				''
+			}
+			continue
+		}
 		if app.configured_model() == none {
 			eprintln('veasel: rejecting queued operation ${operation.id}; model not configured')
 			store.reject_queued_session_operation(operation.session_id, operation.id,

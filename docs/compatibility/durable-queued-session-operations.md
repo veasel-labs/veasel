@@ -19,7 +19,7 @@ loopback HTTP API (`queued` → `running` → terminal).
 
 | Persisted status at crash | On next startup | Rationale |
 | --- | --- | --- |
-| `queued` | Kept and resumed by a worker that claims to `running`, after request/workspace/model checks | Request JSON is durable; no provider or tool effect has started. Missing workspace, invalid request, or unset model fail closed as `cancelled` without claim |
+| `queued` | Kept and resumed by a worker that claims to `running`, after request/workspace/model/autonomous-policy checks | Request JSON is durable; no provider or tool effect has started. Missing workspace, invalid request, unset model, or `autonomous:true` without `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1` fail closed as `cancelled` without claim |
 | `running` / `cancelling` | Marked `uncertain`; never replayed | Provider socket or tool side effects may have completed without a durable result |
 | Terminal (`completed` / `failed` / `cancelled` / `uncertain`) | Unchanged; oldest terminal rows pruned beyond 200 per session | Bounded retention |
 
@@ -35,6 +35,9 @@ loopback HTTP API (`queued` → `running` → terminal).
 - Enqueue fail-closed: request JSON must decode as `ChatMessageInput` with
   non-empty user content (no NUL); invalid payloads never become `queued` rows.
   Resume still re-validates for legacy or manually repaired rows
+- Resume fail-closed for autonomous turns: `autonomous:true` is not claimed
+  unless the running server opted in with `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`
+  (same gate as the HTTP turn path)
 
 Approvals for edits, shell, and MCP remain mandatory. Loopback Host/Origin
 defaults are unchanged. Cancel of a `queued` row is terminal without starting a

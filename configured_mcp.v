@@ -398,9 +398,11 @@ fn parse_configured_mcp_input(input ConfiguredMCPServerInput) !ConfiguredMCPServ
 			}
 			mut env := map[string]string{}
 			for key, value in input.env {
-				if key.len == 0 || key.contains('=') || key.contains('\0')
-					|| key.to_upper() in ['PLUGIN_ROOT', 'PLUGIN_DATA'] || value.contains('\0') {
+				if !valid_plugin_mcp_env_key(key) || value.contains('\0') {
 					return error('env entries are invalid or use reserved names')
+				}
+				if plugin_mcp_env_key_conflicts(env, key) {
+					return error('env entries must be unique regardless of case')
 				}
 				env[key] = value
 			}

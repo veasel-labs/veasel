@@ -272,6 +272,47 @@
     }
   },
   {
+    "name": "stdio env key with CR is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "reserved names"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node",
+          "env": {
+            "BAD\rNAME": "value"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio env keys that differ only by case are skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "unique regardless of case"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node",
+          "env": {
+            "Path": "/tmp/a",
+            "PATH": "/tmp/b"
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "HTTP header value with CR is skipped",
     "accepted": true,
     "servers": [],

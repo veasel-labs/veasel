@@ -139,9 +139,11 @@ fn parse_plugin_mcp_server(root string, name string, value json2.Any) !PluginMCP
 					return error('env exceeds the ${max_plugin_mcp_env} entry limit')
 				}
 				for key, raw_value in raw_env as map[string]json2.Any {
-					if key.len == 0 || key.contains('=') || key.contains('\0')
-						|| key.to_upper() in ['PLUGIN_ROOT', 'PLUGIN_DATA'] || raw_value !is string {
+					if !valid_plugin_mcp_env_key(key) || raw_value !is string {
 						return error('env entries are invalid or use reserved names')
+					}
+					if plugin_mcp_env_key_conflicts(env, key) {
+						return error('env entries must be unique regardless of case')
 					}
 					env_value := raw_value as string
 					if env_value.contains('\0') {
@@ -458,6 +460,33 @@ fn is_valid_plugin_mcp_server_name(name string) bool {
 		}
 	}
 	return true
+}
+
+// valid_plugin_mcp_env_key rejects empty, overlong, reserved, and Windows-hostile
+// names (controls, spaces, `=`). Case-insensitive reserved PLUGIN_* names fail closed.
+fn valid_plugin_mcp_env_key(key string) bool {
+	if key.len == 0 || key.len > max_plugin_mcp_env_key_len || key.contains('=') {
+		return false
+	}
+	if key.to_upper() in ['PLUGIN_ROOT', 'PLUGIN_DATA'] {
+		return false
+	}
+	for c in key {
+		if c <= 32 || c == 127 {
+			return false
+		}
+	}
+	return true
+}
+
+fn plugin_mcp_env_key_conflicts(existing map[string]string, key string) bool {
+	folded := key.to_lower()
+	for name, _ in existing {
+		if name.to_lower() == folded {
+			return true
+		}
+	}
+	return false
 }
 
 fn valid_http_header(name string, value string) bool {

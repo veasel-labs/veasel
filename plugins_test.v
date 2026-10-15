@@ -728,12 +728,28 @@ fn test_plugin_mcp_server_name_and_header_bounds() {
 	assert !valid_http_header('X-Token', 'x'.repeat(max_plugin_mcp_header_value_bytes + 1))
 }
 
+fn test_plugin_mcp_env_keys_reject_controls_spaces_and_case_fold_collisions() {
+	assert valid_plugin_mcp_env_key('PATH')
+	assert valid_plugin_mcp_env_key('MY_TOKEN')
+	assert !valid_plugin_mcp_env_key('')
+	assert !valid_plugin_mcp_env_key('HAS=EQ')
+	assert !valid_plugin_mcp_env_key('PLUGIN_ROOT')
+	assert !valid_plugin_mcp_env_key('plugin_data')
+	assert !valid_plugin_mcp_env_key('BAD\rNAME')
+	assert !valid_plugin_mcp_env_key('HAS SPACE')
+	assert !valid_plugin_mcp_env_key('a'.repeat(max_plugin_mcp_env_key_len + 1))
+	mut env := map[string]string{}
+	env['Path'] = '/tmp/a'
+	assert plugin_mcp_env_key_conflicts(env, 'PATH')
+	assert !plugin_mcp_env_key_conflicts(env, 'Pathext')
+}
+
 fn test_agent_plugin_v1_mcp_fixture_corpus() {
 	path := os.join_path(os.getwd(), 'tests', 'agent_plugins', 'v1.0.0', 'mcp-documents.json')
 	fixtures := json2.decode[[]AgentPluginMCPFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins MCP fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins MCP fixtures: ${err.msg()}') }
-	assert fixtures.len >= 19
+	assert fixtures.len >= 21
 	manifest_json := '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"fixture"}'
 	manifest := json2.decode[map[string]json2.Any](manifest_json) or {
 		panic(err)

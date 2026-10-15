@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatBoundedReviewLines, formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
+import { formatBoundedReviewLines, formatMcpReview, mcpReviewLineBudget, mcpStdioSandboxWarning } from "./mcp-review"
 
 function longArguments(): string {
   const fields = Array.from({ length: 30 }, (_, index) => `  "field_${String(index + 1).padStart(2, "0")}": "value ${index + 1}"`)
@@ -44,5 +44,23 @@ describe("formatMcpReview", () => {
   test("escapes a control character without joining every line into one", () => {
     const text = formatBoundedReviewLines("keep\nline\u0007two", 10)
     expect(text).toBe("keep\nline\\u0007two")
+  })
+
+  test("shows stdio sandbox preview and default-off honesty ahead of arguments", () => {
+    const text = formatMcpReview({
+      plugin: "review-tools",
+      server: "local",
+      tool: "effect",
+      operationId: "op-1",
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      pending: true,
+      argumentsText: '{\n  "path": "src/main.v"\n}',
+      maxLines: 20,
+      stdioSandbox: { mode: "off", will_wrap: false, backend: "none" },
+    })
+    expect(text).toContain("Stdio sandbox: mode off · will not wrap")
+    expect(text).toContain("unsandboxed OS-user privileges")
+    expect(text.indexOf("Stdio sandbox:")).toBeLessThan(text.indexOf('"path"'))
+    expect(mcpStdioSandboxWarning({ mode: "auto", will_wrap: true, backend: "bubblewrap" })).toContain("Bubblewrap")
   })
 })

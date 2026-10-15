@@ -1,5 +1,25 @@
+import {
+  formatSandboxPreviewLine,
+  sandboxCapabilityFromPreview,
+  type ReviewSandboxPreview,
+} from "./shell-review"
+
 export function mcpReviewLineBudget(terminalRows: number): number {
   return Math.max(6, terminalRows - 20)
+}
+
+export function mcpStdioSandboxWarning(preview: ReviewSandboxPreview | undefined): string {
+  const capability = sandboxCapabilityFromPreview(preview)
+  if (capability === "bubblewrap") {
+    return "Trusted stdio MCP will wrap in Linux Bubblewrap when this call uses stdio (read-only host, writable PLUGIN_ROOT/PLUGIN_DATA, network shared). Streamable HTTP ignores this wrap. Review every effect before approval."
+  }
+  if (capability === "seatbelt") {
+    return "Trusted stdio MCP will wrap in macOS Seatbelt when this call uses stdio (writable PLUGIN_ROOT/PLUGIN_DATA, network shared). Streamable HTTP ignores this wrap. Review every effect before approval."
+  }
+  if (capability === "windows") {
+    return "Trusted stdio MCP will wrap in Windows AppContainer + Job when this call uses stdio (writable PLUGIN_ROOT/PLUGIN_DATA, network shared). Streamable HTTP ignores this wrap. Review every effect before approval."
+  }
+  return "Trusted stdio MCP defaults to unsandboxed OS-user privileges (VEASEL_MCP_STDIO_SANDBOX unset/off). Opt in with auto|require for Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer when available. Streamable HTTP ignores this wrap. Review every effect before approval."
 }
 
 function escapeReviewLine(line: string): string {
@@ -28,11 +48,15 @@ export function formatMcpReview(input: {
   pending: boolean
   argumentsText: string
   maxLines: number
+  stdioSandbox?: ReviewSandboxPreview
 }): string {
   const parts = [
     `${input.plugin}/${input.server} · ${input.tool}`,
     `Operation: ${input.operationId}`,
   ]
+  const previewLine = formatSandboxPreviewLine(input.stdioSandbox, "Stdio sandbox")
+  if (previewLine) parts.push(previewLine)
+  parts.push(mcpStdioSandboxWarning(input.stdioSandbox))
   if (input.pending) {
     parts.push(`This call has not reached its MCP server. Type /mcp call approve ${input.id} or /mcp call reject ${input.id}.`)
   }

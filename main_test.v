@@ -579,6 +579,29 @@ fn test_assistant_delta_events_persist_operation_and_text_for_replay() {
 	assert nul_rejected
 }
 
+fn test_session_events_prune_to_retention_limit_during_streaming() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	store.session_events_retention_limit = 4
+	session := store.create_session(SessionInput{
+		title:     'Event retention'
+		directory: '/tmp/event-retention'
+	}) or { panic(err) }
+	operation_id := '223e4567-e89b-42d3-a456-426614174001'
+	// session.created already consumed one slot.
+	store.record_assistant_delta(session.id, operation_id, 'one') or { panic(err) }
+	store.record_assistant_delta(session.id, operation_id, 'two') or { panic(err) }
+	store.record_assistant_delta(session.id, operation_id, 'three') or { panic(err) }
+	store.record_assistant_delta(session.id, operation_id, 'four') or { panic(err) }
+	events := store.events_after(0) or { panic(err) }
+	assert events.len == 4
+	assert events[0].type == 'assistant.delta'
+	assert events[0].data.delta == 'one'
+	assert events[3].data.delta == 'four'
+}
+
 struct ProviderSSETestState {
 mut:
 	messages []string

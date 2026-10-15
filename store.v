@@ -9,6 +9,7 @@ import uuid
 
 const max_session_history_page_size = 100
 const max_retained_terminal_session_operations = 200
+const max_retained_session_events = 5_000
 
 pub struct Session {
 pub:
@@ -140,6 +141,8 @@ mut:
 	path string
 	// When > 0, overrides max_retained_terminal_session_operations (tests only).
 	terminal_ops_retention_limit int
+	// When > 0, overrides max_retained_session_events (tests only).
+	session_events_retention_limit int
 }
 
 struct InterruptedWorkspaceEdit {
@@ -1694,6 +1697,26 @@ fn (mut store Store) record_assistant_delta(session_id string, operation_id stri
 			delta:        delta
 		}),
 	])!
+	store.prune_session_events_unlocked(session_id)
+}
+
+fn (mut store Store) prune_session_events_unlocked(session_id string) {
+	limit := if store.session_events_retention_limit > 0 {
+		store.session_events_retention_limit
+	} else {
+		max_retained_session_events
+	}
+	count_rows := store.db.exec_param('SELECT COUNT(*) FROM events WHERE session_id = ?',
+		session_id) or { return }
+	if count_rows.len != 1 {
+		return
+	}
+	excess := count_rows[0].val(0).int() - limit
+	if excess <= 0 {
+		return
+	}
+	_ = store.db.exec_param_many('DELETE FROM events WHERE id IN (SELECT id FROM events WHERE session_id = ? ORDER BY id ASC LIMIT ?)',
+		[session_id, excess.str()]) or { return }
 }
 
 fn (mut store Store) messages_for_session(session_id string, limit int) ![]ChatTurn {

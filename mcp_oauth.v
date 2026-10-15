@@ -1,7 +1,15 @@
 module main
 
+import json2
+import net.http
 import net.urllib
 import strings
+import time
+
+const max_mcp_oauth_metadata_bytes = 65_536
+const max_mcp_oauth_metadata_servers = 8
+const max_mcp_oauth_metadata_scopes = 32
+const mcp_oauth_metadata_timeout = 5 * time.second
 
 // MCPAuthChallenge holds safe fields from a WWW-Authenticate Bearer challenge
 // (RFC 6750) plus optional resource_metadata (RFC 9728). Values are discovery
@@ -15,6 +23,17 @@ pub:
 	error             string
 	error_description string
 	resource_metadata string
+}
+
+// MCPProtectedResourceMetadata is the subset of RFC 9728 protected-resource
+// metadata Veasel surfaces for credential binding. Fetches never forward MCP
+// server headers or secrets to the metadata URL.
+pub struct MCPProtectedResourceMetadata {
+pub:
+	resource                 string
+	authorization_servers    []string
+	scopes_supported         []string
+	bearer_methods_supported []string
 }
 
 fn mcp_auth_challenge_from_params(scheme string, params map[string]string) MCPAuthChallenge {
@@ -91,6 +110,117 @@ fn mcp_auth_challenge_summary(challenge MCPAuthChallenge) string {
 		parts << 'resource_metadata=${challenge.resource_metadata}'
 	}
 	return parts.join(' ')
+}
+
+fn mcp_protected_resource_metadata_summary(metadata MCPProtectedResourceMetadata) string {
+	mut parts := []string{cap: 4}
+	if metadata.resource.len > 0 {
+		parts << 'resource=${metadata.resource}'
+	}
+	if metadata.authorization_servers.len > 0 {
+		parts << 'authorization_servers=${metadata.authorization_servers.join(',')}'
+	}
+	if metadata.scopes_supported.len > 0 {
+		parts << 'scopes_supported=${metadata.scopes_supported.join(',')}'
+	}
+	if metadata.bearer_methods_supported.len > 0 {
+		parts << 'bearer_methods=${metadata.bearer_methods_supported.join(',')}'
+	}
+	return parts.join(' ')
+}
+
+fn parse_mcp_protected_resource_metadata(body string) !MCPProtectedResourceMetadata {
+	if body.len == 0 || body.len > max_mcp_oauth_metadata_bytes {
+		return error('MCP OAuth resource metadata response is invalid')
+	}
+	fields := json2.decode[map[string]json2.Any](body) or {
+		return error('MCP OAuth resource metadata JSON is invalid')
+	}
+	mut resource := ''
+	if value := fields['resource'] {
+		if value is string {
+			resource = sanitize_mcp_auth_param(value as string, 2048)
+		}
+	}
+	authorization_servers := parse_mcp_oauth_url_list(fields, 'authorization_servers',
+		max_mcp_oauth_metadata_servers)!
+	scopes_supported := parse_mcp_oauth_string_list(fields, 'scopes_supported', max_mcp_oauth_metadata_scopes)
+	bearer_methods := parse_mcp_oauth_string_list(fields, 'bearer_methods_supported', 8)
+	if resource.len == 0 && authorization_servers.len == 0 && scopes_supported.len == 0 {
+		return error('MCP OAuth resource metadata is empty')
+	}
+	return MCPProtectedResourceMetadata{
+		resource:                 resource
+		authorization_servers:    authorization_servers
+		scopes_supported:         scopes_supported
+		bearer_methods_supported: bearer_methods
+	}
+}
+
+fn parse_mcp_oauth_string_list(fields map[string]json2.Any, key string, max_items int) []string {
+	value := fields[key] or { return []string{} }
+	if value !is []json2.Any {
+		return []string{}
+	}
+	mut items := []string{cap: max_items}
+	for entry in value as []json2.Any {
+		if items.len >= max_items {
+			break
+		}
+		if entry is string {
+			cleaned := sanitize_mcp_auth_param(entry as string, 256)
+			if cleaned.len > 0 {
+				items << cleaned
+			}
+		}
+	}
+	return items
+}
+
+fn parse_mcp_oauth_url_list(fields map[string]json2.Any, key string, max_items int) ![]string {
+	value := fields[key] or { return []string{} }
+	if value !is []json2.Any {
+		return error('MCP OAuth metadata field `${key}` must be an array')
+	}
+	mut items := []string{cap: max_items}
+	for entry in value as []json2.Any {
+		if items.len >= max_items {
+			break
+		}
+		if entry is string {
+			if validated := validate_mcp_oauth_resource_metadata_url(entry as string) {
+				items << validated
+			}
+		}
+	}
+	return items
+}
+
+fn fetch_mcp_protected_resource_metadata(url string) !MCPProtectedResourceMetadata {
+	validated := validate_mcp_oauth_resource_metadata_url(url) or {
+		return error('MCP OAuth resource metadata URL is invalid')
+	}
+	mut header := http.new_header()
+	header.set(.accept, 'application/json')
+	response := http.fetch(
+		url:                  validated
+		method:               .get
+		header:               header
+		validate:             validated.starts_with('https://')
+		allow_redirect:       false
+		max_retries:          1
+		read_timeout:         mcp_oauth_metadata_timeout
+		write_timeout:        mcp_oauth_metadata_timeout
+		stop_copying_limit:   max_mcp_oauth_metadata_bytes + 1
+		stop_receiving_limit: max_mcp_oauth_metadata_bytes + 1
+	) or { return error('MCP OAuth resource metadata request failed') }
+	if response.status_code < 200 || response.status_code >= 300 {
+		return error('MCP OAuth resource metadata returned HTTP ${response.status_code}')
+	}
+	if response.body.len > max_mcp_oauth_metadata_bytes {
+		return error('MCP OAuth resource metadata response is too large')
+	}
+	return parse_mcp_protected_resource_metadata(response.body)!
 }
 
 fn split_www_authenticate_challenges(header string) []string {

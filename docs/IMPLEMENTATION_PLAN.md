@@ -207,8 +207,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   TTFB-before-progress cancel) are tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
   Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
-  including RFC 9728 `resource_metadata` for credential binding; the
-  authorization-code dance remains open.
+  including RFC 9728 `resource_metadata`, then best-effort fetch protected-
+  resource metadata (authorization_servers/scopes) without forwarding MCP
+  headers; the authorization-code dance remains open.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
@@ -242,8 +243,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   list|set|remove` for named HTTP header sets. Named HTTP credentials via
   `/v1/mcp-credentials`. Stdio `notifications/cancelled` on turn cancel is
   implemented; HTTP mid-body cancel via progress callbacks is shipped.
-  WWW-Authenticate Bearer challenge discovery (realm/scope/error/
-  resource_metadata) is shipped on 401; interactive OAuth dance and
+  WWW-Authenticate Bearer challenge discovery and RFC 9728 protected-
+  resource metadata fetch are shipped on 401; interactive OAuth dance and
   TTFB-before-progress cancel remain open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,

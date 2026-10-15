@@ -24,8 +24,10 @@ the pinned package and installed Bun 1.4.2. Solid remains an option as the
 view's composition needs grow. The package is pinned and typechecked, and the
 Linux x64 flow was exercised interactively. CI builds and packages the backend
 and TUI bundle for x64 Linux, macOS, and Windows and publishes verified main
-builds automatically. Interactive TUI validation on macOS and Windows and
-measured performance baselines remain open; see [`RESEARCH.md`](RESEARCH.md)
+builds automatically. Standalone interactive TUI PTY smoke runs on Linux and
+macOS in CI; Windows interactive validation still needs a ConPTY harness (see
+[`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md)).
+Measured performance baselines remain open; see [`RESEARCH.md`](RESEARCH.md)
 and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ## Milestones and backlog
@@ -432,7 +434,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
 - [ ] Validate interactive TUI behavior on each platform and establish
-  measured performance baselines.
+  measured performance baselines. Linux + macOS standalone PTY smoke is in
+  CI; Windows remains a ConPTY checklist in
+  [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
 
 ## Initial compatibility target
 

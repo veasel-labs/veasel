@@ -334,7 +334,7 @@ integrations already exist. For current verified feature status, see
 | Failed turns missing from TUI transcript | Fixed: `store.record_session_turn_completion` persists user/assistant text for failed/cancelled turns; covered by `main_test.v`. |
 | `veasel run` concatenating text across tool calls | Fixed: tool-round boundaries keep newlines; tool-budget summary path added. |
 | Artificial 100k input limit | Fixed: `max_chat_input_bytes = 1_048_576` (1 MiB of text, not Muse's token window). |
-| Incomplete real-terminal keyboard testing | Partially addressed on Linux (`keyboard-exercise`); macOS/Windows interactive validation remains open. |
+| Incomplete real-terminal keyboard testing | Linux + macOS standalone PTY smoke in CI; Linux `keyboard-exercise` local. Windows interactive still open (ConPTY checklist in `compatibility/tui-interactive-smoke.md`). |
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
 | Agent Plugins conformance gaps | Substantial v1.0.0 coverage; OAuth authorize/complete + PKCE + headless `--listen` shipped. Remaining gaps: DCR (deferred), TUI browser-open UX, GET notification productization, install UI, full v1.0.0 conformance gate. Linux/macOS/Windows MCP stdio sandbox opt-in (`VEASEL_MCP_STDIO_SANDBOX`; default off) shipped. |
 | Durable job recovery across restart | Queued Prefer: respond-async jobs resume after restart; claimed running/cancelling ops become `uncertain` and are never replayed. See `docs/compatibility/durable-queued-session-operations.md`. |

@@ -354,7 +354,9 @@ jobs:
           mkdir -p benchmark-results
           scripts/api-smoke.sh
       - name: Run standalone TUI integration smoke
-        if: runner.os == 'Linux'
+        # Unix PTY harness (pty/termios/fcntl). Linux + macOS only; Windows needs
+        # a ConPTY path — see docs/compatibility/tui-interactive-smoke.md.
+        if: runner.os == 'Linux' || runner.os == 'macOS'
         run: python3 scripts/standalone-tui-smoke.py --server dist/veasel --tui dist/veasel-tui
       - name: Checkout pinned Harbor trajectory validator
         if: runner.os == 'Linux'

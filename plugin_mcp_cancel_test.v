@@ -16,3 +16,17 @@ fn test_plugin_mcp_jsonrpc_request_id_extraction() {
 	assert plugin_mcp_jsonrpc_request_id_json('{"jsonrpc":"2.0","method":"notifications/cancelled","params":{}}') == ''
 	assert plugin_mcp_jsonrpc_request_id_json('{"jsonrpc":"2.0","method":"notifications/initialized"}') == ''
 }
+
+fn test_plugin_mcp_http_transport_cancel_before_send() {
+	mut transport := &PluginMCPHTTPTransport{
+		url: 'https://example.com/mcp'
+	}
+	transport.request_cancel()
+	transport.send('{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{}}') or {
+		assert err.msg() == 'cancelled'
+		assert transport.cancelled_notified
+		assert transport.active_request_id == '9'
+		return
+	}
+	assert false, 'cancelled HTTP transport must refuse send'
+}

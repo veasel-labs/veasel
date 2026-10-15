@@ -549,8 +549,10 @@ fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Contex
 				cancel_done := chan int{cap: 1}
 				if binding.connection_index >= 0 && binding.connection_index < mcp_connections.len {
 					stdio := mcp_connections[binding.connection_index].stdio_transport
-					if !isnil(stdio) {
-						spawn watch_plugin_mcp_stdio_cancel(mut turn_ctx, stdio, cancel_done)
+					http_transport := mcp_connections[binding.connection_index].http_transport
+					if !isnil(stdio) || !isnil(http_transport) {
+						spawn watch_plugin_mcp_cancel(mut turn_ctx, stdio, http_transport,
+							cancel_done)
 					} else {
 						cancel_done <- 1
 					}

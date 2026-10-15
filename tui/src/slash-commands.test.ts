@@ -93,7 +93,7 @@ describe("slashSuggestions", () => {
   test("suggests subcommands and filters contextual values", () => {
     expect(names("/patch ")).toEqual(["/patch show", "/patch approve", "/patch reject"])
     expect(names("/patch sh")).toEqual(["/patch show"])
-    expect(names("/skill ")).toEqual(["/skill on", "/skill off"])
+    expect(names("/skill ")).toEqual(["/skill on", "/skill off", "/skill run"])
     expect(names("/mcp call ")).toEqual(["/mcp call show", "/mcp call approve", "/mcp call reject"])
     const patches = slashSuggestions("/patch show ", slashCommands, {
       patches: [

@@ -68,7 +68,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/models", category: "setup", description: "Configure provider, model, endpoint, and output budget" },
   { name: "/theme", category: "setup", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora, day, contrast)", usage: "/theme <id>" },
   { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter (all tokens must match)" },
-  { name: "/skill", category: "skills", description: "Turn a Skill on or off", usage: "/skill on|off <source>/<skill>" },
+  { name: "/skill", category: "skills", description: "Enable, disable, or one-shot invoke a Skill", usage: "/skill on|off|run <source>/<skill>" },
   { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages; add text to filter" },
   { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
   { name: "/plugin remove", category: "plugins", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
@@ -120,7 +120,14 @@ const argumentSpecs: Record<string, ArgSpec[]> = {
     { kind: "choice", choices: themeChoices },
   ],
   "/skill": [
-    { kind: "choice", choices: [{ value: "on", description: "Enable a Skill for this session" }, { value: "off", description: "Disable a Skill" }] },
+    {
+      kind: "choice",
+      choices: [
+        { value: "on", description: "Enable a Skill for this session" },
+        { value: "off", description: "Disable a Skill" },
+        { value: "run", description: "One-shot invoke for the next turn only" },
+      ],
+    },
     { kind: "value", values: (context) => context.skills ?? [], empty: "No Skills are available yet" },
   ],
   "/plugin remove": [

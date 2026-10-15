@@ -79,6 +79,13 @@ pub:
 	enabled     bool
 }
 
+struct SessionSkillInvokeResult {
+pub:
+	plugin_name string
+	skill_name  string
+	pending     []SessionPluginSkill
+}
+
 struct PluginMCPServerSelectionInput {
 pub:
 	plugin_name string
@@ -1012,6 +1019,66 @@ pub fn (app &App) set_session_skill(mut ctx Context, id string) veb.Result {
 	})
 }
 
+// One-shot skill invoke queues instruction injection for the next turn only
+// without lasting /skill on. Explicit user invoke is the trust act for project
+// skills; bodies stay untrusted reference text and are never executed.
+@['/v1/sessions/:id/skills/invoke'; post]
+pub fn (app &App) invoke_session_skill(mut ctx Context, id string) veb.Result {
+	fields := json2.decode[map[string]json2.Any](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected plugin_name and skill_name fields')
+	}
+	plugin_value := fields['plugin_name'] or {
+		return json_request_error(mut ctx, 'Expected plugin_name and skill_name fields')
+	}
+	skill_value := fields['skill_name'] or {
+		return json_request_error(mut ctx, 'Expected plugin_name and skill_name fields')
+	}
+	if plugin_value !is string || skill_value !is string {
+		return json_request_error(mut ctx, 'Expected plugin_name and skill_name fields')
+	}
+	plugin_name := plugin_value as string
+	skill_name := skill_value as string
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut components := app.plugin_components
+	if !components.is_enabled(plugin_name, plugin_component_kind_skill, skill_name) {
+		return json_request_error(mut ctx, 'Skill is disabled for this plugin')
+	}
+	project_directory := project_directory_for_skills(session.directory)
+	root, skill := find_session_skill(app.plugin_directory, project_directory, plugin_name, skill_name) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'plugin skill not found'
+		})
+	}
+	_ = load_skill_instructions(root, skill) or {
+		return json_request_error(mut ctx, 'Skill instructions could not be safely loaded')
+	}
+	mut turn_lock := app.session_turn_lock(id)
+	turn_lock.wait()
+	defer {
+		turn_lock.post()
+	}
+	pending := app.store.enqueue_session_skill_invoke(id, plugin_name, skill_name) or {
+		if err.msg().contains('at most') {
+			ctx.res.set_status(.conflict)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_server_error(mut ctx, 'Unable to queue skill invoke')
+	}
+	return ctx.json(SessionSkillInvokeResult{
+		plugin_name: plugin_name
+		skill_name:  skill_name
+		pending:     pending
+	})
+}
+
 @['/v1/sessions/:id/mcp-servers'; get]
 pub fn (app &App) get_session_mcp_servers(mut ctx Context, id string) veb.Result {
 	_ := app.store.get_session(id) or {
@@ -1575,11 +1642,20 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	active_skills := app.store.session_plugin_skills(id) or {
 		return error('Unable to read session skills')
 	}
+	invoked_skills := app.store.take_session_skill_invokes(id) or {
+		return error('Unable to read one-shot skill invokes')
+	}
+	mut turn_skills := active_skills.clone()
+	for invoked in invoked_skills {
+		if !turn_skills.any(it.plugin_name == invoked.plugin_name && it.skill_name == invoked.skill_name) {
+			turn_skills << invoked
+		}
+	}
 	session_for_skills := app.store.get_session(id) or {
 		return error('Unable to read session')
 	}
 	mut skill_context := load_session_skill_context_for_project(app.plugin_directory, project_directory_for_skills(session_for_skills.directory),
-		active_skills) or {
+		turn_skills) or {
 		return error('Unable to load an enabled plugin skill')
 	}
 	if skill_context.instructions.len > 0 {

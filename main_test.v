@@ -773,6 +773,32 @@ fn test_session_plugin_skills_persist_and_emit_only_state_changes() {
 	assert updated_events[2].type == 'session.skill_disabled'
 }
 
+fn test_session_skill_invoke_queues_and_clears_on_take() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Invoke session', directory: '/tmp/invoke' }) or {
+		panic(err)
+	}
+	pending := store.enqueue_session_skill_invoke(session.id, 'agents', 'review') or { panic(err) }
+	assert pending == [SessionPluginSkill{
+		plugin_name: 'agents'
+		skill_name:  'review'
+	}]
+	events := store.events_after(0) or { panic(err) }
+	assert events.any(it.type == 'session.skill_invoked')
+	taken := store.take_session_skill_invokes(session.id) or { panic(err) }
+	assert taken == pending
+	assert (store.take_session_skill_invokes(session.id) or { panic(err) }).len == 0
+	for index in 0 .. max_session_skill_invokes {
+		store.enqueue_session_skill_invoke(session.id, 'agents', 'skill-${index}') or { panic(err) }
+	}
+	_ = store.enqueue_session_skill_invoke(session.id, 'agents', 'overflow') or {
+		assert err.msg().contains('at most')
+		return
+	}
+	panic('expected overflow enqueue to fail')
+}
+
 fn test_session_plugin_mcp_trust_persists_and_emits_only_state_changes() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

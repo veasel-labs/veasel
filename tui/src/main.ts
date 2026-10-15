@@ -937,8 +937,9 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  if (content === "/patches") {
-    await showWorkspaceEdits()
+  if (content === "/patches" || content.startsWith("/patches ")) {
+    const filter = content === "/patches" ? "" : content.slice("/patches ".length).trim()
+    await showWorkspaceEdits(filter)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -964,8 +965,9 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  if (content === "/commands") {
-    await showShellCommands()
+  if (content === "/commands" || content.startsWith("/commands ")) {
+    const filter = content === "/commands" ? "" : content.slice("/commands ".length).trim()
+    await showShellCommands(filter)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -1809,7 +1811,7 @@ async function notifyPendingMcpToolCalls() {
   }
 }
 
-async function showWorkspaceEdits() {
+async function showWorkspaceEdits(filter = "") {
   if (!activeSession) return
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
@@ -1817,17 +1819,25 @@ async function showWorkspaceEdits() {
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const edits = await response.json() as WorkspaceEditSummary[]
-    skillNotice = edits.length > 0
-      ? `WORKSPACE EDIT PROPOSALS\n${edits.map((edit) => {
-        const commands = edit.status === "pending"
-          ? `\nInspect diff: /patch show ${edit.id}`
-          : ""
-        const recovery = edit.status === "interrupted"
-          ? "\nApplication stopped unexpectedly. Inspect the file manually; Veasel will not replay this edit."
-          : ""
-        return `${edit.status.toUpperCase()}  ${safeTerminalText(edit.path)}\n${edit.id}${commands}${recovery}`
-      }).join("\n\n")}`
-      : "No workspace edit proposals. Ask Veasel to make a change; it will show a diff for your review before writing any file."
+    const entries = edits.map((edit) => {
+      const commands = edit.status === "pending"
+        ? `\nInspect diff: /patch show ${edit.id}`
+        : ""
+      const recovery = edit.status === "interrupted"
+        ? "\nApplication stopped unexpectedly. Inspect the file manually; Veasel will not replay this edit."
+        : ""
+      return {
+        haystack: `${edit.status} ${edit.path} ${edit.id}`,
+        line: `${edit.status.toUpperCase()}  ${safeTerminalText(edit.path)}\n${edit.id}${commands}${recovery}`,
+      }
+    })
+    const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
+    const header = formatCatalogFilterHeader("WORKSPACE EDIT PROPOSALS", matched.length, entries.length, filter)
+    skillNotice = matched.length > 0
+      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}\n\nFilter with /patches <text> (path, status, or id tokens).`
+      : filter
+        ? formatCatalogFilterEmpty("edit proposals", safeTerminalText(filter))
+        : "No workspace edit proposals. Ask Veasel to make a change; it will show a diff for your review before writing any file."
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load workspace edit proposals: ${error instanceof Error ? error.message : "request failed"}`
@@ -1909,15 +1919,30 @@ async function actOnWorkspaceEdit(action: "approve" | "reject", editId: string) 
   }
 }
 
-async function showShellCommands() {
+async function showShellCommands(filter = "") {
   if (!activeSession) return
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands`, { signal: controller.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const commands = await response.json() as ShellCommandSummary[]
-    skillNotice = commands.length
-      ? `SHELL COMMAND PROPOSALS\n${commands.map((item) => `${item.status.toUpperCase()}  ${item.id}\n${safeTerminalText(item.command)}\nCWD: ${safeTerminalText(item.cwd)} · timeout ${item.timeout_seconds}s${item.status === "pending" ? `\nInspect: /command show ${item.id}` : item.status === "uncertain" ? "\nExecution was interrupted. Inspect workspace state; Veasel will not rerun it." : ""}`).join("\n\n")}`
-      : `No shell command proposals. Veasel shows the exact command and waits for explicit approval. ${approvedShellSandboxHint()}`
+    const entries = commands.map((item) => {
+      const detail = item.status === "pending"
+        ? `\nInspect: /command show ${item.id}`
+        : item.status === "uncertain"
+          ? "\nExecution was interrupted. Inspect workspace state; Veasel will not rerun it."
+          : ""
+      return {
+        haystack: `${item.status} ${item.id} ${item.command} ${item.cwd}`,
+        line: `${item.status.toUpperCase()}  ${item.id}\n${safeTerminalText(item.command)}\nCWD: ${safeTerminalText(item.cwd)} · timeout ${item.timeout_seconds}s${detail}`,
+      }
+    })
+    const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
+    const header = formatCatalogFilterHeader("SHELL COMMAND PROPOSALS", matched.length, entries.length, filter)
+    skillNotice = matched.length > 0
+      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}\n\nFilter with /commands <text> (command, cwd, status, or id tokens).`
+      : filter
+        ? formatCatalogFilterEmpty("shell command proposals", safeTerminalText(filter))
+        : `No shell command proposals. Veasel shows the exact command and waits for explicit approval. ${approvedShellSandboxHint()}`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load shell command proposals: ${error instanceof Error ? error.message : "request failed"}`

@@ -1078,6 +1078,9 @@ fn validate_messages(messages []ChatMessage) ! {
 		if message.content.trim_space().len == 0 {
 			return error('message content must not be empty')
 		}
+		if message.content.contains('\0') {
+			return error('message content must not contain NUL bytes')
+		}
 		total_bytes += message.content.len
 		if total_bytes > max_chat_input_bytes {
 			return error('messages exceed the ${max_chat_input_bytes} byte limit')

@@ -416,7 +416,7 @@ type ProviderSSEDataFn = fn (data string) !
 struct ProviderSSEDecoder {
 mut:
 	on_data ProviderSSEDataFn @[required]
-	pending string
+	pending []u8
 	// hold_cr is true when the previous chunk ended in CR that may still form
 	// CRLF with the next chunk's leading LF. Only the new chunk is normalized;
 	// rewriting all of pending on every feed was quadratic on large streams.
@@ -429,40 +429,75 @@ mut:
 	bytes   int
 }
 
-// normalize_sse_newlines maps CRLF and lone CR to LF without touching a buffer
-// that is already LF-only.
-fn normalize_sse_newlines(text string) string {
-	if !text.contains('\r') {
-		return text
-	}
-	return text.replace('\r\n', '\n').replace('\r', '\n')
-}
-
-fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
-	if chunk.contains('\0') {
-		return error('provider SSE chunk contained a NUL byte')
-	}
-	mut rest := chunk
-	if decoder.hold_cr {
-		decoder.hold_cr = false
-		if rest.len > 0 && rest[0] == `\n` {
-			// CR+LF split across chunks → one LF.
-			decoder.pending += '\n'
-			rest = rest[1..]
-		} else {
-			// Lone CR → LF.
-			decoder.pending += '\n'
+// append_normalized_sse_bytes maps CRLF and lone CR to LF while appending.
+// LF-only chunks are appended without a second scan/copy pass.
+fn append_normalized_sse_bytes(mut pending []u8, chunk []u8) {
+	mut has_cr := false
+	for b in chunk {
+		if b == `\r` {
+			has_cr = true
+			break
 		}
 	}
-	if rest.ends_with('\r') {
-		decoder.hold_cr = true
-		rest = rest[..rest.len - 1]
+	if !has_cr {
+		pending << chunk
+		return
 	}
-	if rest.len > 0 {
-		decoder.pending += normalize_sse_newlines(rest)
+	mut i := 0
+	for i < chunk.len {
+		if chunk[i] == `\r` {
+			if i + 1 < chunk.len && chunk[i + 1] == `\n` {
+				i++
+			}
+			pending << `\n`
+			i++
+			continue
+		}
+		pending << chunk[i]
+		i++
+	}
+}
+
+fn index_double_lf(buf []u8) int {
+	if buf.len < 2 {
+		return -1
+	}
+	for i := 0; i + 1 < buf.len; i++ {
+		if buf[i] == `\n` && buf[i + 1] == `\n` {
+			return i
+		}
+	}
+	return -1
+}
+
+fn (mut decoder ProviderSSEDecoder) feed(chunk []u8) ! {
+	for b in chunk {
+		if b == 0 {
+			return error('provider SSE chunk contained a NUL byte')
+		}
+	}
+	mut start := 0
+	mut end := chunk.len
+	if decoder.hold_cr {
+		decoder.hold_cr = false
+		if end > start && chunk[start] == `\n` {
+			// CR+LF split across chunks → one LF.
+			decoder.pending << `\n`
+			start++
+		} else {
+			// Lone CR → LF.
+			decoder.pending << `\n`
+		}
+	}
+	if end > start && chunk[end - 1] == `\r` {
+		decoder.hold_cr = true
+		end--
+	}
+	if end > start {
+		append_normalized_sse_bytes(mut decoder.pending, chunk[start..end])
 	}
 	for {
-		lf_end := decoder.pending.index('\n\n') or { -1 }
+		lf_end := index_double_lf(decoder.pending)
 		if lf_end < 0 {
 			if decoder.pending.len > max_provider_response_bytes {
 				return error('stream frame size limit exceeded')
@@ -472,8 +507,8 @@ fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
 		if lf_end > max_provider_response_bytes {
 			return error('stream frame size limit exceeded')
 		}
-		block := decoder.pending[..lf_end]
-		decoder.pending = decoder.pending[lf_end + 2..]
+		block := decoder.pending[..lf_end].bytestr()
+		decoder.pending = decoder.pending[lf_end + 2..].clone()
 		mut data := strings.new_builder(block.len)
 		mut wrote := false
 		for line in block.split('\n') {
@@ -496,13 +531,14 @@ fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
 fn (mut decoder ProviderSSEDecoder) finish() ! {
 	if decoder.hold_cr {
 		decoder.hold_cr = false
-		decoder.pending += '\n'
+		decoder.pending << `\n`
 	}
 	if decoder.pending.len == 0 {
 		return
 	}
-	decoder.pending += '\n\n'
-	decoder.feed('')!
+	decoder.pending << `\n`
+	decoder.pending << `\n`
+	decoder.feed([]u8{})!
 }
 
 struct ModelConfig {
@@ -2208,5 +2244,5 @@ fn provider_sse_handle_progress(mut stream_state ProviderSSERequestState, mut tu
 	if status_code < 200 || status_code >= 300 {
 		return
 	}
-	stream_state.decoder.feed(chunk.bytestr())!
+	stream_state.decoder.feed(chunk)!
 }

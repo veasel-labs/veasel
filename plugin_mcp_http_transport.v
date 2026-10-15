@@ -330,7 +330,7 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 			if transport.cancel_requested {
 				return error('cancelled')
 			}
-			messages := stream.feed(chunk.bytestr())!
+			messages := stream.feed(chunk)!
 			for message in messages {
 				transport.append_notification(message)!
 			}
@@ -494,25 +494,31 @@ fn plugin_mcp_json_string(fields map[string]json2.Any, key string) string {
 
 struct PluginMCPHTTPSseStream {
 mut:
-	carry      string
+	carry      []u8
 	event_name string
 	data_lines []string
 	bytes      int
 }
 
-fn (mut stream PluginMCPHTTPSseStream) feed(chunk string) ![]string {
+fn (mut stream PluginMCPHTTPSseStream) feed(chunk []u8) ![]string {
 	if chunk.len == 0 {
 		return []string{}
 	}
-	if chunk.contains('\0') {
-		return error('MCP HTTP SSE chunk contained a NUL byte')
+	for b in chunk {
+		if b == 0 {
+			return error('MCP HTTP SSE chunk contained a NUL byte')
+		}
 	}
 	stream.bytes += chunk.len
 	if stream.bytes > max_plugin_mcp_http_body_bytes {
 		return error('MCP HTTP SSE response exceeds the message size limit')
 	}
-	text := stream.carry + chunk
-	stream.carry = ''
+	mut text := []u8{cap: stream.carry.len + chunk.len}
+	if stream.carry.len > 0 {
+		text << stream.carry
+		stream.carry = []u8{}
+	}
+	text << chunk
 	mut messages := []string{}
 	mut start := 0
 	for start < text.len {
@@ -521,10 +527,10 @@ fn (mut stream PluginMCPHTTPSseStream) feed(chunk string) ![]string {
 			end++
 		}
 		if end >= text.len {
-			stream.carry = text[start..]
+			stream.carry = text[start..].clone()
 			break
 		}
-		mut line := text[start..end]
+		mut line := text[start..end].bytestr()
 		start = end + 1
 		if line.ends_with('\r') {
 			line = line[..line.len - 1]
@@ -551,12 +557,13 @@ fn (mut stream PluginMCPHTTPSseStream) feed(chunk string) ![]string {
 fn (mut stream PluginMCPHTTPSseStream) finish() ![]string {
 	mut messages := []string{}
 	if stream.carry.len > 0 {
-		line := if stream.carry.ends_with('\r') {
-			stream.carry[..stream.carry.len - 1]
-		} else {
-			stream.carry
+		line_bytes := stream.carry
+		stream.carry = []u8{}
+		mut trim_end := line_bytes.len
+		if trim_end > 0 && line_bytes[trim_end - 1] == `\r` {
+			trim_end--
 		}
-		stream.carry = ''
+		line := line_bytes[..trim_end].bytestr()
 		if line.len > 0 && !line.starts_with(':') {
 			if line.starts_with('event:') {
 				stream.event_name = line[6..].trim_space()
@@ -574,7 +581,7 @@ fn (mut stream PluginMCPHTTPSseStream) finish() ![]string {
 
 fn parse_plugin_mcp_http_sse(body string) ![]string {
 	mut stream := PluginMCPHTTPSseStream{}
-	mut messages := stream.feed(body)!
+	mut messages := stream.feed(body.bytes())!
 	messages << stream.finish()!
 	if messages.len == 0 {
 		return error('MCP HTTP SSE response contained no message events')

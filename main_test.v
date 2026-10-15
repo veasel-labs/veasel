@@ -671,9 +671,9 @@ fn test_provider_sse_decoder_handles_split_crlf_and_multiline_data() {
 	mut decoder := ProviderSSEDecoder{
 		on_data: callback
 	}
-	decoder.feed('event: message\r\ndata: first\r') or { panic(err) }
-	decoder.feed('\n\r\ndata: second\ndata: third\n\n') or { panic(err) }
-	decoder.feed('data: fourth\rdata: fifth\r\r') or { panic(err) }
+	decoder.feed('event: message\r\ndata: first\r'.bytes()) or { panic(err) }
+	decoder.feed('\n\r\ndata: second\ndata: third\n\n'.bytes()) or { panic(err) }
+	decoder.feed('data: fourth\rdata: fifth\r\r'.bytes()) or { panic(err) }
 	decoder.finish() or { panic(err) }
 	assert state.messages == ['first', 'second\nthird', 'fourth\nfifth']
 }
@@ -686,7 +686,7 @@ fn test_provider_sse_decoder_ignores_non_data_fields_and_flushes_final_frame() {
 	mut decoder := ProviderSSEDecoder{
 		on_data: callback
 	}
-	decoder.feed(': comment\nid: 4\nretry: 1000\ndata: [DONE]') or { panic(err) }
+	decoder.feed(': comment\nid: 4\nretry: 1000\ndata: [DONE]'.bytes()) or { panic(err) }
 	decoder.finish() or { panic(err) }
 	assert state.messages == ['[DONE]']
 }
@@ -696,7 +696,7 @@ fn test_provider_sse_decoder_rejects_oversized_unterminated_frames() {
 		on_data: fn (_ string) ! {}
 	}
 	too_large := 'x'.repeat(max_provider_response_bytes + 1)
-	decoder.feed(too_large) or {
+	decoder.feed(too_large.bytes()) or {
 		assert err.msg() == 'stream frame size limit exceeded'
 		return
 	}
@@ -709,7 +709,7 @@ fn test_provider_sse_decoder_rejects_nul_bytes() {
 			assert false, 'NUL chunk must not deliver data'
 		}
 	}
-	decoder.feed('data: before\0after\n\n') or {
+	decoder.feed('data: before\0after\n\n'.bytes()) or {
 		assert err.msg() == 'provider SSE chunk contained a NUL byte'
 		return
 	}

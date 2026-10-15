@@ -33,14 +33,15 @@ mut:
 // `disabled` defaults to false so older files without the field stay enabled.
 struct ConfiguredMCPServerSpec {
 pub:
-	transport string
-	command   string
-	args      []string
-	cwd       string
-	env       map[string]string
-	url       string
-	headers   map[string]string
-	disabled  bool @[omitempty]
+	transport  string
+	command    string
+	args       []string
+	cwd        string
+	env        map[string]string
+	url        string
+	headers    map[string]string
+	credential string @[omitempty]
+	disabled   bool   @[omitempty]
 }
 
 pub struct ConfiguredMCPServerView {
@@ -56,6 +57,7 @@ pub:
 	env_keys     []string @[json: 'env_keys'; omitempty]
 	url_origin   string   @[json: 'url_origin'; omitempty]
 	header_names []string @[json: 'header_names'; omitempty]
+	credential   string   @[omitempty]
 }
 
 pub struct ConfiguredMCPCatalog {
@@ -69,17 +71,18 @@ pub:
 
 struct ConfiguredMCPServerInput {
 pub:
-	name      string
-	transport string
-	command   string
-	args      []string
-	cwd       string
-	env       map[string]string
-	url       string
-	headers   map[string]string
-	enabled   bool   = true
-	scope     string = configured_mcp_scope_user
-	directory string
+	name       string
+	transport  string
+	command    string
+	args       []string
+	cwd        string
+	env        map[string]string
+	url        string
+	headers    map[string]string
+	credential string
+	enabled    bool   = true
+	scope      string = configured_mcp_scope_user
+	directory  string
 }
 
 struct ConfiguredMCPEnableInput {
@@ -196,6 +199,7 @@ fn configured_spec_view_with_source(name string, spec ConfiguredMCPServerSpec, s
 		env_keys:     spec.env.keys().sorted()
 		url_origin:   plugin_mcp_url_origin(spec.url)
 		header_names: plugin_mcp_header_names(spec.headers)
+		credential:   spec.credential
 	}
 }
 
@@ -266,6 +270,7 @@ fn (mut state ConfiguredMCPState) upsert_scoped(input ConfiguredMCPServerInput, 
 		env_keys:     view.env_keys
 		url_origin:   view.url_origin
 		header_names: view.header_names
+		credential:   view.credential
 	}
 }
 
@@ -287,14 +292,15 @@ fn (mut state ConfiguredMCPState) set_enabled(name string, enabled bool) !Config
 	}
 	existing := state.settings.servers[name] or { return error('configured MCP server not found') }
 	spec := ConfiguredMCPServerSpec{
-		transport: existing.transport
-		command:   existing.command
-		args:      existing.args
-		cwd:       existing.cwd
-		env:       existing.env
-		url:       existing.url
-		headers:   existing.headers
-		disabled:  !enabled
+		transport:  existing.transport
+		command:    existing.command
+		args:       existing.args
+		cwd:        existing.cwd
+		env:        existing.env
+		url:        existing.url
+		headers:    existing.headers
+		credential: existing.credential
+		disabled:   !enabled
 	}
 	mut servers := state.settings.servers.clone()
 	servers[name] = spec
@@ -320,6 +326,7 @@ fn (mut state ConfiguredMCPState) set_enabled_scoped(name string, enabled bool, 
 		env_keys:     view.env_keys
 		url_origin:   view.url_origin
 		header_names: view.header_names
+		credential:   view.credential
 	}
 }
 
@@ -403,8 +410,8 @@ fn parse_configured_mcp_input(input ConfiguredMCPServerInput) !ConfiguredMCPServ
 					return error('configured stdio cwd must be an absolute existing directory')
 				}
 			}
-			if input.url.len > 0 || input.headers.len > 0 {
-				return error('stdio servers do not accept url or headers')
+			if input.url.len > 0 || input.headers.len > 0 || input.credential.len > 0 {
+				return error('stdio servers do not accept url, headers, or credential')
 			}
 			return ConfiguredMCPServerSpec{
 				transport: transport
@@ -423,6 +430,10 @@ fn parse_configured_mcp_input(input ConfiguredMCPServerInput) !ConfiguredMCPServ
 			if input.headers.len > max_plugin_mcp_headers {
 				return error('headers exceeds the ${max_plugin_mcp_headers} entry limit')
 			}
+			credential := input.credential.trim_space()
+			if credential.len > 0 && !is_valid_mcp_credential_name(credential) {
+				return error('MCP credential name is invalid')
+			}
 			mut headers := map[string]string{}
 			for key, value in input.headers {
 				if !valid_http_header(key, value) {
@@ -436,10 +447,11 @@ fn parse_configured_mcp_input(input ConfiguredMCPServerInput) !ConfiguredMCPServ
 				headers[key] = value
 			}
 			return ConfiguredMCPServerSpec{
-				transport: transport
-				url:       url
-				headers:   headers
-				disabled:  !input.enabled
+				transport:  transport
+				url:        url
+				headers:    headers
+				credential: credential
+				disabled:   !input.enabled
 			}
 		}
 		else {
@@ -475,6 +487,37 @@ fn configured_spec_to_plugin_server(name string, spec ConfiguredMCPServerSpec) !
 			return error('unsupported configured MCP transport')
 		}
 	}
+}
+
+fn (app &App) materialize_configured_mcp_server(name string, spec ConfiguredMCPServerSpec) !PluginMCPServer {
+	server := configured_spec_to_plugin_server(name, spec)!
+	if spec.transport != 'streamable-http' || spec.credential.len == 0 {
+		return server
+	}
+	mut credentials := app.mcp_credentials
+	credential_headers := credentials.get_headers(spec.credential)!
+	merged := merge_mcp_credential_headers(spec.headers, credential_headers)!
+	return PluginMCPServer{
+		name:        server.name
+		transport:   server.transport
+		url:         server.url
+		headers:     merged
+		plugin_name: server.plugin_name
+	}
+}
+
+fn (app &App) get_configured_plugin_server(mut state ConfiguredMCPState, name string) !PluginMCPServer {
+	state.mu.lock()
+	spec := state.settings.servers[name] or {
+		state.mu.unlock()
+		return error('configured MCP server not found')
+	}
+	if spec.disabled {
+		state.mu.unlock()
+		return error('configured MCP server is disabled')
+	}
+	state.mu.unlock()
+	return app.materialize_configured_mcp_server(name, spec)!
 }
 
 fn decode_configured_mcp_input(raw string) !ConfiguredMCPServerInput {
@@ -570,18 +613,26 @@ fn decode_configured_mcp_input(raw string) !ConfiguredMCPServerInput {
 		}
 		directory = directory_value as string
 	}
+	mut credential := ''
+	if credential_value := fields['credential'] {
+		if credential_value !is string {
+			return error('credential must be a string')
+		}
+		credential = credential_value as string
+	}
 	return ConfiguredMCPServerInput{
-		name:      name_value as string
-		transport: transport_value as string
-		command:   command
-		args:      args
-		cwd:       cwd
-		env:       env
-		url:       url
-		headers:   headers
-		enabled:   enabled
-		scope:     scope
-		directory: directory
+		name:       name_value as string
+		transport:  transport_value as string
+		command:    command
+		args:       args
+		cwd:        cwd
+		env:        env
+		url:        url
+		headers:    headers
+		credential: credential
+		enabled:    enabled
+		scope:      scope
+		directory:  directory
 	}
 }
 
@@ -971,7 +1022,7 @@ fn (app &App) find_session_mcp_server(plugin_name string, server_name string, wo
 		if workspace.trim_space().len > 0 {
 			if resolved := resolve_configured_mcp_workspace(workspace) {
 				mut project_state := new_configured_mcp_state(project_configured_mcp_path(resolved))
-				if server := project_state.get_plugin_server(server_name) {
+				if server := app.get_configured_plugin_server(mut project_state, server_name) {
 					return promote_configured_mcp_stdio_root(app, server)!
 				}
 				if imported := find_imported_project_mcp_server(resolved, server_name) {
@@ -980,7 +1031,7 @@ fn (app &App) find_session_mcp_server(plugin_name string, server_name string, wo
 			}
 		}
 		mut state := app.configured_mcp
-		server := state.get_plugin_server(server_name)!
+		server := app.get_configured_plugin_server(mut state, server_name)!
 		return promote_configured_mcp_stdio_root(app, server)!
 	}
 	mut components := app.plugin_components

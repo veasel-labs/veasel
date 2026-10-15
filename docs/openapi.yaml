@@ -139,10 +139,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/mcp-credentials:
+    get:
+      operationId: listMcpCredentials
+      description: Lists named HTTP header credential sets persisted in `$VEASEL_DATA_DIR/mcp-credentials.json`. Secret values are never returned; only credential names and header names are shown. Streamable HTTP configured MCP servers may reference a credential by name; literal server headers win on case-sensitive key conflicts at connect time.
+      responses:
+        '200':
+          description: Named MCP HTTP credentials (header names only).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPCredentialCatalog'
+    post:
+      operationId: upsertMcpCredential
+      description: Adds or replaces a named set of HTTP headers for Streamable HTTP MCP. Values are stored locally with owner-only file permissions when the platform supports chmod. Does not perform OAuth or interactive authorization discovery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MCPCredentialInput'
+      responses:
+        '200':
+          description: Created or updated credential view (header names only).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPCredentialView'
+        '400':
+          description: Invalid name or headers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/mcp-credentials/{name}:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: removeMcpCredential
+      description: Removes a named MCP HTTP credential. Configured servers that still reference the name fail at connect/trust until updated.
+      responses:
+        '200':
+          description: Credential removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPCredentialRemoval'
+        '400':
+          description: Name is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Credential not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/mcp-servers:
     get:
       operationId: listConfiguredMcpServers
-      description: Lists operator-configured MCP servers. User scope is always `$VEASEL_DATA_DIR/mcp-servers.json`. When `directory` is provided, also includes writable project-scope servers from `<directory>/.veasel/mcp-servers.json` and read-only imported portable `mcpServers` files (`.mcp.json`, `.cursor/mcp.json`). `.vscode/mcp.json` (`servers` key) is not imported. Secrets in headers are not returned; only header names and URL origins are shown. Agent Plugin MCP servers remain listed under `/v1/plugins`.
+      description: Lists operator-configured MCP servers. User scope is always `$VEASEL_DATA_DIR/mcp-servers.json`. When `directory` is provided, also includes writable project-scope servers from `<directory>/.veasel/mcp-servers.json` and read-only imported portable `mcpServers` files (`.mcp.json`, `.cursor/mcp.json`). `.vscode/mcp.json` (`servers` key) is not imported. Secrets in headers are not returned; only header names, optional credential name, and URL origins are shown. Agent Plugin MCP servers remain listed under `/v1/plugins`.
       parameters:
         - in: query
           name: directory
@@ -2051,7 +2112,10 @@ components:
         header_names:
           type: array
           items: { type: string }
-          description: Header names only; values are never returned.
+          description: Literal header names only; values are never returned. Named credential header names are not duplicated here.
+        credential:
+          type: string
+          description: Optional name of a `/v1/mcp-credentials` entry merged into Streamable HTTP headers at connect time.
     ConfiguredMCPServerInput:
       type: object
       required: [name, transport]
@@ -2070,9 +2134,44 @@ components:
         headers:
           type: object
           additionalProperties: { type: string }
+        credential:
+          type: string
+          description: Optional `/v1/mcp-credentials` name for streamable-http only. Stdio rejects credential.
         enabled: { type: boolean, default: true }
         scope: { type: string, enum: [user, project], default: user }
         directory: { type: string, description: Workspace directory required when scope is project. }
+    MCPCredentialCatalog:
+      type: object
+      required: [credentials]
+      properties:
+        path: { type: string, description: Absolute path of mcp-credentials.json when available. }
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/MCPCredentialView'
+    MCPCredentialView:
+      type: object
+      required: [name, header_names]
+      properties:
+        name: { type: string }
+        header_names:
+          type: array
+          items: { type: string }
+          description: Header names only; values are never returned.
+    MCPCredentialInput:
+      type: object
+      required: [name, headers]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Validated HTTP headers stored locally; values are never returned by list/get views.
+    MCPCredentialRemoval:
+      type: object
+      required: [removed]
+      properties:
+        removed: { type: string }
     ConfiguredMCPEnableInput:
       type: object
       required: [enabled]

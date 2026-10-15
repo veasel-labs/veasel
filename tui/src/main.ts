@@ -46,15 +46,19 @@ import {
 } from "./repository-map"
 import {
   formatThemeList,
+  formatThemePreviewStatus,
   isThemeId,
   loadThemeId,
   resolveTheme,
   saveThemeId,
+  themeIdFromSlashSuggestion,
   type Theme,
   type ThemeId,
 } from "./themes"
 
 let theme: Theme = resolveTheme(loadThemeId())
+let committedThemeId: ThemeId = theme.id
+let themePreviewActive = false
 
 function pendingReviewStatusColor(counts: PendingReviewCounts): string {
   return totalPendingReviews(counts) > 0 ? theme.statusWarn : theme.statusOk
@@ -542,11 +546,41 @@ function applyTheme(next: Theme) {
 
 function setTheme(id: ThemeId) {
   saveThemeId(id)
+  committedThemeId = id
+  themePreviewActive = false
   applyTheme(resolveTheme(id))
   skillNotice = formatThemeList(id)
   renderChat(chatMessages)
   status.content = `● theme ${resolveTheme(id).name}`
   status.fg = theme.statusOk
+}
+
+function restoreCommittedTheme() {
+  if (!themePreviewActive && theme.id === committedThemeId) return
+  themePreviewActive = false
+  applyTheme(resolveTheme(committedThemeId))
+  // Prefer the pending-review cue over a theme-restored status when approvals wait.
+  if (totalPendingReviews(lastPendingCounts) > 0) {
+    status.content = statusWithPendingReviews(`● theme ${resolveTheme(committedThemeId).name}`, lastPendingCounts)
+    status.fg = theme.statusWarn
+    return
+  }
+  status.content = `● theme ${resolveTheme(committedThemeId).name}`
+  status.fg = theme.statusOk
+}
+
+// Live-preview the highlighted /theme suggestion without writing the preference.
+function previewThemeFromSlashSelection() {
+  const selected = slashMatches[slashSelected]
+  const previewId = selected ? themeIdFromSlashSuggestion(selected.name) : undefined
+  if (!previewId) {
+    if (themePreviewActive) restoreCommittedTheme()
+    return
+  }
+  themePreviewActive = true
+  if (theme.id !== previewId) applyTheme(resolveTheme(previewId))
+  status.content = formatThemePreviewStatus(previewId, committedThemeId)
+  status.fg = previewId === committedThemeId ? theme.statusOk : theme.statusWarn
 }
 
 async function refreshProviderSetupHint() {
@@ -2369,6 +2403,7 @@ function updateSlashMenu(value: string) {
   const kept = slashMatches.findIndex((command) => command.name === selectedName)
   slashSelected = kept >= 0 ? kept : 0
   renderSlashMenu()
+  previewThemeFromSlashSelection()
   if (slashContextNeeded(value) && !slashContextLoading && Date.now() - slashContextAt > 1500) {
     void refreshSlashContext(value)
   }
@@ -2482,31 +2517,37 @@ function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
   if (key.name === "down" || (key.name === "tab" && !key.shift && alreadyCompleted && slashMatches.length > 1)) {
     slashSelected = moveSuggestion(slashSelected, 1, slashMatches.length)
     renderSlashMenu()
+    previewThemeFromSlashSelection()
     return consume()
   }
   if (key.name === "up" || (key.name === "tab" && key.shift)) {
     slashSelected = moveSuggestion(slashSelected, -1, slashMatches.length)
     renderSlashMenu()
+    previewThemeFromSlashSelection()
     return consume()
   }
   if (key.name === "home") {
     slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "home")
     renderSlashMenu()
+    previewThemeFromSlashSelection()
     return consume()
   }
   if (key.name === "end") {
     slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "end")
     renderSlashMenu()
+    previewThemeFromSlashSelection()
     return consume()
   }
   if (key.name === "pageup") {
     slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "pageup")
     renderSlashMenu()
+    previewThemeFromSlashSelection()
     return consume()
   }
   if (key.name === "pagedown") {
     slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "pagedown")
     renderSlashMenu()
+    previewThemeFromSlashSelection()
     return consume()
   }
   if (key.name === "tab") {
@@ -2517,6 +2558,7 @@ function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
     slashDismissedFor = input.value
     slashMatches = []
     renderSlashMenu()
+    restoreCommittedTheme()
     return consume()
   }
   if (key.name === "return" || key.name === "kpenter") {

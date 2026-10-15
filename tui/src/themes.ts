@@ -347,5 +347,20 @@ export function formatThemeList(activeId: ThemeId): string {
     lines.push(`${marker} ${theme.id}  ${theme.name}`, `  ${theme.description}`)
   }
   lines.push("", "Choose with /theme <id>. Preference is stored in ~/.config/veasel/tui-theme.")
+  lines.push("While the /theme menu is open, ↑/↓ preview colors live; Enter keeps the choice and Esc restores the saved theme.")
   return lines.join("\n")
+}
+
+// Extracts a concrete theme id from a slash suggestion such as "/theme ember".
+export function themeIdFromSlashSuggestion(name: string): ThemeId | undefined {
+  const match = /^\/theme\s+([a-z]+)$/i.exec(name.trim())
+  if (!match) return undefined
+  const id = match[1]!.toLowerCase()
+  return isThemeId(id) ? id : undefined
+}
+
+export function formatThemePreviewStatus(id: ThemeId, savedId: ThemeId): string {
+  const preview = themes[id]
+  if (id === savedId) return `● theme ${preview.name}  ·  saved`
+  return `● preview ${preview.name}  ·  Enter keeps · Esc restores ${themes[savedId].name}`
 }

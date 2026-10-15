@@ -450,6 +450,7 @@ def launch(port: int, rows: int, cols: int) -> tuple[subprocess.Popen, int]:
     env = os.environ.copy()
     env.update({
         "VEASEL_PORT": str(port),
+        "VEASEL_TUI_THEME": "mint",
         "TERM": "xterm-256color",
         "COLUMNS": str(cols),
         "LINES": str(rows),
@@ -556,9 +557,16 @@ def main() -> None:
         screen.clear_line(4)  # "/key"
         screen.send("/color", 0.7)
         screen.wait_for("/theme")
-        screen.send("\x1b", 0.25)
-        screen.clear_line(6)  # "/color"
+        screen.send("\t", 0.45)
+        screen.wait_for("/theme ")
+        screen.wait_for("mint")
+        screen.send("\x1b[B", 0.45)  # ↓ preview ember without saving
+        screen.wait_for("preview Ember", 4)
+        screen.wait_for("Enter keeps")
+        screen.send("\x1b", 0.35)  # Esc restores the saved theme and pending cue
         screen.wait_for("review needed", 4)
+        screen.wait_for("/patches")
+        screen.clear_line(7)  # "/theme "
         screen.wait_for("/patches")
         screen.wait_for("Ctrl+R")
         screen.send("\x12", 0.7)  # Ctrl+R opens the first pending list

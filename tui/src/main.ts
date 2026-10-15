@@ -25,7 +25,7 @@ import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
-import { statusWithUsage } from "./usage"
+import { formatReportedUsage, formatSessionUsageSummary, statusWithUsage, type SessionUsageSummary } from "./usage"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
 const tuiCliAction = parseTuiCliAction(process.argv)
@@ -489,6 +489,12 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (content === "/usage") {
+    await showSessionUsage()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (/^\/history(?:\s|$)/.test(content)) {
     skillNotice = "Use /history older to load the preceding page of this session's chat history."
     renderChat(chatMessages)
@@ -676,6 +682,27 @@ async function sendMessage(value: string) {
       if (streamingAssistantText) renderChat(chatMessages)
       chatInput?.focus()
     }
+  }
+}
+
+async function showSessionUsage() {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/usage`, {
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const summary = await response.json() as SessionUsageSummary
+    skillNotice = formatSessionUsageSummary(summary)
+    renderChat(chatMessages)
+    status.content = summary.usage_reported
+      ? `● session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`
+      : "● session usage  ·  no provider-reported tokens yet"
+    status.fg = "#a7f3d0"
+  } catch (error) {
+    if (controller.signal.aborted) return
+    status.content = `● usage unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.fg = "#f28b82"
   }
 }
 

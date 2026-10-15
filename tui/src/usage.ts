@@ -26,3 +26,28 @@ export function statusWithUsage(
   const output = usage.output_tokens ?? 0
   return `${base}  ·  ${formatReportedUsage(input, output)}`
 }
+
+export type SessionUsageSummary = {
+  session_id: string
+  completed_turns: number
+  reported_turns: number
+  input_tokens: number
+  output_tokens: number
+  usage_reported: boolean
+  cost: string
+}
+
+export function formatSessionUsageSummary(summary: SessionUsageSummary): string {
+  const lines = [
+    "SESSION TOKEN USAGE",
+    `Completed turns: ${summary.completed_turns}`,
+    `Turns with provider-reported tokens: ${summary.reported_turns}`,
+  ]
+  if (summary.usage_reported) {
+    lines.push(`Tokens: ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`)
+  } else {
+    lines.push("Tokens: unavailable (no provider reported usage yet)")
+  }
+  lines.push(`Cost: ${summary.cost === "unavailable" ? "unavailable (no price schedule)" : summary.cost}`)
+  return lines.join("\n")
+}

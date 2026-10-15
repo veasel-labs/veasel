@@ -14,6 +14,7 @@ export const helpItems: HelpItem[] = [
   { command: "/patches · /patch show|approve|reject <id>", description: "Review and decide file edits. The summary states lines added and removed; a long diff keeps the first screen." },
   { command: "/commands · /command show|approve|reject <id>", description: "Review and decide shell commands. The sandbox warning stays above the command, including when the command is long." },
   { command: "/history older", description: "Load earlier messages in this session." },
+  { command: "/usage", description: "Show provider-reported token totals for this session. Cost stays unavailable without a price schedule." },
 ]
 
 export function unknownSlashCommand(input: string): string | undefined {

@@ -211,6 +211,15 @@ bounded, tool-requested repository data; a future retrieval layer should have
 an inspectable budget and source provenance. Avoid porting Continue's IDE
 context catalog into a terminal agent without matching user workflows.
 
+### Kilo Code — cost visibility without forcing priced estimates
+
+At `a72ad30628fd6583fb492a84badf36bd9dba0aee`, Kilo's multisurface product
+surfaces model/provider switching and cost visibility as part of session UX.
+Veasel now exposes honest provider-reported token totals per turn and per
+session (`GET /v1/sessions/{id}/usage`, TUI `/usage`) while keeping cost marked
+unavailable until a pinned price schedule exists. Do not invent USD figures from
+unauthenticated catalogs.
+
 ### Crush — status chrome and interaction-tested TUI surfaces
 
 At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under

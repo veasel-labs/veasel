@@ -46,6 +46,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/commands", description: "List proposed shell commands" },
   { name: "/command", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", description: "Load earlier messages in this session" },
+  { name: "/usage", description: "Show provider-reported token totals for this session" },
 ]
 
 export const maxSlashSuggestions = 6

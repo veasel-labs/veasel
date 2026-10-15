@@ -112,7 +112,7 @@ hits; hits appear only when the provider reports cache usage fields.
 | Gap | Status |
 |---|---|
 | Request-side Anthropic `cache_control` | Shipped (default auto; env opt-out) |
-| OpenAI `prompt_cache_key` / `prompt_cache_retention` | Shipped for `openai` + `openai-responses` (default auto; env opt-out) |
+| OpenAI `prompt_cache_key` / `prompt_cache_retention` | Shipped for `openai` + `openai-responses` (default auto; env opt-out). Keys with C0/DEL fall back to `veasel`. Gemini `cachedContent` names reject all C0/DEL (not only NUL/CR/LF). |
 | OpenAI GPT-5.6+ `prompt_cache_options` / breakpoints | Not implemented |
 | Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire management is not on the turn path (create body encoder fixture-tested) |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |

@@ -1536,8 +1536,8 @@ fn normalize_gemini_cached_content_name(raw string) !string {
 	if name.len == 0 {
 		return error('gemini cached content name is empty')
 	}
-	if name.len > 256 || name.contains('\0') || name.contains('\r') || name.contains('\n')
-		|| name.contains('..') || name.contains(' ') {
+	if name.len > 256 || name.contains('..') || name.contains(' ')
+		|| provider_text_has_unsafe_controls(name) {
 		return error('gemini cached content name is invalid')
 	}
 	normalized := if name.starts_with(gemini_cached_content_prefix) {
@@ -1659,13 +1659,22 @@ fn openai_prompt_cache_enabled() bool {
 fn openai_prompt_cache_key() string {
 	raw := os.getenv_opt(openai_prompt_cache_key_env) or { openai_prompt_cache_default_key }
 	key := raw.trim_space()
-	if key.len == 0 {
+	if key.len == 0 || provider_text_has_unsafe_controls(key) {
 		return openai_prompt_cache_default_key
 	}
 	if key.len > openai_prompt_cache_key_max_bytes {
 		return key[..openai_prompt_cache_key_max_bytes]
 	}
 	return key
+}
+
+fn provider_text_has_unsafe_controls(value string) bool {
+	for c in value {
+		if c < 32 || c == 127 {
+			return true
+		}
+	}
+	return false
 }
 
 fn openai_prompt_cache_fields(provider string) (string, string) {

@@ -127,5 +127,37 @@
       "name": "wrong-keyword-type",
       "keywords": ["valid", false]
     }
+  },
+  {
+    "name": "name longer than 64 characters is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "name starting with hyphen is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "-leading"
+    }
+  },
+  {
+    "name": "name ending with hyphen is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "trailing-"
+    }
+  },
+  {
+    "name": "name with consecutive dots is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "bad..name"
+    }
   }
 ]

@@ -698,7 +698,7 @@ fn test_agent_plugin_v1_manifest_fixture_corpus() {
 	fixtures := json2.decode[[]AgentPluginManifestFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins manifest fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins manifest fixtures: ${err.msg()}') }
-	assert fixtures.len >= 10
+	assert fixtures.len >= 14
 	for fixture in fixtures {
 		if fixture.accepted {
 			manifest, diagnostics := parse_plugin_manifest(fixture.document) or {

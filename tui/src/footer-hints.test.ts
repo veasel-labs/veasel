@@ -1,5 +1,16 @@
 import { expect, test } from "bun:test"
-import { homeFilterFooterHint, homeFooterForFilter, homeFooterHint, sessionFooterHint } from "./footer-hints"
+import {
+  homeFilterFooterHint,
+  homeFooterForFilter,
+  homeFooterHint,
+  sessionFooterForMode,
+  sessionFooterHint,
+  sessionPathFooterHint,
+  sessionReviewFooterHint,
+  sessionReviewPatchFooterHint,
+  sessionSlashFooterHint,
+  sessionStreamingFooterHint,
+} from "./footer-hints"
 
 test("home footer surfaces the discovery slash commands", () => {
   for (const command of ["/connect", "/skills", "/mcp"]) {
@@ -37,4 +48,45 @@ test("session footer surfaces reviews and the same discovery commands", () => {
   expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers @ / S-↵
   expect(sessionFooterHint).not.toContain("Pg") // PgUp/PgDn stay in /help; footer budget prefers @ / S-↵
   expect(sessionFooterHint.length).toBeLessThanOrEqual(72)
+})
+
+test("sessionFooterForMode swaps contextual chrome without exceeding the budget", () => {
+  expect(sessionFooterForMode()).toBe(sessionFooterHint)
+  expect(sessionFooterForMode({ pathComplete: true })).toBe(sessionPathFooterHint)
+  expect(sessionFooterForMode({ slashComplete: true })).toBe(sessionSlashFooterHint)
+  expect(sessionFooterForMode({ reviewPending: true, reviewKind: "command" })).toBe(sessionReviewFooterHint)
+  expect(sessionFooterForMode({ reviewPending: true, reviewKind: "patch" })).toBe(sessionReviewPatchFooterHint)
+  expect(sessionFooterForMode({ streaming: true })).toBe(sessionStreamingFooterHint)
+  // Autocomplete wins over review/stream so Tab/Esc stay obvious while the menu is open.
+  expect(sessionFooterForMode({
+    pathComplete: true,
+    reviewPending: true,
+    streaming: true,
+  })).toBe(sessionPathFooterHint)
+  expect(sessionFooterForMode({
+    slashComplete: true,
+    reviewPending: true,
+  })).toBe(sessionSlashFooterHint)
+  // Review overlay beats streaming so approve keys stay on the always-visible row.
+  expect(sessionFooterForMode({
+    reviewPending: true,
+    reviewKind: "mcp",
+    streaming: true,
+  })).toBe(sessionReviewFooterHint)
+  for (const hint of [
+    sessionPathFooterHint,
+    sessionSlashFooterHint,
+    sessionReviewFooterHint,
+    sessionReviewPatchFooterHint,
+    sessionStreamingFooterHint,
+  ]) {
+    expect(hint.length).toBeLessThanOrEqual(72)
+  }
+  expect(sessionPathFooterHint).toContain("@ paths")
+  expect(sessionSlashFooterHint).toContain("Tab/Enter")
+  expect(sessionReviewFooterHint).toContain("a/x")
+  expect(sessionReviewPatchFooterHint).toContain("{/}")
+  expect(sessionReviewPatchFooterHint).toContain("v")
+  expect(sessionStreamingFooterHint).toContain("Esc cancel")
+  expect(sessionStreamingFooterHint).toContain("End follow")
 })

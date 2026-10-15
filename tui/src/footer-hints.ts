@@ -14,6 +14,43 @@ export const homeFilterFooterHint =
 export const sessionFooterHint =
   "Esc · ↑ · ? · @ · S-↵ · Ctrl+U/W/Y · /skills · /mcp · /map"
 
+// Mode-specific session footers swap the always-visible row so discovery stays
+// contextual without stuffing every hotkey into the default line (footer spam).
+export const sessionPathFooterHint =
+  "Tab/Enter insert · ↑/↓ · Esc dismiss · @ paths"
+
+export const sessionSlashFooterHint =
+  "Tab/Enter · ↑/↓ · Esc · Home/End · Pg"
+
+export const sessionReviewFooterHint =
+  "a/x · A/X · Space · ]/[ · Esc · ? help"
+
+export const sessionReviewPatchFooterHint =
+  "a/x · A/X · Space · {/} · v · ]/[ · Esc"
+
+export const sessionStreamingFooterHint =
+  "Esc cancel · End follow · Pg scroll · ?"
+
+export type SessionFooterMode = {
+  pathComplete?: boolean
+  slashComplete?: boolean
+  reviewPending?: boolean
+  reviewKind?: "patch" | "command" | "mcp"
+  streaming?: boolean
+}
+
+// Priority: autocomplete (on-screen menu) → pending review overlay → live stream
+// → default discovery. Keeps each mode ≤72 columns and avoids overlapping cues.
+export function sessionFooterForMode(mode: SessionFooterMode = {}): string {
+  if (mode.pathComplete) return sessionPathFooterHint
+  if (mode.slashComplete) return sessionSlashFooterHint
+  if (mode.reviewPending) {
+    return mode.reviewKind === "patch" ? sessionReviewPatchFooterHint : sessionReviewFooterHint
+  }
+  if (mode.streaming) return sessionStreamingFooterHint
+  return sessionFooterHint
+}
+
 export function homeFooterForFilter(filter: string): string {
   return filter.trim().length > 0 ? homeFilterFooterHint : homeFooterHint
 }

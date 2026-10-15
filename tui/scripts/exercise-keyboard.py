@@ -764,16 +764,15 @@ def run_core_suite() -> None:
         screen.send("\r", 0.6)
         screen.wait_for("Ask Veasel")
         screen.wait_for("openai/gpt-5", 6)
-        screen.wait_for("Ctrl+Y")
-        screen.wait_for("Ctrl+U")
-        screen.wait_for("Ctrl+W")
+        screen.wait_for("Ctrl+U/W/Y")  # compact footer encodes clear/kill/copy
         screen.wait_for("↑")
-        screen.wait_for("Pg")
+        screen.wait_for("?")  # default session footer (Pg stays mode-specific /help)
         screen.wait_for("/skills")
         # @ path autocomplete against the session workspace (/tmp/alpha).
         screen.send("@src/ma", 0.7)
         screen.wait_for("── paths ──", 4)
         screen.wait_for("@src/main.ts", 4)
+        screen.wait_for("@ paths", 4)  # context footer while the path menu is open
         screen.send("\t", 0.45)
         visible = screen.terminal.text()
         if "@src/main.ts" not in visible:
@@ -783,6 +782,7 @@ def run_core_suite() -> None:
         screen.send("/", 0.6)
         screen.wait_for("── guide ──")
         screen.wait_for("── setup ──")
+        screen.wait_for("Tab/Enter", 4)  # slash context footer while the menu is open
         screen.send("\x1b[F", 0.5)  # End → last command (/map)
         screen.wait_for("/map", 4)
         screen.wait_for("── session ──", 4)
@@ -805,7 +805,7 @@ def run_core_suite() -> None:
         screen.wait_for("Ask Veasel", 4)
         if "VEASEL CODE / QUICK HELP" in screen.terminal.text():
             raise AssertionError("Esc did not dismiss help opened with ?")
-        screen.wait_for("Ctrl+Y")
+        screen.wait_for("Ctrl+U/W/Y")
         # Description search: find /connect, MCP OAuth, and /theme without typing their names.
         screen.send("/key", 0.7)
         screen.wait_for("/connect")
@@ -823,14 +823,14 @@ def run_core_suite() -> None:
         screen.wait_for("/theme")
         screen.send("\t", 0.45)
         screen.wait_for("/theme ")
-        screen.wait_for("mint")
-        screen.send("\x1b[B", 0.45)  # ↓ preview ember without saving
+        # reload/open sit ahead of builtins after Tab; type the id to preview Ember.
+        screen.send("ember", 0.55)
         screen.wait_for("preview Ember", 4)
         screen.wait_for("Enter keeps")
         screen.send("\x1b", 0.35)  # Esc restores the saved theme and pending cue
         screen.wait_for("openai/gpt-5", 4)
         screen.wait_for("/patches")
-        screen.clear_line(7)  # "/theme "
+        screen.clear_line(12)  # "/theme ember"
         # Light and high-contrast themes: live-preview day then contrast, Esc restores mint.
         screen.send("/theme day", 0.7)
         screen.wait_for("preview Day", 4)
@@ -844,7 +844,7 @@ def run_core_suite() -> None:
         screen.wait_for("openai/gpt-5", 4)
         screen.clear_line(15)  # "/theme contrast"
         screen.wait_for("/patches")
-        screen.wait_for("Ctrl+W")  # session footer (Ctrl+R stays in /help)
+        screen.wait_for("Ctrl+U/W/Y")  # session footer (Ctrl+R stays in /help)
         screen.send("\x12", 0.7)  # Ctrl+R opens the first pending list
         screen.wait_for("WORKSPACE EDIT PROPOSALS", 4)
         screen.wait_for("aaaaaaaa-aaaa")
@@ -866,6 +866,7 @@ def run_core_suite() -> None:
         screen.wait_for("beta")
         screen.wait_for(" │ ", 4)  # short -/+ pair renders side-by-side at 100 cols
         screen.wait_for("a approve")
+        screen.wait_for("{/}", 4)  # patch review context footer
         screen.wait_for("v split view", 4)
         reviewed = screen.terminal.text()
         if "TAIL-SENTINEL" in reviewed or "hunk-two-marker" in reviewed:

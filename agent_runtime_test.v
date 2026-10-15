@@ -226,6 +226,8 @@ fn test_available_skills_catalog_discloses_metadata_without_bodies() {
 	tools := agent_skill_load_tools(disclosure)
 	assert tools.len == 1
 	assert tools[0].name == 'agent_skill_load'
+	assert tools[0].description.starts_with('Load one matching skill body')
+	assert !tools[0].description.contains('fail-closed trust')
 	assert !tools[0].description.contains('deep-review')
 	assert tools[0].description.contains('quick-check')
 	assert tools[0].parameters.properties['plugin_name'].enum_values == ['agents']

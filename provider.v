@@ -606,7 +606,7 @@ struct GeminiProvider {}
 
 struct OpenAIRequest {
 	model                  string
-	max_tokens             int
+	max_tokens             ?int @[json: 'max_tokens'; omitempty]
 	messages               []ChatMessage
 	tools                  []OpenAITool @[omitempty]
 	tool_choice            string       @[omitempty]
@@ -905,7 +905,7 @@ struct GeminiFunctionDeclaration {
 }
 
 struct GeminiGenerationConfig {
-	max_output_tokens int @[json: 'maxOutputTokens']
+	max_output_tokens ?int @[json: 'maxOutputTokens'; omitempty]
 }
 
 struct GeminiContent {
@@ -1565,7 +1565,11 @@ fn build_gemini_request(config ModelConfig, messages []ChatMessage, tools []Agen
 		}
 		contents:           conversation
 		generation_config:  GeminiGenerationConfig{
-			max_output_tokens: config.max_output_tokens
+			max_output_tokens: if config.max_output_tokens > 0 {
+				config.max_output_tokens
+			} else {
+				none
+			}
 		}
 		tools:              if declarations.len > 0 {
 			[GeminiToolGroup{
@@ -1636,7 +1640,11 @@ fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools [
 	cache_key, cache_retention := openai_prompt_cache_fields(config.provider)
 	return OpenAIRequest{
 		model:                  config.model
-		max_tokens:             config.max_output_tokens
+		max_tokens:             if config.max_output_tokens > 0 {
+			config.max_output_tokens
+		} else {
+			none
+		}
 		messages:               messages
 		tools:                  openai_tools
 		tool_choice:            if tools.len > 0 { 'auto' } else { '' }

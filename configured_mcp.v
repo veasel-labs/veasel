@@ -983,6 +983,10 @@ fn (app &App) find_session_mcp_server(plugin_name string, server_name string, wo
 		server := state.get_plugin_server(server_name)!
 		return promote_configured_mcp_stdio_root(app, server)!
 	}
+	mut components := app.plugin_components
+	if !components.is_enabled(plugin_name, plugin_component_kind_mcp, server_name) {
+		return error('MCP server is disabled')
+	}
 	return find_agent_mcp_server(app.plugin_directory, plugin_name, server_name)
 }
 
@@ -1001,5 +1005,7 @@ fn (app &App) plugin_catalog_for_directory(project_directory string) !PluginCata
 	}
 	// Precedence (lowest → highest): user, project-import, project.
 	merged := merge_configured_plugin_servers([user_servers, import_servers, project_servers])
-	return merge_configured_mcp_into_catalog(catalog, merged)
+	with_configured := merge_configured_mcp_into_catalog(catalog, merged)
+	mut components := app.plugin_components
+	return apply_plugin_component_state(with_configured, mut components)
 }

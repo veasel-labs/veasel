@@ -38,6 +38,7 @@ pub:
 	allowed_tools          []string
 	source                 string @[omitempty]
 	scope                  string @[omitempty]
+	enabled                bool = true
 }
 
 pub struct PluginMCPServerSummary {
@@ -48,6 +49,7 @@ pub:
 	url_origin   string
 	header_count int
 	header_names []string
+	enabled      bool = true
 }
 
 fn discover_agent_plugins(directory string) !PluginCatalog {
@@ -92,6 +94,7 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 				description:            skill.description
 				allowed_tools_declared: skill.allowed_tools_declared
 				allowed_tools:          agent_skill_allowed_tool_names(skill.allowed_tools)
+				enabled:                true
 			}
 		}
 		mut mcp_servers := []PluginMCPServerSummary{cap: plugin.mcp_servers.len}
@@ -104,6 +107,7 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 				url_origin:   plugin_mcp_url_origin(server.url)
 				header_count: server.headers.len
 				header_names: header_names
+				enabled:      true
 			}
 		}
 		mut extension := VeaselCodeExtension{}

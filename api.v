@@ -220,6 +220,7 @@ pub:
 	plugin_data_directory string
 	model_settings        &ModelSettingsState
 	configured_mcp        &ConfiguredMCPState
+	plugin_components     &PluginComponentState
 	allow_autonomous      bool
 }
 
@@ -234,6 +235,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		plugin_data_directory:    os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
 		model_settings:           new_model_settings_state(store.model_settings_path())
 		configured_mcp:           new_configured_mcp_state(store.configured_mcp_path())
+		plugin_components:        new_plugin_component_state(store.plugin_components_path())
 		allow_autonomous:         os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		session_turn_locks:       session_turn_locks
 		operation_registry:       &TurnOperationRegistry{
@@ -639,6 +641,25 @@ pub fn (app &App) list_plugins(mut ctx Context) veb.Result {
 	return ctx.json(catalog)
 }
 
+@['/v1/plugins/components'; get]
+pub fn (app &App) list_plugin_components(mut ctx Context) veb.Result {
+	mut state := app.plugin_components
+	return ctx.json(state.view())
+}
+
+@['/v1/plugins/components'; patch]
+pub fn (app &App) patch_plugin_component(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'Plugin component update exceeds the size limit')
+	}
+	input := decode_plugin_component_toggle_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut state := app.plugin_components
+	view := state.set_enabled(input) or { return json_request_error(mut ctx, err.msg()) }
+	return ctx.json(view)
+}
+
 @['/v1/mcp-servers'; get]
 pub fn (app &App) list_configured_mcp_servers(mut ctx Context) veb.Result {
 	workspace := ctx.query['directory'] or { '' }
@@ -803,6 +824,10 @@ pub fn (app &App) set_session_skill(mut ctx Context, id string) veb.Result {
 		})
 	}
 	if input.enabled {
+		mut components := app.plugin_components
+		if !components.is_enabled(input.plugin_name, plugin_component_kind_skill, input.skill_name) {
+			return json_request_error(mut ctx, 'Skill is disabled for this plugin')
+		}
 		project_directory := project_directory_for_skills(session.directory)
 		root, skill := find_session_skill(app.plugin_directory, project_directory, input.plugin_name, input.skill_name) or {
 			ctx.res.set_status(.not_found)

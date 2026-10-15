@@ -448,6 +448,9 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 	if description.trim_space().len == 0 {
 		return error('skill description must not be empty')
 	}
+	if skill_text_has_unsafe_controls(description) {
+		return error('skill description must not contain control bytes')
+	}
 	mut allowed_tools := ''
 	mut allowed_tools_declared := false
 	for key in ['license', 'compatibility', 'allowed-tools'] {
@@ -456,6 +459,9 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 				return error('skill field `${key}` must be a string')
 			}
 			text := value as string
+			if skill_text_has_unsafe_controls(text) {
+				return error('skill field `${key}` must not contain control bytes')
+			}
 			if key == 'compatibility' && (text.runes().len == 0 || text.runes().len > 500) {
 				return error('skill compatibility must contain 1 to 500 characters')
 			}
@@ -473,6 +479,9 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 			if value !is string {
 				return error('skill metadata values must be strings')
 			}
+			if skill_text_has_unsafe_controls(value as string) {
+				return error('skill metadata values must not contain control bytes')
+			}
 		}
 	}
 	return PluginSkill{
@@ -482,6 +491,17 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 		allowed_tools:          allowed_tools
 		allowed_tools_declared: allowed_tools_declared
 	}
+}
+
+fn skill_text_has_unsafe_controls(value string) bool {
+	for c in value {
+		// Reject C0 controls and DEL so skill metadata cannot hide review-breaking bytes.
+		// YAML already rejects many of these at parse time; catch survivors like TAB.
+		if c < 32 || c == 127 {
+			return true
+		}
+	}
+	return false
 }
 
 // load_skill_instructions implements Agent Skills progressive disclosure: the

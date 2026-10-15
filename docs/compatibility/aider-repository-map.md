@@ -24,6 +24,10 @@ Veasel ships a **V-native extractive** map inspired by Aider's product goal
   NetworkX PageRank).
 - Fit output to a measured UTF-8 byte budget and report a conservative bytes/4
   token bound.
+- Inject a **sticky** hint-free map into the system prompt so the prefix stays
+  byte-stable across turns for prompt-cache hits; attach a compact
+  mention-ranked focus block to the user message only when the prompt names
+  paths or code-like identifiers (directory/prefix and segment boosts included).
 - Mark map text untrusted; do not execute files or follow embedded instructions.
 - Expose `GET /v1/sessions/{id}/workspace/map`, capability
   `workspace.repository_map` / `session.repository_map`, and

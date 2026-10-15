@@ -9,6 +9,7 @@ import strings
 const repository_map_default_budget_bytes = 12_288
 const repository_map_min_budget_bytes = 1_024
 const repository_map_max_budget_bytes = 65_536
+const repository_map_focus_budget_bytes = 2_048
 const repository_map_max_files = 2_000
 const repository_map_max_symbol_files = 800
 const repository_map_max_file_read_bytes = 262_144
@@ -18,6 +19,8 @@ const repository_map_max_symbols_total = 4_000
 const repository_map_preview_chars = 512
 const repository_map_open = '<veasel-repository-map untrusted="true">'
 const repository_map_close = '</veasel-repository-map>'
+const repository_map_focus_open = '<veasel-repository-map-focus untrusted="true">'
+const repository_map_focus_close = '</veasel-repository-map-focus>'
 
 const repository_map_important_basenames = [
 	'README',
@@ -334,10 +337,25 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			break
 		}
 	}
+	// Directory / prefix mentions (e.g. "src/auth" or "auth/") pull related
+	// children into budget before unrelated deep leaves — extractive, not
+	// tree-sitter/PageRank.
+	for mentioned in hints.paths {
+		if repository_map_path_under_mention(path, mentioned) {
+			score += 220.0
+			break
+		}
+	}
 	for ident in hints.idents {
 		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
 			ident) {
 			score += 300.0
+			break
+		}
+	}
+	for ident in hints.idents {
+		if repository_map_path_has_segment(path, ident) {
+			score += 120.0
 			break
 		}
 	}
@@ -348,6 +366,39 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		score += 10.0
 	}
 	return score
+}
+
+fn repository_map_path_under_mention(path string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
+	path_l := path.to_lower()
+	mentioned_l := mentioned.to_lower().replace('\\', '/').trim_right('/')
+	if mentioned_l.len < 2 {
+		return false
+	}
+	if path_l == mentioned_l {
+		return false
+	}
+	prefix := mentioned_l + '/'
+	if path_l.starts_with(prefix) {
+		return true
+	}
+	return path_l.contains('/' + prefix)
+}
+
+fn repository_map_path_has_segment(path string, ident string) bool {
+	if ident.len < 2 {
+		return false
+	}
+	ident_l := ident.to_lower()
+	for segment in path.replace('\\', '/').split('/') {
+		if repository_map_eq_ci(segment, ident_l) || repository_map_eq_ci(repository_map_stem(segment),
+			ident_l) {
+			return true
+		}
+	}
+	return false
 }
 
 fn score_repository_map_symbol(name string, hints RepositoryMapHintSet) f64 {
@@ -641,11 +692,14 @@ fn repository_map_summary_preview(text string) string {
 	return text[..repository_map_preview_chars] + '\n[truncated]'
 }
 
-// maybe_attach_repository_map appends an untrusted map block to the system
-// prompt when the workspace yields a non-empty structural index that fits.
+// maybe_attach_repository_map appends a sticky (hint-free) untrusted map block
+// to the system prompt. Ranking ignores hint_text so the system prefix stays
+// byte-stable across turns for provider prompt-cache hits; mention focus is a
+// separate user-message block via maybe_attach_repository_map_focus.
 fn maybe_attach_repository_map(mut messages []ChatMessage, root string, hint_text string,
 	budget_bytes int) !RepositoryMapResult {
-	result := build_repository_map(root, hint_text, budget_bytes)!
+	_ = hint_text
+	result := build_repository_map(root, '', budget_bytes)!
 	if result.measurement.file_count == 0 || result.text.len == 0
 		|| !result.text.contains(repository_map_open) {
 		return result
@@ -667,6 +721,102 @@ fn maybe_attach_repository_map(mut messages []ChatMessage, root string, hint_tex
 			bytes:                 result.measurement.bytes
 			estimated_token_bound: result.measurement.estimated_token_bound
 			budget_bytes:          result.measurement.budget_bytes
+			file_count:            result.measurement.file_count
+			symbol_count:          result.measurement.symbol_count
+			files_scanned:         result.measurement.files_scanned
+			truncated:             result.measurement.truncated
+			injected:              true
+			untrusted:             true
+		}
+		ranked_paths: result.ranked_paths
+	}
+}
+
+// repository_map_ident_looks_code_like filters casual English tokens so mention
+// focus does not fire on every chatty turn.
+fn repository_map_ident_looks_code_like(ident string) bool {
+	if ident.len < 3 {
+		return false
+	}
+	mut has_lower := false
+	mut has_upper := false
+	mut has_digit := false
+	mut has_underscore := false
+	for ch in ident {
+		if ch >= `a` && ch <= `z` {
+			has_lower = true
+		} else if ch >= `A` && ch <= `Z` {
+			has_upper = true
+		} else if ch >= `0` && ch <= `9` {
+			has_digit = true
+		} else if ch == `_` {
+			has_underscore = true
+		}
+	}
+	return has_underscore || has_digit || (has_lower && has_upper)
+}
+
+fn repository_map_hints_warrant_focus(hints RepositoryMapHintSet) bool {
+	if hints.paths.len > 0 {
+		return true
+	}
+	for ident in hints.idents {
+		if repository_map_ident_looks_code_like(ident) {
+			return true
+		}
+	}
+	return false
+}
+
+// maybe_attach_repository_map_focus appends a compact mention-ranked map to the
+// latest user message when the prompt names paths or code-like identifiers.
+// Casual turns without such mentions skip the extra bytes.
+fn maybe_attach_repository_map_focus(mut messages []ChatMessage, root string, hint_text string,
+	budget_bytes int) !RepositoryMapResult {
+	hints := extract_repository_map_hints(hint_text)
+	if !repository_map_hints_warrant_focus(hints) {
+		return RepositoryMapResult{}
+	}
+	// Keep mention focus strictly smaller than the sticky system map default.
+	requested := if budget_bytes > 0 {
+		clamp_repository_map_budget(budget_bytes)
+	} else {
+		repository_map_focus_budget_bytes
+	}
+	capped := if requested > repository_map_focus_budget_bytes {
+		repository_map_focus_budget_bytes
+	} else {
+		requested
+	}
+	result := build_repository_map(root, hint_text, capped)!
+	if result.measurement.file_count == 0 || result.text.len == 0 {
+		return result
+	}
+	mut user_index := -1
+	for index := messages.len - 1; index >= 0; index-- {
+		if messages[index].role == 'user' {
+			user_index = index
+			break
+		}
+	}
+	if user_index < 0 {
+		return result
+	}
+	body := result.text.replace(repository_map_open, '').replace(repository_map_close, '').trim_space()
+	focus_text := repository_map_focus_open + '\n' + body + '\n' + repository_map_focus_close
+	if focus_text.len > capped + repository_map_focus_open.len + repository_map_focus_close.len + 8 {
+		return result
+	}
+	messages[user_index] = ChatMessage{
+		role:    'user'
+		content: messages[user_index].content + '\n\n' + focus_text
+	}
+	return RepositoryMapResult{
+		text:         focus_text
+		measurement:  RepositoryMapMeasurement{
+			bytes:                 focus_text.len
+			estimated_token_bound: estimate_token_bound_from_bytes(focus_text.len)
+			budget_bytes:          capped
 			file_count:            result.measurement.file_count
 			symbol_count:          result.measurement.symbol_count
 			files_scanned:         result.measurement.files_scanned

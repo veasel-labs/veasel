@@ -57,6 +57,31 @@ fn test_repository_map_ranks_case_insensitive_path_and_symbol_mentions() {
 	assert repository_map_eq_ci('loginUser', 'LoginUser')
 }
 
+fn test_repository_map_ranks_directory_prefix_and_segment_mentions() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-dir')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'auth', 'session.v'), 'module auth\n\npub fn open_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'other', 'noise.v'), 'module other\n\npub fn ignore_me() {}\n')
+	write_map_fixture_file(os.join_path(root, 'readme_noise.v'), 'module main\n\nfn unused() {}\n')
+	result := build_repository_map(root, 'Look under src/auth for the session flow',
+		repository_map_default_budget_bytes) or { panic(err) }
+	assert result.ranked_paths.len >= 1
+	assert result.ranked_paths[0].contains('src/auth/') || result.ranked_paths[0].ends_with('session.v')
+	auth_pos := result.text.index('src/auth/session.v') or { -1 }
+	other_pos := result.text.index('src/other/noise.v') or { -1 }
+	assert auth_pos >= 0
+	assert other_pos < 0 || auth_pos < other_pos
+	assert repository_map_path_under_mention('src/auth/session.v', 'src/auth')
+	assert repository_map_path_under_mention('src/auth/session.v', 'SRC/AUTH/')
+	assert !repository_map_path_under_mention('src/auth', 'src/auth')
+	assert repository_map_path_has_segment('src/auth/session.v', 'auth')
+	assert !repository_map_path_has_segment('src/other/noise.v', 'auth')
+}
+
 fn test_repository_map_respects_byte_budget_on_large_trees() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-large')
 	os.rmdir_all(root) or {}
@@ -130,8 +155,89 @@ fn test_maybe_attach_repository_map_marks_injection() {
 	}
 	assert result.measurement.injected
 	assert messages[0].content.contains(repository_map_open)
+	assert messages[0].content.contains('main.v')
 	assert messages[0].content.contains('boot_agent')
 	assert messages[0].content.contains('untrusted')
+}
+
+fn test_sticky_repository_map_system_prefix_ignores_turn_hints() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-sticky')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'alpha.v'), 'module src\n\nfn alpha_symbol() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'beta.v'), 'module src\n\nfn beta_symbol() {}\n')
+	mut first := [
+		ChatMessage{
+			role:    'system'
+			content: 'You are Veasel Code.'
+		},
+	]
+	mut second := [
+		ChatMessage{
+			role:    'system'
+			content: 'You are Veasel Code.'
+		},
+	]
+	a := maybe_attach_repository_map(mut first, root, 'Please change alpha_symbol in src/alpha.v',
+		4_096) or { panic(err) }
+	b := maybe_attach_repository_map(mut second, root, 'Now touch beta_symbol in src/beta.v',
+		4_096) or { panic(err) }
+	assert a.measurement.injected
+	assert b.measurement.injected
+	assert first[0].content == second[0].content
+}
+
+fn test_repository_map_focus_attaches_to_user_for_code_mentions_only() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-focus')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'widget.v'), 'module src\n\nfn render_widget() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'other.v'), 'module src\n\nfn unused_helper() {}\n')
+	assert repository_map_ident_looks_code_like('render_widget')
+	assert repository_map_ident_looks_code_like('AuthService')
+	assert !repository_map_ident_looks_code_like('please')
+	assert !repository_map_ident_looks_code_like('fix')
+
+	mut casual := [
+		ChatMessage{
+			role:    'system'
+			content: 'system'
+		},
+		ChatMessage{
+			role:    'user'
+			content: 'hello there please help'
+		},
+	]
+	skipped := maybe_attach_repository_map_focus(mut casual, root, casual[1].content, 2_048) or {
+		panic(err)
+	}
+	assert !skipped.measurement.injected
+	assert !casual[1].content.contains(repository_map_focus_open)
+
+	mut focused := [
+		ChatMessage{
+			role:    'system'
+			content: 'system'
+		},
+		ChatMessage{
+			role:    'user'
+			content: 'Please fix render_widget in src/widget.v'
+		},
+	]
+	result := maybe_attach_repository_map_focus(mut focused, root, focused[1].content, 2_048) or {
+		panic(err)
+	}
+	assert result.measurement.injected
+	assert focused[1].content.contains(repository_map_focus_open)
+	assert focused[1].content.contains('src/widget.v')
+	assert focused[1].content.contains('untrusted')
+	assert result.measurement.bytes <= repository_map_focus_budget_bytes + repository_map_focus_open.len + repository_map_focus_close.len + 16
 }
 
 fn test_clamp_repository_map_budget_bounds() {

@@ -260,6 +260,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Bound project skill ancestor walks at the git worktree/repo root (`.git`
   directory or gitfile), matching OpenCode/Codex/Pi; non-git trees still use
   the existing ancestor cap.
+- [x] Cover Windows `%APPDATA%/opencode/skills` discovery and standalone skill
+  junction escape rejection in CI (`$if windows` tests).
 - [x] When a standalone skill source key collides with an Agent Plugin package
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the

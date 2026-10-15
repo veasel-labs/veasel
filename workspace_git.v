@@ -1,8 +1,12 @@
 module main
 
 import os
+import time
 
 const max_workspace_git_worktrees = 64
+const max_workspace_git_branch_len = 128
+const max_workspace_git_worktree_path_len = 1024
+const workspace_git_command_timeout = 30 * time.second
 
 pub struct WorkspaceGitWorktree {
 pub:
@@ -16,6 +20,25 @@ pub:
 pub struct WorkspaceGitWorktreeCatalog {
 pub:
 	worktrees []WorkspaceGitWorktree
+}
+
+pub struct WorkspaceGitWorktreeAddInput {
+pub:
+	path       string
+	branch     string @[omitempty]
+	new_branch string @[json: 'new_branch'; omitempty]
+}
+
+pub struct WorkspaceGitWorktreeRemoveInput {
+pub:
+	path  string
+	force bool
+}
+
+pub struct WorkspaceGitWorktreeRemoval {
+pub:
+	removed string
+	force   bool
 }
 
 // workspace_git_common_directory returns the shared git directory that owns
@@ -125,4 +148,156 @@ fn list_workspace_git_worktrees(root string) !WorkspaceGitWorktreeCatalog {
 	return WorkspaceGitWorktreeCatalog{
 		worktrees: worktrees
 	}
+}
+
+fn workspace_git_main_checkout(root string) !string {
+	common := workspace_git_common_directory(root)!
+	return os.dir(common)
+}
+
+fn is_valid_workspace_git_branch_name(name string) bool {
+	trimmed := name.trim_space()
+	if trimmed.len == 0 || trimmed.len > max_workspace_git_branch_len {
+		return false
+	}
+	if trimmed.starts_with('-') || trimmed.starts_with('.') || trimmed.ends_with('.')
+		|| trimmed.ends_with('/') || trimmed.contains('..') || trimmed.contains('\\')
+		|| trimmed.contains(' ') || trimmed.contains('\t') || trimmed.contains('\n')
+		|| trimmed.contains('\0') || trimmed.contains('@{') || trimmed.contains('~')
+		|| trimmed.contains('^') || trimmed.contains(':') || trimmed.contains('?')
+		|| trimmed.contains('*') || trimmed.contains('[') {
+		return false
+	}
+	for c in trimmed {
+		if c.is_alnum() || c in [`_`, `-`, `/`, `.`, `+`] {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+fn validate_workspace_git_worktree_path(path string) !string {
+	trimmed := path.trim_space()
+	if trimmed.len == 0 || trimmed.len > max_workspace_git_worktree_path_len {
+		return error('worktree path is invalid')
+	}
+	if !os.is_abs_path(trimmed) {
+		return error('worktree path must be absolute')
+	}
+	if trimmed.contains('\0') {
+		return error('worktree path is invalid')
+	}
+	parent := os.dir(trimmed)
+	if parent.len == 0 || os.is_link(parent) || !os.is_dir(parent) {
+		return error('worktree parent directory must exist')
+	}
+	return os.real_path(parent).replace('\\', '/') + '/' + os.file_name(trimmed)
+}
+
+fn run_workspace_git_command(checkout string, args []string) !string {
+	git := os.find_abs_path_of_executable('git') or {
+		return error('git executable is not available')
+	}
+	mut process := os.new_process(git)
+	process.set_args(args)
+	process.set_work_folder(checkout)
+	process.set_redirect_stdio()
+	process.run()
+	started := time.now()
+	for process.is_alive() {
+		if time.since(started) > workspace_git_command_timeout {
+			process.signal_kill()
+			process.close()
+			return error('git worktree command timed out')
+		}
+		time.sleep(10 * time.millisecond)
+	}
+	process.wait()
+	stdout := process.stdout_slurp().trim_space()
+	stderr := process.stderr_slurp().trim_space()
+	code := process.code
+	process.close()
+	if code != 0 {
+		detail := if stderr.len > 0 { stderr } else { stdout }
+		if detail.len == 0 {
+			return error('git worktree command failed')
+		}
+		if detail.len > 512 {
+			return error(detail[..512])
+		}
+		return error(detail)
+	}
+	return stdout
+}
+
+fn add_workspace_git_worktree(root string, input WorkspaceGitWorktreeAddInput) !WorkspaceGitWorktree {
+	refuse_workspace_edit_while_git_locked(root)!
+	checkout := workspace_git_main_checkout(root)!
+	path := validate_workspace_git_worktree_path(input.path)!
+	if os.exists(path) {
+		return error('worktree path already exists')
+	}
+	catalog := list_workspace_git_worktrees(root)!
+	if catalog.worktrees.len >= max_workspace_git_worktrees {
+		return error('worktree limit (${max_workspace_git_worktrees}) reached')
+	}
+	mut args := ['worktree', 'add']
+	new_branch := input.new_branch.trim_space()
+	branch := input.branch.trim_space()
+	if new_branch.len > 0 {
+		if !is_valid_workspace_git_branch_name(new_branch) {
+			return error('new_branch name is invalid')
+		}
+		args << '-b'
+		args << new_branch
+	}
+	args << path
+	if branch.len > 0 {
+		if !is_valid_workspace_git_branch_name(branch) {
+			return error('branch name is invalid')
+		}
+		args << branch
+	} else if new_branch.len == 0 {
+		return error('worktree add requires branch or new_branch')
+	}
+	_ := run_workspace_git_command(checkout, args)!
+	updated := list_workspace_git_worktrees(root)!
+	for entry in updated.worktrees {
+		if entry.path == os.real_path(path) || entry.path == path {
+			return entry
+		}
+	}
+	return WorkspaceGitWorktree{
+		path:    os.real_path(path)
+		branch:  if new_branch.len > 0 { new_branch } else { branch }
+		is_main: false
+	}
+}
+
+fn remove_workspace_git_worktree(root string, input WorkspaceGitWorktreeRemoveInput) ! {
+	refuse_workspace_edit_while_git_locked(root)!
+	checkout := workspace_git_main_checkout(root)!
+	path := validate_workspace_git_worktree_path(input.path)!
+	resolved := os.real_path(path)
+	catalog := list_workspace_git_worktrees(root)!
+	mut found := false
+	for entry in catalog.worktrees {
+		if entry.is_main {
+			continue
+		}
+		if entry.path == resolved || entry.path == path {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return error('linked worktree not found')
+	}
+	mut args := ['worktree', 'remove']
+	if input.force {
+		args << '--force'
+	}
+	args << path
+	_ := run_workspace_git_command(checkout, args)!
 }

@@ -238,6 +238,23 @@ fn test_openai_chat_request_supports_24h_retention_and_custom_key() {
 	assert root['prompt_cache_retention'] or { panic('missing prompt_cache_retention') }.str() == '24h'
 }
 
+fn test_openai_prompt_cache_key_falls_back_when_controls_present() {
+	prior_key := os.getenv_opt(openai_prompt_cache_key_env) or { '' }
+	defer {
+		if prior_key == '' {
+			os.unsetenv(openai_prompt_cache_key_env)
+		} else {
+			os.setenv(openai_prompt_cache_key_env, prior_key, true)
+		}
+	}
+	os.setenv(openai_prompt_cache_key_env, 'tenant\na', true)
+	assert openai_prompt_cache_key() == openai_prompt_cache_default_key
+	os.setenv(openai_prompt_cache_key_env, 'tenant\ta', true)
+	assert openai_prompt_cache_key() == openai_prompt_cache_default_key
+	os.setenv(openai_prompt_cache_key_env, 'tenant-ok', true)
+	assert openai_prompt_cache_key() == 'tenant-ok'
+}
+
 fn test_openai_chat_request_skips_cache_fields_for_compatible_gateways() {
 	prior_mode := os.getenv_opt(openai_prompt_cache_env) or { '' }
 	os.unsetenv(openai_prompt_cache_env)
@@ -464,14 +481,14 @@ fn test_gemini_cached_content_name_rejects_unsafe_values() {
 	assert normalize_gemini_cached_content_name('veasel-ok')! == 'cachedContents/veasel-ok'
 	assert normalize_gemini_cached_content_name('cachedContents/veasel-ok')! == 'cachedContents/veasel-ok'
 	mut rejected := 0
-	for raw in ['', 'bad\0name', 'bad\nname', 'cachedContents/../escape', 'cachedContents/a/b',
-		'has space', 'a'.repeat(300)] {
+	for raw in ['', 'bad\0name', 'bad\nname', 'bad\tname', 'bad${rune(127)}name',
+		'cachedContents/../escape', 'cachedContents/a/b', 'has space', 'a'.repeat(300)] {
 		_ = normalize_gemini_cached_content_name(raw) or {
 			rejected++
 			''
 		}
 	}
-	assert rejected == 7
+	assert rejected == 9
 	assert normalize_gemini_cached_content_ttl('') == gemini_cached_content_ttl_default
 	assert normalize_gemini_cached_content_ttl('7200s') == '7200s'
 	assert normalize_gemini_cached_content_ttl('nope') == gemini_cached_content_ttl_default

@@ -21,6 +21,7 @@ export type SlashCompletionContext = {
   skills?: SlashArgument[]
   pluginLinks?: SlashArgument[]
   mcpServers?: SlashArgument[]
+  configuredMcpServers?: SlashArgument[]
   mcpCalls?: SlashArgument[]
   patches?: SlashArgument[]
   commands?: SlashArgument[]
@@ -41,7 +42,11 @@ export const slashCommands: SlashCommand[] = [
   { name: "/plugins", description: "List linked Agent Plugin packages" },
   { name: "/plugin add", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
   { name: "/plugin remove", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
-  { name: "/mcp", description: "List MCP servers" },
+  { name: "/mcp", description: "List MCP servers (configured + Agent Plugins)" },
+  { name: "/mcp add", description: "Add a user-scoped MCP server", usage: "/mcp add stdio <name> <command> [args…]  or  /mcp add http <name> <url>" },
+  { name: "/mcp remove", description: "Remove a configured MCP server", usage: "/mcp remove <name>" },
+  { name: "/mcp enable", description: "Enable a configured MCP server", usage: "/mcp enable <name>" },
+  { name: "/mcp disable", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable <name>" },
   { name: "/mcp calls", description: "List MCP calls waiting for review" },
   { name: "/mcp call", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
   { name: "/mcp trust", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
@@ -86,6 +91,24 @@ const argumentSpecs: Record<string, ArgSpec[]> = {
   ],
   "/plugin remove": [
     { kind: "value", values: (context) => context.pluginLinks ?? [], empty: "No managed plugin links yet" },
+  ],
+  "/mcp add": [
+    {
+      kind: "choice",
+      choices: [
+        { value: "stdio", description: "Local process (bare command or absolute path)" },
+        { value: "http", description: "Streamable HTTP endpoint" },
+      ],
+    },
+  ],
+  "/mcp remove": [
+    { kind: "value", values: (context) => context.configuredMcpServers ?? [], empty: "No configured MCP servers yet" },
+  ],
+  "/mcp enable": [
+    { kind: "value", values: (context) => context.configuredMcpServers ?? [], empty: "No configured MCP servers yet" },
+  ],
+  "/mcp disable": [
+    { kind: "value", values: (context) => context.configuredMcpServers ?? [], empty: "No configured MCP servers yet" },
   ],
   "/mcp call": [
     { kind: "choice", choices: decisionChoices },

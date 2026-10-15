@@ -24,6 +24,11 @@ describe("slashSuggestions", () => {
     expect(names("/patch")[0]).toBe("/patch")
     expect(names("/mcp")[0]).toBe("/mcp")
     expect(names("/mcp c")).toEqual(["/mcp calls", "/mcp call"])
+    expect(names("/mcp a")).toEqual(["/mcp add"])
+    expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http"])
+    expect(slashSuggestions("/mcp remove ", slashCommands, {
+      configuredMcpServers: [{ value: "echo-tools", description: "enabled · stdio" }],
+    }).map((item) => item.insert)).toEqual(["/mcp remove echo-tools"])
     expect(names("/con")[0]).toBe("/connect")
     expect(names("/connect")[0]).toBe("/connect")
   })
@@ -69,6 +74,11 @@ describe("slashSuggestions", () => {
     expect(slashSuggestions("/plugin remove ", slashCommands, {
       pluginLinks: [{ value: "review-tools", description: "/tmp/review-tools" }],
     }).map((item) => item.insert)).toEqual(["/plugin remove review-tools"])
+    expect(names("/mcp add")).toEqual(["/mcp add"])
+    expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http"])
+    expect(slashSuggestions("/mcp remove ", slashCommands, {
+      configuredMcpServers: [{ value: "local-echo", description: "enabled · stdio" }],
+    }).map((item) => item.insert)).toEqual(["/mcp remove local-echo"])
   })
 
   test("returns nothing for an unknown command", () => {

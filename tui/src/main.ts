@@ -43,6 +43,7 @@ import {
   settingsPath,
   settingsProgress,
   settingsProviderStepPrompt,
+  moveSettingsListIndex,
 } from "./settings-flow"
 import { formatSettingsLoadError, formatSettingsSaveError } from "./settings-errors"
 import { formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
@@ -503,6 +504,8 @@ let settingsProviderScope: ProviderPickerScope = "all"
 let settingsModelSearchQuery = ""
 let settingsModelCatalog: ModelCatalogEntry[] | undefined
 let settingsModelHint = ""
+let settingsListHighlight = -1
+let settingsListCount = 0
 let settingsManualModel = false
 let settingsStep = 0
 let settingsView: ModelSettingsView | undefined
@@ -2539,6 +2542,8 @@ function closeSettings(message = "Settings unchanged.") {
   settingsModelSearchQuery = ""
   settingsModelCatalog = undefined
   settingsModelHint = ""
+  settingsListHighlight = -1
+  settingsListCount = 0
   settingsManualModel = false
   settingsEditEndpoint = false
   settingsEditBudget = false
@@ -2623,6 +2628,9 @@ function showSettingsStep(manualModel = false) {
       return
     }
     const activeIndex = Math.max(0, providers.findIndex((provider) => provider.id === active))
+    if (settingsListHighlight < 0) settingsListHighlight = activeIndex
+    else settingsListHighlight = Math.min(Math.max(0, settingsListHighlight), providers.length - 1)
+    settingsListCount = providers.length
     const select = new SelectRenderable(renderer, {
       id: "model-provider-select",
       width: "100%",
@@ -2632,7 +2640,7 @@ function showSettingsStep(manualModel = false) {
         description: `${provider.id === active ? `Active${settingsView?.profiles[provider.id]?.model ? ` · ${settingsView.profiles[provider.id].model}` : ""}` : configuredProviders.has(provider.id) ? "Credential available" : provider.requires_api_key ? "Credential needed" : "No key needed"} · ${provider.description.slice(0, 52)}${provider.description.length > 52 ? "…" : ""}${provider.environment_key ? ` · ${provider.environment_key}` : ""}`,
         value: provider.id,
       })),
-      selectedIndex: activeIndex,
+      selectedIndex: settingsListHighlight,
       ...selectStyle(),
       showDescription: true,
       showScrollIndicator: true,
@@ -2657,6 +2665,7 @@ function showSettingsStep(manualModel = false) {
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
       settingsModelHint = ""
+      settingsListHighlight = -1
       settingsManualModel = false
       advanceSettings()
     })
@@ -2670,9 +2679,16 @@ function showSettingsStep(manualModel = false) {
     }
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
-      sessionDetail.content = `${settingsTitle(3)}\n\n${settingPrompts[3]}${knownEndpointNote()}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
-      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · Enter select · Ctrl+B back · Esc cancel`
-      const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
+      sessionDetail.content = `${settingsTitle(3)}\n\n${settingPrompts[3]}${knownEndpointNote()}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nHome/End · PgUp/PgDn · Enter selects · Ctrl+L clears filter · Ctrl+B goes back · Esc cancels`
+      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · ${settingsFooterHint(3, false, false)}`
+      const preferredIndex = matches.findIndex((model) => model.id === settingsValues.model)
+      const optionCount = matches.length + 1
+      if (settingsListHighlight < 0) {
+        settingsListHighlight = preferredIndex >= 0 ? preferredIndex : 0
+      } else {
+        settingsListHighlight = Math.min(Math.max(0, settingsListHighlight), optionCount - 1)
+      }
+      settingsListCount = optionCount
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
         description: model.name === model.id ? "Provider model ID" : safeModelCatalogText(model.id),
@@ -2684,7 +2700,7 @@ function showSettingsStep(manualModel = false) {
         width: "100%",
         height: Math.min(10, options.length * 2 + 1),
         options,
-        selectedIndex: selectedIndex >= 0 && selectedIndex < matches.length ? selectedIndex : 0,
+        selectedIndex: settingsListHighlight,
         ...selectStyle(),
         showDescription: true,
         showScrollIndicator: true,
@@ -2844,6 +2860,7 @@ async function openSettings(mode: "connect" | "models" = "models") {
     settingsModelCatalog = undefined
     settingsModelSearchQuery = ""
     settingsModelHint = ""
+    settingsListHighlight = -1
     settingsManualModel = false
     settingsEditEndpoint = false
     settingsEditBudget = false
@@ -3131,6 +3148,7 @@ renderer.keyInput.on("keypress", (key) => {
       if (back.step !== settingsStep) settingsStep = back.step
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
+      if (settingsStep === 3) settingsListHighlight = -1
       if (settingsStep < 3) settingsManualModel = false
       showSettingsStep()
     }
@@ -3139,6 +3157,20 @@ renderer.keyInput.on("keypress", (key) => {
         key.stopPropagation()
         settingsProviderScope = moveProviderPickerScope(settingsProviderScope, key.shift ? -1 : 1)
         showSettingsStep()
+      } else if (key.ctrl && key.name === "l") {
+        key.stopPropagation()
+        if (settingsProviderQuery.length > 0) {
+          settingsProviderQuery = ""
+          settingsListHighlight = -1
+          showSettingsStep()
+        }
+      } else if (key.name === "home" || key.name === "end" || key.name === "pageup" || key.name === "pagedown") {
+        key.stopPropagation()
+        const next = moveSettingsListIndex(settingsListHighlight, settingsListCount, key.name)
+        if (next !== settingsListHighlight) {
+          settingsListHighlight = next
+          showSettingsStep()
+        }
       } else if (key.name === "backspace") {
         key.stopPropagation()
         settingsProviderQuery = [...settingsProviderQuery].slice(0, -1).join("")
@@ -3151,7 +3183,21 @@ renderer.keyInput.on("keypress", (key) => {
       return
     }
     else if (settingsStep === 3 && settingsModelSelect) {
-      if (key.name === "backspace") {
+      if (key.ctrl && key.name === "l") {
+        key.stopPropagation()
+        if (settingsModelSearchQuery.length > 0) {
+          settingsModelSearchQuery = ""
+          settingsListHighlight = -1
+          showSettingsStep()
+        }
+      } else if (key.name === "home" || key.name === "end" || key.name === "pageup" || key.name === "pagedown") {
+        key.stopPropagation()
+        const next = moveSettingsListIndex(settingsListHighlight, settingsListCount, key.name)
+        if (next !== settingsListHighlight) {
+          settingsListHighlight = next
+          showSettingsStep()
+        }
+      } else if (key.name === "backspace") {
         key.stopPropagation()
         settingsModelSearchQuery = [...settingsModelSearchQuery].slice(0, -1).join("")
         showSettingsStep()

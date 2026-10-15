@@ -122,7 +122,8 @@ export function providerSwitchNote(
 }
 
 export function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
-  if (step === 0) return "Tab scope · type filter · Enter · Esc"
+  if (step === 0) return "Tab scope · type · Home/End · Ctrl+L clear · Enter · Esc"
+  if (step === 3) return "type filter · Home/End · Ctrl+L clear · Enter · Ctrl+B · Esc"
   const parts = [
     step === 2 ? "Enter discovers" : step === 4 ? "Enter saves budget" : step === 1 ? "Enter keeps endpoint" : "Enter selects",
     "Ctrl+B back",
@@ -131,6 +132,23 @@ export function settingsFooterHint(step: number, endpoint: boolean, budget: bool
   if (budget) parts.push("Ctrl+O budget")
   parts.push("Esc")
   return parts.join(" · ")
+}
+
+// Home/End/Pg for provider and model pickers — same edge behavior as the session list.
+export function moveSettingsListIndex(
+  index: number,
+  count: number,
+  where: "home" | "end" | "pageup" | "pagedown",
+  pageSize = 5,
+): number {
+  if (count <= 0) return 0
+  const max = count - 1
+  const current = Math.min(Math.max(0, index), max)
+  const page = Math.max(1, pageSize)
+  if (where === "home") return 0
+  if (where === "end") return max
+  if (where === "pageup") return Math.max(0, current - page)
+  return Math.min(max, current + page)
 }
 
 export function homeWorkspaceBlurb(options: {

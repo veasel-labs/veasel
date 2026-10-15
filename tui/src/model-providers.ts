@@ -9,7 +9,38 @@ export type ModelProvider = {
   requires_api_key: boolean
 }
 
-export type ModelCatalogEntry = { id: string; name: string }
+export type ModelCatalogEntry = {
+  id: string
+  name: string
+  /** Pinned USD per million input tokens when the model is on Veasel's schedule. */
+  input_per_mtok?: number
+  /** Pinned USD per million output tokens when the model is on Veasel's schedule. */
+  output_per_mtok?: number
+  cost_unit?: string
+}
+
+/** Compact schedule badge for the model picker. Empty when rates are absent. */
+export function formatModelCatalogCostBadge(model: ModelCatalogEntry): string {
+  if (
+    typeof model.input_per_mtok !== "number"
+    || typeof model.output_per_mtok !== "number"
+    || !Number.isFinite(model.input_per_mtok)
+    || !Number.isFinite(model.output_per_mtok)
+    || model.input_per_mtok < 0
+    || model.output_per_mtok < 0
+  ) {
+    return ""
+  }
+  const unit = model.cost_unit === "usd_per_million_tokens" || !model.cost_unit
+    ? "$/MTok"
+    : model.cost_unit
+  const formatRate = (value: number) => {
+    if (value >= 100) return String(Math.round(value))
+    if (value >= 10) return value.toFixed(1).replace(/\.0$/, "")
+    return String(value)
+  }
+  return `${formatRate(model.input_per_mtok)}/${formatRate(model.output_per_mtok)} ${unit} in/out (pinned)`
+}
 export type ProviderEndpoints = Record<string, { base_url: string }>
 export type ProviderPickerScope = "all" | "configured" | "local" | "specialized" | "compatible"
 type SearchField = { values: string[]; weight: number }

@@ -146,6 +146,31 @@ fn lookup_cost_schedule_entry(schedule CostSchedule, provider string, model stri
 	return none
 }
 
+// annotate_model_catalog_with_cost_schedule copies pinned USD/MTok rates onto
+// matching catalog rows so clients can prefer cheaper models without inventing
+// prices. Unmatched models keep rates omitted.
+fn annotate_model_catalog_with_cost_schedule(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
+	schedule := active_cost_schedule()
+	if schedule.entries.len == 0 || models.len == 0 {
+		return models
+	}
+	mut out := []ModelCatalogEntry{cap: models.len}
+	for model in models {
+		if entry := lookup_cost_schedule_entry(schedule, provider, model.id) {
+			out << ModelCatalogEntry{
+				id:              model.id
+				name:            model.name
+				input_per_mtok:  entry.input
+				output_per_mtok: entry.output
+				cost_unit:       schedule.unit
+			}
+			continue
+		}
+		out << model
+	}
+	return out
+}
+
 fn cost_schedule_present() bool {
 	return active_cost_schedule().entries.len > 0
 }

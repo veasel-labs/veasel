@@ -19,6 +19,24 @@ export function formatReportedCacheUsage(cacheReadTokens: number, cacheCreationT
   return `${formatTokenCount(cacheReadTokens)} cache read · ${formatTokenCount(cacheCreationTokens)} cache write`
 }
 
+/**
+ * Provider-reported cache-read share of (input + cache read + cache write).
+ * Not a dollar savings claim — only a fraction of reported counters.
+ */
+export function formatReportedCacheHitRatio(
+  inputTokens: number,
+  cacheReadTokens: number,
+  cacheCreationTokens: number,
+): string | undefined {
+  const input = Number.isFinite(inputTokens) && inputTokens > 0 ? inputTokens : 0
+  const read = Number.isFinite(cacheReadTokens) && cacheReadTokens > 0 ? cacheReadTokens : 0
+  const write = Number.isFinite(cacheCreationTokens) && cacheCreationTokens > 0 ? cacheCreationTokens : 0
+  const denominator = input + read + write
+  if (denominator <= 0 || read <= 0) return undefined
+  const pct = Math.round((1000 * read) / denominator) / 10
+  return `${pct}% of reported prompt tokens were cache reads`
+}
+
 export type ReportedUsageFields = {
   usage_reported?: boolean
   input_tokens?: number
@@ -80,7 +98,15 @@ export function formatSessionUsageSummary(summary: SessionUsageSummary): string 
     lines.push(
       `Prompt cache (provider-reported): ${formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0)}`,
     )
-    lines.push("Cache lines are raw counters — not a % savings claim.")
+    const ratio = formatReportedCacheHitRatio(
+      summary.input_tokens,
+      summary.cache_read_tokens ?? 0,
+      summary.cache_creation_tokens ?? 0,
+    )
+    if (ratio) {
+      lines.push(`Cache-read share: ${ratio} (not USD saved).`)
+    }
+    lines.push("Cache lines are raw counters — not a dollar savings claim.")
   } else {
     lines.push("Prompt cache: unavailable (provider omitted cache fields)")
   }

@@ -132,7 +132,7 @@ pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
 	}
 	return ctx.json(ModelCatalogView{
 		provider: provider
-		models:   models
+		models:   annotate_model_catalog_with_cost_schedule(provider, models)
 	})
 }
 
@@ -155,7 +155,7 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 	}
 	return ctx.json(ModelCatalogView{
 		provider: config.provider
-		models:   models
+		models:   annotate_model_catalog_with_cost_schedule(config.provider, models)
 	})
 }
 

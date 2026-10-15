@@ -2265,6 +2265,15 @@ components:
             properties:
               id: { type: string }
               name: { type: string }
+              input_per_mtok:
+                type: number
+                description: Optional pinned USD per million input tokens from Veasel's cost schedule. Omitted when the model is unpriced.
+              output_per_mtok:
+                type: number
+                description: Optional pinned USD per million output tokens from Veasel's cost schedule. Omitted when the model is unpriced.
+              cost_unit:
+                type: string
+                description: Present with rate fields when pinned (usd_per_million_tokens). Never invents rates.
     ModelCatalogInput:
       type: object
       additionalProperties: false

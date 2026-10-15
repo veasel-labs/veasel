@@ -406,6 +406,7 @@ fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_
 	}
 	$if linux {
 		assert mcp_stdio_sandbox_bubblewrap_capability() == bubblewrap_available()
+		assert !mcp_stdio_sandbox_seatbelt_capability()
 		if bubblewrap_available() {
 			node := os.find_abs_path_of_executable('node') or { return }
 			root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-${uuid.new_v4().str()}')
@@ -431,8 +432,56 @@ fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_
 			}
 			assert transport.process.is_alive()
 		}
+	} $else $if macos {
+		assert !mcp_stdio_sandbox_bubblewrap_capability()
+		assert mcp_stdio_sandbox_seatbelt_capability() == seatbelt_available()
+		if seatbelt_available() {
+			node := os.find_abs_path_of_executable('node') or { return }
+			root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-${uuid.new_v4().str()}')
+			data := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-data-${uuid.new_v4().str()}')
+			os.mkdir_all(root) or { panic(err) }
+			defer {
+				os.rmdir_all(root) or {}
+				os.rmdir_all(data) or {}
+			}
+			script := os.join_path(root, 'echo.mjs')
+			os.write_file(script, "import readline from 'node:readline';\nconst lines = readline.createInterface({ input: process.stdin });\nfor await (const line of lines) {\n  const request = JSON.parse(line);\n  if (!request.id) continue;\n  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { ok: true, sandboxed: true } }) + '\\n');\n}\n") or {
+				panic(err)
+			}
+			transport := start_plugin_mcp_transport(root, data, PluginMCPServer{
+				name:      'sandbox-fixture'
+				transport: 'stdio'
+				command:   node
+				args:      [script]
+			}) or { panic(err) }
+			defer {
+				transport.process.signal_kill()
+				transport.process.close()
+			}
+			assert transport.process.is_alive()
+			assert transport.process.filename == macos_seatbelt_executable
+		} else {
+			root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-refuse-${uuid.new_v4().str()}')
+			data := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-refuse-data-${uuid.new_v4().str()}')
+			os.mkdir_all(root) or { panic(err) }
+			defer {
+				os.rmdir_all(root) or {}
+				os.rmdir_all(data) or {}
+			}
+			start_plugin_mcp_transport(root, data, PluginMCPServer{
+				name:      'refuse'
+				transport: 'stdio'
+				command:   '/usr/bin/false'
+				args:      []string{}
+			}) or {
+				assert err.msg().contains('sandbox-exec')
+				return
+			}
+			assert false, 'expected require mode to refuse macOS MCP stdio without sandbox-exec'
+		}
 	} $else {
 		assert !mcp_stdio_sandbox_bubblewrap_capability()
+		assert !mcp_stdio_sandbox_seatbelt_capability()
 		root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-refuse-${uuid.new_v4().str()}')
 		data := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-refuse-data-${uuid.new_v4().str()}')
 		os.mkdir_all(root) or { panic(err) }
@@ -449,6 +498,14 @@ fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_
 			assert err.msg().contains('require')
 			return
 		}
-		assert false, 'expected require mode to refuse non-Linux MCP stdio'
+		assert false, 'expected require mode to refuse MCP stdio without a platform sandbox backend'
 	}
+}
+
+fn test_mcp_stdio_sandbox_seatbelt_profile_carves_plugin_roots_and_allows_network() {
+	profile := macos_mcp_seatbelt_profile()
+	assert profile.contains('(param "PLUGIN_ROOT")')
+	assert profile.contains('(param "PLUGIN_DATA")')
+	assert profile.contains('(allow network-outbound)')
+	assert profile.contains('(deny default)')
 }

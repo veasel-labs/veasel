@@ -34,6 +34,16 @@ Veasel can ship honestly in this slice.
 - Windows AppContainer + Job Object wrap is documented separately in
   [`shell-windows-job-sandbox.md`](shell-windows-job-sandbox.md).
 
+## MCP stdio reuse (same pin)
+
+Trusted MCP stdio may opt into the same `/usr/bin/sandbox-exec` binary via
+`VEASEL_MCP_STDIO_SANDBOX=auto|require` (default `off`). The MCP profile keeps
+network shared (many servers need outbound HTTPS), carves writable
+`PLUGIN_ROOT` and `PLUGIN_DATA` instead of a workspace root, and advertises
+`mcp.stdio.sandbox.seatbelt` only when wrap will run. Default/unset stays
+unsandboxed; `require` fails closed without pretending otherwise. Windows MCP
+stdio AppContainer parity remains open and stays fail-closed under `require`.
+
 No Codex Seatbelt source or SBPL files were copied. Veasel does not claim
 Codex-level sandbox guarantees. `sandbox-exec` remains best-effort and may be
 deprecated or constrained by future macOS releases.

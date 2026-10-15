@@ -8,7 +8,7 @@ export const helpItems: HelpItem[] = [
   { command: "home · j/k · Enter · n", description: "Move the session list, open the selected session, or start one. A long list keeps the selection on screen and shows its position." },
   { command: "/connect", description: "Paste an API key, save it on this machine, and pick a model. Enter keeps a saved key; !clear removes it. Environment variables stay optional." },
   { command: "s · /models", description: "Full provider settings: authenticate, discover models, and adjust endpoint or output budget (Ctrl+U / Ctrl+O)." },
-  { command: "/skills · /skill on|off <plugin>/<skill>", description: "List or manage session Skills." },
+  { command: "/skills · /skill on|off <source>/<skill>", description: "List discovered Agent Skills (optional text filter), or enable and disable them. Covers plugins and standalone SKILL.md." },
   { command: "/mcp · /mcp calls", description: "List servers or calls waiting for review." },
   { command: "/mcp call show|approve|reject <id>", description: "Inspect arguments, then approve once or reject. The decision stays above the arguments, including when the argument list is long." },
   { command: "/mcp trust|untrust <plugin>/<server>", description: "Change a server's trust state." },

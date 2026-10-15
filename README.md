@@ -146,9 +146,14 @@ and `/patch show|approve|reject <id>`; shell with `/commands` and
 replayed automatically.
 
 Agent Plugin packages are discovered from `$VEASEL_PLUGIN_DIR` or
-`$VEASEL_DATA_DIR/plugins`. `/skills` and `/skill on|off` manage Skills;
-`/mcp trust|untrust` manages MCP servers. Skill instructions are untrusted
-reference context; Skill scripts are never auto-executed.
+`$VEASEL_DATA_DIR/plugins`. Standalone `SKILL.md` folders are also discovered
+from project and user roots used by other agents (`.agents/skills`,
+`.claude/skills`, `.codex/skills`, `.cursor/skills`, `.opencode/skills`,
+`.gemini/skills`, `.pi/skills`, `.qwen/skills`, `.github/skills`, plus matching
+home directories and `VEASEL_SKILLS_DIRS`). `/skills [filter]` and
+`/skill on|off` manage Skills; `/mcp trust|untrust` manages MCP servers. Skill
+instructions are untrusted reference context; Skill scripts are never
+auto-executed.
 
 Press Escape to cancel a running turn. Prefer `respond-async` clients follow
 operation IDs and `session.turn_completed`. If the process dies mid-turn,
@@ -160,8 +165,8 @@ workflows.
 
 ## API
 
-Key routes: `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/sessions`,
-`/v1/sessions/:id/messages`, workspace file/search/edits/commands,
+Key routes: `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/skills`,
+`/v1/sessions`, `/v1/sessions/:id/messages`, workspace file/search/edits/commands,
 `/v1/sessions/:id/usage`, `/v1/events` (SSE), and configured chat completions.
 Full contract: [`docs/openapi.yaml`](docs/openapi.yaml). Agent Toolkit clients
 should follow [`docs/integrations/agent-toolkit.md`](docs/integrations/agent-toolkit.md).

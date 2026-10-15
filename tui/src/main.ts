@@ -151,8 +151,16 @@ type SessionTurnCompletion = {
 type PluginCatalog = {
   plugins: Array<{
     name: string
+    origin?: string
     veasel_extension?: { display_name?: string; has_directory?: boolean }
-    skills: Array<{ name: string; description: string; allowed_tools_declared: boolean; allowed_tools: string[] }>
+    skills: Array<{
+      name: string
+      description: string
+      allowed_tools_declared: boolean
+      allowed_tools: string[]
+      source?: string
+      scope?: string
+    }>
     mcp_servers: Array<{ name: string; transport: string; command: string; url_origin: string; header_count: number; header_names: string[] }>
   }>
 }
@@ -675,8 +683,9 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  if (content === "/skills") {
-    await showSkills()
+  if (content === "/skills" || content.startsWith("/skills ")) {
+    const filter = content === "/skills" ? "" : content.slice("/skills ".length).trim()
+    await showSkills(filter)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -1026,32 +1035,41 @@ async function cancelActiveTurn() {
   activeTurnController.abort()
 }
 
-async function showSkills() {
+async function showSkills(filter = "") {
   if (!activeSession) return
   try {
+    const directory = encodeURIComponent(activeSession.directory || "")
     const [catalogResponse, activeResponse] = await Promise.all([
-      fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/plugins?directory=${directory}`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/skills`, { signal: controller.signal }),
     ])
     if (!catalogResponse.ok || !activeResponse.ok) throw new Error("plugin catalog is unavailable")
     const catalog = await catalogResponse.json() as PluginCatalog
     const active = await activeResponse.json() as SessionPluginSkill[]
     const enabled = new Set(active.map((item) => `${item.plugin_name}/${item.skill_name}`))
+    const needle = filter.toLowerCase()
     const lines = catalog.plugins.flatMap((plugin) => plugin.skills.map((skill) => {
       const key = `${plugin.name}/${skill.name}`
+      const origin = plugin.origin === "standalone" || skill.source
+        ? `\n  Source: ${safeTerminalText(skill.source || plugin.name)} · ${safeTerminalText(skill.scope || "plugin")}`
+        : ""
       const displayName = plugin.veasel_extension?.display_name
       const label = displayName ? `\n  Shown as: ${safeTerminalText(displayName)}` : ""
       const restriction = skill.allowed_tools_declared
         ? `\n  Tool access: ${skill.allowed_tools.length > 0 ? skill.allowed_tools.join(", ") : "none"}`
         : ""
-      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}${label}\n  ${skill.description}${restriction}`
-    }))
+      const haystack = `${key} ${skill.description} ${skill.source || ""} ${skill.scope || ""} ${plugin.origin || ""}`.toLowerCase()
+      if (needle && !haystack.includes(needle)) return ""
+      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}${origin}${label}\n  ${skill.description}${restriction}`
+    })).filter((line) => line.length > 0)
     skillNotice = lines.length > 0
-      ? `AGENT PLUGIN SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <plugin>/<skill>. Disable with /skill off <plugin>/<skill>. Active skills can let the model read bounded text resources from their own folder; files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
-      : "No Agent Plugin skills found. Add a package with plugin.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
+      ? `AGENT SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. Filter with /skills <text>. Standalone SKILL.md folders are discovered automatically from project and user agent skill directories; instruction bodies load only after you enable a skill. Active skills can let the model read bounded text resources from their own folder; files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
+      : filter
+        ? `No skills matched “${safeTerminalText(filter)}”. Try /skills, or a broader filter like agents or project.`
+        : "No skills found. Add a plugin.json package under VEASEL_PLUGIN_DIR, or place SKILL.md folders under .agents/skills, .claude/skills, .cursor/skills, and the other discovered agent skill roots."
     renderChat(chatMessages)
   } catch (error) {
-    skillNotice = `Could not load plugin skills: ${error instanceof Error ? error.message : "request failed"}`
+    skillNotice = `Could not load skills: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

@@ -563,10 +563,18 @@ pub fn (app &App) search_workspace(mut ctx Context, id string) veb.Result {
 
 @['/v1/plugins'; get]
 pub fn (app &App) list_plugins(mut ctx Context) veb.Result {
-	catalog := discover_agent_plugins(app.plugin_directory) or {
+	project_directory := project_directory_for_skills(ctx.query['directory'] or { '' })
+	catalog := discover_agent_plugins_with_standalone(app.plugin_directory, project_directory) or {
 		return json_server_error(mut ctx, 'Unable to read the plugin directory')
 	}
 	return ctx.json(catalog)
+}
+
+@['/v1/skills'; get]
+pub fn (app &App) list_discovered_skills(mut ctx Context) veb.Result {
+	project_directory := project_directory_for_skills(ctx.query['directory'] or { '' })
+	discovery := discover_standalone_agent_skills(project_directory)
+	return ctx.json(skills_catalog_from_discovery(discovery))
 }
 
 @['/v1/sessions/:id/skills'; get]
@@ -605,14 +613,15 @@ pub fn (app &App) set_session_skill(mut ctx Context, id string) veb.Result {
 		skill_name:  skill_value as string
 		enabled:     enabled_value as bool
 	}
-	_ := app.store.get_session(id) or {
+	session := app.store.get_session(id) or {
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{
 			error: 'session not found'
 		})
 	}
 	if input.enabled {
-		root, skill := find_agent_skill(app.plugin_directory, input.plugin_name, input.skill_name) or {
+		project_directory := project_directory_for_skills(session.directory)
+		root, skill := find_session_skill(app.plugin_directory, project_directory, input.plugin_name, input.skill_name) or {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
 				error: 'plugin skill not found'
@@ -1167,7 +1176,11 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	active_skills := app.store.session_plugin_skills(id) or {
 		return error('Unable to read session skills')
 	}
-	skill_context := load_session_skill_context(app.plugin_directory, active_skills) or {
+	session_for_skills := app.store.get_session(id) or {
+		return error('Unable to read session')
+	}
+	skill_context := load_session_skill_context_for_project(app.plugin_directory, project_directory_for_skills(session_for_skills.directory),
+		active_skills) or {
 		return error('Unable to load an enabled plugin skill')
 	}
 	if skill_context.instructions.len > 0 {

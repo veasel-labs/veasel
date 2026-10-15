@@ -8,7 +8,7 @@ commits do not publish a release.
 
 Pull-request CI still cancels superseded runs so feature checks stay fast. On
 `main`, later pushes queue behind the in-flight workflow instead of cancelling
-it, so a verified prerelease can finish during merge bursts. Cancelled main
+it, so a verified prerelease can finish during merge bursts. Cancellation is keyed off `github.ref != main`, not event name. Cancelled main
 runs that remain after other interruptions are not product failures; the
 `Ensure main CI` workflow re-dispatches CI for the tip of `main` when no
 successful or in-flight run exists. Publish attaches the channel tag to the

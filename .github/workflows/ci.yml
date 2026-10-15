@@ -13,10 +13,9 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Cancel superseded pull-request runs so feature PR CI stays fast. On main,
-  # queue instead of cancel so an in-flight verified build can finish and
-  # publish even while later merges land (otherwise prereleases starve).
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Cancel superseded PR branch runs. Never cancel main — ref check is the
+  # supported pattern so verified prereleases can finish during merge bursts.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   release-plan:

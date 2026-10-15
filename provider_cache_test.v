@@ -361,7 +361,7 @@ fn test_meta_responses_request_includes_explicit_output_budget() {
 	assert (root['max_output_tokens'] or { panic('missing max_output_tokens') }).int() == 8192
 }
 
-fn test_anthropic_request_keeps_tool_schemas_without_cache_markers() {
+fn test_anthropic_request_marks_last_tool_with_cache_control() {
 	prior := os.getenv_opt(anthropic_prompt_cache_env) or { '' }
 	os.unsetenv(anthropic_prompt_cache_env)
 	defer {
@@ -372,6 +372,66 @@ fn test_anthropic_request_keeps_tool_schemas_without_cache_markers() {
 		}
 	}
 
+	first := AgentToolDefinition{
+		name:        'workspace_list_files'
+		description: 'List workspace files.'
+		parameters:  ToolParameters{
+			properties: {
+				'path': ToolParameter{
+					type: 'string'
+				}
+			}
+			required:   ['path']
+		}
+	}
+	last := AgentToolDefinition{
+		name:        'workspace_search'
+		description: 'Search workspace files.'
+		parameters:  ToolParameters{
+			properties: {
+				'query': ToolParameter{
+					type: 'string'
+				}
+			}
+			required:   ['query']
+		}
+	}
+	request := build_anthropic_request(ModelConfig{
+		provider:          'anthropic'
+		model:             'claude-fixture'
+		max_output_tokens: 64
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'Find sentinel'
+		},
+	], [first, last])
+	payload := json2.encode[AnthropicRequest](request)
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	tools := (root['tools'] or { panic('missing tools') }).as_array()
+	assert tools.len == 2
+	first_obj := tools[0].as_map()
+	last_obj := tools[1].as_map()
+	assert first_obj['name'] or { panic('missing first tool name') }.str() == 'workspace_list_files'
+	assert 'cache_control' !in first_obj
+	assert last_obj['name'] or { panic('missing last tool name') }.str() == 'workspace_search'
+	last_cache := (last_obj['cache_control'] or { panic('missing last-tool cache_control') }).as_map()
+	assert (last_cache['type'] or { panic('missing type') }).str() == 'ephemeral'
+	assert (root['cache_control'] or { panic('missing top-level cache_control') }).as_map()['type'] or {
+		panic('missing type')
+	}.str() == 'ephemeral'
+}
+
+fn test_anthropic_request_omits_tool_cache_control_when_disabled() {
+	prior := os.getenv_opt(anthropic_prompt_cache_env) or { '' }
+	os.setenv(anthropic_prompt_cache_env, 'off', true)
+	defer {
+		if prior == '' {
+			os.unsetenv(anthropic_prompt_cache_env)
+		} else {
+			os.setenv(anthropic_prompt_cache_env, prior, true)
+		}
+	}
 	tool := AgentToolDefinition{
 		name:        'workspace_search'
 		description: 'Search workspace files.'
@@ -399,11 +459,8 @@ fn test_anthropic_request_keeps_tool_schemas_without_cache_markers() {
 	tools := (root['tools'] or { panic('missing tools') }).as_array()
 	assert tools.len == 1
 	tool_obj := tools[0].as_map()
-	assert tool_obj['name'] or { panic('missing tool name') }.str() == 'workspace_search'
 	assert 'cache_control' !in tool_obj
-	assert (root['cache_control'] or { panic('missing top-level cache_control') }).as_map()['type'] or {
-		panic('missing type')
-	}.str() == 'ephemeral'
+	assert 'cache_control' !in root
 }
 
 fn test_gemini_request_omits_cached_content_by_default() {

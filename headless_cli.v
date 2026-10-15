@@ -26,22 +26,24 @@ mut:
 
 struct HeadlessRunResult {
 pub:
-	session_id              string
-	operation_id            string
-	status                  string
-	provider                string @[omitempty]
-	model                   string @[omitempty]
-	response                string @[omitempty]
-	error                   string @[omitempty]
-	trace_file              string @[omitempty]
-	input_tokens            i64    @[omitempty]
-	output_tokens           i64    @[omitempty]
-	usage_reported          bool   @[omitempty]
-	session_completed_turns int    @[omitempty]
-	session_reported_turns  int    @[omitempty]
-	session_input_tokens    i64    @[omitempty]
-	session_output_tokens   i64    @[omitempty]
-	session_usage_reported  bool   @[omitempty]
+	session_id     string
+	operation_id   string
+	status         string
+	provider       string @[omitempty]
+	model          string @[omitempty]
+	response       string @[omitempty]
+	error          string @[omitempty]
+	trace_file     string @[omitempty]
+	input_tokens   i64    @[omitempty]
+	output_tokens  i64    @[omitempty]
+	usage_reported bool   @[omitempty]
+pub mut:
+	// Filled after the turn finishes when session usage is available.
+	session_completed_turns int  @[omitempty]
+	session_reported_turns  int  @[omitempty]
+	session_input_tokens    i64  @[omitempty]
+	session_output_tokens   i64  @[omitempty]
+	session_usage_reported  bool @[omitempty]
 }
 
 fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {

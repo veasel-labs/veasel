@@ -23,3 +23,13 @@ export function killWordBackward(
 export function composerLineCursor(value: string, where: "home" | "end"): number {
   return where === "home" ? 0 : value.length
 }
+
+// Ctrl+K: delete from the cursor to the end of the draft (readline kill-line).
+export function killLineForward(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } {
+  const pos = Math.min(Math.max(0, cursor), value.length)
+  if (pos >= value.length) return { value, cursor: pos }
+  return { value: value.slice(0, pos), cursor: pos }
+}

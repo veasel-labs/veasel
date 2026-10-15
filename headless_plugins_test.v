@@ -35,3 +35,25 @@ fn test_headless_plugins_parses_components_commands() {
 		assert false
 	}
 }
+
+fn test_headless_plugins_parses_links_commands() {
+	listed := parse_headless_plugins_args(['links', 'list', '--json']) or { panic(err) }
+	assert listed.action == .links_list
+	assert listed.json
+
+	added := parse_headless_plugins_args([
+		'links',
+		'add',
+		'/tmp/external-plugin',
+	]) or { panic(err) }
+	assert added.action == .links_add
+	assert added.path == '/tmp/external-plugin'
+
+	removed := parse_headless_plugins_args(['links', 'remove', 'demo']) or { panic(err) }
+	assert removed.action == .links_remove
+	assert removed.name == 'demo'
+
+	if _ := parse_headless_plugins_args(['links', 'add']) {
+		assert false
+	}
+}

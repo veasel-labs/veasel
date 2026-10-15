@@ -47,6 +47,15 @@ export function formatWarnStatus(message: string): string {
   return formatStatusLine("warn", `attention  ·  ${trimmed}`)
 }
 
+// Esc cancel / server-cancelled turns: ▲ plus spoken "cancelled" so the row
+// stays meaningful without color and does not look like a generic attention cue.
+export function formatCancelledStatus(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed) return formatStatusLine("warn", "cancelled")
+  if (/^cancelled\b/i.test(trimmed)) return formatStatusLine("warn", trimmed)
+  return formatStatusLine("warn", `cancelled  ·  ${trimmed}`)
+}
+
 export function formatErrorStatus(message: string): string {
   const trimmed = message.trim()
   if (!trimmed) return formatStatusLine("error", "error")

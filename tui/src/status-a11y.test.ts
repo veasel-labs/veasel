@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   formatBusyStatus,
+  formatCancelledStatus,
   formatErrorStatus,
   formatHomeFilterStatus,
   formatHomeSessionStatus,
@@ -37,9 +38,16 @@ describe("status a11y glyphs", () => {
   })
 
   test("marks warn and error rows with spoken severity words", () => {
-    expect(formatWarnStatus("response cancelled")).toBe("▲ attention  ·  response cancelled")
+    expect(formatWarnStatus("pending review")).toBe("▲ attention  ·  pending review")
     expect(formatErrorStatus("message failed  ·  boom")).toBe("✖ error  ·  message failed  ·  boom")
     expect(formatErrorStatus("error  ·  already labeled")).toBe("✖ error  ·  already labeled")
+  })
+
+  test("marks cancelled turns with spoken cancelled instead of attention", () => {
+    expect(formatCancelledStatus("response cancelled")).toBe("▲ cancelled  ·  response cancelled")
+    expect(formatCancelledStatus("turn cancelled")).toBe("▲ cancelled  ·  turn cancelled")
+    expect(formatCancelledStatus("cancelled  ·  already labeled")).toBe("▲ cancelled  ·  already labeled")
+    expect(formatCancelledStatus("")).toBe("▲ cancelled")
   })
 
   test("states the focused session in plain text on home", () => {

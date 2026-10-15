@@ -102,7 +102,7 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
-import { formatBusyStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
+import { formatBusyStatus, formatCancelledStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
 import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
@@ -1279,7 +1279,7 @@ async function sendMessage(value: string) {
     status.fg = pendingReviewStatusColor(pendingCounts)
   } catch (error) {
     if (activeTurnCancelled) {
-      status.content = formatWarnStatus("response cancelled")
+      status.content = formatCancelledStatus("response cancelled")
       status.fg = theme.statusWarn
       return
     }
@@ -1472,7 +1472,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     status.content = formatWarnStatus("operation outcome uncertain · inspect the workspace before retrying")
     status.fg = theme.statusWarn
   } else if (completion.status === "cancelled") {
-    status.content = formatWarnStatus(userCancelled ? "response cancelled" : "turn cancelled")
+    status.content = formatCancelledStatus(userCancelled ? "response cancelled" : "turn cancelled")
     status.fg = theme.statusWarn
   } else {
     status.content = formatErrorStatus(`message failed  ·  ${completion.error ?? "assistant turn failed"}`)

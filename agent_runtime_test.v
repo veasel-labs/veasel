@@ -435,15 +435,29 @@ fn test_tool_budget_summary_keeps_history_and_does_not_mutate_the_system_prompt(
 			tool_call_id: 'call-1'
 		},
 	]
-	summary := messages_for_tool_budget_summary(messages)
+	blocked := [
+		ProviderToolCall{
+			function: ProviderFunctionCall{
+				name: 'workspace_read_file'
+			}
+		},
+		ProviderToolCall{
+			function: ProviderFunctionCall{
+				name: 'workspace_read_file'
+			}
+		},
+	]
+	summary := messages_for_tool_budget_summary(messages, blocked)
 	assert summary.len == messages.len
 	assert summary[0].role == 'system'
 	assert summary[0].content.starts_with('You are Veasel.')
 	assert summary[0].content.contains('tool budget')
+	assert summary[0].content.contains('Not run: workspace_read_file.')
+	assert !summary[0].content.contains('workspace_read_file, workspace_read_file')
 	assert summary[1].content == 'Fix the test.'
 	assert summary[2].tool_call_id == 'call-1'
 	assert messages[0].content == 'You are Veasel.'
-	without_system := messages_for_tool_budget_summary(messages[1..])
+	without_system := messages_for_tool_budget_summary(messages[1..], []ProviderToolCall{})
 	assert without_system.len == 3
 	assert without_system[0].role == 'system'
 	assert without_system[0].content.contains('were not run')

@@ -601,6 +601,19 @@ fn test_events_after_pages_at_event_stream_limit() {
 	assert next_page[0].data.delta == 'd${max_event_stream_page_size - 1}'
 }
 
+fn test_parse_sse_last_event_id_is_digit_only() {
+	assert parse_sse_last_event_id('0')! == 0
+	assert parse_sse_last_event_id('42')! == 42
+	for invalid in ['', '+1', '-1', ' 1', '1 ', '1a', '01', '1.0', '0x10'] {
+		mut rejected := false
+		_ := parse_sse_last_event_id(invalid) or {
+			rejected = err.msg() == 'Last-Event-ID must be a non-negative integer'
+			0
+		}
+		assert rejected
+	}
+}
+
 fn test_session_events_prune_to_retention_limit_during_streaming() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer {

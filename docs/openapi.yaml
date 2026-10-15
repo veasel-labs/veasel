@@ -1586,24 +1586,24 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. Catch-up reads return at most 500 events per poll so reconnect clients can drain a large backlog faster than the previous 100-event page. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. When the provider payload included cache fields, completion also includes cache_reported with cache_read_tokens and cache_creation_tokens (provider-reported only). Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, summarizer mode (extractive, native, llm, or *_fallback_extractive), optional provider usage when a summarizer adapter reported it, and an untrusted summary preview; durable chat history rows are not deleted. When a turn injects a repository map into the system prompt, session.repository_map records measured map bytes, a bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost is never estimated.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. Catch-up reads return at most 500 events per poll so reconnect clients can drain a large backlog faster than the previous 100-event page. During quiet periods the stream emits `event: heartbeat` with `data: {}` about every 15 seconds so proxies and clients can detect a live connection without inventing session events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. When the provider payload included cache fields, completion also includes cache_reported with cache_read_tokens and cache_creation_tokens (provider-reported only). Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, summarizer mode (extractive, native, llm, or *_fallback_extractive), optional provider usage when a summarizer adapter reported it, and an untrusted summary preview; durable chat history rows are not deleted. When a turn injects a repository map into the system prompt, session.repository_map records measured map bytes, a bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost is never estimated.
       parameters:
         - in: header
           name: Last-Event-ID
           required: false
-          description: Non-negative numeric event ID; defaults to 0.
+          description: Digit-only non-negative event ID cursor (no sign, spaces, or leading zeros except `0`); defaults to `0` when omitted.
           schema:
-            type: integer
-            minimum: 0
+            type: string
+            pattern: '^(0|[1-9][0-9]*)$'
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, session.compaction reports measured request-payload compaction, session.repository_map reports an injected extractive workspace map, and session.turn_completed carries its final status.
+          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, session.compaction reports measured request-payload compaction, session.repository_map reports an injected extractive workspace map, and session.turn_completed carries its final status. Quiet streams also emit heartbeat events (`event: heartbeat`, `data: {}`) about every 15 seconds.
           content:
             text/event-stream:
               schema:
                 type: string
         '400':
-          description: Last-Event-ID is not a non-negative integer.
+          description: Last-Event-ID is not a digit-only non-negative integer.
           content:
             application/json:
               schema:

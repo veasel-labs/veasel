@@ -89,6 +89,10 @@ fn encode_atif_trace_with_usage(session_id string, version string, model string,
 			metrics['cache_read_tokens'] = json2.Any(usage.cache_read_tokens)
 			metrics['cache_creation_tokens'] = json2.Any(usage.cache_creation_tokens)
 		}
+		if usage.reasoning_reported {
+			// Provider-reported reasoning/thinking counters only.
+			metrics['reasoning_tokens'] = json2.Any(usage.reasoning_tokens)
+		}
 	}
 	// Every encoded trajectory is credential-redacted first: this encoder is
 	// the single path used for stored traces and headless trace files alike.
@@ -106,6 +110,11 @@ fn encode_atif_trace_with_usage(session_id string, version string, model string,
 			'outcome':             json2.Any(outcome)
 			'token_usage':         json2.Any(if usage.reported { 'reported' } else { 'unavailable' })
 			'prompt_cache':        json2.Any(if usage.cache_reported {
+				'reported'
+			} else {
+				'unavailable'
+			})
+			'reasoning_tokens':    json2.Any(if usage.reasoning_reported {
 				'reported'
 			} else {
 				'unavailable'

@@ -41,12 +41,14 @@ pub:
 	cache_read_tokens     i64  @[omitempty]
 	cache_creation_tokens i64  @[omitempty]
 	cache_reported        bool @[omitempty]
+	reasoning_tokens      i64  @[omitempty]
+	reasoning_reported    bool @[omitempty]
 	created_at            string
 	updated_at            string
 }
 
 // SessionUsageSummary aggregates adapter-reported tokens for one session.
-// Cost is never estimated here. Cache counters are provider-reported only.
+// Cost is never estimated here. Cache and reasoning counters are provider-reported only.
 pub struct SessionUsageSummary {
 pub:
 	session_id            string
@@ -58,6 +60,8 @@ pub:
 	cache_read_tokens     i64
 	cache_creation_tokens i64
 	cache_reported        bool
+	reasoning_tokens      i64
+	reasoning_reported    bool
 	cost                  string = 'unavailable'
 }
 
@@ -90,6 +94,8 @@ pub:
 	cache_read_tokens              i64    @[omitempty]
 	cache_creation_tokens          i64    @[omitempty]
 	cache_reported                 bool   @[omitempty]
+	reasoning_tokens               i64    @[omitempty]
+	reasoning_reported             bool   @[omitempty]
 	compaction_bytes_before        int    @[omitempty]
 	compaction_bytes_after         int    @[omitempty]
 	compaction_token_bound_before  int    @[omitempty]
@@ -539,6 +545,34 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit prompt-cache usage migration')
+		}
+	}
+	if current < 15 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin reasoning usage migration')
+		}
+		// Provider-reported reasoning/thinking counters only. Absent keys stay
+		// unreported; never invent reasoning tokens.
+		db.exec('ALTER TABLE session_operations ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add operation reasoning token column')
+		}
+		db.exec('ALTER TABLE session_operations ADD COLUMN reasoning_reported INTEGER NOT NULL DEFAULT 0 CHECK (reasoning_reported IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add operation reasoning usage flag column')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (15)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record reasoning usage migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit reasoning usage migration')
 		}
 	}
 	// Running or cancelling work may have contacted a provider or started a tool
@@ -1272,7 +1306,7 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 	if sessions.len != 1 {
 		return error('session not found')
 	}
-	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, created_at, updated_at FROM session_operations WHERE session_id = ? ORDER BY created_at ASC, id ASC',
+	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? ORDER BY created_at ASC, id ASC',
 		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
@@ -1286,7 +1320,7 @@ fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY created_at ASC, id ASC")!
+	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY created_at ASC, id ASC")!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
 		operations << store.session_operation_from_row(row)
@@ -1380,7 +1414,7 @@ fn (mut store Store) prune_terminal_session_operations_unlocked(session_id strin
 }
 
 fn (mut store Store) session_operation_unlocked(session_id string, operation_id string) !SessionOperation {
-	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, created_at, updated_at FROM session_operations WHERE session_id = ? AND id = ?', [
+	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
 		operation_id,
 	])!
@@ -1393,6 +1427,7 @@ fn (mut store Store) session_operation_unlocked(session_id string, operation_id 
 fn (store &Store) session_operation_from_row(row sqlite.Row) SessionOperation {
 	usage_reported := row.val(8) == '1'
 	cache_reported := row.val(11) == '1'
+	reasoning_reported := row.val(13) == '1'
 	return SessionOperation{
 		id:                    row.val(0)
 		session_id:            row.val(1)
@@ -1406,8 +1441,10 @@ fn (store &Store) session_operation_from_row(row sqlite.Row) SessionOperation {
 		cache_read_tokens:     if cache_reported { row.val(9).i64() } else { 0 }
 		cache_creation_tokens: if cache_reported { row.val(10).i64() } else { 0 }
 		cache_reported:        cache_reported
-		created_at:            row.val(12)
-		updated_at:            row.val(13)
+		reasoning_tokens:      if reasoning_reported { row.val(12).i64() } else { 0 }
+		reasoning_reported:    reasoning_reported
+		created_at:            row.val(14)
+		updated_at:            row.val(15)
 	}
 }
 
@@ -1420,7 +1457,7 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 	if sessions.len != 1 {
 		return error('session not found')
 	}
-	rows := store.db.exec_param("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE session_id = ? AND status = 'completed'",
+	rows := store.db.exec_param("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE session_id = ? AND status = 'completed'",
 		session_id)!
 	if rows.len != 1 {
 		return error('unable to read session usage')
@@ -1428,6 +1465,7 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 	row := rows[0]
 	reported_turns := row.val(1).int()
 	cache_turns := row.val(6).int()
+	reasoning_turns := row.val(8).int()
 	return SessionUsageSummary{
 		session_id:            session_id
 		completed_turns:       row.val(0).int()
@@ -1438,6 +1476,8 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 		cache_read_tokens:     row.val(4).i64()
 		cache_creation_tokens: row.val(5).i64()
 		cache_reported:        cache_turns > 0
+		reasoning_tokens:      row.val(7).i64()
+		reasoning_reported:    reasoning_turns > 0
 		cost:                  'unavailable'
 	}
 }
@@ -1680,7 +1720,7 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 	}
 	if usage.reported
 		&& (usage.input_tokens < 0 || usage.output_tokens < 0 || usage.cache_read_tokens < 0
-			|| usage.cache_creation_tokens < 0) {
+			|| usage.cache_creation_tokens < 0 || usage.reasoning_tokens < 0) {
 		return error('provider usage token counts must be non-negative')
 	}
 	store.mu.lock()
@@ -1725,10 +1765,12 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			i64(0)
 		}
 		cache_flag := if usage.cache_reported { '1' } else { '0' }
-		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', input_tokens = ?, output_tokens = ?, usage_reported = ?, cache_read_tokens = ?, cache_creation_tokens = ?, cache_reported = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
+		reasoning_tokens := if usage.reasoning_reported { usage.reasoning_tokens } else { i64(0) }
+		reasoning_flag := if usage.reasoning_reported { '1' } else { '0' }
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', input_tokens = ?, output_tokens = ?, usage_reported = ?, cache_read_tokens = ?, cache_creation_tokens = ?, cache_reported = ?, reasoning_tokens = ?, reasoning_reported = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
 			[provider, model, input_tokens.str(), output_tokens.str(), usage_flag,
-				cache_read_tokens.str(), cache_creation_tokens.str(), cache_flag, operation_id,
-				session_id]) or {
+				cache_read_tokens.str(), cache_creation_tokens.str(), cache_flag,
+				reasoning_tokens.str(), reasoning_flag, operation_id, session_id]) or {
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
@@ -1744,6 +1786,8 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 				cache_read_tokens:     cache_read_tokens
 				cache_creation_tokens: cache_creation_tokens
 				cache_reported:        usage.cache_reported
+				reasoning_tokens:      reasoning_tokens
+				reasoning_reported:    usage.reasoning_reported
 			}
 		} else {
 			EventData{

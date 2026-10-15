@@ -78,6 +78,8 @@ pub:
 	cache_read_tokens     i64
 	cache_creation_tokens i64
 	cache_reported        bool
+	reasoning_tokens      i64
+	reasoning_reported    bool
 	reported              bool
 }
 
@@ -89,6 +91,7 @@ fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
 		return b
 	}
 	cache_reported := a.cache_reported || b.cache_reported
+	reasoning_reported := a.reasoning_reported || b.reasoning_reported
 	return ProviderUsage{
 		input_tokens:          a.input_tokens + b.input_tokens
 		output_tokens:         a.output_tokens + b.output_tokens
@@ -104,6 +107,12 @@ fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
 			i64(0)
 		}
 		cache_reported:        cache_reported
+		reasoning_tokens:      if reasoning_reported {
+			a.reasoning_tokens + b.reasoning_tokens
+		} else {
+			i64(0)
+		}
+		reasoning_reported:    reasoning_reported
 		reported:              true
 	}
 }
@@ -123,6 +132,12 @@ fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
 		cache_read = if details.cached_tokens < 0 { i64(0) } else { details.cached_tokens }
 		cache_reported = true
 	}
+	mut reasoning := i64(0)
+	mut reasoning_reported := false
+	if details := usage.completion_tokens_details {
+		reasoning = if details.reasoning_tokens < 0 { i64(0) } else { details.reasoning_tokens }
+		reasoning_reported = true
+	}
 	total := if usage.total_tokens > 0 {
 		usage.total_tokens
 	} else {
@@ -135,6 +150,8 @@ fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: 0
 		cache_reported:        cache_reported
+		reasoning_tokens:      reasoning
+		reasoning_reported:    reasoning_reported
 		reported:              true
 	}
 }
@@ -152,6 +169,12 @@ fn provider_usage_from_openai_responses(usage OpenAIResponsesUsage) ProviderUsag
 		}
 		cache_reported = true
 	}
+	mut reasoning := i64(0)
+	mut reasoning_reported := false
+	if details := usage.output_tokens_details {
+		reasoning = if details.reasoning_tokens < 0 { i64(0) } else { details.reasoning_tokens }
+		reasoning_reported = true
+	}
 	total := if usage.total_tokens > 0 {
 		usage.total_tokens
 	} else {
@@ -164,7 +187,10 @@ fn provider_usage_from_openai_responses(usage OpenAIResponsesUsage) ProviderUsag
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: cache_creation
 		cache_reported:        cache_reported
+		reasoning_tokens:      reasoning
+		reasoning_reported:    reasoning_reported
 		reported:              usage.input_tokens > 0 || usage.output_tokens > 0 || cache_reported
+			|| reasoning_reported
 	}
 }
 
@@ -182,6 +208,12 @@ fn merge_anthropic_stream_usage(prior ProviderUsage, delta ProviderUsage) Provid
 	} else {
 		prior.cache_creation_tokens
 	}
+	reasoning_reported := prior.reasoning_reported || delta.reasoning_reported
+	reasoning := if delta.reasoning_reported {
+		delta.reasoning_tokens
+	} else {
+		prior.reasoning_tokens
+	}
 	return ProviderUsage{
 		input_tokens:          input_tokens
 		output_tokens:         output_tokens
@@ -189,6 +221,8 @@ fn merge_anthropic_stream_usage(prior ProviderUsage, delta ProviderUsage) Provid
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: cache_creation
 		cache_reported:        cache_reported
+		reasoning_tokens:      reasoning
+		reasoning_reported:    reasoning_reported
 		reported:              prior.reported || delta.reported
 	}
 }
@@ -233,6 +267,12 @@ fn provider_usage_from_gemini(meta GeminiUsageMetadata) ProviderUsage {
 		cache_read = if cached < 0 { i64(0) } else { cached }
 		cache_reported = true
 	}
+	mut reasoning := i64(0)
+	mut reasoning_reported := false
+	if thoughts := meta.thoughts_token_count {
+		reasoning = if thoughts < 0 { i64(0) } else { thoughts }
+		reasoning_reported = true
+	}
 	total := if meta.total_token_count > 0 {
 		meta.total_token_count
 	} else {
@@ -245,8 +285,10 @@ fn provider_usage_from_gemini(meta GeminiUsageMetadata) ProviderUsage {
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: 0
 		cache_reported:        cache_reported
+		reasoning_tokens:      reasoning
+		reasoning_reported:    reasoning_reported
 		reported:              meta.total_token_count > 0 || meta.prompt_token_count > 0
-			|| meta.candidates_token_count > 0 || cache_reported
+			|| meta.candidates_token_count > 0 || cache_reported || reasoning_reported
 	}
 }
 
@@ -631,11 +673,16 @@ struct OpenAIResponsesInputTokensDetails {
 	cache_write_tokens i64 @[json: 'cache_write_tokens']
 }
 
+struct OpenAIResponsesOutputTokensDetails {
+	reasoning_tokens i64 @[json: 'reasoning_tokens']
+}
+
 struct OpenAIResponsesUsage {
-	input_tokens         i64
-	output_tokens        i64
-	total_tokens         i64
-	input_tokens_details ?OpenAIResponsesInputTokensDetails @[json: 'input_tokens_details']
+	input_tokens          i64
+	output_tokens         i64
+	total_tokens          i64
+	input_tokens_details  ?OpenAIResponsesInputTokensDetails  @[json: 'input_tokens_details']
+	output_tokens_details ?OpenAIResponsesOutputTokensDetails @[json: 'output_tokens_details']
 }
 
 struct OpenAIResponsesOutputItem {
@@ -684,11 +731,16 @@ struct OpenAIPromptTokensDetails {
 	cached_tokens i64 @[json: 'cached_tokens']
 }
 
+struct OpenAICompletionTokensDetails {
+	reasoning_tokens i64 @[json: 'reasoning_tokens']
+}
+
 struct OpenAIUsage {
-	prompt_tokens         i64
-	completion_tokens     i64
-	total_tokens          i64
-	prompt_tokens_details ?OpenAIPromptTokensDetails @[json: 'prompt_tokens_details']
+	prompt_tokens             i64
+	completion_tokens         i64
+	total_tokens              i64
+	prompt_tokens_details     ?OpenAIPromptTokensDetails     @[json: 'prompt_tokens_details']
+	completion_tokens_details ?OpenAICompletionTokensDetails @[json: 'completion_tokens_details']
 }
 
 struct OpenAIStreamChoice {
@@ -890,6 +942,7 @@ struct GeminiUsageMetadata {
 	candidates_token_count     i64  @[json: 'candidatesTokenCount']
 	total_token_count          i64  @[json: 'totalTokenCount']
 	cached_content_token_count ?i64 @[json: 'cachedContentTokenCount']
+	thoughts_token_count       ?i64 @[json: 'thoughtsTokenCount']
 }
 
 struct GeminiStreamOutput {

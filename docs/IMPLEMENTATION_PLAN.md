@@ -165,6 +165,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
+- [x] OpenCode-style `/connect` credential UX: paste a key, save it locally,
+  continue to model discovery; saved profile keys win over environment
+  variables for the same provider; `/models` remains the full settings path.
 - [x] Suggest slash commands while typing `/` in the session composer: prefix
   and substring filtering, descriptions and argument syntax, Tab to complete,
   arrows to choose, Enter to run commands without arguments, and Esc to dismiss.

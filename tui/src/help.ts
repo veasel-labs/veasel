@@ -6,7 +6,8 @@ export type HelpItem = {
 export const helpItems: HelpItem[] = [
   { command: "/help, /?", description: "Show this guide." },
   { command: "home · j/k · Enter · n", description: "Move the session list, open the selected session, or start one. A long list keeps the selection on screen and shows its position." },
-  { command: "s · /models", description: "Choose a provider, authenticate, and pick a model. Known endpoints and the output budget are filled in; Ctrl+U changes an endpoint and Ctrl+O changes the budget." },
+  { command: "/connect", description: "Paste an API key, save it on this machine, and pick a model. Enter keeps a saved key; !clear removes it. Environment variables stay optional." },
+  { command: "s · /models", description: "Full provider settings: authenticate, discover models, and adjust endpoint or output budget (Ctrl+U / Ctrl+O)." },
   { command: "/skills · /skill on|off <plugin>/<skill>", description: "List or manage session Skills." },
   { command: "/mcp · /mcp calls", description: "List servers or calls waiting for review." },
   { command: "/mcp call show|approve|reject <id>", description: "Inspect arguments, then approve once or reject. The decision stays above the arguments, including when the argument list is long." },
@@ -27,6 +28,10 @@ export function isModelSettingsCommand(input: string): boolean {
   return input.trim() === "/models"
 }
 
+export function isConnectCommand(input: string): boolean {
+  return input.trim() === "/connect"
+}
+
 export function renderHelp(compact = false) {
   if (compact) {
     return [
@@ -34,7 +39,7 @@ export function renderHelp(compact = false) {
       "/help advanced  Show command syntax",
       "/skills · /mcp · /patches · /commands",
       "/history older  Load earlier messages",
-      "s · /models · /theme  Provider, model, theme",
+      "/connect · /models · /theme  Auth, model, theme",
       "Files go to your provider. Review diffs and MCP calls.",
       "Approved shell runs as you without a sandbox.",
     ].join("\n")

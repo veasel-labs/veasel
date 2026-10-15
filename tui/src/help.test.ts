@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { helpItems, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
+import { helpItems, isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 
 describe("TUI quick help", () => {
   test("documents every command family and the review-before-effect safety model", () => {
@@ -18,6 +18,8 @@ describe("TUI quick help", () => {
     expect(help).toContain("provider-reported token totals")
     expect(help).toContain("/theme")
     expect(help).toContain("s · /models")
+    expect(help).toContain("/connect")
+    expect(help).toContain("Paste an API key")
     expect(help).toContain("Files go to your provider.")
     expect(help).toContain("without a sandbox")
     expect(helpItems.length).toBeGreaterThan(5)
@@ -46,5 +48,12 @@ describe("TUI quick help", () => {
     expect(isModelSettingsCommand("/models")).toBe(true)
     expect(isModelSettingsCommand("  /models ")).toBe(true)
     expect(isModelSettingsCommand("please inspect this session")).toBe(false)
+  })
+
+  test("opens connect only for the explicit session command", () => {
+    expect(isConnectCommand("/connect")).toBe(true)
+    expect(isConnectCommand("  /connect ")).toBe(true)
+    expect(isConnectCommand("/models")).toBe(false)
+    expect(isConnectCommand("please connect the provider")).toBe(false)
   })
 })

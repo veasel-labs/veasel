@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   adjacentSettingsStep,
+  credentialStepCopy,
   endpointHost,
   providerHasKnownEndpoint,
   settingsBackTarget,
@@ -54,5 +55,16 @@ describe("provider setup path", () => {
     expect(adjacentSettingsStep(path, 2, -1)).toBe(0)
     expect(adjacentSettingsStep(path, 3, 1)).toBe(3)
     expect(settingsProgress(path, 2)).toEqual({ index: 2, total: 3 })
+  })
+
+  test("treats saved keys as the primary path and env as an optional alternative", () => {
+    const copy = credentialStepCopy({ apiKeySaved: false, environmentKey: "OPENAI_API_KEY" })
+    expect(copy.prompt).toContain("Paste your API key")
+    expect(copy.prompt).toContain("saves it for this provider")
+    expect(copy.hint).toContain("Enter keeps an already-saved key")
+    expect(copy.hint).toContain("!clear")
+    expect(copy.hint).toContain("Or set OPENAI_API_KEY on the server process")
+    expect(copy.hint).not.toContain("instead of saving a key")
+    expect(credentialStepCopy({ apiKeySaved: true }).hint).toContain("A key is already saved")
   })
 })

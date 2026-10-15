@@ -470,6 +470,45 @@ fn test_provider_model_discovery_accepts_unsaved_credentials_without_persisting_
 	store.close() or { panic(err) }
 }
 
+fn test_resolve_provider_model_config_prefers_saved_key_over_environment() {
+	root := os.join_path(os.temp_dir(), 'veasel-saved-key-wins-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	prior_environment_key := os.getenv('MODEL_API_KEY')
+	prior_shared_key := os.getenv('VEASEL_MODEL_API_KEY')
+	os.unsetenv('VEASEL_MODEL_API_KEY')
+	os.setenv('MODEL_API_KEY', 'fixture-environment-key', true)
+	defer {
+		if prior_shared_key == '' {
+			os.unsetenv('VEASEL_MODEL_API_KEY')
+		} else {
+			os.setenv('VEASEL_MODEL_API_KEY', prior_shared_key, true)
+		}
+		if prior_environment_key == '' {
+			os.unsetenv('MODEL_API_KEY')
+		} else {
+			os.setenv('MODEL_API_KEY', prior_environment_key, true)
+		}
+	}
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'meta'
+		model:    'muse-saved-model'
+		base_url: 'https://api.meta.ai/v1'
+		api_key:  'fixture-saved-key'
+	}) or { panic(err) }
+	config := app.provider_model_config('meta', '') or { panic(err) }
+	assert config.api_key == 'fixture-saved-key'
+	assert config.model == 'muse-saved-model'
+	view := app.model_settings.view()
+	assert 'meta' in view.configured_providers
+	assert !json2.encode(view).contains('fixture-saved-key')
+	assert !json2.encode(view).contains('fixture-environment-key')
+	app.close()
+	store.close() or { panic(err) }
+}
+
 fn test_provider_model_discovery_uses_transient_credentials_before_saved_or_environment_keys() {
 	root := os.join_path(os.temp_dir(), 'veasel-model-discovery-credentials-${uuid.new_v4().str()}')
 	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }

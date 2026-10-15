@@ -113,6 +113,38 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 	assert false
 }
 
+fn test_model_settings_reject_control_bytes_in_model_or_api_key() {
+	mut state := new_model_settings_state('')
+	state.update(ModelSettingsInput{
+		provider: 'openai'
+		model:    'gpt\nbad'
+		base_url: 'https://api.openai.com/v1'
+		api_key:  'sk-ok'
+	}) or {
+		assert err.msg() == 'model settings are invalid'
+		state.update(ModelSettingsInput{
+			provider: 'openai'
+			model:    'gpt-ok'
+			base_url: 'https://api.openai.com/v1'
+			api_key:  'sk-\0bad'
+		}) or {
+			assert err.msg() == 'model settings are invalid'
+			return
+		}
+		assert false
+	}
+	assert false
+}
+
+fn test_effective_max_output_tokens_defaults_except_meta() {
+	assert effective_max_output_tokens('openai', 0) == max_model_output_tokens
+	assert effective_max_output_tokens('anthropic', 0) == max_model_output_tokens
+	assert effective_max_output_tokens('gemini', 0) == max_model_output_tokens
+	assert effective_max_output_tokens('meta', 0) == 0
+	assert effective_max_output_tokens('openai', 2048) == 2048
+	assert effective_max_output_tokens('meta', 8192) == 8192
+}
+
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len

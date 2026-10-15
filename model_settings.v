@@ -146,7 +146,9 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 	}
 	model := input.model.trim_space()
 	base_url := secure_endpoint(input.base_url)!
-	if model.len == 0 || model.len > 200 || input.base_url.len > 2_048 || input.api_key.len > 4_096 {
+	if model.len == 0 || model.len > 200 || input.base_url.len > 2_048 || input.api_key.len > 4_096
+		|| model_settings_text_has_unsafe_controls(model)
+		|| model_settings_text_has_unsafe_controls(input.api_key) {
 		return error('model settings are invalid')
 	}
 	state.mu.lock()
@@ -258,21 +260,33 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	if info.requires_api_key && api_key.trim_space().len == 0 {
 		return error('model credentials are not configured for ${provider}')
 	}
-	max_output_tokens := if valid_max_output_tokens(profile.max_output_tokens)
-		&& profile.max_output_tokens > 0 {
-		profile.max_output_tokens
-	} else if provider == 'meta' {
-		0
-	} else {
-		max_model_output_tokens
-	}
 	return ModelConfig{
 		provider:          provider
 		base_url:          secure_endpoint(base_url)!
 		model:             model.trim_space()
 		api_key:           api_key
-		max_output_tokens: max_output_tokens
+		max_output_tokens: effective_max_output_tokens(provider, profile.max_output_tokens)
 	}
+}
+
+fn effective_max_output_tokens(provider string, configured int) int {
+	if valid_max_output_tokens(configured) && configured > 0 {
+		return configured
+	}
+	if provider == 'meta' {
+		// Meta Responses omits max_output_tokens so the provider applies its own limit.
+		return 0
+	}
+	return max_model_output_tokens
+}
+
+fn model_settings_text_has_unsafe_controls(value string) bool {
+	for c in value {
+		if c < 32 || c == 127 {
+			return true
+		}
+	}
+	return false
 }
 
 fn valid_max_output_tokens(value int) bool {

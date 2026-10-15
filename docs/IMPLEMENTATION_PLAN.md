@@ -236,6 +236,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `POST /v1/mcp-oauth/refresh` and headless `veasel mcp oauth refresh` exchange
   stored refresh tokens (owner-only `mcp-oauth-refresh.json`) and rotate
   credential Bearer headers without returning secrets.
+  `DELETE /v1/mcp-oauth/refresh` and `veasel mcp oauth clear-refresh` clear
+  refresh metadata; deleting a credential also clears its refresh row.
+  Credential views expose boolean `oauth_refresh` without secrets.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

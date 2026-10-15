@@ -759,8 +759,7 @@ pub fn (app &App) patch_plugin_component(mut ctx Context) veb.Result {
 
 @['/v1/mcp-credentials'; get]
 pub fn (app &App) list_mcp_credentials(mut ctx Context) veb.Result {
-	mut state := app.mcp_credentials
-	return ctx.json(state.view())
+	return ctx.json(app.mcp_credential_catalog())
 }
 
 @['/v1/mcp-credentials'; post]
@@ -773,13 +772,12 @@ pub fn (app &App) upsert_mcp_credential(mut ctx Context) veb.Result {
 	}
 	mut state := app.mcp_credentials
 	view := state.upsert(input) or { return json_request_error(mut ctx, err.msg()) }
-	return ctx.json(view)
+	return ctx.json(app.with_mcp_oauth_refresh_flag(view))
 }
 
 @['/v1/mcp-credentials/:name'; delete]
 pub fn (app &App) remove_mcp_credential(mut ctx Context, name string) veb.Result {
-	mut state := app.mcp_credentials
-	state.remove(name) or {
+	app.remove_mcp_credential_and_oauth(name) or {
 		if err.msg() == 'MCP credential not found' {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
@@ -845,6 +843,20 @@ pub fn (app &App) refresh_mcp_oauth(mut ctx Context) veb.Result {
 		return json_request_error(mut ctx, err.msg())
 	}
 	return ctx.json(view)
+}
+
+@['/v1/mcp-oauth/refresh'; delete]
+pub fn (app &App) clear_mcp_oauth_refresh_route(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'OAuth refresh clear request exceeds the size limit')
+	}
+	input := decode_mcp_oauth_refresh_clear_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	result := app.clear_mcp_oauth_refresh(input) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(result)
 }
 
 @['/v1/mcp-servers'; get]

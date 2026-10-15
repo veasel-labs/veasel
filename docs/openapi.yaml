@@ -291,6 +291,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    delete:
+      operationId: clearMcpOauthRefresh
+      description: >
+        Clears owner-only refresh metadata for a named MCP credential without
+        deleting the credential headers. Idempotent when metadata is already
+        absent. Secret values are never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential:
+                  type: string
+      responses:
+        '200':
+          description: Refresh metadata cleared (or already absent).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [cleared]
+                properties:
+                  cleared: { type: string }
+        '400':
+          description: Invalid credential name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/mcp-servers:
     get:
       operationId: listConfiguredMcpServers
@@ -2383,6 +2415,9 @@ components:
           type: array
           items: { type: string }
           description: Header names only; values are never returned.
+        oauth_refresh:
+          type: boolean
+          description: True when owner-only refresh metadata exists for this credential. Never exposes refresh token values.
     MCPCredentialInput:
       type: object
       required: [name, headers]

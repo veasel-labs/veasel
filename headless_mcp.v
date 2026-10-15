@@ -21,6 +21,7 @@ enum HeadlessMcpAction {
 	oauth_authorize
 	oauth_complete
 	oauth_refresh
+	oauth_clear_refresh
 }
 
 struct HeadlessMcpOptions {
@@ -50,7 +51,7 @@ mut:
 }
 
 fn print_headless_mcp_help() {
-	println('Usage: veasel mcp <list|add|enable|disable|remove|credentials|oauth> [options]\n\nCommands:\n  list [--directory <dir>] [--json]\n  add [user|project] stdio <name> <command> [args…]\n  add [user|project] http <name> <url> [--credential <name>]\n  enable|disable|remove [user|project] <name>\n  credentials list [--json]\n  credentials set <name> --header <Name>=<value> [--header …]\n  credentials remove <name>\n  oauth authorize <credential> --authorization-endpoint <url> --token-endpoint <url> --client-id <id> (--listen | --redirect-uri <url>) [--scope <s>] [--resource <url>] [--timeout <sec>] [--json]\n  oauth complete <credential> (--callback-url <url> | --state <s> --code <c>) [--json]\n  oauth refresh <credential> [--json]\n\nOptions:\n  -w, --directory <dir>  Workspace for project scope and list imports (default: cwd)\n      --json             Emit machine-readable JSON\n      --credential <n>   Named HTTP credential for streamable-http add\n      --header <N>=<v>   Header for credentials set (repeatable)\n      --listen           Start a 127.0.0.1 loopback listener, wait for the browser callback, and complete automatically\n  -h, --help             Show this help\n\nPersistence:\n  user         \$VEASEL_DATA_DIR/mcp-servers.json\n  project      <directory>/.veasel/mcp-servers.json\n  credentials  \$VEASEL_DATA_DIR/mcp-credentials.json\n  oauth pending \$VEASEL_DATA_DIR/mcp-oauth-pending.json (owner-only; never printed)\n  oauth refresh \$VEASEL_DATA_DIR/mcp-oauth-refresh.json (owner-only refresh metadata; never printed)\n\nList also reports read-only imports of portable .mcp.json and .cursor/mcp.json.\nTrust remains separate (TUI /mcp trust configured/<name>). No install scripts run.\nStdio processes use your OS privileges; MCP results go to the model provider.\nCredential and OAuth token values are never printed; only names and header names.')
+	println('Usage: veasel mcp <list|add|enable|disable|remove|credentials|oauth> [options]\n\nCommands:\n  list [--directory <dir>] [--json]\n  add [user|project] stdio <name> <command> [args…]\n  add [user|project] http <name> <url> [--credential <name>]\n  enable|disable|remove [user|project] <name>\n  credentials list [--json]\n  credentials set <name> --header <Name>=<value> [--header …]\n  credentials remove <name>\n  oauth authorize <credential> --authorization-endpoint <url> --token-endpoint <url> --client-id <id> (--listen | --redirect-uri <url>) [--scope <s>] [--resource <url>] [--timeout <sec>] [--json]\n  oauth complete <credential> (--callback-url <url> | --state <s> --code <c>) [--json]\n  oauth refresh <credential> [--json]\n  oauth clear-refresh <credential> [--json]\n\nOptions:\n  -w, --directory <dir>  Workspace for project scope and list imports (default: cwd)\n      --json             Emit machine-readable JSON\n      --credential <n>   Named HTTP credential for streamable-http add\n      --header <N>=<v>   Header for credentials set (repeatable)\n      --listen           Start a 127.0.0.1 loopback listener, wait for the browser callback, and complete automatically\n  -h, --help             Show this help\n\nPersistence:\n  user         \$VEASEL_DATA_DIR/mcp-servers.json\n  project      <directory>/.veasel/mcp-servers.json\n  credentials  \$VEASEL_DATA_DIR/mcp-credentials.json\n  oauth pending \$VEASEL_DATA_DIR/mcp-oauth-pending.json (owner-only; never printed)\n  oauth refresh \$VEASEL_DATA_DIR/mcp-oauth-refresh.json (owner-only refresh metadata; never printed)\n\nList also reports read-only imports of portable .mcp.json and .cursor/mcp.json.\nTrust remains separate (TUI /mcp trust configured/<name>). No install scripts run.\nStdio processes use your OS privileges; MCP results go to the model provider.\nCredential and OAuth token values are never printed; only names and header names. Credential list may include oauth_refresh=true when refresh metadata exists.')
 }
 
 fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
@@ -105,7 +106,7 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 		}
 		'oauth' {
 			if index >= args.len {
-				return error('mcp oauth expects authorize|complete|refresh')
+				return error('mcp oauth expects authorize|complete|refresh|clear-refresh')
 			}
 			sub := args[index]
 			index++
@@ -118,6 +119,9 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 				}
 				'refresh' {
 					options.action = .oauth_refresh
+				}
+				'clear-refresh' {
+					options.action = .oauth_clear_refresh
 				}
 				'--help', '-h', 'help' {
 					return error('help')
@@ -348,6 +352,12 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 		.oauth_refresh {
 			if positional.len != 1 {
 				return error('mcp oauth refresh expects <credential>')
+			}
+			options.credential = positional[0]
+		}
+		.oauth_clear_refresh {
+			if positional.len != 1 {
+				return error('mcp oauth clear-refresh expects <credential>')
 			}
 			options.credential = positional[0]
 		}
@@ -732,6 +742,24 @@ fn execute_headless_mcp_oauth_refresh(port int, options HeadlessMcpOptions) !str
 	return 'Refreshed OAuth for credential ${cred.name} (headers: ${cred.header_names.join(', ')})'
 }
 
+fn execute_headless_mcp_oauth_clear_refresh(port int, options HeadlessMcpOptions) !string {
+	payload := MCPOAuthRefreshClearInput{
+		credential: options.credential
+	}
+	response := headless_json_request(port, .delete, '/v1/mcp-oauth/refresh', json2.encode(payload),
+		false, '') or { return error('unable to clear MCP OAuth refresh: ${err.msg()}') }
+	if response.status_code != 200 {
+		return error(headless_mcp_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	cleared := json2.decode[MCPOAuthRefreshClearResult](response.body) or {
+		return error('server returned an invalid clear-refresh response')
+	}
+	return 'Cleared OAuth refresh metadata for credential ${cleared.cleared}'
+}
+
 fn execute_headless_mcp_command(port int, args []string) {
 	options := parse_headless_mcp_args(args, os.getwd()) or {
 		if err.msg() == 'help' {
@@ -809,6 +837,12 @@ fn execute_headless_mcp_command(port int, args []string) {
 		}
 		.oauth_refresh {
 			execute_headless_mcp_oauth_refresh(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.oauth_clear_refresh {
+			execute_headless_mcp_oauth_clear_refresh(port, options) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

@@ -14,8 +14,9 @@ mut:
 
 pub struct MCPCredentialView {
 pub:
-	name         string
-	header_names []string @[json: 'header_names']
+	name          string
+	header_names  []string @[json: 'header_names']
+	oauth_refresh bool     @[json: 'oauth_refresh'; omitempty]
 }
 
 pub struct MCPCredentialCatalog {

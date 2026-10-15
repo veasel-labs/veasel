@@ -901,6 +901,50 @@ fn test_session_operation_persists_provider_reported_token_usage() {
 	assert completion.data.output_tokens == 340
 }
 
+fn test_session_usage_summary_sums_only_reported_completed_turns() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Usage sum', directory: '/tmp/usage-sum' }) or {
+		panic(err)
+	}
+	first := 'd3b42ec1-8f56-45f8-9146-9a0d93f1d529'
+	second := 'e4c53fd2-9067-46a9-a257-ab1ea402e63a'
+	third := 'f5d640e3-a178-47ba-b368-bc2fb513f74b'
+	_ = store.create_session_operation(session.id, first) or { panic(err) }
+	_ = store.append_exchange(session.id, first, 'one', 'a', 'openai-compatible', 'fixture', '',
+		ProviderUsage{
+			input_tokens:  100
+			output_tokens: 20
+			reported:      true
+		}) or { panic(err) }
+	_ = store.create_session_operation(session.id, second) or { panic(err) }
+	_ = store.append_exchange(session.id, second, 'two', 'b', 'openai-compatible', 'fixture', '',
+		ProviderUsage{
+			input_tokens:  50
+			output_tokens: 10
+			reported:      true
+		}) or { panic(err) }
+	_ = store.create_session_operation(session.id, third) or { panic(err) }
+	_ = store.append_exchange(session.id, third, 'three', 'c', 'openai-compatible', 'fixture', '',
+		ProviderUsage{}) or { panic(err) }
+	summary := store.session_usage_summary(session.id) or { panic(err) }
+	assert summary.session_id == session.id
+	assert summary.completed_turns == 3
+	assert summary.reported_turns == 2
+	assert summary.usage_reported
+	assert summary.input_tokens == 150
+	assert summary.output_tokens == 30
+	assert summary.cost == 'unavailable'
+	empty_session := store.create_session(SessionInput{ title: 'Empty', directory: '/tmp/empty' }) or {
+		panic(err)
+	}
+	empty := store.session_usage_summary(empty_session.id) or { panic(err) }
+	assert empty.completed_turns == 0
+	assert !empty.usage_reported
+	assert empty.input_tokens == 0
+	assert empty.output_tokens == 0
+}
+
 fn test_session_operation_survives_restart_and_uncertain_work_is_not_replayed() {
 	database := os.join_path(os.temp_dir(), 'veasel-operation-recovery-${uuid.new_v4().str()}.sqlite')
 	defer {

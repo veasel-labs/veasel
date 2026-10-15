@@ -41,6 +41,19 @@ pub:
 	updated_at     string
 }
 
+// SessionUsageSummary aggregates adapter-reported tokens for one session.
+// Cost is never estimated here.
+pub struct SessionUsageSummary {
+pub:
+	session_id      string
+	completed_turns int
+	reported_turns  int
+	input_tokens    i64
+	output_tokens   i64
+	usage_reported  bool
+	cost            string = 'unavailable'
+}
+
 struct SessionInput {
 pub:
 	title     string
@@ -1111,6 +1124,33 @@ fn (mut store Store) session_operation_unlocked(session_id string, operation_id 
 		usage_reported: usage_reported
 		created_at:     row.val(9)
 		updated_at:     row.val(10)
+	}
+}
+
+fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSummary {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	sessions := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', session_id)!
+	if sessions.len != 1 {
+		return error('session not found')
+	}
+	rows := store.db.exec_param("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0) FROM session_operations WHERE session_id = ? AND status = 'completed'",
+		session_id)!
+	if rows.len != 1 {
+		return error('unable to read session usage')
+	}
+	row := rows[0]
+	reported_turns := row.val(1).int()
+	return SessionUsageSummary{
+		session_id:      session_id
+		completed_turns: row.val(0).int()
+		reported_turns:  reported_turns
+		input_tokens:    row.val(2).i64()
+		output_tokens:   row.val(3).i64()
+		usage_reported:  reported_turns > 0
+		cost:            'unavailable'
 	}
 }
 

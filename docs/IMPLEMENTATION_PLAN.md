@@ -120,8 +120,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   synchronous ChatExchange responses, the TUI status line, and `veasel run`
   JSON. Counts are omitted unless an adapter set `usage.reported`; cost remains
   unavailable without authoritative price schedules.
+- [x] Aggregate those reported totals per session on `GET /v1/sessions/{id}/usage`
+  and surface them through the TUI `/usage` command without inventing cost.
 - [ ] General execution history and a durable usage/cost dashboard beyond
-  per-turn reported tokens and opt-in ATIF `final_metrics`.
+  per-session reported tokens and opt-in ATIF `final_metrics`.
 
 ### Milestone 4 — extensibility
 

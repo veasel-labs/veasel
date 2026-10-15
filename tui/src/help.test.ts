@@ -14,6 +14,8 @@ describe("TUI quick help", () => {
     expect(help).toContain("sandbox warning stays above")
     expect(help).toContain("decision stays above the arguments")
     expect(help).toContain("/history older")
+    expect(help).toContain("/usage")
+    expect(help).toContain("provider-reported token totals")
     expect(help).toContain("s · /models")
     expect(help).toContain("Files go to your provider.")
     expect(help).toContain("without a sandbox")

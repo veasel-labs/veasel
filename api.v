@@ -1292,6 +1292,21 @@ pub fn (app &App) get_session(mut ctx Context, id string) veb.Result {
 	return ctx.json(session)
 }
 
+@['/v1/sessions/:id/usage'; get]
+pub fn (app &App) get_session_usage(mut ctx Context, id string) veb.Result {
+	mut store := app.store
+	summary := store.session_usage_summary(id) or {
+		if err.msg() == 'session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'session not found'
+			})
+		}
+		return json_server_error(mut ctx, 'Unable to read session usage')
+	}
+	return ctx.json(summary)
+}
+
 @['/v1/events'; get]
 pub fn (app &App) event_stream(mut ctx Context) veb.Result {
 	last_id := ctx.req.header.get_custom('Last-Event-ID', exact: false) or { '0' }

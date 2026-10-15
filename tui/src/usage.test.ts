@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatReportedUsage, formatTokenCount, statusWithUsage } from "./usage"
+import { formatReportedUsage, formatSessionUsageSummary, formatTokenCount, statusWithUsage } from "./usage"
 
 describe("formatTokenCount", () => {
   test("keeps small counts exact", () => {
@@ -30,5 +30,35 @@ describe("statusWithUsage", () => {
       input_tokens: 1200,
       output_tokens: 340,
     })).toBe("● openai-compatible  ·  fixture  ·  1.2k in · 340 out")
+  })
+})
+
+describe("formatSessionUsageSummary", () => {
+  test("states when no provider has reported tokens yet", () => {
+    expect(formatSessionUsageSummary({
+      session_id: "s",
+      completed_turns: 2,
+      reported_turns: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      usage_reported: false,
+      cost: "unavailable",
+    })).toContain("Tokens: unavailable")
+  })
+
+  test("sums reported tokens without inventing a cost", () => {
+    const text = formatSessionUsageSummary({
+      session_id: "s",
+      completed_turns: 3,
+      reported_turns: 2,
+      input_tokens: 1500,
+      output_tokens: 400,
+      usage_reported: true,
+      cost: "unavailable",
+    })
+    expect(text).toContain("Completed turns: 3")
+    expect(text).toContain("Turns with provider-reported tokens: 2")
+    expect(text).toContain("1.5k in · 400 out")
+    expect(text).toContain("Cost: unavailable (no price schedule)")
   })
 })

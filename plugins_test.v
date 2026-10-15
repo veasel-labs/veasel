@@ -565,11 +565,6 @@ fn test_agent_skill_frontmatter_enforces_supported_fields_and_limits() {
 	assert valid.description.len == 1024
 	assert valid.allowed_tools == 'Read'
 	assert valid.allowed_tools_declared
-	empty_allowlist := parse_agent_skill('review', '/plugin/skills/review/SKILL.md', '---\nname: review\ndescription: Valid.\nallowed-tools: ""\n---\nBody') or {
-		panic(err)
-	}
-	assert empty_allowlist.allowed_tools_declared
-	assert empty_allowlist.allowed_tools == ''
 	unicode_skill := parse_agent_skill('café-分析-3', '/plugin/skills/café-分析-3/SKILL.md', '---\nname: café-分析-3\ndescription: Unicode skill.\n---\nBody') or {
 		panic(err)
 	}
@@ -580,6 +575,8 @@ fn test_agent_skill_frontmatter_enforces_supported_fields_and_limits() {
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ""')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ' + 'x'.repeat(501))
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: ' + 'x'.repeat(1025))
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nallowed-tools: ""')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nallowed-tools: "   "')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nallowed-tools: 42')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nmetadata:\n  author: 42')
 	assert agent_skill_frontmatter_rejected('review-dir', 'name: review\ndescription: Valid.')
@@ -702,7 +699,7 @@ fn test_agent_plugin_v1_manifest_fixture_corpus() {
 	fixtures := json2.decode[[]AgentPluginManifestFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins manifest fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins manifest fixtures: ${err.msg()}') }
-	assert fixtures.len >= 14
+	assert fixtures.len >= 21
 	for fixture in fixtures {
 		if fixture.accepted {
 			manifest, diagnostics := parse_plugin_manifest(fixture.document) or {

@@ -12,6 +12,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("keeps the selection on screen")
     expect(help).toContain("lines added and removed")
     expect(help).toContain("sandbox warning stays above")
+    expect(help).toContain("decision stays above the arguments")
     expect(help).toContain("/history older")
     expect(help).toContain("s · /models")
     expect(help).toContain("Files go to your provider.")

@@ -1169,8 +1169,8 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
-fn test_resume_rejects_blank_queued_content_without_claiming() {
-	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-blank-queued-${uuid.new_v4().str()}')
+fn test_resume_rejects_missing_session_workspace_without_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-missing-workspace-${uuid.new_v4().str()}')
 	os.mkdir_all(plugin_directory) or { panic(err) }
 	defer {
 		os.rmdir_all(plugin_directory) or {}
@@ -1180,8 +1180,37 @@ fn test_resume_rejects_blank_queued_content_without_claiming() {
 		store.close() or {}
 	}
 	session := store.create_session(SessionInput{
+		title:     'Missing workspace'
+		directory: '/tmp/veasel-missing-workspace-${uuid.new_v4().str()}'
+	}) or { panic(err) }
+	operation_id := '4d5e6f70-8192-a3b4-c5d6-e7f8091a2b3c'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"still valid"}') or {
+		panic(err)
+	}
+	mut app := new_app(store, plugin_directory)
+	app.resume_durable_queued_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Queued turn session workspace is missing and will not be claimed.'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_resume_rejects_blank_queued_content_without_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-blank-queued-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-blank-queued-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
 		title:     'Blank queued content'
-		directory: '/tmp/blank-queued'
+		directory: workspace
 	}) or { panic(err) }
 	operation_id := '3c4d5e6f-7081-92a3-b4c5-d6e7f8091a2b'
 	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"   "}') or {
@@ -1197,9 +1226,12 @@ fn test_resume_rejects_blank_queued_content_without_claiming() {
 
 fn test_resume_rejects_empty_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-empty-queued-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-empty-queued-${uuid.new_v4().str()}')
 	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
 	defer {
 		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
 	}
 	mut store := open_store(':memory:') or { panic(err) }
 	defer {
@@ -1207,7 +1239,7 @@ fn test_resume_rejects_empty_queued_request_without_claiming() {
 	}
 	session := store.create_session(SessionInput{
 		title:     'Empty queued payload'
-		directory: '/tmp/empty-queued'
+		directory: workspace
 	}) or { panic(err) }
 	operation_id := '2b3c4d5e-6f70-8192-a3b4-c5d6e7f8091a'
 	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"placeholder"}') or {
@@ -1227,9 +1259,12 @@ fn test_resume_rejects_empty_queued_request_without_claiming() {
 
 fn test_resume_rejects_invalid_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-invalid-queued-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-invalid-queued-${uuid.new_v4().str()}')
 	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
 	defer {
 		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
 	}
 	mut store := open_store(':memory:') or { panic(err) }
 	defer {
@@ -1237,7 +1272,7 @@ fn test_resume_rejects_invalid_queued_request_without_claiming() {
 	}
 	session := store.create_session(SessionInput{
 		title:     'Invalid queued payload'
-		directory: '/tmp/invalid-queued'
+		directory: workspace
 	}) or { panic(err) }
 	operation_id := '1a2b3c4d-5e6f-7081-92a3-b4c5d6e7f809'
 	_ = store.enqueue_session_operation(session.id, operation_id, '{not-json') or { panic(err) }

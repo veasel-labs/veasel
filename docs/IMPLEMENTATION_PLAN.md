@@ -87,8 +87,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   assistant-delta path so reconnect replay stays finite. `Prefer: respond-async`
   persists `queued` + request JSON, workers claim to `running`,
   `GET /v1/sessions/{id}/operations` lists state, and startup resumes only
-  `queued` rows. Claimed `running`/`cancelling` work still becomes `uncertain`
-  and is never replayed (provider/tool effects may already have started).
+  `queued` rows after validating request JSON/content and that the session
+  workspace directory still exists (missing workspaces fail closed as
+  cancelled without claim). Claimed `running`/`cancelling` work still becomes
+  `uncertain` and is never replayed (provider/tool effects may already have
+  started).
 - [x] Capture provider-reported token usage from all four adapters in opt-in
   ATIF `final_metrics`. Veasel does not yet maintain authoritative,
   versioned provider price schedules, so it does not calculate cost.

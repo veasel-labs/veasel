@@ -396,6 +396,13 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 			eprintln('veasel: trusted MCP server could not be started')
 			continue
 		}
+		// Attach OAuth refresh before initialize so a 401 can refresh once and
+		// retry without dropping the trusted server for an expired Bearer.
+		if !isnil(connection.http_transport) && server.credential.len > 0 {
+			mut http_transport := connection.http_transport
+			http_transport.attach_oauth_refresh(server.credential, app.mcp_oauth_refresh,
+				app.mcp_credentials)
+		}
 		connection.client.initialize() or {
 			eprintln('veasel: trusted MCP server initialization failed')
 			connection.client.close()

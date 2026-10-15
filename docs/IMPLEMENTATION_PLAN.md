@@ -236,6 +236,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `POST /v1/mcp-oauth/refresh` and headless `veasel mcp oauth refresh` exchange
   stored refresh tokens (owner-only `mcp-oauth-refresh.json`) and rotate
   credential Bearer headers without returning secrets.
+  Streamable HTTP transports that reference a named credential with refresh
+  metadata auto-refresh once on HTTP 401 and retry that request (not a general
+  retry policy; side-effecting retries remain disabled otherwise).
   `DELETE /v1/mcp-oauth/refresh` and `veasel mcp oauth clear-refresh` clear
   refresh metadata; deleting a credential also clears its refresh row.
   Credential views expose boolean `oauth_refresh` without secrets.

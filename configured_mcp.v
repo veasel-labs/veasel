@@ -504,6 +504,7 @@ fn (app &App) materialize_configured_mcp_server(name string, spec ConfiguredMCPS
 		transport:   server.transport
 		url:         server.url
 		headers:     merged
+		credential:  spec.credential
 		plugin_name: server.plugin_name
 	}
 }

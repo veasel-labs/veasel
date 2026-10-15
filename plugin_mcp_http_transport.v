@@ -14,12 +14,17 @@ const plugin_mcp_http_close_timeout = 250 * time.millisecond
 // PluginMCPHTTPTransport adapts bounded Streamable HTTP requests to the
 // MCP client transport interface. Redirects and automatic retries are disabled
 // because configured plugin headers are bound to the configured origin and a
-// retried tools/call request could repeat side effects.
+// retried tools/call request could repeat side effects. A single OAuth refresh
+// retry on HTTP 401 is allowed when a named credential with refresh metadata
+// is attached (expired Bearer only; not a general retry policy).
 @[heap]
 struct PluginMCPHTTPTransport {
 mut:
 	url                                string
 	headers                            map[string]string
+	credential                         string
+	oauth_refresh                      &MCPOAuthRefreshState = unsafe { nil }
+	mcp_credentials                    &MCPCredentialState   = unsafe { nil }
 	session_id                         string
 	protocol_version                   string
 	pending                            []string
@@ -40,9 +45,55 @@ fn new_plugin_mcp_http_transport(server PluginMCPServer) !&PluginMCPHTTPTranspor
 		return error('unsupported Agent Plugin MCP HTTP server')
 	}
 	return &PluginMCPHTTPTransport{
-		url:     server.url
-		headers: server.headers.clone()
+		url:        server.url
+		headers:    server.headers.clone()
+		credential: server.credential
 	}
+}
+
+// attach_oauth_refresh wires owner-only refresh + credential stores so a 401
+// can exchange a stored refresh token once and retry the same request.
+fn (mut transport PluginMCPHTTPTransport) attach_oauth_refresh(credential string, refresh &MCPOAuthRefreshState,
+	credentials &MCPCredentialState) {
+	if credential.len == 0 || isnil(refresh) || isnil(credentials) {
+		return
+	}
+	if !is_valid_mcp_credential_name(credential) {
+		return
+	}
+	transport.credential = credential
+	transport.oauth_refresh = refresh
+	transport.mcp_credentials = credentials
+}
+
+fn (mut transport PluginMCPHTTPTransport) try_refresh_oauth_credential() bool {
+	if transport.credential.len == 0 || isnil(transport.oauth_refresh)
+		|| isnil(transport.mcp_credentials) {
+		return false
+	}
+	mut refresh := transport.oauth_refresh
+	if !refresh.has(transport.credential) {
+		return false
+	}
+	mut credentials := transport.mcp_credentials
+	_ := refresh_mcp_oauth_credential(mut refresh, mut credentials, transport.credential) or {
+		return false
+	}
+	cred_headers := credentials.get_headers(transport.credential) or { return false }
+	auth := cred_headers['Authorization'] or { return false }
+	if auth.len == 0 {
+		return false
+	}
+	mut next := map[string]string{}
+	for key, value in transport.headers {
+		if key.to_lower() == 'authorization' {
+			continue
+		}
+		next[key] = value
+	}
+	next['Authorization'] = auth
+	transport.headers = next
+	return true
 }
 
 fn (mut transport PluginMCPHTTPTransport) request_cancel() {
@@ -131,6 +182,10 @@ fn (mut transport PluginMCPHTTPTransport) emit_cancelled_notification() {
 }
 
 fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
+	return transport.send_with_auth_refresh(message, true)
+}
+
+fn (mut transport PluginMCPHTTPTransport) send_with_auth_refresh(message string, allow_auth_refresh bool) ! {
 	if message.len == 0 || message.len > max_plugin_mcp_http_body_bytes {
 		return error('MCP HTTP request exceeds the message size limit')
 	}
@@ -204,6 +259,9 @@ fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 		www_authenticate := response.header.get(.www_authenticate) or { '' }
 		transport.record_http_auth_challenge(www_authenticate)
 		transport.pending.clear()
+		if allow_auth_refresh && transport.try_refresh_oauth_credential() {
+			return transport.send_with_auth_refresh(message, false)
+		}
 		return error(transport.authorization_required_error())
 	}
 	if response.body.len > max_plugin_mcp_http_body_bytes {
@@ -293,6 +351,10 @@ fn (mut transport PluginMCPHTTPTransport) receive() !string {
 // on_progress_body. Servers that answer 405/404 are treated as not offering a
 // notification stream.
 fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
+	return transport.listen_notifications_with_auth_refresh(true)
+}
+
+fn (mut transport PluginMCPHTTPTransport) listen_notifications_with_auth_refresh(allow_auth_refresh bool) !int {
 	if transport.cancel_requested {
 		return error('cancelled')
 	}
@@ -347,6 +409,9 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 	if response.status_code == 401 {
 		www_authenticate := response.header.get(.www_authenticate) or { '' }
 		transport.record_http_auth_challenge(www_authenticate)
+		if allow_auth_refresh && transport.try_refresh_oauth_credential() {
+			return transport.listen_notifications_with_auth_refresh(false)
+		}
 		return error(transport.authorization_required_error())
 	}
 	if response.status_code in 300 .. 400 {

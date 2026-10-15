@@ -61,14 +61,15 @@ mut:
 
 struct PluginMCPServer {
 pub:
-	name      string
-	transport string
-	command   string
-	args      []string
-	url       string
-	headers   map[string]string
-	cwd       string
-	env       map[string]string
+	name       string
+	transport  string
+	command    string
+	args       []string
+	url        string
+	headers    map[string]string
+	cwd        string
+	env        map[string]string
+	credential string // named HTTP credential; enables one OAuth refresh retry on 401
 pub mut:
 	plugin_name string
 }

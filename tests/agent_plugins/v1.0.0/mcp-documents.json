@@ -1073,5 +1073,223 @@
         }
       }
     }
+  },
+  {
+    "name": "stdio cwd ./ is accepted",
+    "accepted": true,
+    "servers": [
+      "local"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "cwd": "./"
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio cwd PLUGIN_ROOT placeholder is accepted",
+    "accepted": true,
+    "servers": [
+      "local"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "cwd": "${PLUGIN_ROOT}"
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio cwd PLUGIN_DATA placeholder is accepted",
+    "accepted": true,
+    "servers": [
+      "local"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "cwd": "${PLUGIN_DATA}"
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio env with safe keys is accepted",
+    "accepted": true,
+    "servers": [
+      "local"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "env": {
+            "LOG_LEVEL": "info",
+            "MY_TOKEN": "x"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio command with ./package path is accepted",
+    "accepted": true,
+    "servers": [
+      "local"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "./README.md"
+        }
+      }
+    }
+  },
+  {
+    "name": "headers as non-object is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "headers"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://tools.example.invalid/mcp",
+          "headers": "bad"
+        }
+      }
+    }
+  },
+  {
+    "name": "env as non-object is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "env"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "env": [
+            "bad"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "non-string url is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "url"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": 1
+        }
+      }
+    }
+  },
+  {
+    "name": "server name with underscore is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP server name is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "bad_name": {
+          "type": "stdio",
+          "command": "echo"
+        }
+      }
+    }
+  },
+  {
+    "name": "server name with uppercase is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP server name is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "Bad": {
+          "type": "stdio",
+          "command": "echo"
+        }
+      }
+    }
+  },
+  {
+    "name": "server name with dots is accepted",
+    "accepted": true,
+    "servers": [
+      "local.tools"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local.tools": {
+          "type": "stdio",
+          "command": "echo"
+        }
+      }
+    }
+  },
+  {
+    "name": "reserved plugin_root lowercase env is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "reserved"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "env": {
+            "plugin_root": "/tmp/evil"
+          }
+        }
+      }
+    }
   }
 ]

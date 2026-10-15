@@ -13,9 +13,9 @@
   },
   {
     "name": "Unicode lowercase skill name",
-    "directory": "caf\u00e9-\u5206\u6790-3",
+    "directory": "café-分析-3",
     "accepted": true,
-    "content": "---\nname: caf\u00e9-\u5206\u6790-3\ndescription: Review localized source.\n---\nInstructions."
+    "content": "---\nname: café-分析-3\ndescription: Review localized source.\n---\nInstructions."
   },
   {
     "name": "unknown frontmatter field is rejected",
@@ -220,5 +220,53 @@
     "directory": "review",
     "accepted": false,
     "content": "---\nname: review\ndescription: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n---\nInstructions."
+  },
+  {
+    "name": "compatibility of exactly 500 characters is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\ncompatibility: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n---\nInstructions."
+  },
+  {
+    "name": "license with LF is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nlicense: \"MIT\\n\"\n---\nInstructions."
+  },
+  {
+    "name": "compatibility with TAB is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\ncompatibility: \"ok\\t\"\n---\nInstructions."
+  },
+  {
+    "name": "allowed-tools with multiple names is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\nallowed-tools: Read Write shell\n---\nInstructions."
+  },
+  {
+    "name": "metadata empty object is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\nmetadata: {}\n---\nInstructions."
+  },
+  {
+    "name": "description with LF is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: \"line\\nbreak\"\n---\nInstructions."
+  },
+  {
+    "name": "compatibility must be a string is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\ncompatibility: 12\n---\nInstructions."
+  },
+  {
+    "name": "name with digit segment is accepted",
+    "directory": "review-2",
+    "accepted": true,
+    "content": "---\nname: review-2\ndescription: Review source changes.\n---\nInstructions."
   }
 ]

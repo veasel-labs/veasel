@@ -709,7 +709,7 @@ fn test_agent_plugin_v1_manifest_fixture_corpus() {
 	fixtures := json2.decode[[]AgentPluginManifestFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins manifest fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins manifest fixtures: ${err.msg()}') }
-	assert fixtures.len >= 42
+	assert fixtures.len >= 50
 	for fixture in fixtures {
 		if fixture.accepted {
 			manifest, diagnostics := parse_plugin_manifest(fixture.document) or {
@@ -766,7 +766,7 @@ fn test_agent_plugin_v1_mcp_fixture_corpus() {
 	fixtures := json2.decode[[]AgentPluginMCPFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins MCP fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins MCP fixtures: ${err.msg()}') }
-	assert fixtures.len >= 61
+	assert fixtures.len >= 73
 	manifest_json := '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"fixture"}'
 	manifest := json2.decode[map[string]json2.Any](manifest_json) or {
 		panic(err)
@@ -796,7 +796,7 @@ fn test_agent_skill_v1_frontmatter_fixture_corpus() {
 	fixtures := json2.decode[[]AgentSkillFrontmatterFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Skills fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Skills fixtures: ${err.msg()}') }
-	assert fixtures.len >= 37
+	assert fixtures.len >= 45
 	for fixture in fixtures {
 		if fixture.accepted {
 			skill := parse_agent_skill(fixture.directory, '/fixture/skills/${fixture.directory}/SKILL.md',

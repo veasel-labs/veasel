@@ -151,6 +151,17 @@ export function moveSettingsListIndex(
   return Math.min(max, current + page)
 }
 
+// Plain-text position cue for provider/model pickers so highlight is not only ●.
+export function formatSettingsListStatus(
+  selected: number,
+  count: number,
+  label: string,
+): string {
+  if (count <= 0) return `● ${label}  ·  none`
+  const index = Math.min(Math.max(0, selected), count - 1)
+  return `● ${label}  ·  selected ${index + 1} of ${count}`
+}
+
 export function homeWorkspaceBlurb(options: {
   providersConfigured: boolean
   modelLabel?: string

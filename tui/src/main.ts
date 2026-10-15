@@ -43,6 +43,7 @@ import {
   settingsPath,
   settingsProgress,
   settingsProviderStepPrompt,
+  formatSettingsListStatus,
   moveSettingsListIndex,
 } from "./settings-flow"
 import { formatSettingsLoadError, formatSettingsSaveError } from "./settings-errors"
@@ -2640,8 +2641,8 @@ function showSettingsStep(manualModel = false) {
     const matches = filterModelProviders(catalog, settingsProviderQuery, settingsProviderScope, configuredProviders, settingsView?.profiles)
     const providers = prioritizeModelProviders(matches, active, configuredProviders)
     sessionDetail.content = `${settingsTitle(0)}  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingsProviderStepPrompt(settingsMode)}${modeIntro}${providerSearchHint}`
-    status.content = `● ${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`
     if (providers.length === 0) {
+      status.content = formatSettingsListStatus(0, 0, `${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`)
       appendSessionDetail("\n\nNo providers match this filter. Backspace clears characters.")
       return
     }
@@ -2649,6 +2650,11 @@ function showSettingsStep(manualModel = false) {
     if (settingsListHighlight < 0) settingsListHighlight = activeIndex
     else settingsListHighlight = Math.min(Math.max(0, settingsListHighlight), providers.length - 1)
     settingsListCount = providers.length
+    status.content = formatSettingsListStatus(
+      settingsListHighlight,
+      providers.length,
+      `${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`,
+    )
     const select = new SelectRenderable(renderer, {
       id: "model-provider-select",
       width: "100%",
@@ -2666,6 +2672,14 @@ function showSettingsStep(manualModel = false) {
     settingsProviderSelect = select
     detail.add(select)
     select.focus()
+    select.on(SelectRenderableEvents.SELECTION_CHANGED, (index) => {
+      settingsListHighlight = index
+      status.content = formatSettingsListStatus(
+        settingsListHighlight,
+        providers.length,
+        `${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`,
+      )
+    })
     select.on(SelectRenderableEvents.ITEM_SELECTED, (_index, option) => {
       const providerId = String(option.value ?? "")
       const provider = providers.find((item) => item.id === providerId)
@@ -2707,6 +2721,11 @@ function showSettingsStep(manualModel = false) {
         settingsListHighlight = Math.min(Math.max(0, settingsListHighlight), optionCount - 1)
       }
       settingsListCount = optionCount
+      status.content = formatSettingsListStatus(
+        settingsListHighlight,
+        optionCount,
+        `Models ${matches.length}/${settingsModelCatalog.length}`,
+      )
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
         description: model.name === model.id ? "Provider model ID" : safeModelCatalogText(model.id),
@@ -2726,6 +2745,14 @@ function showSettingsStep(manualModel = false) {
       settingsModelSelect = select
       detail.add(select)
       select.focus()
+      select.on(SelectRenderableEvents.SELECTION_CHANGED, (index) => {
+        settingsListHighlight = index
+        status.content = formatSettingsListStatus(
+          settingsListHighlight,
+          optionCount,
+          `Models ${matches.length}/${settingsModelCatalog.length}`,
+        )
+      })
       select.on(SelectRenderableEvents.ITEM_SELECTED, (_index, option) => {
         if (option.value === "__manual_model_id__") {
           showSettingsStep(true)

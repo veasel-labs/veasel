@@ -12,6 +12,7 @@ import {
   settingsPath,
   settingsProgress,
   settingsProviderStepPrompt,
+  formatSettingsListStatus,
   moveSettingsListIndex,
 } from "./settings-flow"
 
@@ -91,5 +92,8 @@ describe("provider setup path", () => {
     expect(moveSettingsListIndex(4, 10, "end")).toBe(9)
     expect(moveSettingsListIndex(4, 10, "pageup", 3)).toBe(1)
     expect(moveSettingsListIndex(4, 10, "pagedown", 3)).toBe(7)
+    expect(formatSettingsListStatus(0, 13, "All 13/13")).toBe("● All 13/13  ·  selected 1 of 13")
+    expect(formatSettingsListStatus(12, 13, "Models 4/13")).toBe("● Models 4/13  ·  selected 13 of 13")
+    expect(formatSettingsListStatus(0, 0, "All 0/13")).toBe("● All 0/13  ·  none")
   })
 })

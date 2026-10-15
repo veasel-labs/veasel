@@ -612,6 +612,8 @@ def main() -> None:
         screen.wait_for("Tab scope", 4)
         screen.wait_for("Home/End", 4)
         screen.wait_for("Ctrl+L clear", 4)
+        screen.wait_for("selected ", 4)
+        screen.wait_for(" of ", 4)
         screen.wait_for("1 OF 3")
         screen.send("zzz", 0.45)
         screen.wait_for("No providers match", 4)

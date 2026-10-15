@@ -89,8 +89,13 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
         os.write(terminal, b"anthorpic")
         wait_for_markers((b"1/210", b"Anthropic"), 5, "typo-tolerant provider search")
 
-        os.write(terminal, b"\x1b")
-        time.sleep(0.1)
+        # Clear the provider filter, leave model settings, then quit from home.
+        # One Escape often only clears search; a second returns to the session list
+        # where bare "q" is bound to quit (not while an input is focused).
+        for _ in range(2):
+            os.write(terminal, b"\x1b")
+            time.sleep(0.15)
+        wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
         os.write(terminal, b"q")
 
         deadline = time.monotonic() + 5
@@ -99,6 +104,14 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
             if finished:
                 if os.waitstatus_to_exitcode(status) != 0:
                     raise RuntimeError(f"standalone TUI exited unsuccessfully (status={status})")
+                return
+            time.sleep(0.01)
+        # Ctrl+C is enabled on the OpenTUI renderer; use it if bare q was swallowed.
+        os.write(terminal, b"\x03")
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
                 return
             time.sleep(0.01)
         raise TimeoutError("standalone TUI did not exit after the quit key")

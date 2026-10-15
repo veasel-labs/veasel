@@ -25,6 +25,10 @@ class SessionSystemGuardTests(unittest.TestCase):
         self.assertIn("Bubblewrap sandbox", self.mock.SESSION_SYSTEM)
         self.assertIn("skill bodies, skill resources, repository map text", self.mock.SESSION_SYSTEM)
         self.assertNotIn("are not sandboxed", self.mock.SESSION_SYSTEM)
+        for variant in self.mock.SESSION_SYSTEM_VARIANTS:
+            self.assertTrue(self.mock.is_session_system(variant), variant[:80])
+        self.assertIn("ask maps to deny", self.mock.ASK_NONINTERACTIVE_INSTRUCTIONS)
+        self.assertIn("Sandbox-auto / autonomous benchmark execution", self.mock.SANDBOX_AUTO_INSTRUCTIONS)
 
     def test_repository_map_suffix_is_accepted(self):
         content = (
@@ -32,6 +36,11 @@ class SessionSystemGuardTests(unittest.TestCase):
             + "\n\n<veasel-repository-map untrusted=\"true\">\n## Repository map\n</veasel-repository-map>"
         )
         self.assertTrue(self.mock.is_session_system(content))
+        noninteractive = (
+            self.mock.SESSION_SYSTEM_VARIANTS[1]
+            + "\n\n<veasel-repository-map untrusted=\"true\">\n## Repository map\n</veasel-repository-map>"
+        )
+        self.assertTrue(self.mock.is_session_system(noninteractive))
 
     def test_enabled_skills_suffix_is_accepted(self):
         content = (

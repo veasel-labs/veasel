@@ -351,3 +351,45 @@ fn test_plugin_stdio_mcp_silent_server_times_out() {
 	assert message.contains('timed out')
 	assert time.since(started) < 10 * time.second
 }
+
+fn test_plugin_stdio_mcp_cancel_sends_notifications_cancelled() {
+	node := require_node_for_mcp_fixture()
+	if node.len == 0 {
+		return
+	}
+	root, data := mcp_bad_fixture_root('cancel-notify')
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(data) or {}
+	}
+	script := os.join_path(root, 'fixture.mjs')
+	os.write_file(script, "import readline from 'node:readline';\n" +
+		'const lines = readline.createInterface({ input: process.stdin });\n' +
+		'for await (const line of lines) {\n' +
+		"  if (line.includes('notifications/cancelled')) {\n" +
+		"    process.stdout.write(JSON.stringify({ ok: true }) + '\\n');\n" +
+		'    break;\n' +
+		'  }\n' +
+		'}\n') or { panic(err) }
+	mut transport := start_plugin_mcp_transport(root, data, bad_mcp_server(node, script)) or {
+		panic(err)
+	}
+	defer {
+		transport.close()
+	}
+	transport.response_timeout = 5 * time.second
+	transport.send('{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"slow"}}') or {
+		panic(err)
+	}
+	assert transport.active_request_id == '42'
+	spawn fn (mut transport PluginMCPTransport) {
+		time.sleep(100 * time.millisecond)
+		transport.request_cancel()
+	}(mut transport)
+	frame := transport.receive() or {
+		assert err.msg() == 'cancelled'
+		assert transport.cancelled_notified
+		return
+	}
+	assert false, 'expected cancel before frame, got ${frame}'
+}

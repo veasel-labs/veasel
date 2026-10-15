@@ -17,14 +17,16 @@ const plugin_mcp_http_close_timeout = 250 * time.millisecond
 @[heap]
 struct PluginMCPHTTPTransport {
 mut:
-	url                string
-	headers            map[string]string
-	session_id         string
-	protocol_version   string
-	pending            []string
-	cancel_requested   bool
-	active_request_id  string
-	cancelled_notified bool
+	url                 string
+	headers             map[string]string
+	session_id          string
+	protocol_version    string
+	pending             []string
+	cancel_requested    bool
+	active_request_id   string
+	cancelled_notified  bool
+	last_auth_challenge MCPAuthChallenge
+	has_auth_challenge  bool
 }
 
 fn new_plugin_mcp_http_transport(server PluginMCPServer) !&PluginMCPHTTPTransport {
@@ -39,6 +41,21 @@ fn new_plugin_mcp_http_transport(server PluginMCPServer) !&PluginMCPHTTPTranspor
 
 fn (mut transport PluginMCPHTTPTransport) request_cancel() {
 	transport.cancel_requested = true
+}
+
+fn (mut transport PluginMCPHTTPTransport) record_http_auth_challenge(www_authenticate string) {
+	transport.has_auth_challenge = false
+	transport.last_auth_challenge = MCPAuthChallenge{}
+	challenge := parse_www_authenticate_bearer(www_authenticate) or { return }
+	transport.last_auth_challenge = challenge
+	transport.has_auth_challenge = true
+}
+
+fn (transport &PluginMCPHTTPTransport) authorization_required_error() string {
+	if transport.has_auth_challenge {
+		return 'MCP HTTP authorization required (${mcp_auth_challenge_summary(transport.last_auth_challenge)})'
+	}
+	return 'MCP HTTP authorization required'
 }
 
 fn (mut transport PluginMCPHTTPTransport) emit_cancelled_notification() {
@@ -132,6 +149,12 @@ fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 	}
 	if response.status_code in 300 .. 400 {
 		return error('MCP HTTP redirects are disabled to protect configured headers')
+	}
+	if response.status_code == 401 {
+		www_authenticate := response.header.get(.www_authenticate) or { '' }
+		transport.record_http_auth_challenge(www_authenticate)
+		transport.pending.clear()
+		return error(transport.authorization_required_error())
 	}
 	if response.body.len > max_plugin_mcp_http_body_bytes {
 		return error('MCP HTTP response exceeds the message size limit')

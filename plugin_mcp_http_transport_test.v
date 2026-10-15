@@ -20,7 +20,7 @@ fn (mut fixture PluginMCPHTTPFixture) handle(request http.Request) http.Response
 		fixture.unauthorized_hits++
 		response.set_status(.unauthorized)
 		response.header.set(.content_type, 'text/plain')
-		response.header.set_custom('WWW-Authenticate', 'Bearer realm="fixture"') or {}
+		response.header.set(.www_authenticate, 'Bearer realm="fixture", resource_metadata="https://auth.example/.well-known/oauth-protected-resource"')
 		response.body = 'authentication required'
 		return response
 	}

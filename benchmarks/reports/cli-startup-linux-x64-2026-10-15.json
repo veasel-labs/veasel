@@ -1,0 +1,234 @@
+{
+  "schema": "veasel-cli-startup-benchmark/v1",
+  "scope": "process launch plus local --version and --help commands; no model requests",
+  "generated_at": "2026-10-15T19:53:24.870Z",
+  "platform": "linux",
+  "architecture": "x64",
+  "runtime": "Node.js v24.14.0",
+  "warmups": 3,
+  "requested_samples": 30,
+  "timeout_ms": 15000,
+  "memory": {
+    "unit": "kilobytes",
+    "method": "Linux resource.getrusage(RUSAGE_CHILDREN).ru_maxrss for an isolated child",
+    "scope": "Peak RSS for process launch only; not idle server, interactive TUI, or task working set",
+    "requested_samples": 15
+  },
+  "operations": {
+    "version": [
+      {
+        "id": "veasel-code",
+        "first_output_line": "Veasel Code 0.41.0-next.0",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 2.806,
+        "p50_ms": 3.035,
+        "p95_ms": 3.325,
+        "max_ms": 3.443,
+        "mean_ms": 3.062,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 13692,
+          "p50_kb": 14160,
+          "p95_kb": 14356,
+          "max_kb": 14356,
+          "mean_kb": 14139.5,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "claude-code",
+        "first_output_line": "2.1.296 (Claude Code)",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 9.926,
+        "p50_ms": 10.65,
+        "p95_ms": 11.369,
+        "max_ms": 11.609,
+        "mean_ms": 10.621,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 37288,
+          "p50_kb": 37704,
+          "p95_kb": 37736,
+          "max_kb": 37736,
+          "mean_kb": 37575.2,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "codex",
+        "first_output_line": "codex-cli 0.162.1",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 9.036,
+        "p50_ms": 9.744,
+        "p95_ms": 10.363,
+        "max_ms": 10.955,
+        "mean_ms": 9.775,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 26276,
+          "p50_kb": 26904,
+          "p95_kb": 27268,
+          "max_kb": 27268,
+          "mean_kb": 26837.9,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "opencode",
+        "first_output_line": "opencode v2.0.27",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 128.094,
+        "p50_ms": 134.325,
+        "p95_ms": 167.005,
+        "max_ms": 170.145,
+        "mean_ms": 137.989,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 75424,
+          "p50_kb": 76468,
+          "p95_kb": 76984,
+          "max_kb": 76984,
+          "mean_kb": 76367.5,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "pi",
+        "first_output_line": "0.85.1",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 261.661,
+        "p50_ms": 265.764,
+        "p95_ms": 277.764,
+        "max_ms": 289.746,
+        "mean_ms": 268.129,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 102764,
+          "p50_kb": 107964,
+          "p95_kb": 108760,
+          "max_kb": 108760,
+          "mean_kb": 107496.5,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      }
+    ],
+    "help": [
+      {
+        "id": "veasel-code",
+        "first_output_line": "Veasel Code 0.41.0-next.0",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 2.802,
+        "p50_ms": 3.28,
+        "p95_ms": 4.074,
+        "max_ms": 4.141,
+        "mean_ms": 3.322,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 13764,
+          "p50_kb": 14116,
+          "p95_kb": 14392,
+          "max_kb": 14392,
+          "mean_kb": 14076,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "claude-code",
+        "first_output_line": "Usage: claude [options] [command] [prompt]",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 86.315,
+        "p50_ms": 98.612,
+        "p95_ms": 124.279,
+        "max_ms": 128.793,
+        "mean_ms": 101.231,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 137900,
+          "p50_kb": 138848,
+          "p95_kb": 139360,
+          "max_kb": 139360,
+          "mean_kb": 138795.7,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "codex",
+        "first_output_line": "Codex CLI",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 9.433,
+        "p50_ms": 10.819,
+        "p95_ms": 12.649,
+        "max_ms": 14.049,
+        "mean_ms": 10.907,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 26536,
+          "p50_kb": 26924,
+          "p95_kb": 27456,
+          "max_kb": 27456,
+          "mean_kb": 26966.4,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "opencode",
+        "first_output_line": "DESCRIPTION",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 130.253,
+        "p50_ms": 141.065,
+        "p95_ms": 165.929,
+        "max_ms": 172.674,
+        "mean_ms": 144.734,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 75472,
+          "p50_kb": 76396,
+          "p95_kb": 76884,
+          "max_kb": 76884,
+          "mean_kb": 76300.5,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      },
+      {
+        "id": "pi",
+        "first_output_line": "pi - AI coding assistant with read, bash, edit, write tools",
+        "failures": 0,
+        "last_error": null,
+        "samples": 30,
+        "min_ms": 358.256,
+        "p50_ms": 386.547,
+        "p95_ms": 424.049,
+        "max_ms": 448.821,
+        "mean_ms": 389.448,
+        "rss_kb": {
+          "samples": 15,
+          "min_kb": 132236,
+          "p50_kb": 134808,
+          "p95_kb": 135840,
+          "max_kb": 135840,
+          "mean_kb": 134517.6,
+          "method": "Linux RUSAGE_CHILDREN.ru_maxrss (kilobytes)"
+        }
+      }
+    ]
+  },
+  "host_note": "Single Linux x64 workstation. Veasel binary: verified v0.41.0-next.0 from PATH."
+}

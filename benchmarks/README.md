@@ -47,27 +47,35 @@ VEASEL_BIN=/path/to/veasel VEASEL_BENCH_SAMPLES=30 VEASEL_BENCH_WARMUPS=3 \
 ```
 
 All non-Veasel CLIs must be on `PATH`. Missing or failing commands remain in
-the JSON report with zero or partial samples and a failure count. This narrow
-measurement covers process launch and CLI parsing only. It does not measure
-interactive rendering, model latency, coding-task quality, token cost, memory,
+the JSON report with zero or partial samples and a failure count. On Linux the
+harness also samples peak RSS via
+`resource.getrusage(RUSAGE_CHILDREN).ru_maxrss` (kilobytes) for each command
+unless `VEASEL_BENCH_RSS=0`. Set `VEASEL_BENCH_RSS_SAMPLES` to control RSS
+sample count (default: min(wall samples, 15)). This narrow measurement covers
+process launch and CLI parsing only. It does not measure interactive
+rendering, model latency, coding-task quality, token cost, idle-server memory,
 or end-to-end productivity and cannot establish that one coding agent is
 faster overall.
 
-### Recorded local baseline
+### Recorded local baselines
 
-The first 30-sample Linux x64 run is stored in
-[`reports/cli-startup-linux-x64-2026-10-12.json`](reports/cli-startup-linux-x64-2026-10-12.json).
-Its p50/p95 wall times were:
+| Report | Veasel binary | Notes |
+|---|---|---|
+| [`reports/cli-startup-linux-x64-2026-10-15.json`](reports/cli-startup-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Wall time (30 samples) + peak RSS (`ru_maxrss`) for `--version`/`--help` |
+| [`reports/cli-startup-rss-linux-x64-2026-10-15.json`](reports/cli-startup-rss-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Standalone RSS companion used while enriching the 2026-10-15 report |
+| [`reports/cli-startup-linux-x64-2026-10-12.json`](reports/cli-startup-linux-x64-2026-10-12.json) | `0.13.0-next.0` | Historical wall-time-only baseline |
 
-| CLI | `--version` p50 / p95 | `--help` p50 / p95 |
+2026-10-15 `--version` medians on one Linux x64 workstation:
+
+| CLI | p50 wall | p50 RSS |
 |---|---:|---:|
-| Veasel Code 0.13.0-next.0 | 3.034 / 3.452 ms | 3.070 / 3.442 ms |
-| Claude Code 2.1.285 | 10.582 / 12.331 ms | 86.912 / 93.886 ms |
-| Codex CLI 0.160.0 | 9.446 / 10.963 ms | 9.834 / 10.828 ms |
-| OpenCode 2.0.20 | 115.589 / 119.024 ms | 116.229 / 121.509 ms |
-| Pi 0.85.1 | 273.052 / 283.435 ms | 377.940 / 389.034 ms |
+| Veasel Code 0.41.0-next.0 | 3.035 ms | 14160 kB (~13.8 MiB) |
+| Claude Code 2.1.296 | 10.65 ms | 37704 kB |
+| Codex CLI 0.162.1 | 9.744 ms | 26904 kB |
+| OpenCode 2.0.27 | 134.325 ms | 76468 kB |
+| Pi 0.85.1 | 265.764 ms | 107964 kB |
 
-This is one workstation's CLI-only baseline, not a cross-machine benchmark or
-a comparison of interactive TUI readiness and coding-agent performance. Repeat
-it after changes and collect interactive, memory, and task-quality measures
-before making broader performance claims.
+
+These are single-workstation CLI-only baselines, not a cross-machine benchmark
+or a comparison of interactive TUI readiness and coding-agent performance.
+Repeat after changes before making broader performance claims.

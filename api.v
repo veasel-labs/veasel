@@ -221,6 +221,7 @@ pub:
 	model_settings        &ModelSettingsState
 	configured_mcp        &ConfiguredMCPState
 	plugin_components     &PluginComponentState
+	mcp_credentials       &MCPCredentialState
 	allow_autonomous      bool
 }
 
@@ -236,6 +237,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		model_settings:           new_model_settings_state(store.model_settings_path())
 		configured_mcp:           new_configured_mcp_state(store.configured_mcp_path())
 		plugin_components:        new_plugin_component_state(store.plugin_components_path())
+		mcp_credentials:          new_mcp_credential_state(store.mcp_credentials_path())
 		allow_autonomous:         os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		session_turn_locks:       session_turn_locks
 		operation_registry:       &TurnOperationRegistry{
@@ -658,6 +660,42 @@ pub fn (app &App) patch_plugin_component(mut ctx Context) veb.Result {
 	mut state := app.plugin_components
 	view := state.set_enabled(input) or { return json_request_error(mut ctx, err.msg()) }
 	return ctx.json(view)
+}
+
+@['/v1/mcp-credentials'; get]
+pub fn (app &App) list_mcp_credentials(mut ctx Context) veb.Result {
+	mut state := app.mcp_credentials
+	return ctx.json(state.view())
+}
+
+@['/v1/mcp-credentials'; post]
+pub fn (app &App) upsert_mcp_credential(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 64_000 {
+		return json_request_error(mut ctx, 'MCP credential exceeds the size limit')
+	}
+	input := decode_mcp_credential_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut state := app.mcp_credentials
+	view := state.upsert(input) or { return json_request_error(mut ctx, err.msg()) }
+	return ctx.json(view)
+}
+
+@['/v1/mcp-credentials/:name'; delete]
+pub fn (app &App) remove_mcp_credential(mut ctx Context, name string) veb.Result {
+	mut state := app.mcp_credentials
+	state.remove(name) or {
+		if err.msg() == 'MCP credential not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(MCPCredentialRemoval{
+		removed: name
+	})
 }
 
 @['/v1/mcp-servers'; get]

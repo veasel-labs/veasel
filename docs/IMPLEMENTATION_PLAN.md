@@ -194,8 +194,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `configured/<name>`. Precedence: project > project-import > user. The
   client namespace `com.veasel.code` records an optional `display_name` and
   whether its directory stays inside the package; it does not read that
-  directory. Remaining gaps (OAuth, GET notification streams,
-  `notifications/cancelled`) are tracked in
+  directory.   Named Streamable HTTP credentials are available via `/v1/mcp-credentials`
+  (`mcp.credentials`). Remaining gaps (OAuth discovery, GET notification
+  streams, `notifications/cancelled`) are tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
@@ -225,7 +226,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `user|project`, capability `mcp.servers.configured`, synthetic catalog
   package `configured`, trust as `configured/<name>`. Per-call approval is
   unchanged. Headless `veasel mcp list|add|enable|disable|remove` manages the
-  same scopes via the local API. OAuth and `notifications/cancelled` remain open.
+  same scopes via the local API. Named HTTP credentials via
+  `/v1/mcp-credentials`. OAuth discovery and `notifications/cancelled` remain
+  open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

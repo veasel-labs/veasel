@@ -264,9 +264,17 @@ fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCom
 
 fn run_approved_shell_command_with_policy(root string, command ShellCommandSummary,
 	sanitize_environment bool) ShellCommandResult {
-	// Reviewers may pass a non-canonical path (for example /var vs /private/var
-	// on macOS). Compare against real_path so equivalent roots still run, while
-	// rejecting a root that re-resolves to a different safe location.
+	// Sessions store a real_path workspace root. If that path is later replaced
+	// by a symlink (or otherwise re-bound), refuse before starting a process.
+	// Non-canonical reviewer inputs still resolve through real_path below so
+	// macOS /var vs /private/var equivalents keep working.
+	if os.is_link(root) {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    'The reviewed workspace root now resolves to a different path; no process was started.'
+		}
+	}
 	expected_root := os.real_path(root)
 	canonical_root := canonical_workspace_root(root) or {
 		return ShellCommandResult{

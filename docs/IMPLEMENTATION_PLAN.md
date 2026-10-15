@@ -127,12 +127,21 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   unavailable without authoritative price schedules.
 - [x] Aggregate those reported totals per session on `GET /v1/sessions/{id}/usage`
   and surface them through the TUI `/usage` command without inventing cost.
+- [x] Persist provider-reported prompt-cache counters (`cache_read_tokens`,
+  `cache_creation_tokens`) when adapters see provider cache fields; expose them
+  on operations, turn completion events, ChatExchange, session usage, TUI
+  `/usage`, headless JSON/stderr, and opt-in ATIF `final_metrics`. Capability
+  `sessions.usage.prompt_cache` advertises accounting only—no invented savings
+  and no claim that request-side cache breakpoints are enabled. Field mapping
+  pin: `docs/compatibility/prompt-cache-accounting.md`.
 - [x] Theme the OpenTUI shell to the mint product look (charcoal panels, mint
   accents, LOCAL cue, session markers) and let operators switch among mint,
   ember, slate, mono, and aurora via `/theme`, with the choice persisted under
   `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
 - [ ] General execution history and a durable usage/cost dashboard beyond
   per-session reported tokens and opt-in ATIF `final_metrics`.
+- [ ] Request-side prompt-cache breakpoints/headers (e.g. Anthropic
+  `cache_control`) with fixture evidence before claiming caching works.
 
 ### Milestone 4 — extensibility
 

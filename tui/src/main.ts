@@ -32,7 +32,13 @@ import {
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 import { formatPendingReviewStatus, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 
-import { formatReportedUsage, formatSessionUsageSummary, statusWithUsage, type SessionUsageSummary } from "./usage"
+import {
+  formatReportedCacheUsage,
+  formatReportedUsage,
+  formatSessionUsageSummary,
+  statusWithUsage,
+  type SessionUsageSummary,
+} from "./usage"
 import {
   formatThemeList,
   isThemeId,
@@ -135,6 +141,9 @@ type ChatExchange = {
   usage_reported?: boolean
   input_tokens?: number
   output_tokens?: number
+  cache_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
 }
 
 type SessionTurnAccepted = {
@@ -151,6 +160,9 @@ type SessionTurnCompletion = {
   usage_reported?: boolean
   input_tokens?: number
   output_tokens?: number
+  cache_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
 }
 
 type PluginCatalog = {
@@ -936,9 +948,15 @@ async function showSessionUsage() {
     const summary = await response.json() as SessionUsageSummary
     skillNotice = formatSessionUsageSummary(summary)
     renderChat(chatMessages)
-    status.content = summary.usage_reported
-      ? `● session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`
-      : "● session usage  ·  no provider-reported tokens yet"
+    if (summary.usage_reported) {
+      let usageLine = `● session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`
+      if (summary.cache_reported) {
+        usageLine += `  ·  ${formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0)}`
+      }
+      status.content = usageLine
+    } else {
+      status.content = "● session usage  ·  no provider-reported tokens yet"
+    }
     status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return

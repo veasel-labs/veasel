@@ -183,6 +183,20 @@ fn test_headless_usage_summary_includes_reported_tokens_only() {
 		usage_reported: true
 	})
 	assert with_usage == 'session 123e4567-e89b-42d3-a456-426614174000 · openai-compatible / fixture · 1200 in · 340 out'
+	with_cache := format_headless_usage_summary(HeadlessRunResult{
+		session_id:            '123e4567-e89b-42d3-a456-426614174000'
+		provider:              'anthropic'
+		model:                 'fixture'
+		input_tokens:          50
+		output_tokens:         10
+		usage_reported:        true
+		cache_read_tokens:     1000
+		cache_creation_tokens: 0
+		cache_reported:        true
+	})
+	assert with_cache.contains('50 in · 10 out')
+	assert with_cache.contains('1000 cache read · 0 cache write')
+	assert !with_cache.contains('%')
 }
 
 fn test_attach_headless_session_usage_skips_empty_session_ids() {

@@ -127,12 +127,15 @@ struct CancelTurnResponse {
 
 struct ChatExchange {
 pub:
-	messages       []ChatTurn
-	provider       string
-	model          string
-	input_tokens   i64  @[omitempty]
-	output_tokens  i64  @[omitempty]
-	usage_reported bool @[omitempty]
+	messages              []ChatTurn
+	provider              string
+	model                 string
+	input_tokens          i64  @[omitempty]
+	output_tokens         i64  @[omitempty]
+	usage_reported        bool @[omitempty]
+	cache_read_tokens     i64  @[omitempty]
+	cache_creation_tokens i64  @[omitempty]
+	cache_reported        bool @[omitempty]
 }
 
 struct SessionTurnAccepted {
@@ -143,16 +146,19 @@ pub:
 
 struct SessionOperationResult {
 pub:
-	session_id     string
-	operation_id   string
-	status         string
-	provider       string
-	model          string
-	content        string
-	trajectory     string @[omitempty]
-	input_tokens   i64    @[omitempty]
-	output_tokens  i64    @[omitempty]
-	usage_reported bool   @[omitempty]
+	session_id            string
+	operation_id          string
+	status                string
+	provider              string
+	model                 string
+	content               string
+	trajectory            string @[omitempty]
+	input_tokens          i64    @[omitempty]
+	output_tokens         i64    @[omitempty]
+	usage_reported        bool   @[omitempty]
+	cache_read_tokens     i64    @[omitempty]
+	cache_creation_tokens i64    @[omitempty]
+	cache_reported        bool   @[omitempty]
 }
 
 struct CompletionResponse {
@@ -904,16 +910,27 @@ pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
 		return json_server_error(mut ctx, 'Unable to read assistant operation result')
 	}
 	return ctx.json(SessionOperationResult{
-		session_id:     id
-		operation_id:   canonical_id
-		status:         operation.status
-		provider:       operation.provider
-		model:          operation.model
-		content:        content
-		trajectory:     app.store.operation_trace(id, canonical_id) or { '' }
-		input_tokens:   if operation.usage_reported { operation.input_tokens } else { 0 }
-		output_tokens:  if operation.usage_reported { operation.output_tokens } else { 0 }
-		usage_reported: operation.usage_reported
+		session_id:            id
+		operation_id:          canonical_id
+		status:                operation.status
+		provider:              operation.provider
+		model:                 operation.model
+		content:               content
+		trajectory:            app.store.operation_trace(id, canonical_id) or { '' }
+		input_tokens:          if operation.usage_reported { operation.input_tokens } else { 0 }
+		output_tokens:         if operation.usage_reported { operation.output_tokens } else { 0 }
+		usage_reported:        operation.usage_reported
+		cache_read_tokens:     if operation.cache_reported {
+			operation.cache_read_tokens
+		} else {
+			0
+		}
+		cache_creation_tokens: if operation.cache_reported {
+			operation.cache_creation_tokens
+		} else {
+			0
+		}
+		cache_reported:        operation.cache_reported
 	})
 }
 
@@ -1301,12 +1318,23 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 		return error('unable to persist session messages')
 	}
 	return ChatExchange{
-		messages:       persisted
-		provider:       output.provider
-		model:          output.model
-		input_tokens:   if result.usage.reported { result.usage.input_tokens } else { 0 }
-		output_tokens:  if result.usage.reported { result.usage.output_tokens } else { 0 }
-		usage_reported: result.usage.reported
+		messages:              persisted
+		provider:              output.provider
+		model:                 output.model
+		input_tokens:          if result.usage.reported { result.usage.input_tokens } else { 0 }
+		output_tokens:         if result.usage.reported { result.usage.output_tokens } else { 0 }
+		usage_reported:        result.usage.reported
+		cache_read_tokens:     if result.usage.cache_reported {
+			result.usage.cache_read_tokens
+		} else {
+			0
+		}
+		cache_creation_tokens: if result.usage.cache_reported {
+			result.usage.cache_creation_tokens
+		} else {
+			0
+		}
+		cache_reported:        result.usage.cache_reported
 	}
 }
 

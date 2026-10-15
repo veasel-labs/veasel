@@ -215,7 +215,7 @@ paths:
   /v1/sessions/{id}/usage:
     get:
       operationId: getSessionUsage
-      description: Aggregates provider-reported input and output tokens for completed turns in this session. Turns without adapter-reported usage are counted but do not contribute token totals. Cost is always unavailable until Veasel pins authoritative price schedules.
+      description: Aggregates provider-reported input and output tokens for completed turns in this session. When adapters saw provider cache fields, also aggregates cache_read_tokens and cache_creation_tokens (provider-reported only; never estimated savings). Turns without adapter-reported usage are counted but do not contribute token totals. Cost is always unavailable until Veasel pins authoritative price schedules. Bytes/4 bounds elsewhere remain separate from these cache claims.
       parameters:
         - in: path
           name: id
@@ -1172,7 +1172,7 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, summarizer mode (extractive, native, llm, or *_fallback_extractive), optional provider usage when a summarizer adapter reported it, and an untrusted summary preview; durable chat history rows are not deleted. When a turn injects a repository map into the system prompt, session.repository_map records measured map bytes, a bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost is never estimated.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. When the provider payload included cache fields, completion also includes cache_reported with cache_read_tokens and cache_creation_tokens (provider-reported only). Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, summarizer mode (extractive, native, llm, or *_fallback_extractive), optional provider usage when a summarizer adapter reported it, and an untrusted summary preview; durable chat history rows are not deleted. When a turn injects a repository map into the system prompt, session.repository_map records measured map bytes, a bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost is never estimated.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -1212,7 +1212,7 @@ components:
           type: string
         features:
           type: array
-          description: Includes sessions.operations.list and sessions.operations.durable_queue for Prefer respond-async turns that persist as queued, resume after restart, and expose GET /v1/sessions/{id}/operations. sessions.operations.trace.atif_v1_8 covers opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings. session.compaction.summarizer appears when VEASEL_SESSION_COMPACTION_SUMMARIZER is native or llm (structured local summary or one no-tools LLM completion with extractive fallback). workspace.repository_map and session.repository_map advertise the extractive repository map (GET /v1/sessions/{id}/workspace/map and optional turn injection); sizes are measured UTF-8 bytes plus a bytes/4 bound, not provider usage or tree-sitter/PageRank parity.
+          description: Includes sessions.operations.list and sessions.operations.durable_queue for Prefer respond-async turns that persist as queued, resume after restart, and expose GET /v1/sessions/{id}/operations. sessions.operations.trace.atif_v1_8 covers opt-in successful operation trajectory export. Traces may contain prompt and workspace content. sessions.usage.prompt_cache means adapters persist provider-reported cache_read/cache_creation counters when present (OpenAI cached_tokens subset, Anthropic disjoint cache_*_input_tokens, Gemini cachedContentTokenCount); absent fields stay unreported and Veasel never invents savings. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings. session.compaction.summarizer appears when VEASEL_SESSION_COMPACTION_SUMMARIZER is native or llm (structured local summary or one no-tools LLM completion with extractive fallback). workspace.repository_map and session.repository_map advertise the extractive repository map (GET /v1/sessions/{id}/workspace/map and optional turn injection); sizes are measured UTF-8 bytes plus a bytes/4 bound, not provider usage or tree-sitter/PageRank parity.
           items:
             type: string
     ModelSettingsInput:
@@ -2057,7 +2057,7 @@ components:
           description: SQLite timestamp formatted as YYYY-MM-DD HH:MM:SS.
     SessionUsageSummary:
       type: object
-      required: [session_id, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cost]
+      required: [session_id, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, cost]
       properties:
         session_id: { type: string, format: uuid }
         completed_turns: { type: integer, minimum: 0 }
@@ -2067,6 +2067,17 @@ components:
         usage_reported:
           type: boolean
           description: True when at least one completed turn had provider-reported token counts.
+        cache_read_tokens:
+          type: integer
+          minimum: 0
+          description: Sum of provider-reported cache read/hit tokens across turns that set cache_reported. Not an estimated savings figure.
+        cache_creation_tokens:
+          type: integer
+          minimum: 0
+          description: Sum of provider-reported cache write/creation tokens across turns that set cache_reported.
+        cache_reported:
+          type: boolean
+          description: True when at least one completed turn included provider cache fields (including explicit zeros). False when providers omitted cache keys.
         cost:
           type: string
           const: unavailable
@@ -2155,6 +2166,17 @@ components:
         usage_reported:
           type: boolean
           description: True only when input_tokens and output_tokens came from the provider adapter. Cost remains unavailable.
+        cache_read_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported cache read/hit tokens when cache_reported is true.
+        cache_creation_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported cache write/creation tokens when cache_reported is true.
+        cache_reported:
+          type: boolean
+          description: True only when the provider payload included cache-related usage fields. Never invents hits or savings.
     SessionTurnAccepted:
       type: object
       required: [operation_id, status]
@@ -2193,6 +2215,17 @@ components:
         usage_reported:
           type: boolean
           description: True only when input_tokens and output_tokens came from the provider adapter. Veasel does not estimate tokens or cost.
+        cache_read_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported cache read/hit tokens when cache_reported is true.
+        cache_creation_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported cache write/creation tokens when cache_reported is true.
+        cache_reported:
+          type: boolean
+          description: True only when the provider payload included cache-related usage fields.
         created_at: { type: string }
         updated_at: { type: string }
     SessionOperationResult:
@@ -2219,6 +2252,17 @@ components:
         usage_reported:
           type: boolean
           description: True only when input_tokens and output_tokens came from the provider adapter. Cost remains unavailable.
+        cache_read_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported cache read/hit tokens when cache_reported is true.
+        cache_creation_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported cache write/creation tokens when cache_reported is true.
+        cache_reported:
+          type: boolean
+          description: True only when the provider payload included cache-related usage fields.
     Error:
       type: object
       required: [error]

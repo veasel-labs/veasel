@@ -64,11 +64,16 @@ OpenCode's prompt, compaction, or permission model.
 
 Rechecked usage accounting on 2026-10-15 at the same OpenCode commit in
 [`packages/core/src/session/usage.ts`](https://github.com/anomalyco/opencode/blob/37df62f4a1b6d89187a1169187a6cef10557c0ca/packages/core/src/session/usage.ts).
-That module normalizes provider token fields and multiplies them by Models.dev
-price tiers to produce USD cost. Veasel deliberately does not calculate cost
-without a pinned authoritative price schedule. It now persists adapter-reported
-input/output token totals on completed operations, completion events, ChatExchange,
-`veasel run` JSON, and the TUI status line when `usage.reported` is true.
+That module normalizes provider token fields (including `cache.read` /
+`cache.write`) and multiplies them by Models.dev price tiers to produce USD
+cost. Veasel deliberately does not calculate cost without a pinned authoritative
+price schedule. It now persists adapter-reported input/output token totals and,
+when providers include cache fields, `cache_read_tokens` /
+`cache_creation_tokens` on completed operations, completion events, ChatExchange,
+session usage, `veasel run` JSON, ATIF `final_metrics`, and the TUI `/usage`
+view when `usage.reported` / `cache_reported` are true. Field mapping pin:
+[`compatibility/prompt-cache-accounting.md`](compatibility/prompt-cache-accounting.md).
+Request-side cache breakpoints remain open.
 
 ### Codex CLI — concurrent work, ordered transcript, independent sandbox policy
 

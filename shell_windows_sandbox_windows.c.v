@@ -89,7 +89,7 @@ fn run_windows_sandboxed_shell_command(root string, cwd string, command ShellCom
 		C.veasel_win_sandbox_result_free(&result)
 	}
 	if ok == 0 || result.setup_failed != 0 {
-		mut message := unsafe { result.error_message.vstring() }
+		mut message := unsafe { cstring_to_vstring(&char(&result.error_message[0])) }
 		if message.len == 0 {
 			message = '${purpose} failed to start inside a Windows Job Object; no unsandboxed fallback was started.'
 		}

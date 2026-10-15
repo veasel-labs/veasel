@@ -131,10 +131,13 @@ fn test_operation_trace_records_partial_trajectory() {
 
 fn test_atif_trace_encodes_reported_usage_metrics() {
 	usage := ProviderUsage{
-		input_tokens:  24
-		output_tokens: 12
-		total_tokens:  36
-		reported:      true
+		input_tokens:          24
+		output_tokens:         12
+		total_tokens:          36
+		cache_read_tokens:     18
+		cache_creation_tokens: 2
+		cache_reported:        true
+		reported:              true
 	}
 	encoded := encode_atif_trace_with_usage('session-1', '0.1.0', 'fixture-model', [
 		ATIFStep{
@@ -148,12 +151,15 @@ fn test_atif_trace_encodes_reported_usage_metrics() {
 		json2.Any('{}')
 	}).str()) or { panic(err) }
 	assert (extra['token_usage'] or { json2.Any('') }) == json2.Any('reported')
+	assert (extra['prompt_cache'] or { json2.Any('') }) == json2.Any('reported')
 	assert (extra['cost'] or { json2.Any('') }) == json2.Any('unavailable')
 	metrics := json2.decode[map[string]json2.Any]((trajectory['final_metrics'] or {
 		json2.Any('{}')
 	}).str()) or { panic(err) }
 	assert (metrics['total_prompt_tokens'] or { json2.Any(0) }).int() == 24
 	assert (metrics['total_completion_tokens'] or { json2.Any(0) }).int() == 12
+	assert (metrics['cache_read_tokens'] or { json2.Any(0) }).int() == 18
+	assert (metrics['cache_creation_tokens'] or { json2.Any(0) }).int() == 2
 	assert 'total_tokens' !in metrics
 	without_usage := encode_atif_trace('session-1', '0.1.0', 'fixture-model', [
 		ATIFStep{
@@ -163,4 +169,17 @@ fn test_atif_trace_encodes_reported_usage_metrics() {
 		},
 	]) or { panic(err) }
 	assert !without_usage.contains('final_metrics')
+	no_cache := encode_atif_trace_with_usage('session-1', '0.1.0', 'fixture-model', [
+		ATIFStep{
+			step_id: 1
+			source:  'user'
+			message: 'Read src/main.v'
+		},
+	], 'completed', ProviderUsage{
+		input_tokens:  8
+		output_tokens: 4
+		reported:      true
+	}) or { panic(err) }
+	assert no_cache.contains('"prompt_cache":"unavailable"')
+	assert !no_cache.contains('cache_read_tokens')
 }

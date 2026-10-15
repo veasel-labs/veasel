@@ -74,10 +74,11 @@ v run .
 ```
 
 With no subcommand, Veasel reuses a healthy backend at `127.0.0.1:4097`, or
-starts `veasel serve` and waits for health before opening the TUI. Press `s`
-(or `/models` in a session) to pick a provider, authenticate when needed, and
-choose a model. Use `/theme` to switch among mint, ember, slate, mono, and
-aurora.
+starts `veasel serve` and waits for health before opening the TUI. Use
+`/connect` to paste an API key, save it on this machine, and pick a model —
+no environment variables required. Press `s` or `/models` for full provider
+settings (endpoint and output budget). Use `/theme` to switch among mint,
+ember, slate, mono, and aurora.
 
 Headless turn with the same local server and approval rules:
 
@@ -121,16 +122,17 @@ Responses / local-server presets). See the
 [complete provider catalog](docs/PROVIDERS.md). Preset count is not the same
 as independent protocol implementations.
 
-Settings discovers models when the catalog exposes a list; Ctrl+U edits an
-endpoint; Ctrl+O edits the output-token budget. Keys are stored locally in
-plaintext under `$VEASEL_DATA_DIR/model-settings.json` (owner-only on POSIX)
-unless you use environment credentials. `VEASEL_API_URL` is accepted only for
-unauthenticated loopback HTTP. The API rejects non-loopback `Host` values and
-non-loopback browser `Origin` headers.
+`/connect` is the happy path for credentials and model selection; `/models`
+adds endpoint and budget controls (Ctrl+U / Ctrl+O). Keys are stored locally
+in plaintext under `$VEASEL_DATA_DIR/model-settings.json` (owner-only on
+POSIX). Saved profile keys win over environment variables for the same
+provider; env remains an optional alternative. `VEASEL_API_URL` is accepted
+only for unauthenticated loopback HTTP. The API rejects non-loopback `Host`
+values and non-loopback browser `Origin` headers; settings views expose
+`api_key_saved` only, never the raw key.
 
 Custom endpoints must use HTTPS or loopback HTTP. Meta uses Responses with
-high reasoning where supported; saved profile keys prefer environment
-variables when local plaintext storage is not acceptable.
+high reasoning where supported.
 
 </details>
 

@@ -13,12 +13,12 @@ import {
   type TextChunk,
 } from "@opentui/core"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
-import { isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
+import { isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
-import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
+import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
 import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
@@ -312,7 +312,7 @@ detail.add(portraitRenderable)
 const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: theme.brand })
 detail.add(brandLabel)
 const sessionDetail = new TextRenderable(renderer, {
-  content: "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again.",
+  content: "Your V-powered coding companion.\n\nConnect provider · /connect\nPaste an API key, save it on this machine, then pick a model. Or press s for full provider settings.",
   fg: theme.body,
   wrapMode: "word",
 })
@@ -325,7 +325,14 @@ function appendSessionDetail(text: string) {
   sessionDetail.content = sessionDetail.plainText + text
 }
 
-const homeFooterHint = "n new · s models · /theme · /help · q quit (home)"
+const homeFooterHint = "n new · /connect · s models · /help · q quit (home)"
+
+function homeDetailContent(providersConfigured: boolean): string {
+  if (!providersConfigured) {
+    return "Your V-powered coding companion.\n\nConnect provider · /connect\nPaste an API key, save it on this machine, then pick a model. Or press s for full provider settings."
+  }
+  return "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or use /connect · s to manage providers."
+}
 
 function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
   if (step === 0) return "Tab group · Enter configure · Esc close"
@@ -381,6 +388,7 @@ let chatMessages: ChatTurn[] = []
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
 let settingsOpen = false
+let settingsMode: "connect" | "models" = "models"
 let settingsInput: InputRenderable | undefined
 let settingsSecretIndicator: TextRenderable | undefined
 let settingsProviderSelect: SelectRenderable | undefined
@@ -399,6 +407,7 @@ const settingsValues = { provider: "", model: "", base_url: "", api_key: "", cle
 let settingsEditEndpoint = false
 let settingsEditBudget = false
 let settingsDetourFrom: number | undefined
+let providersConfigured = false
 let slashContext: SlashCompletionContext = {}
 let slashContextLoading = false
 let slashContextAt = 0
@@ -479,6 +488,21 @@ function setTheme(id: ThemeId) {
   status.fg = theme.statusOk
 }
 
+async function refreshProviderSetupHint() {
+  try {
+    const response = await fetch(`${apiBase}/v1/config/model`, { signal: controller.signal })
+    if (!response.ok) return
+    const view = await response.json() as ModelSettingsView
+    providersConfigured = (view.configured_providers?.length ?? 0) > 0
+      || Object.keys(view.profiles ?? {}).length > 0
+    if (!settingsOpen && !activeSession) {
+      sessionDetail.content = homeDetailContent(providersConfigured)
+    }
+  } catch {
+    // Home still works without the settings probe.
+  }
+}
+
 async function refreshSessions() {
   try {
     const response = await fetch(`${apiBase}/v1/sessions`, { signal: controller.signal })
@@ -488,6 +512,10 @@ async function refreshSessions() {
     renderSessions()
     status.content = `● connected  ·  ${sessions.length} session${sessions.length === 1 ? "" : "s"}`
     status.fg = theme.statusOk
+    if (!settingsOpen && !activeSession) {
+      sessionDetail.content = homeDetailContent(providersConfigured)
+      void refreshProviderSetupHint()
+    }
   } catch (error) {
     if (controller.signal.aborted) return
     status.content = `● server unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
@@ -579,9 +607,14 @@ async function openSession(session: Session) {
     input.on(InputRenderableEvents.INPUT, () => updateSlashMenu(input.value))
     input.on(InputRenderableEvents.ENTER, (value) => {
       resetSlashMenu()
+      if (isConnectCommand(value)) {
+        input.value = ""
+        void openSettings("connect")
+        return
+      }
       if (isModelSettingsCommand(value)) {
         input.value = ""
-        void openSettings()
+        void openSettings("models")
         return
       }
       void sendMessage(value)
@@ -1490,7 +1523,7 @@ function beginCreate() {
 const settingPrompts = [
 	"Choose a provider. Veasel fills in the endpoint it already knows.",
 	"Custom endpoint. Enter keeps the endpoint Veasel is using. HTTPS is required except for loopback HTTP.",
-	"API key (hidden; Enter keeps a saved key, !clear removes it):",
+	"Paste your API key. Veasel saves it for this provider on this machine.",
 	"Choose a model returned by this provider, or enter an ID manually.",
 	"Maximum generated tokens (0 uses the default: 4,096 tokens, or Meta's own limit for Meta; Meta counts reasoning tokens in it):",
 ]
@@ -1505,7 +1538,8 @@ function currentSettingsPath() {
 
 function settingsTitle(step: number) {
   const progress = settingsProgress(currentSettingsPath(), step)
-  return `MODEL SETTINGS  /  ${progress.index} OF ${progress.total}`
+  const label = settingsMode === "connect" ? "CONNECT" : "MODEL SETTINGS"
+  return `${label}  /  ${progress.index} OF ${progress.total}`
 }
 
 function knownEndpointNote() {
@@ -1554,13 +1588,15 @@ function closeSettings(message = "Settings unchanged.") {
   settingsDetourFrom = undefined
   settingsValues.api_key = ""
   settingsOpen = false
+  settingsMode = "models"
   sidebar.visible = true
   portraitRenderable.visible = !activeSession
   brandLabel.visible = !activeSession
   footerHint.content = homeFooterHint
-  sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
+  sessionDetail.content = homeDetailContent(providersConfigured)
   status.content = `● ${message}`
   status.fg = theme.statusOk
+  if (!activeSession) void refreshProviderSetupHint()
   if (activeSession) {
     const session = activeSession
     chatInput = undefined
@@ -1584,17 +1620,23 @@ function showSettingsStep(manualModel = false) {
   const providerInfo = settingsView?.providers.find((provider) => provider.id === settingsValues.provider)
   const prior = settingsView?.profiles[settingsValues.provider]
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
-  const hint = settingsStep === 2
-    ? `\n\n${prior?.api_key_saved ? "A key is already saved for this provider." : "No key is saved for this provider."}${providerInfo?.environment_key ? ` Use ${providerInfo.environment_key} instead of saving a key.` : ""} Key characters are hidden.`
-    : ""
+  const credential = settingsStep === 2
+    ? credentialStepCopy({
+      apiKeySaved: Boolean(prior?.api_key_saved),
+      environmentKey: providerInfo?.environment_key || undefined,
+    })
+    : undefined
+  const hint = credential?.hint ?? ""
+  const stepPrompt = settingsStep === 2 && credential ? credential.prompt : settingPrompts[settingsStep]
   const providerSearchHint = settingsStep === 0
     ? `\n\n${providerPickerScopeLabel(settingsProviderScope)} providers · ${settingsProviderQuery ? `Filter: ${settingsProviderQuery}` : "search by name, model, or key"}`
     : ""
   const navigationHint = settingsStep === 0
     ? "Enter selects · Esc cancels"
     : "Enter continues · Ctrl+B goes back · Esc cancels"
-  sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${settingPrompts[settingsStep]}${knownEndpointNote()}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
-  status.content = `● provider settings · ${settingsTitle(settingsStep).replace("MODEL SETTINGS  /  ", "")}`
+  sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${stepPrompt}${knownEndpointNote()}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
+  const modeLabel = settingsMode === "connect" ? "connect" : "provider settings"
+  status.content = `● ${modeLabel} · ${settingsTitle(settingsStep).replace(/^CONNECT  \/  |^MODEL SETTINGS  \/  /, "")}`
   status.fg = theme.statusOk
   const endpointShortcut = settingsStep > 0 && !settingsEditEndpoint && providerHasKnownEndpoint(providerInfo ?? { base_url: "" })
   const budgetShortcut = settingsStep > 0 && settingsStep !== 4
@@ -1805,10 +1847,11 @@ async function loadProviderModels() {
   showSettingsStep()
 }
 
-async function openSettings() {
+async function openSettings(mode: "connect" | "models" = "models") {
   if (settingsOpen || creating || sendingMessage) return
   settingsOpen = true
-  status.content = "● provider settings"
+  settingsMode = mode
+  status.content = mode === "connect" ? "● connect" : "● provider settings"
   status.fg = theme.statusOk
   sidebar.visible = false
   portraitRenderable.visible = false
@@ -1822,6 +1865,8 @@ async function openSettings() {
     const response = await fetch(`${apiBase}/v1/config/model`, { signal: controller.signal })
     if (!response.ok) throw new Error("settings API unavailable")
     settingsView = await response.json() as ModelSettingsView
+    providersConfigured = (settingsView.configured_providers?.length ?? 0) > 0
+      || Object.keys(settingsView.profiles ?? {}).length > 0
     settingsStep = 0
     settingsValues.provider = settingsView.active_provider
     settingsValues.model = ""
@@ -1835,6 +1880,9 @@ async function openSettings() {
     settingsModelSearchQuery = ""
     settingsModelHint = ""
     settingsManualModel = false
+    settingsEditEndpoint = false
+    settingsEditBudget = false
+    settingsDetourFrom = undefined
     showSettingsStep()
   } catch (error) {
     closeSettings(`could not load model settings · ${error instanceof Error ? error.message : "request failed"}`)
@@ -1857,7 +1905,11 @@ async function saveModelSettings() {
       throw new Error(body.error ?? "settings were rejected")
     }
     settingsValues.api_key = ""
-    closeSettings(`saved ${settingsValues.provider} · ${settingsValues.model}`)
+    providersConfigured = true
+    const savedMessage = settingsMode === "connect"
+      ? `connected ${settingsValues.provider}`
+      : `saved ${settingsValues.provider} · ${settingsValues.model}`
+    closeSettings(savedMessage)
   } catch (error) {
     settingsValues.api_key = ""
     closeSettings(`could not save settings · ${error instanceof Error ? error.message : "request failed"}`)
@@ -2137,9 +2189,10 @@ renderer.keyInput.on("keypress", (key) => {
       portraitRenderable.visible = true
       brandLabel.visible = true
       footerHint.content = homeFooterHint
-      sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again."
+      sessionDetail.content = homeDetailContent(providersConfigured)
       status.content = "● connected"
       status.fg = theme.statusOk
+      void refreshProviderSetupHint()
     }
     return
   }
@@ -2148,7 +2201,7 @@ renderer.keyInput.on("keypress", (key) => {
     beginCreate()
   }
   else if (key.name === "r") void refreshSessions()
-  else if (key.name === "s") void openSettings()
+  else if (key.name === "s") void openSettings("models")
   else if (key.name === "up" || key.name === "k") {
     selected = Math.max(0, selected - 1)
     renderSessions()

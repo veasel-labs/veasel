@@ -33,6 +33,7 @@ export type SlashSuggestion = SlashCommand & {
 export const slashCommands: SlashCommand[] = [
   { name: "/help", description: "Show the quick guide" },
   { name: "/help advanced", description: "Show full command syntax" },
+  { name: "/connect", description: "Paste an API key and pick a model for a provider" },
   { name: "/models", description: "Configure provider, model, and output budget" },
   { name: "/skills", description: "List Skills for this session" },
   { name: "/skill", description: "Turn a Skill on or off", usage: "/skill on|off <plugin>/<skill>" },

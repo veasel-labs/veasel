@@ -119,8 +119,13 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 	mut configured_providers := []string{}
 	for info in model_provider_catalog() {
 		profile := state.settings.profiles[info.id] or { ModelProfile{} }
-		api_key := non_empty_environment_value('VEASEL_MODEL_API_KEY') or {
-			non_empty_environment_value(info.environment_key) or { profile.api_key }
+		// Saved profile keys win over environment variables for the same provider.
+		api_key := if profile.api_key.trim_space().len > 0 {
+			profile.api_key
+		} else {
+			non_empty_environment_value('VEASEL_MODEL_API_KEY') or {
+				non_empty_environment_value(info.environment_key) or { '' }
+			}
 		}
 		if api_key.trim_space().len > 0 {
 			configured_providers << info.id
@@ -228,12 +233,16 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	profile := state.settings.profiles[provider] or { ModelProfile{} }
 	state.mu.unlock()
 	model := if profile.model.len > 0 { profile.model } else { fallback_model }
+	// Precedence: transient override → saved profile key → environment → none.
+	// Clearing a saved key intentionally falls back to environment only.
 	api_key := if key_override.len > 0 {
 		key_override
 	} else if clear_saved_key {
 		provider_api_key(provider) or { '' }
+	} else if profile.api_key.trim_space().len > 0 {
+		profile.api_key
 	} else {
-		provider_api_key(provider) or { profile.api_key }
+		provider_api_key(provider) or { '' }
 	}
 	base_url := if endpoint_override.trim_space().len > 0 {
 		endpoint_override

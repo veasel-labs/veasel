@@ -24,6 +24,8 @@ describe("slashSuggestions", () => {
     expect(names("/patch")[0]).toBe("/patch")
     expect(names("/mcp")[0]).toBe("/mcp")
     expect(names("/mcp c")).toEqual(["/mcp calls", "/mcp call"])
+    expect(names("/con")[0]).toBe("/connect")
+    expect(names("/connect")[0]).toBe("/connect")
   })
 
   test("is case-insensitive and tolerates repeated spaces", () => {

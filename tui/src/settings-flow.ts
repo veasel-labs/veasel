@@ -72,3 +72,21 @@ export function settingsProgress(path: number[], current: number): { index: numb
   const index = path.indexOf(current)
   return { index: index < 0 ? 1 : index + 1, total: path.length }
 }
+
+// Credential-step copy for /connect and /models. Env is an optional alternative;
+// saved keys are the primary path and win over env on the server.
+export function credentialStepCopy(options: {
+  apiKeySaved: boolean
+  environmentKey?: string
+}): { prompt: string; hint: string } {
+  const saved = options.apiKeySaved
+    ? "A key is already saved for this provider."
+    : "No key is saved for this provider."
+  const env = options.environmentKey
+    ? ` Or set ${options.environmentKey} on the server process if you prefer not to save a key.`
+    : ""
+  return {
+    prompt: "Paste your API key. Veasel saves it for this provider on this machine.",
+    hint: `\n\n${saved} Enter keeps an already-saved key. Type !clear to remove it.${env} Key characters are hidden.`,
+  }
+}

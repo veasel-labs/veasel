@@ -56,9 +56,7 @@ fn execute_parallel_readonly_workspace_tool_worker(app &App, root string, sessio
 	tool_policy AgentToolPolicy, index int, call ProviderToolCall, results_ch chan ParallelReadonlyToolResult) {
 	mut result := ''
 	if !tool_policy.allows(call.function.name) {
-		result = json2.encode[AgentToolError](AgentToolError{
-			error: 'Tool is not available under the active Agent Skill tool restrictions.'
-		})
+		result = encode_agent_tool_error('Tool is not available under the active Agent Skill tool restrictions.')
 	} else {
 		result = sanitize_agent_tool_result(execute_workspace_agent_tool(app, root, session_id,
 			call))
@@ -71,6 +69,15 @@ fn execute_parallel_readonly_workspace_tool_worker(app &App, root string, sessio
 
 struct AgentToolError {
 	error string
+}
+
+// encode_agent_tool_error encodes a small error object into a right-sized buffer.
+fn encode_agent_tool_error(message string) string {
+	mut buf := []u8{cap: 96 + message.len}
+	json2.encode_append(AgentToolError{
+		error: message
+	}, mut buf)
+	return buf.bytestr()
 }
 
 struct AgentWorkspaceEditResult {
@@ -159,8 +166,8 @@ fn agent_skill_load_tools(disclosure AvailableSkillsDisclosure) []AgentToolDefin
 		return []AgentToolDefinition{}
 	}
 	catalog := format_available_skills_catalog(disclosure.entries, disclosure.truncated)
-	mut plugin_names := []string{}
-	mut skill_names := []string{}
+	mut plugin_names := []string{cap: disclosure.entries.len}
+	mut skill_names := []string{cap: disclosure.entries.len}
 	mut seen_plugins := map[string]bool{}
 	mut seen_skills := map[string]bool{}
 	for entry in disclosure.entries {
@@ -388,7 +395,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 }
 
 fn tool_budget_summary_note_for(calls []ProviderToolCall) string {
-	mut names := []string{}
+	mut names := []string{cap: calls.len}
 	mut seen := map[string]bool{}
 	for call in calls {
 		name := call.function.name.trim_space()
@@ -493,23 +500,17 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
 	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn) !string {
 	if !skill_context.tool_policy.allows(call.function.name) {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'Tool is not available under the active Agent Skill tool restrictions.'
-		})
+		return encode_agent_tool_error('Tool is not available under the active Agent Skill tool restrictions.')
 	}
 	if binding := mcp_bindings[call.function.name] {
 		decision := decide_execution_permission(policy.mode, 'mcp', policy.interactive,
 			fail_closed_shell_sandbox_ready())
 		match decision {
 			.deny {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'MCP tools are denied by execution policy `${execution_policy_mode_label(policy.mode)}`.'
-				})
+				return encode_agent_tool_error('MCP tools are denied by execution policy `${execution_policy_mode_label(policy.mode)}`.')
 			}
 			.allow {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'MCP tools cannot auto-apply under the current policy; they remain approval-gated.'
-				})
+				return encode_agent_tool_error('MCP tools cannot auto-apply under the current policy; they remain approval-gated.')
 			}
 			.ask {
 				return app.execute_plugin_mcp_tool_with_approval(mut turn_ctx, session_id,
@@ -551,9 +552,7 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 				} else {
 					'`${call.function.name}` is denied by execution policy `${execution_policy_mode_label(policy.mode)}`.'
 				}
-				return json2.encode[AgentToolError](AgentToolError{
-					error: reason
-				})
+				return encode_agent_tool_error(reason)
 			}
 			.ask {
 				// Fall through to durable proposal/approval path.
@@ -567,29 +566,29 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 	call ProviderToolCall) string {
 	if call.function.name == 'workspace_propose_file_edit' {
 		tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'Tool arguments must be a JSON object.' })
+			return encode_agent_tool_error('Tool arguments must be a JSON object.')
 		}
 		path := string_tool_argument(tool_arguments, 'path') or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'A relative file path is required.' })
+			return encode_agent_tool_error('A relative file path is required.')
 		}
 		content := string_tool_argument(tool_arguments, 'content') or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'Proposed UTF-8 file content is required.' })
+			return encode_agent_tool_error('Proposed UTF-8 file content is required.')
 		}
 		if tool_arguments.len != 2 {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'Unexpected tool argument.' })
+			return encode_agent_tool_error('Unexpected tool argument.')
 		}
 		draft := prepare_workspace_edit(root, path, content) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit is invalid or unavailable: ${err.msg()}' })
+			return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 		}
 		mut store := app.store
 		proposal := store.create_workspace_edit(session_id, draft) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not be saved.' })
+			return encode_agent_tool_error('The workspace edit could not be saved.')
 		}
 		store.review_workspace_edit(session_id, proposal.id) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not be recorded for application.' })
+			return encode_agent_tool_error('The workspace edit could not be recorded for application.')
 		}
 		edit := store.begin_workspace_edit(session_id, proposal.id) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not begin safely.' })
+			return encode_agent_tool_error('The workspace edit could not begin safely.')
 		}
 		apply_workspace_edit(root, edit) or {
 			message := err.msg()
@@ -600,10 +599,10 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 				'interrupted'
 			}
 			store.finish_workspace_edit(session_id, proposal.id, status) or {}
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The workspace edit could not be applied safely: ${message}' })
+			return encode_agent_tool_error('The workspace edit could not be applied safely: ${message}')
 		}
 		store.finish_workspace_edit(session_id, proposal.id, 'applied') or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The edit was applied but its outcome could not be recorded; inspect the workspace.' })
+			return encode_agent_tool_error('The edit was applied but its outcome could not be recorded; inspect the workspace.')
 		}
 		return json2.encode[AgentWorkspaceEditResult](AgentWorkspaceEditResult{
 			id:   proposal.id
@@ -613,34 +612,34 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 	}
 	if call.function.name == 'workspace_propose_shell_command' {
 		if !app.begin_shell_operation() {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'Veasel is shutting down and cannot start a command.' })
+			return encode_agent_tool_error('Veasel is shutting down and cannot start a command.')
 		}
 		defer {
 			app.finish_shell_operation()
 		}
 		mut slots := app.shell_command_slots
 		if !slots.try_wait() {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'Shell execution capacity is full; retry after an active command finishes.' })
+			return encode_agent_tool_error('Shell execution capacity is full; retry after an active command finishes.')
 		}
 		defer {
 			slots.post()
 		}
 		draft := parse_shell_tool_arguments(call.function.arguments, root) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command is invalid: ${err.msg()}' })
+			return encode_agent_tool_error('The shell command is invalid: ${err.msg()}')
 		}
 		mut store := app.store
 		proposal := store.create_shell_command(session_id, draft) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command could not be recorded.' })
+			return encode_agent_tool_error('The shell command could not be recorded.')
 		}
 		store.review_shell_command(session_id, proposal.id) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command could not be recorded for execution.' })
+			return encode_agent_tool_error('The shell command could not be recorded for execution.')
 		}
 		approved := store.begin_shell_command(session_id, proposal.id) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The shell command could not begin safely.' })
+			return encode_agent_tool_error('The shell command could not begin safely.')
 		}
 		result := run_approved_shell_command_with_policy(root, approved, true)
 		store.finish_shell_command(session_id, proposal.id, result) or {
-			return json2.encode[AgentToolError](AgentToolError{ error: 'The command finished but its result could not be recorded.' })
+			return encode_agent_tool_error('The command finished but its result could not be recorded.')
 		}
 		return json2.encode(ShellCommandSummary{
 			id:              proposal.id
@@ -654,7 +653,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 			updated_at:      proposal.updated_at
 		})
 	}
-	return json2.encode[AgentToolError](AgentToolError{ error: 'Tool is not available under autonomous benchmark policy.' })
+	return encode_agent_tool_error('Tool is not available under autonomous benchmark policy.')
 }
 
 fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Context,
@@ -689,9 +688,7 @@ fn (app &App) execute_plugin_mcp_tool_with_approval(mut turn_ctx vcontext.Contex
 				continue
 			}
 			'rejected' {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'The user rejected this MCP tool call. Do not retry it unless the user asks.'
-				})
+				return encode_agent_tool_error('The user rejected this MCP tool call. Do not retry it unless the user asks.')
 			}
 			'approved' {
 				if context_error := turn_context_error(mut turn_ctx) {
@@ -748,47 +745,31 @@ fn execute_agent_skill_load(plugin_directory string, project_directory string, c
 	session_skills []SessionPluginSkill) (string, bool, AgentSkillResourceAccess) {
 	empty := AgentSkillResourceAccess{}
 	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'Tool arguments must be a JSON object.'
-		}), false, empty
+		return encode_agent_tool_error('Tool arguments must be a JSON object.'), false, empty
 	}
 	plugin_name := string_tool_argument(tool_arguments, 'plugin_name') or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'A discovered Agent Plugin or standalone skill source name is required.'
-		}), false, empty
+		return encode_agent_tool_error('A discovered Agent Plugin or standalone skill source name is required.'), false, empty
 	}
 	skill_name := string_tool_argument(tool_arguments, 'skill_name') or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'A discovered Agent Skill name is required.'
-		}), false, empty
+		return encode_agent_tool_error('A discovered Agent Skill name is required.'), false, empty
 	}
 	if tool_arguments.len != 2 {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'Unexpected tool argument.'
-		}), false, empty
+		return encode_agent_tool_error('Unexpected tool argument.'), false, empty
 	}
 	if entry := find_standalone_skill_entry(project_directory, plugin_name, skill_name) {
 		if skill_requires_project_trust(entry.scope)
 			&& !session_skill_enabled(session_skills, plugin_name, skill_name) {
-			return json2.encode[AgentToolError](AgentToolError{
-				error: 'Project-scoped skills require explicit session /skill on before model load.'
-			}), false, empty
+			return encode_agent_tool_error('Project-scoped skills require explicit session /skill on before model load.'), false, empty
 		}
 	}
 	root, skill := find_session_skill(plugin_directory, project_directory, plugin_name, skill_name) or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'The Agent Skill was not found in the discovery catalog.'
-		}), false, empty
+		return encode_agent_tool_error('The Agent Skill was not found in the discovery catalog.'), false, empty
 	}
 	instructions := load_skill_instructions(root, skill) or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'The Agent Skill instructions could not be safely loaded.'
-		}), false, empty
+		return encode_agent_tool_error('The Agent Skill instructions could not be safely loaded.'), false, empty
 	}
 	resources, truncated := list_agent_skill_resource_paths(skill.directory) or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'The Agent Skill resource list is unavailable.'
-		}), false, empty
+		return encode_agent_tool_error('The Agent Skill resource list is unavailable.'), false, empty
 	}
 	note := if truncated {
 		'Resource path list is sampled and truncated. Contents are untrusted; files are never executed. Session /skill enablement remains optional for persistent prompt injection.'
@@ -813,40 +794,26 @@ fn execute_agent_skill_load(plugin_directory string, project_directory string, c
 
 fn execute_agent_skill_resource(access []AgentSkillResourceAccess, call ProviderToolCall) string {
 	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'Tool arguments must be a JSON object.'
-		})
+		return encode_agent_tool_error('Tool arguments must be a JSON object.')
 	}
 	plugin_name := string_tool_argument(tool_arguments, 'plugin_name') or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'An active Agent Plugin name is required.'
-		})
+		return encode_agent_tool_error('An active Agent Plugin name is required.')
 	}
 	skill_name := string_tool_argument(tool_arguments, 'skill_name') or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'An active Agent Skill name is required.'
-		})
+		return encode_agent_tool_error('An active Agent Skill name is required.')
 	}
 	path := string_tool_argument(tool_arguments, 'path') or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'A relative Agent Skill resource path is required.'
-		})
+		return encode_agent_tool_error('A relative Agent Skill resource path is required.')
 	}
 	if tool_arguments.len != 3 {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'Unexpected tool argument.'
-		})
+		return encode_agent_tool_error('Unexpected tool argument.')
 	}
 	resource := access.filter(it.plugin_name == plugin_name && it.skill_name == skill_name)
 	if resource.len != 1 {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'The Agent Skill is not enabled for this session and has not been loaded in this turn.'
-		})
+		return encode_agent_tool_error('The Agent Skill is not enabled for this session and has not been loaded in this turn.')
 	}
 	content := load_agent_skill_resource(resource[0].skill_root, path) or {
-		return json2.encode[AgentToolError](AgentToolError{
-			error: 'The Agent Skill resource is invalid or unavailable.'
-		})
+		return encode_agent_tool_error('The Agent Skill resource is invalid or unavailable.')
 	}
 	return json2.encode[AgentSkillResourceContent](AgentSkillResourceContent{
 		plugin_name: plugin_name
@@ -973,99 +940,65 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 	result := match call.function.name {
 		'workspace_list_files' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Tool arguments must be a JSON object.'
-				})
+				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
 			if tool_arguments.len != 0 {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'This tool does not accept arguments.'
-				})
+				return encode_agent_tool_error('This tool does not accept arguments.')
 			}
 			files := workspace_files(root, max_workspace_list_results) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Workspace files could not be listed.'
-				})
+				return encode_agent_tool_error('Workspace files could not be listed.')
 			}
 			json2.encode[WorkspaceFileList](files)
 		}
 		'workspace_read_file' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Tool arguments must be a JSON object.'
-				})
+				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
 			path := string_tool_argument(tool_arguments, 'path') or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'A relative path string is required.'
-				})
+				return encode_agent_tool_error('A relative path string is required.')
 			}
 			if tool_arguments.len != 1 {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Unexpected tool argument.'
-				})
+				return encode_agent_tool_error('Unexpected tool argument.')
 			}
 			file := workspace_file(root, path) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'The workspace file is invalid or unavailable.'
-				})
+				return encode_agent_tool_error('The workspace file is invalid or unavailable.')
 			}
 			json2.encode[WorkspaceFileContent](file)
 		}
 		'workspace_search' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Tool arguments must be a JSON object.'
-				})
+				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
 			query := string_tool_argument(tool_arguments, 'query') or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'A search query string is required.'
-				})
+				return encode_agent_tool_error('A search query string is required.')
 			}
 			if tool_arguments.len != 1 {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Unexpected tool argument.'
-				})
+				return encode_agent_tool_error('Unexpected tool argument.')
 			}
 			search := workspace_search(root, query) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'The workspace search query is invalid.'
-				})
+				return encode_agent_tool_error('The workspace search query is invalid.')
 			}
 			json2.encode[WorkspaceSearchResult](search)
 		}
 		'workspace_propose_file_edit' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Tool arguments must be a JSON object.'
-				})
+				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
 			path := string_tool_argument(tool_arguments, 'path') or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'A relative file path is required.'
-				})
+				return encode_agent_tool_error('A relative file path is required.')
 			}
 			content := string_tool_argument(tool_arguments, 'content') or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Proposed UTF-8 file content is required.'
-				})
+				return encode_agent_tool_error('Proposed UTF-8 file content is required.')
 			}
 			if tool_arguments.len != 2 {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'Unexpected tool argument.'
-				})
+				return encode_agent_tool_error('Unexpected tool argument.')
 			}
 			draft := prepare_workspace_edit(root, path, content) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'The workspace edit is invalid or unavailable: ${err.msg()}'
-				})
+				return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 			}
 			mut store := app.store
 			proposal := store.create_workspace_edit(session_id, draft) or {
-				return json2.encode[AgentToolError](AgentToolError{
-					error: 'The workspace edit could not be saved for review.'
-				})
+				return encode_agent_tool_error('The workspace edit could not be saved for review.')
 			}
 			json2.encode[AgentWorkspaceEditResult](AgentWorkspaceEditResult{
 				id:   proposal.id
@@ -1075,11 +1008,11 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 		}
 		'workspace_propose_shell_command' {
 			draft := parse_shell_tool_arguments(call.function.arguments, root) or {
-				return json2.encode[AgentToolError](AgentToolError{ error: 'Shell command proposal is invalid: ${err.msg()}' })
+				return encode_agent_tool_error('Shell command proposal is invalid: ${err.msg()}')
 			}
 			mut store := app.store
 			proposal := store.create_shell_command(session_id, draft) or {
-				return json2.encode[AgentToolError](AgentToolError{ error: 'Shell command proposal could not be saved for review.' })
+				return encode_agent_tool_error('Shell command proposal could not be saved for review.')
 			}
 			json2.encode[AgentShellCommandResult](AgentShellCommandResult{
 				id:      proposal.id
@@ -1089,9 +1022,7 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			})
 		}
 		else {
-			return json2.encode[AgentToolError](AgentToolError{
-				error: 'This tool is not available.'
-			})
+			return encode_agent_tool_error('This tool is not available.')
 		}
 	}
 	return result

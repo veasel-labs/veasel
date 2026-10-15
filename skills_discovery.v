@@ -284,7 +284,7 @@ fn merge_standalone_skills_into_catalog(catalog PluginCatalog, discovery Standal
 		plugin_names[plugin.name] = true
 	}
 	mut by_source := map[string][]StandaloneSkill{}
-	mut source_order := []string{}
+	mut source_order := []string{cap: discovery.skills.len}
 	for skill in discovery.skills {
 		if skill.source !in by_source {
 			source_order << skill.source
@@ -662,7 +662,7 @@ fn list_standalone_skill_directories(root string, depth int) ![]string {
 		return []string{}
 	}
 	entries := os.ls(root) or { return error(err.msg()) }
-	mut skill_dirs := []string{}
+	mut skill_dirs := []string{cap: entries.len}
 	mut sorted := entries.clone()
 	sorted.sort()
 	for entry in sorted {
@@ -723,7 +723,7 @@ pub:
 
 fn available_skill_entries_from_catalog(catalog PluginCatalog, enabled_keys map[string]bool) ([]AvailableSkillEntry, bool) {
 	mut by_key := map[string]AvailableSkillEntry{}
-	mut keys := []string{}
+	mut keys := []string{cap: 32}
 	for plugin in catalog.plugins {
 		for skill in plugin.skills {
 			if !skill.enabled || skill.disable_model_invocation {

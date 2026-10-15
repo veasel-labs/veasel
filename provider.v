@@ -606,7 +606,7 @@ fn filter_provider_chat_models(provider string, models []ModelCatalogEntry) []Mo
 }
 
 fn parse_provider_model_catalog(protocol string, body string) ![]ModelCatalogEntry {
-	mut models := []ModelCatalogEntry{}
+	mut models := []ModelCatalogEntry{cap: max_provider_model_catalog_entries}
 	match protocol {
 		'openai-compatible', 'openai-responses' {
 			catalog := json2.decode[OpenAIModelCatalog](body) or {
@@ -1797,11 +1797,12 @@ fn expire_gemini_cached_content(config ModelConfig, name string) ! {
 fn build_gemini_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) GeminiRequest {
 	system, conversation := gemini_messages(messages)
 	mut declarations := []GeminiFunctionDeclaration{cap: tools.len}
+	mut scratch := new_json2_scratch()
 	for tool in tools {
 		declarations << GeminiFunctionDeclaration{
 			name:        tool.name
 			description: tool.description
-			parameters:  tool_parameters_json(tool)
+			parameters:  tool_parameters_json_reuse(tool, mut scratch)
 		}
 	}
 	return GeminiRequest{
@@ -1882,12 +1883,13 @@ fn openai_prompt_cache_fields(provider string) (string, string) {
 
 fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) OpenAIRequest {
 	mut openai_tools := []OpenAITool{cap: tools.len}
+	mut scratch := new_json2_scratch()
 	for tool in tools {
 		openai_tools << OpenAITool{
 			function: OpenAIFunction{
 				name:        tool.name
 				description: tool.description
-				parameters:  provider_tool_parameters(tool)
+				parameters:  provider_tool_parameters_reuse(tool, mut scratch)
 			}
 		}
 	}
@@ -1911,11 +1913,12 @@ fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools [
 fn build_openai_responses_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !OpenAIResponsesRequest {
 	input := openai_responses_input(messages)!
 	mut response_tools := []OpenAIResponsesTool{cap: tools.len}
+	mut scratch := new_json2_scratch()
 	for tool in tools {
 		response_tools << OpenAIResponsesTool{
 			name:        tool.name
 			description: tool.description
-			parameters:  provider_tool_parameters(tool)
+			parameters:  provider_tool_parameters_reuse(tool, mut scratch)
 		}
 	}
 	cache_key, cache_retention := openai_prompt_cache_fields(config.provider)
@@ -1985,11 +1988,12 @@ fn anthropic_system_blocks(system string, cache ?AnthropicCacheControl) []Anthro
 fn build_anthropic_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) AnthropicRequest {
 	system_text, conversation := anthropic_messages(messages)
 	mut anthropic_tools := []AnthropicTool{cap: tools.len}
+	mut scratch := new_json2_scratch()
 	for tool in tools {
 		anthropic_tools << AnthropicTool{
 			name:         tool.name
 			description:  tool.description
-			input_schema: provider_tool_parameters(tool)
+			input_schema: provider_tool_parameters_reuse(tool, mut scratch)
 		}
 	}
 	cache := anthropic_prompt_cache_control()
@@ -2011,9 +2015,9 @@ fn build_anthropic_request(config ModelConfig, messages []ChatMessage, tools []A
 }
 
 fn anthropic_messages(messages []ChatMessage) (string, []AnthropicRequestMessage) {
-	mut system := []string{}
+	mut system := []string{cap: messages.len}
 	mut conversation := []AnthropicRequestMessage{cap: messages.len}
-	mut pending_tool_results := []AnthropicContentBlock{}
+	mut pending_tool_results := []AnthropicContentBlock{cap: messages.len}
 	for message in messages {
 		if message.role == 'system' {
 			system << message.content
@@ -2032,19 +2036,19 @@ fn anthropic_messages(messages []ChatMessage) (string, []AnthropicRequestMessage
 				role:    'user'
 				content: pending_tool_results
 			}
-			pending_tool_results = []
+			pending_tool_results = []AnthropicContentBlock{cap: messages.len}
 		}
-		mut blocks := []AnthropicContentBlock{}
+		mut blocks := []AnthropicContentBlock{cap: 1 + message.tool_calls.len}
 		if message.content != '' {
 			blocks << AnthropicContentBlock{
 				type: 'text'
 				text: message.content
 			}
 		}
+		mut arg_scratch := json2.DecodeBuffer{}
 		for call in message.tool_calls {
-			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				map[string]json2.Any{}
-			}
+			tool_arguments := json2.decode_reuse[map[string]json2.Any](call.function.arguments, mut
+				arg_scratch) or { map[string]json2.Any{} }
 			blocks << AnthropicContentBlock{
 				type:  'tool_use'
 				id:    call.id
@@ -2074,31 +2078,64 @@ fn strict_tool_parameters(parameters ToolParameters) StrictToolParameters {
 	}
 }
 
-fn tool_parameters_json(tool AgentToolDefinition) json2.Any {
-	if tool.raw_parameters != '' {
-		return json2.decode[json2.Any](tool.raw_parameters) or { json2.Any{} }
+// Json2Scratch reuses encode destination capacity and decode token storage across
+// consecutive tool-schema conversions on one request-building path.
+struct Json2Scratch {
+mut:
+	enc []u8
+	dec json2.DecodeBuffer
+}
+
+fn new_json2_scratch() Json2Scratch {
+	return Json2Scratch{
+		enc: []u8{cap: 2048}
 	}
-	return json2.decode[json2.Any](json2.encode[ToolParameters](tool.parameters)) or { json2.Any{} }
+}
+
+fn (mut scratch Json2Scratch) decode_any(text string) json2.Any {
+	return json2.decode_reuse[json2.Any](text, mut scratch.dec) or { json2.Any{} }
+}
+
+fn (mut scratch Json2Scratch) encode_any[T](val T) json2.Any {
+	scratch.enc.clear()
+	json2.encode_append(val, mut scratch.enc)
+	return scratch.decode_any(scratch.enc.bytestr())
+}
+
+fn tool_parameters_json(tool AgentToolDefinition) json2.Any {
+	mut scratch := new_json2_scratch()
+	return tool_parameters_json_reuse(tool, mut scratch)
+}
+
+fn tool_parameters_json_reuse(tool AgentToolDefinition, mut scratch Json2Scratch) json2.Any {
+	if tool.raw_parameters != '' {
+		return scratch.decode_any(tool.raw_parameters)
+	}
+	return scratch.encode_any(tool.parameters)
 }
 
 fn provider_tool_parameters(tool AgentToolDefinition) json2.Any {
+	mut scratch := new_json2_scratch()
+	return provider_tool_parameters_reuse(tool, mut scratch)
+}
+
+fn provider_tool_parameters_reuse(tool AgentToolDefinition, mut scratch Json2Scratch) json2.Any {
 	if tool.raw_parameters != '' {
-		return json2.decode[json2.Any](tool.raw_parameters) or { json2.Any{} }
+		return scratch.decode_any(tool.raw_parameters)
 	}
-	return json2.decode[json2.Any](json2.encode[StrictToolParameters](strict_tool_parameters(tool.parameters))) or {
-		json2.Any{}
-	}
+	return scratch.encode_any(strict_tool_parameters(tool.parameters))
 }
 
 fn gemini_messages(messages []ChatMessage) (string, []GeminiContent) {
-	mut system := []string{}
+	mut system := []string{cap: messages.len}
 	mut conversation := []GeminiContent{cap: messages.len}
-	mut pending_tool_results := []GeminiPart{}
+	mut pending_tool_results := []GeminiPart{cap: messages.len}
+	mut decode_scratch := json2.DecodeBuffer{}
 	for message in messages {
 		if message.role == 'system' {
 			system << message.content
 		} else if message.role == 'tool' {
-			response := json2.decode[map[string]json2.Any](message.content) or {
+			response := json2.decode_reuse[map[string]json2.Any](message.content, mut decode_scratch) or {
 				{
 					'content': json2.Any(message.content)
 				}
@@ -2116,18 +2153,17 @@ fn gemini_messages(messages []ChatMessage) (string, []GeminiContent) {
 					role:  'user'
 					parts: pending_tool_results
 				}
-				pending_tool_results = []
+				pending_tool_results = []GeminiPart{cap: messages.len}
 			}
-			mut parts := []GeminiPart{}
+			mut parts := []GeminiPart{cap: 1 + message.tool_calls.len}
 			if message.content != '' {
 				parts << GeminiPart{
 					text: message.content
 				}
 			}
 			for call in message.tool_calls {
-				tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-					map[string]json2.Any{}
-				}
+				tool_arguments := json2.decode_reuse[map[string]json2.Any](call.function.arguments, mut
+					decode_scratch) or { map[string]json2.Any{} }
 				parts << GeminiPart{
 					function_call:     GeminiFunctionCall{
 						id:   call.provider_call_id

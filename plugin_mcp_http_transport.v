@@ -217,8 +217,10 @@ fn (mut transport PluginMCPHTTPTransport) send_with_auth_refresh(message string,
 		}
 	}
 	// Re-check after header assembly so a cancel that arrives while preparing
-	// the request never opens a socket. True TTFB-before-progress abort is
-	// still limited by net.http (no callback until bytes arrive).
+	// the request never opens a socket. Once fetch starts, cancel is observed
+	// on the first net.http progress callback (status/header bytes count);
+	// true TTFB-before-any-progress abort is a hard limit — see
+	// docs/compatibility/http-cancel-limits.md.
 	if transport.cancel_requested {
 		transport.emit_cancelled_notification()
 		return error('cancelled')
@@ -251,6 +253,14 @@ fn (mut transport PluginMCPHTTPTransport) send_with_auth_refresh(message string,
 			return error('cancelled')
 		}
 		return error(err.msg())
+	}
+	// Best-effort: if cancel arrived while net.http finished assembling the
+	// response (after the last progress callback), do not deliver pending RPC.
+	// True TTFB-before-any-progress abort remains a net.http hard limit; see
+	// docs/compatibility/http-cancel-limits.md.
+	if transport.cancel_requested {
+		transport.emit_cancelled_notification()
+		return error('cancelled')
 	}
 	if response.status_code in 300 .. 400 {
 		return error('MCP HTTP redirects are disabled to protect configured headers')
@@ -402,6 +412,9 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications_with_auth_refresh
 			return error('cancelled')
 		}
 		return error(err.msg())
+	}
+	if transport.cancel_requested {
+		return error('cancelled')
 	}
 	if response.status_code in [404, 405] {
 		return 0

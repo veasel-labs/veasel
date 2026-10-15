@@ -2280,7 +2280,9 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 
 // provider_sse_handle_progress checks turn cancellation on every body progress
 // callback, including non-2xx and pre-header status_code 0 chunks. True socket
-// abort before any progress callback remains limited by net.http.
+// abort before any progress callback remains a pinned net.http hard limit
+// (no external cancel handle / no TTFB observer); see
+// docs/compatibility/http-cancel-limits.md.
 fn provider_sse_handle_progress(mut stream_state ProviderSSERequestState, mut turn_ctx vcontext.Context,
 	chunk []u8, status_code int) ! {
 	stream_state.bytes += chunk.len

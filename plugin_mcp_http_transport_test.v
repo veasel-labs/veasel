@@ -12,10 +12,19 @@ mut:
 	redirect_target_hits int
 	unauthorized_hits    int
 	supports_2026        bool = true
+	slow_ttfb_delay      time.Duration
 }
 
 fn (mut fixture PluginMCPHTTPFixture) handle(request http.Request) http.Response {
 	mut response := http.Response{}
+	if request.url == '/slow-ttfb' && request.method == .post {
+		if fixture.slow_ttfb_delay > 0 {
+			time.sleep(fixture.slow_ttfb_delay)
+		}
+		response.header.set(.content_type, 'application/json')
+		response.body = '{"jsonrpc":"2.0","id":1,"result":{"ok":true}}'
+		return response
+	}
 	if request.url == '/mcp' && request.method == .get {
 		if !(request.header.get(.accept) or { '' }).contains('text/event-stream') {
 			response.set_status(.bad_request)
@@ -330,4 +339,45 @@ fn test_plugin_mcp_http_sse_parser_rejects_nul_bytes() {
 		return
 	}
 	assert false, 'expected NUL MCP HTTP SSE chunk to fail'
+}
+
+// Best-possible cancel under net.http: a cancel that arrives during server-side
+// TTFB delay cannot close the socket, but aborts on the first progress callback
+// once any response bytes arrive. See docs/compatibility/http-cancel-limits.md.
+fn test_plugin_mcp_http_transport_cancels_on_first_progress_after_slow_ttfb() {
+	mut fixture := &PluginMCPHTTPFixture{
+		slow_ttfb_delay: 250 * time.millisecond
+	}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut transport := new_plugin_mcp_http_transport(PluginMCPServer{
+		name:      'slow'
+		transport: 'streamable-http'
+		url:       'http://${server.addr}/slow-ttfb'
+	}) or { panic(err) }
+	spawn fn [mut transport] () {
+		time.sleep(40 * time.millisecond)
+		transport.request_cancel()
+	}()
+	transport.send('{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}') or {
+		assert err.msg() == 'cancelled'
+		assert transport.cancelled_notified
+		assert transport.active_request_id == '1'
+		return
+	}
+	assert false, 'slow-TTFB cancel must abort on first progress'
 }

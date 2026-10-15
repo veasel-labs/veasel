@@ -122,6 +122,21 @@ fn test_repository_map_boosts_directory_neighbors_of_mentions() {
 	assert result.text.contains('src/auth/tokens.v')
 }
 
+fn test_repository_map_boosts_cross_directory_same_stem_siblings() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-stems')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'lib', 'session.v'), 'module libsession\n\npub fn open_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'cmd', 'tools', 'session.v'), 'module cmdsession\n\npub fn run_session_tool() {}\n')
+	write_map_fixture_file(os.join_path(root, 'pkg', 'noise.v'), 'module noise\n\npub fn ignore_me() {}\n')
+	result := build_repository_map(root, 'Please read lib/session.v', 2_048) or { panic(err) }
+	assert result.ranked_paths.any(it.contains('cmd/tools/session.v') || it.ends_with('tools/session.v'))
+	assert result.text.contains('cmd/tools/session.v')
+}
+
 fn test_repository_map_respects_byte_budget_on_large_trees() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-large')
 	os.rmdir_all(root) or {}

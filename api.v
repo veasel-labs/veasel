@@ -586,6 +586,20 @@ pub fn (app &App) search_workspace(mut ctx Context, id string) veb.Result {
 	return ctx.json(result)
 }
 
+@['/v1/sessions/:id/workspace/git/worktrees'; get]
+pub fn (app &App) list_session_git_worktrees(mut ctx Context, id string) veb.Result {
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	catalog := list_workspace_git_worktrees(session.directory) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(catalog)
+}
+
 @['/v1/sessions/:id/workspace/map'; get]
 pub fn (app &App) get_workspace_repository_map(mut ctx Context, id string) veb.Result {
 	session := app.store.get_session(id) or {

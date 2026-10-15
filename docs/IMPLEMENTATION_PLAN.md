@@ -175,8 +175,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [ ] Complete the typed tool and provider interfaces, safe Git/worktree APIs,
   and versioned agent definitions. Workspace edit propose/apply already refuse
   when well-known git lock files are present under the checkout `.git`
-  directory or a linked worktree `gitdir:` path (`workspace_edits.v`); full
-  worktree create/list/remove APIs remain open.
+  directory or a linked worktree `gitdir:` path (`workspace_edits.v`). Read-only
+  worktree listing is available via `GET /v1/sessions/{id}/workspace/git/worktrees`
+  (capability `workspace.git.worktrees`, no `git` subprocess). Create/remove
+  worktree APIs remain open.
 
 - [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
   manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,

@@ -89,11 +89,13 @@ import {
 import {
   capitalizeWord,
   composerLineCursor,
+  downcaseWord,
   killLineForward,
   killWordBackward,
   killWordForward,
   moveWordCursor,
   transposeChars,
+  upcaseWord,
 } from "./composer-edit"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
@@ -3652,6 +3654,31 @@ renderer.keyInput.on("keypress", (key) => {
       key.preventDefault()
       key.stopPropagation()
       const edited = capitalizeWord(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
+        chatInput.focus()
+      }
+      return
+    }
+    // Alt+U / Alt+L upcase or downcase the current or next word (readline).
+    if ((key.meta && key.name === "u") || key.sequence === "\x1bu") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = upcaseWord(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
+        chatInput.focus()
+      }
+      return
+    }
+    if ((key.meta && key.name === "l") || key.sequence === "\x1bl") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = downcaseWord(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
         chatInput.value = edited.value
         chatInput.cursorOffset = edited.cursor

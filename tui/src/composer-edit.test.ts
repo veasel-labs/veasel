@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test"
 import {
   capitalizeWord,
   composerLineCursor,
+  downcaseWord,
   killLineForward,
   killWordBackward,
   killWordForward,
   moveWordCursor,
   transposeChars,
+  upcaseWord,
 } from "./composer-edit"
 
 describe("killWordBackward", () => {
@@ -59,6 +61,30 @@ describe("capitalizeWord", () => {
 
   test("treats accented Latin letters as part of the word", () => {
     expect(capitalizeWord("café latte", 0)).toEqual({ value: "Café latte", cursor: 4 })
+  })
+})
+
+describe("upcaseWord", () => {
+  test("uppercases the current or next word", () => {
+    expect(upcaseWord("hello world", 0)).toEqual({ value: "HELLO world", cursor: 5 })
+    expect(upcaseWord("hello world", 5)).toEqual({ value: "hello WORLD", cursor: 11 })
+  })
+
+  test("is a no-op at the end and on empty drafts", () => {
+    expect(upcaseWord("", 0)).toEqual({ value: "", cursor: 0 })
+    expect(upcaseWord("hello", 5)).toEqual({ value: "hello", cursor: 5 })
+  })
+})
+
+describe("downcaseWord", () => {
+  test("lowercases the current or next word", () => {
+    expect(downcaseWord("HELLO WORLD", 0)).toEqual({ value: "hello WORLD", cursor: 5 })
+    expect(downcaseWord("HELLO WORLD", 5)).toEqual({ value: "HELLO world", cursor: 11 })
+  })
+
+  test("is a no-op at the end and on empty drafts", () => {
+    expect(downcaseWord("", 0)).toEqual({ value: "", cursor: 0 })
+    expect(downcaseWord("HELLO", 5)).toEqual({ value: "HELLO", cursor: 5 })
   })
 })
 

@@ -138,6 +138,8 @@ mut:
 	mu   sync.Mutex
 	db   sqlite.DB
 	path string
+	// When > 0, overrides max_retained_terminal_session_operations (tests only).
+	terminal_ops_retention_limit int
 }
 
 struct InterruptedWorkspaceEdit {
@@ -1398,11 +1400,17 @@ fn (mut store Store) prune_terminal_session_operations_unlocked(session_id strin
 	if count_rows.len != 1 {
 		return
 	}
-	excess := count_rows[0].val(0).int() - max_retained_terminal_session_operations
+	limit := if store.terminal_ops_retention_limit > 0 {
+		store.terminal_ops_retention_limit
+	} else {
+		max_retained_terminal_session_operations
+	}
+	excess := count_rows[0].val(0).int() - limit
 	if excess <= 0 {
 		return
 	}
-	old_rows := store.db.exec_param_many("SELECT id FROM session_operations WHERE session_id = ? AND status IN ('completed', 'failed', 'cancelled', 'uncertain') ORDER BY created_at ASC, id ASC LIMIT ?",
+	// Prefer SQLite rowid so same-second completions still prune in insert order.
+	old_rows := store.db.exec_param_many("SELECT id FROM session_operations WHERE session_id = ? AND status IN ('completed', 'failed', 'cancelled', 'uncertain') ORDER BY rowid ASC LIMIT ?",
 		[session_id, excess.str()]) or { return }
 	for row in old_rows {
 		_ = store.db.exec_param('DELETE FROM operation_traces WHERE operation_id = ?', row.val(0)) or {

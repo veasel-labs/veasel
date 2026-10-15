@@ -1125,6 +1125,64 @@ fn test_claimed_queued_operation_becomes_uncertain_after_restart() {
 	assert recovered.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
+fn test_terminal_session_operations_prune_to_retention_limit_and_keep_active() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	store.terminal_ops_retention_limit = 3
+	session := store.create_session(SessionInput{
+		title:     'Prune retention'
+		directory: '/tmp/prune-retention'
+	}) or { panic(err) }
+
+	oldest_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, oldest_id) or { panic(err) }
+	_ = store.append_exchange(session.id, oldest_id, 'oldest', 'done', 'openai-compatible',
+		'fixture', '{"schema_version":"ATIF-v1.8","session_id":"prune"}', ProviderUsage{}) or {
+		panic(err)
+	}
+	_ = store.operation_trace(session.id, oldest_id) or { panic(err) }
+
+	mut kept_ids := []string{}
+	for _ in 0 .. 3 {
+		id := uuid.new_v4().str()
+		kept_ids << id
+		_ = store.create_session_operation(session.id, id) or { panic(err) }
+		store.record_session_turn_completion(session.id, id, 'cancelled', 'pruned room', '',
+			'') or { panic(err) }
+	}
+
+	running_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, running_id) or { panic(err) }
+	queued_id := uuid.new_v4().str()
+	_ = store.enqueue_session_operation(session.id, queued_id, '{"content":"still queued"}') or {
+		panic(err)
+	}
+
+	ops := store.list_session_operations(session.id) or { panic(err) }
+	terminals := ops.filter(it.status in ['completed', 'failed', 'cancelled', 'uncertain'])
+	assert terminals.len == 3
+	for id in kept_ids {
+		assert ops.any(it.id == id)
+	}
+	assert ops.any(it.id == running_id && it.status == 'running')
+	assert ops.any(it.id == queued_id && it.status == 'queued')
+
+	mut oldest_missing := false
+	_ = store.get_session_operation(session.id, oldest_id) or {
+		oldest_missing = true
+		SessionOperation{}
+	}
+	assert oldest_missing
+	mut trace_missing := false
+	_ = store.operation_trace(session.id, oldest_id) or {
+		trace_missing = true
+		''
+	}
+	assert trace_missing
+}
+
 fn test_session_operation_completion_commits_with_chat_history() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

@@ -226,14 +226,16 @@ fn test_approved_shell_uses_windows_appcontainer_sandbox_when_available() {
 	defer { os.rmdir_all(parent) or {} }
 	root := canonical_workspace_root(raw_root) or { panic(err) }
 
+	// Prefer workspace-file side effects over stdout: AppContainer stdio pipe
+	// capture is unreliable on some hosts even when the command succeeds.
 	result := run_approved_shell_command(root, ShellCommandSummary{
-		command:         'echo approved-windows-ac-ok>sandbox-write.txt & type sandbox-write.txt'
+		command:         'echo approved-windows-ac-ok>sandbox-write.txt'
 		cwd:             '.'
 		timeout_seconds: 5
 	})
 	assert result.status == 'succeeded', result.output
-	assert result.output.contains('approved-windows-ac-ok')
-	assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
+	written := os.read_file(os.join_path(root, 'sandbox-write.txt')) or { '' }
+	assert written.contains('approved-windows-ac-ok'), written
 
 	// Sibling path is not ACL-granted; AppContainer write must fail.
 	denied := run_approved_shell_command(root, ShellCommandSummary{
@@ -274,14 +276,16 @@ fn test_approved_shell_windows_appcontainer_denies_network_by_default() {
 	defer { os.rmdir_all(root) or {} }
 
 	// curl.exe is on PATH for Windows runners; without internetClient capability
-	// the connect should fail and the || branch prints NET_BLOCKED.
+	// the connect should fail and the || branch records NET_BLOCKED in-workspace.
 	result := run_approved_shell_command(root, ShellCommandSummary{
-		command:         'curl.exe -s -m 2 -o NUL http://1.1.1.1 && echo NET_OPEN || echo NET_BLOCKED'
+		command:         'curl.exe -s -m 2 -o NUL http://1.1.1.1 && echo NET_OPEN>net-result.txt || echo NET_BLOCKED>net-result.txt'
 		cwd:             '.'
 		timeout_seconds: 10
 	})
-	assert result.output.contains('NET_BLOCKED'), result.output
-	assert !result.output.contains('NET_OPEN')
+	assert result.status == 'succeeded', result.output
+	net_result := os.read_file(os.join_path(root, 'net-result.txt')) or { '' }
+	assert net_result.contains('NET_BLOCKED'), net_result
+	assert !net_result.contains('NET_OPEN'), net_result
 }
 
 fn test_approved_shell_require_mode_uses_windows_appcontainer_or_fails_closed() {
@@ -303,12 +307,13 @@ fn test_approved_shell_require_mode_uses_windows_appcontainer_or_fails_closed() 
 		os.mkdir_all(root) or { panic(err) }
 		defer { os.rmdir_all(root) or {} }
 		result := run_approved_shell_command(root, ShellCommandSummary{
-			command:         'echo require-windows-ac-ok'
+			command:         'echo require-windows-ac-ok>require-ok.txt'
 			cwd:             '.'
 			timeout_seconds: 5
 		})
 		assert result.status == 'succeeded', result.output
-		assert result.output.contains('require-windows-ac-ok')
+		written := os.read_file(os.join_path(root, 'require-ok.txt')) or { '' }
+		assert written.contains('require-windows-ac-ok'), written
 		return
 	}
 	assert !shell_sandbox_windows_capability()

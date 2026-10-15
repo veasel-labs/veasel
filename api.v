@@ -1463,8 +1463,14 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 
 fn request_prefers_async(mut ctx Context) bool {
 	preference := ctx.req.header.get_custom('Prefer', exact: false) or { return false }
+	return prefer_header_includes_respond_async(preference)
+}
+
+// RFC 7240 preference names are case-insensitive; parameters after ';' are ignored.
+fn prefer_header_includes_respond_async(preference string) bool {
 	for directive in preference.split(',') {
-		if directive.split(';')[0].trim_space() == 'respond-async' {
+		name := directive.split(';')[0].trim_space().to_lower()
+		if name == 'respond-async' {
 			return true
 		}
 	}

@@ -214,11 +214,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   discover bounded tools, route calls through provider adapters, and keep nested
   JSON Schemas intact. Full conformance suite remains open.
 - [x] Let operators add standalone MCP servers (stdio or Streamable HTTP) without
-  an Agent Plugin package: durable `$VEASEL_DATA_DIR/mcp-servers.json`,
-  `GET/POST /v1/mcp-servers` and `DELETE /v1/mcp-servers/{name}`, capability
-  `mcp.servers.configured`, synthetic catalog package `configured`, trust as
-  `configured/<name>`. Per-call approval is unchanged. OAuth and project-scoped
-  MCP files remain open.
+  an Agent Plugin package: durable `$VEASEL_DATA_DIR/mcp-servers.json` (user
+  scope), `GET/POST /v1/mcp-servers` and `PATCH/DELETE /v1/mcp-servers/{name}`,
+  TUI `/mcp add|remove|enable|disable`, capability `mcp.servers.configured`,
+  synthetic catalog package `configured`, trust as `configured/<name>`.
+  Per-call approval is unchanged. OAuth, `notifications/cancelled`, and
+  project-scoped MCP files remain open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

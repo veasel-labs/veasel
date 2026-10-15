@@ -156,8 +156,13 @@ from project and user roots used by other agents (`.agents/skills`,
 `.claude/skills`, `.codex/skills`, `.cursor/skills`, `.opencode/skills`,
 `.gemini/skills`, `.pi/skills`, `.qwen/skills`, `.github/skills`, plus matching
 home directories and `VEASEL_SKILLS_DIRS`). `/skills [filter]` and
-`/skill on|off` manage Skills; `/mcp trust|untrust` manages MCP servers. Skill
-instructions are untrusted reference context; Skill scripts are never
+`/skill on|off` manage Skills. Add user-scoped MCP servers with
+`/mcp add stdio <name> <command> [args…]` or `/mcp add http <name> <url>`
+(persisted in `$VEASEL_DATA_DIR/mcp-servers.json`); toggle with
+`/mcp enable|disable`, remove with `/mcp remove`, then
+`/mcp trust configured/<name>`. Plugin-packaged servers still use
+`/mcp trust <plugin>/<server>`. Skill instructions and MCP tool output are
+untrusted reference context; Skill scripts and MCP install scripts are never
 auto-executed.
 
 Press Escape to cancel a running turn. Prefer `respond-async` clients follow
@@ -171,9 +176,10 @@ workflows.
 
 ## API
 
-Key routes: `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/skills`,
-`/v1/sessions`, `/v1/sessions/:id/messages`, workspace file/search/edits/commands,
-`/v1/sessions/:id/usage`, `/v1/events` (SSE), and configured chat completions.
+Key routes: `/v1/health`, `/v1/capabilities`, `/v1/plugins`, `/v1/mcp-servers`,
+`/v1/skills`, `/v1/sessions`, `/v1/sessions/:id/messages`, workspace
+file/search/edits/commands, `/v1/sessions/:id/usage`, `/v1/events` (SSE), and
+configured chat completions.
 Full contract: [`docs/openapi.yaml`](docs/openapi.yaml). Agent Toolkit clients
 should follow [`docs/integrations/agent-toolkit.md`](docs/integrations/agent-toolkit.md).
 

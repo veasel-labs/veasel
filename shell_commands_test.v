@@ -24,26 +24,47 @@ fn test_shell_review_sandbox_preview_matches_capabilities() {
 			os.unsetenv(shell_sandbox_mode_env)
 		}
 	}
+	previous_network := os.getenv(shell_sandbox_network_env)
+	defer {
+		if previous_network.len > 0 {
+			os.setenv(shell_sandbox_network_env, previous_network, true)
+		} else {
+			os.unsetenv(shell_sandbox_network_env)
+		}
+	}
+	os.unsetenv(shell_sandbox_network_env)
 	os.setenv(shell_sandbox_mode_env, 'off', true)
 	off := shell_review_sandbox_preview()
 	assert off.mode == 'off'
 	assert !off.will_wrap
 	assert off.backend == 'none'
+	assert off.network == 'host'
 	os.setenv(shell_sandbox_mode_env, 'auto', true)
 	preview := shell_review_sandbox_preview()
 	assert preview.mode == 'auto'
 	if shell_sandbox_bubblewrap_capability() {
 		assert preview.will_wrap
 		assert preview.backend == 'bubblewrap'
+		assert preview.network == 'deny'
 	} else if shell_sandbox_seatbelt_capability() {
 		assert preview.will_wrap
 		assert preview.backend == 'seatbelt'
+		assert preview.network == 'deny'
 	} else if shell_sandbox_windows_capability() {
 		assert preview.will_wrap
 		assert preview.backend == 'windows'
+		assert preview.network == 'deny'
 	} else {
 		assert !preview.will_wrap
 		assert preview.backend == 'none'
+		assert preview.network == 'host'
+	}
+	os.setenv(shell_sandbox_network_env, 'allow', true)
+	allowed := shell_review_sandbox_preview()
+	if allowed.will_wrap {
+		assert allowed.network == 'allow'
+	} else {
+		assert allowed.network == 'host'
 	}
 }
 

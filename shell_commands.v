@@ -56,11 +56,14 @@ fn (app &App) wait_for_shell_operations() {
 
 // ReviewSandboxPreview is computed at response time so reviewers see whether
 // approval will wrap the process. It is not persisted.
+// network is deny|allow when wrapping shell, shared when wrapping MCP stdio,
+// and host when the process inherits the unsandboxed host network.
 pub struct ReviewSandboxPreview {
 pub:
 	mode      string
 	will_wrap bool
 	backend   string
+	network   string
 }
 
 pub struct ShellCommandSummary {
@@ -213,10 +216,15 @@ fn shell_review_sandbox_preview() ReviewSandboxPreview {
 		backend = 'windows'
 		will_wrap = true
 	}
+	mut network := 'host'
+	if will_wrap {
+		network = if approved_shell_sandbox_network_allowed() { 'allow' } else { 'deny' }
+	}
 	return ReviewSandboxPreview{
 		mode:      approved_shell_sandbox_mode_label(mode)
 		will_wrap: will_wrap
 		backend:   backend
+		network:   network
 	}
 }
 

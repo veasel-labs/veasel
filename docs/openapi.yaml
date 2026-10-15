@@ -206,6 +206,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/mcp-servers:
+    get:
+      operationId: listConfiguredMcpServers
+      description: Lists operator-configured MCP servers persisted under the Veasel data directory (mcp-servers.json). Header and env values are omitted from the response; only names/keys and URL origins are shown. These servers appear in the plugin catalog under the synthetic package name configured with origin=configured. Trust and per-call approval still apply before any tool runs.
+      responses:
+        '200':
+          description: Configured MCP servers without secret values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfiguredMCPCatalog'
+    post:
+      operationId: upsertConfiguredMcpServer
+      description: Creates or replaces one configured MCP server (stdio or streamable-http). Persists to mcp-servers.json with owner-only permissions when the filesystem supports them. Does not connect or execute the server until a session trusts configured/<name> and a model turn requests a tool that is then inspected and approved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfiguredMCPServerInput'
+      responses:
+        '200':
+          description: Stored configured MCP server metadata without secret values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfiguredMCPServerView'
+        '400':
+          description: Invalid name, transport, or fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/mcp-servers/{name}:
+    delete:
+      operationId: removeConfiguredMcpServer
+      description: Removes a configured MCP server definition. Does not revoke existing session trust rows; the next turn fails closed if the trusted server is gone. PLUGIN_DATA under plugin-data/configured/<name> is left in place.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Server removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginLinkRemoval'
+        '400':
+          description: Invalid name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/skills:
     get:
       operationId: listDiscoveredSkills
@@ -1875,6 +1936,38 @@ components:
       required: [removed]
       properties:
         removed: { type: string }
+    ConfiguredMCPCatalog:
+      type: object
+      required: [servers]
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfiguredMCPServerView'
+    ConfiguredMCPServerView:
+      type: object
+      required: [name, transport]
+      properties:
+        name: { type: string }
+        transport: { type: string, enum: [stdio, streamable-http] }
+        command: { type: string }
+        args: { type: array, items: { type: string } }
+        cwd: { type: string }
+        env_keys: { type: array, items: { type: string } }
+        url_origin: { type: string }
+        header_names: { type: array, items: { type: string } }
+    ConfiguredMCPServerInput:
+      type: object
+      required: [name, transport]
+      properties:
+        name: { type: string, description: 'Server id used as configured/<name> for trust.' }
+        transport: { type: string, enum: [stdio, streamable-http] }
+        command: { type: string, description: 'Bare executable name or absolute path for stdio.' }
+        args: { type: array, items: { type: string } }
+        cwd: { type: string, description: 'Optional absolute working directory for stdio.' }
+        env: { type: object, additionalProperties: { type: string } }
+        url: { type: string, description: 'Absolute HTTP(S) URL for streamable-http.' }
+        headers: { type: object, additionalProperties: { type: string } }
     SkillsCatalog:
       type: object
       required: [skills, diagnostics, roots]

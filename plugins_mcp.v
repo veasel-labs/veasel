@@ -249,6 +249,14 @@ fn resolve_plugin_cwd(plugin_root string, plugin_data string, configured string)
 	root := canonical_plugin_root(plugin_root)!
 	data := canonical_plugin_root(plugin_data)!
 	cwd := if configured == '' { './' } else { configured }
+	// Operator-configured MCP servers may use an absolute cwd validated at
+	// upsert time. Plugin mcp.json still rejects absolute cwd values.
+	if os.is_abs_path(cwd) {
+		if os.is_link(cwd) || !os.is_dir(cwd) {
+			return error('absolute cwd must be an existing directory')
+		}
+		return os.real_path(cwd)
+	}
 	validate_plugin_cwd(root, cwd)!
 	root_token := '$' + '{PLUGIN_ROOT}'
 	data_token := '$' + '{PLUGIN_DATA}'

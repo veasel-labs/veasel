@@ -235,10 +235,13 @@ unauthenticated catalogs.
 
 At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under
 `internal/ui/model/status.go` and `internal/ui/chat/` keeps mode badges, help
-hints, and message rendering as separate models with golden/bench tests. Veasel
-keeps OpenTUI Core renderables and now surfaces provider-reported token counts
-in the footer after a turn completes. Richer markdown/diff chrome remains open;
-do not port Crush's Lip Gloss stack into the TypeScript client.
+hints, and message rendering as separate models with golden/bench tests. Its
+pending-queue tests (`internal/ui/model/pending_queue_test.go`) keep in-flight
+prompts visible above a spinner. Veasel keeps OpenTUI Core 0.5.17 renderables,
+surfaces provider-reported token counts in the footer, and now prefers a compact
+`review needed` footer cue when edits, shell commands, or MCP calls await
+approval. Richer markdown/diff chrome remains open; do not port Crush's Lip Gloss
+stack into the TypeScript client.
 
 ### Pi — session forks without forcing compaction into the core loop
 

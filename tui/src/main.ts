@@ -10,6 +10,7 @@ import {
   bold,
   createCliRenderer,
   fg,
+  getTreeSitterClient,
   type KeyEvent,
   type TextChunk,
 } from "@opentui/core"
@@ -60,11 +61,13 @@ import {
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
 import {
+  createDiffSyntaxStyle,
   cycleReviewDiffSurface,
   diffRenderableTheme,
   filetypeFromReviewPath,
   formatPatchSplitChrome,
   reviewDiffSurfaceHint,
+  scrollDiffRenderableToHunk,
   type ReviewDiffSurface,
 } from "./diff-view"
 import {
@@ -471,6 +474,9 @@ const sessionDetail = new TextRenderable(renderer, {
 detail.add(sessionDetail)
 // OpenTUI DiffRenderable split view for patch reviews (toggled with v). Mounted
 // only while split surface is active so it never steals flex height from chat.
+// Theme-mapped SyntaxStyle + shared TreeSitterClient drive filetype highlighting.
+let reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme)
+const reviewDiffTreeSitter = getTreeSitterClient()
 const reviewDiffRenderable = new DiffRenderable(renderer, {
   id: "review-diff",
   diff: "",
@@ -478,6 +484,8 @@ const reviewDiffRenderable = new DiffRenderable(renderer, {
   visible: false,
   flexGrow: 1,
   minHeight: 8,
+  syntaxStyle: reviewDiffSyntaxStyle,
+  treeSitterClient: reviewDiffTreeSitter,
   ...diffRenderableTheme(theme),
 })
 let reviewDiffMounted = false
@@ -679,6 +687,9 @@ function applyTheme(next: Theme) {
   reviewDiffRenderable.addedBg = diffColors.addedBg
   reviewDiffRenderable.removedBg = diffColors.removedBg
   reviewDiffRenderable.contextBg = diffColors.contextBg
+  reviewDiffSyntaxStyle.destroy()
+  reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme)
+  reviewDiffRenderable.syntaxStyle = reviewDiffSyntaxStyle
   footer.backgroundColor = theme.headerBg
   footer.borderColor = theme.panelBorder
   footerHint.fg = theme.muted
@@ -2192,7 +2203,7 @@ function hideReviewDiffRenderable() {
   }
 }
 
-function syncReviewDiffRenderable(diff: string, path: string) {
+function syncReviewDiffRenderable(diff: string, path: string, hunkIndex = 0) {
   const colors = diffRenderableTheme(theme)
   reviewDiffRenderable.fg = colors.fg
   reviewDiffRenderable.addedSignColor = colors.addedSignColor
@@ -2203,6 +2214,7 @@ function syncReviewDiffRenderable(diff: string, path: string) {
   reviewDiffRenderable.contextBg = colors.contextBg
   reviewDiffRenderable.view = "split"
   reviewDiffRenderable.syncScroll = true
+  reviewDiffRenderable.syntaxStyle = reviewDiffSyntaxStyle
   reviewDiffRenderable.filetype = filetypeFromReviewPath(path)
   reviewDiffRenderable.diff = diff
   reviewDiffRenderable.visible = true
@@ -2210,6 +2222,16 @@ function syncReviewDiffRenderable(diff: string, path: string) {
     detail.add(reviewDiffRenderable)
     reviewDiffMounted = true
   }
+  // Hunk offsets settle after CodeRenderable rebuilds; scroll on the next tick.
+  const targetHunk = hunkIndex
+  queueMicrotask(() => {
+    if (!reviewDiffMounted || reviewDiffSurface !== "split") return
+    scrollDiffRenderableToHunk(
+      reviewDiffRenderable as unknown as Parameters<typeof scrollDiffRenderableToHunk>[0],
+      targetHunk,
+      { accent: theme.brand },
+    )
+  })
 }
 
 function refreshActiveReviewHint() {
@@ -2239,7 +2261,7 @@ function renderActivePatchDiff() {
     ? `After inspecting the diff, type /patch approve ${activeReview.id} or /patch reject ${activeReview.id}.`
     : undefined
   if (reviewDiffSurface === "split") {
-    syncReviewDiffRenderable(activePatchDiff, activePatchPath)
+    syncReviewDiffRenderable(activePatchDiff, activePatchPath, review.hunkIndex)
     skillNotice = withReviewHotkeyHint(
       formatPatchSplitChrome({
         status: activePatchStatus,
@@ -2247,6 +2269,7 @@ function renderActivePatchDiff() {
         additions: review.additions,
         removals: review.removals,
         hunkCount: review.hunkCount,
+        hunkIndex: review.hunkIndex,
         pendingInstruction,
       }),
       activeReview,

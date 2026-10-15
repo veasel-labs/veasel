@@ -159,5 +159,32 @@
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "bad..name"
     }
+  },
+  {
+    "name": "description with TAB is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "tab-description",
+      "description": "has\ttab"
+    }
+  },
+  {
+    "name": "author name with NUL is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "nul-author",
+      "author": { "name": "bad\u0000name" }
+    }
+  },
+  {
+    "name": "keyword with CR is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "cr-keyword",
+      "keywords": ["ok", "bad\rkeyword"]
+    }
   }
 ]

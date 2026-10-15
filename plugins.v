@@ -191,7 +191,11 @@ fn parse_plugin_manifest(fields map[string]json2.Any) !(PluginManifest, []Plugin
 	for key in ['version', 'description', 'homepage', 'repository', 'license'] {
 		if value := fields[key] {
 			if value is string {
-				optional[key] = value
+				text := value as string
+				if plugin_text_has_unsafe_controls(text) {
+					return error('plugin field `${key}` must not contain control bytes')
+				}
+				optional[key] = text
 			} else {
 				return error('plugin field `${key}` must be a string')
 			}
@@ -203,6 +207,9 @@ fn parse_plugin_manifest(fields map[string]json2.Any) !(PluginManifest, []Plugin
 				if key !in ['name', 'email', 'url'] || value !is string {
 					return error('plugin author fields are invalid')
 				}
+				if plugin_text_has_unsafe_controls(value as string) {
+					return error('plugin author fields must not contain control bytes')
+				}
 			}
 		} else {
 			return error('plugin author must be an object')
@@ -213,6 +220,9 @@ fn parse_plugin_manifest(fields map[string]json2.Any) !(PluginManifest, []Plugin
 			for keyword in keywords {
 				if keyword !is string {
 					return error('plugin keywords must be strings')
+				}
+				if plugin_text_has_unsafe_controls(keyword as string) {
+					return error('plugin keywords must not contain control bytes')
 				}
 			}
 		} else {
@@ -500,8 +510,12 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 }
 
 fn skill_text_has_unsafe_controls(value string) bool {
+	return plugin_text_has_unsafe_controls(value)
+}
+
+fn plugin_text_has_unsafe_controls(value string) bool {
 	for c in value {
-		// Reject C0 controls and DEL so skill metadata cannot hide review-breaking bytes.
+		// Reject C0 controls and DEL so plugin/skill metadata cannot hide review-breaking bytes.
 		// YAML already rejects many of these at parse time; catch survivors like TAB.
 		if c < 32 || c == 127 {
 			return true

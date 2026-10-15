@@ -24,6 +24,9 @@
 #ifndef PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
 #define PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES 0x00020009
 #endif
+#ifndef PROC_THREAD_ATTRIBUTE_HANDLE_LIST
+#define PROC_THREAD_ATTRIBUTE_HANDLE_LIST 0x00020002
+#endif
 /* Well-known capability SIDs (winnt.h); define if the toolchain headers lag. */
 #ifndef WinCapabilityInternetClientSid
 #define WinCapabilityInternetClientSid ((WELL_KNOWN_SID_TYPE)85)
@@ -367,6 +370,7 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 	SECURITY_CAPABILITIES security_capabilities;
 	SIZE_T attr_size = 0;
 	LPPROC_THREAD_ATTRIBUTE_LIST attr_list = NULL;
+	HANDLE inherited_handles[3];
 	HANDLE job = NULL;
 	HANDLE stdout_read = NULL;
 	HANDLE stdout_write = NULL;
@@ -485,16 +489,28 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 		goto cleanup;
 	}
 
-	InitializeProcThreadAttributeList(NULL, 1, 0, &attr_size);
+	/* AppContainer processes inherit only handles listed here, even when
+	 * bInheritHandles is TRUE — without HANDLE_LIST, stdout/stderr pipes are
+	 * silent and tests see empty or garbled capture. */
+	InitializeProcThreadAttributeList(NULL, 2, 0, &attr_size);
 	attr_list = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attr_size);
 	if (!attr_list) {
 		result->setup_failed = 1;
 		set_error(result, "Out of memory for PROC_THREAD_ATTRIBUTE_LIST", 0);
 		goto cleanup;
 	}
-	if (!InitializeProcThreadAttributeList(attr_list, 1, 0, &attr_size)) {
+	if (!InitializeProcThreadAttributeList(attr_list, 2, 0, &attr_size)) {
 		result->setup_failed = 1;
 		set_error(result, "InitializeProcThreadAttributeList failed", GetLastError());
+		goto cleanup;
+	}
+	inherited_handles[0] = stdin_read;
+	inherited_handles[1] = stdout_write;
+	inherited_handles[2] = stderr_write;
+	if (!UpdateProcThreadAttribute(attr_list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+			inherited_handles, sizeof(inherited_handles), NULL, NULL)) {
+		result->setup_failed = 1;
+		set_error(result, "UpdateProcThreadAttribute HANDLE_LIST failed", GetLastError());
 		goto cleanup;
 	}
 	if (!UpdateProcThreadAttribute(attr_list, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,

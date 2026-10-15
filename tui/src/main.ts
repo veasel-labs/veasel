@@ -19,6 +19,7 @@ import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
+import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 
@@ -167,19 +168,20 @@ const body = new BoxRenderable(renderer, {
   gap: 1,
 })
 const sidebar = new BoxRenderable(renderer, {
-  width: "36%",
+  width: sessionSidebarWidth(process.stdout.columns ?? 80),
   flexDirection: "column",
   padding: 1,
   gap: 1,
+  overflow: "hidden",
   backgroundColor: "#171c22",
   borderStyle: "rounded",
   borderColor: "#303944",
 })
-sidebar.add(new TextRenderable(renderer, { content: "SESSIONS", fg: "#d6a7ff" }))
+sidebar.add(new TextRenderable(renderer, { content: "SESSIONS", fg: "#d6a7ff", wrapMode: "none" }))
 const sessionList = new TextRenderable(renderer, {
   content: "Connecting to Veasel…",
   fg: "#d4d8dc",
-  wrapMode: "word",
+  wrapMode: "none",
 })
 sidebar.add(sessionList)
 const detail = new BoxRenderable(renderer, {
@@ -325,15 +327,12 @@ const reviewedShellCommandIds = new Set<string>()
 const handledTurnCompletionIds = new Set<string>()
 
 function renderSessions() {
-  if (sessions.length === 0) {
-    sessionList.content = "No sessions yet.\n\nPress n to start one."
-    return
-  }
-  sessionList.content = sessions.map((session, index) => {
-    const marker = index === selected ? "›" : " "
-    const title = session.title.replace(/[\r\n\t]/g, " ")
-    return `${marker} ${title}\n  ${session.directory}`
-  }).join("\n\n")
+  const terminalColumns = process.stdout.columns ?? 80
+  sidebar.width = sessionSidebarWidth(terminalColumns)
+  sessionList.content = formatSessionList(sessions, selected, {
+    rows: process.stdout.rows ?? 40,
+    columns: sessionListColumns(terminalColumns),
+  })
 }
 
 async function refreshSessions() {

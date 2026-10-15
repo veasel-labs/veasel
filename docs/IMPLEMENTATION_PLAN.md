@@ -192,6 +192,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [ ] Complete cross-platform validation of provider settings and automatic
   backend startup in the pinned CI matrix.
 - [ ] Multi-agent isolation and orchestration.
+- [x] Keep the selected home-screen session inside the sidebar. A longer list
+  shows a text position such as `8/20` and omits sessions outside that window.
+  Titles and directories are clipped so a narrow sidebar cannot wrap the
+  selection off screen.
 - [ ] Context retrieval, rich diff review, accessibility, and UX refinement.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.

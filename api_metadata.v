@@ -26,11 +26,11 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 @['/v1/capabilities'; get]
 pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay',
-		'plugins.catalog', 'sessions.skills', 'sessions.mcp_servers', 'workspace.files',
-		'workspace.read', 'workspace.search', 'workspace.edits.review', 'workspace.edits.approve',
-		'workspace.edits.reject', 'workspace.commands.propose', 'workspace.commands.review',
-		'workspace.commands.approve', 'workspace.commands.reject', 'sessions.operations.result',
-		'sessions.operations.trace.atif_v1_8']
+		'plugins.catalog', 'skills.discovery', 'sessions.skills', 'sessions.mcp_servers',
+		'workspace.files', 'workspace.read', 'workspace.search', 'workspace.edits.review',
+		'workspace.edits.approve', 'workspace.edits.reject', 'workspace.commands.propose',
+		'workspace.commands.review', 'workspace.commands.approve', 'workspace.commands.reject',
+		'sessions.operations.result', 'sessions.operations.trace.atif_v1_8']
 	if app.configured_model() != none {
 		features << 'chat.complete'
 		features << 'chat.cancel'

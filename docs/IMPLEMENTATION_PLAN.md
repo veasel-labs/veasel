@@ -145,6 +145,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   persist per-session activation, include bounded instructions as untrusted
   model context, and let the model read bounded resources from active Skill
   directories on demand. This is a partial integration, not a conformance claim.
+- [x] Discover standalone `SKILL.md` packages from project and user agent skill
+  roots (`.agents`, `.claude`, `.codex`, `.cursor`, `.opencode`, `.gemini`,
+  `.pi`, `.qwen`, `.github`, `.copilot`, XDG/CODEX_HOME, and `VEASEL_SKILLS_DIRS`)
+  without `plugin.json`, expose `/v1/skills` plus synthetic `/v1/plugins`
+  catalog entries, and keep `/skills` / `/skill` enablement on the same
+  metadata-first, never-auto-execute path.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

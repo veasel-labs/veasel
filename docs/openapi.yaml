@@ -119,10 +119,16 @@ paths:
   /v1/plugins:
     get:
       operationId: listAgentPlugins
-      description: Discovers bounded local Agent Plugins and returns metadata without skill instruction bodies.
+      description: Discovers bounded local Agent Plugins and standalone Agent Skills, returning metadata without skill instruction bodies. Standalone skills appear as synthetic catalog entries with origin=standalone.
+      parameters:
+        - in: query
+          name: directory
+          required: false
+          schema: { type: string }
+          description: Project directory used for ancestor skill-root traversal; defaults to the server process working directory.
       responses:
         '200':
-          description: Available plugins and non-fatal discovery diagnostics.
+          description: Available plugins, standalone skill sources, and non-fatal discovery diagnostics.
           content:
             application/json:
               schema:
@@ -133,6 +139,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/skills:
+    get:
+      operationId: listDiscoveredSkills
+      description: Discovers standalone SKILL.md packages from project and user agent skill roots without requiring plugin.json. Returns metadata only; instruction bodies stay on disk until a session enables the skill.
+      parameters:
+        - in: query
+          name: directory
+          required: false
+          schema: { type: string }
+          description: Project directory used for ancestor skill-root traversal; defaults to the server process working directory.
+      responses:
+        '200':
+          description: Discovered standalone skills, scanned roots, and diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillsCatalog'
   /v1/sessions:
     get:
       operationId: listSessions
@@ -1679,6 +1702,44 @@ components:
         veasel_extension:
           $ref: '#/components/schemas/VeaselCodeExtension'
           description: Present only when the package declares a valid Veasel client extension. Omitted otherwise.
+        origin:
+          type: string
+          description: Set to standalone for synthetic entries synthesized from discovered SKILL.md roots; omitted for Agent Plugin packages.
+    SkillsCatalog:
+      type: object
+      required: [skills, diagnostics, roots]
+      properties:
+        skills:
+          type: array
+          items: { $ref: '#/components/schemas/StandaloneSkillSummary' }
+        diagnostics:
+          type: array
+          items: { $ref: '#/components/schemas/PluginDiagnostic' }
+        roots:
+          type: array
+          items: { $ref: '#/components/schemas/StandaloneSkillRootSummary' }
+    StandaloneSkillSummary:
+      type: object
+      required: [key, name, description, source, scope, root, allowed_tools_declared, allowed_tools]
+      properties:
+        key: { type: string, description: 'source/name identifier used with session skill enablement' }
+        name: { type: string }
+        description: { type: string }
+        source: { type: string, description: 'agents, claude, cursor, opencode, configured, ...' }
+        scope: { type: string, description: 'project, user, or configured' }
+        root: { type: string, description: Absolute discovery root that contained the skill }
+        allowed_tools_declared: { type: boolean }
+        allowed_tools:
+          type: array
+          items: { type: string }
+    StandaloneSkillRootSummary:
+      type: object
+      required: [path, source, scope, label]
+      properties:
+        path: { type: string }
+        source: { type: string }
+        scope: { type: string }
+        label: { type: string }
     VeaselCodeExtension:
       type: object
       additionalProperties: false
@@ -1702,6 +1763,12 @@ components:
           type: array
           description: Sorted, deduplicated tool names declared by the skill. An empty list with allowed_tools_declared true restricts the skill to no tools.
           items: { type: string }
+        source:
+          type: string
+          description: Present for standalone discoveries; identifies the agent skill root family.
+        scope:
+          type: string
+          description: Present for standalone discoveries; project, user, or configured.
     PluginMCPServerSummary:
       type: object
       required: [name, transport, command, url_origin, header_count, header_names]

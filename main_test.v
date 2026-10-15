@@ -1141,6 +1141,36 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
+fn test_resume_rejects_empty_queued_request_without_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-empty-queued-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'Empty queued payload'
+		directory: '/tmp/empty-queued'
+	}) or { panic(err) }
+	operation_id := '2b3c4d5e-6f70-8192-a3b4-c5d6e7f8091a'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"placeholder"}') or {
+		panic(err)
+	}
+	store.mu.lock()
+	_ = store.db.exec_param_many('UPDATE session_operations SET request_json = ? WHERE id = ? AND session_id = ?',
+		['', operation_id, session.id]) or { panic(err) }
+	store.mu.unlock()
+	mut app := new_app(store, plugin_directory)
+	app.resume_durable_queued_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Queued turn request payload is missing and will not be claimed.'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_resume_rejects_invalid_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-invalid-queued-${uuid.new_v4().str()}')
 	os.mkdir_all(plugin_directory) or { panic(err) }

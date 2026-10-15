@@ -16,11 +16,30 @@ fn (app &App) resume_durable_queued_operations() {
 	}
 	for operation in queued {
 		session := store.get_session(operation.session_id) or {
-			eprintln('veasel: skipping queued operation ${operation.id}; session missing')
+			eprintln('veasel: rejecting queued operation ${operation.id}; session missing')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn session is missing and will not be claimed.') or {
+				eprintln('veasel: unable to reject orphaned queued operation ${operation.id}')
+				''
+			}
 			continue
 		}
 		request_json := store.session_operation_request_json(operation.session_id, operation.id) or {
-			eprintln('veasel: skipping queued operation ${operation.id}; request missing')
+			eprintln('veasel: rejecting queued operation ${operation.id}; request missing')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn request payload is missing and will not be claimed.') or {
+				eprintln('veasel: unable to reject queued operation without request ${operation.id}')
+				''
+			}
+			continue
+		}
+		if request_json.trim_space().len == 0 {
+			eprintln('veasel: rejecting queued operation ${operation.id}; request empty')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn request payload is missing and will not be claimed.') or {
+				eprintln('veasel: unable to reject queued operation without request ${operation.id}')
+				''
+			}
 			continue
 		}
 		input := json2.decode[ChatMessageInput](request_json) or {

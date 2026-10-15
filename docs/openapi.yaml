@@ -2663,12 +2663,13 @@ components:
         server_name: { type: string }
     ReviewSandboxPreview:
       type: object
-      required: [mode, will_wrap, backend]
-      description: Computed at response time from VEASEL_SHELL_SANDBOX or VEASEL_MCP_STDIO_SANDBOX and platform backends. Not persisted.
+      required: [mode, will_wrap, backend, network]
+      description: Computed at response time from VEASEL_SHELL_SANDBOX or VEASEL_MCP_STDIO_SANDBOX and platform backends. Not persisted. network is deny|allow for wrapped shell (VEASEL_SHELL_SANDBOX_NETWORK), shared for wrapped MCP stdio, and host when unsandboxed.
       properties:
         mode: { type: string, enum: [off, auto, require] }
         will_wrap: { type: boolean, description: True only when this process will wrap on the current platform. }
         backend: { type: string, enum: [none, bubblewrap, seatbelt, windows] }
+        network: { type: string, enum: [deny, allow, shared, host], description: Effective network posture for the reviewed process. }
     PluginMCPToolCallApproval:
       type: object
       required: [id, operation_id, plugin_name, server_name, tool_name, arguments_json, status, reviewed_at, created_at, updated_at, stdio_sandbox]

@@ -10,6 +10,8 @@ export type ReviewSandboxPreview = {
   mode: "off" | "auto" | "require" | string
   will_wrap: boolean
   backend: "none" | "bubblewrap" | "seatbelt" | "windows" | string
+  /** deny|allow for wrapped shell; shared for wrapped MCP stdio; host when unsandboxed. */
+  network?: "deny" | "allow" | "shared" | "host" | string
 }
 
 // Leaves the safety warning and the approve instruction on the first screen.
@@ -33,7 +35,8 @@ export function sandboxCapabilityFromPreview(
 export function formatSandboxPreviewLine(preview: ReviewSandboxPreview | undefined, label = "Sandbox"): string | null {
   if (!preview) return null
   const wrap = preview.will_wrap ? `will wrap (${preview.backend})` : "will not wrap"
-  return `${label}: mode ${preview.mode} · ${wrap}`
+  const network = preview.network?.trim() ? ` · network ${preview.network}` : ""
+  return `${label}: mode ${preview.mode} · ${wrap}${network}`
 }
 
 function textLines(text: string): string[] {

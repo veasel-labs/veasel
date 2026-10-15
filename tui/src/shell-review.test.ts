@@ -122,10 +122,10 @@ describe("formatShellReview", () => {
       pending: true,
       output: "",
       maxLines: 20,
-      sandbox: { mode: "auto", will_wrap: true, backend: "bubblewrap" },
+      sandbox: { mode: "auto", will_wrap: true, backend: "bubblewrap", network: "deny" },
       sandboxCapability: null,
     })
-    expect(text).toContain("Sandbox: mode auto · will wrap (bubblewrap)")
+    expect(text).toContain("Sandbox: mode auto · will wrap (bubblewrap) · network deny")
     expect(text).toContain("inside Bubblewrap")
     expect(text).not.toContain("without an OS sandbox")
   })

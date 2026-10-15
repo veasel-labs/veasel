@@ -72,10 +72,13 @@ fn mcp_stdio_review_sandbox_preview() ReviewSandboxPreview {
 		backend = 'windows'
 		will_wrap = true
 	}
+	// MCP stdio wraps always share network; unsandboxed inherits the host.
+	network := if will_wrap { 'shared' } else { 'host' }
 	return ReviewSandboxPreview{
 		mode:      approved_shell_sandbox_mode_label(mode)
 		will_wrap: will_wrap
 		backend:   backend
+		network:   network
 	}
 }
 

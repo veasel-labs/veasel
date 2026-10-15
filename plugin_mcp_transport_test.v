@@ -408,21 +408,26 @@ fn test_mcp_stdio_review_sandbox_preview_defaults_off() {
 	assert preview.mode == 'off'
 	assert !preview.will_wrap
 	assert preview.backend == 'none'
+	assert preview.network == 'host'
 	assert os.setenv(mcp_stdio_sandbox_mode_env, 'auto', true) == 0
 	auto := mcp_stdio_review_sandbox_preview()
 	assert auto.mode == 'auto'
 	if mcp_stdio_sandbox_bubblewrap_capability() {
 		assert auto.will_wrap
 		assert auto.backend == 'bubblewrap'
+		assert auto.network == 'shared'
 	} else if mcp_stdio_sandbox_seatbelt_capability() {
 		assert auto.will_wrap
 		assert auto.backend == 'seatbelt'
+		assert auto.network == 'shared'
 	} else if mcp_stdio_sandbox_windows_capability() {
 		assert auto.will_wrap
 		assert auto.backend == 'windows'
+		assert auto.network == 'shared'
 	} else {
 		assert !auto.will_wrap
 		assert auto.backend == 'none'
+		assert auto.network == 'host'
 	}
 }
 

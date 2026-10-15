@@ -417,6 +417,7 @@ type ReviewSandboxPreview = {
   mode: string
   will_wrap: boolean
   backend: string
+  network?: string
 }
 
 type PluginMCPToolCallApproval = {

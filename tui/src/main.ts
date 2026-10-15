@@ -19,6 +19,7 @@ import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import {
   activeReviewIndex,
   moveActiveReviewIndex,
+  pendingReviewsOfKind,
   reviewHotkey,
   withReviewHotkeyHint,
   type ActiveReview,
@@ -1712,8 +1713,28 @@ async function openActiveReview(review: ActiveReview) {
   else await showMcpToolCall(review.id)
 }
 
-async function handleReviewHotkey(action: "approve" | "reject" | "next" | "prev") {
+async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "next" | "prev") {
   if (!activeReview?.pending) return
+  if (action === "approveAll") {
+    const kind = activeReview.kind
+    if (pendingReviewQueue.length === 0) await countPendingReviews()
+    const batch = pendingReviewsOfKind(pendingReviewQueue, kind)
+    let approved = 0
+    for (const item of batch) {
+      if (item.kind === "patch") await actOnWorkspaceEdit("approve", item.id)
+      else if (item.kind === "command") await actOnShellCommand("approve", item.id)
+      else await actOnMcpToolCall(item.id, "approve")
+      approved++
+    }
+    setActiveReview(undefined)
+    await countPendingReviews()
+    const label = kind === "patch" ? "edit" : kind === "command" ? "shell command" : "MCP call"
+    skillNotice = approved > 0
+      ? `Approved ${approved} pending ${label}${approved === 1 ? "" : "s"} of the same kind (Shift+A).`
+      : `No pending ${label}s left to approve.`
+    renderChat(chatMessages)
+    return
+  }
   if (action === "approve" || action === "reject") {
     const current = activeReview
     if (current.kind === "patch") await actOnWorkspaceEdit(action, current.id)

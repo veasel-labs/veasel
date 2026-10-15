@@ -8,18 +8,21 @@ export type ActiveReview = {
 
 export type ReviewHotkey =
   | { action: "approve" }
+  | { action: "approveAll" }
   | { action: "reject" }
   | { action: "next" }
   | { action: "prev" }
 
 // Single-key review actions when the composer is empty and a pending review is
 // on screen. Letters stay available for typing once the composer has text.
+// Shift+A approves every pending item of the same kind (patches, shell, or MCP).
 export function reviewHotkey(
-  key: { name: string; ctrl: boolean; meta: boolean },
+  key: { name: string; ctrl: boolean; meta: boolean; shift?: boolean },
   context: { composerEmpty: boolean; review: ActiveReview | undefined },
 ): ReviewHotkey | undefined {
   if (!context.composerEmpty || !context.review?.pending) return undefined
   if (key.ctrl || key.meta) return undefined
+  if (key.name === "a" && key.shift) return { action: "approveAll" }
   if (key.name === "a") return { action: "approve" }
   if (key.name === "x") return { action: "reject" }
   if (key.name === "]" || key.name === "n") return { action: "next" }
@@ -29,7 +32,11 @@ export function reviewHotkey(
 
 export function reviewHotkeyHint(review: ActiveReview | undefined): string | undefined {
   if (!review?.pending) return undefined
-  return "a approve · x reject · ]/[ or n/p next/prev"
+  return "a approve · A all same kind · x reject · ]/[ or n/p next/prev"
+}
+
+export function pendingReviewsOfKind(queue: ActiveReview[], kind: ActiveReviewKind): ActiveReview[] {
+  return queue.filter((item) => item.pending && item.kind === kind)
 }
 
 export function moveActiveReviewIndex(index: number, delta: number, count: number): number {

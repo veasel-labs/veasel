@@ -161,7 +161,7 @@ fn test_available_skills_catalog_discloses_metadata_without_bodies() {
 	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'deep-review', 'references')) or {
 		panic(err)
 	}
-	os.mkdir_all(os.join_path(project, '.claude', 'skills', 'quick-check')) or { panic(err) }
+	os.mkdir_all(os.join_path(home, '.agents', 'skills', 'quick-check')) or { panic(err) }
 	os.mkdir_all(plugin_dir) or { panic(err) }
 	os.mkdir_all(home) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
@@ -200,7 +200,7 @@ fn test_available_skills_catalog_discloses_metadata_without_bodies() {
 	}
 	os.write_file(os.join_path(project, '.agents', 'skills', 'deep-review', 'references', 'guide.md'),
 		'Turn-loaded reference.') or { panic(err) }
-	os.write_file(os.join_path(project, '.claude', 'skills', 'quick-check', 'SKILL.md'),
+	os.write_file(os.join_path(home, '.agents', 'skills', 'quick-check', 'SKILL.md'),
 		'---\nname: quick-check\ndescription: Fast lint-oriented check.\n---\n\nQUICK_BODY_SHOULD_STAY_OFF_CATALOG') or {
 		panic(err)
 	}
@@ -208,27 +208,36 @@ fn test_available_skills_catalog_discloses_metadata_without_bodies() {
 	defer { store.close() or {} }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
-	disclosure := app.available_skills_for_turn(project)
+	session := store.create_session(SessionInput{
+		title:     'Catalog trust'
+		directory: project
+	}) or { panic(err) }
+	disclosure := app.available_skills_for_turn(project, session.id)
 	catalog := format_available_skills_catalog(disclosure.entries, disclosure.truncated)
 	assert catalog.contains('<available_skills>')
+	assert !catalog.contains('<skill_name>deep-review</skill_name>')
 	assert catalog.contains('<plugin_name>agents</plugin_name>')
-	assert catalog.contains('<skill_name>deep-review</skill_name>')
-	assert catalog.contains('Review carefully with references.')
-	assert catalog.contains('<location>')
-	assert catalog.contains('<plugin_name>claude</plugin_name>')
 	assert catalog.contains('<skill_name>quick-check</skill_name>')
 	assert catalog.contains('Fast lint-oriented check.')
+	assert catalog.contains('<location>')
 	assert !catalog.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
 	assert !catalog.contains('QUICK_BODY_SHOULD_STAY_OFF_CATALOG')
 	assert !catalog.contains('Use the reference guide.')
 	tools := agent_skill_load_tools(disclosure)
 	assert tools.len == 1
 	assert tools[0].name == 'agent_skill_load'
-	assert tools[0].description.contains('deep-review')
+	assert !tools[0].description.contains('deep-review')
 	assert tools[0].description.contains('quick-check')
-	assert tools[0].parameters.properties['plugin_name'].enum_values == ['agents', 'claude']
-	assert tools[0].parameters.properties['skill_name'].enum_values == ['deep-review', 'quick-check']
+	assert tools[0].parameters.properties['plugin_name'].enum_values == ['agents']
+	assert tools[0].parameters.properties['skill_name'].enum_values == ['quick-check']
 	assert !tools[0].description.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
+	store.set_session_plugin_skill(session.id, 'agents', 'deep-review', true) or { panic(err) }
+	trusted := app.available_skills_for_turn(project, session.id)
+	trusted_catalog := format_available_skills_catalog(trusted.entries, trusted.truncated)
+	assert trusted_catalog.contains('<skill_name>deep-review</skill_name>')
+	assert trusted_catalog.contains('Review carefully with references.')
+	assert trusted_catalog.contains('<skill_name>quick-check</skill_name>')
+	assert !trusted_catalog.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
 	escaped, _ := available_skill_entries_from_catalog(PluginCatalog{
 		plugins: [
 			PluginCatalogEntry{
@@ -242,7 +251,7 @@ fn test_available_skills_catalog_discloses_metadata_without_bodies() {
 				]
 			},
 		]
-	})
+	}, map[string]bool{})
 	formatted := format_available_skills_catalog(escaped, false)
 	assert formatted.contains('Use A &lt; B &amp; C &gt; D &quot;quoted&quot;')
 	assert !formatted.contains('Use A < B & C > D "quoted"')
@@ -253,8 +262,9 @@ fn test_available_skills_catalog_omits_disabled_components() {
 	project := os.join_path(root, 'workspace')
 	plugin_dir := os.join_path(root, 'plugins')
 	home := os.join_path(root, 'home')
-	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'deep-review')) or { panic(err) }
+	os.mkdir_all(os.join_path(home, '.agents', 'skills', 'deep-review')) or { panic(err) }
 	os.mkdir_all(plugin_dir) or { panic(err) }
+	os.mkdir_all(project) or { panic(err) }
 	os.mkdir_all(home) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	prior_home := os.getenv('HOME')
@@ -286,7 +296,7 @@ fn test_available_skills_catalog_omits_disabled_components() {
 			os.unsetenv('XDG_CONFIG_HOME')
 		}
 	}
-	os.write_file(os.join_path(project, '.agents', 'skills', 'deep-review', 'SKILL.md'),
+	os.write_file(os.join_path(home, '.agents', 'skills', 'deep-review', 'SKILL.md'),
 		'---\nname: deep-review\ndescription: Review carefully.\n---\n\nBody') or {
 		panic(err)
 	}
@@ -294,7 +304,7 @@ fn test_available_skills_catalog_omits_disabled_components() {
 	defer { store.close() or {} }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
-	before := app.available_skills_for_turn(project)
+	before := app.available_skills_for_turn(project, '')
 	assert before.entries.any(it.skill_name == 'deep-review')
 	mut components := app.plugin_components
 	components.set_enabled(PluginComponentToggleInput{
@@ -303,7 +313,7 @@ fn test_available_skills_catalog_omits_disabled_components() {
 		name:    'deep-review'
 		enabled: false
 	}) or { panic(err) }
-	catalog := app.available_skills_for_turn(project)
+	catalog := app.available_skills_for_turn(project, '')
 	assert catalog.entries.len == 0
 	assert agent_skill_load_tools(catalog).len == 0
 }
@@ -313,10 +323,11 @@ fn test_available_skills_catalog_omits_disable_model_invocation() {
 	project := os.join_path(root, 'workspace')
 	plugin_dir := os.join_path(root, 'plugins')
 	home := os.join_path(root, 'home')
-	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'manual-only')) or { panic(err) }
-	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'auto-open')) or { panic(err) }
-	os.mkdir_all(os.join_path(project, '.claude', 'skills', 'no-autoinvoke')) or { panic(err) }
+	os.mkdir_all(os.join_path(home, '.agents', 'skills', 'manual-only')) or { panic(err) }
+	os.mkdir_all(os.join_path(home, '.agents', 'skills', 'auto-open')) or { panic(err) }
+	os.mkdir_all(os.join_path(home, '.claude', 'skills', 'no-autoinvoke')) or { panic(err) }
 	os.mkdir_all(plugin_dir) or { panic(err) }
+	os.mkdir_all(project) or { panic(err) }
 	os.mkdir_all(home) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	prior_home := os.getenv('HOME')
@@ -348,15 +359,15 @@ fn test_available_skills_catalog_omits_disable_model_invocation() {
 			os.unsetenv('XDG_CONFIG_HOME')
 		}
 	}
-	os.write_file(os.join_path(project, '.agents', 'skills', 'manual-only', 'SKILL.md'),
+	os.write_file(os.join_path(home, '.agents', 'skills', 'manual-only', 'SKILL.md'),
 		'---\nname: manual-only\ndescription: Slash or explicit load only.\ndisable-model-invocation: true\n---\n\nMANUAL BODY') or {
 		panic(err)
 	}
-	os.write_file(os.join_path(project, '.agents', 'skills', 'auto-open', 'SKILL.md'),
+	os.write_file(os.join_path(home, '.agents', 'skills', 'auto-open', 'SKILL.md'),
 		'---\nname: auto-open\ndescription: Shown in the model catalog.\n---\n\nAUTO BODY') or {
 		panic(err)
 	}
-	os.write_file(os.join_path(project, '.claude', 'skills', 'no-autoinvoke', 'SKILL.md'),
+	os.write_file(os.join_path(home, '.claude', 'skills', 'no-autoinvoke', 'SKILL.md'),
 		'---\nname: no-autoinvoke\ndescription: Hidden via OpenCode autoinvoke metadata.\nmetadata:\n  opencode/autoinvoke: "false"\n---\n\nNO AUTO BODY') or {
 		panic(err)
 	}
@@ -364,7 +375,7 @@ fn test_available_skills_catalog_omits_disable_model_invocation() {
 	defer { store.close() or {} }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
-	disclosure := app.available_skills_for_turn(project)
+	disclosure := app.available_skills_for_turn(project, '')
 	assert disclosure.entries.any(it.skill_name == 'auto-open')
 	assert !disclosure.entries.any(it.skill_name == 'manual-only')
 	assert !disclosure.entries.any(it.skill_name == 'no-autoinvoke')
@@ -392,7 +403,7 @@ fn test_available_skills_catalog_budget_shortens_before_omitting() {
 				skills: skills
 			},
 		]
-	})
+	}, map[string]bool{})
 	assert entries.len > 0
 	xml := format_available_skills_catalog(entries, truncated)
 	assert xml.len <= max_available_skills_catalog_chars
@@ -403,13 +414,48 @@ fn test_available_skills_catalog_budget_shortens_before_omitting() {
 fn test_agent_skill_load_tool_loads_body_without_session_enable() {
 	root := os.join_path(os.temp_dir(), 'veasel-skill-load-${uuid.new_v4().str()}')
 	project := os.join_path(root, 'workspace')
-	skill_dir := os.join_path(project, '.agents', 'skills', 'deep-review')
-	os.mkdir_all(os.join_path(skill_dir, 'references')) or { panic(err) }
+	home := os.join_path(root, 'home')
+	project_skill := os.join_path(project, '.agents', 'skills', 'deep-review')
+	user_skill := os.join_path(home, '.agents', 'skills', 'user-review')
+	os.mkdir_all(os.join_path(project_skill, 'references')) or { panic(err) }
+	os.mkdir_all(user_skill) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
-	os.write_file(os.join_path(skill_dir, 'SKILL.md'), '---\nname: deep-review\ndescription: Review carefully.\n---\n\nUse the reference guide.') or {
+	prior_home := os.getenv('HOME')
+	prior_skills_dirs := os.getenv('VEASEL_SKILLS_DIRS')
+	prior_codex := os.getenv('CODEX_HOME')
+	prior_xdg := os.getenv('XDG_CONFIG_HOME')
+	had_skills_dirs := 'VEASEL_SKILLS_DIRS' in os.environ()
+	had_codex := 'CODEX_HOME' in os.environ()
+	had_xdg := 'XDG_CONFIG_HOME' in os.environ()
+	os.setenv('HOME', home, true)
+	os.unsetenv('VEASEL_SKILLS_DIRS')
+	os.unsetenv('CODEX_HOME')
+	os.unsetenv('XDG_CONFIG_HOME')
+	defer {
+		os.setenv('HOME', prior_home, true)
+		if had_skills_dirs {
+			os.setenv('VEASEL_SKILLS_DIRS', prior_skills_dirs, true)
+		} else {
+			os.unsetenv('VEASEL_SKILLS_DIRS')
+		}
+		if had_codex {
+			os.setenv('CODEX_HOME', prior_codex, true)
+		} else {
+			os.unsetenv('CODEX_HOME')
+		}
+		if had_xdg {
+			os.setenv('XDG_CONFIG_HOME', prior_xdg, true)
+		} else {
+			os.unsetenv('XDG_CONFIG_HOME')
+		}
+	}
+	os.write_file(os.join_path(project_skill, 'SKILL.md'), '---\nname: deep-review\ndescription: Review carefully.\n---\n\nUse the reference guide.') or {
 		panic(err)
 	}
-	os.write_file(os.join_path(skill_dir, 'references', 'guide.md'), 'Turn-loaded reference.') or {
+	os.write_file(os.join_path(project_skill, 'references', 'guide.md'), 'Turn-loaded reference.') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(user_skill, 'SKILL.md'), '---\nname: user-review\ndescription: User-scoped review.\n---\n\nUser skill body.') or {
 		panic(err)
 	}
 	store := open_store(':memory:') or { panic(err) }
@@ -421,29 +467,47 @@ fn test_agent_skill_load_tool_loads_body_without_session_enable() {
 		directory: project
 	}) or { panic(err) }
 	mut mcp_connections := []PluginMCPConnection{}
-	load_call := ProviderToolCall{
+	mut denied_context := SessionSkillContext{}
+	project_denied := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
+		id:       'load-project-untrusted'
+		function: ProviderFunctionCall{
+			name:      'agent_skill_load'
+			arguments: '{"plugin_name":"agents","skill_name":"deep-review"}'
+		}
+	}, mut denied_context, {}, mut mcp_connections)
+	assert project_denied.contains('Project-scoped skills require explicit session')
+	mut user_context := SessionSkillContext{}
+	user_loaded := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
+		id:       'load-user-skill'
+		function: ProviderFunctionCall{
+			name:      'agent_skill_load'
+			arguments: '{"plugin_name":"agents","skill_name":"user-review"}'
+		}
+	}, mut user_context, {}, mut mcp_connections)
+	assert user_loaded.contains('User skill body.')
+	assert user_context.resource_access.len == 1
+	store.set_session_plugin_skill(session.id, 'agents', 'deep-review', true) or { panic(err) }
+	mut skill_context := SessionSkillContext{}
+	loaded := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
 		id:       'load-skill'
 		function: ProviderFunctionCall{
 			name:      'agent_skill_load'
 			arguments: '{"plugin_name":"agents","skill_name":"deep-review"}'
 		}
-	}
-	mut skill_context := SessionSkillContext{}
-	loaded := execute_test_agent_tool(app, project, session.id, load_call, mut skill_context, {}, mut mcp_connections)
+	}, mut skill_context, {}, mut mcp_connections)
 	assert loaded.contains('Use the reference guide.')
 	assert loaded.contains('references/guide.md')
 	assert loaded.contains('untrusted')
 	assert skill_context.resource_access.len == 1
 	assert skill_context.resource_access[0].plugin_name == 'agents'
 	assert skill_context.resource_access[0].skill_name == 'deep-review'
-	read_call := ProviderToolCall{
+	read_after_load := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
 		id:       'read-after-load'
 		function: ProviderFunctionCall{
 			name:      'agent_skill_read_resource'
 			arguments: '{"plugin_name":"agents","skill_name":"deep-review","path":"references/guide.md"}'
 		}
-	}
-	read_after_load := execute_test_agent_tool(app, project, session.id, read_call, mut skill_context, {}, mut mcp_connections)
+	}, mut skill_context, {}, mut mcp_connections)
 	assert read_after_load.contains('Turn-loaded reference.')
 	mut missing_context := SessionSkillContext{}
 	missing := execute_test_agent_tool(app, project, session.id, ProviderToolCall{

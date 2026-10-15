@@ -193,6 +193,11 @@ fn qualify_standalone_catalog_name(source string, taken map[string]bool) !(strin
 }
 
 fn find_standalone_skill(project_directory string, source string, skill_name string) !(string, PluginSkill) {
+	skill := find_standalone_skill_entry(project_directory, source, skill_name)!
+	return skill.directory, standalone_skill_to_plugin_skill(skill)
+}
+
+fn find_standalone_skill_entry(project_directory string, source string, skill_name string) !StandaloneSkill {
 	if !is_valid_plugin_name(source) || !is_valid_skill_name(skill_name) {
 		return error('plugin or skill name is invalid')
 	}
@@ -200,10 +205,30 @@ fn find_standalone_skill(project_directory string, source string, skill_name str
 	allowed := standalone_discovery_sources(source)
 	for skill in discovery.skills {
 		if skill.source in allowed && skill.name == skill_name {
-			return skill.directory, standalone_skill_to_plugin_skill(skill)
+			return skill
 		}
 	}
 	return error('standalone skill not found')
+}
+
+// Project-scoped skills live in the workspace tree. They stay fail-closed for
+// model catalog/load until the user explicitly enables them with /skill on
+// (POST /v1/sessions/{id}/skills). User and configured skills keep progressive
+// disclosure; Agent Plugin packages remain outside this gate.
+fn skill_requires_project_trust(scope string) bool {
+	return scope == 'project'
+}
+
+fn session_skill_enabled(skills []SessionPluginSkill, plugin_name string, skill_name string) bool {
+	return skills.any(it.plugin_name == plugin_name && it.skill_name == skill_name)
+}
+
+fn session_enabled_skill_keys(skills []SessionPluginSkill) map[string]bool {
+	mut keys := map[string]bool{}
+	for skill in skills {
+		keys['${skill.plugin_name}/${skill.skill_name}'] = true
+	}
+	return keys
 }
 
 fn find_session_skill(plugin_directory string, project_directory string, plugin_name string, skill_name string) !(string, PluginSkill) {
@@ -695,7 +720,7 @@ pub:
 	truncated bool
 }
 
-fn available_skill_entries_from_catalog(catalog PluginCatalog) ([]AvailableSkillEntry, bool) {
+fn available_skill_entries_from_catalog(catalog PluginCatalog, enabled_keys map[string]bool) ([]AvailableSkillEntry, bool) {
 	mut by_key := map[string]AvailableSkillEntry{}
 	mut keys := []string{}
 	for plugin in catalog.plugins {
@@ -704,6 +729,9 @@ fn available_skill_entries_from_catalog(catalog PluginCatalog) ([]AvailableSkill
 				continue
 			}
 			key := '${plugin.name}/${skill.name}'
+			if skill_requires_project_trust(skill.scope) && !enabled_keys[key] {
+				continue
+			}
 			if key in by_key {
 				continue
 			}
@@ -812,26 +840,33 @@ fn format_available_skills_catalog(entries []AvailableSkillEntry, truncated bool
 	return lines.join('\n')
 }
 
-fn (app &App) available_skills_for_turn(project_directory string) AvailableSkillsDisclosure {
+fn (app &App) available_skills_for_turn(project_directory string, session_id string) AvailableSkillsDisclosure {
+	mut enabled_keys := map[string]bool{}
+	if session_id.len > 0 {
+		mut skill_store := app.store
+		if skills := skill_store.session_plugin_skills(session_id) {
+			enabled_keys = session_enabled_skill_keys(skills)
+		}
+	}
 	catalog := app.plugin_catalog_for_directory(project_directory) or {
 		discovery := discover_standalone_agent_skills(project_directory)
 		mut components := app.plugin_components
 		fallback := apply_plugin_component_state(merge_standalone_skills_into_catalog(PluginCatalog{},
 			discovery), mut components)
-		entries, truncated := available_skill_entries_from_catalog(fallback)
+		entries, truncated := available_skill_entries_from_catalog(fallback, enabled_keys)
 		return AvailableSkillsDisclosure{
 			entries:   entries
 			truncated: truncated
 		}
 	}
-	entries, truncated := available_skill_entries_from_catalog(catalog)
+	entries, truncated := available_skill_entries_from_catalog(catalog, enabled_keys)
 	return AvailableSkillsDisclosure{
 		entries:   entries
 		truncated: truncated
 	}
 }
 
-fn (app &App) available_skills_catalog_for_turn(project_directory string) string {
-	disclosure := app.available_skills_for_turn(project_directory)
+fn (app &App) available_skills_catalog_for_turn(project_directory string, session_id string) string {
+	disclosure := app.available_skills_for_turn(project_directory, session_id)
 	return format_available_skills_catalog(disclosure.entries, disclosure.truncated)
 }

@@ -59,6 +59,23 @@ describe("formatShellReview", () => {
     expect(approvedShellSandboxWarning("seatbelt")).toContain("sandbox-exec")
   })
 
+  test("describes Windows Job Object when the capability is present", () => {
+    const text = formatShellReview({
+      command: "echo hi",
+      cwd: ".",
+      timeoutSeconds: 10,
+      runner: "cmd.exe",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+      output: "",
+      maxLines: 20,
+      sandboxCapability: "windows",
+    })
+    expect(text).toContain("Job Object wrap")
+    expect(text).not.toContain("without an OS sandbox")
+    expect(approvedShellSandboxWarning("windows")).toContain("not AppContainer-isolated")
+  })
+
   test("hides the tail of a command taller than the terminal", () => {
     expect(shellReviewLineBudget(40)).toBe(20)
     const command = longCommand()

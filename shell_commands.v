@@ -235,10 +235,27 @@ fn shell_sandbox_seatbelt_capability() bool {
 	}
 }
 
-// shell_sandbox_windows_capability stays false until Veasel can wrap approved
-// Windows shell in a real OS isolation backend without pretending.
+// windows_job_sandbox_available is true when CreateJobObject + limit setup works.
+// Non-Windows builds always return false so capability checks stay honest.
+fn windows_job_sandbox_available() bool {
+	$if windows {
+		return windows_job_object_backend_available()
+	} $else {
+		return false
+	}
+}
+
+// shell_sandbox_windows_capability is true only when Windows Job Object
+// sandboxing will actually wrap approved shell commands for this process.
 fn shell_sandbox_windows_capability() bool {
-	return false
+	$if windows {
+		if approved_shell_sandbox_mode() == .off {
+			return false
+		}
+		return windows_job_sandbox_available()
+	} $else {
+		return false
+	}
 }
 
 fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCommandResult {
@@ -337,12 +354,23 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 			// VEASEL_SHELL_SANDBOX=auto and sandbox-exec missing: fall through unsandboxed.
 		}
 	} $else $if windows {
-		if mode == .require {
-			return ShellCommandResult{
-				status:    'failed'
-				exit_code: -1
-				output:    'Approved shell execution requires a Windows OS sandbox because VEASEL_SHELL_SANDBOX=require; Veasel does not yet wrap approved Windows shell in Job Object, AppContainer, or restricted-token isolation, so no unsandboxed fallback was started.'
+		if mode != .off {
+			if windows_job_sandbox_available() {
+				return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
+					WindowsShellSandboxOptions{
+						purpose:       'Approved shell execution'
+						fail_closed:   mode == .require
+						allow_network: approved_shell_sandbox_network_allowed()
+					})
 			}
+			if mode == .require {
+				return ShellCommandResult{
+					status:    'failed'
+					exit_code: -1
+					output:    'Approved shell execution requires a Windows Job Object sandbox because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
+				}
+			}
+			// VEASEL_SHELL_SANDBOX=auto and Job Object unavailable: fall through unsandboxed.
 		}
 	} $else {
 		if mode == .require {

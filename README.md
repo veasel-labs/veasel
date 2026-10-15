@@ -104,10 +104,11 @@ The working vertical slice includes:
 
 Honesty bounds that stay in the product voice:
 
-- Approved shell uses Bubblewrap on Linux (`shell.sandbox.bubblewrap`) or
-  Seatbelt on macOS (`shell.sandbox.seatbelt`) when the backend is available;
-  otherwise it falls back unsandboxed. Windows has no advertised OS sandbox
-  yet (`shell.sandbox.windows` stays false). MCP remains unsandboxed—inspect
+- Approved shell uses Bubblewrap on Linux (`shell.sandbox.bubblewrap`), Seatbelt
+  on macOS (`shell.sandbox.seatbelt`), or a Job Object wrap on Windows
+  (`shell.sandbox.windows`) when the backend is available; otherwise it falls
+  back unsandboxed. The Windows wrap is process-tree/resource containment, not
+  AppContainer filesystem/network isolation. MCP remains unsandboxed—inspect
   effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox

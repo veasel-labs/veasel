@@ -38,5 +38,5 @@ change extends a related policy to **manually approved** shell commands when
 
 No Codex or mini-SWE-agent source was copied. Veasel does not claim Codex-level
 sandbox guarantees. macOS Seatbelt parity is documented in
-[`shell-seatbelt-sandbox.md`](shell-seatbelt-sandbox.md); Windows OS sandbox
-wrap remains an honest gap (`shell.sandbox.windows` stays false).
+[`shell-seatbelt-sandbox.md`](shell-seatbelt-sandbox.md) and
+[`shell-windows-job-sandbox.md`](shell-windows-job-sandbox.md).

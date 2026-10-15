@@ -436,6 +436,9 @@ function approvedShellSandboxHint(): string {
   if (shellSandboxCapability === "seatbelt") {
     return "On macOS, approved commands run inside Seatbelt when sandbox-exec is available (writable workspace, home/Volumes restricted, network isolated by default)."
   }
+  if (shellSandboxCapability === "windows") {
+    return "On Windows, approved commands run inside a Job Object wrap when available (process-tree/resource caps; filesystem and network are not AppContainer-isolated)."
+  }
   return "Commands run with your OS user permissions without an OS sandbox when the platform sandbox is unavailable or VEASEL_SHELL_SANDBOX=off."
 }
 
@@ -446,6 +449,9 @@ function pendingShellSandboxNotice(count: number): string {
   }
   if (shellSandboxCapability === "seatbelt") {
     return `${count} shell command proposal${plural} need review. Type /commands to inspect them. Approval runs inside Seatbelt (writable workspace, home/Volumes restricted, network isolated by default); inherited environment may still carry credentials.`
+  }
+  if (shellSandboxCapability === "windows") {
+    return `${count} shell command proposal${plural} need review. Type /commands to inspect them. Approval runs inside a Windows Job Object wrap (process-tree/resource caps; filesystem and network are not AppContainer-isolated); inherited environment may still carry credentials.`
   }
   return `${count} shell command proposal${plural} need review. Type /commands to inspect them. Approval runs commands with your OS user permissions and inherited environment, without an OS sandbox.`
 }
@@ -551,6 +557,8 @@ async function refreshShellSandboxCapability() {
       shellSandboxCapability = "bubblewrap"
     } else if (features.includes("shell.sandbox.seatbelt")) {
       shellSandboxCapability = "seatbelt"
+    } else if (features.includes("shell.sandbox.windows")) {
+      shellSandboxCapability = "windows"
     } else {
       shellSandboxCapability = null
     }

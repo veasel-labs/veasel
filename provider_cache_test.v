@@ -495,6 +495,8 @@ fn test_gemini_cached_content_name_rejects_unsafe_values() {
 	assert normalize_gemini_cached_content_ttl('01s') == gemini_cached_content_ttl_default
 	assert normalize_gemini_cached_content_ttl('0s') == gemini_cached_content_ttl_default
 	assert normalize_gemini_cached_content_ttl('3600s\0') == gemini_cached_content_ttl_default
+	assert normalize_gemini_cached_content_ttl('3600s\t') == gemini_cached_content_ttl_default
+	assert normalize_gemini_cached_content_ttl('3600s${rune(127)}') == gemini_cached_content_ttl_default
 }
 
 fn test_gemini_cached_content_name_prefixes_bare_ids() {

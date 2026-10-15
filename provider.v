@@ -1557,7 +1557,7 @@ fn normalize_gemini_cached_content_ttl(ttl string) string {
 	if value.len == 0 {
 		return gemini_cached_content_ttl_default
 	}
-	if value.len > 32 || value.contains('\0') || value.contains('\r') || value.contains('\n') {
+	if value.len > 32 || provider_text_has_unsafe_controls(value) {
 		return gemini_cached_content_ttl_default
 	}
 	// Gemini expects a duration like 3600s; reject other shapes fail-closed to default.

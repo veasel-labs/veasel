@@ -9,7 +9,9 @@ import strconv
 import time
 
 const max_chat_messages = 64
-const max_chat_input_bytes = 100_000
+// One mebibyte of submitted conversation text. This is not a token budget and
+// does not expose Muse's advertised 1,048,576-token context window.
+const max_chat_input_bytes = 1_048_576
 const max_model_output_tokens = 4096
 const min_configured_output_tokens = 16
 const max_configured_output_tokens = 131_072

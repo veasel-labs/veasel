@@ -261,8 +261,21 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				results: trace_observations
 			}
 		}
+		// Text from the next model round must not stick to this round's
+		// narration. The model-visible message stays unchanged.
+		boundary := tool_round_text_boundary(output.content)
+		if boundary.len > 0 {
+			on_text_delta(boundary)!
+		}
 	}
 	return error('agent tool round limit reached')
+}
+
+fn tool_round_text_boundary(content string) string {
+	if content.len == 0 || content.ends_with('\n') {
+		return ''
+	}
+	return '\n'
 }
 
 fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root string,

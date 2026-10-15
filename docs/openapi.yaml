@@ -1885,7 +1885,7 @@ components:
         content:
           type: string
           minLength: 1
-          maxLength: 100000
+          maxLength: 1048576
     CompletionInput:
       type: object
       required: [messages]
@@ -1913,7 +1913,7 @@ components:
         content:
           type: string
           minLength: 1
-          maxLength: 100000
+          maxLength: 1048576
         collect_trace:
           type: boolean
           default: false

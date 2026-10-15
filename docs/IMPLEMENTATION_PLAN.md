@@ -177,7 +177,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   families. `scripts/api-smoke.sh` exercises both OpenAI transports against
   local fixtures. Muse Wonder and Muse Spark advertise a 1,048,576-token
   context window ([Meta model docs](https://dev.meta.ai/docs/models)), while
-  Veasel currently limits submitted input to 100,000 bytes. Model settings now
+  Veasel currently limits submitted input to 1 MiB (1,048,576 bytes). Model settings now
   expose a per-provider output budget (16–131,072 tokens); zero selects
   Veasel's 4,096-token default, except Meta, which omits `max_output_tokens`
   so Meta applies its own limit. Meta counts reasoning tokens in that budget

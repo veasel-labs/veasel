@@ -994,7 +994,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		cancel()
 	}
 	exchange := app.run_session_message(mut turn_ctx, id, session, input, operation_id) or {
-		app.record_session_turn_failure(id, operation_id, err.msg())
+		app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
 		if err.msg() == 'session not found' {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
@@ -1066,7 +1066,7 @@ fn (app &App) start_async_session_message(operation_id string, turn_done chan in
 			cancel()
 		}
 		_ = app.run_session_message(mut turn_ctx, id, session, input, operation_id) or {
-			app.record_session_turn_failure(id, operation_id, err.msg())
+			app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
 			return
 		}
 	}(app, operation_id, turn_done, cancel, id, session, input)
@@ -1094,13 +1094,27 @@ fn (app &App) persist_partial_trace(id string, operation_id string, steps []ATIF
 	}
 }
 
-fn (app &App) record_session_turn_failure(id string, operation_id string, message string) {
+fn (app &App) record_session_turn_failure(id string, operation_id string, message string, user_content string) {
 	eprintln('veasel: assistant turn failed (${message})')
 	status, public_error := session_turn_failure(message)
 	mut store := app.store
-	store.record_session_turn_completion(id, operation_id, status, public_error) or {
+	streamed := store.assistant_text_for_operation(id, operation_id) or { '' }
+	store.record_session_turn_completion(id, operation_id, status, public_error, user_content,
+		visible_failed_turn(streamed, public_error)) or {
 		eprintln('veasel: unable to persist session turn completion (${err.msg()})')
 	}
+}
+
+// visible_failed_turn keeps any text already streamed and puts the public
+// error on its own line, so a failed prompt remains readable in history.
+fn visible_failed_turn(streamed string, public_error string) string {
+	if streamed.len == 0 {
+		return public_error
+	}
+	if streamed.ends_with('\n') {
+		return streamed + public_error
+	}
+	return streamed + '\n' + public_error
 }
 
 fn session_turn_failure(message string) (string, string) {
@@ -1198,7 +1212,9 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 			return error('unable to encode ATIF trajectory')
 		}
 	}
-	persisted := app.store.append_exchange(id, operation_id, input.content, output.content,
+	visible := app.store.assistant_text_for_operation(id, operation_id) or { output.content }
+	assistant_content := if visible.len > 0 { visible } else { output.content }
+	persisted := app.store.append_exchange(id, operation_id, input.content, assistant_content,
 		output.provider, output.model, trace_json) or {
 		return error('unable to persist session messages')
 	}

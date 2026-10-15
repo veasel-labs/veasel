@@ -18,8 +18,8 @@ import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, prov
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
-import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsPath, settingsProgress } from "./settings-flow"
-import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
+import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
+import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
@@ -240,21 +240,36 @@ function appendSessionDetail(text: string) {
   sessionDetail.content = sessionDetail.plainText + text
 }
 
+const homeFooterHint = "n new · s models · /help · /skills · /mcp · /patches · q quit (home)"
+
+function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
+  if (step === 0) return "Tab group · Enter configure · Esc close"
+  const parts = [
+    step === 2 ? "Enter discovers" : step === 4 ? "Enter saves budget" : step === 1 ? "Enter keeps endpoint" : "Enter selects",
+    "Ctrl+B back",
+  ]
+  if (endpoint) parts.push("Ctrl+U endpoint")
+  if (budget) parts.push("Ctrl+O budget")
+  parts.push("Esc")
+  return parts.join(" · ")
+}
 const footer = new BoxRenderable(renderer, {
-  height: 3,
-  flexDirection: "row",
-  alignItems: "center",
+  height: 4,
+  flexDirection: "column",
+  justifyContent: "center",
   paddingLeft: 1,
-  gap: 2,
+  paddingRight: 1,
+  overflow: "hidden",
   backgroundColor: "#1b222b",
   borderStyle: "rounded",
   borderColor: "#303944",
 })
-const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969" })
+const status = new TextRenderable(renderer, { content: "● connecting", fg: "#f3c969", wrapMode: "none" })
 footer.add(status)
 const footerHint = new TextRenderable(renderer, {
-  content: "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit (home)",
+  content: homeFooterHint,
   fg: "#87949e",
+  wrapMode: "none",
 })
 footer.add(footerHint)
 shell.add(header)
@@ -297,9 +312,12 @@ let settingsCatalogRequestId = 0
 let settingsCatalogController: AbortController | undefined
 const settingsValues = { provider: "", model: "", base_url: "", api_key: "", clear_api_key: false, max_output_tokens: 4096 }
 let settingsEditEndpoint = false
+let settingsEditBudget = false
+let settingsDetourFrom: number | undefined
 let slashContext: SlashCompletionContext = {}
 let slashContextLoading = false
 let slashContextAt = 0
+let slashContextRequest = 0
 let streamingAssistantText = ""
 let skillNotice = ""
 const reviewedEditIds = new Set<string>()
@@ -395,6 +413,7 @@ function safeTerminalReviewText(value: string) {
 }
 
 async function openSession(session: Session) {
+  resetSlashContext()
   activeSession = session
   chatHistoryHasOlder = false
   chatHistoryLoading = false
@@ -422,7 +441,7 @@ async function openSession(session: Session) {
       focusedBackgroundColor: "#293640",
       textColor: "#e5e7eb",
       cursorColor: "#a7f3d0",
-      maxLength: 100_000,
+      maxLength: 1_048_576,
     })
     chatInput = input
     detail.add(input)
@@ -723,39 +742,57 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     activeTurnCancelled = false
     return
   }
-  pendingUserMessage = ""
-  streamingAssistantText = ""
   const userCancelled = activeTurnCancelled
+  let historyLoaded = false
+  try {
+    const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
+      signal: controller.signal,
+    })
+    if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
+    if (activeSession?.id !== sessionId) {
+      sendingMessage = false
+      activeTurnId = undefined
+      activeTurnController = undefined
+      activeTurnCancelled = false
+      return
+    }
+    const latest = await historyResponse.json() as ChatTurn[]
+    chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
+    pendingUserMessage = ""
+    streamingAssistantText = ""
+    renderChat(mergeChatTurns(chatMessages, latest))
+    historyLoaded = true
+    if (completion.status === "completed") await notifyPendingProposals()
+  } catch (error) {
+    if (activeSession?.id === sessionId) renderChat(chatMessages)
+    if (completion.status === "completed") {
+      status.content = `● turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`
+      status.fg = "#f3c969"
+    }
+  }
+  if (activeSession?.id !== sessionId) {
+    sendingMessage = false
+    activeTurnId = undefined
+    activeTurnController = undefined
+    activeTurnCancelled = false
+    return
+  }
   sendingMessage = false
   activeTurnId = undefined
   activeTurnController = undefined
   activeTurnCancelled = false
   if (completion.status === "completed") {
-    try {
-      const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
-        signal: controller.signal,
-      })
-      if (!historyResponse.ok) throw new Error(`HTTP ${historyResponse.status}`)
-      const latest = await historyResponse.json() as ChatTurn[]
-      chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
-      renderChat(mergeChatTurns(chatMessages, latest))
-      await notifyPendingProposals()
+    if (historyLoaded) {
       status.content = `● ${completion.provider ?? "provider"}  ·  ${completion.model ?? "assistant"}`
       status.fg = "#a7f3d0"
-    } catch (error) {
-      status.content = `● turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`
-      status.fg = "#f3c969"
     }
   } else if (completion.status === "uncertain") {
-    renderChat(chatMessages)
     status.content = "● operation outcome uncertain · inspect the workspace before retrying"
     status.fg = "#f3c969"
   } else if (completion.status === "cancelled") {
-    renderChat(chatMessages)
     status.content = userCancelled ? "● response cancelled" : "● turn cancelled"
     status.fg = "#f3c969"
   } else {
-    renderChat(chatMessages)
     status.content = `● message failed  ·  ${completion.error ?? "assistant turn failed"}`
     status.fg = "#f28b82"
   }
@@ -1226,7 +1263,7 @@ function currentSettingsProvider() {
 }
 
 function currentSettingsPath() {
-  return settingsPath(currentSettingsProvider(), { editEndpoint: settingsEditEndpoint })
+  return settingsPath(currentSettingsProvider(), { editEndpoint: settingsEditEndpoint, editBudget: settingsEditBudget })
 }
 
 function settingsTitle(step: number) {
@@ -1243,8 +1280,18 @@ function knownEndpointNote() {
 }
 
 function advanceSettings() {
+  settingsDetourFrom = undefined
   settingsStep = adjacentSettingsStep(currentSettingsPath(), settingsStep, 1)
   showSettingsStep()
+}
+
+function finishModelChoice() {
+  if (currentSettingsPath().includes(4)) {
+    settingsStep = 4
+    showSettingsStep()
+    return
+  }
+  void saveModelSettings()
 }
 
 function closeSettings(message = "Settings unchanged.") {
@@ -1266,12 +1313,14 @@ function closeSettings(message = "Settings unchanged.") {
   settingsModelHint = ""
   settingsManualModel = false
   settingsEditEndpoint = false
+  settingsEditBudget = false
+  settingsDetourFrom = undefined
   settingsValues.api_key = ""
   settingsOpen = false
   sidebar.visible = true
   portraitRenderable.visible = !activeSession
   brandLabel.visible = !activeSession
-  footerHint.content = "n new   s models   /models   /help   /skills   /mcp   /patches   /commands   Esc cancel   ↑/↓   q quit (home)"
+  footerHint.content = homeFooterHint
   sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or press s to configure your model provider."
   status.content = `● ${message}`
   status.fg = "#a7f3d0"
@@ -1310,16 +1359,9 @@ function showSettingsStep(manualModel = false) {
   sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${settingPrompts[settingsStep]}${knownEndpointNote()}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
   status.content = `● provider settings · ${settingsTitle(settingsStep).replace("MODEL SETTINGS  /  ", "")}`
   status.fg = "#a7f3d0"
-  const endpointHint = settingsStep > 0 && !settingsEditEndpoint && providerHasKnownEndpoint(providerInfo ?? { base_url: "" }) ? " · Ctrl+U endpoint" : ""
-  footerHint.content = settingsStep === 0
-    ? "Tab group · search handles typos · Enter configure · Esc close"
-    : settingsStep === 3
-      ? `Type to filter · Enter selects · Ctrl+B back${endpointHint} · Esc cancels`
-      : settingsStep === 4
-        ? `Enter keeps this budget · Ctrl+B back${endpointHint} · Esc cancels`
-      : settingsStep === 2
-        ? `Type API key (hidden) · Enter discovers models · Ctrl+B back${endpointHint} · Esc cancels`
-        : "Enter keeps this endpoint · Ctrl+B goes back · Esc cancels"
+  const endpointShortcut = settingsStep > 0 && !settingsEditEndpoint && providerHasKnownEndpoint(providerInfo ?? { base_url: "" })
+  const budgetShortcut = settingsStep > 0 && settingsStep !== 4
+  footerHint.content = settingsFooterHint(settingsStep, endpointShortcut, budgetShortcut)
   if (settingsStep === 0) {
     const catalog = settingsView?.providers ?? []
     if (catalog.length === 0) {
@@ -1389,7 +1431,7 @@ function showSettingsStep(manualModel = false) {
     if (settingsModelCatalog.length > 0) {
       const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
       sessionDetail.content = `${settingsTitle(3)}\n\n${settingPrompts[3]}${knownEndpointNote()}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nEnter selects · Ctrl+B goes back · Esc cancels`
-      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · search handles typos · Enter select · Ctrl+B back · Esc cancel`
+      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · Enter select · Ctrl+B back · Esc cancel`
       const selectedIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
@@ -1421,8 +1463,7 @@ function showSettingsStep(manualModel = false) {
         }
         settingsValues.model = String(option.value ?? "")
         settingsModelHint = ""
-        settingsStep = 4
-        showSettingsStep()
+        finishModelChoice()
       })
       return
     }
@@ -1490,8 +1531,7 @@ function showSettingsStep(manualModel = false) {
         return
       }
       settingsModelHint = ""
-      settingsStep = 4
-      showSettingsStep()
+      finishModelChoice()
       return
     }
     advanceSettings()
@@ -1499,6 +1539,7 @@ function showSettingsStep(manualModel = false) {
 }
 
 async function loadProviderModels() {
+  if (!settingsOpen) return
   settingsCatalogController?.abort()
   const requestId = ++settingsCatalogRequestId
   const requestController = new AbortController()
@@ -1508,7 +1549,7 @@ async function loadProviderModels() {
   const providerName = providerInfo?.name ?? provider
   const providerGuide = providerInfo?.documentation_url ? `\n\nProvider docs · ${providerInfo.documentation_url}` : ""
   sessionDetail.content = `${settingsTitle(3)}\n\nChecking ${providerName} and discovering models…${knownEndpointNote()}${providerGuide}\n\nCtrl+B goes back · Esc cancels`
-  footerHint.content = `Checking ${safeTerminalText(providerName)} · discovering models · Esc cancels`
+  footerHint.content = "Discovering models · Esc cancels"
   try {
     const response = await fetch(`${apiBase}/v1/config/models`, {
       method: "POST",
@@ -1536,7 +1577,7 @@ async function loadProviderModels() {
     settingsModelCatalog = []
     settingsModelHint = `Model discovery failed: ${error instanceof Error ? error.message.replace(/\.$/, "") : "request failed"}. Enter a model ID manually.`
   }
-  if (requestId !== settingsCatalogRequestId) return
+  if (requestId !== settingsCatalogRequestId || !settingsOpen || settingsStep !== 3) return
   settingsCatalogController = undefined
   showSettingsStep()
 }
@@ -1621,6 +1662,13 @@ function resetSlashMenu() {
   if (slashMenu) slashMenu.visible = false
 }
 
+function resetSlashContext() {
+  slashContext = {}
+  slashContextAt = 0
+  slashContextRequest += 1
+  slashContextLoading = false
+}
+
 function updateSlashMenu(value: string) {
   if (!slashMenu) return
   if (slashDismissedFor !== undefined && value !== slashDismissedFor) slashDismissedFor = undefined
@@ -1636,8 +1684,11 @@ function updateSlashMenu(value: string) {
 
 async function refreshSlashContext(typed: string) {
   if (!activeSession || slashContextLoading) return
+  const requestedSessionId = activeSession.id
+  const request = ++slashContextRequest
   slashContextLoading = true
-  const sessionId = encodeURIComponent(activeSession.id)
+  const sessionId = encodeURIComponent(requestedSessionId)
+  let nextContext: SlashCompletionContext | undefined
   try {
     const [editsResponse, commandsResponse, callsResponse, pluginsResponse, serversResponse] = await Promise.all([
       fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/edits`, { signal: controller.signal }),
@@ -1652,7 +1703,7 @@ async function refreshSlashContext(typed: string) {
     const plugins = pluginsResponse.ok ? await pluginsResponse.json() as PluginCatalog : { plugins: [] }
     const trustedServers = serversResponse.ok ? await serversResponse.json() as SessionPluginMCPServer[] : []
     const trusted = new Set(trustedServers.map((server) => `${server.plugin_name}/${server.server_name}`))
-    slashContext = {
+    nextContext = {
       patches: edits.filter((edit) => edit.status === "pending").map((edit) => ({ value: edit.id, description: `pending · ${edit.path}` })),
       commands: commands.filter((item) => item.status === "pending").map((item) => ({ value: item.id, description: `pending · ${item.command}` })),
       mcpCalls: calls.filter((call) => call.status === "pending").map((call) => ({ value: call.id, description: `pending · ${call.plugin_name}/${call.tool_name}` })),
@@ -1665,9 +1716,11 @@ async function refreshSlashContext(typed: string) {
   } catch {
     // Subcommands still complete when the session lists cannot be loaded.
   } finally {
-    slashContextAt = Date.now()
-    slashContextLoading = false
+    if (request === slashContextRequest) slashContextLoading = false
   }
+  if (request !== slashContextRequest || !slashContextApplies(requestedSessionId, activeSession?.id)) return
+  if (nextContext) slashContext = nextContext
+  slashContextAt = Date.now()
   if (chatInput?.value === typed) updateSlashMenu(typed)
 }
 
@@ -1747,8 +1800,16 @@ function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
 renderer.keyInput.on("keypress", (key) => {
   if (settingsOpen) {
     if (key.name === "escape") closeSettings()
+    else if (key.ctrl && key.name === "o" && settingsStep > 0 && settingsStep !== 4) {
+      key.stopPropagation()
+      settingsDetourFrom = settingsStep
+      settingsEditBudget = true
+      settingsStep = 4
+      showSettingsStep()
+    }
     else if (key.ctrl && key.name === "u" && settingsStep > 0 && settingsStep !== 1) {
       key.stopPropagation()
+      settingsDetourFrom = settingsStep
       settingsEditEndpoint = true
       settingsStep = 1
       showSettingsStep()
@@ -1758,8 +1819,11 @@ renderer.keyInput.on("keypress", (key) => {
       settingsCatalogRequestId++
       settingsCatalogController?.abort()
       settingsCatalogController = undefined
-      const previous = adjacentSettingsStep(currentSettingsPath(), settingsStep, -1)
-      if (previous !== settingsStep) settingsStep = previous
+      const back = settingsBackTarget(currentSettingsPath(), settingsStep, settingsDetourFrom)
+      if (back.cancelDetour && settingsStep === 1) settingsEditEndpoint = false
+      if (back.cancelDetour && settingsStep === 4) settingsEditBudget = false
+      settingsDetourFrom = back.cancelDetour ? undefined : settingsDetourFrom
+      if (back.step !== settingsStep) settingsStep = back.step
       settingsModelCatalog = undefined
       settingsModelSearchQuery = ""
       if (settingsStep < 3) settingsManualModel = false
@@ -1845,8 +1909,14 @@ renderer.keyInput.on("keypress", (key) => {
       detail.remove(chatInput)
       chatInput = undefined
       unmountSlashMenu()
+      resetSlashContext()
       activeSession = undefined
+      portraitRenderable.visible = true
+      brandLabel.visible = true
+      footerHint.content = homeFooterHint
       sessionDetail.content = "Your V-powered coding companion.\n\nChoose a session on the left, or press n to start a fresh workspace. Veasel keeps your session history close and ready to pick up again."
+      status.content = "● connected"
+      status.fg = "#a7f3d0"
     }
     return
   }

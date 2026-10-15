@@ -48,7 +48,7 @@ fn test_headless_cli_rejects_missing_or_oversized_prompts() {
 	if _ := parse_headless_run_args(['--prompt', too_large], '/tmp/workspace') {
 		assert false
 	} else {
-		assert err.msg().contains('100000-byte limit')
+		assert err.msg().contains('${max_headless_prompt_bytes}-byte limit')
 	}
 }
 

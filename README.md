@@ -194,7 +194,7 @@ high reasoning, automatic reasoning summaries, and encrypted reasoning replay.
 Model settings configure a maximum output-token budget; Meta's default omits
 `max_output_tokens` so the provider chooses its limit. Meta counts reasoning
 tokens against that budget. The server currently limits submitted conversation
-input to 100,000 bytes; Veasel does not yet expose Muse's full 1,048,576-token
+input to 1 MiB (1,048,576 bytes); Veasel does not yet expose Muse's full 1,048,576-token
 context window.
 For a Meta account, set `MODEL_API_KEY`, open Veasel's provider settings with
 `s` on the home screen (or `/models` in a session), select `meta`, and choose an

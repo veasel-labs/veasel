@@ -184,15 +184,16 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   substantial implementation and fixture coverage. Operator-managed local
   package links (`/v1/plugins/links`, TUI `/plugin add|remove`, capability
   `plugins.links`) are implemented; they do not fetch remote packages.
-  Operator-configured MCP servers (user scope under
-  `$VEASEL_DATA_DIR/mcp-servers.json`) support add/list/update/remove and
-  enable/disable via `/v1/mcp-servers`, TUI `/mcp add|remove|enable|disable`,
-  and capability `mcp.servers.configured`; trust and per-call approval reuse
-  the existing `configured/<name>` session path. The client namespace
-  `com.veasel.code` records an optional `display_name`
-  and whether its directory stays inside the package; it does not read that
-  directory. Remaining gaps (OAuth, GET notification streams, project-scope
-  MCP config, plugin component enable/disable) are tracked in
+  Operator-configured MCP servers support user scope, project scope
+  (`<workspace>/.veasel/mcp-servers.json`), and read-only project-import of
+  portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, TUI
+  `/mcp add|remove|enable|disable` with optional `user|project`, and
+  capability `mcp.servers.configured`; trust and per-call approval reuse
+  `configured/<name>`. Precedence: project > project-import > user. The
+  client namespace `com.veasel.code` records an optional `display_name` and
+  whether its directory stays inside the package; it does not read that
+  directory. Remaining gaps (OAuth, GET notification streams,
+  `notifications/cancelled`, plugin component enable/disable) are tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
   persist per-session activation, include bounded instructions as untrusted
@@ -214,12 +215,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   discover bounded tools, route calls through provider adapters, and keep nested
   JSON Schemas intact. Full conformance suite remains open.
 - [x] Let operators add standalone MCP servers (stdio or Streamable HTTP) without
-  an Agent Plugin package: durable `$VEASEL_DATA_DIR/mcp-servers.json` (user
-  scope), `GET/POST /v1/mcp-servers` and `PATCH/DELETE /v1/mcp-servers/{name}`,
-  TUI `/mcp add|remove|enable|disable`, capability `mcp.servers.configured`,
-  synthetic catalog package `configured`, trust as `configured/<name>`.
-  Per-call approval is unchanged. OAuth, `notifications/cancelled`, and
-  project-scoped MCP files remain open.
+  an Agent Plugin package: durable user and project files, read-only import of
+  portable `.mcp.json` / `.cursor/mcp.json`, `GET/POST /v1/mcp-servers` and
+  `PATCH/DELETE /v1/mcp-servers/{name}` with scope, TUI `/mcp` with
+  `user|project`, capability `mcp.servers.configured`, synthetic catalog
+  package `configured`, trust as `configured/<name>`. Per-call approval is
+  unchanged. OAuth and `notifications/cancelled` remain open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

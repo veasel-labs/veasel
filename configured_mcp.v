@@ -6,10 +6,23 @@ import sync
 
 // Synthetic Agent Plugin name for operator-configured MCP servers that are not
 // packaged as plugin.json. Trust and tool routing use configured/<server>.
-// Configurations persist under $VEASEL_DATA_DIR/mcp-servers.json (user scope).
+// User scope: $VEASEL_DATA_DIR/mcp-servers.json (writable).
+// Project scope: <workspace>/.veasel/mcp-servers.json (writable).
+// Project-import: read-only portable mcpServers layouts verified from
+// competitors — workspace-root .mcp.json (Claude Code / Copilot portable) and
+// .cursor/mcp.json (Cursor project). .vscode/mcp.json uses a different
+// top-level "servers" key and is not auto-imported.
+// Precedence for the same configured/<name> (highest wins): project >
+// project-import (.mcp.json then .cursor/mcp.json) > user. Agent Plugin
+// servers stay namespaced as <plugin>/<server> and do not collide.
 const configured_mcp_plugin_name = 'configured'
 const max_configured_mcp_servers = 32
 const max_configured_mcp_name_len = 64
+const configured_mcp_scope_user = 'user'
+const configured_mcp_scope_project = 'project'
+const configured_mcp_scope_project_import = 'project-import'
+const configured_mcp_import_mcp_json = '.mcp.json'
+const configured_mcp_import_cursor = '.cursor/mcp.json'
 
 struct PersistedConfiguredMCP {
 mut:
@@ -33,7 +46,8 @@ pub:
 pub struct ConfiguredMCPServerView {
 pub:
 	name         string
-	scope        string = 'user'
+	scope        string = configured_mcp_scope_user
+	config_file  string @[json: 'config_file'; omitempty]
 	enabled      bool
 	transport    string
 	command      string   @[omitempty]
@@ -46,9 +60,11 @@ pub:
 
 pub struct ConfiguredMCPCatalog {
 pub:
-	scope   string = 'user'
-	path    string @[omitempty]
-	servers []ConfiguredMCPServerView
+	scope        string = configured_mcp_scope_user
+	path         string   @[omitempty]
+	project_path string   @[json: 'project_path'; omitempty]
+	import_paths []string @[json: 'import_paths'; omitempty]
+	servers      []ConfiguredMCPServerView
 }
 
 struct ConfiguredMCPServerInput {
@@ -61,7 +77,9 @@ pub:
 	env       map[string]string
 	url       string
 	headers   map[string]string
-	enabled   bool = true
+	enabled   bool   = true
+	scope     string = configured_mcp_scope_user
+	directory string
 }
 
 struct ConfiguredMCPEnableInput {
@@ -135,6 +153,10 @@ fn is_valid_configured_mcp_name(name string) bool {
 }
 
 fn (mut state ConfiguredMCPState) view() ConfiguredMCPCatalog {
+	return state.view_scoped(configured_mcp_scope_user)
+}
+
+fn (mut state ConfiguredMCPState) view_scoped(scope string) ConfiguredMCPCatalog {
 	state.mu.lock()
 	defer {
 		state.mu.unlock()
@@ -142,19 +164,30 @@ fn (mut state ConfiguredMCPState) view() ConfiguredMCPCatalog {
 	mut servers := []ConfiguredMCPServerView{cap: state.settings.servers.len}
 	for name in state.settings.servers.keys().sorted() {
 		spec := state.settings.servers[name]
-		servers << configured_spec_view(name, spec)
+		servers << configured_spec_view(name, spec, scope)
 	}
 	return ConfiguredMCPCatalog{
-		scope:   'user'
+		scope:   scope
 		path:    state.path
 		servers: servers
 	}
 }
 
-fn configured_spec_view(name string, spec ConfiguredMCPServerSpec) ConfiguredMCPServerView {
+fn configured_spec_view(name string, spec ConfiguredMCPServerSpec, scope string) ConfiguredMCPServerView {
+	return configured_spec_view_with_source(name, spec, scope, '')
+}
+
+fn configured_spec_view_with_source(name string, spec ConfiguredMCPServerSpec, scope string, config_file string) ConfiguredMCPServerView {
+	resolved_scope := if scope.len > 0 { scope } else { configured_mcp_scope_user }
+	resolved_file := if config_file.len > 0 {
+		config_file
+	} else {
+		configured_mcp_source_for_scope(resolved_scope)
+	}
 	return ConfiguredMCPServerView{
 		name:         name
-		scope:        'user'
+		scope:        resolved_scope
+		config_file:  resolved_file
 		enabled:      !spec.disabled
 		transport:    spec.transport
 		command:      spec.command
@@ -216,7 +249,32 @@ fn (mut state ConfiguredMCPState) upsert(input ConfiguredMCPServerInput) !Config
 	}
 	state.persist(updated)!
 	state.settings = updated
-	return configured_spec_view(input.name, spec)
+	return configured_spec_view(input.name, spec, configured_mcp_scope_user)
+}
+
+fn (mut state ConfiguredMCPState) upsert_scoped(input ConfiguredMCPServerInput, scope string) !ConfiguredMCPServerView {
+	view := state.upsert(input)!
+	return ConfiguredMCPServerView{
+		name:         view.name
+		scope:        scope
+		config_file:  configured_mcp_source_for_scope(scope)
+		enabled:      view.enabled
+		transport:    view.transport
+		command:      view.command
+		args:         view.args
+		cwd:          view.cwd
+		env_keys:     view.env_keys
+		url_origin:   view.url_origin
+		header_names: view.header_names
+	}
+}
+
+fn configured_mcp_source_for_scope(scope string) string {
+	return match scope {
+		configured_mcp_scope_project { os.join_path('.veasel', 'mcp-servers.json') }
+		configured_mcp_scope_user { 'mcp-servers.json' }
+		else { '' }
+	}
 }
 
 fn (mut state ConfiguredMCPState) set_enabled(name string, enabled bool) !ConfiguredMCPServerView {
@@ -245,7 +303,24 @@ fn (mut state ConfiguredMCPState) set_enabled(name string, enabled bool) !Config
 	}
 	state.persist(updated)!
 	state.settings = updated
-	return configured_spec_view(name, spec)
+	return configured_spec_view(name, spec, configured_mcp_scope_user)
+}
+
+fn (mut state ConfiguredMCPState) set_enabled_scoped(name string, enabled bool, scope string) !ConfiguredMCPServerView {
+	view := state.set_enabled(name, enabled)!
+	return ConfiguredMCPServerView{
+		name:         view.name
+		scope:        scope
+		config_file:  configured_mcp_source_for_scope(scope)
+		enabled:      view.enabled
+		transport:    view.transport
+		command:      view.command
+		args:         view.args
+		cwd:          view.cwd
+		env_keys:     view.env_keys
+		url_origin:   view.url_origin
+		header_names: view.header_names
+	}
 }
 
 fn (mut state ConfiguredMCPState) remove(name string) ! {
@@ -418,6 +493,8 @@ fn decode_configured_mcp_input(raw string) !ConfiguredMCPServerInput {
 	mut env := map[string]string{}
 	mut headers := map[string]string{}
 	mut enabled := true
+	mut scope := configured_mcp_scope_user
+	mut directory := ''
 	if command_value := fields['command'] {
 		if command_value !is string {
 			return error('command must be a string')
@@ -475,6 +552,24 @@ fn decode_configured_mcp_input(raw string) !ConfiguredMCPServerInput {
 		}
 		enabled = enabled_value as bool
 	}
+	if scope_value := fields['scope'] {
+		if scope_value !is string {
+			return error('scope must be a string')
+		}
+		scope = (scope_value as string).trim_space()
+		if scope.len == 0 {
+			scope = configured_mcp_scope_user
+		}
+		if scope !in [configured_mcp_scope_user, configured_mcp_scope_project] {
+			return error('scope must be user or project')
+		}
+	}
+	if directory_value := fields['directory'] {
+		if directory_value !is string {
+			return error('directory must be a string')
+		}
+		directory = directory_value as string
+	}
 	return ConfiguredMCPServerInput{
 		name:      name_value as string
 		transport: transport_value as string
@@ -485,6 +580,8 @@ fn decode_configured_mcp_input(raw string) !ConfiguredMCPServerInput {
 		url:       url
 		headers:   headers
 		enabled:   enabled
+		scope:     scope
+		directory: directory
 	}
 }
 
@@ -533,7 +630,7 @@ fn merge_configured_mcp_into_catalog(catalog PluginCatalog, servers []PluginMCPS
 	plugins << PluginCatalogEntry{
 		name:        configured_mcp_plugin_name
 		version:     '1'
-		description: 'Operator-configured MCP servers persisted under VEASEL_DATA_DIR (user scope; not an Agent Plugin package).'
+		description: 'Operator-configured MCP servers from VEASEL_DATA_DIR and optional <workspace>/.veasel (not an Agent Plugin package).'
 		skills:      []PluginSkillSummary{}
 		mcp_servers: mcp_servers
 		diagnostics: []PluginDiagnostic{}
@@ -549,34 +646,360 @@ fn (app &App) configured_mcp_package_root(server_name string) string {
 	return os.join_path(app.plugin_data_directory, configured_mcp_plugin_name, server_name)
 }
 
-fn (app &App) find_session_mcp_server(plugin_name string, server_name string) !(string, PluginMCPServer) {
-	if plugin_name == configured_mcp_plugin_name {
-		mut state := app.configured_mcp
-		server := state.get_plugin_server(server_name)!
-		mut root := app.configured_mcp_package_root(server_name)
-		os.mkdir_all(root)!
-		// Absolute cwd is stored on the spec for display/persistence. The stdio
-		// transport only accepts plugin-relative cwd tokens, so promote the
-		// absolute directory to PLUGIN_ROOT and clear the server cwd.
-		if server.transport == 'stdio' && server.cwd.len > 0 {
-			root = server.cwd
-			return root, PluginMCPServer{
-				name:        server.name
-				transport:   server.transport
-				command:     server.command
-				args:        server.args
-				cwd:         ''
-				env:         server.env
-				plugin_name: server.plugin_name
+fn project_configured_mcp_path(workspace string) string {
+	if workspace.len == 0 {
+		return ''
+	}
+	return os.join_path(workspace, '.veasel', 'mcp-servers.json')
+}
+
+fn normalize_configured_mcp_scope(scope string) !string {
+	trimmed := scope.trim_space()
+	if trimmed.len == 0 || trimmed == configured_mcp_scope_user {
+		return configured_mcp_scope_user
+	}
+	if trimmed == configured_mcp_scope_project {
+		return configured_mcp_scope_project
+	}
+	return error('scope must be user or project')
+}
+
+fn resolve_configured_mcp_workspace(directory string) !string {
+	trimmed := directory.trim_space()
+	if trimmed.len == 0 {
+		return error('project-scoped MCP requires an absolute workspace directory')
+	}
+	return canonical_project_directory(trimmed)!
+}
+
+// merge_configured_plugin_servers overlays layers from lowest to highest
+// precedence. Later layers replace the same server name.
+fn merge_configured_plugin_servers(layers [][]PluginMCPServer) []PluginMCPServer {
+	mut by_name := map[string]PluginMCPServer{}
+	for layer in layers {
+		for server in layer {
+			by_name[server.name] = server
+		}
+	}
+	mut merged := []PluginMCPServer{cap: by_name.len}
+	for name in by_name.keys().sorted() {
+		merged << by_name[name]
+	}
+	return merged
+}
+
+fn configured_mcp_string_contains_unexpanded(value string) bool {
+	return value.contains(r'${')
+}
+
+fn configured_mcp_map_contains_unexpanded(values map[string]string) bool {
+	for key, value in values {
+		if configured_mcp_string_contains_unexpanded(key)
+			|| configured_mcp_string_contains_unexpanded(value) {
+			return true
+		}
+	}
+	return false
+}
+
+fn parse_imported_mcp_servers_document(raw string, source string) ([]ConfiguredMCPServerView, []PluginMCPServer) {
+	empty_views := []ConfiguredMCPServerView{}
+	empty_servers := []PluginMCPServer{}
+	fields := json2.decode[map[string]json2.Any](raw) or { return empty_views, empty_servers }
+	servers_value := fields['mcpServers'] or { return empty_views, empty_servers }
+	if servers_value !is map[string]json2.Any {
+		return empty_views, empty_servers
+	}
+	mut views := []ConfiguredMCPServerView{}
+	mut plugin_servers := []PluginMCPServer{}
+	for name in (servers_value as map[string]json2.Any).keys().sorted() {
+		if !is_valid_configured_mcp_name(name) {
+			continue
+		}
+		entry := (servers_value as map[string]json2.Any)[name] or { continue }
+		input := decode_imported_mcp_server_entry(name, entry) or { continue }
+		mut has_unexpanded := configured_mcp_string_contains_unexpanded(input.command)
+			|| configured_mcp_string_contains_unexpanded(input.cwd)
+			|| configured_mcp_string_contains_unexpanded(input.url)
+			|| configured_mcp_map_contains_unexpanded(input.env)
+			|| configured_mcp_map_contains_unexpanded(input.headers)
+		if !has_unexpanded {
+			for argument in input.args {
+				if configured_mcp_string_contains_unexpanded(argument) {
+					has_unexpanded = true
+					break
+				}
 			}
 		}
-		return root, server
+		if has_unexpanded {
+			continue
+		}
+		spec := parse_configured_mcp_input(input) or { continue }
+		server := configured_spec_to_plugin_server(name, spec) or { continue }
+		views << configured_spec_view_with_source(name, spec, configured_mcp_scope_project_import,
+			source)
+		plugin_servers << server
+	}
+	return views, plugin_servers
+}
+
+fn decode_imported_mcp_server_entry(name string, value json2.Any) !ConfiguredMCPServerInput {
+	if value !is map[string]json2.Any {
+		return error('imported MCP server must be an object')
+	}
+	fields := value as map[string]json2.Any
+	mut transport := ''
+	if type_value := fields['type'] {
+		if type_value !is string {
+			return error('type must be a string')
+		}
+		transport = (type_value as string).trim_space()
+	}
+	mut command := ''
+	mut args := []string{}
+	mut cwd := ''
+	mut env := map[string]string{}
+	mut url := ''
+	mut headers := map[string]string{}
+	if command_value := fields['command'] {
+		if command_value !is string {
+			return error('command must be a string')
+		}
+		command = command_value as string
+	}
+	if url_value := fields['url'] {
+		if url_value !is string {
+			return error('url must be a string')
+		}
+		url = url_value as string
+	}
+	if transport.len == 0 {
+		if command.len > 0 {
+			transport = 'stdio'
+		} else if url.len > 0 {
+			transport = 'streamable-http'
+		} else {
+			return error('imported MCP server needs command or url')
+		}
+	}
+	match transport {
+		'stdio' {}
+		'http' {
+			transport = 'streamable-http'
+		}
+		'streamable-http' {}
+		else {
+			return error('unsupported imported MCP transport')
+		}
+	}
+	if args_value := fields['args'] {
+		if args_value !is []json2.Any {
+			return error('args must be an array of strings')
+		}
+		for item in args_value as []json2.Any {
+			if item !is string {
+				return error('args must be an array of strings')
+			}
+			args << item as string
+		}
+	}
+	if cwd_value := fields['cwd'] {
+		if cwd_value !is string {
+			return error('cwd must be a string')
+		}
+		cwd = cwd_value as string
+	}
+	if env_value := fields['env'] {
+		if env_value !is map[string]json2.Any {
+			return error('env must be an object of strings')
+		}
+		for key, item in env_value as map[string]json2.Any {
+			if item !is string {
+				return error('env must be an object of strings')
+			}
+			env[key] = item as string
+		}
+	}
+	if headers_value := fields['headers'] {
+		if headers_value !is map[string]json2.Any {
+			return error('headers must be an object of strings')
+		}
+		for key, item in headers_value as map[string]json2.Any {
+			if item !is string {
+				return error('headers must be an object of strings')
+			}
+			headers[key] = item as string
+		}
+	}
+	return ConfiguredMCPServerInput{
+		name:      name
+		transport: transport
+		command:   command
+		args:      args
+		cwd:       cwd
+		env:       env
+		url:       url
+		headers:   headers
+		enabled:   true
+		scope:     configured_mcp_scope_project_import
+	}
+}
+
+fn load_imported_project_mcp(workspace string) ([]ConfiguredMCPServerView, []PluginMCPServer, []string) {
+	mut views := []ConfiguredMCPServerView{}
+	mut plugin_servers := []PluginMCPServer{}
+	mut import_paths := []string{}
+	// Lower precedence first so .mcp.json overlays .cursor/mcp.json when both
+	// define the same name in the import layer (portable layout wins).
+	for relative in [configured_mcp_import_cursor, configured_mcp_import_mcp_json] {
+		path := os.join_path(workspace, relative)
+		if !os.is_file(path) {
+			continue
+		}
+		raw := os.read_file(path) or { continue }
+		file_views, file_servers := parse_imported_mcp_servers_document(raw, relative)
+		if file_views.len == 0 && file_servers.len == 0 {
+			// Still record the path so operators can see we considered it.
+			import_paths << path
+			continue
+		}
+		import_paths << path
+		views << file_views
+		plugin_servers << file_servers
+	}
+	return views, plugin_servers, import_paths
+}
+
+fn find_imported_project_mcp_server(workspace string, server_name string) ?PluginMCPServer {
+	// Highest import precedence first for trust resolution.
+	for relative in [configured_mcp_import_mcp_json, configured_mcp_import_cursor] {
+		path := os.join_path(workspace, relative)
+		if !os.is_file(path) {
+			continue
+		}
+		raw := os.read_file(path) or { continue }
+		_, servers := parse_imported_mcp_servers_document(raw, relative)
+		for server in servers {
+			if server.name == server_name {
+				return server
+			}
+		}
+	}
+	return none
+}
+
+fn promote_configured_mcp_stdio_root(app &App, server PluginMCPServer) !(string, PluginMCPServer) {
+	mut root := app.configured_mcp_package_root(server.name)
+	os.mkdir_all(root)!
+	// Absolute cwd is stored on the spec for display/persistence. The stdio
+	// transport only accepts plugin-relative cwd tokens, so promote the
+	// absolute directory to PLUGIN_ROOT and clear the server cwd.
+	if server.transport == 'stdio' && server.cwd.len > 0 {
+		root = server.cwd
+		return root, PluginMCPServer{
+			name:        server.name
+			transport:   server.transport
+			command:     server.command
+			args:        server.args
+			cwd:         ''
+			env:         server.env
+			plugin_name: server.plugin_name
+		}
+	}
+	return root, server
+}
+
+fn (app &App) list_configured_mcp_catalog(workspace string) ConfiguredMCPCatalog {
+	mut user_state := app.configured_mcp
+	user := user_state.view_scoped(configured_mcp_scope_user)
+	mut servers := user.servers.clone()
+	mut project_path := ''
+	mut import_paths := []string{}
+	mut catalog_scope := configured_mcp_scope_user
+	if workspace.trim_space().len > 0 {
+		if resolved := resolve_configured_mcp_workspace(workspace) {
+			project_path = project_configured_mcp_path(resolved)
+			mut project_state := new_configured_mcp_state(project_path)
+			project := project_state.view_scoped(configured_mcp_scope_project)
+			imported_views, _, found_imports := load_imported_project_mcp(resolved)
+			import_paths = found_imports.clone()
+			servers << imported_views
+			servers << project.servers
+			if project.servers.len > 0 || os.is_file(project_path) || imported_views.len > 0
+				|| found_imports.len > 0 {
+				catalog_scope = 'mixed'
+			}
+		}
+	}
+	// Stable order: name, then scope (user < project-import < project).
+	mut by_key := map[string]ConfiguredMCPServerView{}
+	mut keys := []string{}
+	for server in servers {
+		key := server.name + '/' + server.scope + '/' + server.config_file // field access, not a string prefix
+		if key in by_key {
+			continue
+		}
+		by_key[key] = server
+		keys << key
+	}
+	keys.sort()
+	mut ordered := []ConfiguredMCPServerView{cap: keys.len}
+	for key in keys {
+		ordered << by_key[key]
+	}
+	return ConfiguredMCPCatalog{
+		scope:        catalog_scope
+		path:         user.path
+		project_path: project_path
+		import_paths: import_paths
+		servers:      ordered
+	}
+}
+
+fn (app &App) configured_mcp_state_for_scope(scope string, directory string) !&ConfiguredMCPState {
+	resolved_scope := normalize_configured_mcp_scope(scope)!
+	if resolved_scope == configured_mcp_scope_user {
+		return app.configured_mcp
+	}
+	workspace := resolve_configured_mcp_workspace(directory)!
+	path := project_configured_mcp_path(workspace)
+	return new_configured_mcp_state(path)
+}
+
+fn (app &App) find_session_mcp_server(plugin_name string, server_name string, workspace string) !(string, PluginMCPServer) {
+	if plugin_name == configured_mcp_plugin_name {
+		if workspace.trim_space().len > 0 {
+			if resolved := resolve_configured_mcp_workspace(workspace) {
+				mut project_state := new_configured_mcp_state(project_configured_mcp_path(resolved))
+				if server := project_state.get_plugin_server(server_name) {
+					return promote_configured_mcp_stdio_root(app, server)!
+				}
+				if imported := find_imported_project_mcp_server(resolved, server_name) {
+					return promote_configured_mcp_stdio_root(app, imported)!
+				}
+			}
+		}
+		mut state := app.configured_mcp
+		server := state.get_plugin_server(server_name)!
+		return promote_configured_mcp_stdio_root(app, server)!
 	}
 	return find_agent_mcp_server(app.plugin_directory, plugin_name, server_name)
 }
 
 fn (app &App) plugin_catalog_for_directory(project_directory string) !PluginCatalog {
 	catalog := discover_agent_plugins_with_standalone(app.plugin_directory, project_directory)!
-	mut state := app.configured_mcp
-	return merge_configured_mcp_into_catalog(catalog, state.list_plugin_servers())
+	mut user_state := app.configured_mcp
+	user_servers := user_state.list_plugin_servers()
+	mut project_servers := []PluginMCPServer{}
+	mut import_servers := []PluginMCPServer{}
+	if project_directory.trim_space().len > 0 {
+		if resolved := resolve_configured_mcp_workspace(project_directory) {
+			mut project_state := new_configured_mcp_state(project_configured_mcp_path(resolved))
+			project_servers = project_state.list_plugin_servers()
+			_, import_servers, _ = load_imported_project_mcp(resolved)
+		}
+	}
+	// Precedence (lowest → highest): user, project-import, project.
+	merged := merge_configured_plugin_servers([user_servers, import_servers, project_servers])
+	return merge_configured_mcp_into_catalog(catalog, merged)
 }

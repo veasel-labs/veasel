@@ -156,10 +156,14 @@ from project and user roots used by other agents (`.agents/skills`,
 `.claude/skills`, `.codex/skills`, `.cursor/skills`, `.opencode/skills`,
 `.gemini/skills`, `.pi/skills`, `.qwen/skills`, `.github/skills`, plus matching
 home directories and `VEASEL_SKILLS_DIRS`). `/skills [filter]` and
-`/skill on|off` manage Skills. Add user-scoped MCP servers with
-`/mcp add stdio <name> <command> [args…]` or `/mcp add http <name> <url>`
-(persisted in `$VEASEL_DATA_DIR/mcp-servers.json`); toggle with
-`/mcp enable|disable`, remove with `/mcp remove`, then
+`/skill on|off` manage Skills. Add configured MCP servers with
+`/mcp add [user|project] stdio <name> <command> [args…]` or
+`/mcp add [user|project] http <name> <url>` (user:
+`$VEASEL_DATA_DIR/mcp-servers.json`; project:
+`<workspace>/.veasel/mcp-servers.json`). Workspace `.mcp.json` and
+`.cursor/mcp.json` with portable `mcpServers` are imported read-only.
+Precedence for the same name: project > project-import > user. Toggle with
+`/mcp enable|disable [user|project]`, remove with `/mcp remove`, then
 `/mcp trust configured/<name>`. Plugin-packaged servers still use
 `/mcp trust <plugin>/<server>`. Skill instructions and MCP tool output are
 untrusted reference context; Skill scripts and MCP install scripts are never

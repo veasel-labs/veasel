@@ -627,8 +627,8 @@ pub fn (app &App) list_plugins(mut ctx Context) veb.Result {
 
 @['/v1/mcp-servers'; get]
 pub fn (app &App) list_configured_mcp_servers(mut ctx Context) veb.Result {
-	mut state := app.configured_mcp
-	return ctx.json(state.view())
+	workspace := ctx.query['directory'] or { '' }
+	return ctx.json(app.list_configured_mcp_catalog(workspace))
 }
 
 @['/v1/mcp-servers'; post]
@@ -639,8 +639,18 @@ pub fn (app &App) upsert_configured_mcp_server(mut ctx Context) veb.Result {
 	input := decode_configured_mcp_input(ctx.req.data) or {
 		return json_request_error(mut ctx, err.msg())
 	}
-	mut state := app.configured_mcp
-	view := state.upsert(input) or { return json_request_error(mut ctx, err.msg()) }
+	scope := normalize_configured_mcp_scope(input.scope) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	directory := if scope == configured_mcp_scope_project {
+		input.directory
+	} else {
+		''
+	}
+	mut state := app.configured_mcp_state_for_scope(scope, directory) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	view := state.upsert_scoped(input, scope) or { return json_request_error(mut ctx, err.msg()) }
 	return ctx.json(view)
 }
 
@@ -652,8 +662,14 @@ pub fn (app &App) patch_configured_mcp_server(mut ctx Context, name string) veb.
 	input := decode_configured_mcp_enable_input(ctx.req.data) or {
 		return json_request_error(mut ctx, err.msg())
 	}
-	mut state := app.configured_mcp
-	view := state.set_enabled(name, input.enabled) or {
+	scope := normalize_configured_mcp_scope(ctx.query['scope'] or { configured_mcp_scope_user }) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	directory := ctx.query['directory'] or { '' }
+	mut state := app.configured_mcp_state_for_scope(scope, directory) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	view := state.set_enabled_scoped(name, input.enabled, scope) or {
 		if err.msg() == 'configured MCP server not found' {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
@@ -667,7 +683,13 @@ pub fn (app &App) patch_configured_mcp_server(mut ctx Context, name string) veb.
 
 @['/v1/mcp-servers/:name'; delete]
 pub fn (app &App) remove_configured_mcp_server(mut ctx Context, name string) veb.Result {
-	mut state := app.configured_mcp
+	scope := normalize_configured_mcp_scope(ctx.query['scope'] or { configured_mcp_scope_user }) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	directory := ctx.query['directory'] or { '' }
+	mut state := app.configured_mcp_state_for_scope(scope, directory) or {
+		return json_request_error(mut ctx, err.msg())
+	}
 	state.remove(name) or {
 		if err.msg() == 'configured MCP server not found' {
 			ctx.res.set_status(.not_found)
@@ -819,14 +841,14 @@ pub fn (app &App) set_session_mcp_server(mut ctx Context, id string) veb.Result 
 		|| input.plugin_name.len > 64 || input.server_name.len > 256 {
 		return json_request_error(mut ctx, 'Plugin and MCP server names are invalid')
 	}
-	_ := app.store.get_session(id) or {
+	session := app.store.get_session(id) or {
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{
 			error: 'session not found'
 		})
 	}
 	if input.trusted {
-		_, _ := app.find_session_mcp_server(input.plugin_name, input.server_name) or {
+		_, _ := app.find_session_mcp_server(input.plugin_name, input.server_name, session.directory) or {
 			return json_request_error(mut ctx, 'MCP server is invalid or its transport is not supported')
 		}
 	}

@@ -148,5 +148,29 @@
     "directory": "-leading",
     "accepted": false,
     "content": "---\nname: -leading\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "skill name ending with hyphen is rejected",
+    "directory": "trailing-",
+    "accepted": false,
+    "content": "---\nname: trailing-\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "allowed-tools with TAB is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nallowed-tools: \"Bash(git\t*)\"\n---\nInstructions."
+  },
+  {
+    "name": "disable-model-invocation false is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\ndisable-model-invocation: false\n---\nInstructions."
+  },
+  {
+    "name": "metadata non-string value is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nmetadata:\n  author: 12\n---\nInstructions."
   }
 ]

@@ -2,6 +2,7 @@ module main
 
 import os
 import encoding.utf8
+import strings
 
 // Repository map budgets are measured UTF-8 bytes. The bytes/4 field is a
 // conservative bound for observability, not provider-reported token usage.
@@ -500,6 +501,21 @@ fn render_repository_map(entries []RepositoryMapEntry, budget_bytes int) (string
 	return '', []string{}, 0, true
 }
 
+fn write_repository_map_measured_sizes(mut out strings.Builder, bytes int, bound int,
+	budget_bytes int, file_count int, symbol_count int) {
+	out.write_string('\n### Measured sizes\n- bytes: ')
+	out.write_decimal(bytes)
+	out.write_string('\n- estimated_token_bound: ')
+	out.write_decimal(bound)
+	out.write_string('\n- budget_bytes: ')
+	out.write_decimal(budget_bytes)
+	out.write_string('\n- files: ')
+	out.write_decimal(file_count)
+	out.write_string('\n- symbols: ')
+	out.write_decimal(symbol_count)
+	out.write_u8(`\n`)
+}
+
 fn compose_repository_map_text(header string, body string, footer string, budget_bytes int,
 	file_count int, symbol_count int) string {
 	// Two-pass size fill so the reported byte count matches the finished text.
@@ -511,13 +527,23 @@ fn compose_repository_map_text(header string, body string, footer string, budget
 			text.len
 		}
 		bound := estimate_token_bound_from_bytes(bytes)
-		text = header + body + '\n### Measured sizes\n- bytes: ${bytes}\n- estimated_token_bound: ${bound}\n- budget_bytes: ${budget_bytes}\n- files: ${file_count}\n- symbols: ${symbol_count}\n' +
-			footer
+		mut built := strings.new_builder(header.len + body.len + footer.len + 160)
+		built.write_string(header)
+		built.write_string(body)
+		write_repository_map_measured_sizes(mut built, bytes, bound, budget_bytes, file_count,
+			symbol_count)
+		built.write_string(footer)
+		text = built.str()
 	}
 	final_bytes := text.len
 	final_bound := estimate_token_bound_from_bytes(final_bytes)
-	return header + body + '\n### Measured sizes\n- bytes: ${final_bytes}\n- estimated_token_bound: ${final_bound}\n- budget_bytes: ${budget_bytes}\n- files: ${file_count}\n- symbols: ${symbol_count}\n' +
-		footer
+	mut out := strings.new_builder(header.len + body.len + footer.len + 160)
+	out.write_string(header)
+	out.write_string(body)
+	write_repository_map_measured_sizes(mut out, final_bytes, final_bound, budget_bytes,
+		file_count, symbol_count)
+	out.write_string(footer)
+	return out.str()
 }
 
 fn count_repository_map_symbols_in_blocks(blocks []string) int {

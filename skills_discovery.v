@@ -1,6 +1,7 @@
 module main
 
 import os
+import strings
 
 const max_standalone_skill_roots = 256
 const max_standalone_skills_per_root = 256
@@ -821,23 +822,28 @@ fn format_available_skills_catalog(entries []AvailableSkillEntry, truncated bool
 	if entries.len == 0 {
 		return ''
 	}
-	mut lines := []string{cap: entries.len * 7 + 4}
-	lines << '<available_skills>'
+	mut out := strings.new_builder(entries.len * 160 + 64)
+	out.write_string('<available_skills>')
 	for entry in entries {
-		lines << '  <skill>'
-		lines << '    <plugin_name>${escape_available_skill_xml(entry.plugin_name)}</plugin_name>'
-		lines << '    <skill_name>${escape_available_skill_xml(entry.skill_name)}</skill_name>'
-		lines << '    <description>${escape_available_skill_xml(entry.description)}</description>'
+		out.write_string('\n  <skill>\n    <plugin_name>')
+		out.write_string(escape_available_skill_xml(entry.plugin_name))
+		out.write_string('</plugin_name>\n    <skill_name>')
+		out.write_string(escape_available_skill_xml(entry.skill_name))
+		out.write_string('</skill_name>\n    <description>')
+		out.write_string(escape_available_skill_xml(entry.description))
+		out.write_string('</description>')
 		if entry.location.len > 0 {
-			lines << '    <location>${escape_available_skill_xml(entry.location)}</location>'
+			out.write_string('\n    <location>')
+			out.write_string(escape_available_skill_xml(entry.location))
+			out.write_string('</location>')
 		}
-		lines << '  </skill>'
+		out.write_string('\n  </skill>')
 	}
-	lines << '</available_skills>'
+	out.write_string('\n</available_skills>')
 	if truncated {
-		lines << 'Catalog truncated to fit the model skill-disclosure budget; use GET /v1/skills or /v1/plugins for the full metadata list.'
+		out.write_string('\nCatalog truncated to fit the model skill-disclosure budget; use GET /v1/skills or /v1/plugins for the full metadata list.')
 	}
-	return lines.join('\n')
+	return out.str()
 }
 
 fn (app &App) available_skills_for_turn(project_directory string, session_id string) AvailableSkillsDisclosure {

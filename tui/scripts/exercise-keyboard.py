@@ -895,6 +895,16 @@ def main() -> None:
             raise AssertionError(f"Ctrl+T left the unswapped draft on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.4)
         screen.wait_for("Ask Veasel", 4)
+        screen.send("capword", 0.35)
+        screen.wait_for("capword", 4)
+        screen.send("\x01", 0.3)  # Ctrl+A
+        screen.send("\x1bc", 0.45)  # Alt+C capitalizes → Capword
+        screen.wait_for("Capword", 4)
+        visible = screen.terminal.text()
+        if "capword" in visible:
+            raise AssertionError(f"Alt+C left the uncapitalized draft on screen\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.4)
+        screen.wait_for("Ask Veasel", 4)
         screen.send("headTAIL", 0.4)
         screen.wait_for("headTAIL", 4)
         screen.send("\x01", 0.3)  # start of draft

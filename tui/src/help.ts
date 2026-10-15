@@ -5,13 +5,14 @@ export type HelpItem = {
 
 export const helpItems: HelpItem[] = [
   { command: "/help, /?", description: "Show this guide." },
+  { command: "home · j/k · Enter · n", description: "Move the session list, open the selected session, or start one. A long list keeps the selection on screen and shows its position." },
   { command: "s · /models", description: "Choose a provider, authenticate, and pick a model. Known endpoints and the output budget are filled in; Ctrl+U changes an endpoint and Ctrl+O changes the budget." },
   { command: "/skills · /skill on|off <plugin>/<skill>", description: "List or manage session Skills." },
   { command: "/mcp · /mcp calls", description: "List servers or calls waiting for review." },
-  { command: "/mcp call show|approve|reject <id>", description: "Inspect arguments, then approve once or reject." },
+  { command: "/mcp call show|approve|reject <id>", description: "Inspect arguments, then approve once or reject. The decision stays above the arguments, including when the argument list is long." },
   { command: "/mcp trust|untrust <plugin>/<server>", description: "Change a server's trust state." },
-  { command: "/patches · /patch show|approve|reject <id>", description: "Review and decide file edits." },
-  { command: "/commands · /command show|approve|reject <id>", description: "Review and decide shell commands." },
+  { command: "/patches · /patch show|approve|reject <id>", description: "Review and decide file edits. The summary states lines added and removed; a long diff keeps the first screen." },
+  { command: "/commands · /command show|approve|reject <id>", description: "Review and decide shell commands. The sandbox warning stays above the command, including when the command is long." },
   { command: "/history older", description: "Load earlier messages in this session." },
 ]
 

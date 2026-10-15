@@ -602,6 +602,27 @@ fn test_session_events_prune_to_retention_limit_during_streaming() {
 	assert events[3].data.delta == 'four'
 }
 
+fn test_session_events_prune_to_retention_limit_after_exchange() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	store.session_events_retention_limit = 3
+	session := store.create_session(SessionInput{
+		title:     'Exchange retention'
+		directory: '/tmp/exchange-retention'
+	}) or { panic(err) }
+	_ = store.append_exchange(session.id, '', 'hello', 'world', '', '', '', ProviderUsage{}) or {
+		panic(err)
+	}
+	_ = store.append_exchange(session.id, '', 'again', 'reply', '', '', '', ProviderUsage{}) or {
+		panic(err)
+	}
+	events := store.events_after(0) or { panic(err) }
+	assert events.len == 3
+	assert events.filter(it.type == 'message.created').len == 3
+}
+
 struct ProviderSSETestState {
 mut:
 	messages []string

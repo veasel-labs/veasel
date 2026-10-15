@@ -10,6 +10,7 @@ export type ReviewHotkey =
   | { action: "approve" }
   | { action: "approveAll" }
   | { action: "reject" }
+  | { action: "rejectAll" }
   | { action: "toggleSelect" }
   | { action: "next" }
   | { action: "prev" }
@@ -42,7 +43,7 @@ export function resolveSelectedReviews(
 // Single-key review actions when the composer is empty and a pending review is
 // on screen. Letters stay available for typing once the composer has text.
 // Space toggles multi-select; a/x then act on the selection when any are marked.
-// Shift+A approves every pending item of the same kind (patches, shell, or MCP).
+// Shift+A / Shift+X approve or reject every pending item of the same kind.
 // `{`/`}` move between unified-diff hunks while a patch review is open.
 export function reviewHotkey(
   key: { name: string; ctrl: boolean; meta: boolean; shift?: boolean },
@@ -53,6 +54,7 @@ export function reviewHotkey(
   if (key.name === "space" || key.name === " ") return { action: "toggleSelect" }
   if (key.name === "a" && key.shift) return { action: "approveAll" }
   if (key.name === "a") return { action: "approve" }
+  if (key.name === "x" && key.shift) return { action: "rejectAll" }
   if (key.name === "x") return { action: "reject" }
   if (key.name === "]" || key.name === "n") return { action: "next" }
   if (key.name === "[" || key.name === "p") return { action: "prev" }
@@ -74,7 +76,7 @@ export function reviewHotkeyHint(
   const selectCue = selected > 0
     ? ` · ${mark} Space · ${selected} selected · a/x act on selection`
     : ` · ${mark} Space select`
-  return `a approve · A all same kind · x reject · ]/[ or n/p next/prev${selectCue}${hunks}`
+  return `a approve · A/X all same kind · x reject · ]/[ or n/p next/prev${selectCue}${hunks}`
 }
 
 export function pendingReviewsOfKind(queue: ActiveReview[], kind: ActiveReviewKind): ActiveReview[] {

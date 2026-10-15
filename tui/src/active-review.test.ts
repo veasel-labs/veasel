@@ -30,11 +30,12 @@ describe("reviewHotkey", () => {
     })).toBeUndefined()
   })
 
-  test("maps approve, reject, bulk approve, select, and neighbor navigation", () => {
+  test("maps approve, reject, bulk approve/reject, select, and neighbor navigation", () => {
     const ctx = { composerEmpty: true, review: pendingPatch }
     expect(reviewHotkey({ name: "a", ctrl: false, meta: false }, ctx)).toEqual({ action: "approve" })
     expect(reviewHotkey({ name: "a", ctrl: false, meta: false, shift: true }, ctx)).toEqual({ action: "approveAll" })
     expect(reviewHotkey({ name: "x", ctrl: false, meta: false }, ctx)).toEqual({ action: "reject" })
+    expect(reviewHotkey({ name: "x", ctrl: false, meta: false, shift: true }, ctx)).toEqual({ action: "rejectAll" })
     expect(reviewHotkey({ name: "space", ctrl: false, meta: false }, ctx)).toEqual({ action: "toggleSelect" })
     expect(reviewHotkey({ name: " ", ctrl: false, meta: false }, ctx)).toEqual({ action: "toggleSelect" })
     expect(reviewHotkey({ name: "]", ctrl: false, meta: false }, ctx)).toEqual({ action: "next" })
@@ -74,6 +75,7 @@ describe("review multi-select", () => {
 
   test("states the selection count in the hotkey hint", () => {
     expect(reviewHotkeyHint(pendingPatch)?.includes("Space select")).toBe(true)
+    expect(reviewHotkeyHint(pendingPatch)).toContain("A/X all same kind")
     expect(reviewHotkeyHint(pendingPatch, { selectedCount: 2, currentSelected: true })).toContain(
       "● Space · 2 selected · a/x act on selection",
     )
@@ -107,7 +109,7 @@ describe("review queue navigation", () => {
   test("keeps the hotkey hint on the first screen and refreshes selection cues", () => {
     const notice = "REVIEW WORKSPACE EDIT  /  PENDING\nsrc/main.v"
     const withHint = withReviewHotkeyHint(notice, pendingPatch)
-    expect(withHint.startsWith("REVIEW WORKSPACE EDIT  /  PENDING\na approve · A all same kind")).toBe(true)
+    expect(withHint.startsWith("REVIEW WORKSPACE EDIT  /  PENDING\na approve · A/X all same kind")).toBe(true)
     expect(withHint).toContain("Space select")
     expect(withReviewHotkeyHint(withHint, pendingPatch)).toBe(withHint)
     const refreshed = withReviewHotkeyHint(withHint, pendingPatch, { selectedCount: 1, currentSelected: true })

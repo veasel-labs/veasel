@@ -877,7 +877,16 @@ def main() -> None:
         visible = screen.terminal.text()
         if "fwdkill" in visible:
             raise AssertionError(f"Alt+D left the killed word on screen\n--- screen ---\n{visible}")
-        screen.send("\x15", 0.45)  # Ctrl+U clears before Ctrl+K probe
+        screen.send("\x15", 0.45)  # Ctrl+U clears before Ctrl+T / Ctrl+K probes
+        screen.wait_for("Ask Veasel", 4)
+        screen.send("zt", 0.35)
+        screen.wait_for("zt", 4)
+        screen.send("\x14", 0.4)  # Ctrl+T at end swaps to "tz"
+        screen.wait_for("tz", 4)
+        visible = screen.terminal.text()
+        if "zt" in visible:
+            raise AssertionError(f"Ctrl+T left the unswapped draft on screen\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.4)
         screen.wait_for("Ask Veasel", 4)
         screen.send("headTAIL", 0.4)
         screen.wait_for("headTAIL", 4)

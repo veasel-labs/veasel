@@ -85,6 +85,7 @@ import {
   killWordBackward,
   killWordForward,
   moveWordCursor,
+  transposeChars,
 } from "./composer-edit"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
@@ -3535,6 +3536,19 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killLineForward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
+        chatInput.focus()
+      }
+      return
+    }
+    // Ctrl+T swaps characters around the cursor (readline transpose-chars).
+    if ((key.ctrl && key.name === "t") || key.sequence === "\x14") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = transposeChars(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
         chatInput.value = edited.value
         chatInput.cursorOffset = edited.cursor
         updateSlashMenu(edited.value)

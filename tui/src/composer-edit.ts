@@ -56,6 +56,30 @@ export function killLineForward(
   return { value: value.slice(0, pos), cursor: pos }
 }
 
+// Ctrl+T: transpose the character before the cursor with the one at the cursor
+// (readline transpose-chars). At the end of the draft, swap the last two
+// characters. At the start, or with fewer than two characters, this is a no-op.
+export function transposeChars(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } {
+  if (value.length < 2) {
+    return { value, cursor: Math.min(Math.max(0, cursor), value.length) }
+  }
+  const pos = Math.min(Math.max(0, cursor), value.length)
+  if (pos === 0) return { value, cursor: 0 }
+  if (pos === value.length) {
+    return {
+      value: value.slice(0, -2) + value[value.length - 1]! + value[value.length - 2]!,
+      cursor: value.length,
+    }
+  }
+  return {
+    value: value.slice(0, pos - 1) + value[pos]! + value[pos - 1]! + value.slice(pos + 1),
+    cursor: pos + 1,
+  }
+}
+
 // Ctrl+← / Ctrl+→: move by whitespace-delimited words (readline / editor habit).
 export function moveWordCursor(
   value: string,

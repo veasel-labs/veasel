@@ -31,6 +31,7 @@ import { homeFooterHint, sessionFooterHint } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
+import { formatSettingsLoadError, formatSettingsSaveError } from "./settings-errors"
 import { formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
@@ -2840,7 +2841,7 @@ async function openSettings(mode: "connect" | "models" = "models") {
     settingsDetourFrom = undefined
     showSettingsStep()
   } catch (error) {
-    closeSettings(`could not load model settings · ${error instanceof Error ? error.message : "request failed"}`)
+    closeSettings(formatSettingsLoadError(error instanceof Error ? error.message : "request failed"))
   }
 }
 
@@ -2871,8 +2872,15 @@ async function saveModelSettings() {
     closeSettings(savedMessage)
     void refreshProviderSetupHint()
   } catch (error) {
-    settingsValues.api_key = ""
-    closeSettings(`could not save settings · ${error instanceof Error ? error.message : "request failed"}`)
+    // Keep the wizard open so the operator can fix the key, endpoint, or model
+    // without restarting /connect. Do not clear a typed key on failure.
+    if (!settingsOpen) {
+      closeSettings(formatSettingsSaveError(error instanceof Error ? error.message : "request failed"))
+      return
+    }
+    showSettingsStep(settingsManualModel)
+    status.content = formatSettingsSaveError(error instanceof Error ? error.message : "request failed")
+    status.fg = theme.statusError
   }
 }
 

@@ -34,6 +34,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("streaming · N chars")
     expect(help).toContain("it never clears the composer")
     expect(help).toContain("▲ cancelled after Esc cancel")
+    expect(help).toContain("Alt+Y yanks the latest kill")
     expect(help).toContain("not kill-ring yank")
     expect(help).toContain("Selected N of M")
     expect(help).toContain("keeps the selection on screen")

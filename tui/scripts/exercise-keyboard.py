@@ -993,6 +993,24 @@ def main() -> None:
             raise AssertionError(f"Ctrl+_ did not restore the cleared draft\n--- screen ---\n{visible}")
         screen.send("\x15", 0.4)
         screen.wait_for("Ask Veasel", 4)
+        # Alt+Y yanks the latest kill; Ctrl+Y remains OSC-52 last-reply clipboard.
+        screen.send("killring", 0.35)
+        screen.wait_for("killring", 4)
+        screen.send("\x15", 0.4)  # Ctrl+U kills into the ring
+        screen.wait_for("Ask Veasel", 4)
+        visible = screen.terminal.text()
+        if "killring" in visible:
+            raise AssertionError(f"Ctrl+U left killring on screen before Alt+Y\n--- screen ---\n{visible}")
+        screen.send("\x1by", 0.5)  # Alt+Y yank
+        screen.wait_for("killring", 4)
+        visible = screen.terminal.text()
+        if "killring" not in visible:
+            raise AssertionError(f"Alt+Y did not yank the killed draft\n--- screen ---\n{visible}")
+        screen.send("\x19", 0.5)  # Ctrl+Y still copies last assistant reply (not yank)
+        screen.wait_for("Copied last reply", 4)
+        screen.send("\x1b", 0.35)  # dismiss copy notice; composer may still hold killring
+        screen.send("\x15", 0.4)  # clear yanked draft before the next probe
+        screen.wait_for("Ask Veasel", 4)
         screen.send("ml-one", 0.35)
         screen.wait_for("ml-one", 4)
         screen.send("\n", 0.4)  # Ctrl+J / linefeed inserts a newline (does not submit)

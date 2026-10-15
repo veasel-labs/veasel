@@ -87,6 +87,13 @@ import {
   type ComposerHistory,
 } from "./composer-history"
 import {
+  emptyKillRing,
+  latestKill,
+  pushKill,
+  yankAtCursor,
+  type KillRing,
+} from "./composer-kill-ring"
+import {
   capitalizeWord,
   composerLineCursor,
   downcaseWord,
@@ -517,6 +524,7 @@ let activePatchStatus = ""
 let activePatchHunkIndex = 0
 let chatMessages: ChatTurn[] = []
 let composerHistory: ComposerHistory = emptyComposerHistory()
+let composerKillRing: KillRing = emptyKillRing()
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
 let transcriptScrollOffset = 0
@@ -885,6 +893,7 @@ async function openSession(session: Session) {
   chatHistoryLoading = false
   chatMessages = []
   composerHistory = emptyComposerHistory()
+  composerKillRing = emptyKillRing()
   transcriptScrollOffset = 0
   streamingAssistantText = ""
   pendingUserMessage = ""
@@ -3607,12 +3616,27 @@ renderer.keyInput.on("keypress", (key) => {
     // Take over Ctrl+U before Input's delete-to-line-start so history recall
     // resets too; empty drafts are a no-op so settings-free sessions stay quiet.
     // Clear stays undoable via Ctrl+_ (replaceText), unlike submit which resets.
+    // The cleared draft also enters the kill ring for Alt+Y (Ctrl+Y stays OSC-52).
     if ((key.ctrl && key.name === "u") || key.sequence === "\x15") {
       key.preventDefault()
       key.stopPropagation()
       if (chatInput.value.length > 0 || composerHistory.offset > 0) {
+        if (chatInput.value.length > 0) composerKillRing = pushKill(composerKillRing, chatInput.value)
         composerHistory = clearComposerLine(composerHistory)
         setComposerValue(chatInput, "")
+        chatInput.focus()
+      }
+      return
+    }
+    // Alt+Y yanks the latest kill into the draft. Ctrl+Y stays OSC-52 last-reply
+    // clipboard — do not steal it for kill-ring yank.
+    if ((key.meta && key.name === "y") || key.sequence === "\x1by") {
+      key.preventDefault()
+      key.stopPropagation()
+      const killed = latestKill(composerKillRing)
+      if (killed) {
+        const yanked = yankAtCursor(chatInput.value, chatInput.cursorOffset, killed)
+        setComposerValue(chatInput, yanked.value, yanked.cursor)
         chatInput.focus()
       }
       return
@@ -3644,6 +3668,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killWordBackward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
+        if (edited.killed) composerKillRing = pushKill(composerKillRing, edited.killed)
         setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
@@ -3656,6 +3681,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killWordForward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value) {
+        if (edited.killed) composerKillRing = pushKill(composerKillRing, edited.killed)
         setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
@@ -3715,6 +3741,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killLineForward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value) {
+        if (edited.killed) composerKillRing = pushKill(composerKillRing, edited.killed)
         setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }

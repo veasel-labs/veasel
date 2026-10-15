@@ -30,3 +30,15 @@ fn test_plugin_mcp_http_transport_cancel_before_send() {
 	}
 	assert false, 'cancelled HTTP transport must refuse send'
 }
+
+fn test_plugin_mcp_http_transport_cancel_before_listen_notifications() {
+	mut transport := &PluginMCPHTTPTransport{
+		url: 'https://example.com/mcp'
+	}
+	transport.request_cancel()
+	if _ := transport.listen_notifications() {
+		assert false, 'cancelled HTTP transport must refuse notification listen'
+	} else {
+		assert err.msg() == 'cancelled'
+	}
+}

@@ -161,6 +161,13 @@ fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 			header.set_custom('Mcp-Name', request_name)!
 		}
 	}
+	// Re-check after header assembly so a cancel that arrives while preparing
+	// the request never opens a socket. True TTFB-before-progress abort is
+	// still limited by net.http (no callback until bytes arrive).
+	if transport.cancel_requested {
+		transport.emit_cancelled_notification()
+		return error('cancelled')
+	}
 	response := http.fetch(
 		url:                  transport.url
 		method:               .post
@@ -173,6 +180,11 @@ fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 		write_timeout:        plugin_mcp_http_response_timeout
 		stop_copying_limit:   max_plugin_mcp_http_body_bytes + 1
 		stop_receiving_limit: max_plugin_mcp_http_body_bytes + 1
+		on_progress:          fn [mut transport] (_ &http.Request, _ []u8, _ u64) ! {
+			if transport.cancel_requested {
+				return error('cancelled')
+			}
+		}
 		on_progress_body:     fn [mut transport] (_ &http.Request, _ []u8, _ u64, _ u64, _ int) ! {
 			if transport.cancel_requested {
 				return error('cancelled')
@@ -293,6 +305,9 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 	if transport.protocol_version.len > 0 {
 		header.set_custom('MCP-Protocol-Version', transport.protocol_version)!
 	}
+	if transport.cancel_requested {
+		return error('cancelled')
+	}
 	mut stream := &PluginMCPHTTPSseStream{}
 	before := transport.notifications.len
 	response := http.fetch(
@@ -306,6 +321,11 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 		write_timeout:        plugin_mcp_http_notification_timeout
 		stop_copying_limit:   max_plugin_mcp_http_body_bytes + 1
 		stop_receiving_limit: max_plugin_mcp_http_body_bytes + 1
+		on_progress:          fn [mut transport] (_ &http.Request, _ []u8, _ u64) ! {
+			if transport.cancel_requested {
+				return error('cancelled')
+			}
+		}
 		on_progress_body:     fn [mut transport, mut stream] (_ &http.Request, chunk []u8, _ u64, _ u64, _ int) ! {
 			if transport.cancel_requested {
 				return error('cancelled')

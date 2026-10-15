@@ -210,7 +210,7 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel --version')
+		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n  worktrees      List, add, or remove git worktrees for a workspace session\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel worktrees list\n  veasel --version')
 		return
 	}
 	if command in ['--version', '-v', 'version'] {
@@ -232,6 +232,9 @@ fn main() {
 		}
 		'mcp' {
 			execute_headless_mcp_command(port, args[1..])
+		}
+		'worktrees' {
+			execute_headless_worktrees_command(port, args[1..])
 		}
 		else {
 			eprintln('unknown command: ${command}')

@@ -541,6 +541,12 @@ def main() -> None:
         screen.send("/", 0.6)
         screen.wait_for("── guide ──")
         screen.wait_for("── setup ──")
+        screen.send("\x1b[F", 0.5)  # End → last command (/map)
+        screen.wait_for("/map", 4)
+        screen.wait_for("── session ──", 4)
+        screen.send("\x1b[H", 0.5)  # Home → first command
+        screen.wait_for("── guide ──", 4)
+        screen.wait_for("/help", 4)
         screen.send("\x1b", 0.25)
         screen.clear_line(1)  # "/"
         # Description search: find /connect and /theme without typing their names.

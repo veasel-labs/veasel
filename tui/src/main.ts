@@ -21,7 +21,7 @@ import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
 import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
-import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
+import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import {
@@ -2457,7 +2457,7 @@ function renderSlashMenu() {
     }
   })
   const more = slashMatches.length > end - start ? `${slashSelected + 1}/${slashMatches.length} · ` : ""
-  chunks.push(fg(theme.meta)(`   ${more}Tab complete · ↑/↓ choose · Enter run · Esc dismiss`))
+  chunks.push(fg(theme.meta)(`   ${more}Tab · ↑/↓ · Home/End · PgUp/PgDn · Enter · Esc`))
   slashMenu.content = new StyledText(chunks)
   slashMenu.visible = true
 }
@@ -2486,6 +2486,26 @@ function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
   }
   if (key.name === "up" || (key.name === "tab" && key.shift)) {
     slashSelected = moveSuggestion(slashSelected, -1, slashMatches.length)
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "home") {
+    slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "home")
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "end") {
+    slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "end")
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "pageup") {
+    slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "pageup")
+    renderSlashMenu()
+    return consume()
+  }
+  if (key.name === "pagedown") {
+    slashSelected = jumpSuggestion(slashSelected, slashMatches.length, "pagedown")
     renderSlashMenu()
     return consume()
   }

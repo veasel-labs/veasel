@@ -300,7 +300,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   Veasel currently limits submitted input to 1 MiB (1,048,576 bytes). Model settings now
   expose a per-provider output budget (16–131,072 tokens); zero selects
   Veasel's 4,096-token default, except Meta, which omits `max_output_tokens`
-  so Meta applies its own limit. Meta counts reasoning tokens in that budget
+  from the encoded Responses body so Meta applies its own limit (covered by
+  provider encode fixtures). Meta counts reasoning tokens in that budget
   ([Meta Responses API](https://dev.meta.ai/docs/protocols/responses)).
   Veasel still does not consume Muse's full advertised 1,048,576-token context
   window. Provider-reported token usage is aggregated into opt-in ATIF

@@ -530,6 +530,11 @@ def main() -> None:
             raise AssertionError("selected model and api key were not saved")
         screen.send("\r", 0.6)
         screen.wait_for("Ask Veasel")
+        screen.send("/", 0.6)
+        screen.wait_for("── guide ──")
+        screen.wait_for("── setup ──")
+        screen.send("\x1b", 0.25)
+        screen.clear_line(1)  # "/"
         # Description search: find /connect and /theme without typing their names.
         screen.send("/key", 0.7)
         screen.wait_for("/connect")

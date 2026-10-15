@@ -1,8 +1,37 @@
+export type SlashCategory = "guide" | "setup" | "skills" | "plugins" | "mcp" | "approvals" | "session"
+
 export type SlashCommand = {
   name: string
   description: string
+  category: SlashCategory
   // Present when the command needs arguments; name completion stops after a trailing space.
   usage?: string
+}
+
+export const slashCategoryLabels: Record<SlashCategory, string> = {
+  guide: "guide",
+  setup: "setup",
+  skills: "skills",
+  plugins: "plugins",
+  mcp: "mcp",
+  approvals: "review",
+  session: "session",
+}
+
+export function slashCategoryLabel(command: { category?: SlashCategory; name: string }): string {
+  const category = command.category ?? slashCategoryForName(command.name)
+  return slashCategoryLabels[category]
+}
+
+export function slashCategoryForName(name: string): SlashCategory {
+  if (name.startsWith("/help")) return "guide"
+  if (name === "/connect" || name === "/models" || name === "/theme") return "setup"
+  if (name.startsWith("/skill")) return "skills"
+  if (name.startsWith("/plugin")) return "plugins"
+  if (name === "/mcp calls" || name.startsWith("/mcp call")) return "approvals"
+  if (name.startsWith("/mcp")) return "mcp"
+  if (name.startsWith("/patch") || name.startsWith("/command")) return "approvals"
+  return "session"
 }
 
 export type SlashArgument = {
@@ -33,32 +62,32 @@ export type SlashSuggestion = SlashCommand & {
 }
 
 export const slashCommands: SlashCommand[] = [
-  { name: "/help", description: "Show the quick guide" },
-  { name: "/help advanced", description: "Show full command syntax" },
-  { name: "/connect", description: "Authenticate: paste an API key, save credentials, and pick a model" },
-  { name: "/models", description: "Configure provider, model, endpoint, and output budget" },
-  { name: "/skills", description: "List discovered Skills; add text to filter" },
-  { name: "/skill", description: "Turn a Skill on or off", usage: "/skill on|off <source>/<skill>" },
-  { name: "/plugins", description: "List linked Agent Plugin packages" },
-  { name: "/plugin add", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
-  { name: "/plugin remove", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
-  { name: "/mcp", description: "List MCP servers (configured + Agent Plugins)" },
-  { name: "/mcp add", description: "Add a configured MCP server (user or project scope)", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>" },
-  { name: "/mcp remove", description: "Remove a configured MCP server", usage: "/mcp remove [user|project] <name>" },
-  { name: "/mcp enable", description: "Enable a configured MCP server", usage: "/mcp enable [user|project] <name>" },
-  { name: "/mcp disable", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>" },
-  { name: "/mcp calls", description: "List MCP calls waiting for review" },
-  { name: "/mcp call", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
-  { name: "/mcp trust", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
-  { name: "/mcp untrust", description: "Stop trusting an MCP server", usage: "/mcp untrust <plugin>/<server>" },
-  { name: "/patches", description: "List proposed file edits waiting for approval" },
-  { name: "/patch", description: "Show, approve, or reject a file edit", usage: "/patch show|approve|reject <id>" },
-  { name: "/commands", description: "List proposed shell commands waiting for approval" },
-  { name: "/command", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
-  { name: "/history older", description: "Load earlier messages in this session" },
-  { name: "/usage", description: "Show provider-reported token totals for this session" },
-  { name: "/map", description: "Show the extractive workspace repository map; add text to hint ranking" },
-  { name: "/theme", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora)", usage: "/theme <id>" },
+  { name: "/help", category: "guide", description: "Show the quick guide" },
+  { name: "/help advanced", category: "guide", description: "Show full command syntax" },
+  { name: "/connect", category: "setup", description: "Authenticate: paste an API key, save credentials, and pick a model" },
+  { name: "/models", category: "setup", description: "Configure provider, model, endpoint, and output budget" },
+  { name: "/theme", category: "setup", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora)", usage: "/theme <id>" },
+  { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter" },
+  { name: "/skill", category: "skills", description: "Turn a Skill on or off", usage: "/skill on|off <source>/<skill>" },
+  { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages" },
+  { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
+  { name: "/plugin remove", category: "plugins", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
+  { name: "/mcp", category: "mcp", description: "List MCP servers (configured + Agent Plugins)" },
+  { name: "/mcp add", category: "mcp", description: "Add a configured MCP server (user or project scope)", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>" },
+  { name: "/mcp remove", category: "mcp", description: "Remove a configured MCP server", usage: "/mcp remove [user|project] <name>" },
+  { name: "/mcp enable", category: "mcp", description: "Enable a configured MCP server", usage: "/mcp enable [user|project] <name>" },
+  { name: "/mcp disable", category: "mcp", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>" },
+  { name: "/mcp trust", category: "mcp", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
+  { name: "/mcp untrust", category: "mcp", description: "Stop trusting an MCP server", usage: "/mcp untrust <plugin>/<server>" },
+  { name: "/mcp calls", category: "approvals", description: "List MCP calls waiting for review" },
+  { name: "/mcp call", category: "approvals", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
+  { name: "/patches", category: "approvals", description: "List proposed file edits waiting for approval" },
+  { name: "/patch", category: "approvals", description: "Show, approve, or reject a file edit", usage: "/patch show|approve|reject <id>" },
+  { name: "/commands", category: "approvals", description: "List proposed shell commands waiting for approval" },
+  { name: "/command", category: "approvals", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
+  { name: "/history older", category: "session", description: "Load earlier messages in this session" },
+  { name: "/usage", category: "session", description: "Show provider-reported token totals for this session" },
+  { name: "/map", category: "session", description: "Show the extractive workspace repository map; add text to hint ranking" },
 ]
 
 export const maxSlashSuggestions = 6
@@ -209,6 +238,7 @@ function argumentSuggestions(command: SlashCommand, rest: string, context: Slash
       return {
         name: `${stem} ${choice.value}`.replace(/\s+/g, " "),
         description: choice.description,
+        category: command.category,
         insert: more ? `${stem} ${choice.value} ` : `${stem} ${choice.value}`,
         run: !more,
       }
@@ -220,6 +250,7 @@ function argumentSuggestions(command: SlashCommand, rest: string, context: Slash
     return [{
       name: stem,
       description: spec.empty,
+      category: command.category,
       insert: `${stem} `,
       run: false,
     }]
@@ -227,6 +258,7 @@ function argumentSuggestions(command: SlashCommand, rest: string, context: Slash
   return matches.map((value) => ({
     name: `${stem} ${value.value}`.replace(/\s+/g, " "),
     description: value.description,
+    category: command.category,
     insert: `${stem} ${value.value}`,
     run: true,
   }))

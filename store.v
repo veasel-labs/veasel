@@ -89,6 +89,15 @@ pub:
 	compaction_reason              string @[omitempty]
 	compaction_untrusted           bool   @[omitempty]
 	compaction_summary_preview     string @[omitempty]
+	repository_map_bytes           int    @[omitempty]
+	repository_map_token_bound     int    @[omitempty]
+	repository_map_budget_bytes    int    @[omitempty]
+	repository_map_file_count      int    @[omitempty]
+	repository_map_symbol_count    int    @[omitempty]
+	repository_map_truncated       bool   @[omitempty]
+	repository_map_injected        bool   @[omitempty]
+	repository_map_untrusted       bool   @[omitempty]
+	repository_map_preview         string @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -1200,6 +1209,46 @@ fn (mut store Store) record_session_compaction(session_id string, operation_id s
 	store.db.commit() or {
 		store.db.rollback() or {}
 		return error('unable to commit session compaction event')
+	}
+}
+
+fn (mut store Store) record_session_repository_map(session_id string, operation_id string,
+	measurement RepositoryMapMeasurement, preview string) ! {
+	if measurement.injected == false {
+		return
+	}
+	if !validate_operation_id(operation_id) {
+		return error('invalid session operation identifier')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin() or {
+		return error('unable to begin session repository map event')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.repository_map',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id:                operation_id
+			repository_map_bytes:        measurement.bytes
+			repository_map_token_bound:  measurement.estimated_token_bound
+			repository_map_budget_bytes: measurement.budget_bytes
+			repository_map_file_count:   measurement.file_count
+			repository_map_symbol_count: measurement.symbol_count
+			repository_map_truncated:    measurement.truncated
+			repository_map_injected:     true
+			repository_map_untrusted:    true
+			repository_map_preview:      repository_map_summary_preview(preview)
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record session repository map event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session repository map event')
 	}
 }
 

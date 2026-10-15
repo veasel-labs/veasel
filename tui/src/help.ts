@@ -16,6 +16,7 @@ export const helpItems: HelpItem[] = [
   { command: "/commands · /command show|approve|reject <id>", description: "Review and decide shell commands. The sandbox warning stays above the command, including when the command is long." },
   { command: "/history older", description: "Load earlier messages in this session." },
   { command: "/usage", description: "Show provider-reported token totals for this session. Cost stays unavailable without a price schedule." },
+  { command: "repository map", description: "Coding turns may include an untrusted extractive workspace map (paths and declarations) sized in measured UTF-8 bytes. Inspect via GET /v1/sessions/:id/workspace/map; capability workspace.repository_map." },
   { command: "/theme", description: "List TUI color themes, or pass mint, ember, slate, mono, or aurora to switch. The choice is stored for the next launch." },
 ]
 

@@ -158,11 +158,13 @@ when no files are already in context and disables itself on recursion failure
 rather than crashing the agent.
 
 **Useful principle:** context selection should be syntax-aware, bounded,
-incremental, and observable. Veasel currently exposes bounded list/read/search,
-not a symbol map or retrieval cache. First benchmark search and context
-assembly on fixed repositories; then evaluate a V-native symbol index or an
-optional parser adapter against grep-only retrieval. Do not build an index
-whose token/latency benefit has not been measured.
+incremental, and observable. Veasel now ships a V-native extractive repository
+map (heuristic declarations + mention ranking + measured UTF-8 budgets) studied
+against this pin; see
+[`compatibility/aider-repository-map.md`](compatibility/aider-repository-map.md).
+It is not tree-sitter/PageRank parity and does not claim provider token savings.
+Next: measure coding-task success versus grep-only baselines, then consider a
+parser adapter or cache only when measurements justify it.
 
 ### Cline — one runtime for CLI and interactive surfaces
 

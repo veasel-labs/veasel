@@ -217,8 +217,14 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `session.compaction` event records measured bytes before/after plus a
   conservative bytes/4 token bound. This is not LLM summarization, not
   provider-native compaction, and not a claim of Muse's advertised token window.
-  Repository maps, prompt-cache accounting, and LLM/native summarizers remain
-  open.
+- [x] Aider-style extractive repository map for intelligent context selection:
+  deterministic workspace walk, heuristic symbol extraction, mention-weighted
+  ranking under a measured UTF-8 byte budget (plus bytes/4 bound), untrusted
+  injection into the turn system prompt when useful, `GET
+  /v1/sessions/{id}/workspace/map`, capabilities `workspace.repository_map` /
+  `session.repository_map`, and `session.repository_map` events. This is not
+  tree-sitter/PageRank parity with Aider and does not claim provider token or
+  cost savings. Prompt-cache accounting and LLM/native summarizers remain open.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic
@@ -237,7 +243,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] An MCP call review states that the call has not reached its server, and
   the approve instruction, before the arguments. An argument list taller than
   the terminal keeps the first screen and says how many lines remain.
-- [ ] Context retrieval, rich diff review, accessibility, and UX refinement.
+- [ ] Richer context retrieval beyond the extractive repository map, rich diff
+  review, accessibility, and UX refinement.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
 - [ ] Validate interactive TUI behavior on each platform and establish

@@ -132,6 +132,17 @@ describe("transcriptSegments", () => {
     expect(transcriptPlainText(messageBodySegments(content, "assistantText"))).toBe(content)
   })
 
+  test("tones markdown headings without dropping hashes or inline spans", () => {
+    const content = "## Fix `main.v`\nBody"
+    expect(messageBodySegments(content, "assistantText")).toEqual([
+      { text: "## ", tone: "heading" },
+      { text: "Fix ", tone: "heading" },
+      { text: "`main.v`\n", tone: "inlineCode" },
+      { text: "Body", tone: "assistantText" },
+    ])
+    expect(transcriptPlainText(messageBodySegments(content, "assistantText"))).toBe(content)
+  })
+
   test("keeps system and tool roles distinct from the operator", () => {
     const segments = transcriptSegments({
       messages: [

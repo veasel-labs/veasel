@@ -21,6 +21,7 @@ export type TranscriptTone =
   | "strong"
   | "listMarker"
   | "link"
+  | "heading"
   | "status"
   | "hint"
 
@@ -149,6 +150,12 @@ export function messageBodySegments(content: string, proseTone: TranscriptTone):
     }
     if (inFence) {
       segments.push({ text: `${line}${trailing}`, tone: "codeBody" })
+      continue
+    }
+    const heading = /^(#{1,6})(\s+)(.+)$/.exec(line)
+    if (heading) {
+      segments.push({ text: `${heading[1]}${heading[2]}`, tone: "heading" })
+      segments.push(...proseInlineSegments(heading[3]!, "heading", trailing))
       continue
     }
     const list = /^(\s*)([-*+]|\d+\.)(\s+)(.*)$/.exec(line)

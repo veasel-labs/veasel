@@ -45,6 +45,9 @@ state = {
     "pending_user": "",
     "model_posts": 0,
     "sse_id": 0,
+    "edit_status": "pending",
+    "command_status": "pending",
+    "mcp_status": "pending",
 }
 
 
@@ -107,15 +110,16 @@ class Handler(BaseHTTPRequestHandler):
                 "id": EDIT_ID,
                 "session_id": SESSION,
                 "path": "src/main.v",
-                "status": "pending",
+                "status": state["edit_status"],
                 "diff": review_diff(),
             })
         if path == f"/v1/sessions/{SESSION}/workspace/edits":
             if state["hold_edits"]:
                 state["edits_release"].wait(3.0)
-            return self._json(200, [{
-                "id": EDIT_ID, "path": "src/main.v", "status": "pending",
-            }])
+            edits = []
+            if state["edit_status"] == "pending":
+                edits.append({"id": EDIT_ID, "path": "src/main.v", "status": "pending"})
+            return self._json(200, edits)
         if path == f"/v1/sessions/{OTHER}/workspace/edits":
             if state["hold_other_edits"]:
                 state["other_edits_release"].wait(5.0)
@@ -128,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
                 "server_name": "local",
                 "tool_name": "effect",
                 "arguments_json": long_mcp_arguments(),
-                "status": "pending",
+                "status": state["mcp_status"],
                 "reviewed_at": "",
                 "created_at": "",
                 "updated_at": "",
@@ -143,10 +147,13 @@ class Handler(BaseHTTPRequestHandler):
             f"/v1/sessions/{OTHER}/workspace/commands",
         ):
             if path.endswith("/mcp-tool-calls") and SESSION in path:
-                return self._json(200, [{
-                    "id": CALL_ID, "plugin_name": "review-tools", "tool_name": "effect", "status": "pending",
-                    "arguments_bytes": len(long_mcp_arguments()),
-                }])
+                calls = []
+                if state["mcp_status"] == "pending":
+                    calls.append({
+                        "id": CALL_ID, "plugin_name": "review-tools", "tool_name": "effect", "status": "pending",
+                        "arguments_bytes": len(long_mcp_arguments()),
+                    })
+                return self._json(200, calls)
             if path.endswith("/mcp-servers") and SESSION in path:
                 return self._json(200, [{"plugin_name": "review-tools", "server_name": "local"}])
             if path.endswith("/skills") and SESSION in path:
@@ -158,17 +165,20 @@ class Handler(BaseHTTPRequestHandler):
                 "command": long_shell_command(),
                 "cwd": ".",
                 "timeout_seconds": 10,
-                "status": "pending",
+                "status": state["command_status"],
                 "exit_code": 0,
                 "output": "",
                 "created_at": "",
                 "updated_at": "",
             })
         if path == f"/v1/sessions/{SESSION}/workspace/commands":
-            return self._json(200, [{
-                "id": COMMAND_ID, "command": "echo hi", "cwd": ".", "timeout_seconds": 10,
-                "status": "pending", "exit_code": 0, "output": "", "created_at": "", "updated_at": "",
-            }])
+            commands = []
+            if state["command_status"] == "pending":
+                commands.append({
+                    "id": COMMAND_ID, "command": "echo hi", "cwd": ".", "timeout_seconds": 10,
+                    "status": "pending", "exit_code": 0, "output": "", "created_at": "", "updated_at": "",
+                })
+            return self._json(200, commands)
         if path == "/v1/plugins":
             return self._json(200, {"plugins": [{
                 "name": "review-tools",
@@ -195,6 +205,30 @@ class Handler(BaseHTTPRequestHandler):
                 "max_output_tokens": state["saved"].get("max_output_tokens", 0),
             }
             return self._json(200, view)
+        if path.endswith(f"/workspace/edits/{EDIT_ID}/approve"):
+            state["edit_status"] = "applied"
+            return self._json(200, {"status": "applied"})
+        if path.endswith(f"/workspace/edits/{EDIT_ID}/reject"):
+            state["edit_status"] = "rejected"
+            return self._json(200, {"status": "rejected"})
+        if path.endswith(f"/workspace/commands/{COMMAND_ID}/approve"):
+            state["command_status"] = "succeeded"
+            return self._json(200, {
+                "id": COMMAND_ID, "command": "echo hi", "cwd": ".", "timeout_seconds": 10,
+                "status": "succeeded", "exit_code": 0, "output": "hi\n", "created_at": "", "updated_at": "",
+            })
+        if path.endswith(f"/workspace/commands/{COMMAND_ID}/reject"):
+            state["command_status"] = "rejected"
+            return self._json(200, {
+                "id": COMMAND_ID, "command": "echo hi", "cwd": ".", "timeout_seconds": 10,
+                "status": "rejected", "exit_code": 0, "output": "", "created_at": "", "updated_at": "",
+            })
+        if path.endswith(f"/mcp-tool-calls/{CALL_ID}/approve"):
+            state["mcp_status"] = "approved"
+            return self._json(200, {"id": CALL_ID, "status": "approved"})
+        if path.endswith(f"/mcp-tool-calls/{CALL_ID}/reject"):
+            state["mcp_status"] = "rejected"
+            return self._json(200, {"id": CALL_ID, "status": "rejected"})
         if path == f"/v1/sessions/{SESSION}/messages":
             body = json.loads(raw.decode())
             operation = self.headers.get("X-Veasel-Operation-ID", "")
@@ -587,9 +621,16 @@ def main() -> None:
         screen.wait_for("Showing ")
         screen.wait_for("alpha")
         screen.wait_for("beta")
+        screen.wait_for("a approve")
         reviewed = screen.terminal.text()
         if "TAIL-SENTINEL" in reviewed:
             raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
+        screen.send("]", 0.55)  # next pending review (shell)
+        screen.wait_for("REVIEW SHELL COMMAND", 4)
+        screen.send("[", 0.55)  # previous pending review (patch)
+        screen.wait_for("REVIEW WORKSPACE EDIT", 4)
+        screen.send("a", 0.7)  # approve with empty composer
+        screen.wait_for("Applied the reviewed workspace edit", 4)
         screen.send("/skill ", 0.6)
         screen.wait_for("Enable a Skill")
         screen.send("\t", 0.5)

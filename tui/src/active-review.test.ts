@@ -44,6 +44,11 @@ describe("reviewHotkey", () => {
     expect(reviewHotkey({ name: "p", ctrl: false, meta: false }, ctx)).toEqual({ action: "prev" })
     expect(reviewHotkey({ name: "{", ctrl: false, meta: false }, ctx)).toEqual({ action: "hunkPrev" })
     expect(reviewHotkey({ name: "}", ctrl: false, meta: false }, ctx)).toEqual({ action: "hunkNext" })
+    expect(reviewHotkey({ name: "v", ctrl: false, meta: false }, ctx)).toEqual({ action: "toggleDiffSurface" })
+    expect(reviewHotkey({ name: "v", ctrl: false, meta: false }, {
+      composerEmpty: true,
+      review: { kind: "command", id: pendingPatch.id, pending: true },
+    })).toBeUndefined()
     expect(reviewHotkey({ name: "{", ctrl: false, meta: false }, {
       composerEmpty: true,
       review: { kind: "command", id: pendingPatch.id, pending: true },
@@ -76,6 +81,8 @@ describe("review multi-select", () => {
   test("states the selection count in the hotkey hint", () => {
     expect(reviewHotkeyHint(pendingPatch)?.includes("Space select")).toBe(true)
     expect(reviewHotkeyHint(pendingPatch)).toContain("A/X all same kind")
+    expect(reviewHotkeyHint(pendingPatch)).toContain("v split view")
+    expect(reviewHotkeyHint(pendingPatch, { diffSurfaceHint: " · v word-diff" })).toContain("v word-diff")
     expect(reviewHotkeyHint(pendingPatch, { selectedCount: 2, currentSelected: true })).toContain(
       "● Space · 2 selected · a/x act on selection",
     )

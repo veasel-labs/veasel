@@ -4,7 +4,7 @@ import os
 import uuid
 
 const plugin_link_test_manifest = '{"' + plugin_schema_key + '":"' + plugin_manifest_schema +
-	'","name":"review-tools","extensions":[],"future":true}'
+	'","name":"review-tools","version":"1.2.3","description":"Review helpers.","extensions":{"com.veasel.code":{"display_name":"Review Tools"}},"future":true}'
 
 fn test_plugin_links_add_list_remove_and_catalog_origin() {
 	plugin_dir := os.join_path(os.temp_dir(), 'veasel-plugin-links-dir-${uuid.new_v4().str()}')
@@ -23,13 +23,25 @@ fn test_plugin_links_add_list_remove_and_catalog_origin() {
 	link := add_plugin_link(plugin_dir, package) or { panic(err) }
 	assert link.name == 'review-tools'
 	assert link.path == os.real_path(package)
+	assert link.version == '1.2.3'
+	assert link.description == 'Review helpers.'
+	assert link.display_name == 'Review Tools'
+	assert link.skill_count == 1
+	assert link.mcp_server_count == 0
 	again := add_plugin_link(plugin_dir, package) or { panic(err) }
 	assert again.path == link.path
+	assert again.version == '1.2.3'
+	assert again.skill_count == 1
 
 	listed := list_plugin_links(plugin_dir) or { panic(err) }
 	assert listed.links.len == 1
 	assert listed.links[0].name == 'review-tools'
 	assert listed.links[0].path == link.path
+	assert listed.links[0].version == '1.2.3'
+	assert listed.links[0].description == 'Review helpers.'
+	assert listed.links[0].display_name == 'Review Tools'
+	assert listed.links[0].skill_count == 1
+	assert listed.links[0].mcp_server_count == 0
 
 	catalog := discover_agent_plugins(plugin_dir) or { panic(err) }
 	assert catalog.plugins.len == 1

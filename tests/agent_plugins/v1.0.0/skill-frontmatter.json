@@ -13,9 +13,9 @@
   },
   {
     "name": "Unicode lowercase skill name",
-    "directory": "caf\u00e9-\u5206\u6790-3",
+    "directory": "café-分析-3",
     "accepted": true,
-    "content": "---\nname: caf\u00e9-\u5206\u6790-3\ndescription: Review localized source.\n---\nInstructions."
+    "content": "---\nname: café-分析-3\ndescription: Review localized source.\n---\nInstructions."
   },
   {
     "name": "unknown frontmatter field is rejected",
@@ -172,5 +172,29 @@
     "directory": "review",
     "accepted": false,
     "content": "---\nname: review\ndescription: Review source changes.\nmetadata:\n  author: 12\n---\nInstructions."
+  },
+  {
+    "name": "metadata opencode/autoinvoke false is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\nmetadata:\n  opencode/autoinvoke: \"false\"\n---\nInstructions."
+  },
+  {
+    "name": "metadata opencode/autoinvoke true is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\nmetadata:\n  opencode/autoinvoke: \"true\"\n---\nInstructions."
+  },
+  {
+    "name": "compatibility with NUL is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\ncompatibility: \"bad\\0compat\"\n---\nInstructions."
+  },
+  {
+    "name": "license must be a string is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nlicense: true\n---\nInstructions."
   }
 ]

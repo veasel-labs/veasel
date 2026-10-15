@@ -269,7 +269,7 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "del-license",
-      "license": "MIT\u007f"
+      "license": "MIT"
     }
   },
   {
@@ -353,6 +353,56 @@
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "cr-version",
       "version": "1.0.0\r"
+    }
+  },
+  {
+    "name": "author url with NUL is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "nul-author-url",
+      "author": {
+        "url": "https://example.invalid/\u0000"
+      }
+    }
+  },
+  {
+    "name": "version must be a string is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "version-type",
+      "version": 1
+    }
+  },
+  {
+    "name": "homepage must be a string is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "homepage-type",
+      "homepage": [
+        "https://example.invalid"
+      ]
+    }
+  },
+  {
+    "name": "keyword with DEL is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "del-keyword",
+      "keywords": [
+        "review"
+      ]
+    }
+  },
+  {
+    "name": "name ending with dot is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "trailing."
     }
   }
 ]

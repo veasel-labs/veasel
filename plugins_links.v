@@ -5,11 +5,18 @@ import os
 
 // PluginLink is one operator-managed symlink under the plugin directory that
 // points at an external Agent Plugin package. PLUGIN_DATA remains keyed by
-// plugin name and is preserved across relinks.
+// plugin name and is preserved across relinks. Summary fields come from the
+// validated package manifest/components so install UX can preview without a
+// separate catalog round-trip; they never expose secrets or nested paths.
 pub struct PluginLink {
 pub:
-	name string
-	path string
+	name             string
+	path             string
+	version          string
+	description      string
+	display_name     string
+	skill_count      int
+	mcp_server_count int
 }
 
 pub struct PluginLinkCatalog {
@@ -77,14 +84,23 @@ fn list_plugin_links(plugin_directory string) !PluginLinkCatalog {
 			}
 			continue
 		}
-		links << PluginLink{
-			name: plugin.manifest.name
-			path: target
-		}
+		links << plugin_link_from_package(plugin, target)
 	}
 	return PluginLinkCatalog{
 		links:       links
 		diagnostics: diagnostics
+	}
+}
+
+fn plugin_link_from_package(plugin AgentPlugin, package_path string) PluginLink {
+	return PluginLink{
+		name:             plugin.manifest.name
+		path:             package_path
+		version:          plugin.manifest.version
+		description:      plugin.manifest.description
+		display_name:     plugin.manifest.veasel_display_name
+		skill_count:      plugin.skills.len
+		mcp_server_count: plugin.mcp_servers.len
 	}
 }
 
@@ -115,20 +131,14 @@ fn add_plugin_link(plugin_directory string, package_path string) !PluginLink {
 		}
 		existing := os.real_path(link_path)
 		if existing == canonical_package {
-			return PluginLink{
-				name: plugin.manifest.name
-				path: canonical_package
-			}
+			return plugin_link_from_package(plugin, canonical_package)
 		}
 		return error('plugin link `${plugin.manifest.name}` already points elsewhere')
 	}
 	os.symlink(canonical_package, link_path) or {
 		return error('unable to create plugin link: ${err.msg()}')
 	}
-	return PluginLink{
-		name: plugin.manifest.name
-		path: canonical_package
-	}
+	return plugin_link_from_package(plugin, canonical_package)
 }
 
 fn remove_plugin_link(plugin_directory string, name string) ! {

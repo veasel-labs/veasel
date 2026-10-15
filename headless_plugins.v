@@ -212,7 +212,15 @@ fn execute_headless_plugins_links_list(port int, options HeadlessPluginsOptions)
 		lines << '(none)'
 	}
 	for link in catalog.links {
-		lines << '${link.name}  ->  ${link.path}'
+		mut summary := '${link.name}  ->  ${link.path}'
+		if link.version.len > 0 {
+			summary += '  v${link.version}'
+		}
+		if link.display_name.len > 0 {
+			summary += '  (${link.display_name})'
+		}
+		summary += '  skills=${link.skill_count} mcp=${link.mcp_server_count}'
+		lines << summary
 	}
 	for diagnostic in catalog.diagnostics {
 		lines << 'diagnostic  ${diagnostic.message}'
@@ -233,7 +241,15 @@ fn execute_headless_plugins_links_add(port int, options HeadlessPluginsOptions) 
 		return response.body
 	}
 	link := json2.decode[PluginLink](response.body)!
-	return 'Linked ${link.name}  ->  ${link.path}'
+	mut line := 'Linked ${link.name}  ->  ${link.path}'
+	if link.version.len > 0 {
+		line += '  v${link.version}'
+	}
+	if link.display_name.len > 0 {
+		line += '  (${link.display_name})'
+	}
+	line += '  skills=${link.skill_count} mcp=${link.mcp_server_count}'
+	return line
 }
 
 fn execute_headless_plugins_links_remove(port int, options HeadlessPluginsOptions) !string {

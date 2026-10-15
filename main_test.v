@@ -948,18 +948,31 @@ fn test_failed_session_turn_completion_event_is_persisted() {
 	}
 	operation_id := '7df3b3f9-68ad-466d-a115-7c8c285d1999'
 	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
-	store.record_session_turn_completion(session.id, operation_id, 'cancelled', 'Turn cancelled.') or {
+	store.record_session_turn_completion(session.id, operation_id, 'cancelled', 'Turn cancelled.',
+		'Explain this failure', 'Turn cancelled.') or {
 		panic(err)
 	}
 	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
 	assert operation.status == 'cancelled'
 	assert operation.error == 'Turn cancelled.'
+	history := store.messages_for_session(session.id, 10) or { panic(err) }
+	assert history.len == 2
+	assert history[0].role == 'user'
+	assert history[0].content == 'Explain this failure'
+	assert history[1].role == 'assistant'
+	assert history[1].content == 'Turn cancelled.'
 	events := store.events_after(0) or { panic(err) }
 	completion := events[events.len - 1]
 	assert completion.type == 'session.turn_completed'
 	assert completion.data.operation_id == operation_id
 	assert completion.data.status == 'cancelled'
 	assert completion.data.error == 'Turn cancelled.'
+	assert visible_failed_turn('', 'The assistant turn failed.') == 'The assistant turn failed.'
+	assert visible_failed_turn('partial', 'The assistant turn failed.') == 'partial\nThe assistant turn failed.'
+	assert visible_failed_turn('partial\n', 'The assistant turn failed.') == 'partial\nThe assistant turn failed.'
+	assert tool_round_text_boundary('') == ''
+	assert tool_round_text_boundary('Looking.') == '\n'
+	assert tool_round_text_boundary('Looking.\n') == ''
 }
 
 fn test_model_endpoint_requires_tls_or_exact_loopback() {

@@ -10,6 +10,13 @@ export type SlashArgument = {
   description: string
 }
 
+// A completion list belongs to the session that requested it. Applying it
+// after the user switches sessions would offer the previous session's skills,
+// servers, edits, and commands.
+export function slashContextApplies(requestedSessionId: string, activeSessionId: string | undefined): boolean {
+  return activeSessionId === requestedSessionId
+}
+
 export type SlashCompletionContext = {
   skills?: SlashArgument[]
   mcpServers?: SlashArgument[]

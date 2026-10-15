@@ -34,13 +34,14 @@ export function endpointHost(baseUrl: string): string {
 // the provider requires a credential.
 export function settingsPath(
   provider: SettingsProvider | undefined,
-  options: { editEndpoint?: boolean } = {},
+  options: { editEndpoint?: boolean; editBudget?: boolean } = {},
 ): number[] {
   const steps = [providerStep]
   const known = provider ? providerHasKnownEndpoint(provider) : false
   if (!known || options.editEndpoint) steps.push(endpointStep)
   if (!provider || provider.requires_api_key) steps.push(credentialStep)
-  steps.push(modelStep, budgetStep)
+  steps.push(modelStep)
+  if (options.editBudget) steps.push(budgetStep)
   return steps
 }
 
@@ -50,6 +51,21 @@ export function adjacentSettingsStep(path: number[], current: number, direction:
   const next = index + direction
   if (next < 0 || next >= path.length) return current
   return path[next] ?? current
+}
+
+// Ctrl+U and Ctrl+O open the endpoint or budget as a side trip. Back returns to
+// the step that opened the trip and drops the trip from the path. A provider
+// that already requires that step keeps the normal path order.
+export function settingsBackTarget(
+  path: number[],
+  current: number,
+  detourFrom: number | undefined,
+): { step: number; cancelDetour: boolean } {
+  const openedAsDetour = detourFrom !== undefined
+    && detourFrom !== current
+    && (current === endpointStep || current === budgetStep)
+  if (openedAsDetour) return { step: detourFrom, cancelDetour: true }
+  return { step: adjacentSettingsStep(path, current, -1), cancelDetour: false }
 }
 
 export function settingsProgress(path: number[], current: number): { index: number; total: number } {

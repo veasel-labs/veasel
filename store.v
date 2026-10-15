@@ -1301,9 +1301,10 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 }
 
 fn (mut store Store) record_session_turn_completion(session_id string, operation_id string,
-	status string, public_error string) ! {
+	status string, public_error string, user_content string, assistant_content string) ! {
 	if !validate_operation_id(operation_id) || operation_id.len == 0
-		|| status !in ['failed', 'cancelled'] || public_error.len > 1024 {
+		|| status !in ['failed', 'cancelled'] || public_error.len > 1024
+		|| user_content.len > max_chat_input_bytes || assistant_content.len > max_provider_stream_bytes {
 		return error('invalid session turn completion')
 	}
 	store.mu.lock()
@@ -1318,6 +1319,30 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 	if sessions.len != 1 {
 		store.db.rollback() or {}
 		return error('session not found')
+	}
+	// A failed or cancelled turn still belongs in the transcript. The user
+	// prompt is stored here because the successful exchange path is the only
+	// other writer of chat messages.
+	for turn in [ChatTurn{
+		role:    'user'
+		content: user_content
+	}, ChatTurn{
+		role:    'assistant'
+		content: assistant_content
+	}] {
+		if turn.content.len == 0 {
+			continue
+		}
+		_ = store.db.exec_param_many('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)',
+			[session_id, turn.role, turn.content]) or {
+			store.db.rollback() or {}
+			return error('unable to persist chat turn')
+		}
+		_ = store.db.exec_param2('INSERT INTO events (type, session_id) VALUES (?, ?)', 'message.created',
+			session_id) or {
+			store.db.rollback() or {}
+			return error('unable to persist chat event')
+		}
 	}
 	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
 		'session.turn_completed',

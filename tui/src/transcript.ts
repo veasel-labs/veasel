@@ -2,6 +2,9 @@ export type TranscriptTone =
   | "title"
   | "meta"
   | "notice"
+  | "diffAdd"
+  | "diffRemove"
+  | "diffMeta"
   | "userLabel"
   | "userText"
   | "assistantLabel"
@@ -39,7 +42,7 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
     push(`${input.session.title}\n`, "title")
     push(`${input.session.directory}\n\n`, "meta")
   }
-  if (input.notice) push(`${input.notice}\n\n`, "notice")
+  if (input.notice) segments.push(...noticeSegments(input.notice))
   if (input.showMessages === false) return segments
   const turns: Array<{ user: boolean; content: string; status?: string }> = input.messages.map((message) => ({
     user: message.role !== "assistant",
@@ -64,4 +67,21 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
 
 export function transcriptPlainText(segments: TranscriptSegment[]): string {
   return segments.map((segment) => segment.text).join("")
+}
+
+// Unified diffs keep their + and - prefixes, and each changed line gets its
+// own tone so color is not the only way to tell an addition from a removal.
+export function noticeSegments(notice: string): TranscriptSegment[] {
+  const lines = notice.split("\n")
+  const diff = lines.some((line) => line.startsWith("@@") || line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ "))
+  if (!diff) return [{ text: `${notice}\n\n`, tone: "notice" }]
+  return lines.map((line, index) => {
+    const text = `${line}${index === lines.length - 1 ? "\n\n" : "\n"}`
+    if (line.startsWith("+") && !line.startsWith("+++")) return { text, tone: "diffAdd" as const }
+    if (line.startsWith("-") && !line.startsWith("---")) return { text, tone: "diffRemove" as const }
+    if (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
+      return { text, tone: "diffMeta" as const }
+    }
+    return { text, tone: "notice" as const }
+  })
 }

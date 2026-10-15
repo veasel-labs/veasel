@@ -5,6 +5,7 @@ import {
   moveSuggestion,
   runsOnAccept,
   slashCommands,
+  slashContextApplies,
   slashSuggestions,
   suggestionWindow,
 } from "./slash-commands"
@@ -90,6 +91,12 @@ describe("suggestion navigation", () => {
     expect(suggestionWindow(14, 15)).toEqual({ start: 9, end: 15 })
     expect(suggestionWindow(2, 4)).toEqual({ start: 0, end: 4 })
   })
+})
+
+test("stale slash context from another session is discarded", () => {
+  expect(slashContextApplies("session-a", "session-a")).toBe(true)
+  expect(slashContextApplies("session-a", "session-b")).toBe(false)
+  expect(slashContextApplies("session-a", undefined)).toBe(false)
 })
 
 test("every command in the help guide is completable", () => {

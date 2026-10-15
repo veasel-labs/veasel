@@ -5,7 +5,7 @@ export type HelpItem = {
 
 export const helpItems: HelpItem[] = [
   { command: "/help, /?", description: "Show this guide." },
-  { command: "s · /models", description: "Choose a provider, key, and model. Known endpoints are filled in; Ctrl+U changes one." },
+  { command: "s · /models", description: "Choose a provider, authenticate, and pick a model. Known endpoints and the output budget are filled in; Ctrl+U changes an endpoint and Ctrl+O changes the budget." },
   { command: "/skills · /skill on|off <plugin>/<skill>", description: "List or manage session Skills." },
   { command: "/mcp · /mcp calls", description: "List servers or calls waiting for review." },
   { command: "/mcp call show|approve|reject <id>", description: "Inspect arguments, then approve once or reject." },

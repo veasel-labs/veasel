@@ -56,8 +56,23 @@ fn test_shell_sandbox_seatbelt_capability_is_platform_honest() {
 	}
 }
 
-fn test_shell_sandbox_windows_capability_is_never_advertised_yet() {
-	assert !shell_sandbox_windows_capability()
+fn test_shell_sandbox_windows_capability_is_platform_honest() {
+	$if windows {
+		previous := os.getenv(shell_sandbox_mode_env)
+		defer {
+			if previous.len == 0 {
+				os.unsetenv(shell_sandbox_mode_env)
+			} else {
+				os.setenv(shell_sandbox_mode_env, previous, true)
+			}
+		}
+		os.setenv(shell_sandbox_mode_env, 'off', true)
+		assert !shell_sandbox_windows_capability()
+		os.setenv(shell_sandbox_mode_env, 'auto', true)
+		assert shell_sandbox_windows_capability() == windows_job_sandbox_available()
+	} $else {
+		assert !shell_sandbox_windows_capability()
+	}
 }
 
 fn test_approved_shell_uses_bubblewrap_when_available() {
@@ -177,7 +192,49 @@ fn test_approved_shell_uses_seatbelt_when_available() {
 	assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
 }
 
-fn test_approved_shell_require_mode_fails_closed_on_windows_without_fake_capability() {
+fn test_approved_shell_uses_windows_job_sandbox_when_available() {
+	$if !windows {
+		return
+	}
+	if !windows_job_sandbox_available() {
+		return
+	}
+	previous_mode := os.getenv(shell_sandbox_mode_env)
+	previous_network := os.getenv(shell_sandbox_network_env)
+	defer {
+		if previous_mode.len == 0 {
+			os.unsetenv(shell_sandbox_mode_env)
+		} else {
+			os.setenv(shell_sandbox_mode_env, previous_mode, true)
+		}
+		if previous_network.len == 0 {
+			os.unsetenv(shell_sandbox_network_env)
+		} else {
+			os.setenv(shell_sandbox_network_env, previous_network, true)
+		}
+	}
+	os.setenv(shell_sandbox_mode_env, 'auto', true)
+	os.unsetenv(shell_sandbox_network_env)
+	assert shell_sandbox_windows_capability()
+
+	parent := os.join_path(os.temp_dir(), 'veasel-approved-windows-job-${uuid.new_v4().str()}')
+	raw_root := os.join_path(parent, 'workspace')
+	os.mkdir_all(parent) or { panic(err) }
+	os.mkdir_all(raw_root) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	root := canonical_workspace_root(raw_root) or { panic(err) }
+
+	result := run_approved_shell_command(root, ShellCommandSummary{
+		command:         'echo approved-windows-job-ok>sandbox-write.txt & type sandbox-write.txt'
+		cwd:             '.'
+		timeout_seconds: 5
+	})
+	assert result.status == 'succeeded', result.output
+	assert result.output.contains('approved-windows-job-ok')
+	assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
+}
+
+fn test_approved_shell_require_mode_uses_windows_job_sandbox_or_fails_closed() {
 	$if !windows {
 		return
 	}
@@ -190,6 +247,20 @@ fn test_approved_shell_require_mode_fails_closed_on_windows_without_fake_capabil
 		}
 	}
 	os.setenv(shell_sandbox_mode_env, 'require', true)
+	if windows_job_sandbox_available() {
+		assert shell_sandbox_windows_capability()
+		root := os.join_path(os.temp_dir(), 'veasel-approved-windows-require-ok-${uuid.new_v4().str()}')
+		os.mkdir_all(root) or { panic(err) }
+		defer { os.rmdir_all(root) or {} }
+		result := run_approved_shell_command(root, ShellCommandSummary{
+			command:         'echo require-windows-job-ok'
+			cwd:             '.'
+			timeout_seconds: 5
+		})
+		assert result.status == 'succeeded', result.output
+		assert result.output.contains('require-windows-job-ok')
+		return
+	}
 	assert !shell_sandbox_windows_capability()
 	root := os.join_path(os.temp_dir(), 'veasel-approved-windows-require-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
@@ -200,7 +271,7 @@ fn test_approved_shell_require_mode_fails_closed_on_windows_without_fake_capabil
 		timeout_seconds: 5
 	})
 	assert result.status == 'failed'
-	assert result.output.contains('requires a Windows OS sandbox')
+	assert result.output.contains('requires a Windows Job Object sandbox')
 	assert !result.output.contains('must-not-run')
 }
 

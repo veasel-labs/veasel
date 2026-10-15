@@ -29,9 +29,8 @@ Veasel can ship honestly in this slice.
 - Shared knobs `VEASEL_SHELL_SANDBOX=auto|off|require` and
   `VEASEL_SHELL_SANDBOX_NETWORK`; capability `shell.sandbox.seatbelt` is true
   only when wrap will run.
-- Windows: no fake capability (`shell.sandbox.windows` stays false);
-  `require` fails closed; `auto` remains unsandboxed until a real Job Object /
-  AppContainer / restricted-token wrap exists.
+- Windows Job Object wrap is documented separately in
+  [`shell-windows-job-sandbox.md`](shell-windows-job-sandbox.md).
 
 No Codex Seatbelt source or SBPL files were copied. Veasel does not claim
 Codex-level sandbox guarantees. `sandbox-exec` remains best-effort and may be

@@ -2,9 +2,10 @@
 """Drive the real Veasel TUI against a loopback fixture.
 
 This checks the keyboard path that unit tests cannot see: provider setup,
-model discovery, slash arguments, a failed turn, cancellation, a long session
-list that keeps the selection on screen, a session switch while completion
-data is still in flight, and a narrow terminal.
+model discovery, slash arguments, a bounded diff review, a failed turn,
+cancellation, a long session list that keeps the selection on screen, a
+session switch while completion data is still in flight, and a narrow
+terminal.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SESSION = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
+EDIT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 state = {
@@ -41,6 +43,19 @@ state = {
     "model_posts": 0,
     "sse_id": 0,
 }
+
+
+def review_diff() -> str:
+    lines = [
+        "diff --git a/src/main.v b/src/main.v",
+        "--- a/src/main.v",
+        "+++ b/src/main.v",
+        "@@ -1,2 +1,3 @@",
+        "-old line",
+    ]
+    lines.extend(f"+kept line {index:02d}" for index in range(1, 29))
+    lines.append("+TAIL-SENTINEL")
+    return "\n".join(lines) + "\n"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -70,11 +85,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, state["other_messages"])
         if path == "/v1/config/model":
             return self._json(200, settings_view())
+        if path == f"/v1/sessions/{SESSION}/workspace/edits/{EDIT_ID}":
+            return self._json(200, {
+                "id": EDIT_ID,
+                "session_id": SESSION,
+                "path": "src/main.v",
+                "status": "pending",
+                "diff": review_diff(),
+            })
         if path == f"/v1/sessions/{SESSION}/workspace/edits":
             if state["hold_edits"]:
                 state["edits_release"].wait(3.0)
             return self._json(200, [{
-                "id": "edit-1", "path": "src/main.v", "status": "pending",
+                "id": EDIT_ID, "path": "src/main.v", "status": "pending",
             }])
         if path == f"/v1/sessions/{OTHER}/workspace/edits":
             if state["hold_other_edits"]:
@@ -471,9 +494,15 @@ def main() -> None:
         screen.send("\t", 0.4)
         screen.wait_for("/patch show")
         screen.send(" ", 0.6)
-        screen.wait_for("edit-1")
+        screen.wait_for("aaaaaaaa-aaaa")
         screen.send("\x1b", 0.25)
         screen.clear_line(13)  # "/patch show "
+        screen.send(f"/patch show {EDIT_ID}\r", 0.7)
+        screen.wait_for("29 added, 1 removed", 4)
+        screen.wait_for("Showing ")
+        reviewed = screen.terminal.text()
+        if "TAIL-SENTINEL" in reviewed:
+            raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
         screen.send("/skill ", 0.6)
         screen.wait_for("Enable a Skill")
         screen.send("\t", 0.5)
@@ -535,7 +564,7 @@ def main() -> None:
         time.sleep(2.2)
         screen.read_for(0.3)
         visible = screen.terminal.text()
-        if "edit-1" in visible:
+        if "aaaaaaaa-aaaa" in visible:
             raise AssertionError(f"stale edit from the previous session was offered\n--- screen ---\n{visible}")
         if "No file edits are waiting" not in visible:
             raise AssertionError(f"empty edit list disappeared after the late response\n--- screen ---\n{visible}")

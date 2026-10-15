@@ -21,6 +21,7 @@ import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settin
 import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
 import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
+import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
@@ -1019,7 +1020,8 @@ async function showWorkspaceEdit(editId: string) {
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     const edit = await response.json() as WorkspaceEditProposal
     if (edit.status === "pending") reviewedEditIds.add(edit.id)
-    skillNotice = `REVIEW WORKSPACE EDIT  /  ${edit.status.toUpperCase()}\n${safeTerminalText(edit.path)}\n${safeTerminalText(edit.diff)}${edit.status === "pending" ? `\nAfter inspecting the diff, type /patch approve ${edit.id} or /patch reject ${edit.id}.` : ""}`
+    const review = formatReviewDiff(edit.diff, reviewDiffLineBudget(process.stdout.rows ?? 40))
+    skillNotice = `REVIEW WORKSPACE EDIT  /  ${edit.status.toUpperCase()}\n${safeTerminalText(edit.path)}\n${safeTerminalText(review.text)}${edit.status === "pending" ? `\nAfter inspecting the diff, type /patch approve ${edit.id} or /patch reject ${edit.id}.` : ""}`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load workspace edit diff: ${error instanceof Error ? error.message : "request failed"}`

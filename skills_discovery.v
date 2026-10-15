@@ -367,6 +367,17 @@ fn configured_skill_roots() []StandaloneSkillRoot {
 	return roots
 }
 
+// directory_is_git_worktree_root is true when path is a git checkout or linked
+// worktree root (directory or gitfile `.git`). Matches OpenCode/Codex/Pi stop
+// conditions for project skill ancestor walks.
+fn directory_is_git_worktree_root(path string) bool {
+	if path.len == 0 {
+		return false
+	}
+	dot_git := os.join_path(path, '.git')
+	return os.exists(dot_git)
+}
+
 fn project_skill_roots(project_directory string) []StandaloneSkillRoot {
 	start := canonical_project_directory(project_directory) or { return []StandaloneSkillRoot{} }
 	mut roots := []StandaloneSkillRoot{}
@@ -379,6 +390,11 @@ fn project_skill_roots(project_directory string) []StandaloneSkillRoot {
 				scope:  'project'
 				label:  relative
 			}
+		}
+		// Stop at the git worktree/repo root so monorepo walks do not leak into
+		// parent checkouts or home-directory skill folders via ancestors.
+		if directory_is_git_worktree_root(current) {
+			break
 		}
 		parent := os.dir(current)
 		if parent.len == 0 || parent == current {

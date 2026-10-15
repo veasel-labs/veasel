@@ -254,3 +254,62 @@ fn test_standalone_skills_qualify_when_plugin_name_collides() {
 	assert entries.any(it.plugin_name == 'standalone-agents' && it.skill_name == 'repo-check')
 	assert entries.any(it.plugin_name == 'agents' && it.skill_name == 'plugin-skill')
 }
+
+fn test_project_skill_roots_stop_at_git_worktree_root() {
+	sandbox := os.join_path(os.temp_dir(), 'veasel-skills-git-bound-${uuid.new_v4().str()}')
+	// Parent checkout sits above the git worktree so an unbounded ancestor walk
+	// would otherwise pick up its skills.
+	outside := os.join_path(sandbox, 'parent-checkout')
+	repo := os.join_path(outside, 'repo')
+	nested := os.join_path(repo, 'packages', 'app')
+	home := os.join_path(sandbox, 'home')
+	os.mkdir_all(os.join_path(outside, '.agents', 'skills')) or { panic(err) }
+	os.mkdir_all(os.join_path(repo, '.agents', 'skills')) or { panic(err) }
+	os.mkdir_all(os.join_path(nested, '.agents', 'skills')) or { panic(err) }
+	os.mkdir_all(os.join_path(repo, '.git')) or { panic(err) }
+	os.mkdir_all(home) or { panic(err) }
+	defer { os.rmdir_all(sandbox) or {} }
+	write_standalone_skill(os.join_path(outside, '.agents', 'skills'), 'leaked-parent',
+		'Must not be discovered from inside the git worktree.', 'LEAKED PARENT BODY')
+	write_standalone_skill(os.join_path(repo, '.agents', 'skills'), 'repo-root-skill',
+		'Skill at the git worktree root.', 'REPO ROOT BODY')
+	write_standalone_skill(os.join_path(nested, '.agents', 'skills'), 'nested-skill',
+		'Skill under a nested package.', 'NESTED BODY')
+
+	prior_home := os.getenv('HOME')
+	prior_skills_dirs := os.getenv('VEASEL_SKILLS_DIRS')
+	had_skills_dirs := 'VEASEL_SKILLS_DIRS' in os.environ()
+	os.setenv('HOME', home, true)
+	os.unsetenv('VEASEL_SKILLS_DIRS')
+	defer {
+		os.setenv('HOME', prior_home, true)
+		if had_skills_dirs {
+			os.setenv('VEASEL_SKILLS_DIRS', prior_skills_dirs, true)
+		} else {
+			os.unsetenv('VEASEL_SKILLS_DIRS')
+		}
+	}
+
+	assert directory_is_git_worktree_root(repo)
+	assert !directory_is_git_worktree_root(nested)
+	assert !directory_is_git_worktree_root(outside)
+
+	discovery := discover_standalone_agent_skills(nested)
+	mut by_key := map[string]StandaloneSkillSummary{}
+	for skill in skills_catalog_from_discovery(discovery).skills {
+		by_key[skill.key] = skill
+	}
+	assert by_key['agents/nested-skill'].scope == 'project'
+	assert by_key['agents/repo-root-skill'].scope == 'project'
+	assert 'agents/leaked-parent' !in by_key
+
+	// Non-git trees keep walking past the would-be repo boundary.
+	os.rmdir_all(os.join_path(repo, '.git')) or { panic(err) }
+	assert !directory_is_git_worktree_root(repo)
+	unbounded := discover_standalone_agent_skills(nested)
+	mut unbounded_keys := map[string]bool{}
+	for skill in skills_catalog_from_discovery(unbounded).skills {
+		unbounded_keys[skill.key] = true
+	}
+	assert unbounded_keys['agents/leaked-parent']
+}

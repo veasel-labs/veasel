@@ -257,6 +257,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   optional `<location>`, Codex-style description shrink before omit (~8k char
   budget / 64-entry cap), and omit skills with `disable-model-invocation` or
   OpenCode `metadata.opencode/autoinvoke=false` while keeping explicit load.
+- [x] Bound project skill ancestor walks at the git worktree/repo root (`.git`
+  directory or gitfile), matching OpenCode/Codex/Pi; non-git trees still use
+  the existing ancestor cap.
 - [x] When a standalone skill source key collides with an Agent Plugin package
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the

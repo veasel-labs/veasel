@@ -223,9 +223,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   whether its directory stays inside the package; it does not read that
   directory.   Named Streamable HTTP credentials are available via `/v1/mcp-credentials`
   (`mcp.credentials`). Stdio emits `notifications/cancelled` when a turn is
-  cancelled mid-call; Streamable HTTP cancels mid-body via progress callbacks.
-  Remaining gap (true TTFB-before-progress cancel under `net.http`) is tracked in
-  [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
+  cancelled mid-call; Streamable HTTP cancels mid-body via progress callbacks,
+  re-checks cancel after fetch returns, and aborts on first progress bytes after
+  a slow TTFB. True socket abort before any progress callback is a pinned
+  `net.http` hard limit (no external cancel handle); residual documented in
+  [`compatibility/http-cancel-limits.md`](compatibility/http-cancel-limits.md).
   Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
   including RFC 9728 `resource_metadata`, then best-effort fetch protected-
   resource metadata and the first authorization server's RFC 8414 metadata
@@ -329,11 +331,14 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   same scopes via the local API, including `veasel mcp credentials
   list|set|remove` for named HTTP header sets. Named HTTP credentials via
   `/v1/mcp-credentials`. Stdio `notifications/cancelled` on turn cancel is
-  implemented; HTTP mid-body cancel via progress callbacks is shipped.
+  implemented; HTTP mid-body cancel via progress callbacks is shipped, with
+  post-fetch cancel refusal and first-progress abort after slow TTFB. True
+  TTFB-before-any-progress socket abort under pinned `net.http` is a documented
+  hard limit ([`compatibility/http-cancel-limits.md`](compatibility/http-cancel-limits.md)),
+  not open product work pending a custom HTTP stack.
   WWW-Authenticate Bearer challenge discovery, RFC 9728 protected-resource
   metadata, RFC 8414 authorization-server metadata, OAuth authorize/complete,
-  loopback listener, and headless `veasel mcp oauth` are shipped on 401/auth;
-  true TTFB-before-progress cancel under `net.http` remains open.
+  loopback listener, and headless `veasel mcp oauth` are shipped on 401/auth.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

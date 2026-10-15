@@ -579,6 +579,28 @@ fn test_assistant_delta_events_persist_operation_and_text_for_replay() {
 	assert nul_rejected
 }
 
+fn test_events_after_pages_at_event_stream_limit() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'Event page size'
+		directory: '/tmp/event-page-size'
+	}) or { panic(err) }
+	operation_id := '323e4567-e89b-42d3-a456-426614174002'
+	for i in 0 .. max_event_stream_page_size {
+		store.record_assistant_delta(session.id, operation_id, 'd${i}') or { panic(err) }
+	}
+	first_page := store.events_after(0) or { panic(err) }
+	assert first_page.len == max_event_stream_page_size
+	assert first_page[0].type == 'session.created'
+	assert first_page[first_page.len - 1].type == 'assistant.delta'
+	next_page := store.events_after(first_page[first_page.len - 1].id) or { panic(err) }
+	assert next_page.len == 1
+	assert next_page[0].data.delta == 'd${max_event_stream_page_size - 1}'
+}
+
 fn test_session_events_prune_to_retention_limit_during_streaming() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer {

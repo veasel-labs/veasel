@@ -33,8 +33,7 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		'workspace.edits.reject', 'workspace.commands.propose', 'workspace.commands.review',
 		'workspace.commands.approve', 'workspace.commands.reject', 'sessions.operations.list',
 		'sessions.operations.result', 'sessions.operations.trace.atif_v1_8',
-		'sessions.operations.durable_queue', 'sessions.usage.prompt_cache',
-		'sessions.usage.reasoning']
+		'sessions.operations.durable_queue', 'sessions.usage.prompt_cache', 'sessions.usage.reasoning']
 	if anthropic_prompt_cache_enabled() {
 		features << 'provider.anthropic.prompt_cache'
 	}

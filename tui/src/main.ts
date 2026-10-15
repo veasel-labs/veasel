@@ -161,6 +161,8 @@ import {
   formatThemeList,
   formatThemePreviewStatus,
   isThemeId,
+  listThemeChoices,
+  loadCustomThemes,
   loadThemeId,
   resolveTheme,
   saveThemeId,
@@ -168,6 +170,10 @@ import {
   type Theme,
   type ThemeId,
 } from "./themes"
+
+loadCustomThemes({
+  projectDir: process.env.VEASEL_PROJECT_DIR?.trim() || process.cwd(),
+})
 
 let theme: Theme = resolveTheme(loadThemeId())
 let committedThemeId: ThemeId = theme.id
@@ -591,7 +597,9 @@ let settingsEditBudget = false
 let settingsDetourFrom: number | undefined
 let providersConfigured = false
 let activeModelLabel = ""
-let slashContext: SlashCompletionContext = {}
+let slashContext: SlashCompletionContext = {
+  themes: listThemeChoices(),
+}
 let slashContextLoading = false
 let slashContextAt = 0
 let slashContextRequest = 0
@@ -1063,7 +1071,7 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  const themeMatch = content.match(/^\/theme\s+([a-z]+)$/i)
+  const themeMatch = content.match(/^\/theme\s+([a-z][a-z0-9-]*)$/i)
   if (themeMatch) {
     const id = themeMatch[1]!.toLowerCase()
     if (!isThemeId(id)) {
@@ -3318,6 +3326,7 @@ async function refreshSlashContext(typed: string) {
       : { servers: [] as ConfiguredMcpCatalog["servers"] }
     const trusted = new Set(trustedServers.map((server) => `${server.plugin_name}/${server.server_name}`))
     nextContext = {
+      themes: listThemeChoices(),
       patches: edits.filter((edit) => edit.status === "pending").map((edit) => ({ value: edit.id, description: `pending · ${edit.path}` })),
       commands: commands.filter((item) => item.status === "pending").map((item) => ({ value: item.id, description: `pending · ${item.command}` })),
       mcpCalls: calls.filter((call) => call.status === "pending").map((call) => ({ value: call.id, description: `pending · ${call.plugin_name}/${call.tool_name}` })),

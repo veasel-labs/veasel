@@ -54,6 +54,7 @@ export type SlashCompletionContext = {
   mcpCalls?: SlashArgument[]
   patches?: SlashArgument[]
   commands?: SlashArgument[]
+  themes?: SlashArgument[]
 }
 
 export type SlashSuggestion = SlashCommand & {
@@ -66,7 +67,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/help advanced", category: "guide", description: "Show full command syntax" },
   { name: "/connect", category: "setup", description: "Authenticate: paste an API key, save credentials, and pick a model" },
   { name: "/models", category: "setup", description: "Configure provider, model, endpoint, and output budget" },
-  { name: "/theme", category: "setup", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora, day, contrast)", usage: "/theme <id>" },
+  { name: "/theme", category: "setup", description: "List or switch TUI color themes (builtins plus ~/.config/veasel/themes JSON)", usage: "/theme <id>" },
   { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter (all tokens must match)" },
   { name: "/skill", category: "skills", description: "Enable, disable, or one-shot invoke a Skill", usage: "/skill on|off|run <source>/<skill>" },
   { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages; add text to filter" },
@@ -105,7 +106,7 @@ type ChoiceSpec = { kind: "choice"; choices: SlashArgument[] }
 type ValueSpec = { kind: "value"; values: (context: SlashCompletionContext) => SlashArgument[]; empty: string }
 type ArgSpec = ChoiceSpec | ValueSpec
 
-const themeChoices: SlashArgument[] = [
+const builtinThemeChoices: SlashArgument[] = [
   { value: "mint", description: "Charcoal panels with mint accents — the Veasel product look" },
   { value: "ember", description: "Warm dark panels with amber focus cues" },
   { value: "slate", description: "Cool blue-gray workspace with steel accents" },
@@ -117,7 +118,11 @@ const themeChoices: SlashArgument[] = [
 
 const argumentSpecs: Record<string, ArgSpec[]> = {
   "/theme": [
-    { kind: "choice", choices: themeChoices },
+    {
+      kind: "value",
+      values: (context) => context.themes ?? builtinThemeChoices,
+      empty: "No themes are available",
+    },
   ],
   "/skill": [
     {

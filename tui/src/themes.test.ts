@@ -1,14 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import {
+  clearCustomThemes,
   defaultThemeId,
   formatThemeList,
   formatThemePreviewStatus,
   isThemeId,
+  loadCustomThemes,
   loadThemeId,
+  parseThemeJson,
   resolveTheme,
   saveThemeId,
   themeConfigPath,
   themeIdFromSlashSuggestion,
+  themeThemesDir,
   themes,
 } from "./themes"
 
@@ -93,5 +97,79 @@ describe("TUI themes", () => {
       "● preview Ember  ·  Enter keeps · Esc restores Mint",
     )
     expect(formatThemePreviewStatus("mint", "mint")).toBe("● theme Mint  ·  saved")
+  })
+
+  test("parses custom theme JSON that extends a builtin", () => {
+    clearCustomThemes()
+    const parsed = parseThemeJson(
+      JSON.stringify({
+        id: "ocean",
+        name: "Ocean",
+        description: "Deep blue workspace",
+        extends: "mint",
+        brand: "#7dd3fc",
+        shellBg: "#0a1628",
+      }),
+      "ocean.json",
+    )
+    expect(parsed.error).toBeUndefined()
+    expect(parsed.theme?.id).toBe("ocean")
+    expect(parsed.theme?.brand).toBe("#7dd3fc")
+    expect(parsed.theme?.shellBg).toBe("#0a1628")
+    expect(parsed.theme?.panelBg).toBe(themes.mint.panelBg)
+  })
+
+  test("rejects custom themes that replace builtins or use bad colors", () => {
+    expect(parseThemeJson(JSON.stringify({ id: "mint", name: "Nope" }), "bad.json").error).toContain("builtin")
+    expect(parseThemeJson(JSON.stringify({ id: "neon", name: "Neon", brand: "mint" }), "bad.json").error).toContain("hex")
+    expect(parseThemeJson("{", "bad.json").error).toContain("invalid JSON")
+  })
+
+  test("loads custom themes from user and project theme dirs", () => {
+    clearCustomThemes()
+    const home = "/tmp/veasel-custom-theme-home"
+    const env = { XDG_CONFIG_HOME: `${home}/.config` }
+    const userDir = themeThemesDir(env, home)
+    const projectDir = "/tmp/veasel-project"
+    const files = new Map<string, string>([
+      [`${userDir}/ocean.json`, JSON.stringify({
+        id: "ocean",
+        name: "Ocean",
+        extends: "mint",
+        brand: "#7dd3fc",
+      })],
+      [`${projectDir}/.veasel/themes/forest.json`, JSON.stringify({
+        id: "forest",
+        name: "Forest",
+        extends: "ember",
+        brand: "#86efac",
+      })],
+      [`${projectDir}/.veasel/themes/broken.json`, "{not-json"],
+    ])
+    const result = loadCustomThemes({
+      env,
+      home,
+      projectDir,
+      readDir: (path) => {
+        if (path === userDir) return ["ocean.json"]
+        if (path === `${projectDir}/.veasel/themes`) return ["forest.json", "broken.json"]
+        throw new Error(`missing ${path}`)
+      },
+      readFile: (path) => {
+        const raw = files.get(path)
+        if (raw === undefined) throw new Error(`missing ${path}`)
+        return raw
+      },
+    })
+    expect(result.loaded.map((theme) => theme.id).sort()).toEqual(["forest", "ocean"])
+    expect(result.errors.some((error) => error.includes("broken.json"))).toBe(true)
+    expect(isThemeId("ocean")).toBe(true)
+    expect(isThemeId("forest")).toBe(true)
+    expect(resolveTheme("ocean").brand).toBe("#7dd3fc")
+    expect(resolveTheme("forest").brand).toBe("#86efac")
+    expect(themeIdFromSlashSuggestion("/theme ocean")).toBe("ocean")
+    expect(formatThemeList("ocean")).toContain("(custom)")
+    expect(formatThemeList("ocean")).toContain("~/.config/veasel/themes")
+    clearCustomThemes()
   })
 })

@@ -1,10 +1,23 @@
 import { homedir } from "node:os"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
 // Visual tokens for the OpenTUI shell. The default "mint" theme matches the
 // product mock: charcoal panels, mint accents, and a clear LOCAL cue.
-export type ThemeId = "mint" | "ember" | "slate" | "mono" | "aurora" | "day" | "contrast"
+// Builtin ids stay fixed; custom JSON under ~/.config/veasel/themes/ (and
+// <workspace>/.veasel/themes/) may add kebab-case ids at runtime.
+export type BuiltinThemeId = "mint" | "ember" | "slate" | "mono" | "aurora" | "day" | "contrast"
+export type ThemeId = string
+
+export type ThemePortrait = {
+  D: string
+  B: string
+  L: string
+  K: string
+  H: string
+  N: string
+  W: string
+}
 
 export type Theme = {
   id: ThemeId
@@ -43,18 +56,47 @@ export type Theme = {
   assistantText: string
   status: string
   hint: string
-  portrait: {
-    D: string
-    B: string
-    L: string
-    K: string
-    H: string
-    N: string
-    W: string
-  }
+  portrait: ThemePortrait
 }
 
-export const themes: Record<ThemeId, Theme> = {
+const portraitKeys = ["D", "B", "L", "K", "H", "N", "W"] as const
+const colorKeys = [
+  "shellBg",
+  "panelBg",
+  "panelBorder",
+  "headerBg",
+  "headerBorder",
+  "headerTitle",
+  "headerMeta",
+  "localStatus",
+  "sidebarLabel",
+  "sidebarFg",
+  "sessionSelectedFg",
+  "brand",
+  "body",
+  "muted",
+  "statusWarn",
+  "statusOk",
+  "statusError",
+  "inputBg",
+  "inputFocusBg",
+  "inputText",
+  "cursor",
+  "title",
+  "meta",
+  "notice",
+  "diffAdd",
+  "diffRemove",
+  "diffMeta",
+  "userLabel",
+  "userText",
+  "assistantLabel",
+  "assistantText",
+  "status",
+  "hint",
+] as const
+
+export const themes: Record<BuiltinThemeId, Theme> = {
   mint: {
     id: "mint",
     name: "Mint",
@@ -386,19 +428,50 @@ export const themes: Record<ThemeId, Theme> = {
   },
 }
 
-export const defaultThemeId: ThemeId = "mint"
+export const defaultThemeId: BuiltinThemeId = "mint"
 
-export function isThemeId(value: string): value is ThemeId {
+// Runtime registry of custom themes loaded from JSON. Builtin entries always win
+// for the same id; later load dirs overwrite earlier custom ids (project > user).
+const customThemes = new Map<string, Theme>()
+
+export function isBuiltinThemeId(value: string): value is BuiltinThemeId {
   return value in themes
 }
 
+export function isThemeId(value: string): value is ThemeId {
+  return isBuiltinThemeId(value) || customThemes.has(value)
+}
+
+export function isThemeIdShape(value: string): boolean {
+  return /^[a-z][a-z0-9-]{0,31}$/.test(value)
+}
+
 export function listThemes(): Theme[] {
-  return Object.values(themes)
+  return [...Object.values(themes), ...customThemes.values()]
+}
+
+export function listThemeChoices(): Array<{ value: string; description: string }> {
+  return listThemes().map((theme) => ({
+    value: theme.id,
+    description: theme.description,
+  }))
+}
+
+export function clearCustomThemes(): void {
+  customThemes.clear()
 }
 
 export function themeConfigPath(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
   const base = env.XDG_CONFIG_HOME?.trim() || join(home, ".config")
   return join(base, "veasel", "tui-theme")
+}
+
+export function themeThemesDir(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
+  return join(dirname(themeConfigPath(env, home)), "themes")
+}
+
+export function projectThemesDir(projectDir: string): string {
+  return join(projectDir, ".veasel", "themes")
 }
 
 export function loadThemeId(
@@ -430,31 +503,170 @@ export function saveThemeId(
 }
 
 export function resolveTheme(id: string | undefined): Theme {
-  if (id && isThemeId(id)) return themes[id]
+  if (id && customThemes.has(id)) return customThemes.get(id)!
+  if (id && isBuiltinThemeId(id)) return themes[id]
   return themes[defaultThemeId]
 }
 
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value)
+}
+
+type ThemeJson = {
+  id?: unknown
+  name?: unknown
+  description?: unknown
+  extends?: unknown
+  portrait?: unknown
+} & Record<string, unknown>
+
+export function parseThemeJson(
+  raw: string,
+  sourcePath: string,
+  resolveBase: (id: string) => Theme | undefined = (id) => {
+    if (customThemes.has(id)) return customThemes.get(id)
+    if (isBuiltinThemeId(id)) return themes[id]
+    return undefined
+  },
+): { theme?: Theme; error?: string } {
+  let parsed: ThemeJson
+  try {
+    parsed = JSON.parse(raw) as ThemeJson
+  } catch {
+    return { error: `${sourcePath}: invalid JSON` }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { error: `${sourcePath}: theme root must be an object` }
+  }
+  const id = typeof parsed.id === "string" ? parsed.id.trim().toLowerCase() : ""
+  if (!isThemeIdShape(id)) {
+    return { error: `${sourcePath}: id must match [a-z][a-z0-9-]{0,31}` }
+  }
+  if (isBuiltinThemeId(id)) {
+    return { error: `${sourcePath}: cannot replace builtin theme "${id}"` }
+  }
+  const name = typeof parsed.name === "string" ? parsed.name.trim() : ""
+  if (!name) return { error: `${sourcePath}: name is required` }
+  const description = typeof parsed.description === "string" ? parsed.description.trim() : `Custom theme ${id}`
+  const extendsId = typeof parsed.extends === "string" ? parsed.extends.trim().toLowerCase() : defaultThemeId
+  const base = resolveBase(extendsId)
+  if (!base) return { error: `${sourcePath}: unknown extends "${extendsId}"` }
+
+  const next: Theme = {
+    ...base,
+    id,
+    name,
+    description,
+    portrait: { ...base.portrait },
+  }
+  for (const key of colorKeys) {
+    const value = parsed[key]
+    if (value === undefined) continue
+    if (!isHexColor(value)) return { error: `${sourcePath}: ${key} must be a #hex color` }
+    next[key] = value
+  }
+  if (parsed.portrait !== undefined) {
+    if (!parsed.portrait || typeof parsed.portrait !== "object" || Array.isArray(parsed.portrait)) {
+      return { error: `${sourcePath}: portrait must be an object` }
+    }
+    const portrait = parsed.portrait as Record<string, unknown>
+    for (const key of portraitKeys) {
+      const value = portrait[key]
+      if (value === undefined) continue
+      if (!isHexColor(value)) return { error: `${sourcePath}: portrait.${key} must be a #hex color` }
+      next.portrait[key] = value
+    }
+  }
+  return { theme: next }
+}
+
+export type LoadCustomThemesResult = {
+  loaded: Theme[]
+  errors: string[]
+}
+
+export function loadCustomThemes(options: {
+  env?: NodeJS.ProcessEnv
+  home?: string
+  projectDir?: string
+  readDir?: (path: string) => string[]
+  readFile?: (path: string) => string
+  replace?: boolean
+} = {}): LoadCustomThemesResult {
+  const env = options.env ?? process.env
+  const home = options.home ?? homedir()
+  const readDir = options.readDir ?? ((path) => readdirSync(path))
+  const readFile = options.readFile ?? ((path) => readFileSync(path, "utf8"))
+  if (options.replace !== false) customThemes.clear()
+
+  const dirs = [themeThemesDir(env, home)]
+  const projectDir = options.projectDir?.trim()
+  if (projectDir) dirs.push(projectThemesDir(projectDir))
+
+  const loaded: Theme[] = []
+  const errors: string[] = []
+  const byId = new Map<string, Theme>()
+
+  for (const dir of dirs) {
+    let names: string[] = []
+    try {
+      names = readDir(dir).filter((name) => name.endsWith(".json")).sort()
+    } catch {
+      continue
+    }
+    for (const name of names) {
+      const path = join(dir, name)
+      let raw = ""
+      try {
+        raw = readFile(path)
+      } catch (error) {
+        errors.push(`${path}: ${error instanceof Error ? error.message : "unreadable"}`)
+        continue
+      }
+      const parsed = parseThemeJson(raw, path, (id) => {
+        if (byId.has(id)) return byId.get(id)
+        if (isBuiltinThemeId(id)) return themes[id]
+        return undefined
+      })
+      if (parsed.error || !parsed.theme) {
+        errors.push(parsed.error ?? `${path}: unknown parse failure`)
+        continue
+      }
+      byId.set(parsed.theme.id, parsed.theme)
+    }
+  }
+
+  for (const theme of byId.values()) {
+    customThemes.set(theme.id, theme)
+    loaded.push(theme)
+  }
+  return { loaded, errors }
+}
+
 export function formatThemeList(activeId: ThemeId): string {
-  const lines = ["TUI THEMES", `Active: ${themes[activeId].name} (${activeId})`, ""]
+  const active = resolveTheme(activeId)
+  const lines = ["TUI THEMES", `Active: ${active.name} (${active.id})`, ""]
   for (const theme of listThemes()) {
     const marker = theme.id === activeId ? "●" : "○"
-    lines.push(`${marker} ${theme.id}  ${theme.name}`, `  ${theme.description}`)
+    const custom = isBuiltinThemeId(theme.id) ? "" : "  (custom)"
+    lines.push(`${marker} ${theme.id}  ${theme.name}${custom}`, `  ${theme.description}`)
   }
   lines.push("", "Choose with /theme <id>. Preference is stored in ~/.config/veasel/tui-theme.")
+  lines.push("Add custom themes as JSON under ~/.config/veasel/themes/*.json or <workspace>/.veasel/themes/*.json (optional \"extends\" builtin id).")
   lines.push("While the /theme menu is open, ↑/↓ preview colors live; Enter keeps the choice and Esc restores the saved theme.")
   return lines.join("\n")
 }
 
 // Extracts a concrete theme id from a slash suggestion such as "/theme ember".
 export function themeIdFromSlashSuggestion(name: string): ThemeId | undefined {
-  const match = /^\/theme\s+([a-z]+)$/i.exec(name.trim())
+  const match = /^\/theme\s+([a-z][a-z0-9-]*)$/i.exec(name.trim())
   if (!match) return undefined
   const id = match[1]!.toLowerCase()
   return isThemeId(id) ? id : undefined
 }
 
 export function formatThemePreviewStatus(id: ThemeId, savedId: ThemeId): string {
-  const preview = themes[id]
+  const preview = resolveTheme(id)
   if (id === savedId) return `● theme ${preview.name}  ·  saved`
-  return `● preview ${preview.name}  ·  Enter keeps · Esc restores ${themes[savedId].name}`
+  return `● preview ${preview.name}  ·  Enter keeps · Esc restores ${resolveTheme(savedId).name}`
 }

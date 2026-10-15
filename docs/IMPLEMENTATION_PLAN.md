@@ -158,8 +158,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `docs/compatibility/prompt-cache-accounting.md`.
 - [x] Theme the OpenTUI shell to the mint product look (charcoal panels, mint
   accents, LOCAL cue, session markers) and let operators switch among mint,
-  ember, slate, mono, and aurora via `/theme`, with the choice persisted under
-  `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
+  ember, slate, mono, aurora, day, and contrast via `/theme`, with the choice
+  persisted under `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
+  Custom themes load from `~/.config/veasel/themes/*.json` and
+  `<workspace>/.veasel/themes/*.json` (optional `extends` builtin id).
 - [x] TUI `/map` shows the extractive workspace repository map with measured
   UTF-8 bytes, bytes/4 bound, ranked paths, and an optional ranking hint.
   Help documents Windows AppContainer alongside Bubblewrap/Seatbelt.

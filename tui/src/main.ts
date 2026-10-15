@@ -79,7 +79,13 @@ import {
   stepComposerHistory,
   type ComposerHistory,
 } from "./composer-history"
-import { composerLineCursor, killLineForward, killWordBackward, moveWordCursor } from "./composer-edit"
+import {
+  composerLineCursor,
+  killLineForward,
+  killWordBackward,
+  killWordForward,
+  moveWordCursor,
+} from "./composer-edit"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
 import {
@@ -3487,6 +3493,20 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killWordBackward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
+        chatInput.focus()
+      }
+      return
+    }
+    // Alt+D kills from the cursor through the next word (readline). Esc alone
+    // still cancels / leaves; this only handles the Alt+D / Esc+d sequence.
+    if ((key.meta && key.name === "d") || key.sequence === "\x1bd") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = killWordForward(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value) {
         chatInput.value = edited.value
         chatInput.cursorOffset = edited.cursor
         updateSlashMenu(edited.value)

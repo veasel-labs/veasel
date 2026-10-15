@@ -19,6 +19,28 @@ export function killWordBackward(
   }
 }
 
+// Alt+D: delete from the cursor through the current or next word (readline
+// kill-word). When the cursor sits on a word, only that word is removed; when
+// it sits on whitespace, the spaces and the following word go together.
+export function killWordForward(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } {
+  const pos = Math.min(Math.max(0, cursor), value.length)
+  if (pos >= value.length) return { value, cursor: pos }
+  let end = pos
+  if (!/\s/.test(value[end]!)) {
+    while (end < value.length && !/\s/.test(value[end]!)) end += 1
+  } else {
+    while (end < value.length && /\s/.test(value[end]!)) end += 1
+    while (end < value.length && !/\s/.test(value[end]!)) end += 1
+  }
+  return {
+    value: value.slice(0, pos) + value.slice(end),
+    cursor: pos,
+  }
+}
+
 // Ctrl+A / Ctrl+E: jump to the start or end of the draft (readline).
 export function composerLineCursor(value: string, where: "home" | "end"): number {
   return where === "home" ? 0 : value.length

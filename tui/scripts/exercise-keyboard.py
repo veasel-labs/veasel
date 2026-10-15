@@ -813,15 +813,22 @@ def main() -> None:
         screen.wait_for("Ask Veasel", 4)
         screen.send("zxqy wordkill", 0.45)  # unique draft (not in transcript)
         screen.wait_for("zxqy wordkill", 4)
-        screen.send("\x17", 0.45)  # Ctrl+W kills the last word
-        screen.wait_for("zxqy ", 4)
+        screen.send("\x01", 0.35)  # Ctrl+A → start of draft
+        screen.send("pre-", 0.35)
+        screen.wait_for("pre-zxqy wordkill", 4)
+        screen.send("\x05", 0.35)  # Ctrl+E → end of draft
+        screen.send("!", 0.35)
+        screen.wait_for("pre-zxqy wordkill!", 4)
+        screen.send("\x17", 0.45)  # Ctrl+W kills the last word-ish tail
+        # kill "wordkill!" leaves "pre-zxqy "
+        screen.wait_for("pre-zxqy ", 4)
         visible = screen.terminal.text()
         if "wordkill" in visible:
             raise AssertionError(f"Ctrl+W left the killed word on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.45)  # Ctrl+U clears the composer draft
         screen.wait_for("Ask Veasel", 4)
         visible = screen.terminal.text()
-        if "zxqy " in visible:
+        if "pre-zxqy " in visible:
             raise AssertionError(f"Ctrl+U left the composer draft on screen\n--- screen ---\n{visible}")
         screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
         screen.send("!", 0.35)  # append so the recalled line is unique on screen

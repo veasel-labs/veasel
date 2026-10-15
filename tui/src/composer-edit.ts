@@ -18,3 +18,8 @@ export function killWordBackward(
     cursor: start,
   }
 }
+
+// Ctrl+A / Ctrl+E: jump to the start or end of the draft (readline).
+export function composerLineCursor(value: string, where: "home" | "end"): number {
+  return where === "home" ? 0 : value.length
+}

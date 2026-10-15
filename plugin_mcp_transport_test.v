@@ -394,6 +394,38 @@ fn test_plugin_stdio_mcp_cancel_sends_notifications_cancelled() {
 	assert false, 'expected cancel before frame, got ${frame}'
 }
 
+fn test_mcp_stdio_review_sandbox_preview_defaults_off() {
+	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	defer {
+		if value := prior {
+			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
+		} else {
+			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+	}
+	os.unsetenv(mcp_stdio_sandbox_mode_env)
+	preview := mcp_stdio_review_sandbox_preview()
+	assert preview.mode == 'off'
+	assert !preview.will_wrap
+	assert preview.backend == 'none'
+	assert os.setenv(mcp_stdio_sandbox_mode_env, 'auto', true) == 0
+	auto := mcp_stdio_review_sandbox_preview()
+	assert auto.mode == 'auto'
+	if mcp_stdio_sandbox_bubblewrap_capability() {
+		assert auto.will_wrap
+		assert auto.backend == 'bubblewrap'
+	} else if mcp_stdio_sandbox_seatbelt_capability() {
+		assert auto.will_wrap
+		assert auto.backend == 'seatbelt'
+	} else if mcp_stdio_sandbox_windows_capability() {
+		assert auto.will_wrap
+		assert auto.backend == 'windows'
+	} else {
+		assert !auto.will_wrap
+		assert auto.backend == 'none'
+	}
+}
+
 fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_present() {
 	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
 	assert os.setenv(mcp_stdio_sandbox_mode_env, 'require', true) == 0

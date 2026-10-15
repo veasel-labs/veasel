@@ -127,6 +127,12 @@ Unicode line separators, and bidirectional formatting characters are rejected
 so the TUI review cannot hide command text. These bounds limit resource use; they do not make an
 untrusted command safe.
 
+Shell command list/inspect/approve responses include a computed `sandbox`
+object (`mode`, `will_wrap`, `backend`) from `VEASEL_SHELL_SANDBOX` and the
+current platform backends so reviewers see wrap intent before approval. MCP
+tool-call reviews expose the parallel `stdio_sandbox` object from
+`VEASEL_MCP_STDIO_SANDBOX` (default off).
+
 The API is loopback-only and has no authentication token. A local same-user
 process can access session APIs and invoke approvals. Treat same-user processes
 as trusted, keep the server local, and do not expose its API to a network.

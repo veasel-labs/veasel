@@ -1007,6 +1007,7 @@ fn shell_command_from_row(row sqlite.Row, status_override string) ShellCommandSu
 		output:          row.val(6)
 		created_at:      row.val(7)
 		updated_at:      row.val(8)
+		sandbox:         shell_review_sandbox_preview()
 	}
 }
 
@@ -2439,6 +2440,7 @@ fn plugin_mcp_tool_call_summary_from_row(row sqlite.Row) PluginMCPToolCallSummar
 		reviewed_at:     row.val(7)
 		created_at:      row.val(8)
 		updated_at:      row.val(9)
+		stdio_sandbox:   mcp_stdio_review_sandbox_preview()
 	}
 }
 
@@ -2554,5 +2556,6 @@ fn plugin_mcp_tool_call_from_row(row sqlite.Row) PluginMCPToolCallApproval {
 		reviewed_at:    row.val(7)
 		created_at:     row.val(8)
 		updated_at:     row.val(9)
+		stdio_sandbox:  mcp_stdio_review_sandbox_preview()
 	}
 }

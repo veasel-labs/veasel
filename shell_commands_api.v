@@ -116,5 +116,6 @@ pub fn (app &App) approve_shell_command(mut ctx Context, id string, command_id s
 		output:          result.output
 		created_at:      proposal.created_at
 		updated_at:      proposal.updated_at
+		sandbox:         shell_review_sandbox_preview()
 	})
 }

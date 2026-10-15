@@ -2661,9 +2661,17 @@ components:
       properties:
         plugin_name: { type: string }
         server_name: { type: string }
+    ReviewSandboxPreview:
+      type: object
+      required: [mode, will_wrap, backend]
+      description: Computed at response time from VEASEL_SHELL_SANDBOX or VEASEL_MCP_STDIO_SANDBOX and platform backends. Not persisted.
+      properties:
+        mode: { type: string, enum: [off, auto, require] }
+        will_wrap: { type: boolean, description: True only when this process will wrap on the current platform. }
+        backend: { type: string, enum: [none, bubblewrap, seatbelt, windows] }
     PluginMCPToolCallApproval:
       type: object
-      required: [id, operation_id, plugin_name, server_name, tool_name, arguments_json, status, reviewed_at, created_at, updated_at]
+      required: [id, operation_id, plugin_name, server_name, tool_name, arguments_json, status, reviewed_at, created_at, updated_at, stdio_sandbox]
       properties:
         id: { type: string, format: uuid }
         operation_id: { type: string, format: uuid }
@@ -2677,9 +2685,12 @@ components:
         reviewed_at: { type: string, description: Empty until the detail view records inspection. }
         created_at: { type: string }
         updated_at: { type: string }
+        stdio_sandbox:
+          $ref: '#/components/schemas/ReviewSandboxPreview'
+          description: Preview for trusted stdio MCP processes. Streamable HTTP ignores the wrap; default mode is off.
     PluginMCPToolCallSummary:
       type: object
-      required: [id, operation_id, plugin_name, server_name, tool_name, arguments_bytes, status, reviewed_at, created_at, updated_at]
+      required: [id, operation_id, plugin_name, server_name, tool_name, arguments_bytes, status, reviewed_at, created_at, updated_at, stdio_sandbox]
       properties:
         id: { type: string, format: uuid }
         operation_id: { type: string, format: uuid }
@@ -2693,6 +2704,9 @@ components:
         reviewed_at: { type: string, description: Empty until the detail view records inspection. }
         created_at: { type: string }
         updated_at: { type: string }
+        stdio_sandbox:
+          $ref: '#/components/schemas/ReviewSandboxPreview'
+          description: Preview for trusted stdio MCP processes. Streamable HTTP ignores the wrap; default mode is off.
     SetSessionPluginMCPServer:
       type: object
       required: [plugin_name, server_name, trusted]
@@ -2847,7 +2861,7 @@ components:
         status: { type: string, enum: [applied, rejected] }
     ShellCommand:
       type: object
-      required: [id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at]
+      required: [id, command, cwd, timeout_seconds, status, exit_code, output, created_at, updated_at, sandbox]
       properties:
         id: { type: string, format: uuid }
         command: { type: string, maxLength: 8192 }
@@ -2858,6 +2872,9 @@ components:
         output: { type: string, maxLength: 65536 }
         created_at: { type: string }
         updated_at: { type: string }
+        sandbox:
+          $ref: '#/components/schemas/ReviewSandboxPreview'
+          description: Preview from VEASEL_SHELL_SANDBOX and platform backends (default auto).
     CreateSession:
       type: object
       required: [title, directory]

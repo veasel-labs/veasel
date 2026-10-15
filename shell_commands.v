@@ -54,6 +54,15 @@ fn (app &App) wait_for_shell_operations() {
 	workers.wait()
 }
 
+// ReviewSandboxPreview is computed at response time so reviewers see whether
+// approval will wrap the process. It is not persisted.
+pub struct ReviewSandboxPreview {
+pub:
+	mode      string
+	will_wrap bool
+	backend   string
+}
+
 pub struct ShellCommandSummary {
 pub:
 	id              string
@@ -65,6 +74,7 @@ pub:
 	output          string
 	created_at      string
 	updated_at      string
+	sandbox         ReviewSandboxPreview
 }
 
 struct ShellCommandDraft {
@@ -179,6 +189,35 @@ fn approved_shell_sandbox_mode_from(value string) ApprovedShellSandboxMode {
 
 fn approved_shell_sandbox_mode() ApprovedShellSandboxMode {
 	return approved_shell_sandbox_mode_from(os.getenv(shell_sandbox_mode_env))
+}
+
+fn approved_shell_sandbox_mode_label(mode ApprovedShellSandboxMode) string {
+	return match mode {
+		.off { 'off' }
+		.auto { 'auto' }
+		.require { 'require' }
+	}
+}
+
+fn shell_review_sandbox_preview() ReviewSandboxPreview {
+	mode := approved_shell_sandbox_mode()
+	mut backend := 'none'
+	mut will_wrap := false
+	if shell_sandbox_bubblewrap_capability() {
+		backend = 'bubblewrap'
+		will_wrap = true
+	} else if shell_sandbox_seatbelt_capability() {
+		backend = 'seatbelt'
+		will_wrap = true
+	} else if shell_sandbox_windows_capability() {
+		backend = 'windows'
+		will_wrap = true
+	}
+	return ReviewSandboxPreview{
+		mode:      approved_shell_sandbox_mode_label(mode)
+		will_wrap: will_wrap
+		backend:   backend
+	}
 }
 
 fn approved_shell_sandbox_network_allowed_from(value string) bool {

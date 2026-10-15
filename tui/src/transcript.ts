@@ -17,6 +17,8 @@ export type TranscriptTone =
   | "toolText"
   | "codeFence"
   | "codeBody"
+  | "inlineCode"
+  | "strong"
   | "status"
   | "hint"
 
@@ -143,7 +145,65 @@ export function messageBodySegments(content: string, proseTone: TranscriptTone):
       segments.push({ text: `${line}${trailing}`, tone: "codeFence" })
       continue
     }
-    segments.push({ text: `${line}${trailing}`, tone: inFence ? "codeBody" : proseTone })
+    if (inFence) {
+      segments.push({ text: `${line}${trailing}`, tone: "codeBody" })
+      continue
+    }
+    segments.push(...proseInlineSegments(line, proseTone, trailing))
+  }
+  return segments
+}
+
+// Inline `code` and **strong** spans keep their markers in the text so the
+// transcript stays readable without color, while tones make them scannable.
+export function proseInlineSegments(
+  line: string,
+  proseTone: TranscriptTone,
+  trailing = "",
+): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = []
+  let rest = line
+  while (rest.length > 0) {
+    const codeAt = rest.indexOf("`")
+    const boldAt = rest.indexOf("**")
+    let next = -1
+    let kind: "code" | "bold" | undefined
+    if (codeAt >= 0 && (boldAt < 0 || codeAt < boldAt)) {
+      next = codeAt
+      kind = "code"
+    } else if (boldAt >= 0) {
+      next = boldAt
+      kind = "bold"
+    }
+    if (kind === undefined || next < 0) {
+      segments.push({ text: rest, tone: proseTone })
+      break
+    }
+    if (next > 0) segments.push({ text: rest.slice(0, next), tone: proseTone })
+    if (kind === "code") {
+      const close = rest.indexOf("`", next + 1)
+      if (close < 0) {
+        segments.push({ text: rest.slice(next), tone: proseTone })
+        break
+      }
+      segments.push({ text: rest.slice(next, close + 1), tone: "inlineCode" })
+      rest = rest.slice(close + 1)
+      continue
+    }
+    const close = rest.indexOf("**", next + 2)
+    if (close < 0) {
+      segments.push({ text: rest.slice(next), tone: proseTone })
+      break
+    }
+    segments.push({ text: rest.slice(next, close + 2), tone: "strong" })
+    rest = rest.slice(close + 2)
+  }
+  if (trailing) {
+    if (segments.length === 0) segments.push({ text: trailing, tone: proseTone })
+    else {
+      const last = segments[segments.length - 1]!
+      segments[segments.length - 1] = { text: `${last.text}${trailing}`, tone: last.tone }
+    }
   }
   return segments
 }

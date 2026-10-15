@@ -118,6 +118,8 @@ function buildTranscriptStyles(active: Theme): Record<TranscriptTone, (text: str
     toolText: (text) => fg(active.notice)(text),
     codeFence: (text) => fg(active.diffMeta)(bold(text)),
     codeBody: (text) => fg(active.inputText)(text),
+    inlineCode: (text) => fg(active.inputText)(text),
+    strong: (text) => fg(active.assistantText)(bold(text)),
     status: (text) => fg(active.status)(text),
     hint: (text) => fg(active.hint)(text),
   }

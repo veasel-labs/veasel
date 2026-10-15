@@ -6,6 +6,14 @@ with `feat`, `fix`, `perf`, or a breaking-change marker produce an automated
 GitHub prerelease on the `next` channel. Documentation, CI, and refactoring
 commits do not publish a release.
 
+Cancelled CI runs on `main` usually mean a newer push superseded the in-flight
+workflow (`cancel-in-progress` keeps one active run per ref so feature merges
+stay fast). That is expected and is not a product failure. The
+`Ensure main CI` workflow re-dispatches CI for the tip of `main` after a quiet
+period so a verified prerelease can still publish. Publish also skips when the
+run's commit is no longer the tip of `main`, so an older build cannot overwrite
+a newer channel tag.
+
 The release job calculates a semantic version from the last `v*` tag (or the
 version in `v.mod` before the first tag), compiles Linux, macOS, and Windows
 archives with that exact version, and publishes the V backend, a standalone

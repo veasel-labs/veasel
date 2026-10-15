@@ -16,7 +16,7 @@ test("session footer surfaces reviews and the same discovery commands", () => {
   for (const command of ["/skills", "/plugins", "/mcp", "/theme", "/map"]) {
     expect(sessionFooterHint).toContain(command)
   }
-  expect(sessionFooterHint).toContain("Ctrl+R reviews")
+  expect(sessionFooterHint).toContain("Ctrl+R")
   expect(sessionFooterHint).toContain("Esc home")
-  expect(sessionFooterHint).toContain("/ commands")
+  expect(sessionFooterHint).toContain("PgUp/PgDn")
 })

@@ -217,8 +217,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   redirect_uri validation, callback parsing, token exchange, owner-only
   pending-session persistence, writing `Authorization: Bearer` into named
   `/v1/mcp-credentials` entries, and `POST /v1/mcp-oauth/authorize|complete`
-  (capability `mcp.oauth`) are shipped; an automatic loopback browser listener
-  remains follow-up.
+  (capability `mcp.oauth`) are shipped. A single-shot `127.0.0.1` loopback
+  callback listener (`mcp_oauth_listener.v`) captures the browser redirect;
+  headless `veasel mcp oauth` UX remains follow-up.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

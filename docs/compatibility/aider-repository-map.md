@@ -21,8 +21,9 @@ Veasel ships a **V-native extractive** map inspired by Aider's product goal
 - Walk the session workspace with the same ignore roots as workspace tools.
 - Extract declaration-like symbols with line-prefix heuristics (not tree-sitter).
 - Rank paths/symbols with mention weighting, important-file boosts,
-  test/source pairing, same-directory neighbors, and cross-directory
-  same-basename-stem siblings (not NetworkX PageRank).
+  test/source pairing, same-directory neighbors, cross-directory
+  same-basename-stem siblings, and file↔package stem pairing such as
+  `lib/session.v` with `lib/session/` (not NetworkX PageRank).
 - Fit output to a measured UTF-8 byte budget and report a conservative bytes/4
   token bound.
 - Inject a **sticky** hint-free map into the system prompt so the prefix stays

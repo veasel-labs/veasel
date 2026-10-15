@@ -137,6 +137,26 @@ fn test_repository_map_boosts_cross_directory_same_stem_siblings() {
 	assert result.text.contains('cmd/tools/session.v')
 }
 
+fn test_repository_map_boosts_stem_package_file_and_directory() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-packages')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'lib', 'session.v'), 'module libsession\n\npub fn open_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'lib', 'session', 'handler.v'), 'module sessionhandler\n\npub fn handle_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'pkg', 'noise.v'), 'module noise\n\npub fn ignore_me() {}\n')
+	forward := build_repository_map(root, 'Please read lib/session.v', 2_048) or { panic(err) }
+	assert forward.ranked_paths.any(it.contains('lib/session/handler.v') || it.ends_with('session/handler.v'))
+	assert forward.text.contains('lib/session/handler.v')
+	reverse := build_repository_map(root, 'Please read lib/session/handler.v', 2_048) or {
+		panic(err)
+	}
+	assert reverse.ranked_paths.any(it.ends_with('lib/session.v') || it == 'lib/session.v')
+	assert reverse.text.contains('lib/session.v')
+}
+
 fn test_repository_map_respects_byte_budget_on_large_trees() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-large')
 	os.rmdir_all(root) or {}

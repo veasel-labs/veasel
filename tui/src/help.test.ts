@@ -31,6 +31,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("s · /models")
     expect(help).toContain("/connect")
     expect(help).toContain("Ctrl+L clears the filter")
+    expect(help).toContain("j/k move when the filter is empty")
     expect(help).toContain("Home/End and PgUp/PgDn jump the list")
     expect(help).toContain("selected N of M in plain text")
     expect(help).toContain("Quick connect")

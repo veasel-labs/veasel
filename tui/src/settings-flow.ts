@@ -122,8 +122,8 @@ export function providerSwitchNote(
 }
 
 export function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
-  if (step === 0) return "Tab scope · type · Home/End · Ctrl+L clear · Enter · Esc"
-  if (step === 3) return "type filter · Home/End · Ctrl+L clear · Enter · Ctrl+B · Esc"
+  if (step === 0) return "Tab · j/k · type · Home/End · Ctrl+L · Enter · Esc"
+  if (step === 3) return "j/k · type · Home/End · Ctrl+L · Enter · Ctrl+B · Esc"
   const parts = [
     step === 2 ? "Enter discovers" : step === 4 ? "Enter saves budget" : step === 1 ? "Enter keeps endpoint" : "Enter selects",
     "Ctrl+B back",
@@ -134,17 +134,20 @@ export function settingsFooterHint(step: number, endpoint: boolean, budget: bool
   return parts.join(" · ")
 }
 
-// Home/End/Pg for provider and model pickers — same edge behavior as the session list.
+// j/k, Home/End, and Pg for provider and model pickers — same edge behavior as
+// the home session list so operators transfer muscle memory.
 export function moveSettingsListIndex(
   index: number,
   count: number,
-  where: "home" | "end" | "pageup" | "pagedown",
+  where: "up" | "down" | "home" | "end" | "pageup" | "pagedown",
   pageSize = 5,
 ): number {
   if (count <= 0) return 0
   const max = count - 1
   const current = Math.min(Math.max(0, index), max)
   const page = Math.max(1, pageSize)
+  if (where === "up") return Math.max(0, current - 1)
+  if (where === "down") return Math.min(max, current + 1)
   if (where === "home") return 0
   if (where === "end") return max
   if (where === "pageup") return Math.max(0, current - page)

@@ -213,10 +213,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   (issuer/authorize/token endpoints) without forwarding MCP headers; GET
   notification streams append SSE `message` events into a dedicated
   notifications queue (not RPC pending) with mid-stream cancel, and trusted
-  HTTP connects best-effort listen after initialize. Authorization-code +
-  PKCE S256 authorize URL construction, loopback redirect_uri validation,
-  and callback state/code parsing are shipped; token exchange and durable
-  token storage follow.
+  HTTP connects best-effort listen after initialize.   Authorization-code + PKCE S256 authorize URL construction, loopback
+  redirect_uri validation, callback parsing, token exchange, owner-only
+  pending-session persistence, and writing `Authorization: Bearer` into named
+  `/v1/mcp-credentials` entries are shipped; HTTP API/headless completion
+  wiring and browser/loopback listener remain follow-up.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

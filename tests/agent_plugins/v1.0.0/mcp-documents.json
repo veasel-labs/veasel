@@ -2,17 +2,26 @@
   {
     "name": "minimal stdio server",
     "accepted": true,
-    "servers": ["local"],
+    "servers": [
+      "local"
+    ],
     "diagnostics": [],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      "mcpServers": { "local": { "type": "stdio", "command": "node" } }
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node"
+        }
+      }
     }
   },
   {
     "name": "streamable HTTP server with headers",
     "accepted": true,
-    "servers": ["remote"],
+    "servers": [
+      "remote"
+    ],
     "diagnostics": [],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
@@ -20,7 +29,9 @@
         "remote": {
           "type": "streamable-http",
           "url": "https://tools.example.invalid/mcp",
-          "headers": { "X-Tenant": "example" }
+          "headers": {
+            "X-Tenant": "example"
+          }
         }
       }
     }
@@ -28,13 +39,24 @@
   {
     "name": "invalid server entry does not hide valid sibling",
     "accepted": true,
-    "servers": ["valid"],
-    "diagnostics": ["mcpServers.invalid"],
+    "servers": [
+      "valid"
+    ],
+    "diagnostics": [
+      "mcpServers.invalid"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
-        "valid": { "type": "streamable-http", "url": "http://127.0.0.8:8080/mcp" },
-        "invalid": { "type": "stdio", "command": "node", "unknown": true }
+        "valid": {
+          "type": "streamable-http",
+          "url": "http://127.0.0.8:8080/mcp"
+        },
+        "invalid": {
+          "type": "stdio",
+          "command": "node",
+          "unknown": true
+        }
       }
     }
   },
@@ -42,16 +64,25 @@
     "name": "unsupported optional SSE server is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["unsupported"],
+    "diagnostics": [
+      "unsupported"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      "mcpServers": { "legacy": { "type": "sse", "url": "https://tools.example.invalid/sse" } }
+      "mcpServers": {
+        "legacy": {
+          "type": "sse",
+          "url": "https://tools.example.invalid/sse"
+        }
+      }
     }
   },
   {
     "name": "missing schema is rejected",
     "accepted": false,
-    "document": { "mcpServers": {} }
+    "document": {
+      "mcpServers": {}
+    }
   },
   {
     "name": "schema version mismatch is rejected",
@@ -64,7 +95,9 @@
   {
     "name": "missing server map is rejected",
     "accepted": false,
-    "document": { "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json" }
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+    }
   },
   {
     "name": "unknown root property is rejected",
@@ -79,7 +112,9 @@
     "name": "HTTP URL with userinfo is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["user information"],
+    "diagnostics": [
+      "user information"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
@@ -94,7 +129,9 @@
     "name": "HTTP URL with fragment is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["fragment"],
+    "diagnostics": [
+      "fragment"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
@@ -109,7 +146,9 @@
     "name": "cleartext remote HTTP URL is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["HTTPS"],
+    "diagnostics": [
+      "HTTPS"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
@@ -124,7 +163,9 @@
     "name": "case-insensitive duplicate headers are skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["unique regardless of case"],
+    "diagnostics": [
+      "unique regardless of case"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
@@ -143,14 +184,18 @@
     "name": "reserved PLUGIN_ROOT env is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["reserved names"],
+    "diagnostics": [
+      "reserved names"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
         "local": {
           "type": "stdio",
           "command": "node",
-          "env": { "PLUGIN_ROOT": "/tmp/evil" }
+          "env": {
+            "PLUGIN_ROOT": "/tmp/evil"
+          }
         }
       }
     }
@@ -159,14 +204,18 @@
     "name": "reserved PLUGIN_DATA env is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["reserved names"],
+    "diagnostics": [
+      "reserved names"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
         "local": {
           "type": "stdio",
           "command": "node",
-          "env": { "plugin_data": "/tmp/evil" }
+          "env": {
+            "plugin_data": "/tmp/evil"
+          }
         }
       }
     }
@@ -175,13 +224,89 @@
     "name": "stdio args with path separator in bare command is skipped",
     "accepted": true,
     "servers": [],
-    "diagnostics": ["path separator"],
+    "diagnostics": [
+      "path separator"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
       "mcpServers": {
         "local": {
           "type": "stdio",
           "command": "bin/node"
+        }
+      }
+    }
+  },
+  {
+    "name": "empty MCP server name is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP server name is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "": {
+          "type": "stdio",
+          "command": "node"
+        }
+      }
+    }
+  },
+  {
+    "name": "overlong MCP server name is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP server name is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+          "type": "stdio",
+          "command": "node"
+        }
+      }
+    }
+  },
+  {
+    "name": "HTTP header value with CR is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "HTTP header is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "X-Token": "bad\rvalue"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "overlong HTTP header value is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "HTTP header is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "X-Token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
         }
       }
     }

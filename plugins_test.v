@@ -717,12 +717,23 @@ fn test_agent_plugin_v1_manifest_fixture_corpus() {
 	}
 }
 
+fn test_plugin_mcp_server_name_and_header_bounds() {
+	assert is_valid_plugin_mcp_server_name('local')
+	assert is_valid_plugin_mcp_server_name('echo-1')
+	assert !is_valid_plugin_mcp_server_name('')
+	assert !is_valid_plugin_mcp_server_name('Bad')
+	assert !is_valid_plugin_mcp_server_name('a'.repeat(max_plugin_mcp_server_name_len + 1))
+	assert valid_http_header('X-Token', 'ok')
+	assert !valid_http_header('X-Token', 'bad\rvalue')
+	assert !valid_http_header('X-Token', 'x'.repeat(max_plugin_mcp_header_value_bytes + 1))
+}
+
 fn test_agent_plugin_v1_mcp_fixture_corpus() {
 	path := os.join_path(os.getwd(), 'tests', 'agent_plugins', 'v1.0.0', 'mcp-documents.json')
 	fixtures := json2.decode[[]AgentPluginMCPFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Plugins MCP fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Plugins MCP fixtures: ${err.msg()}') }
-	assert fixtures.len >= 15
+	assert fixtures.len >= 19
 	manifest_json := '{"' + plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"fixture"}'
 	manifest := json2.decode[map[string]json2.Any](manifest_json) or {
 		panic(err)

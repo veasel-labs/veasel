@@ -79,6 +79,9 @@ fn validate_plugin_mcp(root string, fields map[string]json2.Any, manifest map[st
 }
 
 fn parse_plugin_mcp_server(root string, name string, value json2.Any) !PluginMCPServer {
+	if !is_valid_plugin_mcp_server_name(name) {
+		return error('MCP server name is invalid')
+	}
 	if value !is map[string]json2.Any {
 		return error('server entry must be an object')
 	}
@@ -436,8 +439,30 @@ fn expand_plugin_placeholders(value string, plugin_root string, plugin_data stri
 	return output.str()
 }
 
+fn is_valid_plugin_mcp_server_name(name string) bool {
+	if name.len < 1 || name.len > max_plugin_mcp_server_name_len {
+		return false
+	}
+	if name[0] !in `a` .. `z` && name[0] !in `0` .. `9` {
+		return false
+	}
+	if name[name.len - 1] !in `a` .. `z` && name[name.len - 1] !in `0` .. `9` {
+		return false
+	}
+	if name.contains('--') || name.contains('..') {
+		return false
+	}
+	for c in name {
+		if c !in `a` .. `z` && c !in `0` .. `9` && c !in [`-`, `.`] {
+			return false
+		}
+	}
+	return true
+}
+
 fn valid_http_header(name string, value string) bool {
-	if name.len == 0 || value.contains('\r') || value.contains('\n') {
+	if name.len == 0 || value.len > max_plugin_mcp_header_value_bytes || value.contains('\r')
+		|| value.contains('\n') {
 		return false
 	}
 	for c in name {

@@ -3,6 +3,35 @@ module main
 import json2
 import os
 
+fn test_anthropic_request_uses_default_max_tokens_when_budget_is_zero() {
+	zero := build_anthropic_request(ModelConfig{
+		provider:          'anthropic'
+		model:             'claude-fixture'
+		max_output_tokens: 0
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'default budget'
+		},
+	], [])
+	assert zero.max_tokens == max_model_output_tokens
+	zero_payload := json2.encode[AnthropicRequest](zero)
+	zero_root := json2.decode[map[string]json2.Any](zero_payload) or { panic(err) }
+	assert (zero_root['max_tokens'] or { panic('missing max_tokens') }).int() == max_model_output_tokens
+
+	explicit := build_anthropic_request(ModelConfig{
+		provider:          'anthropic'
+		model:             'claude-fixture'
+		max_output_tokens: 512
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'explicit budget'
+		},
+	], [])
+	assert explicit.max_tokens == 512
+}
+
 fn test_anthropic_request_emits_ephemeral_cache_control_by_default() {
 	prior := os.getenv_opt(anthropic_prompt_cache_env) or { '' }
 	os.unsetenv(anthropic_prompt_cache_env)

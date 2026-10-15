@@ -94,7 +94,7 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
-import { formatBusyStatus, formatErrorStatus, formatHomeSessionStatus, formatStatusLine, formatWarnStatus } from "./status-a11y"
+import { formatBusyStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatWarnStatus } from "./status-a11y"
 import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
@@ -590,9 +590,12 @@ function renderSessions() {
   headerMeta.content = headerMetaContent()
   headerMeta.fg = theme.headerMeta
   if (!activeSession && !settingsOpen) {
-    status.content = sessionFilterQuery.trim()
-      ? formatStatusLine("ok", `connected  ·  ${visible.length} of ${sessions.length} sessions match “${sessionFilterQuery.trim()}”`)
-      : formatHomeSessionStatus(selected, sessions.length)
+    status.content = formatHomeFilterStatus(
+      selected,
+      visible.length,
+      sessions.length,
+      sessionFilterQuery,
+    )
     status.fg = theme.statusOk
     footerHint.content = homeFooterForFilter(sessionFilterQuery)
   }

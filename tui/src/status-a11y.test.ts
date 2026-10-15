@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   formatBusyStatus,
   formatErrorStatus,
+  formatHomeFilterStatus,
   formatHomeSessionStatus,
   formatStatusLine,
   formatWarnStatus,
@@ -34,5 +35,17 @@ describe("status a11y glyphs", () => {
     expect(formatHomeSessionStatus(0, 0)).toBe("● connected  ·  no sessions yet")
     expect(formatHomeSessionStatus(0, 20)).toBe("● connected  ·  session 1 of 20 selected")
     expect(formatHomeSessionStatus(19, 20)).toBe("● connected  ·  session 20 of 20 selected")
+  })
+
+  test("states filter matches and the focused match in plain text", () => {
+    expect(formatHomeFilterStatus(0, 1, 20, "Lane")).toBe(
+      "● connected  ·  filter  ·  session 1 of 1 match “Lane” (20 total)",
+    )
+    expect(formatHomeFilterStatus(0, 0, 20, "zzz")).toBe(
+      "● connected  ·  filter  ·  0 of 20 match “zzz”",
+    )
+    expect(formatHomeFilterStatus(2, 5, 20, "")).toBe(
+      "● connected  ·  session 3 of 20 selected",
+    )
   })
 })

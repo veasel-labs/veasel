@@ -28,7 +28,7 @@ mut:
 }
 
 fn print_headless_plugins_help() {
-	println('Usage: veasel plugins <components|links> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add <absolute-package-path>\n  links remove <name>\n\nOptions:\n      --json  Emit machine-readable JSON\n  -h, --help  Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR; PLUGIN_DATA stays keyed by plugin name.')
+	println('Usage: veasel plugins <components|links> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add <absolute-package-path>\n  links remove <name>\n\nOptions:\n      --json  Emit machine-readable JSON\n  -h, --help  Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR and record targets in \$VEASEL_DATA_DIR/plugin-links.json; list restores a missing symlink when the registered package still validates. PLUGIN_DATA stays keyed by plugin name.')
 }
 
 fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {

@@ -463,7 +463,7 @@ paths:
   /v1/plugins/links:
     get:
       operationId: listPluginLinks
-      description: Lists operator-managed Agent Plugin directory links under the plugin directory. Returns absolute package paths for link management only; ordinary catalog responses still omit filesystem paths for package contents.
+      description: Lists operator-managed Agent Plugin directory links under the plugin directory. Also restores missing symlinks from `$VEASEL_DATA_DIR/plugin-links.json` when the registered package path still validates. Returns absolute package paths for link management only; ordinary catalog responses still omit filesystem paths for package contents.
       responses:
         '200':
           description: Managed plugin links and non-fatal diagnostics.
@@ -479,7 +479,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: addPluginLink
-      description: Validates an absolute local Agent Plugin package outside the plugin directory and creates a symlink named after the package. Idempotent when the same target is already linked. PLUGIN_DATA for that plugin name is preserved across relinks. Does not install from the network.
+      description: Validates an absolute local Agent Plugin package outside the plugin directory and creates a symlink named after the package. Idempotent when the same target is already linked. Optional `replace` updates an existing link that points elsewhere. Intended targets are also recorded in `$VEASEL_DATA_DIR/plugin-links.json` so a missing symlink can be restored on a later list. PLUGIN_DATA for that plugin name is preserved across relinks. Does not install from the network.
       requestBody:
         required: true
         content:
@@ -502,7 +502,7 @@ paths:
   /v1/plugins/links/{name}:
     delete:
       operationId: removePluginLink
-      description: Removes a managed plugin symlink by package name. Refuses to delete a non-link package directory. PLUGIN_DATA is left in place.
+      description: Removes a managed plugin symlink by package name and drops the matching `$VEASEL_DATA_DIR/plugin-links.json` entry. Refuses to delete a non-link package directory. PLUGIN_DATA is left in place.
       parameters:
         - in: path
           name: name
@@ -2547,6 +2547,10 @@ components:
         path:
           type: string
           description: Absolute path to a local Agent Plugin package directory outside the plugin directory.
+        replace:
+          type: boolean
+          default: false
+          description: When true, replace an existing managed link that already points at a different package path.
     PluginLinkRemoval:
       type: object
       required: [removed]

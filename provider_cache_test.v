@@ -295,6 +295,24 @@ fn test_openai_responses_request_skips_cache_fields_for_meta() {
 	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
 	assert 'prompt_cache_key' !in root
 	assert 'prompt_cache_retention' !in root
+	// Meta applies its own output limit when Veasel leaves the budget at zero.
+	assert 'max_output_tokens' !in root
+}
+
+fn test_meta_responses_request_includes_explicit_output_budget() {
+	request := build_openai_responses_request(ModelConfig{
+		provider:          'meta'
+		model:             'muse-fixture'
+		max_output_tokens: 8192
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'Meta explicit budget'
+		},
+	], []) or { panic(err) }
+	payload := json2.encode[OpenAIResponsesRequest](request)
+	root := json2.decode[map[string]json2.Any](payload) or { panic(err) }
+	assert (root['max_output_tokens'] or { panic('missing max_output_tokens') }).int() == 8192
 }
 
 fn test_anthropic_request_keeps_tool_schemas_without_cache_markers() {

@@ -27,7 +27,10 @@ export function pendingReviewOpenCommand(counts: PendingReviewCounts): string | 
 // Exact proposals still appear in the transcript notice. Actionable slash
 // commands stay in the cue so operators can jump without reopening /help.
 // The warn glyph plus the word "attention" keep the cue meaningful without color.
-export function formatPendingReviewStatus(counts: PendingReviewCounts): string | undefined {
+export function formatPendingReviewStatus(
+  counts: PendingReviewCounts,
+  modelLabel?: string,
+): string | undefined {
   const parts: string[] = []
   if (counts.edits > 0) {
     parts.push(`${counts.edits} edit${counts.edits === 1 ? "" : "s"}`)
@@ -41,17 +44,22 @@ export function formatPendingReviewStatus(counts: PendingReviewCounts): string |
   if (parts.length === 0) return undefined
   const total = totalPendingReviews(counts)
   const actions = pendingReviewActions(counts)
+  // Prefer keeping slash actions on-screen: when a model label is present,
+  // drop the redundant "review needed" words to free columns.
+  const model = modelLabel?.trim()
+  const lead = model ? `attention  ·  ${model}` : "attention  ·  review needed"
   return formatStatusLine(
     "warn",
-    `attention  ·  review needed  ·  ${total} pending  ·  ${parts.join(" · ")}  ·  ${actions.join(" · ")}  ·  Ctrl+R`,
+    `${lead}  ·  ${total} pending  ·  ${parts.join(" · ")}  ·  ${actions.join(" · ")}  ·  Ctrl+R`,
   )
 }
 
 export function statusWithPendingReviews(
   baseStatus: string,
   counts: PendingReviewCounts,
+  modelLabel?: string,
 ): string {
-  const pending = formatPendingReviewStatus(counts)
+  const pending = formatPendingReviewStatus(counts, modelLabel)
   if (!pending) return baseStatus
   // Prefer the review cue: approvals block progress more than usage trivia.
   return pending

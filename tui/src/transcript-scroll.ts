@@ -96,3 +96,24 @@ export function transcriptScrollStatus(options: {
   if (options.streaming) return "scrolled  ·  streaming below · End follows"
   return "scrolled  ·  End sticks to latest"
 }
+
+// While a turn streams, PgUp must still advertise End-follow; stick-to-bottom
+// keeps the measured streaming busy cue. Callers that previously skipped scroll
+// status entirely during send left Esc-cancel-while-scrolled without a cue.
+export function liveStreamStatusMessage(options: {
+  offsetFromBottom: number
+  streaming: boolean
+  streamingChars: number
+  formatStreaming: (chars: number) => string
+}): string | undefined {
+  if (!options.streaming) return transcriptScrollStatus({
+    offsetFromBottom: options.offsetFromBottom,
+    streaming: false,
+  })
+  const scrolled = transcriptScrollStatus({
+    offsetFromBottom: options.offsetFromBottom,
+    streaming: true,
+  })
+  if (scrolled) return scrolled
+  return options.formatStreaming(options.streamingChars)
+}

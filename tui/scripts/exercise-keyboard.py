@@ -301,7 +301,11 @@ class Handler(BaseHTTPRequestHandler):
                 state["pending_op"] = operation
                 state["pending_user"] = body["content"]
                 self._json(202, {"operation_id": operation, "status": "running"})
-                threading.Thread(target=emit_assistant_delta, args=(operation, "partial stream text"), daemon=True).start()
+                # Long multi-line delta so PgUp during the live stream is real.
+                long_delta = "\n".join(
+                    [f"stream line {index:02d}" for index in range(1, 36)] + ["STREAM-TAIL"]
+                ) + "\n"
+                threading.Thread(target=emit_assistant_delta, args=(operation, long_delta), daemon=True).start()
                 return
             remember_turn(body["content"], "The assistant turn failed.")
             self._json(202, {"operation_id": operation, "status": "running"})
@@ -1098,17 +1102,25 @@ def main() -> None:
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
         screen.wait_for("busy")
-        screen.wait_for("streaming")
-        screen.wait_for("█")
-        # Mock streams a short delta; busy status grows with measured chars (thinking
-        # may be too brief to assert once the first delta lands).
+        # Long live stream lands as one delta (█ / STREAM-TAIL may be clipped
+        # below the composer). Stick-to-bottom shows measured growth, then PgUp
+        # must advertise streaming below before Esc cancels while scrolled.
+        screen.wait_for("stream line 12", 4)
         screen.wait_for("streaming  ·  ", 4)
         screen.wait_for("chars", 4)
-        time.sleep(0.35)
-        screen.send("\x1b", 0.4)
+        time.sleep(0.25)
+        # Home jumps to the earliest window (composer empty). Footer status is
+        # reliable even when the in-panel ▼ cue is clipped under the composer.
+        screen.send("\x1b[H", 0.45)  # Home while streaming
+        screen.wait_for("scrolled  ·  streaming below · End follows", 4)
+        visible = screen.terminal.text()
+        if "stream line 01" not in visible:
+            raise AssertionError(f"Home did not reveal the start of the live stream\n--- screen ---\n{visible}")
+        screen.send("\x1b", 0.4)  # Esc cancels while scrolled — never leaves
         screen.wait_for("Turn cancelled.", 6)
         screen.wait_for("cancelled  ·  response cancelled", 4)
         screen.wait_for("stop this")
+        screen.wait_for("Ask Veasel", 4)  # still in session after scrolled cancel
         screen.send("\x1b", 0.35)  # dismiss notice overlay if any
         screen.send("\x1b", 0.45)  # leave session
         screen.wait_for("q quit")

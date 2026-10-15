@@ -14,6 +14,7 @@ describe("mcp credentials formatting", () => {
     expect(empty).toContain("MCP HTTP CREDENTIALS")
     expect(empty).toContain("No named credentials yet")
     expect(empty).toContain("/mcp credential set")
+    expect(empty).toContain("/mcp oauth refresh")
     const filled = formatMcpCredentialCatalog({
       path: "/tmp/mcp-credentials.json",
       credentials: [{ name: "docs", header_names: ["Authorization"] }],
@@ -21,6 +22,7 @@ describe("mcp credentials formatting", () => {
     expect(filled).toContain("Store: /tmp/mcp-credentials.json")
     expect(filled).toContain("• docs  ·  headers: Authorization")
     expect(filled).toContain("/mcp credential remove")
+    expect(filled).toContain("/mcp oauth refresh")
     expect(filled).not.toContain("Bearer")
   })
 

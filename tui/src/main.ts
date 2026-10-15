@@ -125,6 +125,7 @@ import {
 import {
   formatMcpOauthAuthorizeNotice,
   formatMcpOauthCompleteNotice,
+  formatMcpOauthRefreshNotice,
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
@@ -1152,8 +1153,15 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  const mcpOauthRefresh = /^\/mcp oauth refresh\s+(\S+)$/i.exec(content)
+  if (mcpOauthRefresh) {
+    await refreshMcpOauth(mcpOauthRefresh[1]!)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/mcp oauth" || content.startsWith("/mcp oauth ")) {
-    skillNotice = "Use /mcp oauth authorize <credential> <authorization_endpoint> <token_endpoint> <client_id> <redirect_uri> [scope], then /mcp oauth complete <credential> <callback_url> or <state> <code>. Token values are never shown. Prefer headless veasel mcp oauth --listen when Veasel should own the loopback listener."
+    skillNotice = "Use /mcp oauth authorize <credential> <authorization_endpoint> <token_endpoint> <client_id> <redirect_uri> [scope] (browser URL is copied; --listen stays headless), then /mcp oauth complete <credential> <callback_url> or <state> <code>. Refresh with /mcp oauth refresh <credential>. Token values are never shown."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1796,7 +1804,7 @@ async function showMcpServers(filter = "") {
     const importPaths = configured.import_paths?.length
       ? `\nImported project files: ${configured.import_paths.map(safeTerminalText).join(", ")}`
       : ""
-    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nHTTP auth: /mcp credentials · /mcp credential set|remove · /mcp oauth authorize|complete (header names only; token values never shown)\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio is dangerous and unsandboxed by default (full OS privileges). On Linux set VEASEL_MCP_STDIO_SANDBOX=auto|require to wrap with Bubblewrap when bwrap is present (capability mcp.stdio.sandbox.bubblewrap). Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
+    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nHTTP auth: /mcp credentials · /mcp credential set|remove · /mcp oauth authorize|complete|refresh (header names only; token values never shown; --listen stays headless)\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio is dangerous and unsandboxed by default (full OS privileges). On Linux set VEASEL_MCP_STDIO_SANDBOX=auto|require to wrap with Bubblewrap when bwrap is present (capability mcp.stdio.sandbox.bubblewrap). Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
@@ -1884,16 +1892,39 @@ async function startMcpOauth(input: {
     })
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     const view = await response.json() as McpOauthAuthorizeView
+    const authorizeUrl = safeTerminalText(view.authorize_url || "")
+    const copiedAuthorizeUrl = authorizeUrl.length > 0 ? writeClipboardOsc52(authorizeUrl) : false
     skillNotice = formatMcpOauthAuthorizeNotice({
       credential: safeTerminalText(view.credential || input.credential),
       state: safeTerminalText(view.state || ""),
-      authorize_url: safeTerminalText(view.authorize_url || ""),
+      authorize_url: authorizeUrl,
       redirect_uri: safeTerminalText(view.redirect_uri || input.redirect_uri),
       code_challenge_method: view.code_challenge_method,
-    })
+    }, { copiedAuthorizeUrl })
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not start MCP OAuth: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function refreshMcpOauth(credential: string) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-oauth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const view = await response.json() as McpCredentialView
+    skillNotice = formatMcpOauthRefreshNotice({
+      name: safeTerminalText(view.name || credential),
+      header_names: Array.isArray(view.header_names) ? view.header_names.map(safeTerminalText) : [],
+    })
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not refresh MCP OAuth: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

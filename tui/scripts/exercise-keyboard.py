@@ -270,6 +270,12 @@ class Handler(BaseHTTPRequestHandler):
                 "name": body.get("credential", "docs"),
                 "header_names": ["Authorization"],
             })
+        if path == "/v1/mcp-oauth/refresh":
+            body = json.loads(raw.decode())
+            return self._json(200, {
+                "name": body.get("credential", "docs"),
+                "header_names": ["Authorization"],
+            })
         if path.endswith(f"/workspace/edits/{EDIT_ID}/approve"):
             state["edit_status"] = "applied"
             return self._json(200, {"status": "applied"})
@@ -902,9 +908,17 @@ def main() -> None:
         screen.wait_for("Removed credential docs-http", 4)
         screen.send("/mcp oauth authorize docs https://auth.example/authorize https://auth.example/token demo-client http://127.0.0.1:8765/callback\r", 0.8)
         screen.wait_for("MCP OAUTH AUTHORIZE", 4)
+        screen.wait_for("Browser:", 4)
         screen.wait_for("https://auth.example/authorize?client_id=demo", 4)
+        screen.wait_for("--listen", 4)
+        screen.wait_for("Authorize URL copied", 4)
         screen.send("/mcp oauth complete docs http://127.0.0.1:8765/callback?code=abc&state=oauth-state-1\r", 0.7)
         screen.wait_for("MCP OAUTH COMPLETE", 4)
+        screen.wait_for("Authorization", 4)
+        screen.wait_for("/mcp oauth refresh docs", 4)
+        screen.send("/mcp oauth refresh docs\r", 0.7)
+        screen.wait_for("MCP OAUTH REFRESH", 4)
+        screen.wait_for("Credential docs refreshed", 4)
         screen.wait_for("Authorization", 4)
         screen.send("/usage\r", 0.7)
         screen.wait_for("SESSION TOKEN USAGE", 4)

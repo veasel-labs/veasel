@@ -3243,6 +3243,20 @@ renderer.keyInput.on("keypress", (key) => {
           settingsListHighlight = next
           showSettingsStep()
         }
+      } else if (
+        settingsProviderQuery.length === 0
+        && !key.ctrl
+        && !key.meta
+        && /^[1-9]$/.test(key.sequence)
+      ) {
+        const jump = sessionDigitIndex(key.sequence, settingsListCount)
+        if (jump !== undefined) {
+          key.stopPropagation()
+          if (jump !== settingsListHighlight) {
+            settingsListHighlight = jump
+            showSettingsStep()
+          }
+        }
       } else if (key.name === "home" || key.name === "end" || key.name === "pageup" || key.name === "pagedown") {
         key.stopPropagation()
         const next = moveSettingsListIndex(settingsListHighlight, settingsListCount, key.name)
@@ -3282,6 +3296,20 @@ renderer.keyInput.on("keypress", (key) => {
         if (next !== settingsListHighlight) {
           settingsListHighlight = next
           showSettingsStep()
+        }
+      } else if (
+        settingsModelSearchQuery.length === 0
+        && !key.ctrl
+        && !key.meta
+        && /^[1-9]$/.test(key.sequence)
+      ) {
+        const jump = sessionDigitIndex(key.sequence, settingsListCount)
+        if (jump !== undefined) {
+          key.stopPropagation()
+          if (jump !== settingsListHighlight) {
+            settingsListHighlight = jump
+            showSettingsStep()
+          }
         }
       } else if (key.name === "home" || key.name === "end" || key.name === "pageup" || key.name === "pagedown") {
         key.stopPropagation()

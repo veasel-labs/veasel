@@ -122,8 +122,8 @@ export function providerSwitchNote(
 }
 
 export function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
-  if (step === 0) return "Tab · j/k · type · Home/End · Ctrl+L · Enter · Esc"
-  if (step === 3) return "j/k · type · Home/End · Ctrl+L · Enter · Ctrl+B · Esc"
+  if (step === 0) return "Tab · j/k · 1-9 · type · Home/End · Ctrl+L · Esc"
+  if (step === 3) return "j/k · 1-9 · type · Home/End · Ctrl+L · Ctrl+B · Esc"
   const parts = [
     step === 2 ? "Enter discovers" : step === 4 ? "Enter saves budget" : step === 1 ? "Enter keeps endpoint" : "Enter selects",
     "Ctrl+B back",

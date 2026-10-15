@@ -15,6 +15,7 @@ pub:
 	head    string @[omitempty]
 	branch  string @[omitempty]
 	locked  bool
+	missing bool
 	is_main bool @[json: 'is_main']
 }
 
@@ -28,6 +29,7 @@ pub:
 	path       string
 	branch     string @[omitempty]
 	new_branch string @[json: 'new_branch'; omitempty]
+	prune      bool
 }
 
 pub struct WorkspaceGitWorktreeRemoveInput {
@@ -140,15 +142,19 @@ fn list_workspace_git_worktrees(root string) !WorkspaceGitWorktreeCatalog {
 				continue
 			}
 			worktree_path := os.dir(worktree_git_file)
-			if !os.is_dir(worktree_path) || os.is_link(worktree_path) {
-				continue
+			missing := os.is_link(worktree_path) || !os.is_dir(worktree_path)
+			path := if missing {
+				worktree_path.replace('\\', '/')
+			} else {
+				os.real_path(worktree_path)
 			}
 			head, branch := read_workspace_git_ref(entry_dir)
 			worktrees << WorkspaceGitWorktree{
-				path:    os.real_path(worktree_path)
+				path:    path
 				head:    head
 				branch:  branch
 				locked:  workspace_git_worktree_locked(entry_dir)
+				missing: missing
 				is_main: false
 			}
 		}
@@ -237,6 +243,13 @@ fn run_workspace_git_command(checkout string, args []string) !string {
 		return error(detail)
 	}
 	return stdout
+}
+
+fn prune_workspace_git_worktrees(root string) !WorkspaceGitWorktreeCatalog {
+	refuse_workspace_edit_while_git_locked(root)!
+	checkout := workspace_git_main_checkout(root)!
+	_ := run_workspace_git_command(checkout, ['worktree', 'prune'])!
+	return list_workspace_git_worktrees(root)!
 }
 
 fn add_workspace_git_worktree(root string, input WorkspaceGitWorktreeAddInput) !WorkspaceGitWorktree {

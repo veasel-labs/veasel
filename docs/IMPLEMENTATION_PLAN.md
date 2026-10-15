@@ -205,8 +205,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   (capability `workspace.git.worktrees`, filesystem-only). Create/remove use
   `POST`/`PATCH`/`DELETE` on the same path with argv-only `git worktree
   add|lock|unlock|remove` (bounded timeout; lock-aware; absolute paths).
-  Headless `veasel worktrees list|add|remove|lock|unlock` drives the same
-  session API.
+  Headless `veasel worktrees list|add|remove|lock|unlock|prune` drives the same
+  session API. Listing reports `missing` for stale linked checkouts; `POST`
+  with `prune: true` runs argv-only `git worktree prune`.
 
 - [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
   manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,

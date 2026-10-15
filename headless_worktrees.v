@@ -10,6 +10,7 @@ enum HeadlessWorktreesAction {
 	remove
 	lock
 	unlock
+	prune
 }
 
 struct HeadlessWorktreesOptions {
@@ -26,7 +27,7 @@ mut:
 }
 
 fn print_headless_worktrees_help() {
-	println('Usage: veasel worktrees <list|add|remove|lock|unlock> [options]\n\nCommands:\n  list\n  add --path <abs> (--branch <name> | --new-branch <name>)\n  remove --path <abs> [--force]\n  lock --path <abs> [--reason <text>]\n  unlock --path <abs>\n\nOptions:\n  -w, --workspace <dir>  Workspace for a new session (default: cwd)\n      --session <uuid>   Reuse an existing session instead of creating one\n      --path <abs>       Absolute worktree path (add/remove/lock/unlock)\n      --branch <name>    Existing branch for add\n      --new-branch <n>   Create branch with git worktree add -b\n      --reason <text>    Optional lock reason\n      --force            Pass --force to git worktree remove\n      --json             Emit machine-readable JSON\n  -h, --help             Show this help\n\nUses the local API: GET/POST/PATCH/DELETE /v1/sessions/{id}/workspace/git/worktrees.\nAdd/remove/lock/unlock invoke argv-only git; listing is filesystem-only.')
+	println('Usage: veasel worktrees <list|add|remove|lock|unlock|prune> [options]\n\nCommands:\n  list\n  add --path <abs> (--branch <name> | --new-branch <name>)\n  remove --path <abs> [--force]\n  lock --path <abs> [--reason <text>]\n  unlock --path <abs>\n  prune\n\nOptions:\n  -w, --workspace <dir>  Workspace for a new session (default: cwd)\n      --session <uuid>   Reuse an existing session instead of creating one\n      --path <abs>       Absolute worktree path (add/remove/lock/unlock)\n      --branch <name>    Existing branch for add\n      --new-branch <n>   Create branch with git worktree add -b\n      --reason <text>    Optional lock reason\n      --force            Pass --force to git worktree remove\n      --json             Emit machine-readable JSON\n  -h, --help             Show this help\n\nUses the local API: GET/POST/PATCH/DELETE /v1/sessions/{id}/workspace/git/worktrees.\nAdd/remove/lock/unlock/prune invoke argv-only git; listing is filesystem-only and reports missing checkouts.')
 }
 
 fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOptions {
@@ -54,6 +55,9 @@ fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOp
 		}
 		'unlock' {
 			options.action = .unlock
+		}
+		'prune' {
+			options.action = .prune
 		}
 		'--help', '-h', 'help' {
 			return error('help')
@@ -124,6 +128,7 @@ fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOp
 	}
 	match options.action {
 		.list {}
+		.prune {}
 		.add {
 			if options.path.len == 0 {
 				return error('worktrees add requires --path')
@@ -201,10 +206,27 @@ fn execute_headless_worktrees_list(port int, session_id string, as_json bool) !s
 	for tree in catalog.worktrees {
 		kind := if tree.is_main { 'main' } else { 'linked' }
 		locked_mark := if tree.locked { ' locked' } else { '' }
+		missing_mark := if tree.missing { ' missing' } else { '' }
 		branch := if tree.branch.len > 0 { tree.branch } else { tree.head }
-		lines << '${kind}${locked_mark}  ${tree.path}  ${branch}'
+		lines << '${kind}${locked_mark}${missing_mark}  ${tree.path}  ${branch}'
 	}
 	return lines.join('\n')
+}
+
+fn execute_headless_worktrees_prune(port int, session_id string, as_json bool) !string {
+	payload := {
+		'prune': json2.Any(true)
+	}
+	response := headless_json_request(port, .post, '/v1/sessions/${session_id}/workspace/git/worktrees',
+		json2.encode(payload), false, '')!
+	if response.status_code != 200 {
+		return error(headless_worktrees_api_error(response))
+	}
+	if as_json {
+		return response.body
+	}
+	catalog := json2.decode[WorkspaceGitWorktreeCatalog](response.body)!
+	return 'Pruned git worktrees; ${catalog.worktrees.len} remain'
 }
 
 fn execute_headless_worktrees_add(port int, session_id string, options HeadlessWorktreesOptions) !string {
@@ -313,6 +335,12 @@ fn execute_headless_worktrees_command(port int, args []string) {
 		}
 		.unlock {
 			execute_headless_worktrees_set_locked(port, session_id, options, false) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.prune {
+			execute_headless_worktrees_prune(port, session_id, options.json) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

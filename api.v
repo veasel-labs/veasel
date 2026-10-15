@@ -636,7 +636,17 @@ pub fn (app &App) add_session_git_worktree(mut ctx Context, id string) veb.Resul
 		})
 	}
 	input := json2.decode[WorkspaceGitWorktreeAddInput](ctx.req.data) or {
-		return json_request_error(mut ctx, 'Expected path and branch or new_branch')
+		return json_request_error(mut ctx, 'Expected path and branch or new_branch, or prune')
+	}
+	if input.prune {
+		if input.path.trim_space().len > 0 || input.branch.trim_space().len > 0
+			|| input.new_branch.trim_space().len > 0 {
+			return json_request_error(mut ctx, 'prune cannot be combined with path, branch, or new_branch')
+		}
+		catalog := prune_workspace_git_worktrees(session.directory) or {
+			return json_request_error(mut ctx, err.msg())
+		}
+		return ctx.json(catalog)
 	}
 	worktree := add_workspace_git_worktree(session.directory, input) or {
 		return json_request_error(mut ctx, err.msg())

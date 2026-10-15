@@ -34,6 +34,67 @@ fn test_list_workspace_git_worktrees_includes_main_and_linked() {
 	assert from_linked.worktrees.filter(it.path == os.real_path(worktree)).len == 1
 }
 
+fn test_list_workspace_git_worktrees_marks_missing_checkout() {
+	main_root := os.join_path(os.temp_dir(), 'veasel-git-list-missing-${uuid.new_v4().str()}')
+	worktree := os.join_path(os.temp_dir(), 'veasel-git-list-missing-wt-${uuid.new_v4().str()}')
+	git_common := os.join_path(main_root, '.git')
+	gitdir := os.join_path(git_common, 'worktrees', 'gone')
+	os.mkdir_all(gitdir) or { panic(err) }
+	defer {
+		os.rmdir_all(main_root) or {}
+		os.rmdir_all(worktree) or {}
+	}
+	os.write_file(os.join_path(git_common, 'HEAD'), 'ref: refs/heads/main\n') or { panic(err) }
+	os.write_file(os.join_path(gitdir, 'HEAD'), 'ref: refs/heads/gone\n') or { panic(err) }
+	os.write_file(os.join_path(gitdir, 'gitdir'), '${worktree}/.git\n') or { panic(err) }
+	// Intentionally do not create the checkout directory.
+	catalog := list_workspace_git_worktrees(main_root) or { panic(err) }
+	assert catalog.worktrees.len == 2
+	assert catalog.worktrees[0].is_main
+	assert !catalog.worktrees[0].missing
+	mut found_missing := false
+	for tree in catalog.worktrees {
+		if tree.is_main {
+			continue
+		}
+		assert tree.missing
+		assert tree.path.contains('veasel-git-list-missing-wt-')
+		found_missing = true
+	}
+	assert found_missing
+}
+
+fn test_prune_workspace_git_worktrees_removes_stale_admin_entry() {
+	git := os.find_abs_path_of_executable('git') or { return }
+	_ = git
+	main_root := os.join_path(os.temp_dir(), 'veasel-git-prune-main-${uuid.new_v4().str()}')
+	worktree := os.join_path(os.temp_dir(), 'veasel-git-prune-wt-${uuid.new_v4().str()}')
+	os.mkdir_all(main_root) or { panic(err) }
+	defer {
+		os.rmdir_all(main_root) or {}
+		os.rmdir_all(worktree) or {}
+	}
+	_ := run_workspace_git_command(main_root, ['init', '-b', 'main']) or { panic(err) }
+	_ := run_workspace_git_command(main_root, ['config', 'user.email', 'veasel@example.com']) or {
+		panic(err)
+	}
+	_ := run_workspace_git_command(main_root, ['config', 'user.name', 'Veasel']) or { panic(err) }
+	os.write_file(os.join_path(main_root, 'README'), 'hello\n') or { panic(err) }
+	_ := run_workspace_git_command(main_root, ['add', 'README']) or { panic(err) }
+	_ := run_workspace_git_command(main_root, ['commit', '-m', 'init']) or { panic(err) }
+	_ := add_workspace_git_worktree(main_root, WorkspaceGitWorktreeAddInput{
+		path:       worktree
+		new_branch: 'feature/prune'
+	}) or { panic(err) }
+	os.rmdir_all(worktree) or { panic(err) }
+	before := list_workspace_git_worktrees(main_root) or { panic(err) }
+	assert before.worktrees.any(it.missing)
+	after := prune_workspace_git_worktrees(main_root) or { panic(err) }
+	assert after.worktrees.len == 1
+	assert after.worktrees[0].is_main
+	assert !after.worktrees.any(it.missing)
+}
+
 fn test_list_workspace_git_worktrees_marks_locks() {
 	main_root := os.join_path(os.temp_dir(), 'veasel-git-list-lock-${uuid.new_v4().str()}')
 	git_common := os.join_path(main_root, '.git')

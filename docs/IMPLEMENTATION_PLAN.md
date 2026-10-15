@@ -426,8 +426,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   startup probes in the pinned CI matrix: Linux/macOS/Windows run
   `model_settings_test` / `headless_config_test`; macOS also runs `main_test`
   (including `backend_is_healthy` / `ensure_backend` healthy-reuse); Windows
-  keeps `main_test` plus repository-map coverage. Interactive TUI matrix gaps
-  remain under the separate ConPTY / measured-baseline item.
+  keeps `main_test` plus repository-map coverage. Save/discovery also reject
+  catalog endpoint placeholders such as `YOUR_ACCOUNT_ID` or `<ACCOUNT_ID>`.
+  Interactive TUI matrix gaps remain under the separate ConPTY /
+  measured-baseline item.
 - [ ] Multi-agent isolation and orchestration.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.

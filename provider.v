@@ -1116,7 +1116,24 @@ fn secure_endpoint(base_url string) !string {
 	if parsed.scheme != 'https' && !(parsed.scheme == 'http' && is_loopback_host(parsed.host)) {
 		return error('model endpoint must use HTTPS or loopback HTTP')
 	}
+	// Catalog templates such as Cloudflare's YOUR_ACCOUNT_ID must be replaced
+	// before save/discovery — never treat placeholders as live endpoints.
+	if endpoint_contains_catalog_placeholder(base) {
+		return error('model endpoint still contains a catalog placeholder')
+	}
 	return base
+}
+
+fn endpoint_contains_catalog_placeholder(base_url string) bool {
+	upper := base_url.to_upper()
+	if upper.contains('YOUR_') {
+		return true
+	}
+	// Angle-bracket tokens like <ACCOUNT_ID> are catalog fill-ins, not hosts.
+	if base_url.contains('<') && base_url.contains('>') {
+		return true
+	}
+	return false
 }
 
 fn is_loopback_host(host string) bool {

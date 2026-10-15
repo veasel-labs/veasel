@@ -113,6 +113,22 @@ fn test_model_settings_reject_unsupported_provider_and_insecure_endpoint() {
 	assert false
 }
 
+fn test_model_settings_reject_catalog_endpoint_placeholders() {
+	mut state := new_model_settings_state('')
+	state.update(ModelSettingsInput{
+		provider: 'openai'
+		model:    'gpt-ok'
+		base_url: 'https://api.cloudflare.com/client/v4/accounts/YOUR_ACCOUNT_ID/ai/v1'
+		api_key:  'sk-ok'
+	}) or {
+		assert err.msg() == 'model endpoint still contains a catalog placeholder'
+		assert endpoint_contains_catalog_placeholder('https://api.example.com/<ACCOUNT_ID>/v1')
+		assert !endpoint_contains_catalog_placeholder('https://api.openai.com/v1')
+		return
+	}
+	assert false
+}
+
 fn test_model_settings_reject_control_bytes_in_model_or_api_key() {
 	mut state := new_model_settings_state('')
 	state.update(ModelSettingsInput{

@@ -1144,6 +1144,25 @@ fn test_queued_session_operation_survives_restart_and_claims_to_completion() {
 	recovered.close() or { panic(err) }
 }
 
+fn test_enqueue_session_operation_rejects_nul_in_request_json() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'NUL queued payload'
+		directory: '/tmp/nul-queued'
+	}) or { panic(err) }
+	operation_id := '5e6f7081-92a3-b4c5-d6e7-f8091a2b3c4d'
+	mut rejected := false
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"bad\0json"}') or {
+		rejected = err.msg() == 'queued session operation request is invalid'
+		SessionOperation{}
+	}
+	assert rejected
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

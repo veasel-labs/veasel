@@ -105,6 +105,20 @@ describe("transcriptSegments", () => {
     })).toContainEqual({ text: "```ts\n", tone: "codeFence" })
   })
 
+  test("tones inline code and bold spans without dropping markers", () => {
+    const content = "Use `fmt` and **save** the file."
+    expect(messageBodySegments(content, "assistantText")).toEqual([
+      { text: "Use ", tone: "assistantText" },
+      { text: "`fmt`", tone: "inlineCode" },
+      { text: " and ", tone: "assistantText" },
+      { text: "**save**", tone: "strong" },
+      { text: " the file.", tone: "assistantText" },
+    ])
+    expect(transcriptPlainText(transcriptSegments({
+      messages: [{ role: "assistant", content }],
+    }))).toBe(`◆ VEASEL\n${content}`)
+  })
+
   test("keeps system and tool roles distinct from the operator", () => {
     const segments = transcriptSegments({
       messages: [

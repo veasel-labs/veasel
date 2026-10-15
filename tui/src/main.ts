@@ -2435,7 +2435,7 @@ function renderSlashMenu() {
   }
   const { start, end } = suggestionWindow(slashSelected, slashMatches.length)
   const width = Math.max(...slashMatches.map((command) => command.name.length))
-  const chunks: ReturnType<typeof fg>[] = []
+  const chunks: TextChunk[] = []
   let lastCategory = ""
   slashMatches.slice(start, end).forEach((command, offset) => {
     const selected = start + offset === slashSelected

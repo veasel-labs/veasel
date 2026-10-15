@@ -25,12 +25,14 @@ export function formatMcpCredentialCatalog(catalog: McpCredentialCatalog): strin
   if (catalog.credentials.length === 0) {
     lines.push("No named credentials yet. Create one with /mcp credential set <name> <Header>=<value>…")
     lines.push("Or complete OAuth into a name with /mcp oauth authorize … then /mcp oauth complete …")
+    lines.push("Refresh a stored OAuth credential with /mcp oauth refresh <name> (no secrets shown).")
   } else {
     for (const credential of catalog.credentials) {
       lines.push(formatMcpCredentialLine(credential))
     }
     lines.push("")
     lines.push("Remove with /mcp credential remove <name>. Servers that still reference a removed name fail at connect until updated.")
+    lines.push("OAuth: /mcp oauth refresh <name> when refresh metadata exists (header names only).")
   }
   return lines.join("\n")
 }

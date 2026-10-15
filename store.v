@@ -1870,6 +1870,7 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		store.db.rollback() or {}
 		return error('unable to commit chat exchange')
 	}
+	store.prune_session_events_unlocked(session_id)
 	if operation_id.len > 0 {
 		store.prune_terminal_session_operations_unlocked(session_id)
 	}

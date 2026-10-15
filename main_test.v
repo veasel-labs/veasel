@@ -1104,6 +1104,7 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 	assert status == 'cancelled'
 	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
 	assert operation.status == 'cancelled'
+	assert operation.error == 'Cancelled before a worker claimed this queued turn.'
 	mut claim_failed := false
 	_ = store.claim_session_operation(session.id, operation_id) or {
 		claim_failed = err.msg().contains('cancelled')
@@ -1111,6 +1112,35 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 	}
 	assert claim_failed
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_resume_rejects_invalid_queued_request_without_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-invalid-queued-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'Invalid queued payload'
+		directory: '/tmp/invalid-queued'
+	}) or { panic(err) }
+	operation_id := '1a2b3c4d-5e6f-7081-92a3-b4c5d6e7f809'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{not-json') or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	app.resume_durable_queued_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Queued turn request was invalid and will not be claimed.'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+	events := store.events_after(0) or { panic(err) }
+	completions := events.filter(it.type == 'session.turn_completed')
+	assert completions.len == 1
+	assert completions[0].data.status == 'cancelled'
+	assert completions[0].data.error == 'Queued turn request was invalid and will not be claimed.'
 }
 
 fn test_claimed_queued_operation_becomes_uncertain_after_restart() {

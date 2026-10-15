@@ -1343,6 +1343,24 @@ fn (mut store Store) mark_session_operation_cancelling(session_id string, operat
 }
 
 fn (mut store Store) cancel_session_operation(session_id string, operation_id string) !string {
+	return store.finish_queued_session_operation(session_id, operation_id, 'Cancelled before a worker claimed this queued turn.')
+}
+
+fn (mut store Store) reject_queued_session_operation(session_id string, operation_id string,
+	public_error string) !string {
+	reason := if public_error.trim_space().len > 0 {
+		public_error.trim_space()
+	} else {
+		'Queued turn request was invalid and will not be claimed.'
+	}
+	if reason.len > 1024 {
+		return error('queued rejection error exceeds the size limit')
+	}
+	return store.finish_queued_session_operation(session_id, operation_id, reason)
+}
+
+fn (mut store Store) finish_queued_session_operation(session_id string, operation_id string,
+	public_error string) !string {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -1359,8 +1377,8 @@ fn (mut store Store) cancel_session_operation(session_id string, operation_id st
 	status := rows[0].val(0)
 	if status == 'queued' {
 		store.db.begin()!
-		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'cancelled', error = 'Cancelled before a worker claimed this queued turn.', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'queued'",
-			[session_id, operation_id]) or {
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'queued'",
+			[public_error, session_id, operation_id]) or {
 			store.db.rollback() or {}
 			return error('unable to cancel queued session operation')
 		}
@@ -1370,7 +1388,7 @@ fn (mut store Store) cancel_session_operation(session_id string, operation_id st
 			json2.encode[EventData](EventData{
 				operation_id: operation_id
 				status:       'cancelled'
-				error:        'Cancelled before a worker claimed this queued turn.'
+				error:        public_error
 			}),
 		]) or {
 			store.db.rollback() or {}

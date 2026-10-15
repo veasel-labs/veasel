@@ -25,8 +25,9 @@ fn (app &App) resume_durable_queued_operations() {
 		}
 		input := json2.decode[ChatMessageInput](request_json) or {
 			eprintln('veasel: skipping queued operation ${operation.id}; request invalid')
-			store.cancel_session_operation(operation.session_id, operation.id) or {
-				eprintln('veasel: unable to cancel invalid queued operation ${operation.id}')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn request was invalid and will not be claimed.') or {
+				eprintln('veasel: unable to reject invalid queued operation ${operation.id}')
 				''
 			}
 			continue

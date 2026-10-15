@@ -1678,7 +1678,8 @@ fn (mut store Store) record_operation_trace(session_id string, operation_id stri
 }
 
 fn (mut store Store) record_assistant_delta(session_id string, operation_id string, delta string) ! {
-	if delta.len == 0 || delta.len > max_provider_response_bytes || !validate_operation_id(operation_id) {
+	if delta.len == 0 || delta.len > max_provider_response_bytes || delta.contains('\0')
+		|| !validate_operation_id(operation_id) {
 		return error('invalid streamed assistant delta')
 	}
 	store.mu.lock()

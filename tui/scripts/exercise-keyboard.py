@@ -64,6 +64,12 @@ def review_diff() -> str:
     ]
     lines.extend(f"+kept line {index:02d}" for index in range(1, 27))
     lines.append("+TAIL-SENTINEL")
+    # Second hunk so {/} navigation is real-terminal covered.
+    lines.extend([
+        "@@ -200 +200 @@",
+        "-unused line",
+        "+hunk-two-marker",
+    ])
     return "\n".join(lines) + "\n"
 
 
@@ -778,21 +784,34 @@ def main() -> None:
         screen.send("\x1b", 0.25)
         screen.clear_line(13)  # "/patch show "
         screen.send(f"/patch show {EDIT_ID}\r", 0.7)
-        screen.wait_for("28 added, 2 removed", 4)
+        screen.wait_for("29 added, 3 removed", 4)
         screen.wait_for("Showing ")
         screen.wait_for("remain", 4)
+        screen.wait_for("Hunk 1 of 2", 4)
+        screen.wait_for("{/} hunks", 4)
         screen.wait_for("alpha")
         screen.wait_for("beta")
         screen.wait_for("a approve")
         reviewed = screen.terminal.text()
-        if "TAIL-SENTINEL" in reviewed:
+        if "TAIL-SENTINEL" in reviewed or "hunk-two-marker" in reviewed:
             raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
+        screen.send("}", 0.5)  # next unified-diff hunk
+        screen.wait_for("Hunk 2 of 2", 4)
+        screen.wait_for("hunk-two-marker", 4)
+        screen.send("{", 0.5)  # previous hunk
+        screen.wait_for("Hunk 1 of 2", 4)
+        screen.wait_for("remain", 4)
+        screen.send(" ", 0.45)  # Space multi-select current review
+        screen.wait_for("selected", 4)
+        screen.wait_for("● Space", 4)
+        screen.send(" ", 0.45)  # Space clears the selection mark
+        screen.wait_for("○ Space select", 4)
         screen.send("]", 0.55)  # next pending review (shell)
         screen.wait_for("REVIEW SHELL COMMAND", 4)
         screen.send("[", 0.55)  # previous pending review (patch)
         screen.wait_for("REVIEW WORKSPACE EDIT", 4)
-        screen.send("a", 0.7)  # approve with empty composer
-        screen.wait_for("Applied the reviewed workspace edit", 4)
+        screen.send("A", 0.7)  # Shift+A approves all pending patches of this kind
+        screen.wait_for("Approved 1 pending edit of the same kind (Shift+A)", 4)
         screen.send("/skill ", 0.6)
         screen.wait_for("Enable a Skill")
         screen.send("\t", 0.5)

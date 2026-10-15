@@ -572,6 +572,11 @@ fn test_assistant_delta_events_persist_operation_and_text_for_replay() {
 	assert events[1].data.operation_id == operation_id
 	assert events[1].data.delta == 'hello '
 	assert events[2].data.delta == 'world'
+	mut nul_rejected := false
+	store.record_assistant_delta(session.id, operation_id, 'bad\0delta') or {
+		nul_rejected = err.msg() == 'invalid streamed assistant delta'
+	}
+	assert nul_rejected
 }
 
 struct ProviderSSETestState {

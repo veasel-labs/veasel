@@ -19,6 +19,7 @@ export function slashContextApplies(requestedSessionId: string, activeSessionId:
 
 export type SlashCompletionContext = {
   skills?: SlashArgument[]
+  pluginLinks?: SlashArgument[]
   mcpServers?: SlashArgument[]
   mcpCalls?: SlashArgument[]
   patches?: SlashArgument[]
@@ -37,6 +38,9 @@ export const slashCommands: SlashCommand[] = [
   { name: "/models", description: "Configure provider, model, and output budget" },
   { name: "/skills", description: "List discovered Skills; add text to filter" },
   { name: "/skill", description: "Turn a Skill on or off", usage: "/skill on|off <source>/<skill>" },
+  { name: "/plugins", description: "List linked Agent Plugin packages" },
+  { name: "/plugin add", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
+  { name: "/plugin remove", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
   { name: "/mcp", description: "List MCP servers" },
   { name: "/mcp calls", description: "List MCP calls waiting for review" },
   { name: "/mcp call", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
@@ -79,6 +83,9 @@ const argumentSpecs: Record<string, ArgSpec[]> = {
   "/skill": [
     { kind: "choice", choices: [{ value: "on", description: "Enable a Skill for this session" }, { value: "off", description: "Disable a Skill" }] },
     { kind: "value", values: (context) => context.skills ?? [], empty: "No Skills are available yet" },
+  ],
+  "/plugin remove": [
+    { kind: "value", values: (context) => context.pluginLinks ?? [], empty: "No managed plugin links yet" },
   ],
   "/mcp call": [
     { kind: "choice", choices: decisionChoices },

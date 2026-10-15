@@ -770,6 +770,31 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (content === "/plugins") {
+    await showPluginLinks()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/plugin add ")) {
+    await addPluginLink(content.slice("/plugin add ".length).trim())
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/plugin remove ")) {
+    await removePluginLink(content.slice("/plugin remove ".length).trim())
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/plugin")) {
+    skillNotice = "Use /plugins to list managed links, /plugin add <absolute-path> to link a local package, or /plugin remove <name> to unlink. Only symlinks are removed; PLUGIN_DATA stays on disk."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/mcp") {
     await showMcpServers()
     chatInput.value = ""
@@ -1178,6 +1203,75 @@ async function showSkills(filter = "") {
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load skills: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+type PluginLinkCatalog = {
+  links: Array<{ name: string; path: string }>
+  diagnostics?: Array<{ component: string; message: string }>
+}
+
+async function showPluginLinks() {
+  try {
+    const response = await fetch(`${apiBase}/v1/plugins/links`, { signal: controller.signal })
+    if (!response.ok) throw new Error("plugin links are unavailable")
+    const catalog = await response.json() as PluginLinkCatalog
+    const lines = catalog.links.map((link) => `● ${safeTerminalText(link.name)}\n  ${safeTerminalText(link.path)}`)
+    const diagnostics = (catalog.diagnostics ?? [])
+      .map((item) => `! ${safeTerminalText(item.component)}: ${safeTerminalText(item.message)}`)
+    skillNotice = lines.length > 0
+      ? `PLUGIN LINKS\n${lines.join("\n\n")}${diagnostics.length > 0 ? `\n\n${diagnostics.join("\n")}` : ""}\n\nAdd with /plugin add <absolute-path>. Remove with /plugin remove <name>. Only managed symlinks are removed; PLUGIN_DATA for that name is kept.`
+      : "No managed plugin links. Use /plugin add <absolute-path> to link a local Agent Plugin package into VEASEL_PLUGIN_DIR."
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load plugin links: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function addPluginLink(path: string) {
+  if (!path) {
+    skillNotice = "Use /plugin add <absolute-path> with a local Agent Plugin package directory."
+    renderChat(chatMessages)
+    return
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/plugins/links`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path }),
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => ({})) as { name?: string; path?: string; error?: string }
+    if (!response.ok) throw new Error(body.error || "unable to add plugin link")
+    skillNotice = `Linked ${safeTerminalText(body.name || "plugin")} → ${safeTerminalText(body.path || path)}. Use /plugins to review, then /skill or /mcp as needed.`
+    slashContextAt = 0
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not add plugin link: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function removePluginLink(name: string) {
+  if (!name) {
+    skillNotice = "Use /plugin remove <name> with a managed plugin link name from /plugins."
+    renderChat(chatMessages)
+    return
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/plugins/links/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => ({})) as { removed?: string; error?: string }
+    if (!response.ok) throw new Error(body.error || "unable to remove plugin link")
+    skillNotice = `Removed plugin link ${safeTerminalText(body.removed || name)}. PLUGIN_DATA for that name remains on disk.`
+    slashContextAt = 0
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not remove plugin link: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }
@@ -2092,24 +2186,27 @@ async function refreshSlashContext(typed: string) {
   const sessionId = encodeURIComponent(requestedSessionId)
   let nextContext: SlashCompletionContext | undefined
   try {
-    const [editsResponse, commandsResponse, callsResponse, pluginsResponse, serversResponse] = await Promise.all([
+    const [editsResponse, commandsResponse, callsResponse, pluginsResponse, serversResponse, linksResponse] = await Promise.all([
       fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/edits`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/commands`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-tool-calls`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-servers`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/plugins/links`, { signal: controller.signal }),
     ])
     const edits = editsResponse.ok ? await editsResponse.json() as WorkspaceEditSummary[] : []
     const commands = commandsResponse.ok ? await commandsResponse.json() as ShellCommandSummary[] : []
     const calls = callsResponse.ok ? await callsResponse.json() as PluginMCPToolCallSummary[] : []
     const plugins = pluginsResponse.ok ? await pluginsResponse.json() as PluginCatalog : { plugins: [] }
     const trustedServers = serversResponse.ok ? await serversResponse.json() as SessionPluginMCPServer[] : []
+    const links = linksResponse.ok ? await linksResponse.json() as PluginLinkCatalog : { links: [] }
     const trusted = new Set(trustedServers.map((server) => `${server.plugin_name}/${server.server_name}`))
     nextContext = {
       patches: edits.filter((edit) => edit.status === "pending").map((edit) => ({ value: edit.id, description: `pending · ${edit.path}` })),
       commands: commands.filter((item) => item.status === "pending").map((item) => ({ value: item.id, description: `pending · ${item.command}` })),
       mcpCalls: calls.filter((call) => call.status === "pending").map((call) => ({ value: call.id, description: `pending · ${call.plugin_name}/${call.tool_name}` })),
       skills: plugins.plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ value: `${plugin.name}/${skill.name}`, description: skill.description }))),
+      pluginLinks: links.links.map((link) => ({ value: link.name, description: link.path })),
       mcpServers: plugins.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
         const value = `${plugin.name}/${server.name}`
         return { value, description: trusted.has(value) ? `trusted · ${server.transport}` : server.transport }

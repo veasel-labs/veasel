@@ -65,6 +65,10 @@ describe("slashSuggestions", () => {
     expect(slashSuggestions("/skill on ", slashCommands, {
       skills: [{ value: "review-tools/review", description: "Review changes" }],
     }).map((item) => item.insert)).toEqual(["/skill on review-tools/review"])
+    expect(names("/plugin")).toEqual(["/plugins", "/plugin add", "/plugin remove"])
+    expect(slashSuggestions("/plugin remove ", slashCommands, {
+      pluginLinks: [{ value: "review-tools", description: "/tmp/review-tools" }],
+    }).map((item) => item.insert)).toEqual(["/plugin remove review-tools"])
   })
 
   test("returns nothing for an unknown command", () => {

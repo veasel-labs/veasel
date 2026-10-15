@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { alignWordDiff, formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
+import {
+  alignWordDiff,
+  formatReviewDiff,
+  moveReviewHunkIndex,
+  reviewDiffLineBudget,
+  reviewHunkStarts,
+} from "./review-diff"
 import { noticeSegments, transcriptPlainText } from "./transcript"
 
 function sampleDiff(extra = 0): string {
@@ -13,6 +19,23 @@ function sampleDiff(extra = 0): string {
   for (let index = 1; index <= extra; index++) lines.push(`+kept line ${String(index).padStart(2, "0")}`)
   lines.push("+TAIL-SENTINEL")
   return `${lines.join("\n")}\n`
+}
+
+function multiHunkDiff(): string {
+  return [
+    "diff --git a/src/a.v b/src/a.v",
+    "--- a/src/a.v",
+    "+++ b/src/a.v",
+    "@@ -1 +1 @@",
+    "-one",
+    "+ONE",
+    "@@ -10 +10 @@",
+    "-two",
+    "+TWO",
+    "@@ -20 +20 @@",
+    "-three",
+    "+THREE",
+  ].join("\n")
 }
 
 describe("formatReviewDiff", () => {
@@ -36,6 +59,23 @@ describe("formatReviewDiff", () => {
 
   test("keeps an empty proposal explicit", () => {
     expect(formatReviewDiff(" \n", 10).text).toBe("The proposal has no diff.")
+  })
+
+  test("jumps the window to a later hunk without wrapping past the ends", () => {
+    expect(reviewHunkStarts(multiHunkDiff())).toEqual([3, 6, 9])
+    expect(moveReviewHunkIndex(0, -1, 3)).toBe(0)
+    expect(moveReviewHunkIndex(2, 1, 3)).toBe(2)
+    const first = formatReviewDiff(multiHunkDiff(), 20, { hunkIndex: 0 })
+    expect(first.hunkCount).toBe(3)
+    expect(first.text).toContain("Hunk 1 of 3.")
+    expect(first.text).toContain("diff --git")
+    expect(first.text).toContain("+ONE")
+    const second = formatReviewDiff(multiHunkDiff(), 20, { hunkIndex: 1 })
+    expect(second.text).toContain("Hunk 2 of 3.")
+    expect(second.text).toContain("@@ -10 +10 @@")
+    expect(second.text).toContain("+TWO")
+    expect(second.text).not.toContain("+ONE")
+    expect(second.text).not.toContain("diff --git")
   })
 
   test("does not tone the summary as an added line", () => {

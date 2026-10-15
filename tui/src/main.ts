@@ -42,6 +42,13 @@ import {
   type ApprovedShellSandboxCapability,
 } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
+import {
+  jumpTranscriptScroll,
+  moveTranscriptScroll,
+  transcriptPageSize,
+  transcriptSegmentLines,
+  windowTranscriptSegments,
+} from "./transcript-scroll"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -456,6 +463,8 @@ let activePatchHunkIndex = 0
 let chatMessages: ChatTurn[] = []
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
+let transcriptScrollOffset = 0
+let lastTranscriptLineCount = 0
 let settingsOpen = false
 let settingsMode: "connect" | "models" = "models"
 let settingsInput: InputRenderable | undefined
@@ -717,7 +726,40 @@ function renderChat(messages: ChatTurn[]) {
     hasOlder: chatHistoryHasOlder,
     showMessages: !helpVisible,
   })
-  sessionDetail.content = new StyledText(segments.map(({ text, tone }) => transcriptStyles[tone](text)))
+  // Notices (reviews, help, status) already budget their own lines — keep them
+  // unwindowed so headers like "a approve" stay on screen.
+  lastTranscriptLineCount = transcriptSegmentLines(segments).length
+  if (skillNotice) {
+    transcriptScrollOffset = 0
+    sessionDetail.content = new StyledText(segments.map(({ text, tone }) => transcriptStyles[tone](text)))
+    return
+  }
+  const pageSize = transcriptPageSize(process.stdout.rows ?? 40)
+  transcriptScrollOffset = moveTranscriptScroll(transcriptScrollOffset, 0, lastTranscriptLineCount, pageSize)
+  const windowed = windowTranscriptSegments(segments, transcriptScrollOffset, pageSize)
+  const withCues = [...windowed.segments]
+  if (windowed.truncatedAbove) {
+    withCues.unshift({ text: "▲ PgUp · earlier transcript\n", tone: "hint" })
+  }
+  if (windowed.truncatedBelow) {
+    withCues.push({ text: "\n▼ PgDn · later transcript", tone: "hint" })
+  }
+  sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
+}
+
+function scrollTranscript(where: "pageup" | "pagedown" | "home" | "end") {
+  const pageSize = transcriptPageSize(process.stdout.rows ?? 40)
+  if (where === "home" || where === "end") {
+    transcriptScrollOffset = jumpTranscriptScroll(where, lastTranscriptLineCount, pageSize)
+  } else {
+    transcriptScrollOffset = moveTranscriptScroll(
+      transcriptScrollOffset,
+      where === "pageup" ? 1 : -1,
+      lastTranscriptLineCount,
+      pageSize,
+    )
+  }
+  renderChat(chatMessages)
 }
 
 let transcriptStyles: Record<TranscriptTone, (text: string) => TextChunk> = buildTranscriptStyles(theme)
@@ -737,6 +779,7 @@ async function openSession(session: Session) {
   chatHistoryHasOlder = false
   chatHistoryLoading = false
   chatMessages = []
+  transcriptScrollOffset = 0
   streamingAssistantText = ""
   pendingUserMessage = ""
   reviewedShellCommandIds.clear()
@@ -2912,6 +2955,23 @@ renderer.keyInput.on("keypress", (key) => {
   }
   if (chatInput && activeSession) {
     if (slashMatches.length > 0 && handleSlashMenuKey(key, chatInput)) return
+    if (slashMatches.length === 0 && (key.name === "pageup" || key.name === "pagedown")) {
+      key.preventDefault()
+      key.stopPropagation()
+      scrollTranscript(key.name)
+      return
+    }
+    if (
+      slashMatches.length === 0
+      && chatInput.value.trim() === ""
+      && !activeReview?.pending
+      && (key.name === "home" || key.name === "end")
+    ) {
+      key.preventDefault()
+      key.stopPropagation()
+      scrollTranscript(key.name)
+      return
+    }
     if (key.ctrl && key.name === "r") {
       const open = pendingReviewOpenCommand(lastPendingCounts)
       if (open) {

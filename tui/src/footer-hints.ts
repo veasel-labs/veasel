@@ -6,4 +6,4 @@ export const homeFooterHint =
   "n new · j/k · Home/End · /connect · /skills · /mcp · /theme · q quit"
 
 export const sessionFooterHint =
-  "Esc home · / commands · Ctrl+R reviews · /skills · /plugins · /mcp · /theme · /map"
+  "Esc home · PgUp/PgDn · Ctrl+R · /skills · /plugins · /mcp · /theme · /map"

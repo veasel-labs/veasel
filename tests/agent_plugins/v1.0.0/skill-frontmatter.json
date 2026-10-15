@@ -13,9 +13,9 @@
   },
   {
     "name": "Unicode lowercase skill name",
-    "directory": "café-分析-3",
+    "directory": "caf\u00e9-\u5206\u6790-3",
     "accepted": true,
-    "content": "---\nname: café-分析-3\ndescription: Review localized source.\n---\nInstructions."
+    "content": "---\nname: caf\u00e9-\u5206\u6790-3\ndescription: Review localized source.\n---\nInstructions."
   },
   {
     "name": "unknown frontmatter field is rejected",
@@ -82,5 +82,29 @@
     "directory": "review",
     "accepted": false,
     "content": "---\nname: review\ndescription: \"bad\tdescription\"\n---\nInstructions."
+  },
+  {
+    "name": "description longer than 1024 characters is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n---\nInstructions."
+  },
+  {
+    "name": "empty allowed-tools is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nallowed-tools: \"\"\n---\nInstructions."
+  },
+  {
+    "name": "whitespace-only allowed-tools is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nallowed-tools: \"   \"\n---\nInstructions."
+  },
+  {
+    "name": "skill name longer than 64 characters is rejected",
+    "directory": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "accepted": false,
+    "content": "---\nname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ndescription: Review source changes.\n---\nInstructions."
   }
 ]

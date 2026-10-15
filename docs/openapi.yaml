@@ -252,6 +252,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/mcp-oauth/refresh:
+    post:
+      operationId: refreshMcpOauth
+      description: >
+        Refreshes a named MCP credential that previously received a refresh_token
+        during authorize/complete. Uses owner-only `$VEASEL_DATA_DIR/mcp-oauth-refresh.json`
+        for refresh metadata, exchanges `grant_type=refresh_token`, upserts
+        `Authorization: Bearer` on the credential, and rotates stored refresh
+        tokens when the server returns a new one. Secret values are never returned.
+        Loopback listen remains headless (`veasel mcp oauth authorize --listen`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential:
+                  type: string
+      responses:
+        '200':
+          description: Credential view after refresh (header names only).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPCredentialView'
+        '400':
+          description: Invalid credential or refresh exchange failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Refresh metadata not found for the credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/mcp-servers:
     get:
       operationId: listConfiguredMcpServers

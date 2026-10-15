@@ -236,6 +236,7 @@ pub:
 	plugin_components     &PluginComponentState
 	mcp_credentials       &MCPCredentialState
 	mcp_oauth_pending     &MCPOAuthPendingState
+	mcp_oauth_refresh     &MCPOAuthRefreshState
 	allow_autonomous      bool
 	allow_auto_edit       bool
 }
@@ -254,6 +255,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		plugin_components:        new_plugin_component_state(store.plugin_components_path())
 		mcp_credentials:          new_mcp_credential_state(store.mcp_credentials_path())
 		mcp_oauth_pending:        new_mcp_oauth_pending_state(store.mcp_oauth_pending_path())
+		mcp_oauth_refresh:        new_mcp_oauth_refresh_state(store.mcp_oauth_refresh_path())
 		allow_autonomous:         os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		allow_auto_edit:          os.getenv('VEASEL_ALLOW_AUTO_EDIT') == '1'
 			|| os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
@@ -815,6 +817,26 @@ pub fn (app &App) complete_mcp_oauth(mut ctx Context) veb.Result {
 	}
 	view := app.complete_mcp_oauth_authorize(input) or {
 		if err.msg() == 'OAuth pending session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(view)
+}
+
+@['/v1/mcp-oauth/refresh'; post]
+pub fn (app &App) refresh_mcp_oauth(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'OAuth refresh request exceeds the size limit')
+	}
+	input := decode_mcp_oauth_refresh_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	view := app.refresh_mcp_oauth_authorize(input) or {
+		if err.msg().contains('not found') {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
 				error: err.msg()

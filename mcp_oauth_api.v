@@ -119,6 +119,31 @@ fn (app &App) complete_mcp_oauth_authorize(input MCPOAuthCompleteInput) !MCPCred
 	}
 	mut pending := app.mcp_oauth_pending
 	mut credentials := app.mcp_credentials
-	return complete_mcp_oauth_authorization_code(mut pending, mut credentials, input.credential,
-		callback)!
+	mut refresh := app.mcp_oauth_refresh
+	return complete_mcp_oauth_authorization_code(mut pending, mut credentials, mut refresh,
+		input.credential, callback)!
+}
+
+pub struct MCPOAuthRefreshInput {
+pub:
+	credential string
+}
+
+fn decode_mcp_oauth_refresh_input(raw string) !MCPOAuthRefreshInput {
+	fields := json2.decode[map[string]json2.Any](raw) or {
+		return error('Expected OAuth refresh JSON object')
+	}
+	credential := json_required_string(fields, 'credential')!
+	if !is_valid_mcp_credential_name(credential) {
+		return error('MCP credential name is invalid')
+	}
+	return MCPOAuthRefreshInput{
+		credential: credential
+	}
+}
+
+fn (app &App) refresh_mcp_oauth_authorize(input MCPOAuthRefreshInput) !MCPCredentialView {
+	mut refresh := app.mcp_oauth_refresh
+	mut credentials := app.mcp_credentials
+	return refresh_mcp_oauth_credential(mut refresh, mut credentials, input.credential)!
 }

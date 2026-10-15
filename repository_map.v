@@ -182,6 +182,9 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	// Pull same-directory siblings of strongly mentioned paths into budget
 	// without tree-sitter/PageRank — extractive co-location only.
 	boost_repository_map_directory_neighbors(mut entries)
+	// Also elevate same basename-stem files in other directories (e.g. lib/foo.v
+	// mention helps cmd/foo.v) — still extractive, not graph ranking.
+	boost_repository_map_same_stem_siblings(mut entries)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)
@@ -464,6 +467,40 @@ fn boost_repository_map_directory_neighbors(mut entries []RepositoryMapEntry) {
 		dir := os.dir(entry.path).replace('\\', '/')
 		if hot_dirs[dir] {
 			entry.score += 90.0
+		}
+	}
+}
+
+fn boost_repository_map_same_stem_siblings(mut entries []RepositoryMapEntry) {
+	mut hot_stems := map[string]bool{}
+	for entry in entries {
+		if entry.score < 500.0 {
+			continue
+		}
+		stem := repository_map_stem(os.file_name(entry.path)).to_lower()
+		if stem.len < 2 {
+			continue
+		}
+		hot_stems[stem] = true
+		base := repository_map_stem_base(stem)
+		if base.len >= 2 {
+			hot_stems[base] = true
+		}
+	}
+	if hot_stems.len == 0 {
+		return
+	}
+	for mut entry in entries {
+		if entry.score >= 500.0 {
+			continue
+		}
+		stem := repository_map_stem(os.file_name(entry.path)).to_lower()
+		if stem.len < 2 {
+			continue
+		}
+		base := repository_map_stem_base(stem)
+		if hot_stems[stem] || (base.len >= 2 && hot_stems[base]) {
+			entry.score += 70.0
 		}
 	}
 }

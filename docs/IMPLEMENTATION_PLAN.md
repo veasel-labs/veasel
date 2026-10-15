@@ -442,8 +442,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   the terminal keeps the first screen and says how many lines remain.
 - [ ] Richer context retrieval beyond the extractive repository map, rich diff
   review, accessibility, and UX refinement. Extractive map ranking now includes
-  test/source pairing, CamelCase/snake symbol-part matches, and same-directory
-  neighbor boosts (still not tree-sitter/PageRank).
+  test/source pairing, CamelCase/snake symbol-part matches, same-directory
+  neighbor boosts, and cross-directory same-basename-stem sibling boosts
+  (still not tree-sitter/PageRank).
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
 - [ ] Validate interactive TUI behavior on each platform and establish

@@ -254,6 +254,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the
   qualified catalog name and the original discovery source.
+- [x] Opt-in Linux Bubblewrap wrap for trusted MCP stdio
+  (`VEASEL_MCP_STDIO_SANDBOX=auto|require`; default `off` / unset = unsandboxed);
+  capability `mcp.stdio.sandbox.bubblewrap` only when wrap will run; network
+  shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest unsandboxed fallback under
+  auto; macOS/Windows MCP stdio remain unsandboxed with hard operator warnings.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

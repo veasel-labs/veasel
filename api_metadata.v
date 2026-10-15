@@ -59,6 +59,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if app.allow_autonomous {
 		features << 'agent.execution_policy.sandbox_auto'
 	}
+	if mcp_stdio_sandbox_bubblewrap_capability() {
+		features << 'mcp.stdio.sandbox.bubblewrap'
+	}
 	if app.configured_model() != none {
 		features << 'chat.complete'
 		features << 'chat.cancel'

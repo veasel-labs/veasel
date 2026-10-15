@@ -15,6 +15,7 @@ const max_plugin_mcp_concurrency = 4
 const max_session_plugin_mcp_tools = 64
 const max_session_plugin_mcp_tool_pages = 16
 const max_session_plugin_mcp_cursor_bytes = 1024
+const mcp_stdio_sandbox_mode_env = 'VEASEL_MCP_STDIO_SANDBOX'
 
 struct PluginMCPToolBinding {
 	connection_index int
@@ -43,6 +44,30 @@ mut:
 	cancelled_notified bool
 }
 
+fn mcp_stdio_sandbox_mode() ApprovedShellSandboxMode {
+	// Default off: MCP stdio stays unsandboxed until operators opt into
+	// auto/require. Empty VEASEL_SHELL_SANDBOX defaults to auto for shell;
+	// do not inherit that default here.
+	raw := os.getenv(mcp_stdio_sandbox_mode_env).trim_space().to_lower()
+	if raw.len == 0 {
+		return .off
+	}
+	return approved_shell_sandbox_mode_from(raw)
+}
+
+// mcp_stdio_sandbox_bubblewrap_capability is true only when Linux Bubblewrap
+// will actually wrap trusted stdio MCP processes for the current configuration.
+fn mcp_stdio_sandbox_bubblewrap_capability() bool {
+	$if linux {
+		if mcp_stdio_sandbox_mode() == .off {
+			return false
+		}
+		return bubblewrap_available()
+	} $else {
+		return false
+	}
+}
+
 fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server PluginMCPServer) !&PluginMCPTransport {
 	if server.transport != 'stdio' || server.command.len == 0 {
 		return error('unsupported Agent Plugin MCP server')
@@ -67,8 +92,25 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	mut env := overlay_plugin_environment(plugin_mcp_base_environment(), configured, case_insensitive)
 	env['PLUGIN_ROOT'] = root
 	env['PLUGIN_DATA'] = data
+	args := server.args.map(expand_plugin_placeholders(it, root, data))
+	mode := mcp_stdio_sandbox_mode()
+	$if linux {
+		if mode != .off {
+			if bubblewrap_available() {
+				return start_plugin_mcp_transport_linux_sandboxed(root, data, cwd, server.command,
+					args, env)
+			}
+			if mode == .require {
+				return error('Trusted MCP stdio requires bubblewrap (bwrap) because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
+			}
+		}
+	} $else {
+		if mode == .require {
+			return error('VEASEL_MCP_STDIO_SANDBOX=require is only implemented for Linux Bubblewrap; refuse to start unsandboxed MCP stdio')
+		}
+	}
 	mut process := os.new_process(server.command)
-	process.set_args(server.args.map(expand_plugin_placeholders(it, root, data)))
+	process.set_args(args)
 	process.set_work_folder(cwd)
 	process.set_environment(env)
 	process.set_redirect_stdio()
@@ -79,6 +121,89 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	}
 	return &PluginMCPTransport{
 		process: process
+	}
+}
+
+// Linux Bubblewrap policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// - host root is read-only; PLUGIN_ROOT and PLUGIN_DATA are writable binds
+// - home/runtime paths are masked; /tmp is a private tmpfs
+// - network is shared (many MCP servers need outbound HTTPS); not a shell-style deny
+// - missing bwrap under auto falls back unsandboxed and never pretends sandboxed
+fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd string, command string,
+	args []string, env map[string]string) !&PluginMCPTransport {
+	for broad_root in ['/', '/home', '/root', '/tmp', '/usr', '/etc', '/var', '/opt'] {
+		if root == broad_root || data == broad_root {
+			return error('Trusted MCP stdio refused: PLUGIN_ROOT or PLUGIN_DATA is too broad for the sandbox')
+		}
+	}
+	bwrap := bubblewrap_executable_path() or {
+		return error('Trusted MCP stdio could not locate bubblewrap (bwrap)')
+	}
+	mut bwrap_args := [
+		'--unshare-all',
+		'--share-net',
+		'--die-with-parent',
+		'--new-session',
+		'--ro-bind',
+		'/',
+		'/',
+	]
+	for hidden_path in ['/home', '/root', '/run', '/mnt', '/media', '/tmp'] {
+		if os.is_dir(hidden_path) {
+			bwrap_args << '--tmpfs'
+			bwrap_args << hidden_path
+		}
+	}
+	bwrap_args << '--proc'
+	bwrap_args << '/proc'
+	bwrap_args << '--dev'
+	bwrap_args << '/dev'
+	append_linux_bwrap_parent_dirs(mut bwrap_args, root)
+	bwrap_args << '--bind'
+	bwrap_args << root
+	bwrap_args << root
+	if data != root {
+		append_linux_bwrap_parent_dirs(mut bwrap_args, data)
+		bwrap_args << '--bind'
+		bwrap_args << data
+		bwrap_args << data
+	}
+	bwrap_args << '--chdir'
+	bwrap_args << cwd
+	bwrap_args << '--'
+	bwrap_args << command
+	for arg in args {
+		bwrap_args << arg
+	}
+	mut sandboxed_env := env.clone()
+	sandboxed_env['HOME'] = data
+	sandboxed_env['TMPDIR'] = '/tmp'
+	mut process := os.new_process(bwrap)
+	process.set_args(bwrap_args)
+	process.set_environment(sandboxed_env)
+	process.set_redirect_stdio()
+	process.run()
+	if process.status != .running {
+		process.close()
+		return error('unable to start trusted Agent Plugin MCP server inside Bubblewrap')
+	}
+	return &PluginMCPTransport{
+		process: process
+	}
+}
+
+fn append_linux_bwrap_parent_dirs(mut args []string, path string) {
+	mut parent := ''
+	for component in path.split('/') {
+		if component.len == 0 {
+			continue
+		}
+		parent = if parent.len == 0 { '/${component}' } else { '${parent}/${component}' }
+		if parent == path {
+			break
+		}
+		args << '--dir'
+		args << parent
 	}
 }
 

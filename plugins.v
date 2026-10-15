@@ -21,6 +21,8 @@ const max_plugin_mcp_servers = 128
 const max_plugin_mcp_args = 4096
 const max_plugin_mcp_env = 256
 const max_plugin_mcp_headers = 128
+const max_plugin_mcp_header_value_bytes = 4096
+const max_plugin_mcp_server_name_len = 64
 
 struct AgentPlugin {
 pub:

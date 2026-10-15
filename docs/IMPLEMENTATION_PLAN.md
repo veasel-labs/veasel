@@ -250,6 +250,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   description at turn start so the model can see discovered skills before load;
   omit the tool when the catalog is empty or every skill component is disabled;
   never embed instruction bodies in the catalog.
+- [x] When a standalone skill source key collides with an Agent Plugin package
+  name, expose the standalone source as `standalone-<source>` (with a catalog
+  diagnostic) instead of omitting the entire source; load resolves both the
+  qualified catalog name and the original discovery source.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

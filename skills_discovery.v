@@ -160,13 +160,43 @@ fn standalone_skill_to_plugin_skill(skill StandaloneSkill) PluginSkill {
 	}
 }
 
+const standalone_skill_catalog_prefix = 'standalone-'
+
+// standalone_discovery_sources maps a catalog/plugin_name used for load back to
+// the on-disk discovery source label (e.g. standalone-agents → agents).
+fn standalone_discovery_sources(catalog_name string) []string {
+	mut sources := [catalog_name]
+	if catalog_name.starts_with(standalone_skill_catalog_prefix) {
+		original := catalog_name[standalone_skill_catalog_prefix.len..]
+		if original.len > 0 && original !in sources {
+			sources << original
+		}
+	}
+	return sources
+}
+
+fn qualify_standalone_catalog_name(source string, taken map[string]bool) !(string, string) {
+	if !taken[source] {
+		return source, ''
+	}
+	candidate := standalone_skill_catalog_prefix + source
+	if !is_valid_plugin_name(candidate) {
+		return error('cannot qualify colliding standalone source `${source}`')
+	}
+	if !taken[candidate] {
+		return candidate, 'Standalone skills for source `${source}` are exposed as `${candidate}` because an Agent Plugin already uses that name'
+	}
+	return error('standalone source `${source}` collides with both `${source}` and `${candidate}` Agent Plugin names')
+}
+
 fn find_standalone_skill(project_directory string, source string, skill_name string) !(string, PluginSkill) {
 	if !is_valid_plugin_name(source) || !is_valid_skill_name(skill_name) {
 		return error('plugin or skill name is invalid')
 	}
 	discovery := discover_standalone_agent_skills(project_directory)
+	allowed := standalone_discovery_sources(source)
 	for skill in discovery.skills {
-		if skill.source == source && skill.name == skill_name {
+		if skill.source in allowed && skill.name == skill_name {
 			return skill.directory, standalone_skill_to_plugin_skill(skill)
 		}
 	}
@@ -237,12 +267,18 @@ fn merge_standalone_skills_into_catalog(catalog PluginCatalog, discovery Standal
 	mut diagnostics := catalog.diagnostics.clone()
 	diagnostics << discovery.diagnostics
 	for source in source_order {
-		if plugin_names[source] {
+		catalog_name, qualify_note := qualify_standalone_catalog_name(source, plugin_names) or {
 			diagnostics << PluginDiagnostic{
 				component: source
-				message:   'Standalone skills for source `${source}` are omitted because an Agent Plugin already uses that name'
+				message:   'Standalone skills for source `${source}` are omitted because ${err.msg()}'
 			}
 			continue
+		}
+		if qualify_note.len > 0 {
+			diagnostics << PluginDiagnostic{
+				component: catalog_name
+				message:   qualify_note
+			}
 		}
 		skills := by_source[source]
 		mut summaries := []PluginSkillSummary{cap: skills.len}
@@ -268,7 +304,7 @@ fn merge_standalone_skills_into_catalog(catalog PluginCatalog, discovery Standal
 			'user'
 		}
 		plugins << PluginCatalogEntry{
-			name:        source
+			name:        catalog_name
 			version:     ''
 			description: 'Standalone Agent Skills discovered from ${scope_label} ${source} skill directories'
 			skills:      summaries
@@ -276,7 +312,7 @@ fn merge_standalone_skills_into_catalog(catalog PluginCatalog, discovery Standal
 			diagnostics: []PluginDiagnostic{}
 			origin:      'standalone'
 		}
-		plugin_names[source] = true
+		plugin_names[catalog_name] = true
 	}
 	return PluginCatalog{
 		plugins:     plugins

@@ -1698,6 +1698,8 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 			content: messages[0].content + '\n\n' + skill_context.instructions
 		}
 	}
+	// Sticky hint-free map on system keeps the prompt-cacheable prefix stable
+	// across turns; mention focus (if any) lands on the user message below.
 	map_result := maybe_attach_repository_map(mut messages, session.directory, input.content,
 		repository_map_default_budget_bytes) or {
 		return error('Unable to build the workspace repository map')
@@ -1718,6 +1720,17 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 		}
 	}
 	messages << user_message
+	focus_result := maybe_attach_repository_map_focus(mut messages, session.directory, input.content,
+		repository_map_focus_budget_bytes) or {
+		return error('Unable to build the workspace repository map focus')
+	}
+	if focus_result.measurement.injected {
+		mut focus_store := app.store
+		focus_store.record_session_repository_map(id, operation_id, focus_result.measurement,
+			focus_result.text) or {
+			return error('Unable to record repository map focus event')
+		}
+	}
 	mut delta_buffer := &AssistantDeltaBuffer{
 		store:        app.store
 		session_id:   id

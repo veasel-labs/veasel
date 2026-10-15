@@ -135,8 +135,9 @@ fn shell_text_has_unsafe_controls(value string) bool {
 const shell_sandbox_mode_env = 'VEASEL_SHELL_SANDBOX'
 const shell_sandbox_network_env = 'VEASEL_SHELL_SANDBOX_NETWORK'
 
-// ApprovedShellSandboxMode selects defense-in-depth Bubblewrap for reviewed
-// commands. Autonomous execution always uses fail-closed Bubblewrap on Linux.
+// ApprovedShellSandboxMode selects defense-in-depth OS sandboxing for reviewed
+// commands (Bubblewrap on Linux, Seatbelt on macOS). Autonomous execution always
+// uses fail-closed Bubblewrap on Linux only.
 enum ApprovedShellSandboxMode {
 	auto
 	off
@@ -149,6 +150,14 @@ struct LinuxShellSandboxOptions {
 	filter_environment bool
 	allow_network      bool
 }
+
+struct MacosShellSandboxOptions {
+	purpose       string
+	fail_closed   bool
+	allow_network bool
+}
+
+const macos_seatbelt_executable = '/usr/bin/sandbox-exec'
 
 fn approved_shell_sandbox_mode_from(value string) ApprovedShellSandboxMode {
 	match value.trim_space().to_lower() {
@@ -205,6 +214,33 @@ fn shell_sandbox_bubblewrap_capability() bool {
 	}
 }
 
+fn seatbelt_available() bool {
+	$if macos {
+		return os.is_file(macos_seatbelt_executable) && os.is_executable(macos_seatbelt_executable)
+	} $else {
+		return false
+	}
+}
+
+// shell_sandbox_seatbelt_capability is true only when macOS Seatbelt will
+// actually wrap approved shell commands for the current process configuration.
+fn shell_sandbox_seatbelt_capability() bool {
+	$if macos {
+		if approved_shell_sandbox_mode() == .off {
+			return false
+		}
+		return seatbelt_available()
+	} $else {
+		return false
+	}
+}
+
+// shell_sandbox_windows_capability stays false until Veasel can wrap approved
+// Windows shell in a real OS isolation backend without pretending.
+fn shell_sandbox_windows_capability() bool {
+	return false
+}
+
 fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCommandResult {
 	return run_approved_shell_command_with_policy(root, command, false)
 }
@@ -256,8 +292,8 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 			}
 		}
 	}
+	mode := approved_shell_sandbox_mode()
 	$if linux {
-		mode := approved_shell_sandbox_mode()
 		if mode != .off {
 			if bubblewrap_available() {
 				return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command,
@@ -276,6 +312,41 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 				}
 			}
 			// VEASEL_SHELL_SANDBOX=auto and bwrap missing: fall through unsandboxed.
+		}
+	} $else $if macos {
+		if mode != .off {
+			if seatbelt_available() {
+				return run_macos_sandboxed_shell_command(canonical_root, verified.cwd, command,
+					MacosShellSandboxOptions{
+						purpose:       'Approved shell execution'
+						fail_closed:   mode == .require
+						allow_network: approved_shell_sandbox_network_allowed()
+					})
+			}
+			if mode == .require {
+				return ShellCommandResult{
+					status:    'failed'
+					exit_code: -1
+					output:    'Approved shell execution requires /usr/bin/sandbox-exec because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
+				}
+			}
+			// VEASEL_SHELL_SANDBOX=auto and sandbox-exec missing: fall through unsandboxed.
+		}
+	} $else $if windows {
+		if mode == .require {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    'Approved shell execution requires a Windows OS sandbox because VEASEL_SHELL_SANDBOX=require; Veasel does not yet wrap approved Windows shell in Job Object, AppContainer, or restricted-token isolation, so no unsandboxed fallback was started.'
+			}
+		}
+	} $else {
+		if mode == .require {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    'Approved shell execution requires an OS sandbox because VEASEL_SHELL_SANDBOX=require; this platform has no Veasel sandbox backend, so no unsandboxed fallback was started.'
+			}
 		}
 	}
 	$if windows {
@@ -390,6 +461,96 @@ fn run_linux_sandboxed_shell_command(root string, cwd string, command ShellComma
 	environment['TMPDIR'] = '/tmp'
 	process.set_environment(environment)
 	process.set_stdin_path('/dev/null')
+	process.set_redirect_stdio()
+	process.use_pgroup = true
+	return collect_shell_process(mut process, command.timeout_seconds)
+}
+
+// macOS Seatbelt policy for approved shell (principles adapted from Codex Seatbelt
+// study; no upstream source copied):
+// - sandbox-exec is taken only from /usr/bin/sandbox-exec
+// - default deny; host remains readable; writes limited to workspace + temp
+// - /Users, /var/root, and /Volumes are denied except the workspace carve-out
+// - network stays denied unless allow_network is set
+// - Seatbelt is best-effort containment via sandbox-exec, not a VM boundary
+fn macos_seatbelt_profile(allow_network bool) string {
+	mut lines := [
+		'(version 1)',
+		'(deny default)',
+		'(allow process-exec)',
+		'(allow process-fork)',
+		'(allow signal (target self))',
+		'(allow process-info* (target self))',
+		'(allow sysctl-read)',
+		'(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))',
+		'(allow file-read-metadata)',
+		'(allow file-read*)',
+		'(allow file-write-data (require-all (literal "/dev/null") (vnode-type CHARACTER-DEVICE)))',
+		'(allow file-write* (subpath (param "WORKSPACE")))',
+		'(allow file-write* (subpath "/private/tmp"))',
+		'(allow file-write* (subpath "/tmp"))',
+		'(allow file-write* (subpath "/private/var/folders"))',
+		'(allow file-write* (subpath "/var/folders"))',
+		'(deny file-read* file-write* (require-all (subpath "/Users") (require-not (subpath (param "WORKSPACE")))))',
+		'(deny file-read* file-write* (require-all (subpath "/var/root") (require-not (subpath (param "WORKSPACE")))))',
+		'(deny file-read* file-write* (require-all (subpath "/private/var/root") (require-not (subpath (param "WORKSPACE")))))',
+		'(deny file-read* file-write* (require-all (subpath "/Volumes") (require-not (subpath (param "WORKSPACE")))))',
+	]
+	if allow_network {
+		lines << '(allow network-outbound)'
+		lines << '(allow network-inbound)'
+		lines << '(allow system-socket)'
+	}
+	return lines.join('\n')
+}
+
+fn run_macos_sandboxed_shell_command(root string, cwd string, command ShellCommandSummary,
+	options MacosShellSandboxOptions) ShellCommandResult {
+	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
+	for broad_root in ['/', '/Users', '/System', '/Library', '/Applications', '/private', '/var',
+		'/usr', '/bin', '/sbin', '/etc', '/tmp', '/Volumes', '/Network', '/dev', '/cores'] {
+		if root == broad_root {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    '${purpose} refused: the workspace root is too broad for the enforced sandbox.'
+			}
+		}
+	}
+	if !seatbelt_available() {
+		if options.fail_closed {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    '${purpose} requires /usr/bin/sandbox-exec; no unsandboxed fallback was started.'
+			}
+		}
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    '${purpose} could not locate /usr/bin/sandbox-exec; no process was started.'
+		}
+	}
+	profile := macos_seatbelt_profile(options.allow_network)
+	mut args := [
+		'-p',
+		profile,
+		'-DWORKSPACE=${root}',
+		'--',
+		'/bin/sh',
+		'-c',
+		command.command,
+	]
+	mut process := os.new_process(macos_seatbelt_executable)
+	process.set_args(args)
+	mut environment := os.environ()
+	tmpdir := os.temp_dir()
+	if tmpdir.len > 0 {
+		environment['TMPDIR'] = tmpdir
+	}
+	process.set_environment(environment)
+	process.set_stdin_path('/dev/null')
+	process.set_work_folder(os.join_path(root, cwd))
 	process.set_redirect_stdio()
 	process.use_pgroup = true
 	return collect_shell_process(mut process, command.timeout_seconds)

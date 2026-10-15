@@ -325,13 +325,14 @@ jobs:
         run: |
           & v -cc gcc -d windows_7 test main_test.v plugins_test.v plugin_mcp_transport_test.v headless_cli_test.v workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -cc gcc test model_settings_test.v api_metadata_test.v plugin_mcp_http_transport_test.v
+          & v -cc gcc test model_settings_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run macOS provider settings tests
+      - name: Run macOS provider settings and shell sandbox tests
         if: runner.os == 'macOS'
         run: |
           v test model_settings_test.v
           v test api_metadata_test.v
+          v test shell_commands_test.v
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'
         env:

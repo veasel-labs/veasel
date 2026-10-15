@@ -35,11 +35,28 @@ describe("formatShellReview", () => {
       pending: true,
       output: "",
       maxLines: 20,
-      bubblewrapCapable: true,
+      sandboxCapability: "bubblewrap",
     })
     expect(text).toContain("inside Bubblewrap")
     expect(text).not.toContain("without an OS sandbox")
-    expect(approvedShellSandboxWarning(true)).toContain("network isolated by default")
+    expect(approvedShellSandboxWarning("bubblewrap")).toContain("network isolated by default")
+  })
+
+  test("describes Seatbelt when the capability is present", () => {
+    const text = formatShellReview({
+      command: "echo hi",
+      cwd: ".",
+      timeoutSeconds: 10,
+      runner: "/bin/sh",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+      output: "",
+      maxLines: 20,
+      sandboxCapability: "seatbelt",
+    })
+    expect(text).toContain("inside Seatbelt")
+    expect(text).not.toContain("without an OS sandbox")
+    expect(approvedShellSandboxWarning("seatbelt")).toContain("sandbox-exec")
   })
 
   test("hides the tail of a command taller than the terminal", () => {

@@ -89,7 +89,7 @@ unsandboxed fallback otherwise); autonomous Linux shell uses the same mount
 layout, filters the environment, and fails closed if it cannot start. This is
 best-effort containment and does not provide Codex-level sandbox guarantees;
 macOS/Windows OS sandbox parity and stronger workspace isolation remain open.
-See [`compatibility/shell-bubblewrap-sandbox.md`](compatibility/shell-bubblewrap-sandbox.md).
+See [`compatibility/shell-bubblewrap-sandbox.md`](compatibility/shell-bubblewrap-sandbox.md) and [`compatibility/shell-seatbelt-sandbox.md`](compatibility/shell-seatbelt-sandbox.md).
 
 ### mini-SWE-agent — a baseline small enough to falsify complexity
 
@@ -327,5 +327,5 @@ integrations already exist. For current verified feature status, see
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
 | Agent Plugins conformance gaps | Substantial v1.0.0 coverage; remaining gaps listed in `docs/compatibility/agent-plugins.md` (OAuth, GET notification streams, install UI). |
 | Durable job recovery across restart | Async ops become `uncertain` and are never replayed; durable queued workers remain open. |
-| Incomplete execution sandboxing | Approved Linux shell uses Bubblewrap when available (honest fallback); MCP and non-Linux shell remain unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level / macOS / Windows OS sandbox remains open. |
+| Incomplete execution sandboxing | Approved Linux Bubblewrap and macOS Seatbelt wrap when available (honest capabilities); Windows remains unsandboxed under auto with require fail-closed; MCP remains unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level Windows isolation and deeper Seatbelt hardening remain open. |
 | Missing credible E2E benchmark comparisons | Harbor smoke adapter + ATIF validation exist; no Harbor Index / Terminal-Bench / SWE-bench submission or leaderboard claim. |

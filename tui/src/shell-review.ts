@@ -4,6 +4,8 @@ export type BoundedBlock = {
   totalLines: number
 }
 
+export type ApprovedShellSandboxCapability = "bubblewrap" | "seatbelt" | null
+
 // Leaves the safety warning and the approve instruction on the first screen.
 export function shellReviewLineBudget(terminalRows: number): number {
   return Math.max(6, terminalRows - 20)
@@ -29,11 +31,14 @@ export function formatBoundedBlock(text: string, maxLines: number): BoundedBlock
   }
 }
 
-export function approvedShellSandboxWarning(bubblewrapCapable: boolean): string {
-  if (bubblewrapCapable) {
+export function approvedShellSandboxWarning(capability: ApprovedShellSandboxCapability): string {
+  if (capability === "bubblewrap") {
     return "On Linux, approval still runs as your OS user inside Bubblewrap: read-only host, writable workspace, sensitive home/runtime mounts hidden, network isolated by default. Inherited environment may still carry credentials. Review every effect before approval."
   }
-  return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox (Bubblewrap unavailable or VEASEL_SHELL_SANDBOX=off). Review every effect before approval."
+  if (capability === "seatbelt") {
+    return "On macOS, approval still runs as your OS user inside Seatbelt (sandbox-exec): host readable, writes limited to the workspace and temp, home/Volumes reads denied outside the workspace, network isolated by default. Inherited environment may still carry credentials. Review every effect before approval."
+  }
+  return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox (platform sandbox unavailable or VEASEL_SHELL_SANDBOX=off). Review every effect before approval."
 }
 
 export function formatShellReview(input: {
@@ -45,13 +50,17 @@ export function formatShellReview(input: {
   pending: boolean
   output: string
   maxLines: number
+  sandboxCapability?: ApprovedShellSandboxCapability
+  /** @deprecated Prefer sandboxCapability. */
   bubblewrapCapable?: boolean
 }): string {
+  const capability: ApprovedShellSandboxCapability = input.sandboxCapability
+    ?? (input.bubblewrapCapable === true ? "bubblewrap" : null)
   const command = formatBoundedBlock(input.command, input.maxLines)
   const parts = [
     `CWD: ${input.cwd} · timeout ${input.timeoutSeconds}s`,
     `Runner: ${input.runner} · non-interactive stdin`,
-    approvedShellSandboxWarning(input.bubblewrapCapable === true),
+    approvedShellSandboxWarning(capability),
   ]
   if (input.pending) parts.push(`Type /command approve ${input.id} or /command reject ${input.id}.`)
   if (command.text) parts.push(command.text)

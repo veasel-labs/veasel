@@ -573,7 +573,7 @@ def main() -> None:
         screen.send("\x1b", 0.25)
         screen.clear_line(14)  # "/command show "
         screen.send(f"/command show {COMMAND_ID}\r", 0.7)
-        screen.wait_for("without a sandbox", 4)
+        screen.wait_for("without an OS sandbox", 4)
         screen.wait_for("Showing ")
         reviewed = screen.terminal.text()
         if "SHELL-TAIL" in reviewed:

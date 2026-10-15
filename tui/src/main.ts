@@ -31,7 +31,7 @@ import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnow
 import { formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
-import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
+import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
 import {
   formatBoundedBlock,
   formatShellReview,
@@ -439,6 +439,10 @@ let pendingUserMessage = ""
 let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let pendingReviewQueue: ActiveReview[] = []
 let activeReview: ActiveReview | undefined
+let activePatchDiff = ""
+let activePatchPath = ""
+let activePatchStatus = ""
+let activePatchHunkIndex = 0
 let chatMessages: ChatTurn[] = []
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
@@ -1713,8 +1717,35 @@ async function openActiveReview(review: ActiveReview) {
   else await showMcpToolCall(review.id)
 }
 
-async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "next" | "prev") {
+function renderActivePatchDiff() {
+  if (!activeReview || activeReview.kind !== "patch" || !activePatchDiff) return
+  const review = formatReviewDiff(activePatchDiff, reviewDiffLineBudget(process.stdout.rows ?? 40), {
+    hunkIndex: activePatchHunkIndex,
+  })
+  activePatchHunkIndex = review.hunkIndex
+  skillNotice = withReviewHotkeyHint(
+    `REVIEW WORKSPACE EDIT  /  ${activePatchStatus}\n${safeTerminalText(activePatchPath)}\n${safeTerminalText(review.text)}${activeReview.pending ? `\nAfter inspecting the diff, type /patch approve ${activeReview.id} or /patch reject ${activeReview.id}.` : ""}`,
+    activeReview,
+    { hunkCount: review.hunkCount },
+  )
+  renderChat(chatMessages)
+}
+
+async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "next" | "prev" | "hunkNext" | "hunkPrev") {
   if (!activeReview?.pending) return
+  if (action === "hunkNext" || action === "hunkPrev") {
+    if (activeReview.kind !== "patch" || !activePatchDiff) return
+    const probe = formatReviewDiff(activePatchDiff, reviewDiffLineBudget(process.stdout.rows ?? 40), {
+      hunkIndex: activePatchHunkIndex,
+    })
+    activePatchHunkIndex = moveReviewHunkIndex(
+      probe.hunkIndex,
+      action === "hunkNext" ? 1 : -1,
+      probe.hunkCount,
+    )
+    renderActivePatchDiff()
+    return
+  }
   if (action === "approveAll") {
     const kind = activeReview.kind
     if (pendingReviewQueue.length === 0) await countPendingReviews()
@@ -1838,14 +1869,13 @@ async function showWorkspaceEdit(editId: string) {
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     const edit = await response.json() as WorkspaceEditProposal
     if (edit.status === "pending") reviewedEditIds.add(edit.id)
-    const review = formatReviewDiff(edit.diff, reviewDiffLineBudget(process.stdout.rows ?? 40))
+    activePatchDiff = edit.diff
+    activePatchPath = edit.path
+    activePatchStatus = edit.status.toUpperCase()
+    activePatchHunkIndex = 0
     const reviewState: ActiveReview = { kind: "patch", id: edit.id, pending: edit.status === "pending" }
     setActiveReview(reviewState)
-    skillNotice = withReviewHotkeyHint(
-      `REVIEW WORKSPACE EDIT  /  ${edit.status.toUpperCase()}\n${safeTerminalText(edit.path)}\n${safeTerminalText(review.text)}${edit.status === "pending" ? `\nAfter inspecting the diff, type /patch approve ${edit.id} or /patch reject ${edit.id}.` : ""}`,
-      reviewState,
-    )
-    renderChat(chatMessages)
+    renderActivePatchDiff()
   } catch (error) {
     skillNotice = `Could not load workspace edit diff: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)

@@ -36,6 +36,12 @@ describe("reviewHotkey", () => {
     expect(reviewHotkey({ name: "[", ctrl: false, meta: false }, ctx)).toEqual({ action: "prev" })
     expect(reviewHotkey({ name: "n", ctrl: false, meta: false }, ctx)).toEqual({ action: "next" })
     expect(reviewHotkey({ name: "p", ctrl: false, meta: false }, ctx)).toEqual({ action: "prev" })
+    expect(reviewHotkey({ name: "{", ctrl: false, meta: false }, ctx)).toEqual({ action: "hunkPrev" })
+    expect(reviewHotkey({ name: "}", ctrl: false, meta: false }, ctx)).toEqual({ action: "hunkNext" })
+    expect(reviewHotkey({ name: "{", ctrl: false, meta: false }, {
+      composerEmpty: true,
+      review: { kind: "command", id: pendingPatch.id, pending: true },
+    })).toBeUndefined()
   })
 })
 

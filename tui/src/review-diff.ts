@@ -4,6 +4,8 @@ export type ReviewDiff = {
   removals: number
   shownLines: number
   totalLines: number
+  hunkIndex: number
+  hunkCount: number
 }
 
 export type WordDiffToken = {
@@ -33,11 +35,34 @@ function diffLines(diff: string): string[] {
   return normalized.split("\n")
 }
 
-// Summarizes a proposal in text and keeps only the first screen of a long diff.
-// The + and - markers stay on the visible lines.
-export function formatReviewDiff(diff: string, maxLines: number): ReviewDiff {
+// Line indexes of unified-diff hunk headers (`@@ … @@`). A diff without headers
+// is treated as a single hunk starting at line 0.
+export function reviewHunkStarts(diff: string): number[] {
+  const lines = diffLines(diff)
+  const starts: number[] = []
+  for (let index = 0; index < lines.length; index++) {
+    if (lines[index]!.startsWith("@@")) starts.push(index)
+  }
+  if (starts.length === 0 && lines.length > 0) return [0]
+  return starts
+}
+
+export function moveReviewHunkIndex(index: number, delta: number, count: number): number {
+  if (count <= 0) return 0
+  return Math.min(count - 1, Math.max(0, index + delta))
+}
+
+// Summarizes a proposal in text and keeps one screen of a long diff, optionally
+// starting at a chosen hunk so `{`/`}` can page through change regions.
+export function formatReviewDiff(
+  diff: string,
+  maxLines: number,
+  options: { hunkIndex?: number } = {},
+): ReviewDiff {
   const lines = diffLines(diff)
   const { additions, removals } = changedLines(lines)
+  const starts = reviewHunkStarts(diff)
+  const hunkCount = starts.length
   if (lines.length === 0) {
     return {
       text: "The proposal has no diff.",
@@ -45,19 +70,31 @@ export function formatReviewDiff(diff: string, maxLines: number): ReviewDiff {
       removals: 0,
       shownLines: 0,
       totalLines: 0,
+      hunkIndex: 0,
+      hunkCount: 0,
     }
   }
+  const hunkIndex = moveReviewHunkIndex(options.hunkIndex ?? 0, 0, hunkCount)
+  // Keep file headers on the first hunk; later hunks jump to their @@ markers.
+  const startLine = hunkIndex === 0 ? 0 : (starts[hunkIndex] ?? 0)
   const limit = Math.max(1, maxLines)
-  const shown = lines.slice(0, Math.min(lines.length, limit))
-  const summary = shown.length < lines.length
-    ? `${additions} added, ${removals} removed. Showing ${shown.length} of ${lines.length} lines.`
-    : `${additions} added, ${removals} removed.`
+  const shown = lines.slice(startLine, Math.min(lines.length, startLine + limit))
+  const hunkLabel = hunkCount > 1 ? `Hunk ${hunkIndex + 1} of ${hunkCount}. ` : ""
+  const counts = `${additions} added, ${removals} removed.`
+  const truncated = shown.length < lines.length - startLine
+  const summary = startLine === 0
+    ? truncated
+      ? `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines.`
+      : `${hunkLabel}${counts}`
+    : `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines from offset ${startLine + 1}.`
   return {
     text: `${summary}\n${shown.join("\n")}`,
     additions,
     removals,
     shownLines: shown.length,
     totalLines: lines.length,
+    hunkIndex,
+    hunkCount,
   }
 }
 

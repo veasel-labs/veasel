@@ -12,6 +12,7 @@ import {
   settingsPath,
   settingsProgress,
   settingsProviderStepPrompt,
+  moveSettingsListIndex,
 } from "./settings-flow"
 
 const openai = { base_url: "https://api.openai.com/v1", requires_api_key: true }
@@ -80,8 +81,15 @@ describe("provider setup path", () => {
     expect(providerSwitchNote("openai", "openai", "OpenAI")).toBe("")
     expect(providerSwitchNote("openai", "anthropic", "Anthropic")).toContain("Switching from openai → Anthropic")
     expect(settingsFooterHint(0, false, false)).toContain("Tab scope")
+    expect(settingsFooterHint(0, false, false)).toContain("Home/End")
+    expect(settingsFooterHint(0, false, false)).toContain("Ctrl+L clear")
+    expect(settingsFooterHint(3, false, false)).toContain("Ctrl+L clear")
     expect(settingsFooterHint(2, true, true)).toContain("Ctrl+U endpoint")
     expect(homeWorkspaceBlurb({ providersConfigured: false })).toContain("/connect")
     expect(homeWorkspaceBlurb({ providersConfigured: true, modelLabel: "openai/gpt-5" })).toContain("Active model · openai/gpt-5")
+    expect(moveSettingsListIndex(4, 10, "home")).toBe(0)
+    expect(moveSettingsListIndex(4, 10, "end")).toBe(9)
+    expect(moveSettingsListIndex(4, 10, "pageup", 3)).toBe(1)
+    expect(moveSettingsListIndex(4, 10, "pagedown", 3)).toBe(7)
   })
 })

@@ -610,7 +610,15 @@ def main() -> None:
         screen.wait_for("Provider settings", 4)
         screen.wait_for("Tab cycles", 4)
         screen.wait_for("Tab scope", 4)
+        screen.wait_for("Home/End", 4)
+        screen.wait_for("Ctrl+L clear", 4)
         screen.wait_for("1 OF 3")
+        screen.send("zzz", 0.45)
+        screen.wait_for("No providers match", 4)
+        screen.send("\x0c", 0.4)  # Ctrl+L clears provider filter
+        screen.wait_for("OpenAI", 4)
+        screen.send("\x1b[H", 0.35)  # Home → first provider
+        screen.send("\x1b[F", 0.35)  # End → last provider
         screen.send("\t", 0.35)
         screen.wait_for("Configured")
         screen.send("\x1b[Z", 0.35)  # Shift+Tab

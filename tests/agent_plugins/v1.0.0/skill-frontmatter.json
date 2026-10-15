@@ -70,5 +70,17 @@
     "directory": "review",
     "accepted": false,
     "content": "name: review\ndescription: Review source changes.\nInstructions."
+  },
+  {
+    "name": "description with embedded NUL is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: \"bad\u0000description\"\n---\nInstructions."
+  },
+  {
+    "name": "description with TAB is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: \"bad\tdescription\"\n---\nInstructions."
   }
 ]

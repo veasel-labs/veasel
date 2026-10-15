@@ -583,6 +583,10 @@ fn test_agent_skill_frontmatter_enforces_supported_fields_and_limits() {
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nallowed-tools: 42')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nmetadata:\n  author: 42')
 	assert agent_skill_frontmatter_rejected('review-dir', 'name: review\ndescription: Valid.')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: "bad\0desc"')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: "bad\tdesc"')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: "bad\tcompat"')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nmetadata:\n  author: "bad\tauthor"')
 }
 
 fn test_agent_skill_tool_policy_combines_only_active_skill_restrictions() {
@@ -748,7 +752,7 @@ fn test_agent_skill_v1_frontmatter_fixture_corpus() {
 	fixtures := json2.decode[[]AgentSkillFrontmatterFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Skills fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Skills fixtures: ${err.msg()}') }
-	assert fixtures.len >= 12
+	assert fixtures.len >= 14
 	for fixture in fixtures {
 		if fixture.accepted {
 			skill := parse_agent_skill(fixture.directory, '/fixture/skills/${fixture.directory}/SKILL.md',

@@ -1,8 +1,8 @@
 // Readline-style composer edits. Keep Esc free for leave-after-cancel.
 
-// Ctrl+W: delete the word before the cursor (and any spaces immediately
-// before that word). Cursor at the start is a no-op. Cursor offsets match
-// OpenTUI InputRenderable.cursorOffset (JS string indices).
+// Ctrl+W / Alt+Backspace: delete the word before the cursor (and any spaces
+// immediately before that word). Cursor at the start is a no-op. Cursor
+// offsets match OpenTUI InputRenderable.cursorOffset (JS string indices).
 export function killWordBackward(
   value: string,
   cursor: number,

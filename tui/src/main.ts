@@ -2738,14 +2738,15 @@ function showSettingsStep(manualModel = false) {
   }
   if (settingsStep === 3 && manualModel) settingsManualModel = true
   if (settingsStep === 3 && !settingsManualModel) {
-    if (settingsModelCatalog === undefined) {
+    const modelCatalog = settingsModelCatalog
+    if (modelCatalog === undefined) {
       void loadProviderModels()
       return
     }
-    if (settingsModelCatalog.length > 0) {
-      const matches = filterModelCatalog(settingsModelCatalog, settingsModelSearchQuery)
+    if (modelCatalog.length > 0) {
+      const matches = filterModelCatalog(modelCatalog, settingsModelSearchQuery)
       sessionDetail.content = `${settingsTitle(3)}\n\n${settingPrompts[3]}${knownEndpointNote()}${providerGuide}\n\nFilter  ${settingsModelSearchQuery || "type a model name or ID"}\n\nHome/End · PgUp/PgDn · Enter selects · Ctrl+L clears filter · Ctrl+B goes back · Esc cancels`
-      footerHint.content = `Models ${matches.length}/${settingsModelCatalog.length} · ${settingsFooterHint(3, false, false)}`
+      footerHint.content = `Models ${matches.length}/${modelCatalog.length} · ${settingsFooterHint(3, false, false)}`
       const preferredIndex = matches.findIndex((model) => model.id === settingsValues.model)
       const optionCount = matches.length + 1
       if (settingsListHighlight < 0) {
@@ -2757,7 +2758,7 @@ function showSettingsStep(manualModel = false) {
       status.content = formatSettingsListStatus(
         settingsListHighlight,
         optionCount,
-        `Models ${matches.length}/${settingsModelCatalog.length}`,
+        `Models ${matches.length}/${modelCatalog.length}`,
       )
       const options = matches.map((model) => ({
         name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
@@ -2783,7 +2784,7 @@ function showSettingsStep(manualModel = false) {
         status.content = formatSettingsListStatus(
           settingsListHighlight,
           optionCount,
-          `Models ${matches.length}/${settingsModelCatalog.length}`,
+          `Models ${matches.length}/${modelCatalog.length}`,
         )
       })
       select.on(SelectRenderableEvents.ITEM_SELECTED, (_index, option) => {
@@ -3473,9 +3474,15 @@ renderer.keyInput.on("keypress", (key) => {
       }
       return
     }
-    // Ctrl+W kills the word before the cursor (readline). Esc stays reserved
-    // for cancel / leave-after-cancel and must not clear the draft.
-    if ((key.ctrl && key.name === "w") || key.sequence === "\x17") {
+    // Ctrl+W / Alt+Backspace kill the word before the cursor (readline / macOS).
+    // Esc stays reserved for cancel / leave-after-cancel and must not clear the draft.
+    if (
+      (key.ctrl && key.name === "w")
+      || key.sequence === "\x17"
+      || (key.meta && key.name === "backspace")
+      || key.sequence === "\x1b\x7f"
+      || key.sequence === "\x1b\b"
+    ) {
       key.preventDefault()
       key.stopPropagation()
       const edited = killWordBackward(chatInput.value, chatInput.cursorOffset)

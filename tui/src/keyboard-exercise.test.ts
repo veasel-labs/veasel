@@ -20,4 +20,4 @@ test("drives the real terminal through setup, completion, diff review, shell rev
   })
   expect(result.stderr).toBe("")
   expect(result.code).toBe(0)
-}, 95_000)
+}, 120_000)

@@ -11,6 +11,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("home · j/k · type · Home/End · PgUp/PgDn · Enter · n")
     expect(help).toContain("type to filter by title or directory")
     expect(help).toContain("streaming below · End follows")
+    expect(help).toContain("Ctrl+U clears the composer draft")
     expect(help).toContain("Selected N of M")
     expect(help).toContain("keeps the selection on screen")
     expect(help).toContain("lines added and removed")

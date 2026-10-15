@@ -1,5 +1,6 @@
 import { expect, test, describe } from "bun:test"
 import {
+  clearComposerLine,
   emptyComposerHistory,
   rememberComposerEntry,
   stepComposerHistory,
@@ -27,5 +28,12 @@ describe("composer history", () => {
     const draft = stepComposerHistory(back.history, "newer", back.value)!
     expect(draft.value).toBe("")
     expect(draft.history.offset).toBe(0)
+
+    const recalled = stepComposerHistory(history, "older", "")!
+    expect(recalled.history.offset).toBe(1)
+    const cleared = clearComposerLine(recalled.history)
+    expect(cleared.offset).toBe(0)
+    expect(cleared.draft).toBe("")
+    expect(cleared.entries).toEqual(["one", "two"])
   })
 })

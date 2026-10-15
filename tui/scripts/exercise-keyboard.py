@@ -788,11 +788,16 @@ def main() -> None:
         screen.wait_for("keep this prompt")
         screen.send("\x19", 0.5)  # Ctrl+Y copies last assistant reply
         screen.wait_for("Copied last reply", 4)
-        screen.clear_line(24)
+        screen.send("\x1b", 0.35)  # dismiss copy notice so the composer is alone
+        screen.wait_for("Ask Veasel", 4)
         screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
         screen.send("!", 0.35)  # append so the recalled line is unique on screen
         screen.wait_for("keep this prompt!", 4)
-        screen.clear_line(24)
+        screen.send("\x15", 0.45)  # Ctrl+U clears the composer draft
+        screen.wait_for("Ask Veasel", 4)
+        visible = screen.terminal.text()
+        if "keep this prompt!" in visible:
+            raise AssertionError(f"Ctrl+U left the composer draft on screen\n--- screen ---\n{visible}")
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
         screen.wait_for("busy")

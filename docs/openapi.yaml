@@ -1279,7 +1279,7 @@ paths:
         schema: { type: string, format: uuid }
     get:
       operationId: listSessionGitWorktrees
-      description: Lists git worktrees for the session workspace by reading the repository git directory (no `git` subprocess). Includes the main checkout and linked worktrees under `.git/worktrees/`. Reports HEAD/branch when present and whether well-known git lock files exist.
+      description: Lists git worktrees for the session workspace by reading the repository git directory (no `git` subprocess). Includes the main checkout and linked worktrees under `.git/worktrees/`. Reports HEAD/branch when present, whether well-known git lock files exist, and `missing` when a linked worktree checkout directory is gone (stale admin entry).
       responses:
         '200':
           description: Discovered worktrees (capped).
@@ -1298,7 +1298,7 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
     post:
       operationId: addSessionGitWorktree
-      description: Adds a linked git worktree via `git worktree add` (argv only, no shell). Requires an absolute unused path whose parent exists, and either `branch` (existing) or `new_branch` (`-b`). Refuses when well-known git lock files are present. Runs with a bounded timeout against the repository main checkout.
+      description: Adds a linked git worktree via `git worktree add` (argv only, no shell), or prunes stale worktree admin entries when `prune` is true (`git worktree prune`). Add requires an absolute unused path whose parent exists, and either `branch` (existing) or `new_branch` (`-b`). Prune must not combine with path/branch fields and returns the refreshed worktree catalog. Refuses when well-known git lock files are present. Runs with a bounded timeout against the repository main checkout.
       requestBody:
         required: true
         content:
@@ -2758,19 +2758,23 @@ components:
           items: { $ref: '#/components/schemas/WorkspaceGitWorktree' }
     WorkspaceGitWorktree:
       type: object
-      required: [path, locked, is_main]
+      required: [path, locked, missing, is_main]
       properties:
         path: { type: string, description: Absolute worktree root path. }
         head: { type: string, description: Raw HEAD contents (ref or detached SHA). }
         branch: { type: string, description: Branch name when HEAD is refs/heads/*. }
         locked: { type: boolean, description: True when a well-known git lock file is present for this worktree. }
+        missing: { type: boolean, description: True when a linked worktree admin entry remains but the checkout directory is gone. }
         is_main: { type: boolean, description: True for the primary checkout that owns `.git/`. }
     WorkspaceGitWorktreeAddInput:
       type: object
-      required: [path]
       properties:
-        path: { type: string, description: Absolute unused directory path for the new worktree. }
-        branch: { type: string, description: Existing branch to check out. Required when new_branch is omitted. }
+        prune:
+          type: boolean
+          default: false
+          description: When true, run `git worktree prune` and return the refreshed WorkspaceGitWorktreeCatalog instead of adding a worktree. Must not be combined with path/branch/new_branch.
+        path: { type: string, description: Absolute unused directory path for the new worktree. Required unless prune is true. }
+        branch: { type: string, description: Existing branch to check out. Required when new_branch is omitted and prune is false. }
         new_branch: { type: string, description: Create and check out this branch (`git worktree add -b`). }
     WorkspaceGitWorktreeRemoveInput:
       type: object

@@ -58,6 +58,12 @@ import {
   suggestWorkspacePaths,
   type PathSuggestion,
 } from "./path-autocomplete"
+import {
+  completeSkillMention,
+  skillMentionAt,
+  suggestSkills,
+  type SkillSuggestion,
+} from "./skill-autocomplete"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
 import {
@@ -613,9 +619,11 @@ let creating = false
 let slashMenu: TextRenderable | undefined
 let slashMatches: SlashSuggestion[] = []
 let pathMatches: PathSuggestion[] = []
+let skillMatches: SkillSuggestion[] = []
 let slashSelected = 0
 let slashDismissedFor: string | undefined
 let pathDismissedFor: string | undefined
+let skillDismissedFor: string | undefined
 let titleInput: InputRenderable | undefined
 let activeSession: Session | undefined
 let chatInput: ComposerRenderable | undefined
@@ -1080,7 +1088,7 @@ async function openSession(session: Session) {
     const input = new ComposerRenderable(renderer, {
       id: "chat-composer",
       width: "100%",
-      placeholder: "Ask Veasel…  ·  / commands  ·  @ paths",
+      placeholder: "Ask Veasel…  ·  / commands  ·  @ paths  ·  $ skills",
       ...composerStyle(),
       maxLength: 1_048_576,
     })
@@ -2329,6 +2337,7 @@ function refreshSessionFooter() {
   if (!activeSession || settingsOpen) return
   footerHint.content = sessionFooterForMode({
     pathComplete: pathMatches.length > 0,
+    skillComplete: skillMatches.length > 0,
     slashComplete: slashMatches.length > 0,
     // Only swap when the review overlay itself is on screen (hotkey cue present),
     // not while /help or another notice temporarily covers the transcript.
@@ -3372,17 +3381,21 @@ function unmountSlashMenu() {
   slashMenu = undefined
   slashMatches = []
   pathMatches = []
+  skillMatches = []
   slashSelected = 0
   slashDismissedFor = undefined
   pathDismissedFor = undefined
+  skillDismissedFor = undefined
 }
 
 function resetSlashMenu() {
   slashMatches = []
   pathMatches = []
+  skillMatches = []
   slashSelected = 0
   slashDismissedFor = undefined
   pathDismissedFor = undefined
+  skillDismissedFor = undefined
   if (slashMenu) slashMenu.visible = false
 }
 
@@ -3397,10 +3410,12 @@ function updateSlashMenu(value: string) {
   if (!slashMenu) return
   if (slashDismissedFor !== undefined && value !== slashDismissedFor) slashDismissedFor = undefined
   if (pathDismissedFor !== undefined && value !== pathDismissedFor) pathDismissedFor = undefined
+  if (skillDismissedFor !== undefined && value !== skillDismissedFor) skillDismissedFor = undefined
   const cursor = chatInput?.cursorOffset ?? value.length
   const mention = pathMentionAt(value, cursor)
   if (mention && !value.trimStart().startsWith("/")) {
     slashMatches = []
+    skillMatches = []
     const selectedPath = pathMatches[slashSelected]?.path
     const root = activeSession?.directory || process.env.VEASEL_PROJECT_DIR || process.cwd()
     pathMatches = pathDismissedFor === undefined ? suggestWorkspacePaths(mention.query, root) : []
@@ -3411,6 +3426,26 @@ function updateSlashMenu(value: string) {
     return
   }
   pathMatches = []
+  const skillMention = skillMentionAt(value, cursor)
+  if (skillMention && !value.trimStart().startsWith("/")) {
+    slashMatches = []
+    const selectedKey = skillMatches[slashSelected]?.key
+    const catalog = (slashContext.skills ?? []).map((skill) => ({
+      key: skill.value,
+      description: skill.description,
+    }))
+    skillMatches = skillDismissedFor === undefined ? suggestSkills(skillMention.query, catalog) : []
+    const kept = skillMatches.findIndex((item) => item.key === selectedKey)
+    slashSelected = kept >= 0 ? kept : 0
+    renderSlashMenu()
+    restoreCommittedTheme()
+    // Load the Skill catalog once when `$` opens before a /skill argument refresh.
+    if (slashContext.skills === undefined && !slashContextLoading && Date.now() - slashContextAt > 500) {
+      void refreshSlashContext(value)
+    }
+    return
+  }
+  skillMatches = []
   const selectedName = slashMatches[slashSelected]?.name
   slashMatches = slashDismissedFor === undefined ? slashSuggestions(value, slashCommands, slashContext) : []
   const kept = slashMatches.findIndex((command) => command.name === selectedName)
@@ -3473,7 +3508,10 @@ async function refreshSlashContext(typed: string) {
   if (request !== slashContextRequest || !slashContextApplies(requestedSessionId, activeSession?.id)) return
   if (nextContext) slashContext = nextContext
   slashContextAt = Date.now()
-  if (chatInput?.value === typed) updateSlashMenu(typed)
+  // Rebuild against the live draft so `$` / slash menus fill after a fast typer
+  // moved past the value that started the fetch.
+  if (chatInput) updateSlashMenu(chatInput.value)
+  else if (typed) updateSlashMenu(typed)
 }
 
 function renderSlashMenu() {
@@ -3496,6 +3534,30 @@ function renderSlashMenu() {
       }
     })
     const more = pathMatches.length > end - start ? `${slashSelected + 1}/${pathMatches.length} · ` : ""
+    chunks.push(fg(theme.meta)(`   ${more}Tab · ↑/↓ · Enter inserts · Esc`))
+    slashMenu.content = new StyledText(chunks)
+    slashMenu.visible = true
+    refreshSessionFooter()
+    return
+  }
+  if (skillMatches.length > 0) {
+    const { start, end } = suggestionWindow(slashSelected, skillMatches.length)
+    const width = Math.max(...skillMatches.map((item) => item.name.length))
+    const chunks: TextChunk[] = [fg(theme.meta)("   ── skills ──\n")]
+    skillMatches.slice(start, end).forEach((item, offset) => {
+      const selected = start + offset === slashSelected
+      const name = item.name.padEnd(width + 2)
+      if (selected) {
+        chunks.push(
+          fg(theme.brand)(bold(` › ${name}`)),
+          fg(theme.inputText)(item.description),
+          fg(theme.meta)("\n"),
+        )
+      } else {
+        chunks.push(fg(theme.body)(`   ${name}`), fg(theme.meta)(`${item.description}\n`))
+      }
+    })
+    const more = skillMatches.length > end - start ? `${slashSelected + 1}/${skillMatches.length} · ` : ""
     chunks.push(fg(theme.meta)(`   ${more}Tab · ↑/↓ · Enter inserts · Esc`))
     slashMenu.content = new StyledText(chunks)
     slashMenu.visible = true
@@ -3551,7 +3613,14 @@ function acceptPathSuggestion(input: ComposerRenderable, selected: PathSuggestio
   return true
 }
 
-// Returns true when the key was consumed by the slash-command or @-path menu.
+function acceptSkillSuggestion(input: ComposerRenderable, selected: SkillSuggestion): boolean {
+  const next = completeSkillMention(input.value, input.cursorOffset, selected)
+  if (!next) return false
+  setComposerValue(input, next.value, next.cursor)
+  return true
+}
+
+// Returns true when the key was consumed by the slash-command, @-path, or $-skill menu.
 function handleSlashMenuKey(key: KeyEvent, input: ComposerRenderable): boolean {
   if (pathMatches.length > 0) {
     const selected = pathMatches[slashSelected]
@@ -3601,6 +3670,59 @@ function handleSlashMenuKey(key: KeyEvent, input: ComposerRenderable): boolean {
     if (key.name === "escape") {
       pathDismissedFor = input.value
       pathMatches = []
+      renderSlashMenu()
+      return consume()
+    }
+    return false
+  }
+  if (skillMatches.length > 0) {
+    const selected = skillMatches[slashSelected]
+    if (!selected) return false
+    const consume = () => {
+      key.preventDefault()
+      key.stopPropagation()
+      return true
+    }
+    const count = skillMatches.length
+    const mention = skillMentionAt(input.value, input.cursorOffset)
+    const alreadyCompleted = Boolean(mention && mention.query === selected.key)
+    if (key.name === "down" || (key.name === "tab" && !key.shift && alreadyCompleted && count > 1)) {
+      slashSelected = moveSuggestion(slashSelected, 1, count)
+      renderSlashMenu()
+      return consume()
+    }
+    if (key.name === "up" || (key.name === "tab" && key.shift)) {
+      slashSelected = moveSuggestion(slashSelected, -1, count)
+      renderSlashMenu()
+      return consume()
+    }
+    if (key.name === "home") {
+      slashSelected = jumpSuggestion(slashSelected, count, "home")
+      renderSlashMenu()
+      return consume()
+    }
+    if (key.name === "end") {
+      slashSelected = jumpSuggestion(slashSelected, count, "end")
+      renderSlashMenu()
+      return consume()
+    }
+    if (key.name === "pageup") {
+      slashSelected = jumpSuggestion(slashSelected, count, "pageup")
+      renderSlashMenu()
+      return consume()
+    }
+    if (key.name === "pagedown") {
+      slashSelected = jumpSuggestion(slashSelected, count, "pagedown")
+      renderSlashMenu()
+      return consume()
+    }
+    if (key.name === "tab" || key.name === "return" || key.name === "kpenter") {
+      acceptSkillSuggestion(input, selected)
+      return consume()
+    }
+    if (key.name === "escape") {
+      skillDismissedFor = input.value
+      skillMatches = []
       renderSlashMenu()
       return consume()
     }

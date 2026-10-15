@@ -8,6 +8,7 @@ import {
   sessionPathFooterHint,
   sessionReviewFooterHint,
   sessionReviewPatchFooterHint,
+  sessionSkillFooterHint,
   sessionSlashFooterHint,
   sessionStreamingFooterHint,
 } from "./footer-hints"
@@ -42,17 +43,19 @@ test("session footer surfaces reviews and the same discovery commands", () => {
   expect(sessionFooterHint).toContain("↑")
   expect(sessionFooterHint).toContain("Esc")
   expect(sessionFooterHint).toContain("@") // workspace path autocomplete
+  expect(sessionFooterHint).toContain("$") // skill mention autocomplete
   expect(sessionFooterHint).toContain("S-↵") // Shift+Enter multiline
   expect(sessionFooterHint).toContain("?") // empty-composer ? opens /help
-  expect(sessionFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers @ / S-↵
-  expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers @ / S-↵
-  expect(sessionFooterHint).not.toContain("Pg") // PgUp/PgDn stay in /help; footer budget prefers @ / S-↵
+  expect(sessionFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers @ / $ / S-↵
+  expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers @ / $ / S-↵
+  expect(sessionFooterHint).not.toContain("Pg") // PgUp/PgDn stay in /help; footer budget prefers @ / $ / S-↵
   expect(sessionFooterHint.length).toBeLessThanOrEqual(72)
 })
 
 test("sessionFooterForMode swaps contextual chrome without exceeding the budget", () => {
   expect(sessionFooterForMode()).toBe(sessionFooterHint)
   expect(sessionFooterForMode({ pathComplete: true })).toBe(sessionPathFooterHint)
+  expect(sessionFooterForMode({ skillComplete: true })).toBe(sessionSkillFooterHint)
   expect(sessionFooterForMode({ slashComplete: true })).toBe(sessionSlashFooterHint)
   expect(sessionFooterForMode({ reviewPending: true, reviewKind: "command" })).toBe(sessionReviewFooterHint)
   expect(sessionFooterForMode({ reviewPending: true, reviewKind: "patch" })).toBe(sessionReviewPatchFooterHint)
@@ -63,6 +66,11 @@ test("sessionFooterForMode swaps contextual chrome without exceeding the budget"
     reviewPending: true,
     streaming: true,
   })).toBe(sessionPathFooterHint)
+  expect(sessionFooterForMode({
+    skillComplete: true,
+    reviewPending: true,
+    streaming: true,
+  })).toBe(sessionSkillFooterHint)
   expect(sessionFooterForMode({
     slashComplete: true,
     reviewPending: true,
@@ -75,6 +83,7 @@ test("sessionFooterForMode swaps contextual chrome without exceeding the budget"
   })).toBe(sessionReviewFooterHint)
   for (const hint of [
     sessionPathFooterHint,
+    sessionSkillFooterHint,
     sessionSlashFooterHint,
     sessionReviewFooterHint,
     sessionReviewPatchFooterHint,
@@ -83,6 +92,7 @@ test("sessionFooterForMode swaps contextual chrome without exceeding the budget"
     expect(hint.length).toBeLessThanOrEqual(72)
   }
   expect(sessionPathFooterHint).toContain("@ paths")
+  expect(sessionSkillFooterHint).toContain("$ skills")
   expect(sessionSlashFooterHint).toContain("Tab/Enter")
   expect(sessionReviewFooterHint).toContain("a/x")
   expect(sessionReviewPatchFooterHint).toContain("{/}")

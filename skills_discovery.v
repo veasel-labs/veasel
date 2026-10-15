@@ -7,6 +7,7 @@ const max_standalone_skills_per_root = 256
 const max_standalone_skill_scan_depth = 4
 const max_project_skill_ancestors = 64
 const max_available_skills_catalog_entries = 64
+const max_available_skills_catalog_chars = 8000
 const max_available_skill_catalog_description_bytes = 256
 
 // StandaloneSkillRoot is one filesystem location that may contain Agent Skills
@@ -23,15 +24,16 @@ pub:
 // bodies stay on disk until a session enables the skill or the model loads it.
 struct StandaloneSkill {
 pub:
-	name                   string
-	description            string
-	path                   string
-	directory              string
-	source                 string
-	scope                  string
-	root_path              string
-	allowed_tools          string
-	allowed_tools_declared bool
+	name                     string
+	description              string
+	path                     string
+	directory                string
+	source                   string
+	scope                    string
+	root_path                string
+	allowed_tools            string
+	allowed_tools_declared   bool
+	disable_model_invocation bool
 }
 
 struct StandaloneSkillsDiscovery {
@@ -151,12 +153,13 @@ fn skills_catalog_from_discovery(discovery StandaloneSkillsDiscovery) SkillsCata
 
 fn standalone_skill_to_plugin_skill(skill StandaloneSkill) PluginSkill {
 	return PluginSkill{
-		name:                   skill.name
-		description:            skill.description
-		path:                   skill.path
-		allowed_tools:          skill.allowed_tools
-		allowed_tools_declared: skill.allowed_tools_declared
-		directory:              skill.directory
+		name:                     skill.name
+		description:              skill.description
+		path:                     skill.path
+		allowed_tools:            skill.allowed_tools
+		allowed_tools_declared:   skill.allowed_tools_declared
+		disable_model_invocation: skill.disable_model_invocation
+		directory:                skill.directory
 	}
 }
 
@@ -286,12 +289,14 @@ fn merge_standalone_skills_into_catalog(catalog PluginCatalog, discovery Standal
 		for skill in skills {
 			scope_counts[skill.scope] = scope_counts[skill.scope] + 1
 			summaries << PluginSkillSummary{
-				name:                   skill.name
-				description:            skill.description
-				allowed_tools_declared: skill.allowed_tools_declared
-				allowed_tools:          agent_skill_allowed_tool_names(skill.allowed_tools)
-				source:                 skill.source
-				scope:                  skill.scope
+				name:                     skill.name
+				description:              skill.description
+				location:                 skill.directory
+				allowed_tools_declared:   skill.allowed_tools_declared
+				allowed_tools:            agent_skill_allowed_tool_names(skill.allowed_tools)
+				source:                   skill.source
+				scope:                    skill.scope
+				disable_model_invocation: skill.disable_model_invocation
 			}
 		}
 		scope_label := if scope_counts['project'] > 0 && scope_counts['user'] > 0 {
@@ -581,15 +586,16 @@ fn scan_standalone_skill_root(root StandaloneSkillRoot) StandaloneSkillsDiscover
 		}
 		seen_skill_paths[resolved_skill] = true
 		skills << StandaloneSkill{
-			name:                   parsed.name
-			description:            parsed.description
-			path:                   resolved_skill
-			directory:              os.real_path(entry)
-			source:                 root.source
-			scope:                  root.scope
-			root_path:              root.path
-			allowed_tools:          parsed.allowed_tools
-			allowed_tools_declared: parsed.allowed_tools_declared
+			name:                     parsed.name
+			description:              parsed.description
+			path:                     resolved_skill
+			directory:                os.real_path(entry)
+			source:                   root.source
+			scope:                    root.scope
+			root_path:                root.path
+			allowed_tools:            parsed.allowed_tools
+			allowed_tools_declared:   parsed.allowed_tools_declared
+			disable_model_invocation: parsed.disable_model_invocation
 		}
 	}
 	return StandaloneSkillsDiscovery{
@@ -654,6 +660,13 @@ pub:
 	plugin_name string
 	skill_name  string
 	description string
+	location    string
+}
+
+struct AvailableSkillsDisclosure {
+pub:
+	entries   []AvailableSkillEntry
+	truncated bool
 }
 
 fn available_skill_entries_from_catalog(catalog PluginCatalog) ([]AvailableSkillEntry, bool) {
@@ -661,7 +674,7 @@ fn available_skill_entries_from_catalog(catalog PluginCatalog) ([]AvailableSkill
 	mut keys := []string{}
 	for plugin in catalog.plugins {
 		for skill in plugin.skills {
-			if !skill.enabled {
+			if !skill.enabled || skill.disable_model_invocation {
 				continue
 			}
 			key := '${plugin.name}/${skill.name}'
@@ -672,64 +685,127 @@ fn available_skill_entries_from_catalog(catalog PluginCatalog) ([]AvailableSkill
 				plugin_name: plugin.name
 				skill_name:  skill.name
 				description: skill.description
+				location:    skill.location
 			}
 			keys << key
 		}
 	}
 	keys.sort()
-	truncated := keys.len > max_available_skills_catalog_entries
-	limit := if truncated {
-		max_available_skills_catalog_entries
+	mut all := []AvailableSkillEntry{cap: keys.len}
+	for key in keys {
+		all << by_key[key]
+	}
+	return budget_available_skill_entries(all)
+}
+
+fn budget_available_skill_entries(entries []AvailableSkillEntry) ([]AvailableSkillEntry, bool) {
+	if entries.len == 0 {
+		return []AvailableSkillEntry{}, false
+	}
+	hard_truncated := entries.len > max_available_skills_catalog_entries
+	pool := if hard_truncated {
+		entries[..max_available_skills_catalog_entries]
 	} else {
-		keys.len
+		entries
 	}
-	mut entries := []AvailableSkillEntry{cap: limit}
-	for key in keys[..limit] {
-		entries << by_key[key]
+	desc_limits := [
+		max_available_skill_catalog_description_bytes,
+		128,
+		64,
+		32,
+		16,
+		0,
+	]
+	for desc_limit in desc_limits {
+		mut prepared := []AvailableSkillEntry{cap: pool.len}
+		for entry in pool {
+			prepared << AvailableSkillEntry{
+				plugin_name: entry.plugin_name
+				skill_name:  entry.skill_name
+				description: truncate_available_skill_catalog_description(entry.description, desc_limit)
+				location:    entry.location
+			}
+		}
+		if format_available_skills_catalog(prepared, false).len <= max_available_skills_catalog_chars {
+			omitted := hard_truncated || prepared.len < entries.len
+			return prepared, omitted
+		}
 	}
-	return entries, truncated
+	mut fitted := []AvailableSkillEntry{}
+	for entry in pool {
+		candidate := AvailableSkillEntry{
+			plugin_name: entry.plugin_name
+			skill_name:  entry.skill_name
+			description: ''
+			location:    entry.location
+		}
+		mut trial := fitted.clone()
+		trial << candidate
+		if format_available_skills_catalog(trial, false).len > max_available_skills_catalog_chars {
+			return fitted, true
+		}
+		fitted << candidate
+	}
+	return fitted, hard_truncated || fitted.len < entries.len
 }
 
 fn escape_available_skill_xml(value string) string {
 	return value.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
 }
 
-fn truncate_available_skill_catalog_description(description string) string {
-	if description.len <= max_available_skill_catalog_description_bytes {
+fn truncate_available_skill_catalog_description(description string, limit int) string {
+	if limit <= 0 || description.len == 0 {
+		return ''
+	}
+	if description.len <= limit {
 		return description
 	}
-	return description[..max_available_skill_catalog_description_bytes] + '...'
+	return description[..limit] + '...'
 }
 
 fn format_available_skills_catalog(entries []AvailableSkillEntry, truncated bool) string {
 	if entries.len == 0 {
 		return ''
 	}
-	mut lines := []string{cap: entries.len * 6 + 4}
+	mut lines := []string{cap: entries.len * 7 + 4}
 	lines << '<available_skills>'
 	for entry in entries {
 		lines << '  <skill>'
 		lines << '    <plugin_name>${escape_available_skill_xml(entry.plugin_name)}</plugin_name>'
 		lines << '    <skill_name>${escape_available_skill_xml(entry.skill_name)}</skill_name>'
-		lines << '    <description>${escape_available_skill_xml(truncate_available_skill_catalog_description(entry.description))}</description>'
+		lines << '    <description>${escape_available_skill_xml(entry.description)}</description>'
+		if entry.location.len > 0 {
+			lines << '    <location>${escape_available_skill_xml(entry.location)}</location>'
+		}
 		lines << '  </skill>'
 	}
 	lines << '</available_skills>'
 	if truncated {
-		lines << 'Catalog truncated to ${max_available_skills_catalog_entries} skills; use GET /v1/skills or /v1/plugins for the full metadata list.'
+		lines << 'Catalog truncated to fit the model skill-disclosure budget; use GET /v1/skills or /v1/plugins for the full metadata list.'
 	}
 	return lines.join('\n')
 }
 
-fn (app &App) available_skills_catalog_for_turn(project_directory string) string {
+fn (app &App) available_skills_for_turn(project_directory string) AvailableSkillsDisclosure {
 	catalog := app.plugin_catalog_for_directory(project_directory) or {
 		discovery := discover_standalone_agent_skills(project_directory)
 		mut components := app.plugin_components
 		fallback := apply_plugin_component_state(merge_standalone_skills_into_catalog(PluginCatalog{},
 			discovery), mut components)
 		entries, truncated := available_skill_entries_from_catalog(fallback)
-		return format_available_skills_catalog(entries, truncated)
+		return AvailableSkillsDisclosure{
+			entries:   entries
+			truncated: truncated
+		}
 	}
 	entries, truncated := available_skill_entries_from_catalog(catalog)
-	return format_available_skills_catalog(entries, truncated)
+	return AvailableSkillsDisclosure{
+		entries:   entries
+		truncated: truncated
+	}
+}
+
+fn (app &App) available_skills_catalog_for_turn(project_directory string) string {
+	disclosure := app.available_skills_for_turn(project_directory)
+	return format_available_skills_catalog(disclosure.entries, disclosure.truncated)
 }

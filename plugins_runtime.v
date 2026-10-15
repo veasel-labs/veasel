@@ -32,13 +32,15 @@ pub:
 
 pub struct PluginSkillSummary {
 pub:
-	name                   string
-	description            string
-	allowed_tools_declared bool
-	allowed_tools          []string
-	source                 string @[omitempty]
-	scope                  string @[omitempty]
-	enabled                bool = true
+	name                     string
+	description              string
+	location                 string @[omitempty]
+	allowed_tools_declared   bool
+	allowed_tools            []string
+	source                   string @[omitempty]
+	scope                    string @[omitempty]
+	enabled                  bool = true
+	disable_model_invocation bool @[json: 'disable_model_invocation'; omitempty]
 }
 
 pub struct PluginMCPServerSummary {
@@ -90,11 +92,13 @@ fn discover_agent_plugins(directory string) !PluginCatalog {
 		mut skills := []PluginSkillSummary{cap: plugin.skills.len}
 		for skill in plugin.skills {
 			skills << PluginSkillSummary{
-				name:                   skill.name
-				description:            skill.description
-				allowed_tools_declared: skill.allowed_tools_declared
-				allowed_tools:          agent_skill_allowed_tool_names(skill.allowed_tools)
-				enabled:                true
+				name:                     skill.name
+				description:              skill.description
+				location:                 skill.directory
+				allowed_tools_declared:   skill.allowed_tools_declared
+				allowed_tools:            agent_skill_allowed_tool_names(skill.allowed_tools)
+				enabled:                  true
+				disable_model_invocation: skill.disable_model_invocation
 			}
 		}
 		mut mcp_servers := []PluginMCPServerSummary{cap: plugin.mcp_servers.len}

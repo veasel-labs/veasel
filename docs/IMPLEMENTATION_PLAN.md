@@ -250,6 +250,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   description at turn start so the model can see discovered skills before load;
   omit the tool when the catalog is empty or every skill component is disabled;
   never embed instruction bodies in the catalog.
+- [x] Harden the model skill catalog: closed `plugin_name`/`skill_name` enums,
+  optional `<location>`, Codex-style description shrink before omit (~8k char
+  budget / 64-entry cap), and omit skills with `disable-model-invocation` or
+  OpenCode `metadata.opencode/autoinvoke=false` while keeping explicit load.
 - [x] When a standalone skill source key collides with an Agent Plugin package
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the

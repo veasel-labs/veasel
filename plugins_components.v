@@ -278,14 +278,16 @@ fn apply_plugin_component_state(catalog PluginCatalog, mut state PluginComponent
 		mut skills := []PluginSkillSummary{cap: plugin.skills.len}
 		for skill in plugin.skills {
 			skills << PluginSkillSummary{
-				name:                   skill.name
-				description:            skill.description
-				allowed_tools_declared: skill.allowed_tools_declared
-				allowed_tools:          skill.allowed_tools
-				source:                 skill.source
-				scope:                  skill.scope
-				enabled:                state.is_enabled(plugin.name, plugin_component_kind_skill,
+				name:                     skill.name
+				description:              skill.description
+				location:                 skill.location
+				allowed_tools_declared:   skill.allowed_tools_declared
+				allowed_tools:            skill.allowed_tools
+				source:                   skill.source
+				scope:                    skill.scope
+				enabled:                  state.is_enabled(plugin.name, plugin_component_kind_skill,
 					skill.name)
+				disable_model_invocation: skill.disable_model_invocation
 			}
 		}
 		mut mcp_servers := []PluginMCPServerSummary{cap: plugin.mcp_servers.len}

@@ -7,10 +7,18 @@ shell-command review, a bounded MCP argument review, a failed turn,
 cancellation, a long session list that keeps the selection on screen, a
 session switch while completion data is still in flight, and a narrow
 terminal.
+
+Suites (same coverage when `all` runs):
+  all     full path then narrow (default)
+  core    home → connect → session chrome through reviews / stream / home
+  narrow  24x80 provider/footer smoke only
+
+Speed: set VEASEL_KEYBOARD_EXERCISE_PAUSE (default 0.7) to scale send sleeps.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pty
@@ -23,6 +31,14 @@ import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Scale interactive pauses so the full PTY exercise stays under ~2 minutes on
+# typical developer machines without dropping assertions.
+PAUSE_SCALE = max(0.35, min(1.5, float(os.environ.get("VEASEL_KEYBOARD_EXERCISE_PAUSE", "0.7"))))
+
+
+def pause(seconds: float) -> None:
+    time.sleep(max(0.02, seconds * PAUSE_SCALE))
 
 SESSION = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
@@ -569,20 +585,20 @@ class Screen:
     def wait_for(self, needle: str, seconds: float = 5) -> None:
         deadline = time.time() + seconds
         while time.time() < deadline:
-            if needle in self.read_for(0.15):
+            if needle in self.read_for(max(0.05, 0.1 * PAUSE_SCALE)):
                 return
         visible = self.terminal.text()
         open("/tmp/tui-exercise.txt", "w").write(visible)
         open("/tmp/tui-exercise.raw", "w").write(self.raw)
         raise AssertionError(f"did not see {needle!r}\n--- screen ---\n{visible}")
 
-    def send(self, data: str, pause: float = 0.15) -> None:
+    def send(self, data: str, pause_s: float = 0.15) -> None:
         os.write(self.master, data.encode())
-        time.sleep(pause)
+        pause(pause_s)
 
     def clear_line(self, length: int) -> None:
         if length:
-            self.send("\x7f" * length, 0.15)
+            self.send("\x7f" * length, 0.12)
 
 
 def set_winsize(fd: int, rows: int, cols: int) -> None:
@@ -655,7 +671,7 @@ def seed_session_workspace() -> None:
         handle.write("# alpha\n")
 
 
-def main() -> None:
+def run_core_suite() -> None:
     seed_session_workspace()
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
@@ -1140,7 +1156,7 @@ def main() -> None:
         screen.wait_for("stream line 12", 6)
         screen.wait_for("streaming  ·  ", 4)
         screen.wait_for("chars", 4)
-        time.sleep(0.35)
+        pause(0.25)
         # Home jumps to the earliest window (composer empty). Footer status is
         # reliable even when the in-panel ▼ cue is clipped under the composer.
         screen.send("\x1b[H", 0.45)  # Home while streaming
@@ -1151,7 +1167,7 @@ def main() -> None:
         screen.send("\x1b[F", 0.45)  # End re-follows the live tail
         screen.wait_for("streaming  ·  ", 4)
         screen.wait_for("chars", 4)
-        time.sleep(0.2)
+        pause(0.15)
         visible = screen.terminal.text()
         if "scrolled  ·  streaming below · End follows" in visible:
             raise AssertionError(f"End did not clear the scroll-follow status\n--- screen ---\n{visible}")
@@ -1207,8 +1223,8 @@ def main() -> None:
         screen.wait_for("Ask Veasel")
         screen.send("/patch show ", 0.35)
         screen.wait_for("No file edits are waiting")
-        time.sleep(2.2)
-        screen.read_for(0.3)
+        pause(1.2)
+        screen.read_for(0.25)
         visible = screen.terminal.text()
         if "aaaaaaaa-aaaa" in visible:
             raise AssertionError(f"stale edit from the previous session was offered\n--- screen ---\n{visible}")
@@ -1223,7 +1239,6 @@ def main() -> None:
         state["other_edits_release"].set()
         process.terminate()
         process.wait(timeout=2)
-        exercise_narrow(port)
     finally:
         process.terminate()
         try:
@@ -1231,7 +1246,36 @@ def main() -> None:
         except subprocess.TimeoutExpired:
             process.kill()
         server.shutdown()
-    print("keyboard exercise passed")
+
+
+def run_narrow_suite() -> None:
+    seed_session_workspace()
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        exercise_narrow(port)
+    finally:
+        server.shutdown()
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--suite",
+        choices=("all", "core", "narrow"),
+        default="all",
+        help="Run the full path (all), core only, or narrow-terminal smoke only",
+    )
+    args = parser.parse_args(argv)
+    if args.suite == "narrow":
+        run_narrow_suite()
+        print(f"keyboard exercise passed (suite=narrow, pause_scale={PAUSE_SCALE})")
+        return
+    run_core_suite()
+    if args.suite == "all":
+        run_narrow_suite()
+    print(f"keyboard exercise passed (suite={args.suite}, pause_scale={PAUSE_SCALE})")
 
 
 if __name__ == "__main__":

@@ -906,6 +906,19 @@ def main() -> None:
             raise AssertionError(f"Ctrl+→ did not land before the last word\n--- screen ---\n{visible}")
         screen.send("\x15", 0.4)
         screen.wait_for("Ask Veasel", 4)
+        screen.send("abf-one abf-two abf-three", 0.4)
+        screen.wait_for("abf-one abf-two abf-three", 4)
+        screen.send("\x01", 0.3)  # Ctrl+A
+        screen.send("\x1bf", 0.3)  # Alt+F → after "abf-one "
+        screen.send("\x1bf", 0.3)  # Alt+F → after "abf-two "
+        screen.send("\x1bb", 0.3)  # Alt+B → start of "abf-two"
+        screen.send("\x0b", 0.4)  # Ctrl+K drops "abf-two abf-three"
+        screen.wait_for("abf-one ", 4)
+        visible = screen.terminal.text()
+        if "abf-two" in visible or "abf-three" in visible:
+            raise AssertionError(f"Alt+B/F did not land before abf-two\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.4)
+        screen.wait_for("Ask Veasel", 4)
         screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
         screen.send("!", 0.35)  # append so the recalled line is unique on screen
         screen.wait_for("keep this prompt!", 4)

@@ -223,11 +223,3 @@ If live model discovery fails, Veasel reports safe upstream status details witho
 | ZenMux | zenmux | openai-compatible | https://zenmux.ai/api/v1 | ZENMUX_API_KEY | [Documentation](https://docs.zenmux.ai) |
 | Zhipu AI | zhipuai | openai-compatible | https://open.bigmodel.cn/api/paas/v4 | ZHIPU_API_KEY | [Documentation](https://docs.z.ai/guides/overview/pricing) |
 | Zhipu AI Coding Plan | zhipuai-coding-plan | openai-compatible | https://open.bigmodel.cn/api/coding/paas/v4 | ZHIPU_API_KEY | [Documentation](https://docs.bigmodel.cn/cn/coding-plan/overview) |
-
-
-## Prompt cache request knobs
-
-- Anthropic: `VEASEL_ANTHROPIC_PROMPT_CACHE` (`auto` / `1h` / `off`) — ephemeral `cache_control` markers.
-- OpenAI / OpenAI Responses: `VEASEL_OPENAI_PROMPT_CACHE` (`auto` / `24h` / `in_memory` / `off`) and optional `VEASEL_OPENAI_PROMPT_CACHE_KEY`.
-- Gemini: `VEASEL_GEMINI_CACHED_CONTENT` (resource name or bare id) plus `VEASEL_GEMINI_PROMPT_CACHE` (`auto` / `off`). Emits `cachedContent` on generateContent when configured; does not create caches on the turn path. Hits remain provider-reported via `cachedContentTokenCount` only.
-

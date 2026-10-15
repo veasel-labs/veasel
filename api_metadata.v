@@ -52,6 +52,13 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if shell_sandbox_windows_capability() {
 		features << 'shell.sandbox.windows'
 	}
+	features << 'agent.execution_policy'
+	if app.allow_auto_edit {
+		features << 'agent.execution_policy.auto_edit'
+	}
+	if app.allow_autonomous {
+		features << 'agent.execution_policy.sandbox_auto'
+	}
 	if app.configured_model() != none {
 		features << 'chat.complete'
 		features << 'chat.cancel'

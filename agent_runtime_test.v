@@ -356,7 +356,10 @@ fn execute_test_agent_tool(app &App, root string, session_id string, call Provid
 	mut turn_ctx, cancel := vcontext.with_timeout(mut background, time.second)
 	defer { cancel() }
 	return execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, 'test-operation', call,
-		mut skill_context, bindings, mut connections, false) or { panic(err) }
+		mut skill_context, bindings, mut connections, ExecutionPolicyTurn{
+			mode:        .ask
+			interactive: true
+		}) or { panic(err) }
 }
 
 fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_results() {
@@ -380,7 +383,7 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 			arguments: '{"path":"target.txt","content":"after"}'
 		}
 	})
-	assert edit.contains('Applied by explicit autonomous benchmark policy')
+	assert edit.contains('Applied by graduated execution policy')
 	assert os.read_file(file_path) or { panic(err) } == 'after'
 	edits := store.workspace_edits(session.id) or { panic(err) }
 	assert edits.len == 1

@@ -263,9 +263,10 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	session_id := options.session_id
 	operation_id := uuid.new_v4().str()
 	response := headless_json_request(port, .post, '/v1/sessions/${session_id}/messages', json2.encode(ChatMessageInput{
-		content:       options.prompt
-		collect_trace: options.trace_file.len > 0
-		autonomous:    options.autonomous
+		content:         options.prompt
+		collect_trace:   options.trace_file.len > 0
+		autonomous:      options.autonomous
+		non_interactive: true
 	}), true, operation_id) or {
 		return headless_failed_result(session_id, operation_id, 'unable to start model turn: ${err.msg()}')
 	}

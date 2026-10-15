@@ -513,7 +513,7 @@ fn plugin_mcp_env_key_conflicts(existing map[string]string, key string) bool {
 
 fn valid_http_header(name string, value string) bool {
 	if name.len == 0 || value.len > max_plugin_mcp_header_value_bytes || value.contains('\r')
-		|| value.contains('\n') {
+		|| value.contains('\n') || value.contains('\t') {
 		return false
 	}
 	for c in name {
@@ -523,7 +523,7 @@ fn valid_http_header(name string, value string) bool {
 		}
 	}
 	for c in value {
-		if (c < 32 && c != `\t`) || c == 127 {
+		if c < 32 || c == 127 {
 			return false
 		}
 	}

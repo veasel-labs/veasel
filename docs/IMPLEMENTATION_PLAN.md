@@ -90,9 +90,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `GET /v1/sessions/{id}/operations` lists state, and startup resumes only
   `queued` rows after validating request JSON/content and that the session
   workspace directory still exists (missing workspaces fail closed as
-  cancelled without claim). Claimed `running`/`cancelling` work still becomes
-  `uncertain` and is never replayed (provider/tool effects may already have
-  started).
+  cancelled without claim). At most 32 `queued` rows are retained per session
+  (`503` + `Retry-After` when full). Claimed `running`/`cancelling` work still
+  becomes `uncertain` and is never replayed (provider/tool effects may already
+  have started).
 - [x] Capture provider-reported token usage from all four adapters in opt-in
   ATIF `final_metrics`. Veasel does not yet maintain authoritative,
   versioned provider price schedules, so it does not calculate cost.

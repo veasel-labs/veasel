@@ -469,5 +469,135 @@
         }
       }
     }
+  },
+  {
+    "name": "non-string HTTP header value is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "HTTP header is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "X-Token": 42
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "HTTP header value with LF is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "HTTP header is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "X-Token": "bad\nvalue"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "relative HTTP URL is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP URL must be absolute HTTP(S) without user information or fragment"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "file URL is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP URL must be absolute HTTP(S) without user information or fragment"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "file:///tmp/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "non-string env value is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "env entries are invalid or use reserved names"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "env": {
+            "FLAG": 1
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio cwd with TAB is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "cwd must not contain control bytes"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "cwd": "./bad\tdir"
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio arg with NUL is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "arguments must not contain control bytes"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "args": ["bad\u0000arg"]
+        }
+      }
+    }
   }
 ]

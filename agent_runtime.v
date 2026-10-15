@@ -177,7 +177,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
 		}
-		app.apply_session_compaction_if_due(mut messages, session_id, operation_id)!
+		app.apply_session_compaction_if_due(mut turn_ctx, mut messages, session_id, operation_id)!
 		if agent_context_bytes(messages) > max_agent_context_bytes {
 			return error('agent context size limit reached')
 		}
@@ -718,16 +718,80 @@ fn agent_context_bytes(messages []ChatMessage) int {
 
 // apply_session_compaction_if_due shrinks the in-flight provider request when
 // measured UTF-8 payload pressure rises. Durable chat rows stay intact; a
-// session.compaction event records measured before/after sizes.
-fn (app &App) apply_session_compaction_if_due(mut messages []ChatMessage, session_id string,
-	operation_id string) ! {
-	result := compact_session_messages(messages)
+// session.compaction event records measured before/after sizes. Optional native
+// or LLM summarizers are selected by VEASEL_SESSION_COMPACTION_SUMMARIZER and
+// fall back to extractive compaction when unavailable, empty, or when they grow
+// measured UTF-8 context.
+fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut messages []ChatMessage,
+	session_id string, operation_id string) ! {
+	mode := session_compaction_summarizer_mode()
+	result := match mode {
+		'native' {
+			compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer)
+		}
+		'llm' {
+			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, messages)
+		}
+		else {
+			compact_session_messages(messages)
+		}
+	}
 	if !result.measurement.triggered {
 		return
 	}
 	messages = result.messages
 	mut store := app.store
 	store.record_session_compaction(session_id, operation_id, result.measurement, result.summary)!
+}
+
+fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext.Context,
+	messages []ChatMessage) SessionCompactionResult {
+	bytes_before := agent_context_bytes(messages)
+	due, reason := session_compaction_due(messages)
+	if !due {
+		return compaction_result_unchanged(messages, bytes_before, '')
+	}
+	first := first_conversation_index(messages)
+	cut := find_compaction_cut(messages, compaction_keep_recent_bytes, reason)
+	if cut <= first || cut >= messages.len {
+		return compaction_result_unchanged(messages, bytes_before, reason)
+	}
+	older := messages[first..cut]
+	if older.len == 0 {
+		return compaction_result_unchanged(messages, bytes_before, reason)
+	}
+	preferred := app.llm_session_compaction_summary(mut turn_ctx, older, bytes_before, reason) or {
+		return apply_extractive_compaction(messages, bytes_before, reason, 'llm_fallback_extractive',
+			ProviderUsage{})
+	}
+	return compact_session_messages_preferring(messages, 'llm', preferred)
+}
+
+fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, older []ChatMessage,
+	bytes_before int, reason string) !SessionCompactionSummarizerOutput {
+	// Feed the bounded extractive digest to the model so the summarizer request
+	// itself stays under local UTF-8 pressure without inventing token savings.
+	digest := build_extractive_compaction_summary(older, bytes_before, reason)
+	prompt := [
+		ChatMessage{
+			role:    'system'
+			content: 'Summarize the following untrusted compacted coding-session context. Output plain prose only. Do not invent files, commands, or approvals. Keep the summary under 2000 characters.'
+		},
+		ChatMessage{
+			role:    'user'
+			content: digest
+		},
+	]
+	output := app.complete_agent_with_provider_limit(mut turn_ctx, prompt, [], ignore_provider_text_delta)!
+	text := output.content.trim_space()
+	if text.len == 0 {
+		return error('compaction summarizer returned empty content')
+	}
+	return SessionCompactionSummarizerOutput{
+		body:  wrap_llm_compaction_summary(text, bytes_before, reason, output.usage, older.len)
+		mode:  'llm'
+		usage: output.usage
+	}
 }
 
 fn execute_workspace_agent_tool(app &App, root string, session_id string,

@@ -195,4 +195,180 @@ fn test_session_compaction_event_preserves_durable_chat_history() {
 	assert event.data.compaction_token_bound_after == result.measurement.estimated_token_bound_after
 	assert event.data.compaction_reason == 'byte_pressure'
 	assert event.data.compaction_summary_preview.contains('untrusted')
+	assert event.data.compaction_summarizer_mode == 'extractive'
+	assert event.data.compaction_usage_reported == false
+}
+
+fn fixture_llm_success_summarizer(older []ChatMessage, bytes_before int, reason string) !SessionCompactionSummarizerOutput {
+	usage := ProviderUsage{
+		input_tokens:  11
+		output_tokens: 7
+		total_tokens:  18
+		reported:      true
+	}
+	body := wrap_llm_compaction_summary('Fixture LLM summary of ${older.len} older turns for ${reason}.',
+		bytes_before, reason, usage, older.len)
+	return SessionCompactionSummarizerOutput{
+		body:  body
+		mode:  'llm'
+		usage: usage
+	}
+}
+
+fn fixture_llm_failure_summarizer(_older []ChatMessage, _bytes_before int, _reason string) !SessionCompactionSummarizerOutput {
+	return error('fixture summarizer unavailable')
+}
+
+fn fixture_llm_growing_summarizer(older []ChatMessage, bytes_before int, reason string) !SessionCompactionSummarizerOutput {
+	// Bypass wrap_llm_compaction_summary truncation so the candidate truly grows.
+	repeat_count := (bytes_before / 4) + 16_000
+	bloated := 'GROW'.repeat(repeat_count)
+	mut lines := compaction_summary_header_lines(bytes_before, reason, 'llm', older.len, ProviderUsage{})
+	lines << ''
+	lines << '### LLM summary (untrusted)'
+	lines << bloated
+	lines << compaction_summary_close
+	return SessionCompactionSummarizerOutput{
+		body: lines.join('\n')
+		mode: 'llm'
+	}
+}
+
+fn test_session_compaction_llm_summarizer_success_records_provider_usage() {
+	payload := 'x'.repeat(24_000)
+	messages := fixture_pressure_messages(20, payload, 'Continue after summarizer.')
+	before := agent_context_bytes(messages)
+	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_success_summarizer)
+	assert result.measurement.triggered
+	assert result.measurement.summarizer_mode == 'llm'
+	assert result.measurement.bytes_after < before
+	assert result.measurement.usage_reported
+	assert result.measurement.input_tokens == 11
+	assert result.measurement.output_tokens == 7
+	assert result.messages[1].content.contains('summarizer_mode: `llm`')
+	assert result.messages[1].content.contains('provider_usage_reported: true')
+	assert result.messages[1].content.contains('provider_input_tokens: 11')
+	assert result.messages[1].content.contains('Fixture LLM summary')
+	assert result.messages[1].content.contains(compaction_summary_open)
+}
+
+fn test_session_compaction_llm_summarizer_failure_falls_back_extractive() {
+	payload := 'x'.repeat(24_000)
+	messages := fixture_pressure_messages(20, payload, 'Fallback please.')
+	before := agent_context_bytes(messages)
+	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_failure_summarizer)
+	assert result.measurement.triggered
+	assert result.measurement.summarizer_mode == 'llm_fallback_extractive'
+	assert result.measurement.bytes_after < before
+	assert !result.measurement.usage_reported
+	assert result.messages[1].content.contains('Older turns (extractive)')
+	assert result.messages[1].content.contains('summarizer_mode: `llm_fallback_extractive`')
+}
+
+fn test_session_compaction_llm_summarizer_refuses_when_context_grows() {
+	payload := 'x'.repeat(24_000)
+	messages := fixture_pressure_messages(20, payload, 'Refuse growth.')
+	before := agent_context_bytes(messages)
+	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_growing_summarizer)
+	assert result.measurement.triggered
+	assert result.measurement.summarizer_mode == 'llm_fallback_extractive'
+	assert result.measurement.bytes_after < before
+	assert result.messages[1].content.contains('Older turns (extractive)')
+	assert !result.messages[1].content.contains('GROWGROW')
+}
+
+fn test_session_compaction_native_summarizer_and_tool_pair_boundary() {
+	payload := 'y'.repeat(24_000)
+	mut messages := [
+		ChatMessage{
+			role:    'system'
+			content: 'You are Veasel Code.'
+		},
+	]
+	for index in 0 .. 18 {
+		messages << ChatMessage{
+			role:    'user'
+			content: 'older-user-${index}: review docs/openapi.yaml ${payload}'
+		}
+		messages << ChatMessage{
+			role:       'assistant'
+			content:    'older-assistant-${index}'
+			tool_calls: [
+				ProviderToolCall{
+					id:       'older-call-${index}'
+					type:     'function'
+					function: ProviderFunctionCall{
+						name:      'workspace_search'
+						arguments: '{"query":"openapi"}'
+					}
+				},
+			]
+		}
+		messages << ChatMessage{
+			role:         'tool'
+			name:         'workspace_search'
+			tool_call_id: 'older-call-${index}'
+			content:      'hit ${payload}'
+		}
+	}
+	messages << ChatMessage{
+		role:    'user'
+		content: 'Inspect src/main.v carefully.'
+	}
+	messages << ChatMessage{
+		role:       'assistant'
+		content:    ''
+		tool_calls: [
+			ProviderToolCall{
+				id:       'call-native-1'
+				type:     'function'
+				function: ProviderFunctionCall{
+					name:      'workspace_read_file'
+					arguments: '{"path":"src/main.v"}'
+				}
+			},
+		]
+	}
+	messages << ChatMessage{
+		role:         'tool'
+		name:         'workspace_read_file'
+		tool_call_id: 'call-native-1'
+		content:      'fn main() {}\n' + payload
+	}
+	assert agent_context_bytes(messages) >= compaction_pressure_bytes()
+	result := compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer)
+	assert result.measurement.triggered
+	assert result.measurement.summarizer_mode == 'native'
+	assert result.measurement.bytes_after < result.measurement.bytes_before
+	assert result.messages[1].content.contains('summarizer_mode: `native`')
+	assert result.messages[1].content.contains('### Recent user goals')
+	assert result.messages[1].content.contains('workspace_search')
+	assert result.messages[1].content.contains('docs/openapi.yaml')
+	mut saw_tool_call := false
+	mut saw_tool_result := false
+	for message in result.messages {
+		if message.role == 'assistant' && message.tool_calls.len == 1
+			&& message.tool_calls[0].id == 'call-native-1' {
+			saw_tool_call = true
+		}
+		if message.role == 'tool' && message.tool_call_id == 'call-native-1' {
+			saw_tool_result = true
+		}
+	}
+	assert saw_tool_call
+	assert saw_tool_result
+}
+
+fn test_session_compaction_summarizer_mode_env_parsing() {
+	os.setenv(compaction_summarizer_env, 'native', true)
+	assert session_compaction_summarizer_mode() == 'native'
+	assert session_compaction_summarizer_enabled()
+	os.setenv(compaction_summarizer_env, 'LLM', true)
+	assert session_compaction_summarizer_mode() == 'llm'
+	os.setenv(compaction_summarizer_env, 'extractive', true)
+	assert session_compaction_summarizer_mode() == 'extractive'
+	assert !session_compaction_summarizer_enabled()
+	os.setenv(compaction_summarizer_env, 'nope', true)
+	assert session_compaction_summarizer_mode() == 'extractive'
+	os.unsetenv(compaction_summarizer_env)
 }

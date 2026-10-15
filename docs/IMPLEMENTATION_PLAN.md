@@ -215,8 +215,16 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   threshold: older turns are replaced with an untrusted extractive summary,
   recent turns stay verbatim, durable SQLite chat history is preserved, and a
   `session.compaction` event records measured bytes before/after plus a
-  conservative bytes/4 token bound. This is not LLM summarization, not
-  provider-native compaction, and not a claim of Muse's advertised token window.
+  conservative bytes/4 token bound. This is not a claim of Muse's advertised
+  token window.
+- [x] Optional session compaction summarizer (`VEASEL_SESSION_COMPACTION_SUMMARIZER=
+  extractive|native|llm`): structured native summary or one no-tools LLM
+  completion over the bounded extractive digest, with automatic extractive
+  fallback on error/empty/growth; capability `session.compaction.summarizer`
+  when enabled; events record `compaction_summarizer_mode` and provider usage
+  only when reported. Not provider-native compaction APIs; not invented cost or
+  percent savings. Study pin:
+  [`compatibility/session-compaction-summarizer.md`](compatibility/session-compaction-summarizer.md).
 - [x] Aider-style extractive repository map for intelligent context selection:
   deterministic workspace walk, heuristic symbol extraction, mention-weighted
   ranking under a measured UTF-8 byte budget (plus bytes/4 bound), untrusted
@@ -224,7 +232,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   /v1/sessions/{id}/workspace/map`, capabilities `workspace.repository_map` /
   `session.repository_map`, and `session.repository_map` events. This is not
   tree-sitter/PageRank parity with Aider and does not claim provider token or
-  cost savings. Prompt-cache accounting and LLM/native summarizers remain open.
+  cost savings. Prompt-cache accounting remains open.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

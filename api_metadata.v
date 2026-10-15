@@ -40,6 +40,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		features << 'agent.tools.skill_load'
 		features << 'agent.tools.skill_read_resource'
 		features << 'session.compaction'
+		if session_compaction_summarizer_enabled() {
+			features << 'session.compaction.summarizer'
+		}
 		features << 'session.repository_map'
 	}
 	return ctx.json(Capabilities{

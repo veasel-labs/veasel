@@ -657,6 +657,32 @@ pub fn (app &App) remove_session_git_worktree(mut ctx Context, id string) veb.Re
 	})
 }
 
+@['/v1/sessions/:id/workspace/git/worktrees'; patch]
+pub fn (app &App) patch_session_git_worktree(mut ctx Context, id string) veb.Result {
+	if ctx.req.data.len > 16_000 {
+		return json_request_error(mut ctx, 'Worktree request exceeds the size limit')
+	}
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	input := json2.decode[WorkspaceGitWorktreeLockInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected path and locked fields')
+	}
+	worktree := set_workspace_git_worktree_locked(session.directory, input) or {
+		if err.msg() == 'worktree not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(worktree)
+}
+
 @['/v1/sessions/:id/workspace/map'; get]
 pub fn (app &App) get_workspace_repository_map(mut ctx Context, id string) veb.Result {
 	session := app.store.get_session(id) or {

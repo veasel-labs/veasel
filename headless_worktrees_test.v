@@ -26,6 +26,15 @@ fn test_headless_worktrees_parses_list_add_remove() {
 		'/tmp') or { panic(err) }
 	assert removed.action == .remove
 	assert removed.force
+
+	locked := parse_headless_worktrees_args(['lock', '--path', '/tmp/wt', '--reason', 'hold'],
+		'/tmp') or { panic(err) }
+	assert locked.action == .lock
+	assert locked.reason == 'hold'
+	unlocked := parse_headless_worktrees_args(['unlock', '--path', '/tmp/wt'], '/tmp') or {
+		panic(err)
+	}
+	assert unlocked.action == .unlock
 }
 
 fn test_headless_worktrees_rejects_invalid_shapes() {
@@ -38,6 +47,12 @@ fn test_headless_worktrees_rejects_invalid_shapes() {
 		assert false
 	} else {
 		assert err.msg().contains('--path')
+	}
+	if _ := parse_headless_worktrees_args(['unlock', '--path', '/tmp/wt', '--reason', 'x'],
+		'/tmp') {
+		assert false
+	} else {
+		assert err.msg().contains('--reason')
 	}
 	if _ := parse_headless_worktrees_args(['mystery'], '/tmp') {
 		assert false

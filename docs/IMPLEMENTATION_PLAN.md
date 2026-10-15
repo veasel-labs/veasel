@@ -182,9 +182,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   directory or a linked worktree `gitdir:` path (`workspace_edits.v`). Read-only
   worktree listing is available via `GET /v1/sessions/{id}/workspace/git/worktrees`
   (capability `workspace.git.worktrees`, filesystem-only). Create/remove use
-  `POST`/`DELETE` on the same path with argv-only `git worktree add|remove`
-  (bounded timeout; lock-aware; absolute paths). Headless `veasel worktrees
-  list|add|remove` drives the same session API.
+  `POST`/`PATCH`/`DELETE` on the same path with argv-only `git worktree
+  add|lock|unlock|remove` (bounded timeout; lock-aware; absolute paths).
+  Headless `veasel worktrees list|add|remove|lock|unlock` drives the same
+  session API.
 
 - [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
   manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,

@@ -27,7 +27,7 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	mut features := ['sessions.create', 'sessions.list', 'sessions.get', 'events.sse', 'events.replay',
 		'plugins.catalog', 'plugins.links', 'plugins.components', 'mcp.servers.configured',
-		'mcp.credentials', 'skills.discovery', 'sessions.skills', 'sessions.mcp_servers',
+		'mcp.credentials', 'mcp.oauth', 'skills.discovery', 'sessions.skills', 'sessions.mcp_servers',
 		'workspace.files', 'workspace.read', 'workspace.search', 'workspace.repository_map',
 		'workspace.git.worktrees', 'workspace.edits.review', 'workspace.edits.approve',
 		'workspace.edits.reject', 'workspace.commands.propose', 'workspace.commands.review',

@@ -215,9 +215,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   notifications queue (not RPC pending) with mid-stream cancel, and trusted
   HTTP connects best-effort listen after initialize.   Authorization-code + PKCE S256 authorize URL construction, loopback
   redirect_uri validation, callback parsing, token exchange, owner-only
-  pending-session persistence, and writing `Authorization: Bearer` into named
-  `/v1/mcp-credentials` entries are shipped; HTTP API/headless completion
-  wiring and browser/loopback listener remain follow-up.
+  pending-session persistence, writing `Authorization: Bearer` into named
+  `/v1/mcp-credentials` entries, and `POST /v1/mcp-oauth/authorize|complete`
+  (capability `mcp.oauth`) are shipped; an automatic loopback browser listener
+  remains follow-up.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

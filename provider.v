@@ -422,6 +422,9 @@ mut:
 }
 
 fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
+	if chunk.contains('\0') {
+		return error('provider SSE chunk contained a NUL byte')
+	}
 	decoder.pending += chunk
 	trailing_cr := decoder.pending.ends_with('\r')
 	if trailing_cr {

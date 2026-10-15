@@ -199,9 +199,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   directory.   Named Streamable HTTP credentials are available via `/v1/mcp-credentials`
   (`mcp.credentials`). Stdio emits `notifications/cancelled` when a turn is
   cancelled mid-call; Streamable HTTP cancels mid-body via progress callbacks.
-  Remaining gaps (OAuth discovery, GET notification streams, TTFB-before-progress
-  cancel) are tracked in
+  Remaining gaps (interactive OAuth dance, GET notification streams,
+  TTFB-before-progress cancel) are tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
+  Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
+  including RFC 9728 `resource_metadata` for credential binding; the
+  authorization-code dance remains open.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
@@ -234,8 +237,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   same scopes via the local API, including `veasel mcp credentials
   list|set|remove` for named HTTP header sets. Named HTTP credentials via
   `/v1/mcp-credentials`. Stdio `notifications/cancelled` on turn cancel is
-  implemented; HTTP mid-body cancel via progress callbacks is shipped. OAuth
-  discovery and TTFB-before-progress cancel remain open.
+  implemented; HTTP mid-body cancel via progress callbacks is shipped.
+  WWW-Authenticate Bearer challenge discovery (realm/scope/error/
+  resource_metadata) is shipped on 401; interactive OAuth dance and
+  TTFB-before-progress cancel remain open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

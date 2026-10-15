@@ -16,7 +16,7 @@ export const helpItems: HelpItem[] = [
   { command: "/commands · /command show|approve|reject <id>", description: "Review and decide shell commands. The sandbox warning stays above the command, including when the command is long." },
   { command: "/history older", description: "Load earlier messages in this session." },
   { command: "/usage", description: "Show provider-reported token totals for this session. Cost stays unavailable without a price schedule." },
-  { command: "repository map", description: "Coding turns may include an untrusted extractive workspace map (paths and declarations) sized in measured UTF-8 bytes. Inspect via GET /v1/sessions/:id/workspace/map; capability workspace.repository_map." },
+  { command: "/map", description: "Show the untrusted extractive workspace repository map (ranked paths and declarations) with measured UTF-8 bytes and a bytes/4 bound. Add text after /map to reweight ranking. Capability workspace.repository_map." },
   { command: "/theme", description: "List TUI color themes, or pass mint, ember, slate, mono, or aurora to switch. The choice is stored for the next launch." },
 ]
 
@@ -40,9 +40,9 @@ export function renderHelp(compact = false) {
       "/help advanced  Show command syntax",
       "/skills · /mcp · /patches · /commands",
       "/history older  Load earlier messages",
-      "/connect · /models · /theme  Auth, model, theme",
+      "/connect · /models · /theme · /map  Auth, model, map",
       "Files go to your provider. Review diffs and MCP calls.",
-      "Approved shell uses Bubblewrap on Linux or Seatbelt on macOS when available.",
+      "Approved shell: Bubblewrap, Seatbelt, or Windows AppContainer when available.",
     ].join("\n")
   }
 
@@ -51,7 +51,7 @@ export function renderHelp(compact = false) {
     .join("\n")
   return [
     "VEASEL CODE / QUICK HELP",
-    "Files go to your provider. Review diffs and MCP arguments; approved shell uses Bubblewrap on Linux or Seatbelt on macOS when available, otherwise runs without an OS sandbox.",
+    "Files go to your provider. Review diffs and MCP arguments; approved shell uses Bubblewrap on Linux, Seatbelt on macOS, or AppContainer on Windows when available, otherwise runs without an OS sandbox.",
     commands,
   ].join("\n")
 }

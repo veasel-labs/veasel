@@ -140,6 +140,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   accents, LOCAL cue, session markers) and let operators switch among mint,
   ember, slate, mono, and aurora via `/theme`, with the choice persisted under
   `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
+- [x] TUI `/map` shows the extractive workspace repository map with measured
+  UTF-8 bytes, bytes/4 bound, ranked paths, and an optional ranking hint.
+  Help documents Windows AppContainer alongside Bubblewrap/Seatbelt.
 - [ ] General execution history and a durable usage/cost dashboard beyond
   per-session reported tokens and opt-in ATIF `final_metrics`.
 - [x] Request-side Anthropic prompt-cache markers: default ephemeral

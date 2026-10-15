@@ -48,6 +48,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/command", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", description: "Load earlier messages in this session" },
   { name: "/usage", description: "Show provider-reported token totals for this session" },
+  { name: "/map", description: "Show the extractive workspace repository map; add text to hint ranking" },
   { name: "/theme", description: "List or switch TUI color themes", usage: "/theme <id>" },
 ]
 

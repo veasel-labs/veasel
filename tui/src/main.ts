@@ -40,6 +40,10 @@ import {
   type SessionUsageSummary,
 } from "./usage"
 import {
+  formatRepositoryMapSummary,
+  type WorkspaceRepositoryMap,
+} from "./repository-map"
+import {
   formatThemeList,
   isThemeId,
   loadThemeId,
@@ -723,6 +727,13 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (content === "/map" || content.startsWith("/map ")) {
+    const hint = content === "/map" ? "" : content.slice("/map ".length).trim()
+    await showRepositoryMap(hint)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/theme") {
     skillNotice = formatThemeList(theme.id)
     renderChat(chatMessages)
@@ -961,6 +972,28 @@ async function showSessionUsage() {
   } catch (error) {
     if (controller.signal.aborted) return
     status.content = `● usage unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.fg = theme.statusError
+  }
+}
+
+async function showRepositoryMap(hint = "") {
+  if (!activeSession) return
+  try {
+    const query = hint.length > 0 ? `?hint=${encodeURIComponent(hint)}` : ""
+    const response = await fetch(
+      `${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/map${query}`,
+      { signal: controller.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const map = await response.json() as WorkspaceRepositoryMap
+    skillNotice = formatRepositoryMapSummary(map, hint)
+    renderChat(chatMessages)
+    const truncated = map.truncated ? " · truncated" : ""
+    status.content = `● repository map  ·  ${map.bytes} B · ${map.file_count} files · ${map.symbol_count} symbols${truncated}`
+    status.fg = theme.statusOk
+  } catch (error) {
+    if (controller.signal.aborted) return
+    status.content = `● repository map unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
     status.fg = theme.statusError
   }
 }

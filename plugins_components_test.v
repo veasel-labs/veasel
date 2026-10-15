@@ -3,6 +3,19 @@ module main
 import os
 import uuid
 
+fn test_plugin_component_names_reject_control_bytes() {
+	assert is_valid_plugin_component_entry_name('local')
+	assert !is_valid_plugin_component_entry_name('bad\tname')
+	assert !is_valid_plugin_component_entry_name('bad\nname')
+	assert !is_valid_plugin_component_entry_name('bad\0name')
+	assert !is_valid_plugin_component_plugin_name('bad\tplugin')
+	decode_plugin_component_toggle_input('{"plugin":"demo","kind":"mcp","name":"bad\\tname","enabled":false}') or {
+		assert err.msg().contains('entry name is invalid')
+		return
+	}
+	assert false, 'control bytes in component entry names must be rejected'
+}
+
 fn test_plugin_component_disable_persists_and_filters_catalog() {
 	data_dir := os.join_path(os.temp_dir(), 'veasel-plugin-components-${uuid.new_v4().str()}')
 	plugin_dir := os.join_path(data_dir, 'plugins')

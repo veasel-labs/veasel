@@ -24,6 +24,20 @@ export function formatBusyStatus(message: string): string {
   return formatStatusLine("busy", `busy  ·  ${trimmed}`)
 }
 
+export function formatWarnStatus(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed) return formatStatusLine("warn", "attention")
+  if (/^attention\b/i.test(trimmed)) return formatStatusLine("warn", trimmed)
+  return formatStatusLine("warn", `attention  ·  ${trimmed}`)
+}
+
+export function formatErrorStatus(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed) return formatStatusLine("error", "error")
+  if (/^error\b/i.test(trimmed)) return formatStatusLine("error", trimmed)
+  return formatStatusLine("error", `error  ·  ${trimmed}`)
+}
+
 // Home session switcher cue: always states which session is focused so the
 // selection is not only the ● marker in the sidebar.
 export function formatHomeSessionStatus(selected: number, count: number): string {

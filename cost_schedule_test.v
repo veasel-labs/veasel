@@ -87,12 +87,21 @@ fn test_embedded_schedule_matches_checked_in_json() {
 	from_file := load_cost_schedule_from_json(raw) or { panic(err) }
 	embedded := cost_schedule_from_embedded()
 	assert from_file.entries.len == embedded.entries.len
-	assert from_file.entries.len > 0
+	assert from_file.entries.len >= 50
 	sonnet := lookup_cost_schedule_entry(embedded, 'anthropic', 'claude-sonnet-4-5') or {
 		panic('missing sonnet')
 	}
 	assert sonnet.input == 3.0
 	assert sonnet.output == 15.0
+	spark := lookup_cost_schedule_entry(embedded, 'meta', 'muse-spark-1.3') or {
+		panic('missing muse-spark')
+	}
+	assert spark.input == 1.25
+	assert spark.output == 4.25
+	// Muse Wonder has no Models.dev [cost] at the pin — stay unpriced.
+	if _ := lookup_cost_schedule_entry(embedded, 'meta', 'muse-wonder-1.0') {
+		panic('muse-wonder must stay unpriced without invented rates')
+	}
 }
 
 fn test_session_usage_summary_prices_matching_schedule_models() {

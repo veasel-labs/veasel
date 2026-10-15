@@ -260,9 +260,11 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	if info.requires_api_key && api_key.trim_space().len == 0 {
 		return error('model credentials are not configured for ${provider}')
 	}
+	// Empty model is allowed here so catalog discovery can resolve credentials
+	// and endpoints before a model ID is chosen. model_config() still rejects
+	// an empty model before any completion request.
 	resolved_model := model.trim_space()
-	if resolved_model.len == 0 || resolved_model.len > 200
-		|| model_settings_text_has_unsafe_controls(resolved_model)
+	if resolved_model.len > 200 || model_settings_text_has_unsafe_controls(resolved_model)
 		|| model_settings_text_has_unsafe_controls(api_key) {
 		return error('model settings are invalid')
 	}

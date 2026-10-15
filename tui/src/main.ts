@@ -89,7 +89,7 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
-import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
+import { formatBusyStatus, formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
@@ -1205,7 +1205,7 @@ async function sendMessage(value: string) {
   let awaitingAsyncCompletion = false
   chatInput.value = ""
   chatInput.blur()
-  status.content = "● Veasel is thinking…"
+  status.content = formatBusyStatus("Veasel is thinking…")
   status.fg = theme.statusWarn
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
@@ -1319,7 +1319,7 @@ async function loadOlderChatHistory() {
   const sessionId = activeSession.id
   const before = chatMessages[0].id
   chatHistoryLoading = true
-  status.content = "● loading earlier messages…"
+  status.content = formatBusyStatus("loading earlier messages…")
   status.fg = theme.statusWarn
   try {
     const response = await fetch(
@@ -1446,7 +1446,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
 async function cancelActiveTurn() {
   if (!activeSession || !activeTurnId || !activeTurnController || activeTurnCancelled) return
   activeTurnCancelled = true
-  status.content = "● cancelling response…"
+  status.content = formatBusyStatus("cancelling response…")
   status.fg = theme.statusWarn
   void fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/operations/${activeTurnId}/cancel`, {
     method: "POST",
@@ -2451,13 +2451,13 @@ async function consumeEvents() {
         }
       }
       if (!controller.signal.aborted) {
-        status.content = "● reconnecting to event stream…"
+        status.content = formatBusyStatus("reconnecting to event stream…")
         status.fg = theme.statusWarn
         await new Promise((resolve) => setTimeout(resolve, 1200))
       }
     } catch {
       if (controller.signal.aborted) return
-      status.content = "● reconnecting to event stream…"
+      status.content = formatBusyStatus("reconnecting to event stream…")
       status.fg = theme.statusWarn
       await new Promise((resolve) => setTimeout(resolve, 1200))
     }

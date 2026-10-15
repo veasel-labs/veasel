@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatHomeSessionStatus, formatStatusLine, statusGlyph } from "./status-a11y"
+import { formatBusyStatus, formatHomeSessionStatus, formatStatusLine, statusGlyph } from "./status-a11y"
 
 describe("status a11y glyphs", () => {
   test("uses distinct markers per severity", () => {
@@ -8,6 +8,13 @@ describe("status a11y glyphs", () => {
     expect(statusGlyph("error")).toBe("✖")
     expect(statusGlyph("busy")).toBe("◌")
     expect(formatStatusLine("error", "server unavailable")).toBe("✖ server unavailable")
+  })
+
+  test("marks in-flight work with busy glyph and spoken word", () => {
+    expect(formatBusyStatus("Veasel is thinking…")).toBe("◌ busy  ·  Veasel is thinking…")
+    expect(formatBusyStatus("cancelling response…")).toBe("◌ busy  ·  cancelling response…")
+    expect(formatBusyStatus("reconnecting to event stream…")).toBe("◌ busy  ·  reconnecting to event stream…")
+    expect(formatBusyStatus("busy  ·  already labeled")).toBe("◌ busy  ·  already labeled")
   })
 
   test("states the focused session in plain text on home", () => {

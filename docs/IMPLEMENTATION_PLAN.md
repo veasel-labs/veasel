@@ -262,6 +262,13 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   the existing ancestor cap.
 - [x] Cover Windows `%APPDATA%/opencode/skills` discovery and standalone skill
   junction escape rejection in CI (`$if windows` tests).
+- [x] Fail-closed project skill trust: `scope=project` skills stay out of the
+  model `<available_skills>` catalog and `agent_skill_load` until the user
+  enables them with session `/skill on` (existing POST `/v1/sessions/{id}/skills`);
+  user/configured/plugin-package skills keep progressive disclosure. Capability
+  `skills.project.trust`.
+- [ ] One-shot user skill invoke (API + TUI `/skill` or `$name` without
+  persistent session enablement).
 - [x] When a standalone skill source key collides with an Agent Plugin package
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the

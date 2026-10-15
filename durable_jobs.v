@@ -83,11 +83,13 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
-		if input.autonomous && !app.allow_autonomous {
-			eprintln('veasel: rejecting queued operation ${operation.id}; autonomous policy disabled')
+		policy := execution_policy_turn_from_input(input.execution_policy, input.autonomous,
+			input.non_interactive)
+		if err_msg := app.execution_policy_forbidden_reason(policy) {
+			eprintln('veasel: rejecting queued operation ${operation.id}; ${err_msg}')
 			store.reject_queued_session_operation(operation.session_id, operation.id,
-				'Queued autonomous turn cannot start because the isolated benchmark policy is disabled.') or {
-				eprintln('veasel: unable to reject queued autonomous operation ${operation.id}')
+				'Queued turn cannot start because its execution policy is disabled on this server.') or {
+				eprintln('veasel: unable to reject queued policy-gated operation ${operation.id}')
 				''
 			}
 			continue

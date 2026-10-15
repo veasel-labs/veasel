@@ -132,13 +132,14 @@ fn agent_skill_resource_tools() []AgentToolDefinition {
 
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
 	session_id string, operation_id string, mut skill_context SessionSkillContext,
-	on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep, collect_trace bool, autonomous bool) !AgentTraceResult {
+	on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep, collect_trace bool,
+	policy ExecutionPolicyTurn) !AgentTraceResult {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
 	active_mcp_servers := app.store.session_plugin_mcp_servers(session_id)!
-	if autonomous && active_mcp_servers.len > 0 {
-		return error('autonomous benchmark mode does not allow session MCP servers')
+	if policy.mode == .sandbox_auto && active_mcp_servers.len > 0 {
+		return error('sandbox-auto execution policy does not allow session MCP servers')
 	}
 	if active_mcp_servers.len > 0 {
 		if !app.try_plugin_mcp_slot() {
@@ -252,7 +253,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		for call in output.tool_calls {
 			result := sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
 				root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
-				autonomous)!)
+				policy)!)
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
@@ -390,12 +391,33 @@ fn sanitize_agent_tool_result(result string) string {
 fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root string,
 	session_id string, operation_id string, call ProviderToolCall,
 	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
-	mut mcp_connections []PluginMCPConnection, autonomous bool) !string {
+	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn) !string {
 	if !skill_context.tool_policy.allows(call.function.name) {
 		return json2.encode[AgentToolError](AgentToolError{
 			error: 'Tool is not available under the active Agent Skill tool restrictions.'
 		})
 	}
+	if binding := mcp_bindings[call.function.name] {
+		decision := decide_execution_permission(policy.mode, 'mcp', policy.interactive,
+			fail_closed_shell_sandbox_ready())
+		match decision {
+			.deny {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'MCP tools are denied by execution policy `${execution_policy_mode_label(policy.mode)}`.'
+				})
+			}
+			.allow {
+				return json2.encode[AgentToolError](AgentToolError{
+					error: 'MCP tools cannot auto-apply under the current policy; they remain approval-gated.'
+				})
+			}
+			.ask {
+				return app.execute_plugin_mcp_tool_with_approval(mut turn_ctx, session_id,
+					operation_id, binding, call.function.arguments, mut mcp_connections)!
+			}
+		}
+	}
+	tool_class := execution_tool_class(call.function.name)
 	if call.function.name == 'agent_skill_load' {
 		result, granted, access := execute_agent_skill_load(app.plugin_directory, project_directory_for_skills(root),
 			call)
@@ -411,13 +433,30 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 	if call.function.name == 'agent_skill_read_resource' {
 		return execute_agent_skill_resource(skill_context.resource_access, call)
 	}
-	if binding := mcp_bindings[call.function.name] {
-		return app.execute_plugin_mcp_tool_with_approval(mut turn_ctx, session_id, operation_id,
-			binding, call.function.arguments, mut mcp_connections)!
-	}
-	if autonomous && call.function.name in ['workspace_propose_file_edit',
-		'workspace_propose_shell_command'] {
-		return execute_autonomous_workspace_agent_tool(app, root, session_id, call)
+	if tool_class in ['edit', 'shell'] {
+		decision := decide_execution_permission(policy.mode, tool_class, policy.interactive,
+			fail_closed_shell_sandbox_ready())
+		match decision {
+			.allow {
+				return execute_autonomous_workspace_agent_tool(app, root, session_id, call)
+			}
+			.deny {
+				reason := if tool_class == 'shell' && policy.mode == .sandbox_auto
+					&& !fail_closed_shell_sandbox_ready() {
+					'Shell auto-apply requires a fail-closed OS sandbox (Bubblewrap, Seatbelt, or AppContainer+Job); none is available.'
+				} else if !policy.interactive {
+					'Non-interactive turns deny `${call.function.name}` under execution policy `${execution_policy_mode_label(policy.mode)}` (ask maps to deny).'
+				} else {
+					'`${call.function.name}` is denied by execution policy `${execution_policy_mode_label(policy.mode)}`.'
+				}
+				return json2.encode[AgentToolError](AgentToolError{
+					error: reason
+				})
+			}
+			.ask {
+				// Fall through to durable proposal/approval path.
+			}
+		}
 	}
 	return execute_workspace_agent_tool(app, root, session_id, call)
 }
@@ -467,7 +506,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 		return json2.encode[AgentWorkspaceEditResult](AgentWorkspaceEditResult{
 			id:   proposal.id
 			path: proposal.path
-			note: 'Applied by explicit autonomous benchmark policy.'
+			note: 'Applied by graduated execution policy (auto-edit or sandbox-auto).'
 		})
 	}
 	if call.function.name == 'workspace_propose_shell_command' {

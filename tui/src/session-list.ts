@@ -5,6 +5,28 @@ export type SessionListEntry = {
   directory: string
 }
 
+export type SessionListMove = "up" | "down" | "home" | "end" | "pageup" | "pagedown"
+
+// Home/End and page keys jump without wrapping past the list edges, matching
+// slash-menu navigation so operators transfer muscle memory from / commands.
+export function moveSessionSelection(
+  selected: number,
+  count: number,
+  action: SessionListMove,
+  pageSize: number,
+): number {
+  if (count <= 0) return 0
+  const max = count - 1
+  const index = Math.min(Math.max(0, selected), max)
+  const page = Math.max(1, pageSize)
+  if (action === "up") return Math.max(0, index - 1)
+  if (action === "down") return Math.min(max, index + 1)
+  if (action === "home") return 0
+  if (action === "end") return max
+  if (action === "pageup") return Math.max(0, index - page)
+  return Math.min(max, index + page)
+}
+
 // Sidebar chrome outside the session text: shell padding, header, footer,
 // gaps, and the sidebar border, padding, and "SESSIONS" label.
 const reservedRows = 17
@@ -53,7 +75,8 @@ function clipEnd(value: string, width: number): string {
 }
 
 // Renders the home session list. A selection past the visible rows stays on
-// screen, and the `8/20` position is text so it does not depend on color.
+// screen, and the position is spoken as plain text so it does not depend on
+// color ("Selected 8 of 20" for screen readers and high-contrast terminals).
 export function formatSessionList(
   sessions: SessionListEntry[],
   selected: number,
@@ -65,7 +88,9 @@ export function formatSessionList(
   const capacity = sessionListCapacity(options.rows, sessions.length)
   const { start, end } = suggestionWindow(index, sessions.length, capacity)
   const lines: string[] = []
-  if (end - start < sessions.length) lines.push(`${index + 1}/${sessions.length}`)
+  if (end - start < sessions.length) {
+    lines.push(`Selected ${index + 1} of ${sessions.length}`)
+  }
   for (let cursor = start; cursor < end; cursor++) {
     const session = sessions[cursor]
     if (!session) continue

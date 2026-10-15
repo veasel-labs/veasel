@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { formatSessionList, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
+import {
+  formatSessionList,
+  moveSessionSelection,
+  sessionListCapacity,
+  sessionListColumns,
+  sessionSidebarWidth,
+} from "./session-list"
 
 const sessions = Array.from({ length: 20 }, (_, index) => ({
   title: index === 0 ? "Alpha" : `Lane-${String(index).padStart(2, "0")}`,
@@ -16,14 +22,13 @@ describe("formatSessionList", () => {
     expect(text.startsWith("●")).toBe(false)
     expect(text).toContain("● Lane-01")
     expect(text).toContain("○ Alpha")
-    expect(text).not.toContain("1/2")
-    expect(text).not.toContain("2/2")
+    expect(text).not.toContain("Selected")
   })
 
   test("keeps the selected session on screen and states its position", () => {
     expect(sessionListCapacity(40, 20)).toBeLessThan(20)
     const text = formatSessionList(sessions, 19, { rows: 40, columns: 36 })
-    expect(text.startsWith("20/20\n")).toBe(true)
+    expect(text.startsWith("Selected 20 of 20\n")).toBe(true)
     expect(text).toContain("● Lane-19")
     expect(text).not.toContain("Alpha")
     expect(text).not.toContain("Lane-01")
@@ -31,7 +36,7 @@ describe("formatSessionList", () => {
 
   test("returns to the first session after moving back up", () => {
     const text = formatSessionList(sessions, 0, { rows: 40, columns: 36 })
-    expect(text.startsWith("1/20\n")).toBe(true)
+    expect(text.startsWith("Selected 1 of 20\n")).toBe(true)
     expect(text).toContain("● Alpha")
     expect(text).not.toContain("Lane-19")
   })
@@ -54,5 +59,20 @@ describe("formatSessionList", () => {
     const text = formatSessionList([{ title: "Alpha\nBeta\tGamma", directory: "/tmp/alpha" }], 0, { rows: 40, columns: 40 })
     expect(text).toContain("● Alpha Beta Gamma")
     expect(text).not.toContain("\nBeta")
+  })
+})
+
+describe("moveSessionSelection", () => {
+  test("moves by one and jumps to edges without wrapping", () => {
+    expect(moveSessionSelection(5, 20, "up", 4)).toBe(4)
+    expect(moveSessionSelection(5, 20, "down", 4)).toBe(6)
+    expect(moveSessionSelection(5, 20, "home", 4)).toBe(0)
+    expect(moveSessionSelection(5, 20, "end", 4)).toBe(19)
+    expect(moveSessionSelection(5, 20, "pageup", 4)).toBe(1)
+    expect(moveSessionSelection(5, 20, "pagedown", 4)).toBe(9)
+    expect(moveSessionSelection(0, 20, "up", 4)).toBe(0)
+    expect(moveSessionSelection(19, 20, "down", 4)).toBe(19)
+    expect(moveSessionSelection(1, 20, "pageup", 4)).toBe(0)
+    expect(moveSessionSelection(18, 20, "pagedown", 4)).toBe(19)
   })
 })

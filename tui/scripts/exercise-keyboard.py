@@ -513,7 +513,7 @@ def exercise_narrow(port: int) -> None:
         screen.wait_for("Alpha", 8)
         screen.wait_for("n new")
         screen.wait_for("/skills")
-        screen.wait_for("quit (home)")
+        screen.wait_for("q quit")
         screen.send("s", 0.5)
         screen.wait_for("OpenAI")
         screen.wait_for("1 OF 3")
@@ -540,8 +540,8 @@ def main() -> None:
         screen.wait_for("/skills")
         screen.wait_for("/mcp")
         screen.wait_for("/theme")
-        screen.wait_for("/map")
-        screen.wait_for("quit (home)")
+        screen.wait_for("Home/End")
+        screen.wait_for("q quit")
         screen.send("s", 0.5)
         screen.wait_for("Choose a provider")
         screen.wait_for("1 OF 3")
@@ -678,17 +678,20 @@ def main() -> None:
         screen.wait_for("Turn cancelled.", 6)
         screen.wait_for("stop this")
         screen.send("\x1b", 0.45)
-        screen.wait_for("quit (home)")
-        for _ in range(19):
-            screen.send("j", 0.04)
-        screen.wait_for("20/20", 4)
+        screen.wait_for("q quit")
+        screen.send("\x1b[F", 0.35)  # End → last session
+        screen.wait_for("Selected 20 of 20", 4)
         screen.wait_for("Lane-19")
         visible = screen.terminal.text()
         if "Alpha" in visible or "Beta" in visible:
             raise AssertionError(f"session list left earlier rows on screen\n--- screen ---\n{visible}")
-        for _ in range(19):
-            screen.send("k", 0.04)
-        screen.wait_for("1/20", 4)
+        screen.send("\x1b[H", 0.35)  # Home → first session
+        screen.wait_for("Selected 1 of 20", 4)
+        screen.wait_for("Alpha")
+        screen.send("\x1b[6~", 0.25)  # PgDn
+        screen.wait_for("Selected ", 4)
+        screen.send("\x1b[5~", 0.25)  # PgUp
+        screen.wait_for("Selected 1 of 20", 4)
         screen.wait_for("Alpha")
         state["hold_edits"] = True
         state["hold_other_edits"] = True
@@ -697,7 +700,7 @@ def main() -> None:
         screen.send("/patch ", 0.2)
         screen.send("\x1b", 0.15)
         screen.send("\x1b", 0.3)
-        screen.wait_for("quit (home)")
+        screen.wait_for("q quit")
         screen.send("j", 0.25)
         screen.send("\r", 0.55)
         screen.wait_for("Ask Veasel")

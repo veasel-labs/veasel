@@ -621,7 +621,19 @@ def exercise_narrow(port: int) -> None:
             process.kill()
 
 
+def seed_session_workspace() -> None:
+    """Create files under the Alpha fixture directory for @ path autocomplete."""
+    root = "/tmp/alpha"
+    src = os.path.join(root, "src")
+    os.makedirs(src, exist_ok=True)
+    with open(os.path.join(src, "main.ts"), "w", encoding="utf-8") as handle:
+        handle.write("export const alpha = 1\n")
+    with open(os.path.join(root, "README.md"), "w", encoding="utf-8") as handle:
+        handle.write("# alpha\n")
+
+
 def main() -> None:
+    seed_session_workspace()
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -719,6 +731,16 @@ def main() -> None:
         screen.wait_for("↑")
         screen.wait_for("Pg")
         screen.wait_for("/skills")
+        # @ path autocomplete against the session workspace (/tmp/alpha).
+        screen.send("@src/ma", 0.7)
+        screen.wait_for("── paths ──", 4)
+        screen.wait_for("@src/main.ts", 4)
+        screen.send("\t", 0.45)
+        visible = screen.terminal.text()
+        if "@src/main.ts" not in visible:
+            raise AssertionError(f"Tab did not insert @src/main.ts\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.35)  # Ctrl+U clears the draft (keep Esc for leave-after-cancel)
+        screen.wait_for("/skills", 4)
         screen.send("/", 0.6)
         screen.wait_for("── guide ──")
         screen.wait_for("── setup ──")

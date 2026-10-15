@@ -19,6 +19,11 @@ const max_provider_response_bytes = 1_000_000
 const max_provider_stream_bytes = 16_000_000
 const max_provider_model_catalog_bytes = 1_000_000
 const max_provider_model_catalog_entries = 500
+// Request-side Anthropic prompt caching. Default `auto` emits ephemeral
+// cache_control (top-level automatic + system-block breakpoint). Set to `off`
+// to disable; `1h` requests the extended TTL. This only shapes requests—
+// cache hits still require provider-reported usage fields from the adapter.
+const anthropic_prompt_cache_env = 'VEASEL_ANTHROPIC_PROMPT_CACHE'
 
 pub struct ChatMessage {
 pub:
@@ -698,13 +703,19 @@ struct OpenAIStreamFunctionDelta {
 	arguments string
 }
 
+struct AnthropicCacheControl {
+	type string
+	ttl  string @[omitempty]
+}
+
 struct AnthropicRequest {
-	model      string
-	max_tokens int
-	system     string @[omitempty]
-	messages   []AnthropicRequestMessage
-	tools      []AnthropicTool @[omitempty]
-	stream     bool
+	model         string
+	max_tokens    int
+	system        []AnthropicContentBlock @[omitempty]
+	messages      []AnthropicRequestMessage
+	tools         []AnthropicTool @[omitempty]
+	stream        bool
+	cache_control ?AnthropicCacheControl @[json: 'cache_control'; omitempty]
 }
 
 struct AnthropicStreamEvent {
@@ -778,13 +789,14 @@ struct AnthropicTool {
 }
 
 struct AnthropicContentBlock {
-	type        string
-	text        string               @[omitempty]
-	content     string               @[omitempty]
-	id          string               @[omitempty]
-	name        string               @[omitempty]
-	input       map[string]json2.Any @[omitempty]
-	tool_use_id string               @[json: 'tool_use_id'; omitempty]
+	type          string
+	text          string                 @[omitempty]
+	content       string                 @[omitempty]
+	id            string                 @[omitempty]
+	name          string                 @[omitempty]
+	input         map[string]json2.Any   @[omitempty]
+	tool_use_id   string                 @[json: 'tool_use_id'; omitempty]
+	cache_control ?AnthropicCacheControl @[json: 'cache_control'; omitempty]
 }
 
 struct GeminiRequest {
@@ -1315,23 +1327,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 	messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
-	system, conversation := anthropic_messages(messages)
-	mut anthropic_tools := []AnthropicTool{cap: tools.len}
-	for tool in tools {
-		anthropic_tools << AnthropicTool{
-			name:         tool.name
-			description:  tool.description
-			input_schema: provider_tool_parameters(tool)
-		}
-	}
-	request := AnthropicRequest{
-		model:      config.model
-		max_tokens: config.max_output_tokens
-		system:     system
-		messages:   conversation
-		tools:      anthropic_tools
-		stream:     true
-	}
+	request := build_anthropic_request(config, messages, tools)
 	mut stream_state := &AnthropicStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {
 		event := json2.decode[AnthropicStreamEvent](data) or { return error('response_parse') }
@@ -1475,6 +1471,71 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 		content:    stream_state.content.join('')
 		tool_calls: stream_state.tools
 		usage:      stream_state.usage
+	}
+}
+
+fn anthropic_prompt_cache_mode() string {
+	raw := os.getenv_opt(anthropic_prompt_cache_env) or { 'auto' }
+	value := raw.trim_space().to_lower()
+	return match value {
+		'off', '0', 'false', 'no' { 'off' }
+		'1h' { '1h' }
+		else { 'auto' }
+	}
+}
+
+fn anthropic_prompt_cache_enabled() bool {
+	return anthropic_prompt_cache_mode() != 'off'
+}
+
+fn anthropic_prompt_cache_control() ?AnthropicCacheControl {
+	mode := anthropic_prompt_cache_mode()
+	if mode == 'off' {
+		return none
+	}
+	if mode == '1h' {
+		return AnthropicCacheControl{
+			type: 'ephemeral'
+			ttl:  '1h'
+		}
+	}
+	return AnthropicCacheControl{
+		type: 'ephemeral'
+	}
+}
+
+fn anthropic_system_blocks(system string, cache ?AnthropicCacheControl) []AnthropicContentBlock {
+	if system == '' {
+		return []
+	}
+	return [
+		AnthropicContentBlock{
+			type:          'text'
+			text:          system
+			cache_control: cache
+		},
+	]
+}
+
+fn build_anthropic_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) AnthropicRequest {
+	system_text, conversation := anthropic_messages(messages)
+	mut anthropic_tools := []AnthropicTool{cap: tools.len}
+	for tool in tools {
+		anthropic_tools << AnthropicTool{
+			name:         tool.name
+			description:  tool.description
+			input_schema: provider_tool_parameters(tool)
+		}
+	}
+	cache := anthropic_prompt_cache_control()
+	return AnthropicRequest{
+		model:         config.model
+		max_tokens:    config.max_output_tokens
+		system:        anthropic_system_blocks(system_text, cache)
+		messages:      conversation
+		tools:         anthropic_tools
+		stream:        true
+		cache_control: cache
 	}
 }
 

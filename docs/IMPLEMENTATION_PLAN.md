@@ -131,17 +131,23 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `cache_creation_tokens`) when adapters see provider cache fields; expose them
   on operations, turn completion events, ChatExchange, session usage, TUI
   `/usage`, headless JSON/stderr, and opt-in ATIF `final_metrics`. Capability
-  `sessions.usage.prompt_cache` advertises accounting only—no invented savings
-  and no claim that request-side cache breakpoints are enabled. Field mapping
-  pin: `docs/compatibility/prompt-cache-accounting.md`.
+  `sessions.usage.prompt_cache` advertises accounting only—no invented savings.
+  Request-side Anthropic markers are a separate capability
+  (`provider.anthropic.prompt_cache`). Field mapping pin:
+  `docs/compatibility/prompt-cache-accounting.md`.
 - [x] Theme the OpenTUI shell to the mint product look (charcoal panels, mint
   accents, LOCAL cue, session markers) and let operators switch among mint,
   ember, slate, mono, and aurora via `/theme`, with the choice persisted under
   `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
 - [ ] General execution history and a durable usage/cost dashboard beyond
   per-session reported tokens and opt-in ATIF `final_metrics`.
-- [ ] Request-side prompt-cache breakpoints/headers (e.g. Anthropic
-  `cache_control`) with fixture evidence before claiming caching works.
+- [x] Request-side Anthropic prompt-cache markers: default ephemeral
+  `cache_control` (top-level automatic + system-block breakpoint), opt-out /
+  `1h` TTL via `VEASEL_ANTHROPIC_PROMPT_CACHE`, capability
+  `provider.anthropic.prompt_cache` distinct from accounting
+  `sessions.usage.prompt_cache`. Fixture evidence: `provider_cache_test.v`;
+  pin: `docs/compatibility/prompt-cache-accounting.md`. Does not invent hit
+  rates or USD savings.
 
 ### Milestone 4 — extensibility
 

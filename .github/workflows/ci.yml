@@ -315,6 +315,7 @@ jobs:
           v test repository_map_test.v
           v test atif_trace_test.v
           v test provider_usage_test.v
+          v test provider_cache_test.v
           v test headless_cli_test.v
           v test workspace_tools_test.v
       - name: Run Windows plugin, workspace edit, and recovery tests

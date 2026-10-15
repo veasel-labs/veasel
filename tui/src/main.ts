@@ -79,6 +79,7 @@ import {
   stepComposerHistory,
   type ComposerHistory,
 } from "./composer-history"
+import { killWordBackward } from "./composer-edit"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
 import {
@@ -3392,6 +3393,20 @@ renderer.keyInput.on("keypress", (key) => {
       if (chatInput.value.length > 0 || composerHistory.offset > 0) {
         composerHistory = clearComposerLine(composerHistory)
         setComposerValue(chatInput, "")
+        chatInput.focus()
+      }
+      return
+    }
+    // Ctrl+W kills the word before the cursor (readline). Esc stays reserved
+    // for cancel / leave-after-cancel and must not clear the draft.
+    if ((key.ctrl && key.name === "w") || key.sequence === "\x17") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = killWordBackward(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
         chatInput.focus()
       }
       return

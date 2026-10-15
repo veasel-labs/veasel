@@ -30,7 +30,7 @@ describe("slashSuggestions", () => {
     expect(names("/pa")).toEqual(["/patches", "/patch"])
     expect(names("/patch")[0]).toBe("/patch")
     expect(names("/mcp")[0]).toBe("/mcp")
-    expect(names("/mcp c")).toEqual(["/mcp calls", "/mcp call"])
+    expect(names("/mcp c")).toEqual(["/mcp credentials", "/mcp credential", "/mcp calls", "/mcp call"])
     expect(names("/mcp a")).toEqual(["/mcp add"])
     expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http", "/mcp add project", "/mcp add user"])
     expect(slashSuggestions("/mcp remove ", slashCommands, {

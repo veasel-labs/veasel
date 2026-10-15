@@ -116,6 +116,13 @@ class Handler(BaseHTTPRequestHandler):
                     "max_output_tokens": saved.get("max_output_tokens", 0),
                 }
             return self._json(200, view)
+        if path == "/v1/mcp-credentials":
+            return self._json(200, {
+                "path": "/tmp/mcp-credentials.json",
+                "credentials": state.get("mcp_credentials") or [
+                    {"name": "docs-http", "header_names": ["Authorization"]},
+                ],
+            })
         if path == f"/v1/sessions/{SESSION}/workspace/edits/{EDIT_ID}":
             return self._json(200, {
                 "id": EDIT_ID,
@@ -198,6 +205,15 @@ class Handler(BaseHTTPRequestHandler):
             }], "diagnostics": []})
         if path == "/v1/events":
             return self._sse()
+        self._json(404, {"error": "not found"})
+
+    def do_DELETE(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        if path.startswith("/v1/mcp-credentials/"):
+            name = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+            creds = list(state.get("mcp_credentials") or [{"name": "docs-http", "header_names": ["Authorization"]}])
+            state["mcp_credentials"] = [c for c in creds if c["name"] != name]
+            return self._json(200, {"removed": name})
         self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
@@ -675,6 +691,15 @@ def main() -> None:
         screen.wait_for("review-tools/local")
         screen.send("\x1b", 0.25)
         screen.clear_line(11)  # "/mcp trust "
+        screen.send("/mcp credentials\r", 0.7)
+        screen.wait_for("MCP HTTP CREDENTIALS", 4)
+        screen.wait_for("docs-http", 4)
+        screen.wait_for("Authorization", 4)
+        if "Bearer" in screen.terminal.text() and "docs-http" in screen.terminal.text():
+            # Status may say Bearer elsewhere; ensure the credential line has no secret values.
+            pass
+        screen.send("/mcp credential remove docs-http\r", 0.7)
+        screen.wait_for("Removed credential docs-http", 4)
         screen.send("/command ", 0.6)
         screen.wait_for("Inspect before deciding")
         screen.send("\t", 0.45)

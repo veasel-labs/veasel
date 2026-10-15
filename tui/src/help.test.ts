@@ -38,6 +38,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("Selected N of M")
     expect(help).toContain("keeps the selection on screen")
     expect(help).toContain("lines added and removed")
+    expect(help).toContain("side-by-side")
     expect(help).toContain("sandbox warning stays above")
     expect(help).toContain("decision stays above the arguments")
     expect(help).toContain("/history older")

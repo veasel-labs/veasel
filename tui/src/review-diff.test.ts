@@ -3,8 +3,10 @@ import {
   alignWordDiff,
   formatReviewDiff,
   moveReviewHunkIndex,
+  prefersSideBySideDiff,
   reviewDiffLineBudget,
   reviewHunkStarts,
+  sideBySidePairWidth,
 } from "./review-diff"
 import { noticeSegments, transcriptPlainText } from "./transcript"
 
@@ -120,10 +122,21 @@ describe("alignWordDiff", () => {
       "+const answer = 2",
     ].join("\n")
     const segments = noticeSegments(notice)
-    expect(transcriptPlainText(segments)).toBe(`${notice}\n\n`)
+    expect(transcriptPlainText(segments)).toBe(
+      "REVIEW\nsrc/main.v\n@@ -1 +1 @@\n-const answer = 1 │ +const answer = 2\n\n",
+    )
     expect(segments).toContainEqual({ text: "1", tone: "diffRemove" })
     expect(segments).toContainEqual({ text: "2", tone: "diffAdd" })
+    expect(segments).toContainEqual({ text: " │ ", tone: "diffMeta" })
     expect(segments).toContainEqual({ text: "const", tone: "diffContext" })
     expect(segments).toContainEqual({ text: "answer", tone: "diffContext" })
+  })
+})
+
+describe("prefersSideBySideDiff", () => {
+  test("accepts short pairs and rejects pairs that exceed the column budget", () => {
+    expect(prefersSideBySideDiff("-a", "+b", 80)).toBe(true)
+    expect(sideBySidePairWidth("a", "b")).toBe(1 + 1 + 3 + 1 + 1)
+    expect(prefersSideBySideDiff(`-${"x".repeat(40)}`, `+${"y".repeat(40)}`, 50)).toBe(false)
   })
 })

@@ -808,6 +808,7 @@ function renderChat(messages: ChatTurn[]) {
     streaming: Boolean(activeTurnId),
     hasOlder: chatHistoryHasOlder,
     showMessages: !helpVisible,
+    cols: process.stdout.columns ?? 80,
   })
   // Notices (reviews, help, status) already budget their own lines — keep them
   // unwindowed so headers like "a approve" stay on screen.

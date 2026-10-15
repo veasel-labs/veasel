@@ -1,4 +1,10 @@
-import { alignWordDiff, isWordDiffPair, type WordDiffToken } from "./review-diff"
+import {
+  alignWordDiff,
+  isWordDiffPair,
+  prefersSideBySideDiff,
+  sideBySideGutter,
+  type WordDiffToken,
+} from "./review-diff"
 
 export type TranscriptTone =
   | "title"
@@ -41,6 +47,8 @@ export type TranscriptInput = {
   streaming?: boolean
   hasOlder?: boolean
   showMessages?: boolean
+  // Terminal columns for width-aware notice chrome (side-by-side word diffs).
+  cols?: number
 }
 
 // Spoken role words stay in the plain-text transcript so roles remain clear
@@ -92,7 +100,7 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
     push(`${input.session.title}\n`, "title")
     push(`${input.session.directory}\n\n`, "meta")
   }
-  if (input.notice) segments.push(...noticeSegments(input.notice))
+  if (input.notice) segments.push(...noticeSegments(input.notice, { cols: input.cols }))
   if (input.showMessages === false) return segments
   const turns: Turn[] = input.messages.map((message) => ({
     kind: turnKind(message.role),
@@ -273,9 +281,39 @@ function wordLineSegments(
   return segments
 }
 
+function sideBySideWordSegments(
+  removed: WordDiffToken[],
+  added: WordDiffToken[],
+  trailing: string,
+): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = [{ text: "-", tone: "diffRemove" }]
+  for (const token of removed) {
+    segments.push({
+      text: token.text,
+      tone: token.kind === "change" ? "diffRemove" : "diffContext",
+    })
+  }
+  segments.push({ text: sideBySideGutter, tone: "diffMeta" })
+  segments.push({ text: "+", tone: "diffAdd" })
+  for (const token of added) {
+    segments.push({
+      text: token.text,
+      tone: token.kind === "change" ? "diffAdd" : "diffContext",
+    })
+  }
+  segments.push({ text: trailing, tone: "diffContext" })
+  return segments
+}
+
 // Unified diffs keep their + and - prefixes. Adjacent -/+ hunk pairs also get
 // word-level emphasis so only the changed tokens carry the add/remove tone.
-export function noticeSegments(notice: string): TranscriptSegment[] {
+// When the terminal is wide enough, short pairs render as one side-by-side row
+// (`-left │ +right`) without switching the review surface to DiffRenderable.
+export function noticeSegments(
+  notice: string,
+  options: { cols?: number } = {},
+): TranscriptSegment[] {
+  const cols = options.cols ?? 80
   const lines = notice.split("\n")
   const diff = lines.some((line) => line.startsWith("@@") || line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ "))
   if (!diff) return [{ text: `${notice}\n\n`, tone: "notice" }]
@@ -287,8 +325,12 @@ export function noticeSegments(notice: string): TranscriptSegment[] {
     if (next && isWordDiffPair(line, next)) {
       const aligned = alignWordDiff(line, next)
       const addedTrailing = index + 1 === lines.length - 1 ? "\n\n" : "\n"
-      segments.push(...wordLineSegments("-", aligned.removed, "diffRemove", "\n"))
-      segments.push(...wordLineSegments("+", aligned.added, "diffAdd", addedTrailing))
+      if (prefersSideBySideDiff(line, next, cols)) {
+        segments.push(...sideBySideWordSegments(aligned.removed, aligned.added, addedTrailing))
+      } else {
+        segments.push(...wordLineSegments("-", aligned.removed, "diffRemove", "\n"))
+        segments.push(...wordLineSegments("+", aligned.added, "diffAdd", addedTrailing))
+      }
       index++
       continue
     }

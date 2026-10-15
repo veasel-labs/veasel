@@ -1,24 +1,29 @@
 # Competitive coding-agent source study
 
-**Reviewed:** 2026-10-12. This document records implementation observations from
-the pinned upstream commits below. It is an engineering input, not a feature or
-performance claim about Veasel. Recheck upstream before using these references
-to make compatibility decisions.
+**Reviewed:** 2026-10-12; clone inventory and selected rechecks 2026-10-15.
+This document records implementation observations from the pinned upstream
+commits below. It is an engineering input, not a feature or performance claim
+about Veasel. Recheck upstream before using these references to make
+compatibility decisions. Local read-only clones live under
+`~/.cache/veasel-reference-research` (28/28 present on 2026-10-15).
 
 ## Source revisions
 
 | Project | Inspected revision | License / scope |
 |---|---|---|
-| [OpenCode](https://github.com/anomalyco/opencode/tree/3e78cd58e001a9b89ddbde53bb889190a934b649) | `3e78cd58e001a9b89ddbde53bb889190a934b649` | MIT; core session runner and tool policy |
-| [Codex CLI](https://github.com/openai/codex/tree/a9b0815167c27ab13719dd12d13b63e02b70d221) | `a9b0815167c27ab13719dd12d13b63e02b70d221` | Apache-2.0; turn orchestration and sandbox boundary |
+| [OpenCode](https://github.com/anomalyco/opencode/tree/37df62f4a1b6d89187a1169187a6cef10557c0ca) | `37df62f4a1b6d89187a1169187a6cef10557c0ca` (`dev`) | MIT; session runner, max-steps, usage accounting |
+| [Codex CLI](https://github.com/openai/codex/tree/160b2b1ef62114eeb41e41e5e3be0000d944b713) | `160b2b1ef62114eeb41e41e5e3be0000d944b713` | Apache-2.0; turn orchestration and sandbox boundary |
 | [mini-SWE-agent](https://github.com/SWE-agent/mini-SWE-agent/tree/04d809ceab9df28f9adaed044884180159172930) | `04d809ceab9df28f9adaed044884180159172930` | MIT; minimal loop, model/environment boundary |
-| [Goose](https://github.com/aaif-goose/goose/tree/4617040c7b650b37d599bdaa08d3790572c19ae8) | `4617040c7b650b37d599bdaa08d3790572c19ae8` | Apache-2.0; agent state machine and effects |
-| [Gemini CLI](https://github.com/google-gemini/gemini-cli/tree/9b6e0265d16bbd29ca51e33c9e0c01dc4cec5e83) | `9b6e0265d16bbd29ca51e33c9e0c01dc4cec5e83` | Apache-2.0; telemetry, redaction, and checkpointing |
+| [Goose](https://github.com/aaif-goose/goose/tree/dd17bf2021f3fb3b326c471593c352e1b0d62bbd) | `dd17bf2021f3fb3b326c471593c352e1b0d62bbd` | Apache-2.0; agent state machine and effects |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli/tree/06d329873703ddabe8a842d962342ac4ad779e83) | `06d329873703ddabe8a842d962342ac4ad779e83` | Apache-2.0; telemetry, redaction, and checkpointing |
 | [Aider](https://github.com/Aider-AI/aider/tree/5dc9490bb35f9729ef2c95d00a19ccd30c26339c) | `5dc9490bb35f9729ef2c95d00a19ccd30c26339c` | Apache-2.0; syntax-aware repository map and cache |
-| [Cline](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1) | `8eba11b2703f5b12d3f415544be37ffc0ca03be1` | Apache-2.0; shared agent/session and CLI runtime |
-| [OpenHands](https://github.com/All-Hands-AI/OpenHands/tree/0f1b6f62507f1ccdb4e63f61cf3dc48356a0d4fa) | `0f1b6f62507f1ccdb4e63f61cf3dc48356a0d4fa` | MIT; inspected the web client/runtime API boundary only, not the separately maintained agent-server implementation |
+| [Cline](https://github.com/cline/cline/tree/789f79e46d3ba579717e8dc8be35fe28af935b06) | `789f79e46d3ba579717e8dc8be35fe28af935b06` | Apache-2.0; shared agent/session and CLI runtime |
+| [OpenHands](https://github.com/OpenHands/OpenHands/tree/1c75a05d587bcb502cd3f63d7e13eaa98ca84d53) | `1c75a05d587bcb502cd3f63d7e13eaa98ca84d53` | MIT; web client; pair with software-agent-sdk |
+| [software-agent-sdk](https://github.com/OpenHands/software-agent-sdk/tree/8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547) | `8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547` | MIT; Agent Server REST/WebSocket lifecycle |
 | [Continue](https://github.com/continuedev/continue/tree/5522c6f44ca0ac3528b37244818fbfa39b5af470) | `5522c6f44ca0ac3528b37244818fbfa39b5af470` | Apache-2.0; context-provider and repository-map interfaces |
-| [Harbor](https://github.com/harbor-framework/harbor/tree/dc933be707feafbb9efcdf092cb8a0e391332617) | `dc933be707feafbb9efcdf092cb8a0e391332617` | Upstream integration contract and installed-agent adapters |
+| [Crush](https://github.com/charmbracelet/crush/tree/f49b28113b3bab3fcfe193676cc3f7fb858d6411) | `f49b28113b3bab3fcfe193676cc3f7fb858d6411` | MIT; Bubble Tea TUI status/diff presentation |
+| [Pi](https://github.com/earendil-works/pi/tree/b06c1f2cf1dea6af8748ddeee18c23587d2cb7c6) | `b06c1f2cf1dea6af8748ddeee18c23587d2cb7c6` | Apache-2.0; session forks and compaction |
+| [Harbor](https://github.com/harbor-framework/harbor/tree/f17ded80e938bccfd43bcf271f225f9dcaba5283) | `f17ded80e938bccfd43bcf271f225f9dcaba5283` | Upstream integration contract and installed-agent adapters |
 
 Proprietary Claude Code and Cursor were evaluated only through public product
 documentation and observable workflows; no proprietary source was inspected or
@@ -56,6 +61,14 @@ Veasel still executes tools one at a time. Its own tool-round cap now spends
 the blocked round on one tools-disabled completion and keeps that text when it
 is non-empty. The pending tool calls are not executed. This does not copy
 OpenCode's prompt, compaction, or permission model.
+
+Rechecked usage accounting on 2026-10-15 at the same OpenCode commit in
+[`packages/core/src/session/usage.ts`](https://github.com/anomalyco/opencode/blob/37df62f4a1b6d89187a1169187a6cef10557c0ca/packages/core/src/session/usage.ts).
+That module normalizes provider token fields and multiplies them by Models.dev
+price tiers to produce USD cost. Veasel deliberately does not calculate cost
+without a pinned authoritative price schedule. It now persists adapter-reported
+input/output token totals on completed operations, completion events, ChatExchange,
+`veasel run` JSON, and the TUI status line when `usage.reported` is true.
 
 ### Codex CLI — concurrent work, ordered transcript, independent sandbox policy
 
@@ -198,6 +211,24 @@ bounded, tool-requested repository data; a future retrieval layer should have
 an inspectable budget and source provenance. Avoid porting Continue's IDE
 context catalog into a terminal agent without matching user workflows.
 
+### Crush — status chrome and interaction-tested TUI surfaces
+
+At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under
+`internal/ui/model/status.go` and `internal/ui/chat/` keeps mode badges, help
+hints, and message rendering as separate models with golden/bench tests. Veasel
+keeps OpenTUI Core renderables and now surfaces provider-reported token counts
+in the footer after a turn completes. Richer markdown/diff chrome remains open;
+do not port Crush's Lip Gloss stack into the TypeScript client.
+
+### Pi — session forks without forcing compaction into the core loop
+
+At `b06c1f2cf1dea6af8748ddeee18c23587d2cb7c6`, Pi's durable session layer in
+`packages/durable/src/session/forks.ts` copies conversation-scoped documents
+under explicit `asOf`/`current` fork policies. Compaction is a separate
+conversation task. Veasel sessions are linear SQLite histories today; add
+forking only with a clear user workflow and restore tests. OpenCode-style
+automatic compaction is still deferred until token/task measurements justify it.
+
 ## Benchmark integration implications
 
 Harbor documentation currently recommends a `BaseInstalledAgent` adapter when
@@ -215,9 +246,10 @@ Harbor Index currently documents 80 tasks, at least five public trials per
 task, a pinned judge-verifier config, and a leaderboard PR after a public job
 upload. Veasel has not run this evaluation. The current headless runner is a
 useful prerequisite, not a Harbor integration: it does not yet make approved
-workspace edits automatically, provide a complete ATIF trajectory, expose
-provider token/cost usage, or satisfy the adapter's execution and artifact
-contract. Paid model calls and public uploads remain separate authorized
+workspace edits automatically under a sandboxed unattended policy. It can emit
+ATIF trajectories with provider-reported token totals when adapters supply them,
+but cost remains unavailable and the adapter contract for public tasks is not
+satisfied. Paid model calls and public uploads remain separate authorized
 steps.
 
 ## What to measure before changing the harness

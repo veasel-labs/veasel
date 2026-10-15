@@ -26,14 +26,17 @@ mut:
 
 struct HeadlessRunResult {
 pub:
-	session_id   string
-	operation_id string
-	status       string
-	provider     string @[omitempty]
-	model        string @[omitempty]
-	response     string @[omitempty]
-	error        string @[omitempty]
-	trace_file   string @[omitempty]
+	session_id     string
+	operation_id   string
+	status         string
+	provider       string @[omitempty]
+	model          string @[omitempty]
+	response       string @[omitempty]
+	error          string @[omitempty]
+	trace_file     string @[omitempty]
+	input_tokens   i64    @[omitempty]
+	output_tokens  i64    @[omitempty]
+	usage_reported bool   @[omitempty]
 }
 
 fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {
@@ -204,13 +207,16 @@ fn headless_completed_result(port int, session_id string, operation_id string,
 		write_atif_trace_file(trace_file, result.trajectory)!
 	}
 	return HeadlessRunResult{
-		session_id:   session_id
-		operation_id: operation_id
-		status:       operation.status
-		provider:     result.provider
-		model:        result.model
-		response:     result.content
-		trace_file:   if trace_file.len > 0 { trace_file } else { '' }
+		session_id:     session_id
+		operation_id:   operation_id
+		status:         operation.status
+		provider:       result.provider
+		model:          result.model
+		response:       result.content
+		trace_file:     if trace_file.len > 0 { trace_file } else { '' }
+		input_tokens:   if result.usage_reported { result.input_tokens } else { 0 }
+		output_tokens:  if result.usage_reported { result.output_tokens } else { 0 }
+		usage_reported: result.usage_reported
 	}
 }
 
@@ -347,13 +353,16 @@ fn headless_operation_result(port int, session_id string, operation_id string,
 		}
 	}
 	return HeadlessRunResult{
-		session_id:   session_id
-		operation_id: operation_id
-		status:       operation.status
-		provider:     operation.provider
-		model:        operation.model
-		error:        operation.error
-		trace_file:   written_trace
+		session_id:     session_id
+		operation_id:   operation_id
+		status:         operation.status
+		provider:       operation.provider
+		model:          operation.model
+		error:          operation.error
+		trace_file:     written_trace
+		input_tokens:   if operation.usage_reported { operation.input_tokens } else { 0 }
+		output_tokens:  if operation.usage_reported { operation.output_tokens } else { 0 }
+		usage_reported: operation.usage_reported
 	}
 }
 

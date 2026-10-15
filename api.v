@@ -113,9 +113,12 @@ struct CancelTurnResponse {
 
 struct ChatExchange {
 pub:
-	messages []ChatTurn
-	provider string
-	model    string
+	messages       []ChatTurn
+	provider       string
+	model          string
+	input_tokens   i64  @[omitempty]
+	output_tokens  i64  @[omitempty]
+	usage_reported bool @[omitempty]
 }
 
 struct SessionTurnAccepted {
@@ -126,13 +129,16 @@ pub:
 
 struct SessionOperationResult {
 pub:
-	session_id   string
-	operation_id string
-	status       string
-	provider     string
-	model        string
-	content      string
-	trajectory   string @[omitempty]
+	session_id     string
+	operation_id   string
+	status         string
+	provider       string
+	model          string
+	content        string
+	trajectory     string @[omitempty]
+	input_tokens   i64    @[omitempty]
+	output_tokens  i64    @[omitempty]
+	usage_reported bool   @[omitempty]
 }
 
 struct CompletionResponse {
@@ -827,13 +833,16 @@ pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
 		return json_server_error(mut ctx, 'Unable to read assistant operation result')
 	}
 	return ctx.json(SessionOperationResult{
-		session_id:   id
-		operation_id: canonical_id
-		status:       operation.status
-		provider:     operation.provider
-		model:        operation.model
-		content:      content
-		trajectory:   app.store.operation_trace(id, canonical_id) or { '' }
+		session_id:     id
+		operation_id:   canonical_id
+		status:         operation.status
+		provider:       operation.provider
+		model:          operation.model
+		content:        content
+		trajectory:     app.store.operation_trace(id, canonical_id) or { '' }
+		input_tokens:   if operation.usage_reported { operation.input_tokens } else { 0 }
+		output_tokens:  if operation.usage_reported { operation.output_tokens } else { 0 }
+		usage_reported: operation.usage_reported
 	})
 }
 
@@ -1215,13 +1224,16 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	visible := app.store.assistant_text_for_operation(id, operation_id) or { output.content }
 	assistant_content := if visible.len > 0 { visible } else { output.content }
 	persisted := app.store.append_exchange(id, operation_id, input.content, assistant_content,
-		output.provider, output.model, trace_json) or {
+		output.provider, output.model, trace_json, result.usage) or {
 		return error('unable to persist session messages')
 	}
 	return ChatExchange{
-		messages: persisted
-		provider: output.provider
-		model:    output.model
+		messages:       persisted
+		provider:       output.provider
+		model:          output.model
+		input_tokens:   if result.usage.reported { result.usage.input_tokens } else { 0 }
+		output_tokens:  if result.usage.reported { result.usage.output_tokens } else { 0 }
+		usage_reported: result.usage.reported
 	}
 }
 

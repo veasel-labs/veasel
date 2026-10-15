@@ -67,19 +67,19 @@ fn test_operation_trace_store_is_session_scoped_and_migrated() {
 	operation_id := uuid.new_v4().str()
 	store.create_session_operation(one.id, operation_id) or { panic(err) }
 	store.append_exchange(one.id, operation_id, 'prompt', 'response', 'fixture', 'model',
-		'{"schema_version":"ATIF-v1.8"}') or {
+		'{"schema_version":"ATIF-v1.8"}', ProviderUsage{}) or {
 		panic(err)
 	}
 	assert store.operation_trace(one.id, operation_id) or { panic(err) } == '{"schema_version":"ATIF-v1.8"}'
 	assert store.operation_trace(two.id, operation_id) or { '' } == ''
 	if _ := store.append_exchange(one.id, operation_id, 'duplicate prompt', 'duplicate response',
-		'fixture', 'model', '{"schema_version":"ATIF-v1.8"}') {
+		'fixture', 'model', '{"schema_version":"ATIF-v1.8"}', ProviderUsage{}) {
 		assert false
 	}
 	persisted_messages := store.messages_for_session(one.id, 10) or { panic(err) }
 	assert persisted_messages.len == 2
 	if _ := store.append_exchange(one.id, 'invalid', 'prompt', 'response', 'fixture', 'model',
-		'{"schema_version":"ATIF-v1.8"}') {
+		'{"schema_version":"ATIF-v1.8"}', ProviderUsage{}) {
 		assert false
 	} else {
 		assert err.msg().contains('operation trace is invalid')

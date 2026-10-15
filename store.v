@@ -28,14 +28,17 @@ pub:
 
 pub struct SessionOperation {
 pub:
-	id         string
-	session_id string
-	status     string
-	provider   string
-	model      string
-	error      string
-	created_at string
-	updated_at string
+	id             string
+	session_id     string
+	status         string
+	provider       string
+	model          string
+	error          string
+	input_tokens   i64  @[omitempty]
+	output_tokens  i64  @[omitempty]
+	usage_reported bool @[omitempty]
+	created_at     string
+	updated_at     string
 }
 
 struct SessionInput {
@@ -55,12 +58,15 @@ pub:
 
 struct EventData {
 pub:
-	operation_id string @[omitempty]
-	delta        string @[omitempty]
-	status       string @[omitempty]
-	provider     string @[omitempty]
-	model        string @[omitempty]
-	error        string @[omitempty]
+	operation_id   string @[omitempty]
+	delta          string @[omitempty]
+	status         string @[omitempty]
+	provider       string @[omitempty]
+	model          string @[omitempty]
+	error          string @[omitempty]
+	input_tokens   i64    @[omitempty]
+	output_tokens  i64    @[omitempty]
+	usage_reported bool   @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -374,6 +380,39 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit operation trace migration')
+		}
+	}
+	if current < 12 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin operation usage migration')
+		}
+		// Provider-reported token totals only. Cost stays unavailable until Veasel
+		// pins authoritative price schedules; never invent estimates here.
+		db.exec('ALTER TABLE session_operations ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add operation input token column')
+		}
+		db.exec('ALTER TABLE session_operations ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add operation output token column')
+		}
+		db.exec('ALTER TABLE session_operations ADD COLUMN usage_reported INTEGER NOT NULL DEFAULT 0 CHECK (usage_reported IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add operation usage flag column')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (12)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record operation usage migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit operation usage migration')
 		}
 	}
 	// Async session work is never replayed after restart: its provider request or
@@ -1051,7 +1090,7 @@ fn (mut store Store) mark_session_operation_cancelling(session_id string, operat
 }
 
 fn (mut store Store) session_operation_unlocked(session_id string, operation_id string) !SessionOperation {
-	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, created_at, updated_at FROM session_operations WHERE session_id = ? AND id = ?', [
+	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, created_at, updated_at FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
 		operation_id,
 	])!
@@ -1059,15 +1098,19 @@ fn (mut store Store) session_operation_unlocked(session_id string, operation_id 
 		return error('session operation not found')
 	}
 	row := rows[0]
+	usage_reported := row.val(8) == '1'
 	return SessionOperation{
-		id:         row.val(0)
-		session_id: row.val(1)
-		status:     row.val(2)
-		provider:   row.val(3)
-		model:      row.val(4)
-		error:      row.val(5)
-		created_at: row.val(6)
-		updated_at: row.val(7)
+		id:             row.val(0)
+		session_id:     row.val(1)
+		status:         row.val(2)
+		provider:       row.val(3)
+		model:          row.val(4)
+		error:          row.val(5)
+		input_tokens:   if usage_reported { row.val(6).i64() } else { 0 }
+		output_tokens:  if usage_reported { row.val(7).i64() } else { 0 }
+		usage_reported: usage_reported
+		created_at:     row.val(9)
+		updated_at:     row.val(10)
 	}
 }
 
@@ -1210,7 +1253,8 @@ fn (mut store Store) messages_page_for_session(session_id string, limit int, bef
 }
 
 fn (mut store Store) append_exchange(session_id string, operation_id string, user_content string,
-	assistant_content string, provider string, model string, trajectory_json string) ![]ChatTurn {
+	assistant_content string, provider string, model string, trajectory_json string,
+	usage ProviderUsage) ![]ChatTurn {
 	if trajectory_json.len > max_provider_stream_bytes * 2 {
 		return error('operation trace exceeds the persistence size limit')
 	}
@@ -1221,6 +1265,9 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		_ := json2.decode[map[string]json2.Any](trajectory_json) or {
 			return error('operation trace is invalid')
 		}
+	}
+	if usage.reported && (usage.input_tokens < 0 || usage.output_tokens < 0) {
+		return error('provider usage token counts must be non-negative')
 	}
 	store.mu.lock()
 	defer {
@@ -1254,20 +1301,37 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		}
 	}
 	if operation_id.len > 0 {
-		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
-			[provider, model, operation_id, session_id]) or {
+		input_tokens := if usage.reported { usage.input_tokens } else { i64(0) }
+		output_tokens := if usage.reported { usage.output_tokens } else { i64(0) }
+		usage_flag := if usage.reported { '1' } else { '0' }
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', input_tokens = ?, output_tokens = ?, usage_reported = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
+			[provider, model, input_tokens.str(), output_tokens.str(), usage_flag, operation_id,
+				session_id]) or {
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
-		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
-			'session.turn_completed',
-			session_id,
-			json2.encode[EventData](EventData{
+		completion := if usage.reported {
+			EventData{
+				operation_id:   operation_id
+				status:         'completed'
+				provider:       provider
+				model:          model
+				input_tokens:   input_tokens
+				output_tokens:  output_tokens
+				usage_reported: true
+			}
+		} else {
+			EventData{
 				operation_id: operation_id
 				status:       'completed'
 				provider:     provider
 				model:        model
-			}),
+			}
+		}
+		_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'session.turn_completed',
+			session_id,
+			json2.encode[EventData](completion),
 		]) or {
 			store.db.rollback() or {}
 			return error('unable to persist session turn completion')

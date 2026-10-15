@@ -1054,7 +1054,7 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. Cost is never estimated.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -1948,6 +1948,17 @@ components:
           type: string
         model:
           type: string
+        input_tokens:
+          type: integer
+          minimum: 0
+          description: Present only when the provider reported token usage for this turn.
+        output_tokens:
+          type: integer
+          minimum: 0
+          description: Present only when the provider reported token usage for this turn.
+        usage_reported:
+          type: boolean
+          description: True only when input_tokens and output_tokens came from the provider adapter. Cost remains unavailable.
     SessionTurnAccepted:
       type: object
       required: [operation_id, status]
@@ -1970,6 +1981,17 @@ components:
         provider: { type: string }
         model: { type: string }
         error: { type: string, maxLength: 1024 }
+        input_tokens:
+          type: integer
+          minimum: 0
+          description: Present only when the provider reported token usage for this turn.
+        output_tokens:
+          type: integer
+          minimum: 0
+          description: Present only when the provider reported token usage for this turn.
+        usage_reported:
+          type: boolean
+          description: True only when input_tokens and output_tokens came from the provider adapter. Veasel does not estimate tokens or cost.
         created_at: { type: string }
         updated_at: { type: string }
     SessionOperationResult:
@@ -1985,6 +2007,17 @@ components:
         trajectory:
           type: string
           description: Optional ATIF v1.8 JSON string, present only when collect_trace was requested and trajectory persistence succeeded.
+        input_tokens:
+          type: integer
+          minimum: 0
+          description: Present only when the provider reported token usage for this turn.
+        output_tokens:
+          type: integer
+          minimum: 0
+          description: Present only when the provider reported token usage for this turn.
+        usage_reported:
+          type: boolean
+          description: True only when input_tokens and output_tokens came from the provider adapter. Cost remains unavailable.
     Error:
       type: object
       required: [error]

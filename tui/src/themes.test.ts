@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test"
 import {
   defaultThemeId,
   formatThemeList,
+  formatThemePreviewStatus,
   isThemeId,
   loadThemeId,
   resolveTheme,
   saveThemeId,
   themeConfigPath,
+  themeIdFromSlashSuggestion,
   themes,
 } from "./themes"
 
@@ -53,5 +55,21 @@ describe("TUI themes", () => {
     expect(text).toContain("● mint  Mint")
     expect(text).toContain("○ ember  Ember")
     expect(text).toContain("/theme <id>")
+    expect(text).toContain("preview colors live")
+  })
+
+  test("reads a theme id from a /theme suggestion", () => {
+    expect(themeIdFromSlashSuggestion("/theme ember")).toBe("ember")
+    expect(themeIdFromSlashSuggestion("/theme AURORA")).toBe("aurora")
+    expect(themeIdFromSlashSuggestion("/theme")).toBeUndefined()
+    expect(themeIdFromSlashSuggestion("/theme neon")).toBeUndefined()
+    expect(themeIdFromSlashSuggestion("/themes ember")).toBeUndefined()
+  })
+
+  test("formats a preview status that names the saved theme", () => {
+    expect(formatThemePreviewStatus("ember", "mint")).toBe(
+      "● preview Ember  ·  Enter keeps · Esc restores Mint",
+    )
+    expect(formatThemePreviewStatus("mint", "mint")).toBe("● theme Mint  ·  saved")
   })
 })

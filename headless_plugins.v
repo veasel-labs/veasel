@@ -2,15 +2,19 @@ module main
 
 import json2
 import net.http
+import net.urllib
 import os
 
-// Headless Agent Plugin component enable/disable. Calls /v1/plugins/components.
-// Does not install packages, trust MCP servers, or execute skill scripts.
+// Headless Agent Plugin management. Calls /v1/plugins/components and
+// /v1/plugins/links. Does not trust MCP servers or execute skill scripts.
 
 enum HeadlessPluginsAction {
 	components_list
 	components_enable
 	components_disable
+	links_list
+	links_add
+	links_remove
 }
 
 struct HeadlessPluginsOptions {
@@ -19,11 +23,12 @@ mut:
 	plugin string
 	kind   string
 	name   string
+	path   string
 	json   bool
 }
 
 fn print_headless_plugins_help() {
-	println('Usage: veasel plugins components <list|enable|disable> [options]\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n\nOptions:\n      --json  Emit machine-readable JSON\n  -h, --help  Show this help\n\nPersists overrides in \$VEASEL_DATA_DIR/plugin-components.json via PATCH /v1/plugins/components.\nAbsent entries default to enabled. Disabled skills cannot be session-activated; disabled MCP servers cannot be trusted.')
+	println('Usage: veasel plugins <components|links> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add <absolute-package-path>\n  links remove <name>\n\nOptions:\n      --json  Emit machine-readable JSON\n  -h, --help  Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR; PLUGIN_DATA stays keyed by plugin name.')
 }
 
 fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
@@ -37,29 +42,55 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 	if group in ['--help', '-h', 'help'] {
 		return error('help')
 	}
-	if group != 'components' {
+	if group !in ['components', 'links'] {
 		return error('unknown plugins command: ${group}')
 	}
 	if index >= args.len {
-		return error('plugins components expects list|enable|disable')
+		return error('plugins ${group} expects a subcommand')
 	}
 	action := args[index]
 	index++
-	match action {
-		'list' {
-			options.action = .components_list
+	match group {
+		'components' {
+			match action {
+				'list' {
+					options.action = .components_list
+				}
+				'enable' {
+					options.action = .components_enable
+				}
+				'disable' {
+					options.action = .components_disable
+				}
+				'--help', '-h', 'help' {
+					return error('help')
+				}
+				else {
+					return error('unknown plugins components command: ${action}')
+				}
+			}
 		}
-		'enable' {
-			options.action = .components_enable
-		}
-		'disable' {
-			options.action = .components_disable
-		}
-		'--help', '-h', 'help' {
-			return error('help')
+		'links' {
+			match action {
+				'list' {
+					options.action = .links_list
+				}
+				'add' {
+					options.action = .links_add
+				}
+				'remove' {
+					options.action = .links_remove
+				}
+				'--help', '-h', 'help' {
+					return error('help')
+				}
+				else {
+					return error('unknown plugins links command: ${action}')
+				}
+			}
 		}
 		else {
-			return error('unknown plugins components command: ${action}')
+			return error('unknown plugins command: ${group}')
 		}
 	}
 	mut positional := []string{}
@@ -82,9 +113,9 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 		index++
 	}
 	match options.action {
-		.components_list {
+		.components_list, .links_list {
 			if positional.len > 0 {
-				return error('plugins components list does not take positional arguments')
+				return error('plugins list does not take positional arguments')
 			}
 		}
 		.components_enable, .components_disable {
@@ -97,6 +128,18 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 			if options.kind !in [plugin_component_kind_skill, plugin_component_kind_mcp] {
 				return error('component kind must be skill or mcp')
 			}
+		}
+		.links_add {
+			if positional.len != 1 {
+				return error('plugins links add expects <absolute-package-path>')
+			}
+			options.path = positional[0]
+		}
+		.links_remove {
+			if positional.len != 1 {
+				return error('plugins links remove expects <name>')
+			}
+			options.name = positional[0]
 		}
 	}
 	return options
@@ -154,6 +197,58 @@ fn execute_headless_plugins_components_toggle(port int, options HeadlessPluginsO
 	return '${view.plugin}/${view.kind}/${view.name}  ${state}'
 }
 
+fn execute_headless_plugins_links_list(port int, options HeadlessPluginsOptions) !string {
+	response := headless_json_request(port, .get, '/v1/plugins/links', '', false, '')!
+	if response.status_code != 200 {
+		return error(headless_plugins_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	catalog := json2.decode[PluginLinkCatalog](response.body)!
+	mut lines := []string{cap: catalog.links.len + catalog.diagnostics.len + 2}
+	lines << 'Plugin links (${catalog.links.len})'
+	if catalog.links.len == 0 {
+		lines << '(none)'
+	}
+	for link in catalog.links {
+		lines << '${link.name}  ->  ${link.path}'
+	}
+	for diagnostic in catalog.diagnostics {
+		lines << 'diagnostic  ${diagnostic.message}'
+	}
+	return lines.join('\n')
+}
+
+fn execute_headless_plugins_links_add(port int, options HeadlessPluginsOptions) !string {
+	payload := PluginLinkInput{
+		path: options.path
+	}
+	response := headless_json_request(port, .post, '/v1/plugins/links', json2.encode(payload),
+		false, '')!
+	if response.status_code != 200 {
+		return error(headless_plugins_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	link := json2.decode[PluginLink](response.body)!
+	return 'Linked ${link.name}  ->  ${link.path}'
+}
+
+fn execute_headless_plugins_links_remove(port int, options HeadlessPluginsOptions) !string {
+	path := '/v1/plugins/links/${urllib.path_escape(options.name)}'
+	response := headless_json_request(port, .delete, path, '', false, '')!
+	if response.status_code != 200 {
+		return error(headless_plugins_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	removal := json2.decode[PluginLinkRemoval](response.body)!
+	return 'Removed plugin link ${removal.removed}'
+}
+
 fn execute_headless_plugins_command(port int, args []string) {
 	options := parse_headless_plugins_args(args) or {
 		if err.msg() == 'help' {
@@ -183,6 +278,24 @@ fn execute_headless_plugins_command(port int, args []string) {
 		}
 		.components_disable {
 			execute_headless_plugins_components_toggle(port, options, false) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.links_list {
+			execute_headless_plugins_links_list(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.links_add {
+			execute_headless_plugins_links_add(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.links_remove {
+			execute_headless_plugins_links_remove(port, options) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

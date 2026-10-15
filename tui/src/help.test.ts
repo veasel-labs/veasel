@@ -53,7 +53,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("scrolling the split panel")
     expect(help).toContain("Press v to toggle")
     expect(help).toContain("sandbox warning stays above")
-    expect(help).toContain("decision stays above the arguments")
+    expect(help).toContain("decision and sandbox honesty stay above the arguments")
     expect(help).toContain("/history older")
     expect(help).toContain("/usage")
     expect(help).toContain("provider-reported token totals")

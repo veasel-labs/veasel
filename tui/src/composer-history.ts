@@ -22,6 +22,12 @@ export function rememberComposerEntry(history: ComposerHistory, raw: string): Co
   return { entries, offset: 0, draft: "" }
 }
 
+// Ctrl+U (readline kill-line) drops the draft and exits history recall so the
+// next ↑ starts from the newest entry again.
+export function clearComposerLine(history: ComposerHistory): ComposerHistory {
+  return { ...history, offset: 0, draft: "" }
+}
+
 export function stepComposerHistory(
   history: ComposerHistory,
   direction: "older" | "newer",

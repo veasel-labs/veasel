@@ -71,6 +71,7 @@ import {
   writeClipboardOsc52,
 } from "./copy-last-reply"
 import {
+  clearComposerLine,
   emptyComposerHistory,
   rememberComposerEntry,
   stepComposerHistory,
@@ -3307,6 +3308,18 @@ renderer.keyInput.on("keypress", (key) => {
       const ok = writeClipboardOsc52(reply)
       skillNotice = copyLastReplyNotice(ok ? "copied" : "failed")
       renderChat(chatMessages)
+      return
+    }
+    // Take over Ctrl+U before Input's delete-to-line-start so history recall
+    // resets too; empty drafts are a no-op so settings-free sessions stay quiet.
+    if ((key.ctrl && key.name === "u") || key.sequence === "\x15") {
+      key.preventDefault()
+      key.stopPropagation()
+      if (chatInput.value.length > 0 || composerHistory.offset > 0) {
+        composerHistory = clearComposerLine(composerHistory)
+        setComposerValue(chatInput, "")
+        chatInput.focus()
+      }
       return
     }
     if (

@@ -12,6 +12,63 @@ const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 const max_agent_context_bytes = max_chat_input_bytes + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
 const plugin_mcp_approval_poll_interval = 250 * time.millisecond
 
+// Workspace list/read/search have no durable side effects and may run concurrently
+// when a provider returns multiple tools in one round. Skill load/read stay
+// sequential so turn-scoped resource grants stay ordered; edits/shell/MCP never
+// parallelize.
+fn agent_tool_allows_parallel_readonly(name string) bool {
+	return name in ['workspace_list_files', 'workspace_read_file', 'workspace_search']
+}
+
+fn agent_tool_batch_allows_parallel_readonly(calls []ProviderToolCall) bool {
+	if calls.len < 2 {
+		return false
+	}
+	for call in calls {
+		if !agent_tool_allows_parallel_readonly(call.function.name) {
+			return false
+		}
+	}
+	return true
+}
+
+struct ParallelReadonlyToolResult {
+	index  int
+	result string
+}
+
+fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id string,
+	calls []ProviderToolCall, tool_policy AgentToolPolicy) []string {
+	results_ch := chan ParallelReadonlyToolResult{cap: calls.len}
+	for i, call in calls {
+		spawn execute_parallel_readonly_workspace_tool_worker(app, root, session_id, tool_policy,
+			i, call, results_ch)
+	}
+	mut ordered := []string{len: calls.len}
+	for _ in 0 .. calls.len {
+		item := <-results_ch
+		ordered[item.index] = item.result
+	}
+	return ordered
+}
+
+fn execute_parallel_readonly_workspace_tool_worker(app &App, root string, session_id string,
+	tool_policy AgentToolPolicy, index int, call ProviderToolCall, results_ch chan ParallelReadonlyToolResult) {
+	mut result := ''
+	if !tool_policy.allows(call.function.name) {
+		result = json2.encode[AgentToolError](AgentToolError{
+			error: 'Tool is not available under the active Agent Skill tool restrictions.'
+		})
+	} else {
+		result = sanitize_agent_tool_result(execute_workspace_agent_tool(app, root, session_id,
+			call))
+	}
+	results_ch <- ParallelReadonlyToolResult{
+		index:  index
+		result: result
+	}
+}
+
 struct AgentToolError {
 	error string
 }
@@ -273,11 +330,29 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			provider_context: output.provider_context
 		}
 		tool_calls += output.tool_calls.len
+		mut tool_results := []string{cap: output.tool_calls.len}
+		if agent_tool_batch_allows_parallel_readonly(output.tool_calls) {
+			if context_error := turn_context_error(mut turn_ctx) {
+				return error(context_error)
+			}
+			tool_results = execute_parallel_readonly_workspace_tools(app, root, session_id,
+				output.tool_calls, skill_context.tool_policy)
+			if context_error := turn_context_error(mut turn_ctx) {
+				return error(context_error)
+			}
+		} else {
+			for call in output.tool_calls {
+				if context_error := turn_context_error(mut turn_ctx) {
+					return error(context_error)
+				}
+				tool_results << sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
+					root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
+					policy)!)
+			}
+		}
 		mut trace_observations := []ATIFObservationResult{}
-		for call in output.tool_calls {
-			result := sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
-				root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
-				policy)!)
+		for i, call in output.tool_calls {
+			result := tool_results[i]
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')

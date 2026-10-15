@@ -57,10 +57,12 @@ Rechecked the session runner on 2026-10-15 at
 reaches its step limit, that runner keeps the tool definitions for the cached
 prefix but sets tool choice to none and asks for a text-only status. The rest
 of the 2026-10-12 OpenCode notes above were not re-audited at this commit.
-Veasel still executes tools one at a time. Its own tool-round cap now spends
-the blocked round on one tools-disabled completion and keeps that text when it
-is non-empty. The pending tool calls are not executed. This does not copy
-OpenCode's prompt, compaction, or permission model.
+Veasel executes a multi-tool round concurrently when every call is a workspace
+list/read/search tool, then appends results in provider call order; mixed rounds
+and skill/edit/shell/MCP calls stay sequential. Its own tool-round cap still
+spends the blocked round on one tools-disabled completion and keeps that text
+when it is non-empty. The pending tool calls are not executed. This does not
+copy OpenCode's prompt, compaction, or permission model.
 
 Rechecked usage accounting on 2026-10-15 at the same OpenCode commit in
 [`packages/core/src/session/usage.ts`](https://github.com/anomalyco/opencode/blob/37df62f4a1b6d89187a1169187a6cef10557c0ca/packages/core/src/session/usage.ts).

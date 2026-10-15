@@ -128,10 +128,12 @@ so the TUI review cannot hide command text. These bounds limit resource use; the
 untrusted command safe.
 
 Shell command list/inspect/approve responses include a computed `sandbox`
-object (`mode`, `will_wrap`, `backend`) from `VEASEL_SHELL_SANDBOX` and the
-current platform backends so reviewers see wrap intent before approval. MCP
-tool-call reviews expose the parallel `stdio_sandbox` object from
-`VEASEL_MCP_STDIO_SANDBOX` (default off).
+object (`mode`, `will_wrap`, `backend`, `network`) from `VEASEL_SHELL_SANDBOX`,
+`VEASEL_SHELL_SANDBOX_NETWORK`, and the current platform backends so reviewers
+see wrap intent and network posture before approval (`deny`/`allow` when
+wrapping, `host` when unsandboxed). MCP tool-call reviews expose the parallel
+`stdio_sandbox` object from `VEASEL_MCP_STDIO_SANDBOX` (default off; `network`
+is `shared` when wrapping, otherwise `host`).
 
 The API is loopback-only and has no authentication token. A local same-user
 process can access session APIs and invoke approvals. Treat same-user processes

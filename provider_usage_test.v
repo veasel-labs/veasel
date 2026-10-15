@@ -165,3 +165,51 @@ fn test_add_provider_usage_sums_cache_only_when_reported() {
 	assert sum.cache_reported
 	assert sum.cache_read_tokens == 100
 }
+
+fn test_anthropic_stream_merges_message_start_and_delta_usage() {
+	mut stream_state := AnthropicStreamOutput{}
+	anthropic_stream_apply_usage(mut stream_state, 'message_start', '{
+		"type":"message_start",
+		"message":{"usage":{"input_tokens":120,"output_tokens":0,"cache_read_input_tokens":80,"cache_creation_input_tokens":10}}
+	}') or { panic(err) }
+	assert stream_state.usage.reported
+	assert stream_state.usage.input_tokens == 120
+	assert stream_state.usage.output_tokens == 0
+	assert stream_state.usage.cache_reported
+	assert stream_state.usage.cache_read_tokens == 80
+	assert stream_state.usage.cache_creation_tokens == 10
+	anthropic_stream_apply_usage(mut stream_state, 'message_delta', '{
+		"type":"message_delta",
+		"usage":{"output_tokens":40,"cache_read_input_tokens":80,"cache_creation_input_tokens":10}
+	}') or { panic(err) }
+	merged := stream_state.usage
+	assert merged.input_tokens == 120
+	assert merged.output_tokens == 40
+	assert merged.total_tokens == 160
+	assert merged.cache_reported
+	assert merged.cache_read_tokens == 80
+	assert merged.cache_creation_tokens == 10
+}
+
+fn test_openai_and_anthropic_usage_clamp_negative_cache_and_reasoning() {
+	openai := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 10,
+		"completion_tokens": 5,
+		"total_tokens": 15,
+		"prompt_tokens_details": {"cached_tokens": -3},
+		"completion_tokens_details": {"reasoning_tokens": -7}
+	}') or { panic(err) }
+	assert openai.cache_reported
+	assert openai.cache_read_tokens == 0
+	assert openai.reasoning_reported
+	assert openai.reasoning_tokens == 0
+	anthropic := provider_usage_from_fixture_json('anthropic', '{
+		"input_tokens": 10,
+		"output_tokens": 5,
+		"cache_read_input_tokens": -2,
+		"cache_creation_input_tokens": -4
+	}') or { panic(err) }
+	assert anthropic.cache_reported
+	assert anthropic.cache_read_tokens == 0
+	assert anthropic.cache_creation_tokens == 0
+}

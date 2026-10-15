@@ -388,8 +388,8 @@ fn parse_configured_mcp_input(input ConfiguredMCPServerInput) !ConfiguredMCPServ
 			}
 			mut args := []string{}
 			for argument in input.args {
-				if argument.contains('\0') {
-					return error('arguments must not contain NUL bytes')
+				if !valid_plugin_mcp_arg(argument) {
+					return error('arguments must not contain control bytes')
 				}
 				args << argument
 			}

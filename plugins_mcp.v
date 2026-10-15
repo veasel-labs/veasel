@@ -124,8 +124,8 @@ fn parse_plugin_mcp_server(root string, name string, value json2.Any) !PluginMCP
 						return error('args must be an array of strings')
 					}
 					argument := arg as string
-					if argument.contains('\0') {
-						return error('arguments must not contain NUL bytes')
+					if !valid_plugin_mcp_arg(argument) {
+						return error('arguments must not contain control bytes')
 					}
 					args << argument
 				}
@@ -483,6 +483,17 @@ fn valid_plugin_mcp_env_key(key string) bool {
 // cannot be split by embedded CR/LF/NUL/TAB bytes.
 fn valid_plugin_mcp_env_value(value string) bool {
 	for c in value {
+		if c < 32 || c == 127 {
+			return false
+		}
+	}
+	return true
+}
+
+// valid_plugin_mcp_arg rejects ASCII controls in stdio argv so shell-metachar
+// and CreateProcess command lines cannot embed CR/LF/NUL/TAB.
+fn valid_plugin_mcp_arg(argument string) bool {
+	for c in argument {
 		if c < 32 || c == 127 {
 			return false
 		}

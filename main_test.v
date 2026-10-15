@@ -1367,6 +1367,26 @@ fn test_enqueue_session_operation_rejects_non_object_json() {
 	assert rejected
 }
 
+fn test_enqueue_session_operation_rejects_oversized_request_json() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'Enqueue oversized'
+		directory: '/tmp/enqueue-oversized'
+	}) or { panic(err) }
+	oversized := 'x'.repeat(max_chat_input_bytes + 2049)
+	mut rejected := false
+	_ = store.enqueue_session_operation(session.id, '6f708192-a3b4-c5d6-e7f8-091a2b3c4d5e',
+		oversized) or {
+		rejected = err.msg() == 'queued session operation request exceeds the size limit'
+		SessionOperation{}
+	}
+	assert rejected
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_resume_rejects_empty_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-empty-queued-${uuid.new_v4().str()}')
 	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-empty-queued-${uuid.new_v4().str()}')

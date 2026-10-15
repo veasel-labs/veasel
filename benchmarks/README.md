@@ -79,3 +79,32 @@ faster overall.
 These are single-workstation CLI-only baselines, not a cross-machine benchmark
 or a comparison of interactive TUI readiness and coding-agent performance.
 Repeat after changes before making broader performance claims.
+
+## Local TUI startup + PTY connected
+
+`tui-startup.mjs` measures packaged `veasel-tui` `--version`/`--help` wall time
+and Linux RSS, plus PTY time-to-connected against an isolated `veasel serve`
+(visible markers `connected`, `SESSIONS`, `VEASEL`). It makes no model requests.
+
+```sh
+VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \
+VEASEL_BENCH_SAMPLES=15 VEASEL_BENCH_WARMUPS=2 VEASEL_TUI_PTY_SAMPLES=5 \
+  node benchmarks/tui-startup.mjs --output tui-startup.json
+```
+
+### Recorded local TUI baseline
+
+| Report | Binary | Notes |
+|---|---|---|
+| [`reports/tui-startup-linux-x64-2026-10-15.json`](reports/tui-startup-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples) |
+
+2026-10-15 medians on one Linux x64 workstation (`7.2.9-arch1-1`):
+
+| Probe | p50 |
+|---|---:|
+| `veasel-tui --version` | 41.1 ms (≈50.4 MiB RSS) |
+| `veasel-tui --help` | 41.9 ms (≈50.3 MiB RSS) |
+| PTY → connected home | 70.0 ms |
+
+Single-workstation evidence only. See
+[`../docs/compatibility/tui-interactive-smoke.md`](../docs/compatibility/tui-interactive-smoke.md).

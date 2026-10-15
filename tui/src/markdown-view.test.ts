@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
   createMarkdownSyntaxStyle,
+  latestAssistantMarkdown,
   markdownSyntaxStyles,
   shouldStreamMarkdownSurface,
+  shouldUseMarkdownSurface,
 } from "./markdown-view"
 import { themes } from "./themes"
 
@@ -21,28 +23,74 @@ describe("markdown stream surface", () => {
     syntax.destroy()
   })
 
-  test("uses MarkdownRenderable only while following the live stream", () => {
+  test("uses MarkdownRenderable while following live or completed assistant bodies", () => {
+    expect(shouldUseMarkdownSurface({
+      followBottom: true,
+      hasAssistantMarkdown: true,
+    })).toBe(true)
+    expect(shouldUseMarkdownSurface({
+      followBottom: false,
+      hasAssistantMarkdown: true,
+    })).toBe(false)
+    expect(shouldUseMarkdownSurface({
+      followBottom: true,
+      hasAssistantMarkdown: false,
+    })).toBe(false)
+    expect(shouldUseMarkdownSurface({
+      followBottom: true,
+      hasAssistantMarkdown: true,
+      noticeOpen: true,
+    })).toBe(false)
+    expect(shouldUseMarkdownSurface({
+      followBottom: true,
+      hasAssistantMarkdown: true,
+      reviewSplitOpen: true,
+    })).toBe(false)
+  })
+
+  test("keeps stream-only helper gated on an in-flight turn", () => {
     expect(shouldStreamMarkdownSurface({
       streaming: true,
       followBottom: true,
     })).toBe(true)
     expect(shouldStreamMarkdownSurface({
-      streaming: true,
-      followBottom: false,
-    })).toBe(false)
-    expect(shouldStreamMarkdownSurface({
       streaming: false,
       followBottom: true,
     })).toBe(false)
-    expect(shouldStreamMarkdownSurface({
+  })
+
+  test("prefers the live stream over a prior completed assistant turn", () => {
+    expect(latestAssistantMarkdown({
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "# Done" },
+      ],
       streaming: true,
-      followBottom: true,
-      noticeOpen: true,
-    })).toBe(false)
-    expect(shouldStreamMarkdownSurface({
+      streamingText: "## Live",
+      streamingCursor: "█",
+    })).toEqual({ content: "## Live█", streaming: true })
+  })
+
+  test("finalizes the latest completed assistant when idle", () => {
+    expect(latestAssistantMarkdown({
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "first" },
+        { role: "user", content: "again" },
+        { role: "assistant", content: "# Shipped\n\nok" },
+      ],
+    })).toEqual({ content: "# Shipped\n\nok", streaming: false })
+  })
+
+  test("returns null when there is no assistant body to render", () => {
+    expect(latestAssistantMarkdown({
+      messages: [{ role: "user", content: "only me" }],
+    })).toBeNull()
+    expect(latestAssistantMarkdown({
+      messages: [],
       streaming: true,
-      followBottom: true,
-      reviewSplitOpen: true,
-    })).toBe(false)
+      streamingText: "",
+      streamingCursor: "█",
+    })).toEqual({ content: "█", streaming: true })
   })
 })

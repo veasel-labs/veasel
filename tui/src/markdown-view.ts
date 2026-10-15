@@ -34,14 +34,60 @@ export function createMarkdownSyntaxStyle(theme: Theme): SyntaxStyle {
   return SyntaxStyle.fromStyles(markdownSyntaxStyles(theme))
 }
 
-// Follow-mode live replies can use MarkdownRenderable streaming; once the
-// operator scrolls the TextChunk transcript window, keep the stream inline so
-// PgUp/Home still reveal earlier delta lines inside the same surface.
+// Stick-to-bottom can own the latest assistant body via MarkdownRenderable
+// (live stream + completed history). Scrolled TextChunk windows keep markdown
+// tones so Home/PgUp still page earlier lines inside one surface.
+export function shouldUseMarkdownSurface(input: {
+  followBottom: boolean
+  noticeOpen?: boolean
+  reviewSplitOpen?: boolean
+  hasAssistantMarkdown?: boolean
+}): boolean {
+  const hasBody = input.hasAssistantMarkdown !== false
+  return Boolean(input.followBottom && hasBody && !input.noticeOpen && !input.reviewSplitOpen)
+}
+
+/** @deprecated Prefer shouldUseMarkdownSurface; kept for stream-only call sites. */
 export function shouldStreamMarkdownSurface(input: {
   streaming: boolean
   followBottom: boolean
   noticeOpen?: boolean
   reviewSplitOpen?: boolean
 }): boolean {
-  return Boolean(input.streaming && input.followBottom && !input.noticeOpen && !input.reviewSplitOpen)
+  return shouldUseMarkdownSurface({
+    followBottom: input.followBottom,
+    noticeOpen: input.noticeOpen,
+    reviewSplitOpen: input.reviewSplitOpen,
+    hasAssistantMarkdown: input.streaming,
+  })
+}
+
+export type LatestAssistantMarkdown = {
+  content: string
+  streaming: boolean
+}
+
+// Latest assistant body for the follow-mode Markdown panel. Live streams win
+// over the last completed turn so deltas keep updating one renderable.
+export function latestAssistantMarkdown(input: {
+  messages: Array<{ role: string; content: string }>
+  streaming?: boolean
+  streamingText?: string
+  streamingCursor?: string
+}): LatestAssistantMarkdown | null {
+  if (input.streaming || (input.streamingText !== undefined && input.streamingText.length > 0)) {
+    const body = input.streamingText ?? ""
+    const cursor = input.streaming ? (input.streamingCursor ?? "") : ""
+    return {
+      content: `${body}${cursor}`,
+      streaming: Boolean(input.streaming),
+    }
+  }
+  for (let index = input.messages.length - 1; index >= 0; index--) {
+    const message = input.messages[index]!
+    if (message.role === "assistant" && message.content.trim().length > 0) {
+      return { content: message.content, streaming: false }
+    }
+  }
+  return null
 }

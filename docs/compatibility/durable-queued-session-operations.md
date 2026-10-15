@@ -34,7 +34,9 @@ loopback HTTP API (`queued` → `running` → terminal).
   `Retry-After: 1` and do not persist another queue row
 - Enqueue fail-closed: request JSON must decode as `ChatMessageInput` with
   non-empty user content (no NUL); invalid payloads never become `queued` rows.
-  Resume still re-validates for legacy or manually repaired rows
+  Request JSON larger than `max_chat_input_bytes + 2048` (1 MiB + 2 KiB) is
+  rejected before insert. Resume still re-validates for legacy or manually
+  repaired rows
 - Resume fail-closed for autonomous turns: `autonomous:true` is not claimed
   unless the running server opted in with `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`
   (same gate as the HTTP turn path)

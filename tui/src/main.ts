@@ -79,7 +79,7 @@ import {
   stepComposerHistory,
   type ComposerHistory,
 } from "./composer-history"
-import { composerLineCursor, killWordBackward } from "./composer-edit"
+import { composerLineCursor, killLineForward, killWordBackward } from "./composer-edit"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
 import {
@@ -3455,6 +3455,19 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       chatInput.cursorOffset = composerLineCursor(chatInput.value, "end")
       chatInput.focus()
+      return
+    }
+    // Ctrl+K kills from the cursor to the end of the draft (readline).
+    if ((key.ctrl && key.name === "k") || key.sequence === "\x0b") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = killLineForward(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
+        chatInput.focus()
+      }
       return
     }
     if (

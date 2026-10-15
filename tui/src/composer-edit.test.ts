@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { composerLineCursor, killWordBackward } from "./composer-edit"
+import { composerLineCursor, killLineForward, killWordBackward } from "./composer-edit"
 
 describe("killWordBackward", () => {
   test("deletes the word before the cursor and keeps the rest", () => {
@@ -24,5 +24,13 @@ describe("composerLineCursor", () => {
     expect(composerLineCursor("hello", "home")).toBe(0)
     expect(composerLineCursor("hello", "end")).toBe(5)
     expect(composerLineCursor("", "end")).toBe(0)
+  })
+})
+
+describe("killLineForward", () => {
+  test("deletes from the cursor to the end of the draft", () => {
+    expect(killLineForward("hello world", 5)).toEqual({ value: "hello", cursor: 5 })
+    expect(killLineForward("hello world", 0)).toEqual({ value: "", cursor: 0 })
+    expect(killLineForward("hello", 5)).toEqual({ value: "hello", cursor: 5 })
   })
 })

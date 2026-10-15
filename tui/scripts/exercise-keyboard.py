@@ -831,10 +831,22 @@ def main() -> None:
         visible = screen.terminal.text()
         if "wordkill" in visible:
             raise AssertionError(f"Ctrl+W left the killed word on screen\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.45)  # Ctrl+U clears before Ctrl+K probe
+        screen.wait_for("Ask Veasel", 4)
+        screen.send("headTAIL", 0.4)
+        screen.wait_for("headTAIL", 4)
+        screen.send("\x01", 0.3)  # start of draft
+        for _ in range(4):  # move past "head"
+            screen.send("\x1b[C", 0.08)
+        screen.send("\x0b", 0.45)  # Ctrl+K kills from cursor to end
+        screen.wait_for("head", 4)
+        visible = screen.terminal.text()
+        if "TAIL" in visible:
+            raise AssertionError(f"Ctrl+K left text after the cursor\n--- screen ---\n{visible}")
         screen.send("\x15", 0.45)  # Ctrl+U clears the composer draft
         screen.wait_for("Ask Veasel", 4)
         visible = screen.terminal.text()
-        if "pre-zxqy " in visible:
+        if "head" in visible:
             raise AssertionError(f"Ctrl+U left the composer draft on screen\n--- screen ---\n{visible}")
         screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
         screen.send("!", 0.35)  # append so the recalled line is unique on screen

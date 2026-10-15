@@ -13,11 +13,12 @@ test("home footer surfaces the discovery slash commands", () => {
 })
 
 test("session footer surfaces reviews and the same discovery commands", () => {
-  for (const command of ["/skills", "/plugins", "/mcp", "/theme", "/map"]) {
+  for (const command of ["/skills", "/mcp", "/theme", "/map"]) {
     expect(sessionFooterHint).toContain(command)
   }
   expect(sessionFooterHint).toContain("Ctrl+R")
   expect(sessionFooterHint).toContain("Ctrl+Y")
+  expect(sessionFooterHint).toContain("↑ history")
   expect(sessionFooterHint).toContain("Esc")
   expect(sessionFooterHint).toContain("PgUp/PgDn")
 })

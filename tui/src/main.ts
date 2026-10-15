@@ -54,6 +54,12 @@ import {
   lastAssistantReply,
   writeClipboardOsc52,
 } from "./copy-last-reply"
+import {
+  emptyComposerHistory,
+  rememberComposerEntry,
+  stepComposerHistory,
+  type ComposerHistory,
+} from "./composer-history"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -466,6 +472,7 @@ let activePatchPath = ""
 let activePatchStatus = ""
 let activePatchHunkIndex = 0
 let chatMessages: ChatTurn[] = []
+let composerHistory: ComposerHistory = emptyComposerHistory()
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
 let transcriptScrollOffset = 0
@@ -784,6 +791,7 @@ async function openSession(session: Session) {
   chatHistoryHasOlder = false
   chatHistoryLoading = false
   chatMessages = []
+  composerHistory = emptyComposerHistory()
   transcriptScrollOffset = 0
   streamingAssistantText = ""
   pendingUserMessage = ""
@@ -834,6 +842,7 @@ async function sendMessage(value: string) {
   const content = value.trim()
   const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
   if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
+  composerHistory = rememberComposerEntry(composerHistory, content)
   if (content === "/help" || content === "/?" || content === "/help advanced") {
     skillNotice = renderHelp(content === "/help" && (process.stdout.rows ?? 40) < 30)
     renderChat(chatMessages)
@@ -3000,6 +3009,23 @@ renderer.keyInput.on("keypress", (key) => {
       skillNotice = copyLastReplyNotice(ok ? "copied" : "failed")
       renderChat(chatMessages)
       return
+    }
+    if (
+      slashMatches.length === 0
+      && (key.name === "up" || key.name === "down")
+    ) {
+      const stepped = stepComposerHistory(
+        composerHistory,
+        key.name === "up" ? "older" : "newer",
+        chatInput.value,
+      )
+      if (stepped) {
+        key.preventDefault()
+        key.stopPropagation()
+        composerHistory = stepped.history
+        setComposerValue(chatInput, stepped.value)
+        return
+      }
     }
     const hotkey = reviewHotkey(key, {
       composerEmpty: chatInput.value.trim() === "",

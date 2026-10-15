@@ -1194,6 +1194,9 @@ fn (mut store Store) enqueue_session_operation(session_id string, operation_id s
 	if request_json.trim_space().len == 0 {
 		return error('queued session operation requires a request payload')
 	}
+	if request_json.contains('\0') {
+		return error('queued session operation request is invalid')
+	}
 	if request_json.len > max_chat_input_bytes + 2048 {
 		return error('queued session operation request exceeds the size limit')
 	}

@@ -939,6 +939,8 @@ fn test_session_title_rejects_control_characters() {
 	assert !valid_session_title('bad\ntitle')
 	assert !valid_session_title('bad\rtitle')
 	assert !valid_session_title('bad\0title')
+	assert !valid_session_title('bad\ttitle')
+	assert !valid_session_title('bad\x1btitle')
 	mut nul_rejected := false
 	_ = canonical_workspace_root('/tmp/workspace\0escape') or {
 		nul_rejected = true

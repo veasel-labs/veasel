@@ -1703,7 +1703,7 @@ fn valid_session_title(title string) bool {
 		return false
 	}
 	for c in title {
-		if c == 0 || c == `\r` || c == `\n` {
+		if c < 32 || c == 127 {
 			return false
 		}
 	}

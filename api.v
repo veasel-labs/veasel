@@ -1677,17 +1677,18 @@ pub fn (app &App) create_session(mut ctx Context) veb.Result {
 	input := json2.decode[SessionInput](ctx.req.data) or {
 		return json_request_error(mut ctx, 'Expected JSON with title and directory')
 	}
-	if input.title.trim_space().len == 0 || input.title.len > 200 {
-		return json_request_error(mut ctx, 'Title must contain 1 to 200 characters')
+	title := input.title.trim_space()
+	if !valid_session_title(title) {
+		return json_request_error(mut ctx, 'Title must contain 1 to 200 printable characters without control bytes')
 	}
-	if input.directory.len == 0 || input.directory.len > 4096 {
+	if input.directory.len == 0 || input.directory.len > 4096 || input.directory.contains('\0') {
 		return json_request_error(mut ctx, 'Directory must contain 1 to 4096 characters')
 	}
 	directory := canonical_workspace_root(input.directory) or {
 		return json_request_error(mut ctx, 'Directory must resolve to an existing workspace directory')
 	}
 	session := app.store.create_session(SessionInput{
-		title:     input.title.trim_space()
+		title:     title
 		directory: directory
 	}) or {
 		eprintln('veasel: create session failed: ${err}')
@@ -1697,8 +1698,20 @@ pub fn (app &App) create_session(mut ctx Context) veb.Result {
 	return ctx.json(session)
 }
 
+fn valid_session_title(title string) bool {
+	if title.len == 0 || title.len > 200 {
+		return false
+	}
+	for c in title {
+		if c == 0 || c == `\r` || c == `\n` {
+			return false
+		}
+	}
+	return true
+}
+
 fn canonical_workspace_root(path string) !string {
-	if path.len == 0 || path.len > 4096 {
+	if path.len == 0 || path.len > 4096 || path.contains('\0') {
 		return error('invalid workspace directory')
 	}
 	canonical := os.real_path(path)

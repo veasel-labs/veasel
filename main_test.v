@@ -903,6 +903,22 @@ fn test_chat_history_pages_use_an_exclusive_message_cursor() {
 	assert invalid_cursor_rejected
 }
 
+fn test_session_title_rejects_control_characters() {
+	assert valid_session_title('Review branch')
+	assert valid_session_title('a'.repeat(200))
+	assert !valid_session_title('')
+	assert !valid_session_title('a'.repeat(201))
+	assert !valid_session_title('bad\ntitle')
+	assert !valid_session_title('bad\rtitle')
+	assert !valid_session_title('bad\0title')
+	mut nul_rejected := false
+	_ = canonical_workspace_root('/tmp/workspace\0escape') or {
+		nul_rejected = true
+		''
+	}
+	assert nul_rejected
+}
+
 fn test_prefer_header_includes_respond_async_is_case_insensitive() {
 	assert prefer_header_includes_respond_async('respond-async')
 	assert prefer_header_includes_respond_async('Respond-Async')

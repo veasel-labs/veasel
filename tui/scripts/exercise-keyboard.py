@@ -577,6 +577,13 @@ def exercise_narrow(port: int) -> None:
         screen.send("\r", 0.6)
         screen.wait_for("2 OF 3")
         screen.wait_for("API key")
+        screen.send("\x1b", 0.4)  # Esc closes settings
+        screen.wait_for("q quit", 4)
+        screen.send("\r", 0.5)  # open Alpha
+        screen.wait_for("Ask Veasel", 4)
+        screen.send("/help\r", 0.7)  # 24-row terminal uses compact help
+        screen.wait_for("/mcp credentials · /mcp oauth", 4)
+        screen.wait_for("Named HTTP auth", 4)
     finally:
         process.terminate()
         try:
@@ -655,16 +662,25 @@ def main() -> None:
         screen.clear_line(1)  # "/"
         screen.send("/help\r", 0.7)
         screen.wait_for("VEASEL CODE / QUICK HELP", 4)
+        screen.wait_for("/mcp", 4)
         screen.send("\x1b", 0.4)  # Esc dismisses help notice, stays in session
         screen.wait_for("Ask Veasel", 4)
         if "VEASEL CODE / QUICK HELP" in screen.terminal.text():
             raise AssertionError("Esc did not dismiss the help notice")
         screen.wait_for("Ctrl+Y")
-        # Description search: find /connect and /theme without typing their names.
+        # Description search: find /connect, MCP OAuth, and /theme without typing their names.
         screen.send("/key", 0.7)
         screen.wait_for("/connect")
         screen.send("\x1b", 0.25)
         screen.clear_line(4)  # "/key"
+        screen.send("/pkce", 0.7)
+        screen.wait_for("/mcp oauth", 4)
+        screen.send("\x1b", 0.25)
+        screen.clear_line(5)  # "/pkce"
+        screen.send("/bearer", 0.7)
+        screen.wait_for("/mcp credential", 4)
+        screen.send("\x1b", 0.25)
+        screen.clear_line(7)  # "/bearer"
         screen.send("/color", 0.7)
         screen.wait_for("/theme")
         screen.send("\t", 0.45)

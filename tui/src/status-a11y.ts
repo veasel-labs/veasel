@@ -24,6 +24,22 @@ export function formatBusyStatus(message: string): string {
   return formatStatusLine("busy", `busy  ·  ${trimmed}`)
 }
 
+// Compact measured length for the streaming busy cue (not a token estimate).
+export function formatStreamingCharCount(chars: number): string {
+  const n = Math.max(0, Math.floor(chars))
+  if (n < 1000) return `${n} chars`
+  const k = n / 1000
+  if (k >= 10) return `${Math.round(k)}k chars`
+  return `${k.toFixed(1).replace(/\.0$/, "")}k chars`
+}
+
+// In-flight assistant deltas: keep ◌ busy, speak "streaming", and show measured
+// character growth so operators see progress without color alone.
+export function formatStreamingBusyStatus(chars: number): string {
+  if (chars <= 0) return formatBusyStatus("Veasel is thinking…")
+  return formatBusyStatus(`streaming  ·  ${formatStreamingCharCount(chars)}`)
+}
+
 export function formatWarnStatus(message: string): string {
   const trimmed = message.trim()
   if (!trimmed) return formatStatusLine("warn", "attention")

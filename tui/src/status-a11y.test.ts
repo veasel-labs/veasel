@@ -5,6 +5,8 @@ import {
   formatHomeFilterStatus,
   formatHomeSessionStatus,
   formatStatusLine,
+  formatStreamingBusyStatus,
+  formatStreamingCharCount,
   formatWarnStatus,
   statusGlyph,
 } from "./status-a11y"
@@ -23,6 +25,15 @@ describe("status a11y glyphs", () => {
     expect(formatBusyStatus("cancelling response…")).toBe("◌ busy  ·  cancelling response…")
     expect(formatBusyStatus("reconnecting to event stream…")).toBe("◌ busy  ·  reconnecting to event stream…")
     expect(formatBusyStatus("busy  ·  already labeled")).toBe("◌ busy  ·  already labeled")
+  })
+
+  test("reports measured streaming character growth without inventing tokens", () => {
+    expect(formatStreamingCharCount(0)).toBe("0 chars")
+    expect(formatStreamingCharCount(42)).toBe("42 chars")
+    expect(formatStreamingCharCount(1500)).toBe("1.5k chars")
+    expect(formatStreamingCharCount(12_400)).toBe("12k chars")
+    expect(formatStreamingBusyStatus(0)).toBe("◌ busy  ·  Veasel is thinking…")
+    expect(formatStreamingBusyStatus(42)).toBe("◌ busy  ·  streaming  ·  42 chars")
   })
 
   test("marks warn and error rows with spoken severity words", () => {

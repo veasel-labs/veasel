@@ -94,7 +94,7 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
-import { formatBusyStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatWarnStatus } from "./status-a11y"
+import { formatBusyStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
 import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
@@ -2448,7 +2448,11 @@ async function consumeEvents() {
             if (line.startsWith("event:") && line.slice(6).trim() !== "heartbeat") {
               const eventType = line.slice(6).trim()
               refreshSessionsForEvent ||= eventType !== "assistant.delta"
-              status.content = `● live  ·  ${eventType}`
+              // Keep assistant.delta off the live flash so streaming busy / scroll
+              // cues are not overwritten by the raw event name.
+              if (eventType !== "assistant.delta") {
+                status.content = `● live  ·  ${eventType}`
+              }
               if (eventType === "assistant.delta" || eventType === "plugin.mcp_tool_call_pending"
                 || eventType === "session.turn_completed") {
                 const data = block.split(/\r?\n/).filter((item) => item.startsWith("data:"))
@@ -2467,6 +2471,12 @@ async function consumeEvents() {
                       && typeof delta === "string" && delta.length > 0) {
                       streamingAssistantText += delta
                       renderChat(chatMessages)
+                      // Stick-to-bottom streams announce measured growth; scrolled
+                      // views keep the existing "streaming below · End follows" cue.
+                      if (transcriptScrollOffset <= 0) {
+                        status.content = formatStreamingBusyStatus(streamingAssistantText.length)
+                        status.fg = theme.statusWarn
+                      }
                     }
                   } else if (eventType === "session.turn_completed" && event.session_id) {
                     void finishAsyncSessionTurn(event.session_id, event.data ?? {})

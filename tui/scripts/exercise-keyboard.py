@@ -292,7 +292,9 @@ class Handler(BaseHTTPRequestHandler):
             if state["next_message"] == "cancel":
                 state["pending_op"] = operation
                 state["pending_user"] = body["content"]
-                return self._json(202, {"operation_id": operation, "status": "running"})
+                self._json(202, {"operation_id": operation, "status": "running"})
+                threading.Thread(target=emit_assistant_delta, args=(operation, "partial stream text"), daemon=True).start()
+                return
             remember_turn(body["content"], "The assistant turn failed.")
             self._json(202, {"operation_id": operation, "status": "running"})
             threading.Thread(target=emit_completion, args=(operation, "failed", "The assistant turn failed."), daemon=True).start()
@@ -356,6 +358,27 @@ def remember_turn(user: str, assistant: str) -> None:
     state["messages"].append({
         "id": start + 1, "session_id": SESSION, "role": "assistant", "content": assistant, "created_at": "2026-10-14 00:00:03",
     })
+
+
+def emit_assistant_delta(operation: str, delta: str) -> None:
+    time.sleep(0.15)
+    stream = state["sse"]
+    if stream is None:
+        return
+    state["sse_id"] += 1
+    event_id = state["sse_id"]
+    payload = json.dumps({
+        "id": event_id,
+        "type": "assistant.delta",
+        "session_id": SESSION,
+        "created_at": "2026-10-14 00:00:03",
+        "data": {"operation_id": operation, "delta": delta},
+    })
+    try:
+        stream.write(f"id: {event_id}\nevent: assistant.delta\ndata: {payload}\n\n".encode())
+        stream.flush()
+    except Exception:
+        pass
 
 
 def emit_completion(operation: str, status: str, error: str) -> None:
@@ -865,9 +888,12 @@ def main() -> None:
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
         screen.wait_for("busy")
-        screen.wait_for("thinking")
         screen.wait_for("streaming")
         screen.wait_for("█")
+        # Mock streams a short delta; busy status grows with measured chars (thinking
+        # may be too brief to assert once the first delta lands).
+        screen.wait_for("streaming  ·  ", 4)
+        screen.wait_for("chars", 4)
         time.sleep(0.35)
         screen.send("\x1b", 0.4)
         screen.wait_for("Turn cancelled.", 6)

@@ -12,6 +12,7 @@ import {
   type KeyEvent,
   type TextChunk,
 } from "@opentui/core"
+import { ComposerRenderable } from "./composer-input"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
@@ -487,7 +488,7 @@ let slashSelected = 0
 let slashDismissedFor: string | undefined
 let titleInput: InputRenderable | undefined
 let activeSession: Session | undefined
-let chatInput: InputRenderable | undefined
+let chatInput: ComposerRenderable | undefined
 let sendingMessage = false
 let activeTurnId: string | undefined
 let activeTurnController: AbortController | undefined
@@ -887,7 +888,7 @@ async function openSession(session: Session) {
   await notifyPendingProposals()
   footerHint.content = sessionFooterHint
   if (!chatInput) {
-    const input = new InputRenderable(renderer, {
+    const input = new ComposerRenderable(renderer, {
       id: "chat-composer",
       width: "100%",
       placeholder: "Ask Veasel to explain or propose a workspace change…  ·  type / for commands",
@@ -897,8 +898,9 @@ async function openSession(session: Session) {
     chatInput = input
     detail.add(input)
     mountSlashMenu()
-    input.on(InputRenderableEvents.INPUT, () => updateSlashMenu(input.value))
-    input.on(InputRenderableEvents.ENTER, (value) => {
+    input.onContentChange = () => updateSlashMenu(input.value)
+    input.onSubmit = () => {
+      const value = input.value
       resetSlashMenu()
       if (isConnectCommand(value)) {
         input.value = ""
@@ -911,7 +913,7 @@ async function openSession(session: Session) {
         return
       }
       void sendMessage(value)
-    })
+    }
   }
   chatInput.focus()
 }
@@ -3127,14 +3129,14 @@ function renderSlashMenu() {
   slashMenu.visible = true
 }
 
-function setComposerValue(input: InputRenderable, value: string) {
+function setComposerValue(input: ComposerRenderable, value: string) {
   input.value = value
   input.cursorOffset = value.length
   updateSlashMenu(value)
 }
 
 // Returns true when the key was consumed by the slash-command menu.
-function handleSlashMenuKey(key: KeyEvent, input: InputRenderable): boolean {
+function handleSlashMenuKey(key: KeyEvent, input: ComposerRenderable): boolean {
   const selected = slashMatches[slashSelected]
   if (!selected) return false
   const consume = () => {

@@ -173,7 +173,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 ### Milestone 4 — extensibility
 
 - [ ] Complete the typed tool and provider interfaces, safe Git/worktree APIs,
-  and versioned agent definitions.
+  and versioned agent definitions. Workspace edit propose/apply already refuse
+  when well-known git lock files are present under the checkout `.git`
+  directory or a linked worktree `gitdir:` path (`workspace_edits.v`); full
+  worktree create/list/remove APIs remain open.
+
 - [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
   manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,
   placeholder expansion, failure isolation, and per-call MCP consent have

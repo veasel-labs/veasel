@@ -137,6 +137,63 @@ fn test_workspace_edit_is_diffed_confined_and_stale_safe() {
 	assert workspace_edit_apply_rejected(root, stale)
 }
 
+fn test_workspace_edit_refuses_while_git_index_lock_is_held() {
+	root := os.join_path(os.temp_dir(), 'veasel-git-lock-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, '.git')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'src')) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	os.write_file(os.join_path(root, 'src', 'main.v'), 'module fixture\n') or { panic(err) }
+	lock_path := os.join_path(root, '.git', 'index.lock')
+	os.write_file(lock_path, '') or { panic(err) }
+	_ := prepare_workspace_edit(root, 'src/main.v', 'module fixture\nfn main() {}\n') or {
+		assert err.msg().contains('index.lock')
+		os.rm(lock_path) or { panic(err) }
+		draft := prepare_workspace_edit(root, 'src/main.v', 'module fixture\nfn main() {}\n') or {
+			panic(err)
+		}
+		os.write_file(lock_path, '') or { panic(err) }
+		edit := StoredWorkspaceEdit{
+			id:            uuid.new_v4().str()
+			path:          draft.path
+			expected_hash: draft.expected_hash
+			content:       draft.content
+			diff:          draft.diff
+			create_file:   draft.create_file
+			status:        'applying'
+		}
+		apply_workspace_edit(root, edit) or {
+			assert err.msg().contains('index.lock')
+			return
+		}
+		assert false, 'apply should refuse while index.lock exists'
+		return
+	}
+	assert false, 'prepare should refuse while index.lock exists'
+}
+
+fn test_workspace_git_directory_resolves_linked_worktree_pointer() {
+	main_root := os.join_path(os.temp_dir(), 'veasel-git-main-${uuid.new_v4().str()}')
+	worktree := os.join_path(os.temp_dir(), 'veasel-git-wt-${uuid.new_v4().str()}')
+	gitdir := os.join_path(main_root, '.git', 'worktrees', 'feature')
+	os.mkdir_all(gitdir) or { panic(err) }
+	os.mkdir_all(worktree) or { panic(err) }
+	defer {
+		os.rmdir_all(main_root) or {}
+		os.rmdir_all(worktree) or {}
+	}
+	os.write_file(os.join_path(worktree, '.git'), 'gitdir: ${gitdir}\n') or { panic(err) }
+	resolved := workspace_git_directory(worktree) or { panic(err) }
+	assert resolved == os.real_path(gitdir)
+	os.write_file(os.join_path(gitdir, 'HEAD.lock'), '') or { panic(err) }
+	_ := prepare_workspace_edit(worktree, 'note.txt', 'hello\n') or {
+		assert err.msg().contains('HEAD.lock')
+		return
+	}
+	assert false, 'linked worktree prepare should refuse while HEAD.lock exists'
+}
+
 fn workspace_file_error_contains(root string, path string, expected string) bool {
 	_ := workspace_file(root, path) or { return err.msg().contains(expected) }
 	return false

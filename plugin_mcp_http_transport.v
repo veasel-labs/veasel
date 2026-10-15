@@ -8,6 +8,7 @@ import time
 const max_plugin_mcp_http_body_bytes = 1_000_000
 const max_plugin_mcp_http_messages = 64
 const plugin_mcp_http_response_timeout = 20 * time.second
+const plugin_mcp_http_notification_timeout = 2 * time.second
 const plugin_mcp_http_close_timeout = 250 * time.millisecond
 
 // PluginMCPHTTPTransport adapts bounded Streamable HTTP requests to the
@@ -22,6 +23,7 @@ mut:
 	session_id             string
 	protocol_version       string
 	pending                []string
+	notifications          []string
 	cancel_requested       bool
 	active_request_id      string
 	cancelled_notified     bool
@@ -256,9 +258,10 @@ fn (mut transport PluginMCPHTTPTransport) receive() !string {
 }
 
 // listen_notifications opens the Streamable HTTP GET notification stream and
-// appends completed SSE `message` events to pending. Long-lived streams abort
-// when cancel is requested via on_progress_body. Servers that answer 405/404
-// are treated as not offering a notification stream.
+// appends completed SSE `message` events to the notifications queue (never the
+// RPC pending queue). Long-lived streams abort when cancel is requested via
+// on_progress_body. Servers that answer 405/404 are treated as not offering a
+// notification stream.
 fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 	if transport.cancel_requested {
 		return error('cancelled')
@@ -273,7 +276,7 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 		header.set_custom('MCP-Protocol-Version', transport.protocol_version)!
 	}
 	mut stream := &PluginMCPHTTPSseStream{}
-	before := transport.pending.len
+	before := transport.notifications.len
 	response := http.fetch(
 		url:                  transport.url
 		method:               .get
@@ -281,8 +284,8 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 		validate:             transport.url.starts_with('https://')
 		allow_redirect:       false
 		max_retries:          1
-		read_timeout:         plugin_mcp_http_response_timeout
-		write_timeout:        plugin_mcp_http_response_timeout
+		read_timeout:         plugin_mcp_http_notification_timeout
+		write_timeout:        plugin_mcp_http_notification_timeout
 		stop_copying_limit:   max_plugin_mcp_http_body_bytes + 1
 		stop_receiving_limit: max_plugin_mcp_http_body_bytes + 1
 		on_progress_body:     fn [mut transport, mut stream] (_ &http.Request, chunk []u8, _ u64, _ u64, _ int) ! {
@@ -291,10 +294,7 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 			}
 			messages := stream.feed(chunk.bytestr())!
 			for message in messages {
-				if transport.pending.len >= max_plugin_mcp_http_messages {
-					return error('MCP HTTP SSE response exceeded the message count limit')
-				}
-				transport.pending << message
+				transport.append_notification(message)!
 			}
 		}
 	) or {
@@ -324,12 +324,32 @@ fn (mut transport PluginMCPHTTPTransport) listen_notifications() !int {
 	}
 	tail := stream.finish()!
 	for message in tail {
-		if transport.pending.len >= max_plugin_mcp_http_messages {
-			return error('MCP HTTP SSE response exceeded the message count limit')
-		}
-		transport.pending << message
+		transport.append_notification(message)!
 	}
-	return transport.pending.len - before
+	return transport.notifications.len - before
+}
+
+fn (mut transport PluginMCPHTTPTransport) append_notification(message string) ! {
+	if message.len == 0 {
+		return
+	}
+	if transport.notifications.len >= max_plugin_mcp_http_messages {
+		return error('MCP HTTP SSE response exceeded the message count limit')
+	}
+	transport.notifications << message
+}
+
+fn (mut transport PluginMCPHTTPTransport) receive_notification() !string {
+	if transport.notifications.len == 0 {
+		return error('MCP HTTP notification queue is empty')
+	}
+	message := transport.notifications[0]
+	transport.notifications = if transport.notifications.len == 1 {
+		[]string{}
+	} else {
+		transport.notifications[1..].clone()
+	}
+	return message
 }
 
 fn (mut transport PluginMCPHTTPTransport) close() {

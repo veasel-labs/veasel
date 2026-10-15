@@ -209,8 +209,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
   including RFC 9728 `resource_metadata`, then best-effort fetch protected-
   resource metadata (authorization_servers/scopes) without forwarding MCP
-  headers; GET notification streams append SSE `message` events into pending
-  with mid-stream cancel. The authorization-code dance remains open.
+  headers; GET notification streams append SSE `message` events into a
+  dedicated notifications queue (not RPC pending) with mid-stream cancel, and
+  trusted HTTP connects best-effort listen after initialize. The
+  authorization-code dance remains open.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,

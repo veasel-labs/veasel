@@ -504,6 +504,9 @@ fn (mut stream PluginMCPHTTPSseStream) feed(chunk string) ![]string {
 	if chunk.len == 0 {
 		return []string{}
 	}
+	if chunk.contains('\0') {
+		return error('MCP HTTP SSE chunk contained a NUL byte')
+	}
 	stream.bytes += chunk.len
 	if stream.bytes > max_plugin_mcp_http_body_bytes {
 		return error('MCP HTTP SSE response exceeds the message size limit')
@@ -584,6 +587,9 @@ fn append_plugin_mcp_http_sse_event(mut messages []string, event_name string, da
 		return
 	}
 	message := data_lines.join('\n')
+	if message.contains('\0') {
+		return error('MCP HTTP SSE message contained a NUL byte')
+	}
 	if message.len == 0 || message.len > max_plugin_mcp_http_body_bytes {
 		return error('MCP HTTP SSE message exceeds the size limit')
 	}

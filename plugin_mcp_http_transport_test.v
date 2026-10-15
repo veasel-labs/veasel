@@ -323,3 +323,11 @@ fn test_plugin_mcp_http_sse_parser_is_bounded_and_skips_non_message_events() {
 		'X-Plugin-Configured': 'visible'
 	}
 }
+
+fn test_plugin_mcp_http_sse_parser_rejects_nul_bytes() {
+	parse_plugin_mcp_http_sse('event: message\ndata: {"ok":true}\0\n\n') or {
+		assert err.msg() == 'MCP HTTP SSE chunk contained a NUL byte'
+		return
+	}
+	assert false, 'expected NUL MCP HTTP SSE chunk to fail'
+}

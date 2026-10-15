@@ -619,6 +619,19 @@ fn test_provider_sse_decoder_rejects_oversized_unterminated_frames() {
 	assert false, 'expected oversized stream frame to fail'
 }
 
+fn test_provider_sse_decoder_rejects_nul_bytes() {
+	mut decoder := ProviderSSEDecoder{
+		on_data: fn (_ string) ! {
+			assert false, 'NUL chunk must not deliver data'
+		}
+	}
+	decoder.feed('data: before\0after\n\n') or {
+		assert err.msg() == 'provider SSE chunk contained a NUL byte'
+		return
+	}
+	assert false, 'expected NUL provider SSE chunk to fail'
+}
+
 fn test_provider_sse_progress_aborts_on_cancel_before_2xx_decode() {
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)

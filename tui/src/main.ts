@@ -126,6 +126,7 @@ function buildTranscriptStyles(active: Theme): Record<TranscriptTone, (text: str
     strong: (text) => fg(active.assistantText)(bold(text)),
     listMarker: (text) => fg(active.diffMeta)(bold(text)),
     link: (text) => fg(active.brand)(text),
+    heading: (text) => fg(active.title)(bold(text)),
     status: (text) => fg(active.status)(text),
     hint: (text) => fg(active.hint)(text),
   }

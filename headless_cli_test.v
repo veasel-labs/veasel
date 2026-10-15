@@ -165,3 +165,22 @@ fn test_headless_failures_keep_session_and_operation_identifiers() {
 	assert result.operation_id == '123e4567-e89b-42d3-a456-426614174001'
 	assert result.error == 'state request failed'
 }
+
+fn test_headless_usage_summary_includes_reported_tokens_only() {
+	without_usage := format_headless_usage_summary(HeadlessRunResult{
+		session_id: '123e4567-e89b-42d3-a456-426614174000'
+		provider:   'openai-compatible'
+		model:      'fixture'
+	})
+	assert without_usage == 'session 123e4567-e89b-42d3-a456-426614174000 · openai-compatible / fixture'
+	assert !without_usage.contains(' in · ')
+	with_usage := format_headless_usage_summary(HeadlessRunResult{
+		session_id:     '123e4567-e89b-42d3-a456-426614174000'
+		provider:       'openai-compatible'
+		model:          'fixture'
+		input_tokens:   1200
+		output_tokens:  340
+		usage_reported: true
+	})
+	assert with_usage == 'session 123e4567-e89b-42d3-a456-426614174000 · openai-compatible / fixture · 1200 in · 340 out'
+}

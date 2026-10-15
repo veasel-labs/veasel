@@ -78,8 +78,8 @@ fn test_session_compaction_reduces_bytes_under_byte_pressure() {
 }
 
 fn test_session_compaction_preserves_tool_pair_in_recent_tail() {
-	payload := 'y'.repeat(20_000)
-	mut messages := fixture_pressure_messages(18, payload, 'Inspect the file.')
+	payload := 'y'.repeat(24_000)
+	mut messages := fixture_pressure_messages(20, payload, 'Inspect the file.')
 	messages << ChatMessage{
 		role:       'assistant'
 		content:    ''
@@ -137,8 +137,11 @@ fn test_session_compaction_message_pressure_without_huge_payload() {
 	result := compact_session_messages(messages)
 	assert result.measurement.triggered
 	assert result.measurement.reason == 'message_pressure'
-	assert result.measurement.bytes_after < result.measurement.bytes_before
+	assert result.messages.len < messages.len
+	assert result.measurement.summarized_message_count > 0
 	assert result.messages[1].content.contains('message_pressure')
+	// Prefer a smaller UTF-8 payload, but message-count relief is the contract
+	// when turns are tiny; do not require bytes_after < bytes_before here.
 }
 
 fn test_compaction_summary_preview_truncates() {

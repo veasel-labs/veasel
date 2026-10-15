@@ -144,6 +144,15 @@ fn truncate_compaction_excerpt(text string, limit int) string {
 	return clean[..limit] + '\n[truncated]'
 }
 
+fn compaction_excerpt_limit_for_reason(reason string) int {
+	if reason == 'message_pressure' {
+		// Message-count pressure often involves many short turns. Keep excerpts
+		// tight so the summary frees slots without growing the UTF-8 payload.
+		return 80
+	}
+	return compaction_excerpt_chars
+}
+
 fn build_extractive_compaction_summary(older []ChatMessage, bytes_before int, reason string) string {
 	mut lines := []string{cap: 16 + older.len}
 	lines << compaction_summary_open
@@ -158,6 +167,7 @@ fn build_extractive_compaction_summary(older []ChatMessage, bytes_before int, re
 	lines << '- pressure_threshold_bytes: ${compaction_pressure_bytes()}'
 	lines << ''
 	lines << '### Older turns (extractive)'
+	excerpt_limit := compaction_excerpt_limit_for_reason(reason)
 	mut excerpts := 0
 	for message in older {
 		if excerpts >= compaction_max_older_excerpts {
@@ -165,7 +175,7 @@ fn build_extractive_compaction_summary(older []ChatMessage, bytes_before int, re
 			break
 		}
 		role := if message.role.len == 0 { 'unknown' } else { message.role }
-		excerpt := truncate_compaction_excerpt(message.content, compaction_excerpt_chars)
+		excerpt := truncate_compaction_excerpt(message.content, excerpt_limit)
 		if excerpt.len == 0 && message.tool_calls.len > 0 {
 			lines << '- [${role}] (tool call; arguments omitted from extract)'
 		} else if excerpt.len == 0 {
@@ -239,8 +249,17 @@ fn compact_session_messages(messages []ChatMessage) SessionCompactionResult {
 		compacted << messages[index]
 	}
 	bytes_after := agent_context_bytes(compacted)
-	// Refuse a compaction that does not reduce measured payload bytes.
-	if bytes_after >= bytes_before {
+	reduced_bytes := bytes_after < bytes_before
+	reduced_messages := compacted.len < messages.len
+	// Byte pressure must shrink measured UTF-8 payload. Message-count pressure
+	// may accept a shorter message list even when tiny turns make the extract
+	// similar in bytes, as long as at least one metric improves.
+	accepted := if reason == 'message_pressure' {
+		reduced_messages || reduced_bytes
+	} else {
+		reduced_bytes
+	}
+	if !accepted {
 		return SessionCompactionResult{
 			messages:    messages
 			measurement: SessionCompactionMeasurement{

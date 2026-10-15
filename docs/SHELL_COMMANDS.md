@@ -114,7 +114,9 @@ without that backend refuse to start a process. Autonomous commands always
 deny network sharing; Linux and macOS also filter the environment to an
 allowlist (Windows AppContainer still inherits process env — a documented
 backend limit). Do not treat this as a VM or a boundary against a hostile
-kernel. MCP stdio processes do not use this sandbox.
+kernel. MCP stdio does not use `VEASEL_SHELL_SANDBOX`; it has a separate
+opt-in under `VEASEL_MCP_STDIO_SANDBOX` (Linux Bubblewrap / macOS Seatbelt /
+Windows AppContainer when available; default off).
 
 ## Limits and API trust
 

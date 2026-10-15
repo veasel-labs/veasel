@@ -44,6 +44,7 @@ state = {
     "pending_op": "",
     "pending_user": "",
     "model_posts": 0,
+    "settings_posts": 0,
     "sse_id": 0,
     "edit_status": "pending",
     "command_status": "pending",
@@ -232,6 +233,9 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length else b""
         if path == "/v1/config/model":
+            state["settings_posts"] = int(state.get("settings_posts") or 0) + 1
+            if state["settings_posts"] == 1:
+                return self._json(401, {"error": "unauthorized api key"})
             state["saved"] = json.loads(raw.decode())
             view = settings_view()
             provider = state["saved"]["provider"]
@@ -620,7 +624,11 @@ def main() -> None:
         screen.send("gpt", 0.5)
         screen.wait_for("GPT-5")
         screen.send("\r", 0.8)
-        screen.wait_for("/connect · s to manage providers")
+        screen.wait_for("could not save", 4)
+        screen.wait_for("Check the API key", 4)
+        screen.wait_for("MODEL SETTINGS", 4)  # wizard stays open after a rejected save
+        screen.send("\r", 0.9)  # retry save from the model step
+        screen.wait_for("/connect · s to manage providers", 6)
         saved = state["saved"] or {}
         if saved.get("model") != "gpt-5" or not saved.get("api_key"):
             raise AssertionError("selected model and api key were not saved")

@@ -99,6 +99,14 @@ fn (mut state MCPOAuthRefreshState) get(name string) !MCPOAuthRefreshRecord {
 	return state.settings.credentials[name]
 }
 
+fn (mut state MCPOAuthRefreshState) has(name string) bool {
+	state.mu.lock()
+	defer {
+		state.mu.unlock()
+	}
+	return name in state.settings.credentials
+}
+
 fn (mut state MCPOAuthRefreshState) remove(name string) ! {
 	state.mu.lock()
 	defer {

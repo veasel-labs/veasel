@@ -200,3 +200,51 @@ fn test_refresh_mcp_oauth_credential_rotates_access_token() {
 	rotated := refresh.get('mcp-oauth') or { panic(err) }
 	assert rotated.refresh_token == 'refresh-rotated'
 }
+
+fn test_remove_mcp_credential_clears_oauth_refresh_metadata() {
+	cred_path := os.join_path(os.temp_dir(), 'veasel-oauth-clear-creds-${uuid.new_v4().str()}.json')
+	refresh_path := os.join_path(os.temp_dir(), 'veasel-oauth-clear-meta-${uuid.new_v4().str()}.json')
+	defer {
+		os.rm(cred_path) or {}
+		os.rm(refresh_path) or {}
+	}
+	data_dir := os.join_path(os.temp_dir(), 'veasel-oauth-clear-app-${uuid.new_v4().str()}')
+	os.mkdir_all(data_dir) or { panic(err) }
+	defer {
+		os.rmdir_all(data_dir) or {}
+	}
+	mut store := open_store(os.join_path(data_dir, 'veasel.db')) or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	plugin_directory := os.join_path(data_dir, 'plugins')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer {
+		app.close()
+	}
+	// Rebind credential/refresh paths to temp files by writing through app state.
+	mut credentials := app.mcp_credentials
+	mut refresh := app.mcp_oauth_refresh
+	credentials.upsert(MCPCredentialInput{
+		name:    'to-clear'
+		headers: {
+			'Authorization': 'Bearer access'
+		}
+	}) or { panic(err) }
+	refresh.put('to-clear', MCPOAuthRefreshRecord{
+		refresh_token:  'refresh-secret'
+		token_endpoint: 'http://127.0.0.1:9/token'
+		client_id:      'veasel-local'
+	}) or { panic(err) }
+	assert refresh.has('to-clear')
+	catalog := app.mcp_credential_catalog()
+	assert catalog.credentials.len == 1
+	assert catalog.credentials[0].oauth_refresh
+	app.remove_mcp_credential_and_oauth('to-clear') or { panic(err) }
+	assert !refresh.has('to-clear')
+	cleared := app.clear_mcp_oauth_refresh(MCPOAuthRefreshClearInput{
+		credential: 'already-gone'
+	}) or { panic(err) }
+	assert cleared.cleared == 'already-gone'
+}

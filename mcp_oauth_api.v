@@ -120,8 +120,9 @@ fn (app &App) complete_mcp_oauth_authorize(input MCPOAuthCompleteInput) !MCPCred
 	mut pending := app.mcp_oauth_pending
 	mut credentials := app.mcp_credentials
 	mut refresh := app.mcp_oauth_refresh
-	return complete_mcp_oauth_authorization_code(mut pending, mut credentials, mut refresh,
+	view := complete_mcp_oauth_authorization_code(mut pending, mut credentials, mut refresh,
 		input.credential, callback)!
+	return app.with_mcp_oauth_refresh_flag(view)
 }
 
 pub struct MCPOAuthRefreshInput {
@@ -145,5 +146,71 @@ fn decode_mcp_oauth_refresh_input(raw string) !MCPOAuthRefreshInput {
 fn (app &App) refresh_mcp_oauth_authorize(input MCPOAuthRefreshInput) !MCPCredentialView {
 	mut refresh := app.mcp_oauth_refresh
 	mut credentials := app.mcp_credentials
-	return refresh_mcp_oauth_credential(mut refresh, mut credentials, input.credential)!
+	view := refresh_mcp_oauth_credential(mut refresh, mut credentials, input.credential)!
+	return app.with_mcp_oauth_refresh_flag(view)
+}
+
+pub struct MCPOAuthRefreshClearInput {
+pub:
+	credential string
+}
+
+pub struct MCPOAuthRefreshClearResult {
+pub:
+	cleared string
+}
+
+fn decode_mcp_oauth_refresh_clear_input(raw string) !MCPOAuthRefreshClearInput {
+	fields := json2.decode[map[string]json2.Any](raw) or {
+		return error('Expected OAuth refresh clear JSON object')
+	}
+	credential := json_required_string(fields, 'credential')!
+	if !is_valid_mcp_credential_name(credential) {
+		return error('MCP credential name is invalid')
+	}
+	return MCPOAuthRefreshClearInput{
+		credential: credential
+	}
+}
+
+fn (app &App) with_mcp_oauth_refresh_flag(view MCPCredentialView) MCPCredentialView {
+	mut refresh := app.mcp_oauth_refresh
+	return MCPCredentialView{
+		name:          view.name
+		header_names:  view.header_names
+		oauth_refresh: refresh.has(view.name)
+	}
+}
+
+fn (app &App) mcp_credential_catalog() MCPCredentialCatalog {
+	mut credentials := app.mcp_credentials
+	mut refresh := app.mcp_oauth_refresh
+	catalog := credentials.view()
+	mut views := []MCPCredentialView{cap: catalog.credentials.len}
+	for view in catalog.credentials {
+		views << MCPCredentialView{
+			name:          view.name
+			header_names:  view.header_names
+			oauth_refresh: refresh.has(view.name)
+		}
+	}
+	return MCPCredentialCatalog{
+		path:        catalog.path
+		credentials: views
+	}
+}
+
+fn (app &App) clear_mcp_oauth_refresh(input MCPOAuthRefreshClearInput) !MCPOAuthRefreshClearResult {
+	mut refresh := app.mcp_oauth_refresh
+	refresh.remove(input.credential)!
+	return MCPOAuthRefreshClearResult{
+		cleared: input.credential
+	}
+}
+
+fn (app &App) remove_mcp_credential_and_oauth(name string) ! {
+	mut credentials := app.mcp_credentials
+	mut refresh := app.mcp_oauth_refresh
+	credentials.remove(name)!
+	refresh.remove(name) or {}
 }

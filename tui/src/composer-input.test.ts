@@ -34,5 +34,7 @@ describe("composerKeyBindings", () => {
     expect(action("return", { shift: true })).toBe("newline")
     expect(action("return", { ctrl: true })).toBe("newline")
     expect(action("return", { meta: true })).toBe("newline")
+    expect(action("_", { ctrl: true })).toBe("undo")
+    expect(action("-", { ctrl: true })).toBe("undo")
   })
 })

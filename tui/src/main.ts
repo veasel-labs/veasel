@@ -3185,8 +3185,9 @@ function renderSlashMenu() {
 }
 
 function setComposerValue(input: ComposerRenderable, value: string, cursor = value.length) {
-  input.value = value
-  input.cursorOffset = cursor
+  // Undoable replace so Ctrl+_ can restore prior drafts (slash/@ completion,
+  // history recall, and readline edits). Submit clears still use `.value =`.
+  input.applyEdit(value, cursor)
   updateSlashMenu(value)
 }
 
@@ -3604,12 +3605,27 @@ renderer.keyInput.on("keypress", (key) => {
     }
     // Take over Ctrl+U before Input's delete-to-line-start so history recall
     // resets too; empty drafts are a no-op so settings-free sessions stay quiet.
+    // Clear stays undoable via Ctrl+_ (replaceText), unlike submit which resets.
     if ((key.ctrl && key.name === "u") || key.sequence === "\x15") {
       key.preventDefault()
       key.stopPropagation()
       if (chatInput.value.length > 0 || composerHistory.offset > 0) {
         composerHistory = clearComposerLine(composerHistory)
         setComposerValue(chatInput, "")
+        chatInput.focus()
+      }
+      return
+    }
+    // Ctrl+_ / Ctrl+- undoes the last composer edit (readline undo). Ctrl+Y
+    // stays OSC-52 last-reply clipboard — do not steal it for yank/redo.
+    if (
+      (key.ctrl && (key.name === "_" || key.name === "-"))
+      || key.sequence === "\x1f"
+    ) {
+      key.preventDefault()
+      key.stopPropagation()
+      if (chatInput.undo()) {
+        updateSlashMenu(chatInput.value)
         chatInput.focus()
       }
       return
@@ -3627,9 +3643,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killWordBackward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return
@@ -3641,9 +3655,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killWordForward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return
@@ -3655,9 +3667,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = capitalizeWord(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return
@@ -3668,9 +3678,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = upcaseWord(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return
@@ -3680,9 +3688,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = downcaseWord(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return
@@ -3708,9 +3714,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killLineForward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return
@@ -3721,9 +3725,7 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = transposeChars(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
-        chatInput.value = edited.value
-        chatInput.cursorOffset = edited.cursor
-        updateSlashMenu(edited.value)
+        setComposerValue(chatInput, edited.value, edited.cursor)
         chatInput.focus()
       }
       return

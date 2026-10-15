@@ -975,6 +975,21 @@ def main() -> None:
             raise AssertionError(f"Alt+L left the uppercased draft on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.4)
         screen.wait_for("Ask Veasel", 4)
+        # Ctrl+_ undoes Ctrl+U clear (readline undo; Ctrl+Y stays OSC-52 copy).
+        screen.send("undostack", 0.35)
+        screen.wait_for("undostack", 4)
+        screen.send("\x15", 0.4)  # Ctrl+U clears
+        screen.wait_for("Ask Veasel", 4)
+        visible = screen.terminal.text()
+        if "undostack" in visible:
+            raise AssertionError(f"Ctrl+U left undostack on screen before undo\n--- screen ---\n{visible}")
+        screen.send("\x1f", 0.5)  # Ctrl+_
+        screen.wait_for("undostack", 4)
+        visible = screen.terminal.text()
+        if "undostack" not in visible:
+            raise AssertionError(f"Ctrl+_ did not restore the cleared draft\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.4)
+        screen.wait_for("Ask Veasel", 4)
         screen.send("ml-one", 0.35)
         screen.wait_for("ml-one", 4)
         screen.send("\n", 0.4)  # Ctrl+J / linefeed inserts a newline (does not submit)

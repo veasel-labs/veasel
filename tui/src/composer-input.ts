@@ -25,6 +25,10 @@ export const composerKeyBindings: KeyBinding[] = [
   // Alt+Enter for terminals that do not encode Shift+Enter.
   { name: "return", meta: true, action: "newline" },
   { name: "kpenter", meta: true, action: "newline" },
+  // Readline undo (Ctrl+_) and the common Ctrl+- encoding; OpenTUI also binds
+  // Ctrl+- by default — keep both so either sequence restores the draft.
+  { name: "_", ctrl: true, action: "undo" },
+  { name: "-", ctrl: true, action: "undo" },
 ]
 
 export function composerHeightForText(text: string, maxHeight = composerMaxHeight): number {
@@ -66,11 +70,21 @@ export class ComposerRenderable extends TextareaRenderable {
     return this.plainText
   }
 
+  // Hard reset: clears the native undo stack (submit clear, session reopen).
   set value(value: string) {
     const next = value.slice(0, this._maxLength)
     if (this.plainText === next) return
     this.setText(next)
     this.cursorOffset = next.length
+    this.syncHeight()
+  }
+
+  // Replace the draft while keeping undo history so Ctrl+_ can restore it.
+  applyEdit(value: string, cursor = value.length): void {
+    const next = value.slice(0, this._maxLength)
+    const nextCursor = Math.min(Math.max(0, cursor), next.length)
+    if (this.plainText !== next) this.replaceText(next)
+    this.cursorOffset = nextCursor
     this.syncHeight()
   }
 

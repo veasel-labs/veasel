@@ -21,6 +21,7 @@ import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settin
 import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
 import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
+import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
@@ -911,10 +912,17 @@ async function showMcpToolCall(callId: string) {
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     const call = await response.json() as PluginMCPToolCallApproval
     const args = JSON.stringify(JSON.parse(call.arguments_json) as unknown, null, 2)
-    const action = call.status === "pending"
-      ? `\nType /mcp call approve ${call.id} or /mcp call reject ${call.id}.`
-      : ""
-    skillNotice = `REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${safeTerminalReviewText(call.plugin_name)}/${safeTerminalReviewText(call.server_name)} · ${safeTerminalReviewText(call.tool_name)}\nOperation: ${call.operation_id}\nArguments (terminal control and direction characters are escaped):\n${safeTerminalReviewText(args)}${action}`
+    const review = formatMcpReview({
+      plugin: safeTerminalReviewText(call.plugin_name),
+      server: safeTerminalReviewText(call.server_name),
+      tool: safeTerminalReviewText(call.tool_name),
+      operationId: safeTerminalReviewText(call.operation_id),
+      id: call.id,
+      pending: call.status === "pending",
+      argumentsText: args,
+      maxLines: mcpReviewLineBudget(process.stdout.rows ?? 40),
+    })
+    skillNotice = `REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${review}`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not inspect MCP tool call: ${error instanceof Error ? error.message : "request failed"}`

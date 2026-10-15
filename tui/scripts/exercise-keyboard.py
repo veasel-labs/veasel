@@ -3,9 +3,10 @@
 
 This checks the keyboard path that unit tests cannot see: provider setup,
 model discovery, slash arguments, a bounded diff review, a bounded
-shell-command review, a failed turn, cancellation, a long session list that
-keeps the selection on screen, a session switch while completion data is
-still in flight, and a narrow terminal.
+shell-command review, a bounded MCP argument review, a failed turn,
+cancellation, a long session list that keeps the selection on screen, a
+session switch while completion data is still in flight, and a narrow
+terminal.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ SESSION = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
 EDIT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 COMMAND_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+CALL_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 state = {
@@ -63,6 +65,12 @@ def long_shell_command() -> str:
     lines = [f"echo step {index:02d}" for index in range(1, 31)]
     lines.append("echo SHELL-TAIL")
     return "\n".join(lines)
+
+
+def long_mcp_arguments() -> str:
+    fields = [f'  "field_{index:02d}": "value {index}"' for index in range(1, 31)]
+    fields.append('  "tail": "MCP-TAIL"')
+    return "{\n" + ",\n".join(fields) + "\n}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -110,6 +118,19 @@ class Handler(BaseHTTPRequestHandler):
             if state["hold_other_edits"]:
                 state["other_edits_release"].wait(5.0)
             return self._json(200, [])
+        if path == f"/v1/sessions/{SESSION}/mcp-tool-calls/{CALL_ID}":
+            return self._json(200, {
+                "id": CALL_ID,
+                "operation_id": "op-1",
+                "plugin_name": "review-tools",
+                "server_name": "local",
+                "tool_name": "effect",
+                "arguments_json": long_mcp_arguments(),
+                "status": "pending",
+                "reviewed_at": "",
+                "created_at": "",
+                "updated_at": "",
+            })
         if path in (
             f"/v1/sessions/{SESSION}/skills",
             f"/v1/sessions/{SESSION}/mcp-servers",
@@ -121,7 +142,8 @@ class Handler(BaseHTTPRequestHandler):
         ):
             if path.endswith("/mcp-tool-calls") and SESSION in path:
                 return self._json(200, [{
-                    "id": "call-1", "plugin_name": "review-tools", "tool_name": "effect", "status": "pending",
+                    "id": CALL_ID, "plugin_name": "review-tools", "tool_name": "effect", "status": "pending",
+                    "arguments_bytes": len(long_mcp_arguments()),
                 }])
             if path.endswith("/mcp-servers") and SESSION in path:
                 return self._json(200, [{"plugin_name": "review-tools", "server_name": "local"}])
@@ -531,9 +553,15 @@ def main() -> None:
         screen.send("/mcp call ", 0.6)
         screen.wait_for("approve")
         screen.send("\t", 0.45)
-        screen.wait_for("call-1")
+        screen.wait_for("cccccccc")
         screen.send("\x1b", 0.25)
         screen.clear_line(15)  # "/mcp call show "
+        screen.send(f"/mcp call show {CALL_ID}\r", 0.7)
+        screen.wait_for("has not reached its MCP server", 4)
+        screen.wait_for("Showing ")
+        reviewed = screen.terminal.text()
+        if "MCP-TAIL" in reviewed:
+            raise AssertionError(f"MCP review showed arguments past the terminal budget\n--- screen ---\n{reviewed}")
         screen.send("/mcp trust ", 0.6)
         screen.wait_for("review-tools/local")
         screen.send("\x1b", 0.25)

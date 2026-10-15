@@ -867,6 +867,16 @@ def main() -> None:
         visible = screen.terminal.text()
         if "again" in visible:
             raise AssertionError(f"Alt+Backspace left the killed word on screen\n--- screen ---\n{visible}")
+        screen.send("fwdkill more", 0.4)
+        screen.wait_for("pre-zxqy fwdkill more", 4)
+        screen.send("\x01", 0.3)  # Ctrl+A
+        for _ in range(9):  # land on "fwdkill"
+            screen.send("\x1b[C", 0.05)
+        screen.send("\x1bd", 0.45)  # Alt+D kills "fwdkill"
+        screen.wait_for("pre-zxqy  more", 4)
+        visible = screen.terminal.text()
+        if "fwdkill" in visible:
+            raise AssertionError(f"Alt+D left the killed word on screen\n--- screen ---\n{visible}")
         screen.send("\x15", 0.45)  # Ctrl+U clears before Ctrl+K probe
         screen.wait_for("Ask Veasel", 4)
         screen.send("headTAIL", 0.4)

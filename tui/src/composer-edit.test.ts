@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { composerLineCursor, killLineForward, killWordBackward, moveWordCursor } from "./composer-edit"
+import {
+  composerLineCursor,
+  killLineForward,
+  killWordBackward,
+  killWordForward,
+  moveWordCursor,
+} from "./composer-edit"
 
 describe("killWordBackward", () => {
   test("deletes the word before the cursor and keeps the rest", () => {
@@ -16,6 +22,24 @@ describe("killWordBackward", () => {
   test("treats accented Latin letters as part of the word", () => {
     expect(killWordBackward("café latte", 4)).toEqual({ value: " latte", cursor: 0 })
     expect(killWordBackward("café latte", 10)).toEqual({ value: "café ", cursor: 5 })
+  })
+})
+
+describe("killWordForward", () => {
+  test("deletes from the cursor through the current or next word", () => {
+    expect(killWordForward("hello world", 0)).toEqual({ value: " world", cursor: 0 })
+    expect(killWordForward("hello world", 6)).toEqual({ value: "hello ", cursor: 6 })
+    expect(killWordForward("hello  world", 5)).toEqual({ value: "hello", cursor: 5 })
+  })
+
+  test("is a no-op at the end and on empty drafts", () => {
+    expect(killWordForward("", 0)).toEqual({ value: "", cursor: 0 })
+    expect(killWordForward("hello", 5)).toEqual({ value: "hello", cursor: 5 })
+  })
+
+  test("treats accented Latin letters as part of the word", () => {
+    expect(killWordForward("café latte", 0)).toEqual({ value: " latte", cursor: 0 })
+    expect(killWordForward("café latte", 5)).toEqual({ value: "café ", cursor: 5 })
   })
 })
 

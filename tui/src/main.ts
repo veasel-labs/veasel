@@ -49,6 +49,11 @@ import {
   transcriptSegmentLines,
   windowTranscriptSegments,
 } from "./transcript-scroll"
+import {
+  copyLastReplyNotice,
+  lastAssistantReply,
+  writeClipboardOsc52,
+} from "./copy-last-reply"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -2981,6 +2986,20 @@ renderer.keyInput.on("keypress", (key) => {
         chatInput.submit()
         return
       }
+    }
+    if (key.ctrl && key.name === "y") {
+      key.preventDefault()
+      key.stopPropagation()
+      const reply = lastAssistantReply(chatMessages, streamingAssistantText)
+      if (!reply) {
+        skillNotice = copyLastReplyNotice("empty")
+        renderChat(chatMessages)
+        return
+      }
+      const ok = writeClipboardOsc52(reply)
+      skillNotice = copyLastReplyNotice(ok ? "copied" : "failed")
+      renderChat(chatMessages)
+      return
     }
     const hotkey = reviewHotkey(key, {
       composerEmpty: chatInput.value.trim() === "",

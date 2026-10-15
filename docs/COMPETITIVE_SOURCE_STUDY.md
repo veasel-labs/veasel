@@ -92,6 +92,17 @@ does not yet auto-apply edits or produce benchmark-ready trajectories. Keep
 that limitation visible; add richer policies only with isolated tests and
 task-level evidence.
 
+Rechecked `environments/extra/bubblewrap.py` at the same commit
+`04d809ceab9df28f9adaed044884180159172930` on 2026-10-15. That optional
+environment bind-mounts the host `/usr`, `/bin`, `/lib`, `/etc`, and the
+working directory, and it does not unshare the network. Veasel's autonomous
+Linux path in `shell_commands.v` is stricter: `--unshare-all`, a read-only
+host root, hidden home and removable mounts, a writable workspace only, a
+filtered environment, and a hard failure when `bwrap` is missing or the
+workspace root is too broad. Do not relax that path to match mini-swe-agent.
+It is still not a Codex-level sandbox, and manually approved shell commands
+remain unsandboxed.
+
 ### Goose — state machine and runtime effects
 
 [`machine.rs`](https://github.com/aaif-goose/goose/blob/4617040c7b650b37d599bdaa08d3790572c19ae8/crates/goose-agent/src/machine.rs)

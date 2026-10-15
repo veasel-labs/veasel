@@ -198,3 +198,59 @@ fn test_plugin_catalog_merges_standalone_skills_without_instruction_bodies() {
 	assert context.instructions.contains('PLUGIN BODY')
 	assert context.resource_access.len == 2
 }
+
+fn test_standalone_skills_qualify_when_plugin_name_collides() {
+	plugin_dir := os.join_path(os.temp_dir(), 'veasel-skills-collide-plugins-${uuid.new_v4().str()}')
+	project := os.join_path(os.temp_dir(), 'veasel-skills-collide-project-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(plugin_dir, 'agents-package', 'skills', 'plugin-skill')) or {
+		panic(err)
+	}
+	os.mkdir_all(os.join_path(project, '.agents', 'skills')) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_dir) or {}
+		os.rmdir_all(project) or {}
+	}
+	os.write_file(os.join_path(plugin_dir, 'agents-package', 'plugin.json'), '{"' +
+		plugin_schema_key + '":"' + plugin_manifest_schema + '","name":"agents"}') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(plugin_dir, 'agents-package', 'skills', 'plugin-skill', 'SKILL.md'),
+		'---\nname: plugin-skill\ndescription: Real plugin skill.\n---\n\nPLUGIN COLLIDE BODY') or {
+		panic(err)
+	}
+	write_standalone_skill(os.join_path(project, '.agents', 'skills'), 'repo-check',
+		'Standalone repo check.', 'STANDALONE COLLIDE BODY')
+
+	prior_home := os.getenv('HOME')
+	empty_home := os.join_path(os.temp_dir(), 'veasel-skills-collide-home-${uuid.new_v4().str()}')
+	os.mkdir_all(empty_home) or { panic(err) }
+	os.setenv('HOME', empty_home, true)
+	defer {
+		os.setenv('HOME', prior_home, true)
+		os.rmdir_all(empty_home) or {}
+	}
+
+	catalog := discover_agent_plugins_with_standalone(plugin_dir, project) or { panic(err) }
+	assert catalog.plugins.any(it.name == 'agents' && it.origin == '')
+	assert !catalog.plugins.any(it.name == 'agents' && it.origin == 'standalone')
+	qualified := catalog.plugins.filter(it.name == 'standalone-agents')
+	assert qualified.len == 1
+	assert qualified[0].origin == 'standalone'
+	assert qualified[0].skills.len == 1
+	assert qualified[0].skills[0].name == 'repo-check'
+	assert qualified[0].skills[0].source == 'agents'
+	assert catalog.diagnostics.any(it.message.contains('exposed as `standalone-agents`'))
+	assert !catalog.diagnostics.any(it.message.contains('are omitted because an Agent Plugin'))
+
+	root, skill := find_session_skill(plugin_dir, project, 'standalone-agents', 'repo-check') or {
+		panic(err)
+	}
+	assert skill.name == 'repo-check'
+	assert os.is_dir(root)
+	loaded := load_skill_instructions(root, skill) or { panic(err) }
+	assert loaded.contains('STANDALONE COLLIDE BODY')
+
+	entries, _ := available_skill_entries_from_catalog(catalog)
+	assert entries.any(it.plugin_name == 'standalone-agents' && it.skill_name == 'repo-check')
+	assert entries.any(it.plugin_name == 'agents' && it.skill_name == 'plugin-skill')
+}

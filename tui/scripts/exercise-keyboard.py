@@ -877,6 +877,18 @@ def main() -> None:
         visible = screen.terminal.text()
         if "head" in visible:
             raise AssertionError(f"Ctrl+U left the composer draft on screen\n--- screen ---\n{visible}")
+        screen.send("one two three", 0.4)
+        screen.wait_for("one two three", 4)
+        screen.send("\x01", 0.3)  # Ctrl+A
+        screen.send("\x1b[1;5C", 0.25)  # Ctrl+→ → after "one "
+        screen.send("\x1b[1;5C", 0.25)  # Ctrl+→ → after "two "
+        screen.send("\x0b", 0.4)  # Ctrl+K drops "three"
+        screen.wait_for("one two ", 4)
+        visible = screen.terminal.text()
+        if "three" in visible:
+            raise AssertionError(f"Ctrl+→ did not land before the last word\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.4)
+        screen.wait_for("Ask Veasel", 4)
         screen.send("\x1b[A", 0.45)  # ↑ recalls last submitted prompt
         screen.send("!", 0.35)  # append so the recalled line is unique on screen
         screen.wait_for("keep this prompt!", 4)

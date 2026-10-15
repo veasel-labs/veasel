@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { composerLineCursor, killLineForward, killWordBackward } from "./composer-edit"
+import { composerLineCursor, killLineForward, killWordBackward, moveWordCursor } from "./composer-edit"
 
 describe("killWordBackward", () => {
   test("deletes the word before the cursor and keeps the rest", () => {
@@ -32,5 +32,16 @@ describe("killLineForward", () => {
     expect(killLineForward("hello world", 5)).toEqual({ value: "hello", cursor: 5 })
     expect(killLineForward("hello world", 0)).toEqual({ value: "", cursor: 0 })
     expect(killLineForward("hello", 5)).toEqual({ value: "hello", cursor: 5 })
+  })
+})
+
+describe("moveWordCursor", () => {
+  test("jumps backward and forward across whitespace-delimited words", () => {
+    expect(moveWordCursor("one two three", 13, "backward")).toBe(8)
+    expect(moveWordCursor("one two three", 8, "backward")).toBe(4)
+    expect(moveWordCursor("one two three", 0, "forward")).toBe(4)
+    expect(moveWordCursor("one two three", 4, "forward")).toBe(8)
+    expect(moveWordCursor("one two three", 0, "backward")).toBe(0)
+    expect(moveWordCursor("one two three", 13, "forward")).toBe(13)
   })
 })

@@ -580,9 +580,17 @@ export function parseThemeJson(
   return { theme: next }
 }
 
+export type ThemeScanDir = {
+  path: string
+  label: "user" | "workspace"
+  present: boolean
+  files: string[]
+}
+
 export type LoadCustomThemesResult = {
   loaded: Theme[]
   errors: string[]
+  scans: ThemeScanDir[]
 }
 
 export function loadCustomThemes(options: {
@@ -599,23 +607,29 @@ export function loadCustomThemes(options: {
   const readFile = options.readFile ?? ((path) => readFileSync(path, "utf8"))
   if (options.replace !== false) customThemes.clear()
 
-  const dirs = [themeThemesDir(env, home)]
+  const userDir = themeThemesDir(env, home)
+  const dirs: Array<{ path: string; label: "user" | "workspace" }> = [{ path: userDir, label: "user" }]
   const projectDir = options.projectDir?.trim()
-  if (projectDir) dirs.push(projectThemesDir(projectDir))
+  if (projectDir) dirs.push({ path: projectThemesDir(projectDir), label: "workspace" })
 
   const loaded: Theme[] = []
   const errors: string[] = []
+  const scans: ThemeScanDir[] = []
   const byId = new Map<string, Theme>()
 
   for (const dir of dirs) {
     let names: string[] = []
+    let present = true
     try {
-      names = readDir(dir).filter((name) => name.endsWith(".json")).sort()
+      names = readDir(dir.path).filter((name) => name.endsWith(".json")).sort()
     } catch {
-      continue
+      present = false
+      names = []
     }
+    scans.push({ path: dir.path, label: dir.label, present, files: names })
+    if (!present) continue
     for (const name of names) {
-      const path = join(dir, name)
+      const path = join(dir.path, name)
       let raw = ""
       try {
         raw = readFile(path)
@@ -640,21 +654,70 @@ export function loadCustomThemes(options: {
     customThemes.set(theme.id, theme)
     loaded.push(theme)
   }
-  return { loaded, errors }
+  return { loaded, errors, scans }
 }
 
-export function formatThemeList(activeId: ThemeId): string {
+function displayThemePath(path: string, home = homedir()): string {
+  const prefix = home.endsWith("/") ? home : `${home}/`
+  if (path === home) return "~"
+  if (path.startsWith(prefix)) return `~/${path.slice(prefix.length)}`
+  return path
+}
+
+export type FormatThemeListOptions = {
+  errors?: string[]
+  scans?: ThemeScanDir[]
+  home?: string
+}
+
+export function formatThemeList(activeId: ThemeId, options: FormatThemeListOptions = {}): string {
   const active = resolveTheme(activeId)
+  const home = options.home ?? homedir()
   const lines = ["TUI THEMES", `Active: ${active.name} (${active.id})`, ""]
   for (const theme of listThemes()) {
     const marker = theme.id === activeId ? "●" : "○"
     const custom = isBuiltinThemeId(theme.id) ? "" : "  (custom)"
     lines.push(`${marker} ${theme.id}  ${theme.name}${custom}`, `  ${theme.description}`)
   }
+
+  const scans = options.scans ?? []
+  if (scans.length > 0) {
+    lines.push("", "Custom theme directories:")
+    for (const scan of scans) {
+      const shown = displayThemePath(scan.path, home)
+      if (!scan.present) {
+        lines.push(`  ${shown}  (${scan.label}, missing — create to add JSON)`)
+        continue
+      }
+      if (scan.files.length === 0) {
+        lines.push(`  ${shown}  (${scan.label}, empty)`)
+        continue
+      }
+      lines.push(`  ${shown}  (${scan.label}, ${scan.files.join(", ")})`)
+    }
+  } else {
+    lines.push("", "Add custom themes as JSON under ~/.config/veasel/themes/*.json or <workspace>/.veasel/themes/*.json (optional \"extends\" builtin id).")
+  }
+
+  const errors = options.errors ?? []
+  if (errors.length > 0) {
+    lines.push("", `Theme JSON errors (${errors.length}):`)
+    for (const error of errors) {
+      lines.push(`  ✖ ${displayThemePath(error, home)}`)
+    }
+  } else if (scans.length > 0 && !listThemes().some((theme) => !isBuiltinThemeId(theme.id))) {
+    lines.push("", "No custom themes loaded yet. Drop a *.json file into either directory (optional \"extends\" builtin id).")
+  }
+
   lines.push("", "Choose with /theme <id>. Preference is stored in ~/.config/veasel/tui-theme.")
-  lines.push("Add custom themes as JSON under ~/.config/veasel/themes/*.json or <workspace>/.veasel/themes/*.json (optional \"extends\" builtin id).")
   lines.push("While the /theme menu is open, ↑/↓ preview colors live; Enter keeps the choice and Esc restores the saved theme.")
   return lines.join("\n")
+}
+
+export function formatThemeLoadStatusHint(errors: string[]): string | undefined {
+  if (errors.length === 0) return undefined
+  if (errors.length === 1) return "1 theme JSON error · /theme"
+  return `${errors.length} theme JSON errors · /theme`
 }
 
 // Extracts a concrete theme id from a slash suggestion such as "/theme ember".

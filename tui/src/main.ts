@@ -163,6 +163,7 @@ import {
 } from "./repository-map"
 import {
   formatThemeList,
+  formatThemeLoadStatusHint,
   formatThemePreviewStatus,
   isThemeId,
   listThemeChoices,
@@ -175,9 +176,16 @@ import {
   type ThemeId,
 } from "./themes"
 
-loadCustomThemes({
+const customThemeLoad = loadCustomThemes({
   projectDir: process.env.VEASEL_PROJECT_DIR?.trim() || process.cwd(),
 })
+
+function themeListNotice(activeId: ThemeId): string {
+  return formatThemeList(activeId, {
+    errors: customThemeLoad.errors,
+    scans: customThemeLoad.scans,
+  })
+}
 
 const reducedMotion = prefersReducedMotion()
 let motionFrame = 0
@@ -764,10 +772,13 @@ function setTheme(id: ThemeId) {
   committedThemeId = id
   themePreviewActive = false
   applyTheme(resolveTheme(id))
-  skillNotice = formatThemeList(id)
+  skillNotice = themeListNotice(id)
   renderChat(chatMessages)
-  status.content = `● theme ${resolveTheme(id).name}`
-  status.fg = theme.statusOk
+  const loadHint = formatThemeLoadStatusHint(customThemeLoad.errors)
+  status.content = loadHint
+    ? `● theme ${resolveTheme(id).name}  ·  ${loadHint}`
+    : `● theme ${resolveTheme(id).name}`
+  status.fg = loadHint ? theme.statusWarn : theme.statusOk
 }
 
 function restoreCommittedTheme() {
@@ -1097,8 +1108,13 @@ async function sendMessage(value: string) {
     return
   }
   if (content === "/theme") {
-    skillNotice = formatThemeList(theme.id)
+    skillNotice = themeListNotice(theme.id)
     renderChat(chatMessages)
+    const loadHint = formatThemeLoadStatusHint(customThemeLoad.errors)
+    if (loadHint) {
+      status.content = `● ${loadHint}`
+      status.fg = theme.statusWarn
+    }
     chatInput.value = ""
     chatInput.focus()
     return
@@ -1107,7 +1123,7 @@ async function sendMessage(value: string) {
   if (themeMatch) {
     const id = themeMatch[1]!.toLowerCase()
     if (!isThemeId(id)) {
-      skillNotice = `Unknown theme "${id}".\n\n${formatThemeList(theme.id)}`
+      skillNotice = `Unknown theme "${id}".\n\n${themeListNotice(theme.id)}`
       renderChat(chatMessages)
       chatInput.value = ""
       chatInput.focus()

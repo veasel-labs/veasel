@@ -24,9 +24,20 @@ describe("review diff surface", () => {
     expect(colors.addedSignColor).toBe(themes.mint.diffAdd)
     expect(colors.removedSignColor).toBe(themes.mint.diffRemove)
     expect(colors.fg).toBe(themes.mint.body)
+    expect(colors.addedBg).toBe("#1a3328")
+    expect(colors.removedBg).toBe("#33201f")
     expect(colors.syncScroll).toBe(true)
     expect(colors.wrapMode).toBe("none")
     expect(colors.showLineNumbers).toBe(true)
+  })
+
+  test("uses pale DiffRenderable washes on light themes", () => {
+    const day = diffRenderableTheme(themes.day)
+    expect(day.addedBg).toBe("#dcfce7")
+    expect(day.removedBg).toBe("#fee2e2")
+    const contrast = diffRenderableTheme(themes.contrast)
+    expect(contrast.addedBg).toBe("#dcfce7")
+    expect(contrast.removedBg).toBe("#fee2e2")
   })
 
   test("builds a theme-mapped SyntaxStyle for filetype highlighting", () => {

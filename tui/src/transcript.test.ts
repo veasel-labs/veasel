@@ -23,11 +23,11 @@ describe("transcriptSegments", () => {
       ],
     })
     expect(segments).toContainEqual({ text: userLabel, tone: "userLabel" })
-    expect(segments).toContainEqual({ text: "\nWhy does CI fail?", tone: "userText" })
+    expect(segments).toContainEqual({ text: "  Why does CI fail?", tone: "userText" })
     expect(segments).toContainEqual({ text: assistantLabel, tone: "assistantLabel" })
-    expect(segments).toContainEqual({ text: "\nThe Windows job times out.", tone: "assistantText" })
+    expect(segments).toContainEqual({ text: "  The Windows job times out.", tone: "assistantText" })
     expect(transcriptPlainText(segments)).toBe(
-      "fix tests\n/work/app\n\n● you\nWhy does CI fail?\n\n◆ assistant\nThe Windows job times out.",
+      "fix tests\n/work/app\n\n● you\n  Why does CI fail?\n\n◆ assistant\n  The Windows job times out.",
     )
   })
 
@@ -38,7 +38,7 @@ describe("transcriptSegments", () => {
       streamingText: "Reading",
       streaming: true,
     }))
-    expect(text).toBe(`● you  ·  sending\nadd a test\n\n◆ assistant  ·  streaming…\nReading${streamingCursor}`)
+    expect(text).toBe(`● you  ·  sending\n  add a test\n\n◆ assistant  ·  streaming…\n  Reading${streamingCursor}`)
   })
 
   test("shows a cursor while streaming before the first token arrives", () => {
@@ -47,7 +47,7 @@ describe("transcriptSegments", () => {
       streamingText: "",
       streaming: true,
     }))
-    expect(text).toBe(`◆ assistant  ·  streaming…\n${streamingCursor}`)
+    expect(text).toBe(`◆ assistant  ·  streaming…\n  ${streamingCursor}`)
   })
 
   test("accepts an override streaming cursor for reduced-motion frames", () => {
@@ -57,13 +57,13 @@ describe("transcriptSegments", () => {
       streaming: true,
       streamingCursor: "·",
     }))
-    expect(text).toBe("◆ assistant  ·  streaming…\nhi·")
+    expect(text).toBe("◆ assistant  ·  streaming…\n  hi·")
   })
 
   test("labels an interrupted response as partial without a cursor", () => {
     const segments = transcriptSegments({ messages: [], streamingText: "half", streaming: false })
     expect(segments).toContainEqual({ text: "  ·  partial response", tone: "status" })
-    expect(transcriptPlainText(segments)).toBe("◆ assistant  ·  partial response\nhalf")
+    expect(transcriptPlainText(segments)).toBe("◆ assistant  ·  partial response\n  half")
   })
 
   test("shows the empty-state hint and the older-history hint", () => {
@@ -125,7 +125,7 @@ describe("transcriptSegments", () => {
     const text = transcriptPlainText(transcriptSegments({
       messages: [{ role: "assistant", content }],
     }))
-    expect(text).toBe(`◆ assistant\n${content}`)
+    expect(text).toBe(`◆ assistant\n  Before\n  \`\`\`ts\n  const n = 1\n  \`\`\`\n  After`)
     expect(transcriptSegments({
       messages: [{ role: "assistant", content }],
     })).toContainEqual({ text: "ts", tone: "codeLang" })
@@ -153,7 +153,7 @@ describe("transcriptSegments", () => {
     ])
     expect(transcriptPlainText(transcriptSegments({
       messages: [{ role: "assistant", content }],
-    }))).toBe(`◆ assistant\n${content}`)
+    }))).toBe(`◆ assistant\n  ${content}`)
   })
 
   test("tones list markers and markdown links in streamed prose", () => {
@@ -188,9 +188,16 @@ describe("transcriptSegments", () => {
       ],
     })
     expect(segments).toContainEqual({ text: systemLabel, tone: "systemLabel" })
-    expect(segments).toContainEqual({ text: "\nworkspace tools available", tone: "systemText" })
+    expect(segments).toContainEqual({ text: "  workspace tools available", tone: "systemText" })
     expect(segments).toContainEqual({ text: toolLabel, tone: "toolLabel" })
-    expect(segments).toContainEqual({ text: "\nread src/main.v", tone: "toolText" })
+    expect(segments).toContainEqual({ text: "  read src/main.v", tone: "toolText" })
     expect(transcriptPlainText(segments)).not.toContain(userLabel)
+  })
+
+  test("indents every body line under the role label for visual hierarchy", () => {
+    const text = transcriptPlainText(transcriptSegments({
+      messages: [{ role: "assistant", content: "line one\nline two" }],
+    }))
+    expect(text).toBe("◆ assistant\n  line one\n  line two")
   })
 })

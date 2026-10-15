@@ -128,16 +128,38 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
     const label = labelFor(turn.kind)
     push(label.text, label.tone)
     if (turn.status) push(`  ·  ${turn.status}`, "status")
-    const body = messageBodySegments(turn.content, bodyTone(turn.kind))
-    if (body.length === 0) {
-      push("\n", bodyTone(turn.kind))
-    } else {
-      body[0] = { text: `\n${body[0]!.text}`, tone: body[0]!.tone }
-      for (const segment of body) push(segment.text, segment.tone)
-    }
+    const prose = bodyTone(turn.kind)
+    const body = indentBodySegments(messageBodySegments(turn.content, prose), prose)
+    for (const segment of body) push(segment.text, segment.tone)
   })
   if (input.hasOlder) push("\n\n/history older · load earlier messages", "hint")
   return segments
+}
+
+// Body lines sit two spaces under the spoken role label so turns read as a
+// clear hierarchy (label → prose) without adding chrome that copies poorly.
+export const transcriptBodyIndent = "  "
+
+export function indentBodySegments(
+  segments: TranscriptSegment[],
+  proseTone: TranscriptTone,
+): TranscriptSegment[] {
+  if (segments.length === 0) return [{ text: "\n", tone: proseTone }]
+  const out: TranscriptSegment[] = [{ text: "\n", tone: proseTone }]
+  let atLineStart = true
+  for (const segment of segments) {
+    let text = ""
+    for (const ch of segment.text) {
+      if (atLineStart) {
+        text += transcriptBodyIndent
+        atLineStart = false
+      }
+      text += ch
+      if (ch === "\n") atLineStart = true
+    }
+    if (text) out.push({ text, tone: segment.tone })
+  }
+  return out
 }
 
 // Split prose from fenced code so ``` / ~~~ blocks stay visually distinct while

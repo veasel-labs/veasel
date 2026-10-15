@@ -4,13 +4,19 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Quiet-period / ensure-main-ci re-dispatch so cancelled main runs can still
+  # produce a verified prerelease without disabling PR supersession.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded pull-request runs so feature PR CI stays fast. On main,
+  # queue instead of cancel so an in-flight verified build can finish and
+  # publish even while later merges land (otherwise prereleases starve).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   release-plan:
@@ -43,12 +49,16 @@ jobs:
         run: node --check benchmarks/cli-startup.mjs
       - name: Calculate prerelease version
         id: plan
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: >-
+          github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: npm run plan
         working-directory: tools/release
       - name: Skip publishing for pull requests
         id: skip
-        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+        if: >-
+          github.ref != 'refs/heads/main' ||
+          (github.event_name != 'push' && github.event_name != 'workflow_dispatch')
         run: echo "released=false" >> "$GITHUB_OUTPUT"
 
   harbor-adapter:
@@ -453,10 +463,16 @@ jobs:
 
   publish-prerelease:
     name: Publish verified prerelease
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release-plan.outputs.released == 'true'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release-plan.outputs.released == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [release-plan, backend, security, tui, harbor-adapter]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: veasel-publish-prerelease
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -514,10 +530,18 @@ jobs:
           RELEASE_VERSION: ${{ needs.release-plan.outputs.version }}
           RELEASE_COMMIT: ${{ github.sha }}
         run: |
+          set -euo pipefail
+          # Publish the verified commit that finished CI. Main may have moved
+          # ahead while this run was queued; that is OK for the next channel.
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/* SHA256SUMS release.json --clobber
-          else
-            gh release create "$RELEASE_TAG" release-assets/* SHA256SUMS release.json \
-              --target "$RELEASE_COMMIT" --title "Veasel Code $RELEASE_VERSION" \
-              --generate-notes --prerelease
+            existing="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq .target_commitish)"
+            if [[ "$existing" == "$RELEASE_COMMIT" || "$existing" == "${RELEASE_COMMIT:0:7}" ]]; then
+              gh release upload "$RELEASE_TAG" release-assets/* SHA256SUMS release.json --clobber
+              exit 0
+            fi
+            echo "Release $RELEASE_TAG already exists for $existing; skipping duplicate publish of $RELEASE_COMMIT."
+            exit 0
           fi
+          gh release create "$RELEASE_TAG" release-assets/* SHA256SUMS release.json \
+            --target "$RELEASE_COMMIT" --title "Veasel Code $RELEASE_VERSION" \
+            --generate-notes --prerelease

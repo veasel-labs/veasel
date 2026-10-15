@@ -6,6 +6,15 @@ with `feat`, `fix`, `perf`, or a breaking-change marker produce an automated
 GitHub prerelease on the `next` channel. Documentation, CI, and refactoring
 commits do not publish a release.
 
+Pull-request CI still cancels superseded runs so feature checks stay fast. On
+`main`, later pushes queue behind the in-flight workflow instead of cancelling
+it, so a verified prerelease can finish during merge bursts. Cancelled main
+runs that remain after other interruptions are not product failures; the
+`Ensure main CI` workflow re-dispatches CI for the tip of `main` when no
+successful or in-flight run exists. Publish attaches the channel tag to the
+commit that finished verification; if that tag already exists for another
+commit, the job skips instead of clobbering.
+
 The release job calculates a semantic version from the last `v*` tag (or the
 version in `v.mod` before the first tag), compiles Linux, macOS, and Windows
 archives with that exact version, and publishes the V backend, a standalone

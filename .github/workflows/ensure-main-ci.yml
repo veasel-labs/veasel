@@ -1,0 +1,75 @@
+name: Ensure main CI
+
+# Main CI cancels superseded runs so feature merges stay fast. During a merge
+# storm that can starve the verified prerelease job. After the tip of main has
+# no successful CI and nothing in flight, re-dispatch CI once so a quiet period
+# still publishes.
+
+on:
+  schedule:
+    - cron: "12,42 * * * *"
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ensure-main-ci
+  cancel-in-progress: false
+
+jobs:
+  ensure:
+    name: Ensure tip of main has CI
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Re-dispatch CI when tip lacks a successful run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          tip="$(gh api "repos/$repo/commits/main" --jq .sha)"
+          echo "Tip of main: $tip"
+
+          # Cap the lookback so the script stays cheap during busy days.
+          runs_json="$(gh api "repos/$repo/actions/workflows/ci.yml/runs?branch=main&per_page=30")"
+
+          tip_runs="$(jq -c --arg tip "$tip" '
+            [.workflow_runs[] | select(.head_sha == $tip)]
+          ' <<<"$runs_json")"
+
+          success="$(jq -r '[.[] | select(.conclusion == "success")] | length' <<<"$tip_runs")"
+          if [[ "$success" -gt 0 ]]; then
+            echo "Tip already has a successful CI run."
+            exit 0
+          fi
+
+          inflight="$(jq -r '
+            [.[] | select(.status == "queued" or .status == "in_progress" or .status == "pending" or .status == "waiting" or .status == "requested")]
+            | length
+          ' <<<"$tip_runs")"
+          if [[ "$inflight" -gt 0 ]]; then
+            echo "Tip already has an in-flight CI run."
+            exit 0
+          fi
+
+          # Do not retry genuine product/test failures; only recover cancelled or
+          # missing tip runs caused by supersession during merge bursts.
+          failure="$(jq -r '[.[] | select(.conclusion == "failure" or .conclusion == "timed_out")] | length' <<<"$tip_runs")"
+          if [[ "$failure" -gt 0 ]]; then
+            echo "Tip has a failed CI run; leaving it for a deliberate fix."
+            exit 0
+          fi
+
+          echo "No successful or in-flight CI for tip; dispatching workflow_dispatch."
+          gh workflow run ci.yml --repo "$repo" --ref main
+          echo "Dispatched CI for tip $tip."

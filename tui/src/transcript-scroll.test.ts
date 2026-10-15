@@ -4,6 +4,7 @@ import {
   moveTranscriptScroll,
   transcriptBelowCue,
   transcriptPageSize,
+  transcriptScrollStatus,
   transcriptSegmentLines,
   windowTranscriptSegments,
 } from "./transcript-scroll"
@@ -43,5 +44,15 @@ describe("transcript page scroll", () => {
     expect(transcriptBelowCue({ truncatedBelow: false, streaming: true })).toBe("")
     expect(transcriptBelowCue({ truncatedBelow: true, streaming: false })).toBe("\n▼ PgDn · later transcript")
     expect(transcriptBelowCue({ truncatedBelow: true, streaming: true })).toBe("\n▼ streaming below · End follows")
+  })
+
+  test("status names End when the transcript is scrolled up", () => {
+    expect(transcriptScrollStatus({ offsetFromBottom: 0, streaming: true })).toBeUndefined()
+    expect(transcriptScrollStatus({ offsetFromBottom: 12, streaming: false })).toBe(
+      "scrolled  ·  End sticks to latest",
+    )
+    expect(transcriptScrollStatus({ offsetFromBottom: 12, streaming: true })).toBe(
+      "scrolled  ·  streaming below · End follows",
+    )
   })
 })

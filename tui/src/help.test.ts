@@ -20,6 +20,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("Ctrl+W or Alt+Backspace deletes the word before the cursor")
     expect(help).toContain("Alt+D deletes from the cursor through the next word")
     expect(help).toContain("Ctrl+K deletes from the cursor to the end")
+    expect(help).toContain("Ctrl+T swaps characters around the cursor")
     expect(help).toContain("Ctrl+A / Ctrl+E jump to the start or end of the draft")
     expect(help).toContain("Ctrl+← / Ctrl+→ or Alt+B / Alt+F move by words")
     expect(help).toContain("streaming · N chars")

@@ -5,6 +5,7 @@ import {
   killWordBackward,
   killWordForward,
   moveWordCursor,
+  transposeChars,
 } from "./composer-edit"
 
 describe("killWordBackward", () => {
@@ -67,5 +68,23 @@ describe("moveWordCursor", () => {
     expect(moveWordCursor("one two three", 4, "forward")).toBe(8)
     expect(moveWordCursor("one two three", 0, "backward")).toBe(0)
     expect(moveWordCursor("one two three", 13, "forward")).toBe(13)
+  })
+})
+
+describe("transposeChars", () => {
+  test("swaps the character before the cursor with the one at the cursor", () => {
+    expect(transposeChars("ab", 1)).toEqual({ value: "ba", cursor: 2 })
+    expect(transposeChars("abc", 2)).toEqual({ value: "acb", cursor: 3 })
+  })
+
+  test("at the end swaps the last two characters", () => {
+    expect(transposeChars("ab", 2)).toEqual({ value: "ba", cursor: 2 })
+    expect(transposeChars("abc", 3)).toEqual({ value: "acb", cursor: 3 })
+  })
+
+  test("is a no-op at the start or with fewer than two characters", () => {
+    expect(transposeChars("ab", 0)).toEqual({ value: "ab", cursor: 0 })
+    expect(transposeChars("a", 1)).toEqual({ value: "a", cursor: 1 })
+    expect(transposeChars("", 0)).toEqual({ value: "", cursor: 0 })
   })
 })

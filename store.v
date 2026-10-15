@@ -8,6 +8,7 @@ import sync
 import uuid
 
 const max_session_history_page_size = 100
+const max_event_stream_page_size = 500
 const max_retained_terminal_session_operations = 200
 const max_retained_session_events = 5_000
 const max_queued_session_operations_per_session = 32
@@ -1615,7 +1616,7 @@ fn (mut store Store) events_after(after int) ![]Event {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param('SELECT id, type, session_id, created_at, data FROM events WHERE id > ? ORDER BY id LIMIT 100',
+	rows := store.db.exec_param('SELECT id, type, session_id, created_at, data FROM events WHERE id > ? ORDER BY id LIMIT ${max_event_stream_page_size}',
 		after.str())!
 	mut events := []Event{cap: rows.len}
 	for row in rows {

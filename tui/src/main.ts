@@ -27,7 +27,7 @@ import {
   withReviewHotkeyHint,
   type ActiveReview,
 } from "./active-review"
-import { homeFooterHint, sessionFooterHint } from "./footer-hints"
+import { homeFooterForFilter, homeFooterHint, sessionFooterHint } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import {
@@ -592,6 +592,7 @@ function renderSessions() {
       ? formatStatusLine("ok", `connected  ·  ${visible.length} of ${sessions.length} sessions match “${sessionFilterQuery.trim()}”`)
       : formatHomeSessionStatus(selected, sessions.length)
     status.fg = theme.statusOk
+    footerHint.content = homeFooterForFilter(sessionFilterQuery)
   }
 }
 

@@ -816,6 +816,8 @@ def main() -> None:
         screen.wait_for("q quit")
         screen.send("Lane-19", 0.55)  # type-to-filter home sessions
         screen.wait_for("Filter  1/20 match", 4)
+        screen.wait_for("Ctrl+L clear", 4)
+        screen.wait_for("Esc clear", 4)
         screen.wait_for("Lane-19")
         visible = screen.terminal.text()
         if "Alpha" in visible or "Beta" in visible:

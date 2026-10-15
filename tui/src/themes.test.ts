@@ -2,10 +2,15 @@ import { describe, expect, test } from "bun:test"
 import {
   clearCustomThemes,
   defaultThemeId,
+  ensureThemeDirs,
   formatThemeList,
   formatThemeLoadStatusHint,
+  formatThemeOpenNotice,
   formatThemePreviewStatus,
+  formatThemeReloadStatus,
+  isThemeActionId,
   isThemeId,
+  listThemeChoices,
   loadCustomThemes,
   loadThemeId,
   parseThemeJson,
@@ -82,7 +87,44 @@ describe("TUI themes", () => {
     expect(text).toContain("● mint  Mint")
     expect(text).toContain("○ ember  Ember")
     expect(text).toContain("/theme <id>")
+    expect(text).toContain("/theme reload")
+    expect(text).toContain("/theme open")
     expect(text).toContain("preview colors live")
+  })
+
+  test("lists reload and open ahead of theme ids in slash choices", () => {
+    clearCustomThemes()
+    const choices = listThemeChoices()
+    expect(choices.slice(0, 2).map((item) => item.value)).toEqual(["reload", "open"])
+    expect(choices.some((item) => item.value === "mint")).toBe(true)
+    expect(isThemeActionId("reload")).toBe(true)
+    expect(isThemeActionId("open")).toBe(true)
+    expect(isThemeActionId("mint")).toBe(false)
+    expect(formatThemeReloadStatus(1, 0)).toBe("● reloaded 1 custom theme  ·  /theme")
+    expect(formatThemeReloadStatus(0, 2)).toBe("● reloaded 0 custom themes  ·  2 JSON errors  ·  /theme")
+  })
+
+  test("creates missing theme directories for /theme open", () => {
+    const created: string[] = []
+    const result = ensureThemeDirs({
+      env: { XDG_CONFIG_HOME: "/tmp/veasel-open-cfg" },
+      home: "/tmp/veasel-open-home",
+      projectDir: "/tmp/veasel-open-project",
+      existsDir: () => false,
+      mkdir: (path) => {
+        created.push(path)
+      },
+    })
+    expect(result.userDir).toBe("/tmp/veasel-open-cfg/veasel/themes")
+    expect(result.workspaceDir).toBe("/tmp/veasel-open-project/.veasel/themes")
+    expect(created).toEqual([
+      "/tmp/veasel-open-cfg/veasel/themes",
+      "/tmp/veasel-open-project/.veasel/themes",
+    ])
+    const notice = formatThemeOpenNotice(result, "/tmp/veasel-open-home")
+    expect(notice).toContain("THEME DIRECTORIES")
+    expect(notice).toContain("/theme reload")
+    expect(notice).toContain("Created:")
   })
 
   test("lists custom theme directories and surfaces JSON errors", () => {
@@ -114,6 +156,8 @@ describe("TUI themes", () => {
     expect(themeIdFromSlashSuggestion("/theme AURORA")).toBe("aurora")
     expect(themeIdFromSlashSuggestion("/theme")).toBeUndefined()
     expect(themeIdFromSlashSuggestion("/theme neon")).toBeUndefined()
+    expect(themeIdFromSlashSuggestion("/theme reload")).toBeUndefined()
+    expect(themeIdFromSlashSuggestion("/theme open")).toBeUndefined()
     expect(themeIdFromSlashSuggestion("/themes ember")).toBeUndefined()
   })
 
@@ -146,6 +190,8 @@ describe("TUI themes", () => {
 
   test("rejects custom themes that replace builtins or use bad colors", () => {
     expect(parseThemeJson(JSON.stringify({ id: "mint", name: "Nope" }), "bad.json").error).toContain("builtin")
+    expect(parseThemeJson(JSON.stringify({ id: "reload", name: "Nope" }), "bad.json").error).toContain("reserved")
+    expect(parseThemeJson(JSON.stringify({ id: "open", name: "Nope" }), "bad.json").error).toContain("reserved")
     expect(parseThemeJson(JSON.stringify({ id: "neon", name: "Neon", brand: "mint" }), "bad.json").error).toContain("hex")
     expect(parseThemeJson("{", "bad.json").error).toContain("invalid JSON")
   })

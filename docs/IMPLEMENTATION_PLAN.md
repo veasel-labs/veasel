@@ -161,7 +161,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   ember, slate, mono, aurora, day, and contrast via `/theme`, with the choice
   persisted under `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
   Custom themes load from `~/.config/veasel/themes/*.json` and
-  `<workspace>/.veasel/themes/*.json` (optional `extends` builtin id).
+  `<workspace>/.veasel/themes/*.json` (optional `extends` builtin id);
+  `/theme reload` rescans without restart and `/theme open` creates/shows
+  those directories.
 - [x] TUI `/map` shows the extractive workspace repository map with measured
   UTF-8 bytes, bytes/4 bound, ranked paths, and an optional ranking hint.
   Help documents Windows AppContainer alongside Bubblewrap/Seatbelt.

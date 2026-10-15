@@ -2,10 +2,10 @@
 """Drive the real Veasel TUI against a loopback fixture.
 
 This checks the keyboard path that unit tests cannot see: provider setup,
-model discovery, slash arguments, a bounded diff review, a failed turn,
-cancellation, a long session list that keeps the selection on screen, a
-session switch while completion data is still in flight, and a narrow
-terminal.
+model discovery, slash arguments, a bounded diff review, a bounded
+shell-command review, a failed turn, cancellation, a long session list that
+keeps the selection on screen, a session switch while completion data is
+still in flight, and a narrow terminal.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SESSION = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
 EDIT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+COMMAND_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 state = {
@@ -56,6 +57,12 @@ def review_diff() -> str:
     lines.extend(f"+kept line {index:02d}" for index in range(1, 29))
     lines.append("+TAIL-SENTINEL")
     return "\n".join(lines) + "\n"
+
+
+def long_shell_command() -> str:
+    lines = [f"echo step {index:02d}" for index in range(1, 31)]
+    lines.append("echo SHELL-TAIL")
+    return "\n".join(lines)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -121,9 +128,21 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("/skills") and SESSION in path:
                 return self._json(200, [{"plugin_name": "review-tools", "skill_name": "review"}])
             return self._json(200, [])
+        if path == f"/v1/sessions/{SESSION}/workspace/commands/{COMMAND_ID}":
+            return self._json(200, {
+                "id": COMMAND_ID,
+                "command": long_shell_command(),
+                "cwd": ".",
+                "timeout_seconds": 10,
+                "status": "pending",
+                "exit_code": 0,
+                "output": "",
+                "created_at": "",
+                "updated_at": "",
+            })
         if path == f"/v1/sessions/{SESSION}/workspace/commands":
             return self._json(200, [{
-                "id": "cmd-1", "command": "echo hi", "cwd": ".", "timeout_seconds": 10,
+                "id": COMMAND_ID, "command": "echo hi", "cwd": ".", "timeout_seconds": 10,
                 "status": "pending", "exit_code": 0, "output": "", "created_at": "", "updated_at": "",
             }])
         if path == "/v1/plugins":
@@ -522,9 +541,15 @@ def main() -> None:
         screen.send("/command ", 0.6)
         screen.wait_for("Inspect before deciding")
         screen.send("\t", 0.45)
-        screen.wait_for("cmd-1")
+        screen.wait_for("bbbbbbbb")
         screen.send("\x1b", 0.25)
         screen.clear_line(14)  # "/command show "
+        screen.send(f"/command show {COMMAND_ID}\r", 0.7)
+        screen.wait_for("without a sandbox", 4)
+        screen.wait_for("Showing ")
+        reviewed = screen.terminal.text()
+        if "SHELL-TAIL" in reviewed:
+            raise AssertionError(f"shell review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
         screen.send("keep this prompt\r", 0.4)
         screen.wait_for("The assistant turn failed.", 6)
         screen.wait_for("keep this prompt")

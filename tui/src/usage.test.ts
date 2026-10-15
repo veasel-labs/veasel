@@ -84,9 +84,12 @@ describe("formatSessionUsageSummary", () => {
       usage_reported: true,
       cost: "unavailable",
     })
+    expect(text).toContain("Only provider-reported counters")
     expect(text).toContain("Completed turns: 3")
     expect(text).toContain("Turns with provider-reported tokens: 2")
     expect(text).toContain("1.5k in · 400 out")
+    expect(text).toContain("Total (in+out): 1.9k")
+    expect(text).toContain("Avg per reported turn: 750 in · 200 out")
     expect(text).toContain("Prompt cache: unavailable")
     expect(text).toContain("Cost: unavailable (no price schedule)")
   })
@@ -105,7 +108,7 @@ describe("formatSessionUsageSummary", () => {
       cost: "unavailable",
     })
     expect(text).toContain("Prompt cache (provider-reported): 80k cache read · 1.2k cache write")
-    expect(text).not.toContain("%")
+    expect(text).toContain("not a % savings claim")
     expect(text).not.toContain("saved")
   })
 })

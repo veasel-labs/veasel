@@ -60,11 +60,19 @@ export type SessionUsageSummary = {
 export function formatSessionUsageSummary(summary: SessionUsageSummary): string {
   const lines = [
     "SESSION TOKEN USAGE",
+    "Only provider-reported counters appear here. Veasel never estimates tokens or invents savings.",
     `Completed turns: ${summary.completed_turns}`,
     `Turns with provider-reported tokens: ${summary.reported_turns}`,
   ]
   if (summary.usage_reported) {
+    const total = summary.input_tokens + summary.output_tokens
     lines.push(`Tokens: ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`)
+    lines.push(`Total (in+out): ${formatTokenCount(total)}`)
+    if (summary.reported_turns > 0) {
+      const avgIn = Math.round(summary.input_tokens / summary.reported_turns)
+      const avgOut = Math.round(summary.output_tokens / summary.reported_turns)
+      lines.push(`Avg per reported turn: ${formatReportedUsage(avgIn, avgOut)}`)
+    }
   } else {
     lines.push("Tokens: unavailable (no provider reported usage yet)")
   }
@@ -72,6 +80,7 @@ export function formatSessionUsageSummary(summary: SessionUsageSummary): string 
     lines.push(
       `Prompt cache (provider-reported): ${formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0)}`,
     )
+    lines.push("Cache lines are raw counters — not a % savings claim.")
   } else {
     lines.push("Prompt cache: unavailable (provider omitted cache fields)")
   }

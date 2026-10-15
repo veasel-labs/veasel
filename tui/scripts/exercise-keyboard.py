@@ -123,6 +123,17 @@ class Handler(BaseHTTPRequestHandler):
                     {"name": "docs-http", "header_names": ["Authorization"]},
                 ],
             })
+        if path == f"/v1/sessions/{SESSION}/usage":
+            return self._json(200, {
+                "session_id": SESSION,
+                "completed_turns": 2,
+                "reported_turns": 2,
+                "input_tokens": 1500,
+                "output_tokens": 400,
+                "usage_reported": True,
+                "cache_reported": False,
+                "cost": "unavailable",
+            })
         if path == f"/v1/sessions/{SESSION}/workspace/edits/{EDIT_ID}":
             return self._json(200, {
                 "id": EDIT_ID,
@@ -721,6 +732,11 @@ def main() -> None:
         screen.send("/mcp oauth complete docs http://127.0.0.1:8765/callback?code=abc&state=oauth-state-1\r", 0.7)
         screen.wait_for("MCP OAUTH COMPLETE", 4)
         screen.wait_for("Authorization", 4)
+        screen.send("/usage\r", 0.7)
+        screen.wait_for("SESSION TOKEN USAGE", 4)
+        screen.wait_for("Only provider-reported counters", 4)
+        screen.wait_for("Total (in+out): 1.9k", 4)
+        screen.wait_for("Avg per reported turn", 4)
         screen.send("/command ", 0.6)
         screen.wait_for("Inspect before deciding")
         screen.send("\t", 0.45)

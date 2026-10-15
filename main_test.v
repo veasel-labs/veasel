@@ -619,6 +619,41 @@ fn test_provider_sse_decoder_rejects_oversized_unterminated_frames() {
 	assert false, 'expected oversized stream frame to fail'
 }
 
+fn test_provider_sse_progress_aborts_on_cancel_before_2xx_decode() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	cancel()
+	mut stream_state := &ProviderSSERequestState{
+		decoder: ProviderSSEDecoder{
+			on_data: fn (_ string) ! {
+				assert false, 'cancelled progress must not decode SSE'
+			}
+		}
+	}
+	provider_sse_handle_progress(mut stream_state, mut turn_ctx, 'data: hi\n\n'.bytes(), 0) or {
+		assert err.msg() == 'cancelled'
+		assert stream_state.bytes == 'data: hi\n\n'.len
+		return
+	}
+	assert false, 'expected cancelled turn to abort SSE progress'
+}
+
+fn test_provider_sse_progress_skips_non_2xx_body_without_decode() {
+	mut background := vcontext.background()
+	mut turn_ctx, _ := vcontext.with_cancel(mut background)
+	mut state := &ProviderSSETestState{}
+	mut stream_state := &ProviderSSERequestState{
+		decoder: ProviderSSEDecoder{
+			on_data: fn [mut state] (data string) ! {
+				state.messages << data
+			}
+		}
+	}
+	provider_sse_handle_progress(mut stream_state, mut turn_ctx, 'error-body'.bytes(), 401)!
+	assert state.messages.len == 0
+	assert stream_state.bytes == 'error-body'.len
+}
+
 fn test_session_plugin_skills_persist_and_emit_only_state_changes() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

@@ -1942,24 +1942,34 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 		stop_receiving_limit: max_provider_stream_bytes + 1
 		validate:             true
 		verify:               provider_tls_verify_path(url)!
-		on_progress_body:     fn [mut stream_state, turn_ctx] (_ &http.Request, chunk []u8, _ u64, _ u64, status_code int) ! {
-			stream_state.bytes += chunk.len
-			if stream_state.bytes > max_provider_stream_bytes {
-				return error('provider stream size limit exceeded')
-			}
-			if status_code < 200 || status_code >= 300 {
-				return
-			}
-			mut active_ctx := turn_ctx
-			if context_error := turn_context_error(mut active_ctx) {
-				return error(context_error)
-			}
-			stream_state.decoder.feed(chunk.bytestr())!
+		on_progress_body:     fn [mut stream_state, mut turn_ctx] (_ &http.Request, chunk []u8, _ u64, _ u64, status_code int) ! {
+			provider_sse_handle_progress(mut stream_state, mut turn_ctx, chunk, status_code)!
 		}
 	) or { return error(err.msg()) }
+	if context_error := turn_context_error(mut turn_ctx) {
+		return error(context_error)
+	}
 	stream_state.decoder.finish()!
 	if response.status_code < 200 || response.status_code >= 300 {
 		return error('HTTP ${response.status_code}')
 	}
 	return response
+}
+
+// provider_sse_handle_progress checks turn cancellation on every body progress
+// callback, including non-2xx and pre-header status_code 0 chunks. True socket
+// abort before any progress callback remains limited by net.http.
+fn provider_sse_handle_progress(mut stream_state ProviderSSERequestState, mut turn_ctx vcontext.Context,
+	chunk []u8, status_code int) ! {
+	stream_state.bytes += chunk.len
+	if stream_state.bytes > max_provider_stream_bytes {
+		return error('provider stream size limit exceeded')
+	}
+	if context_error := turn_context_error(mut turn_ctx) {
+		return error(context_error)
+	}
+	if status_code < 200 || status_code >= 300 {
+		return
+	}
+	stream_state.decoder.feed(chunk.bytestr())!
 }

@@ -780,6 +780,7 @@ def main() -> None:
         screen.send(f"/patch show {EDIT_ID}\r", 0.7)
         screen.wait_for("28 added, 2 removed", 4)
         screen.wait_for("Showing ")
+        screen.wait_for("remain", 4)
         screen.wait_for("alpha")
         screen.wait_for("beta")
         screen.wait_for("a approve")

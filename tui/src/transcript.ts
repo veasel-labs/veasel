@@ -7,6 +7,7 @@ export type TranscriptTone =
   | "diffAdd"
   | "diffRemove"
   | "diffMeta"
+  | "diffContext"
   | "userLabel"
   | "userText"
   | "assistantLabel"
@@ -16,12 +17,14 @@ export type TranscriptTone =
   | "toolLabel"
   | "toolText"
   | "codeFence"
+  | "codeLang"
   | "codeBody"
   | "inlineCode"
   | "strong"
   | "listMarker"
   | "link"
   | "heading"
+  | "blockquote"
   | "status"
   | "hint"
 
@@ -135,11 +138,13 @@ export function messageBodySegments(content: string, proseTone: TranscriptTone):
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!
     const trailing = index < lines.length - 1 ? "\n" : ""
-    const open = /^(```|~~~)(.*)$/.exec(line)
+    const open = /^(```|~~~)(\S*)(.*)$/.exec(line)
     if (open && !inFence) {
       inFence = true
       fenceMarker = open[1]!
-      segments.push({ text: `${line}${trailing}`, tone: "codeFence" })
+      segments.push({ text: fenceMarker, tone: "codeFence" })
+      if (open[2]) segments.push({ text: open[2], tone: "codeLang" })
+      segments.push({ text: `${open[3] ?? ""}${trailing}`, tone: "codeFence" })
       continue
     }
     if (inFence && fenceMarker && line.startsWith(fenceMarker) && /^(`{3}|~{3})\s*$/.test(line)) {
@@ -156,6 +161,12 @@ export function messageBodySegments(content: string, proseTone: TranscriptTone):
     if (heading) {
       segments.push({ text: `${heading[1]}${heading[2]}`, tone: "heading" })
       segments.push(...proseInlineSegments(heading[3]!, "heading", trailing))
+      continue
+    }
+    const quote = /^(\s*>\s?)(.*)$/.exec(line)
+    if (quote) {
+      segments.push({ text: quote[1]!, tone: "blockquote" })
+      segments.push(...proseInlineSegments(quote[2]!, "blockquote", trailing))
       continue
     }
     const list = /^(\s*)([-*+]|\d+\.)(\s+)(.*)$/.exec(line)
@@ -253,10 +264,10 @@ function wordLineSegments(
   for (const token of tokens) {
     segments.push({
       text: token.text,
-      tone: token.kind === "change" ? changeTone : "notice",
+      tone: token.kind === "change" ? changeTone : "diffContext",
     })
   }
-  segments.push({ text: trailing, tone: "notice" })
+  segments.push({ text: trailing, tone: "diffContext" })
   return segments
 }
 
@@ -289,6 +300,11 @@ export function noticeSegments(notice: string): TranscriptSegment[] {
     }
     if (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
       segments.push({ text: `${line}${trailing}`, tone: "diffMeta" })
+      continue
+    }
+    // Unified-diff context lines keep their leading space; mute them so +/- pop.
+    if (line.startsWith(" ") || line === "") {
+      segments.push({ text: `${line}${trailing}`, tone: "diffContext" })
       continue
     }
     segments.push({ text: `${line}${trailing}`, tone: "notice" })

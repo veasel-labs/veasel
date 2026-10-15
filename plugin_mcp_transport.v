@@ -26,7 +26,8 @@ struct PluginMCPToolBinding {
 struct PluginMCPConnection {
 mut:
 	client          mcp.Client
-	stdio_transport &PluginMCPTransport = unsafe { nil }
+	stdio_transport &PluginMCPTransport     = unsafe { nil }
+	http_transport  &PluginMCPHTTPTransport = unsafe { nil }
 }
 
 // PluginMCPTransport supplies the process configuration missing from the
@@ -228,9 +229,7 @@ fn new_plugin_mcp_connection(plugin_root string, plugin_data string, server Plug
 			}
 		}
 		'streamable-http' {
-			return PluginMCPConnection{
-				client: new_plugin_mcp_http_client(server)!
-			}
+			return new_plugin_mcp_http_connection(server)!
 		}
 		else {
 			return error('unsupported Agent Plugin MCP server')
@@ -395,6 +394,16 @@ fn close_plugin_mcp_connections(mut connections []PluginMCPConnection) {
 
 fn watch_plugin_mcp_stdio_cancel(mut turn_ctx vcontext.Context, transport &PluginMCPTransport,
 	done chan int) {
+	watch_plugin_mcp_cancel(mut turn_ctx, transport, unsafe { nil }, done)
+}
+
+fn watch_plugin_mcp_http_cancel(mut turn_ctx vcontext.Context, transport &PluginMCPHTTPTransport,
+	done chan int) {
+	watch_plugin_mcp_cancel(mut turn_ctx, unsafe { nil }, transport, done)
+}
+
+fn watch_plugin_mcp_cancel(mut turn_ctx vcontext.Context, stdio &PluginMCPTransport,
+	http_transport &PluginMCPHTTPTransport, done chan int) {
 	for {
 		mut finished := 0
 		if done.try_pop(mut finished) == .success {
@@ -402,8 +411,14 @@ fn watch_plugin_mcp_stdio_cancel(mut turn_ctx vcontext.Context, transport &Plugi
 		}
 		if context_error := turn_context_error(mut turn_ctx) {
 			if context_error == 'cancelled' {
-				mut active := transport
-				active.request_cancel()
+				if !isnil(stdio) {
+					mut active := stdio
+					active.request_cancel()
+				}
+				if !isnil(http_transport) {
+					mut active_http := http_transport
+					active_http.request_cancel()
+				}
 				return
 			}
 		}

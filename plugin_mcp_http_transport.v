@@ -14,28 +14,79 @@ const plugin_mcp_http_close_timeout = 250 * time.millisecond
 // MCP client transport interface. Redirects and automatic retries are disabled
 // because configured plugin headers are bound to the configured origin and a
 // retried tools/call request could repeat side effects.
+@[heap]
 struct PluginMCPHTTPTransport {
 mut:
-	url              string
-	headers          map[string]string
-	session_id       string
-	protocol_version string
-	pending          []string
+	url                string
+	headers            map[string]string
+	session_id         string
+	protocol_version   string
+	pending            []string
+	cancel_requested   bool
+	active_request_id  string
+	cancelled_notified bool
 }
 
-fn new_plugin_mcp_http_transport(server PluginMCPServer) !PluginMCPHTTPTransport {
+fn new_plugin_mcp_http_transport(server PluginMCPServer) !&PluginMCPHTTPTransport {
 	if server.transport != 'streamable-http' || server.url.len == 0 {
 		return error('unsupported Agent Plugin MCP HTTP server')
 	}
-	return PluginMCPHTTPTransport{
+	return &PluginMCPHTTPTransport{
 		url:     server.url
 		headers: server.headers.clone()
 	}
 }
 
+fn (mut transport PluginMCPHTTPTransport) request_cancel() {
+	transport.cancel_requested = true
+}
+
+fn (mut transport PluginMCPHTTPTransport) emit_cancelled_notification() {
+	if transport.cancelled_notified || transport.active_request_id.len == 0 {
+		return
+	}
+	transport.cancelled_notified = true
+	notification := plugin_mcp_cancelled_notification(transport.active_request_id, 'turn cancelled')
+	if notification.len == 0 || notification.len > max_plugin_mcp_http_body_bytes {
+		return
+	}
+	mut header := http.new_header()
+	header.add_custom_map(plugin_mcp_http_user_headers(transport.headers)) or { return }
+	header.set(.content_type, 'application/json')
+	header.set(.accept, 'application/json, text/event-stream')
+	if transport.session_id.len > 0 {
+		header.set_custom('MCP-Session-Id', transport.session_id) or { return }
+	}
+	if transport.protocol_version.len > 0 {
+		header.set_custom('MCP-Protocol-Version', transport.protocol_version) or { return }
+	}
+	_ := http.fetch(
+		url:                  transport.url
+		method:               .post
+		data:                 notification
+		header:               header
+		validate:             transport.url.starts_with('https://')
+		allow_redirect:       false
+		max_retries:          1
+		read_timeout:         plugin_mcp_http_close_timeout
+		write_timeout:        plugin_mcp_http_close_timeout
+		stop_copying_limit:   max_plugin_mcp_http_body_bytes + 1
+		stop_receiving_limit: max_plugin_mcp_http_body_bytes + 1
+	) or { return }
+}
+
 fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 	if message.len == 0 || message.len > max_plugin_mcp_http_body_bytes {
 		return error('MCP HTTP request exceeds the message size limit')
+	}
+	request_id := plugin_mcp_jsonrpc_request_id_json(message)
+	if request_id.len > 0 {
+		transport.active_request_id = request_id
+		transport.cancelled_notified = false
+	}
+	if transport.cancel_requested {
+		transport.emit_cancelled_notification()
+		return error('cancelled')
 	}
 	mut header := http.new_header()
 	header.add_custom_map(plugin_mcp_http_user_headers(transport.headers))!
@@ -67,7 +118,18 @@ fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 		write_timeout:        plugin_mcp_http_response_timeout
 		stop_copying_limit:   max_plugin_mcp_http_body_bytes + 1
 		stop_receiving_limit: max_plugin_mcp_http_body_bytes + 1
-	)!
+		on_progress_body:     fn [mut transport] (_ &http.Request, _ []u8, _ u64, _ u64, _ int) ! {
+			if transport.cancel_requested {
+				return error('cancelled')
+			}
+		}
+	) or {
+		if err.msg() == 'cancelled' || transport.cancel_requested {
+			transport.emit_cancelled_notification()
+			return error('cancelled')
+		}
+		return error(err.msg())
+	}
 	if response.status_code in 300 .. 400 {
 		return error('MCP HTTP redirects are disabled to protect configured headers')
 	}
@@ -136,6 +198,10 @@ fn (mut transport PluginMCPHTTPTransport) send(message string) ! {
 }
 
 fn (mut transport PluginMCPHTTPTransport) receive() !string {
+	if transport.cancel_requested {
+		transport.emit_cancelled_notification()
+		return error('cancelled')
+	}
 	if transport.pending.len == 0 {
 		return error('MCP HTTP response did not contain an MCP message')
 	}
@@ -302,8 +368,16 @@ fn valid_plugin_mcp_http_header_value(value string) bool {
 }
 
 fn new_plugin_mcp_http_client(server PluginMCPServer) !mcp.Client {
-	transport := new_plugin_mcp_http_transport(server)!
-	return mcp.new_client(transport, mcp.ClientConfig{
-		protocol_version: mcp.latest_protocol_version
-	})
+	connection := new_plugin_mcp_http_connection(server)!
+	return connection.client
+}
+
+fn new_plugin_mcp_http_connection(server PluginMCPServer) !PluginMCPConnection {
+	mut transport := new_plugin_mcp_http_transport(server)!
+	return PluginMCPConnection{
+		client:         mcp.new_client(transport, mcp.ClientConfig{
+			protocol_version: mcp.latest_protocol_version
+		})
+		http_transport: transport
+	}
 }

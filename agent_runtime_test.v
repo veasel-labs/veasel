@@ -37,7 +37,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	advertised := restrict_agent_tools(workspace_agent_tools(), policy)
 	assert advertised.map(it.name) == ['workspace_read_file']
 	mut mcp_connections := []PluginMCPConnection{}
-	skill_context := SessionSkillContext{
+	mut skill_context := SessionSkillContext{
 		tool_policy: policy
 	}
 	denied_edit := execute_test_agent_tool(app, root, session.id, ProviderToolCall{
@@ -46,7 +46,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 			name:      'workspace_propose_file_edit'
 			arguments: '{"path":"source.txt","content":"changed"}'
 		}
-	}, skill_context, {}, mut mcp_connections)
+	}, mut skill_context, {}, mut mcp_connections)
 	assert denied_edit.contains('active Agent Skill tool restrictions')
 	assert os.read_file(path) or { panic(err) } == 'must remain unchanged'
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
@@ -57,7 +57,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 			name:      'mcp_trusted_action'
 			arguments: '{}'
 		}
-	}, skill_context, {
+	}, mut skill_context, {
 		'mcp_trusted_action': PluginMCPToolBinding{
 			connection_index: 0
 			native_name:      'action'
@@ -88,8 +88,10 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 		skill_name:  'review'
 		skill_root:  skill_root
 	}]
-	definitions := agent_skill_resource_tools(access)
+	definitions := agent_skill_resource_tools()
 	assert definitions.map(it.name) == ['agent_skill_read_resource']
+	load_definitions := agent_skill_load_tools()
+	assert load_definitions.map(it.name) == ['agent_skill_load']
 	resource_policy := agent_tool_policy_for_skills([PluginSkill{
 		name:                   'references'
 		allowed_tools:          'agent_skill_read_resource'
@@ -104,13 +106,14 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 			arguments: '{"plugin_name":"review-tools","skill_name":"review","path":"references/guide.md"}'
 		}
 	}
+	mut allowed_context := SessionSkillContext{
+		resource_access: access
+	}
 	allowed := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
-		SessionSkillContext{
-			resource_access: access
-		}, {}, mut mcp_connections)
+		mut allowed_context, {}, mut mcp_connections)
 	assert allowed.contains('Reference instructions.')
 	assert allowed.contains('references/guide.md')
-	blocked_context := SessionSkillContext{
+	mut blocked_context := SessionSkillContext{
 		tool_policy:     agent_tool_policy_for_skills([PluginSkill{
 			name:                   'read-only'
 			allowed_tools:          'workspace_read_file'
@@ -119,22 +122,79 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 		resource_access: access
 	}
 	blocked := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
-		blocked_context, {}, mut mcp_connections)
+		mut blocked_context, {}, mut mcp_connections)
 	assert blocked.contains('active Agent Skill tool restrictions')
 	assert restrict_agent_tools(definitions, blocked_context.tool_policy).len == 0
+	mut disabled_context := SessionSkillContext{}
 	disabled := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
-		SessionSkillContext{}, {}, mut mcp_connections)
-	assert disabled.contains('not active in this session')
+		mut disabled_context, {}, mut mcp_connections)
+	assert disabled.contains('has not been loaded in this turn')
+}
+
+fn test_agent_skill_load_tool_loads_body_without_session_enable() {
+	root := os.join_path(os.temp_dir(), 'veasel-skill-load-${uuid.new_v4().str()}')
+	project := os.join_path(root, 'workspace')
+	skill_dir := os.join_path(project, '.agents', 'skills', 'deep-review')
+	os.mkdir_all(os.join_path(skill_dir, 'references')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(skill_dir, 'SKILL.md'), '---\nname: deep-review\ndescription: Review carefully.\n---\n\nUse the reference guide.') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(skill_dir, 'references', 'guide.md'), 'Turn-loaded reference.') or {
+		panic(err)
+	}
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	session := store.create_session(SessionInput{
+		title:     'On-demand skill load'
+		directory: project
+	}) or { panic(err) }
+	mut mcp_connections := []PluginMCPConnection{}
+	load_call := ProviderToolCall{
+		id:       'load-skill'
+		function: ProviderFunctionCall{
+			name:      'agent_skill_load'
+			arguments: '{"plugin_name":"agents","skill_name":"deep-review"}'
+		}
+	}
+	mut skill_context := SessionSkillContext{}
+	loaded := execute_test_agent_tool(app, project, session.id, load_call, mut skill_context, {}, mut mcp_connections)
+	assert loaded.contains('Use the reference guide.')
+	assert loaded.contains('references/guide.md')
+	assert loaded.contains('untrusted')
+	assert skill_context.resource_access.len == 1
+	assert skill_context.resource_access[0].plugin_name == 'agents'
+	assert skill_context.resource_access[0].skill_name == 'deep-review'
+	read_call := ProviderToolCall{
+		id:       'read-after-load'
+		function: ProviderFunctionCall{
+			name:      'agent_skill_read_resource'
+			arguments: '{"plugin_name":"agents","skill_name":"deep-review","path":"references/guide.md"}'
+		}
+	}
+	read_after_load := execute_test_agent_tool(app, project, session.id, read_call, mut skill_context, {}, mut mcp_connections)
+	assert read_after_load.contains('Turn-loaded reference.')
+	mut missing_context := SessionSkillContext{}
+	missing := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
+		id:       'missing-skill'
+		function: ProviderFunctionCall{
+			name:      'agent_skill_load'
+			arguments: '{"plugin_name":"agents","skill_name":"missing"}'
+		}
+	}, mut missing_context, {}, mut mcp_connections)
+	assert missing.contains('not found')
 }
 
 fn execute_test_agent_tool(app &App, root string, session_id string, call ProviderToolCall,
-	skill_context SessionSkillContext, bindings map[string]PluginMCPToolBinding,
+	mut skill_context SessionSkillContext, bindings map[string]PluginMCPToolBinding,
 	mut connections []PluginMCPConnection) string {
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_timeout(mut background, time.second)
 	defer { cancel() }
 	return execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, 'test-operation', call,
-		skill_context, bindings, mut connections, false) or { panic(err) }
+		mut skill_context, bindings, mut connections, false) or { panic(err) }
 }
 
 fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_results() {

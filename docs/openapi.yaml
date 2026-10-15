@@ -142,7 +142,7 @@ paths:
   /v1/skills:
     get:
       operationId: listDiscoveredSkills
-      description: Discovers standalone SKILL.md packages from project and user agent skill roots without requiring plugin.json. Returns metadata only; instruction bodies stay on disk until a session enables the skill.
+      description: Discovers standalone SKILL.md packages from project and user agent skill roots without requiring plugin.json. Returns metadata only; instruction bodies stay on disk until a session enables the skill or the model loads one with agent_skill_load.
       parameters:
         - in: query
           name: directory
@@ -1141,7 +1141,7 @@ components:
           type: string
         features:
           type: array
-          description: Includes sessions.operations.trace.atif_v1_8 for opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_read_resource when model support is configured; the tool is exposed only while one or more Agent Skills are active in the session.
+          description: Includes sessions.operations.trace.atif_v1_8 for opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files.
           items:
             type: string
     ModelSettingsInput:

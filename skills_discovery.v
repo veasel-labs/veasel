@@ -18,7 +18,7 @@ pub:
 }
 
 // StandaloneSkill is metadata discovered from a SKILL.md file. Instruction
-// bodies stay on disk until a session enables the skill.
+// bodies stay on disk until a session enables the skill or the model loads it.
 struct StandaloneSkill {
 pub:
 	name                   string

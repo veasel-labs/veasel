@@ -211,8 +211,9 @@ mut:
 }
 
 struct SessionSkillContext {
-	instructions    string
-	tool_policy     AgentToolPolicy
+	instructions string
+	tool_policy  AgentToolPolicy
+mut:
 	resource_access []AgentSkillResourceAccess
 }
 

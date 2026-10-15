@@ -17,28 +17,45 @@
       "name": "review-tools",
       "version": "1.2.3",
       "description": "Review source changes.",
-      "author": { "name": "Example", "email": "dev@example.invalid", "url": "https://example.invalid" },
+      "author": {
+        "name": "Example",
+        "email": "dev@example.invalid",
+        "url": "https://example.invalid"
+      },
       "homepage": "https://example.invalid/home",
       "repository": "https://example.invalid/repo",
       "license": "MIT",
-      "keywords": ["review", "testing"],
-      "extensions": { "com.veasel.code": { "display_name": "Review tools" } }
+      "keywords": [
+        "review",
+        "testing"
+      ],
+      "extensions": {
+        "com.veasel.code": {
+          "display_name": "Review tools"
+        }
+      }
     }
   },
   {
     "name": "unknown root property is ignored",
     "accepted": true,
-    "diagnostics": ["unknown top-level field"],
+    "diagnostics": [
+      "unknown top-level field"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "future-field",
-      "futureField": { "opaque": true }
+      "futureField": {
+        "opaque": true
+      }
     }
   },
   {
     "name": "non-object extensions is ignored with a diagnostic",
     "accepted": true,
-    "diagnostics": ["non-object extensions"],
+    "diagnostics": [
+      "non-object extensions"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "bad-extensions",
@@ -48,21 +65,34 @@
   {
     "name": "unsupported Veasel extension field is ignored",
     "accepted": true,
-    "diagnostics": ["Ignoring unsupported Veasel extension field `channel`"],
+    "diagnostics": [
+      "Ignoring unsupported Veasel extension field `channel`"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "extra-extension-field",
-      "extensions": { "com.veasel.code": { "display_name": "Review tools", "channel": "stable" } }
+      "extensions": {
+        "com.veasel.code": {
+          "display_name": "Review tools",
+          "channel": "stable"
+        }
+      }
     }
   },
   {
     "name": "invalid Veasel extension label is ignored",
     "accepted": true,
-    "diagnostics": ["Ignoring invalid Veasel extension display_name"],
+    "diagnostics": [
+      "Ignoring invalid Veasel extension display_name"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "bad-extension-label",
-      "extensions": { "com.veasel.code": { "display_name": "bad\nname" } }
+      "extensions": {
+        "com.veasel.code": {
+          "display_name": "bad\nname"
+        }
+      }
     }
   },
   {
@@ -72,13 +102,22 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "opaque-extension",
-      "extensions": { "vendor.example": ["opaque", { "nested": true }] }
+      "extensions": {
+        "vendor.example": [
+          "opaque",
+          {
+            "nested": true
+          }
+        ]
+      }
     }
   },
   {
     "name": "missing schema is rejected",
     "accepted": false,
-    "document": { "name": "missing-schema" }
+    "document": {
+      "name": "missing-schema"
+    }
   },
   {
     "name": "unsupported schema version is rejected",
@@ -91,7 +130,9 @@
   {
     "name": "missing name is rejected",
     "accepted": false,
-    "document": { "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json" }
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+    }
   },
   {
     "name": "invalid name grammar is rejected",
@@ -116,7 +157,9 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "unknown-author-field",
-      "author": { "nickname": "unsupported" }
+      "author": {
+        "nickname": "unsupported"
+      }
     }
   },
   {
@@ -125,7 +168,10 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "wrong-keyword-type",
-      "keywords": ["valid", false]
+      "keywords": [
+        "valid",
+        false
+      ]
     }
   },
   {
@@ -175,7 +221,9 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "nul-author",
-      "author": { "name": "bad\u0000name" }
+      "author": {
+        "name": "bad\u0000name"
+      }
     }
   },
   {
@@ -184,7 +232,10 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "cr-keyword",
-      "keywords": ["ok", "bad\rkeyword"]
+      "keywords": [
+        "ok",
+        "bad\rkeyword"
+      ]
     }
   },
   {
@@ -227,7 +278,9 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "tab-author-email",
-      "author": { "email": "dev\t@example.invalid" }
+      "author": {
+        "email": "dev\t@example.invalid"
+      }
     }
   },
   {
@@ -236,7 +289,9 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "author-array",
-      "author": ["Example"]
+      "author": [
+        "Example"
+      ]
     }
   },
   {
@@ -251,11 +306,53 @@
   {
     "name": "non-object Veasel extension data is ignored",
     "accepted": true,
-    "diagnostics": ["Ignoring invalid Veasel extension data"],
+    "diagnostics": [
+      "Ignoring invalid Veasel extension data"
+    ],
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "bad-veasel-extension-shape",
-      "extensions": { "com.veasel.code": ["not", "an", "object"] }
+      "extensions": {
+        "com.veasel.code": [
+          "not",
+          "an",
+          "object"
+        ]
+      }
+    }
+  },
+  {
+    "name": "uppercase name is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "BadName"
+    }
+  },
+  {
+    "name": "name with underscore is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "bad_name"
+    }
+  },
+  {
+    "name": "repository with TAB is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "tab-repo",
+      "repository": "https://example.invalid/\trepo"
+    }
+  },
+  {
+    "name": "version with CR is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "cr-version",
+      "version": "1.0.0\r"
     }
   }
 ]

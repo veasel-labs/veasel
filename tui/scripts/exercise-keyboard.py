@@ -54,9 +54,11 @@ def review_diff() -> str:
         "--- a/src/main.v",
         "+++ b/src/main.v",
         "@@ -1,2 +1,3 @@",
+        "-const answer = alpha",
+        "+const answer = beta",
         "-old line",
     ]
-    lines.extend(f"+kept line {index:02d}" for index in range(1, 29))
+    lines.extend(f"+kept line {index:02d}" for index in range(1, 27))
     lines.append("+TAIL-SENTINEL")
     return "\n".join(lines) + "\n"
 
@@ -581,8 +583,10 @@ def main() -> None:
         screen.send("\x1b", 0.25)
         screen.clear_line(13)  # "/patch show "
         screen.send(f"/patch show {EDIT_ID}\r", 0.7)
-        screen.wait_for("29 added, 1 removed", 4)
+        screen.wait_for("28 added, 2 removed", 4)
         screen.wait_for("Showing ")
+        screen.wait_for("alpha")
+        screen.wait_for("beta")
         reviewed = screen.terminal.text()
         if "TAIL-SENTINEL" in reviewed:
             raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")

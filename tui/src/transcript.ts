@@ -1,3 +1,5 @@
+import { alignWordDiff, isWordDiffPair, type WordDiffToken } from "./review-diff"
+
 export type TranscriptTone =
   | "title"
   | "meta"
@@ -113,19 +115,55 @@ export function transcriptPlainText(segments: TranscriptSegment[]): string {
   return segments.map((segment) => segment.text).join("")
 }
 
-// Unified diffs keep their + and - prefixes, and each changed line gets its
-// own tone so color is not the only way to tell an addition from a removal.
+function wordLineSegments(
+  prefix: "-" | "+",
+  tokens: WordDiffToken[],
+  changeTone: TranscriptTone,
+  trailing: string,
+): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = [{ text: prefix, tone: changeTone }]
+  for (const token of tokens) {
+    segments.push({
+      text: token.text,
+      tone: token.kind === "change" ? changeTone : "notice",
+    })
+  }
+  segments.push({ text: trailing, tone: "notice" })
+  return segments
+}
+
+// Unified diffs keep their + and - prefixes. Adjacent -/+ hunk pairs also get
+// word-level emphasis so only the changed tokens carry the add/remove tone.
 export function noticeSegments(notice: string): TranscriptSegment[] {
   const lines = notice.split("\n")
   const diff = lines.some((line) => line.startsWith("@@") || line.startsWith("diff --git ") || line.startsWith("--- ") || line.startsWith("+++ "))
   if (!diff) return [{ text: `${notice}\n\n`, tone: "notice" }]
-  return lines.map((line, index) => {
-    const text = `${line}${index === lines.length - 1 ? "\n\n" : "\n"}`
-    if (line.startsWith("+") && !line.startsWith("+++")) return { text, tone: "diffAdd" as const }
-    if (line.startsWith("-") && !line.startsWith("---")) return { text, tone: "diffRemove" as const }
-    if (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
-      return { text, tone: "diffMeta" as const }
+  const segments: TranscriptSegment[] = []
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!
+    const trailing = index === lines.length - 1 ? "\n\n" : "\n"
+    const next = lines[index + 1]
+    if (next && isWordDiffPair(line, next)) {
+      const aligned = alignWordDiff(line, next)
+      const addedTrailing = index + 1 === lines.length - 1 ? "\n\n" : "\n"
+      segments.push(...wordLineSegments("-", aligned.removed, "diffRemove", "\n"))
+      segments.push(...wordLineSegments("+", aligned.added, "diffAdd", addedTrailing))
+      index++
+      continue
     }
-    return { text, tone: "notice" as const }
-  })
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      segments.push({ text: `${line}${trailing}`, tone: "diffAdd" })
+      continue
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      segments.push({ text: `${line}${trailing}`, tone: "diffRemove" })
+      continue
+    }
+    if (line.startsWith("@@") || line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("---") || line.startsWith("+++")) {
+      segments.push({ text: `${line}${trailing}`, tone: "diffMeta" })
+      continue
+    }
+    segments.push({ text: `${line}${trailing}`, tone: "notice" })
+  }
+  return segments
 }

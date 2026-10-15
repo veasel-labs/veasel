@@ -68,8 +68,10 @@ describe("transcriptSegments", () => {
     const diff = "REVIEW\nsrc/main.v\n@@ -1 +1 @@\n context\n-old\n+new\n--- a/src/main.v\n+++ b/src/main.v"
     const segments = noticeSegments(diff)
     expect(transcriptPlainText(segments)).toBe(`${diff}\n\n`)
-    expect(segments).toContainEqual({ text: "-old\n", tone: "diffRemove" })
-    expect(segments).toContainEqual({ text: "+new\n", tone: "diffAdd" })
+    expect(segments).toContainEqual({ text: "-", tone: "diffRemove" })
+    expect(segments).toContainEqual({ text: "old", tone: "diffRemove" })
+    expect(segments).toContainEqual({ text: "+", tone: "diffAdd" })
+    expect(segments).toContainEqual({ text: "new", tone: "diffAdd" })
     expect(segments).toContainEqual({ text: "@@ -1 +1 @@\n", tone: "diffMeta" })
     expect(segments).toContainEqual({ text: "--- a/src/main.v\n", tone: "diffMeta" })
     expect(segments).toContainEqual({ text: "+++ b/src/main.v\n\n", tone: "diffMeta" })

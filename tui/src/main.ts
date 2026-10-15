@@ -30,7 +30,7 @@ import {
   withReviewHotkeyHint,
   type ActiveReview,
 } from "./active-review"
-import { homeFooterForFilter, homeFooterHint, sessionFooterHint } from "./footer-hints"
+import { homeFooterForFilter, homeFooterHint, sessionFooterForMode } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import {
@@ -952,6 +952,7 @@ function renderChat(messages: ChatTurn[]) {
   if (skillNotice) {
     transcriptScrollOffset = 0
     sessionDetail.content = new StyledText(segments.map(({ text, tone }) => transcriptStyles[tone](text)))
+    refreshSessionFooter()
     return
   }
   const pageSize = transcriptPageSize(process.stdout.rows ?? 40)
@@ -969,6 +970,7 @@ function renderChat(messages: ChatTurn[]) {
     withCues.push({ text: belowCue, tone: "hint" })
   }
   sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
+  refreshSessionFooter()
 }
 
 function applyLiveStreamStatus() {
@@ -982,6 +984,7 @@ function applyLiveStreamStatus() {
   // End (offset 0) restores measured streaming busy; scrolled keeps End-follow.
   status.content = transcriptScrollOffset > 0 ? formatWarnStatus(live) : live
   status.fg = theme.statusWarn
+  refreshSessionFooter()
 }
 
 function refreshScrollStatus() {
@@ -1072,7 +1075,7 @@ async function openSession(session: Session) {
   chatHistoryHasOlder = pageMayHaveOlder(messages, chatHistoryPageSize)
   renderChat(messages)
   await notifyPendingProposals()
-  footerHint.content = sessionFooterHint
+  refreshSessionFooter()
   if (!chatInput) {
     const input = new ComposerRenderable(renderer, {
       id: "chat-composer",
@@ -2316,6 +2319,23 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
 
 function setActiveReview(review: ActiveReview | undefined) {
   activeReview = review
+  refreshSessionFooter()
+}
+
+// Swap the always-visible session footer for the active mode so discovery stays
+// contextual (autocomplete / review / stream) without stuffing every hotkey into
+// the default line.
+function refreshSessionFooter() {
+  if (!activeSession || settingsOpen) return
+  footerHint.content = sessionFooterForMode({
+    pathComplete: pathMatches.length > 0,
+    slashComplete: slashMatches.length > 0,
+    // Only swap when the review overlay itself is on screen (hotkey cue present),
+    // not while /help or another notice temporarily covers the transcript.
+    reviewPending: Boolean(activeReview?.pending && skillNotice.includes("a approve")),
+    reviewKind: activeReview?.kind,
+    streaming: Boolean(activeTurnId || sendingMessage),
+  })
 }
 
 function reviewHintOptions(hunkCount?: number) {
@@ -3475,10 +3495,12 @@ function renderSlashMenu() {
     chunks.push(fg(theme.meta)(`   ${more}Tab · ↑/↓ · Enter inserts · Esc`))
     slashMenu.content = new StyledText(chunks)
     slashMenu.visible = true
+    refreshSessionFooter()
     return
   }
   if (slashMatches.length === 0) {
     slashMenu.visible = false
+    refreshSessionFooter()
     return
   }
   const { start, end } = suggestionWindow(slashSelected, slashMatches.length)
@@ -3508,6 +3530,7 @@ function renderSlashMenu() {
   chunks.push(fg(theme.meta)(`   ${more}Tab · ↑/↓ · Home/End · PgUp/PgDn · Enter · Esc`))
   slashMenu.content = new StyledText(chunks)
   slashMenu.visible = true
+  refreshSessionFooter()
 }
 
 function setComposerValue(input: ComposerRenderable, value: string, cursor = value.length) {

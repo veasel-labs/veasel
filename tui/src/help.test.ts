@@ -32,6 +32,8 @@ describe("TUI quick help", () => {
     expect(help).toContain("Enter submits the draft")
     expect(help).toContain("Shift+Enter, Ctrl+J, Ctrl+Enter, or Alt+Enter inserts a newline")
     expect(help).toContain("Type @ to autocomplete workspace paths")
+    expect(help).toContain("The always-visible footer swaps by mode")
+    expect(help).toContain("Esc cancel · End follow while streaming")
     expect(help).toContain("Ctrl+A / Ctrl+E jump to the start or end of the draft")
     expect(help).toContain("Ctrl+← / Ctrl+→ or Alt+B / Alt+F move by words")
     expect(help).toContain("streaming · N chars")

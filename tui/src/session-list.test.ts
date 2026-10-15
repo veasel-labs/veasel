@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
+  filterSessionList,
+  formatSessionFilterHeader,
   formatSessionList,
   moveSessionSelection,
   sessionListCapacity,
@@ -59,6 +61,34 @@ describe("formatSessionList", () => {
     const text = formatSessionList([{ title: "Alpha\nBeta\tGamma", directory: "/tmp/alpha" }], 0, { rows: 40, columns: 40 })
     expect(text).toContain("● Alpha Beta Gamma")
     expect(text).not.toContain("\nBeta")
+  })
+})
+
+describe("filterSessionList", () => {
+  test("keeps every session when the filter is empty", () => {
+    expect(filterSessionList(sessions, "")).toEqual(sessions)
+    expect(filterSessionList(sessions, "   ")).toEqual(sessions)
+  })
+
+  test("matches title and directory tokens", () => {
+    expect(filterSessionList(sessions, "Alpha").map((session) => session.title)).toEqual(["Alpha"])
+    expect(filterSessionList(sessions, "lane-19").map((session) => session.title)).toEqual(["Lane-19"])
+    expect(filterSessionList(sessions, "lane 03").map((session) => session.title)).toEqual(["Lane-03"])
+    expect(filterSessionList(sessions, "zzz")).toEqual([])
+  })
+
+  test("states the filter in the list header", () => {
+    expect(formatSessionFilterHeader(1, 20, "Alpha")).toContain("1/20 match “Alpha”")
+    const text = formatSessionList(filterSessionList(sessions, "Alpha"), 0, {
+      rows: 40,
+      columns: 36,
+      filter: "Alpha",
+      totalCount: 20,
+    })
+    expect(text).toContain("Filter  1/20 match “Alpha”")
+    expect(text).toContain("Selected 1 of 1")
+    expect(text).toContain("● Alpha")
+    expect(formatSessionList([], 0, { rows: 40, columns: 24, filter: "zzz" })).toContain("No sessions match")
   })
 })
 

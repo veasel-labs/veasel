@@ -1,8 +1,31 @@
+import { matchesCatalogFilter } from "./catalog-filter"
 import { suggestionWindow } from "./slash-commands"
 
 export type SessionListEntry = {
   title: string
   directory: string
+}
+
+// Home type-to-filter: every token must hit title or directory (same rules as
+// /skills and /mcp inventory filters).
+export function filterSessionList<T extends SessionListEntry>(
+  sessions: T[],
+  filter: string,
+): T[] {
+  const trimmed = filter.trim()
+  if (!trimmed) return sessions
+  return sessions.filter((session) =>
+    matchesCatalogFilter(`${session.title} ${session.directory}`, trimmed))
+}
+
+export function formatSessionFilterHeader(
+  matched: number,
+  total: number,
+  filter: string,
+): string {
+  const trimmed = filter.trim()
+  if (!trimmed) return ""
+  return `Filter  ${matched}/${total} match “${trimmed}” · Ctrl+L clear`
 }
 
 export type SessionListMove = "up" | "down" | "home" | "end" | "pageup" | "pagedown"
@@ -80,15 +103,22 @@ function clipEnd(value: string, width: number): string {
 export function formatSessionList(
   sessions: SessionListEntry[],
   selected: number,
-  options: { rows: number; columns: number },
+  options: { rows: number; columns: number; filter?: string; totalCount?: number },
 ): string {
-  if (sessions.length === 0) return "No sessions yet.\n\nPress n to start one."
+  const filter = options.filter?.trim() ?? ""
+  const totalCount = options.totalCount ?? sessions.length
+  if (sessions.length === 0) {
+    if (filter) return `No sessions match “${filter}”.\n\nBackspace or Ctrl+L clears the filter.`
+    return "No sessions yet.\n\nPress n to start one."
+  }
   const width = Math.max(4, options.columns)
   const index = Math.min(Math.max(0, selected), sessions.length - 1)
   const capacity = sessionListCapacity(options.rows, sessions.length)
   const { start, end } = suggestionWindow(index, sessions.length, capacity)
   const lines: string[] = []
-  if (end - start < sessions.length) {
+  const filterHeader = formatSessionFilterHeader(sessions.length, totalCount, filter)
+  if (filterHeader) lines.push(filterHeader)
+  if (end - start < sessions.length || filter) {
     lines.push(`Selected ${index + 1} of ${sessions.length}`)
   }
   for (let cursor = start; cursor < end; cursor++) {

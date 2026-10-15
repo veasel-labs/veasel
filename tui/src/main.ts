@@ -422,6 +422,7 @@ let slashContextAt = 0
 let slashContextRequest = 0
 let streamingAssistantText = ""
 let skillNotice = ""
+let shellSandboxBubblewrap = false
 const reviewedEditIds = new Set<string>()
 const reviewedShellCommandIds = new Set<string>()
 const handledTurnCompletionIds = new Set<string>()
@@ -511,6 +512,21 @@ async function refreshProviderSetupHint() {
   }
 }
 
+async function refreshShellSandboxCapability() {
+  try {
+    const response = await fetch(`${apiBase}/v1/capabilities`, { signal: controller.signal })
+    if (!response.ok) {
+      shellSandboxBubblewrap = false
+      return
+    }
+    const body = await response.json() as { features?: string[] }
+    shellSandboxBubblewrap = Array.isArray(body.features)
+      && body.features.includes("shell.sandbox.bubblewrap")
+  } catch {
+    shellSandboxBubblewrap = false
+  }
+}
+
 async function refreshSessions() {
   try {
     const response = await fetch(`${apiBase}/v1/sessions`, { signal: controller.signal })
@@ -523,6 +539,7 @@ async function refreshSessions() {
     if (!settingsOpen && !activeSession) {
       sessionDetail.content = homeDetailContent(providersConfigured)
       void refreshProviderSetupHint()
+      void refreshShellSandboxCapability()
     }
   } catch (error) {
     if (controller.signal.aborted) return
@@ -774,7 +791,9 @@ async function sendMessage(value: string) {
     return
   }
   if (content.startsWith("/command ")) {
-    skillNotice = "Use /commands to list proposals, /command show <id> to inspect one, then /command approve <id> or /command reject <id>. Commands run with your OS user permissions and are not sandboxed."
+    skillNotice = shellSandboxBubblewrap
+      ? "Use /commands to list proposals, /command show <id> to inspect one, then /command approve <id> or /command reject <id>. On Linux, approved commands run inside Bubblewrap when available (read-only host, writable workspace, network isolated by default)."
+      : "Use /commands to list proposals, /command show <id> to inspect one, then /command approve <id> or /command reject <id>. Commands run with your OS user permissions without an OS sandbox when Bubblewrap is unavailable."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1269,7 +1288,9 @@ async function notifyPendingProposals() {
       notices.push(`${counts.edits} workspace edit proposal${counts.edits === 1 ? "" : "s"} need review. Type /patches to inspect them. No files have changed.`)
     }
     if (counts.commands > 0) {
-      notices.push(`${counts.commands} shell command proposal${counts.commands === 1 ? "" : "s"} need review. Type /commands to inspect them. Approval runs commands with your OS user permissions and inherited environment, without a sandbox.`)
+      notices.push(shellSandboxBubblewrap
+        ? `${counts.commands} shell command proposal${counts.commands === 1 ? "" : "s"} need review. Type /commands to inspect them. Approval runs inside Bubblewrap (read-only host, writable workspace, network isolated by default); inherited environment may still carry credentials.`
+        : `${counts.commands} shell command proposal${counts.commands === 1 ? "" : "s"} need review. Type /commands to inspect them. Approval runs commands with your OS user permissions and inherited environment, without an OS sandbox.`)
     }
     if (counts.mcp > 0) {
       notices.push(`${counts.mcp} MCP tool call${counts.mcp === 1 ? "" : "s"} need review. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`)
@@ -1338,7 +1359,9 @@ async function showShellCommands() {
     const commands = await response.json() as ShellCommandSummary[]
     skillNotice = commands.length
       ? `SHELL COMMAND PROPOSALS\n${commands.map((item) => `${item.status.toUpperCase()}  ${item.id}\n${safeTerminalText(item.command)}\nCWD: ${safeTerminalText(item.cwd)} · timeout ${item.timeout_seconds}s${item.status === "pending" ? `\nInspect: /command show ${item.id}` : item.status === "uncertain" ? "\nExecution was interrupted. Inspect workspace state; Veasel will not rerun it." : ""}`).join("\n\n")}`
-      : "No shell command proposals. Veasel shows the exact command and waits for explicit approval. Commands run with your OS user permissions and have no sandbox."
+      : shellSandboxBubblewrap
+        ? "No shell command proposals. Veasel shows the exact command and waits for explicit approval. On Linux, approved commands run inside Bubblewrap when available."
+        : "No shell command proposals. Veasel shows the exact command and waits for explicit approval. Commands run with your OS user permissions without an OS sandbox when Bubblewrap is unavailable."
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load shell command proposals: ${error instanceof Error ? error.message : "request failed"}`
@@ -1362,6 +1385,7 @@ async function showShellCommand(commandId: string) {
       pending: item.status === "pending",
       output: safeTerminalText(item.output),
       maxLines: shellReviewLineBudget(process.stdout.rows ?? 40),
+      bubblewrapCapable: shellSandboxBubblewrap,
     })
     skillNotice = `REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${review}`
     renderChat(chatMessages)

@@ -29,6 +29,13 @@ export function formatBoundedBlock(text: string, maxLines: number): BoundedBlock
   }
 }
 
+export function approvedShellSandboxWarning(bubblewrapCapable: boolean): string {
+  if (bubblewrapCapable) {
+    return "On Linux, approval still runs as your OS user inside Bubblewrap: read-only host, writable workspace, sensitive home/runtime mounts hidden, network isolated by default. Inherited environment may still carry credentials. Review every effect before approval."
+  }
+  return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox (Bubblewrap unavailable or VEASEL_SHELL_SANDBOX=off). Review every effect before approval."
+}
+
 export function formatShellReview(input: {
   command: string
   cwd: string
@@ -38,12 +45,13 @@ export function formatShellReview(input: {
   pending: boolean
   output: string
   maxLines: number
+  bubblewrapCapable?: boolean
 }): string {
   const command = formatBoundedBlock(input.command, input.maxLines)
   const parts = [
     `CWD: ${input.cwd} · timeout ${input.timeoutSeconds}s`,
     `Runner: ${input.runner} · non-interactive stdin`,
-    "Runs as your OS user, inherits its environment, and has filesystem and network access without a sandbox. Review every effect before approval.",
+    approvedShellSandboxWarning(input.bubblewrapCapable === true),
   ]
   if (input.pending) parts.push(`Type /command approve ${input.id} or /command reject ${input.id}.`)
   if (command.text) parts.push(command.text)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
+import { approvedShellSandboxWarning, formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
 
 function longCommand(): string {
   const lines = Array.from({ length: 30 }, (_, index) => `echo step ${String(index + 1).padStart(2, "0")}`)
@@ -19,10 +19,27 @@ describe("formatShellReview", () => {
       output: "",
       maxLines: 20,
     })
-    expect(text.indexOf("without a sandbox")).toBeGreaterThan(-1)
-    expect(text.indexOf("without a sandbox")).toBeLessThan(text.indexOf("echo hi"))
+    expect(text.indexOf("without an OS sandbox")).toBeGreaterThan(-1)
+    expect(text.indexOf("without an OS sandbox")).toBeLessThan(text.indexOf("echo hi"))
     expect(text).toContain("Type /command approve bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
     expect(text).not.toContain("Showing ")
+  })
+
+  test("describes Bubblewrap when the capability is present", () => {
+    const text = formatShellReview({
+      command: "echo hi",
+      cwd: ".",
+      timeoutSeconds: 10,
+      runner: "/bin/sh",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+      output: "",
+      maxLines: 20,
+      bubblewrapCapable: true,
+    })
+    expect(text).toContain("inside Bubblewrap")
+    expect(text).not.toContain("without an OS sandbox")
+    expect(approvedShellSandboxWarning(true)).toContain("network isolated by default")
   })
 
   test("hides the tail of a command taller than the terminal", () => {
@@ -43,7 +60,7 @@ describe("formatShellReview", () => {
     expect(block.shownLines).toBe(20)
     expect(text).toContain("Showing 20 of 31 lines.")
     expect(text).not.toContain("SHELL-TAIL")
-    expect(text.indexOf("without a sandbox")).toBeLessThan(text.indexOf("Showing 20 of 31 lines."))
+    expect(text.indexOf("without an OS sandbox")).toBeLessThan(text.indexOf("Showing 20 of 31 lines."))
   })
 
   test("keeps captured output behind the same line budget", () => {

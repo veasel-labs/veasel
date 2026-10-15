@@ -132,6 +132,79 @@ fn shell_text_has_unsafe_controls(value string) bool {
 	return false
 }
 
+const shell_sandbox_mode_env = 'VEASEL_SHELL_SANDBOX'
+const shell_sandbox_network_env = 'VEASEL_SHELL_SANDBOX_NETWORK'
+
+// ApprovedShellSandboxMode selects defense-in-depth Bubblewrap for reviewed
+// commands. Autonomous execution always uses fail-closed Bubblewrap on Linux.
+enum ApprovedShellSandboxMode {
+	auto
+	off
+	require
+}
+
+struct LinuxShellSandboxOptions {
+	purpose            string
+	fail_closed        bool
+	filter_environment bool
+	allow_network      bool
+}
+
+fn approved_shell_sandbox_mode_from(value string) ApprovedShellSandboxMode {
+	match value.trim_space().to_lower() {
+		'', 'auto' {
+			return .auto
+		}
+		'off', '0', 'false', 'none', 'disable', 'disabled' {
+			return .off
+		}
+		'require', 'required', 'must', 'strict' {
+			return .require
+		}
+		else {
+			return .auto
+		}
+	}
+}
+
+fn approved_shell_sandbox_mode() ApprovedShellSandboxMode {
+	return approved_shell_sandbox_mode_from(os.getenv(shell_sandbox_mode_env))
+}
+
+fn approved_shell_sandbox_network_allowed_from(value string) bool {
+	return value.trim_space().to_lower() in ['allow', '1', 'true', 'yes', 'on']
+}
+
+fn approved_shell_sandbox_network_allowed() bool {
+	return approved_shell_sandbox_network_allowed_from(os.getenv(shell_sandbox_network_env))
+}
+
+fn bubblewrap_executable_path() !string {
+	return os.find_abs_path_of_executable('bwrap')
+}
+
+fn bubblewrap_available() bool {
+	$if linux {
+		bubblewrap_executable_path() or { return false }
+		return true
+	} $else {
+		return false
+	}
+}
+
+// shell_sandbox_bubblewrap_capability is true only when Linux Bubblewrap will
+// actually wrap approved shell commands for the current process configuration.
+fn shell_sandbox_bubblewrap_capability() bool {
+	$if linux {
+		if approved_shell_sandbox_mode() == .off {
+			return false
+		}
+		return bubblewrap_available()
+	} $else {
+		return false
+	}
+}
+
 fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCommandResult {
 	return run_approved_shell_command_with_policy(root, command, false)
 }
@@ -168,13 +241,41 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 	}
 	if sanitize_environment {
 		$if linux {
-			return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command)
+			return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				LinuxShellSandboxOptions{
+					purpose:            'Autonomous shell execution'
+					fail_closed:        true
+					filter_environment: true
+					allow_network:      false
+				})
 		} $else {
 			return ShellCommandResult{
 				status:    'failed'
 				exit_code: -1
 				output:    'Autonomous shell execution is unavailable on this platform because Veasel cannot enforce its required operating-system sandbox.'
 			}
+		}
+	}
+	$if linux {
+		mode := approved_shell_sandbox_mode()
+		if mode != .off {
+			if bubblewrap_available() {
+				return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command,
+					LinuxShellSandboxOptions{
+						purpose:            'Approved shell execution'
+						fail_closed:        mode == .require
+						filter_environment: false
+						allow_network:      approved_shell_sandbox_network_allowed()
+					})
+			}
+			if mode == .require {
+				return ShellCommandResult{
+					status:    'failed'
+					exit_code: -1
+					output:    'Approved shell execution requires bubblewrap (bwrap) because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
+				}
+			}
+			// VEASEL_SHELL_SANDBOX=auto and bwrap missing: fall through unsandboxed.
 		}
 	}
 	$if windows {
@@ -206,27 +307,36 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 	}
 }
 
-// Autonomous benchmark commands run in a Linux mount and network namespace.
-// The host filesystem is read-only; only the selected workspace is writable.
-// User-home and common removable/runtime mount points are hidden. Bubblewrap is
-// an explicit host capability, not a bundled V runtime dependency.
-fn run_linux_sandboxed_shell_command(root string, cwd string,
-	command ShellCommandSummary) ShellCommandResult {
+// Linux Bubblewrap policy (approved when available; autonomous fail-closed):
+// - host root is read-only; only the workspace bind is writable
+// - /home, /root, /run, /mnt, /media, and /tmp are masked with tmpfs when present
+// - namespaces are unshared; network stays isolated unless allow_network is set
+// - Bubblewrap is a host capability, not a bundled V runtime dependency
+fn run_linux_sandboxed_shell_command(root string, cwd string, command ShellCommandSummary,
+	options LinuxShellSandboxOptions) ShellCommandResult {
+	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
 	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr', '/etc',
 		'/opt', '/boot', '/sys', '/proc', '/dev', '/run', '/bin', '/sbin', '/lib', '/lib64'] {
 		if root == broad_root {
 			return ShellCommandResult{
 				status:    'failed'
 				exit_code: -1
-				output:    'Autonomous shell execution refused: the workspace root is too broad for the enforced sandbox.'
+				output:    '${purpose} refused: the workspace root is too broad for the enforced sandbox.'
 			}
 		}
 	}
-	bwrap := os.find_abs_path_of_executable('bwrap') or {
+	bwrap := bubblewrap_executable_path() or {
+		if options.fail_closed {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    '${purpose} requires bubblewrap (bwrap); no unsandboxed fallback was started.'
+			}
+		}
 		return ShellCommandResult{
 			status:    'failed'
 			exit_code: -1
-			output:    'Autonomous shell execution requires bubblewrap (bwrap); no unsandboxed fallback was started.'
+			output:    '${purpose} could not locate bubblewrap (bwrap); no process was started.'
 		}
 	}
 	mut args := [
@@ -237,6 +347,9 @@ fn run_linux_sandboxed_shell_command(root string, cwd string,
 		'/',
 		'/',
 	]
+	if options.allow_network {
+		args << '--share-net'
+	}
 	for hidden_path in ['/home', '/root', '/run', '/mnt', '/media', '/tmp'] {
 		if os.is_dir(hidden_path) {
 			args << '--tmpfs'
@@ -249,7 +362,9 @@ fn run_linux_sandboxed_shell_command(root string, cwd string,
 	args << '/dev'
 	mut parent := ''
 	for component in root.split('/') {
-		if component.len == 0 { continue }
+		if component.len == 0 {
+			continue
+		}
 		parent = if parent.len == 0 { '/${component}' } else { '${parent}/${component}' }
 		args << '--dir'
 		args << parent
@@ -265,7 +380,12 @@ fn run_linux_sandboxed_shell_command(root string, cwd string,
 	args << command.command
 	mut process := os.new_process(bwrap)
 	process.set_args(args)
-	mut environment := autonomous_shell_environment()
+	mut environment := map[string]string{}
+	if options.filter_environment {
+		environment = autonomous_shell_environment()
+	} else {
+		environment = os.environ()
+	}
 	environment['HOME'] = '/tmp'
 	environment['TMPDIR'] = '/tmp'
 	process.set_environment(environment)

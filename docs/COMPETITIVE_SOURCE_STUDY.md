@@ -83,11 +83,13 @@ concerns.
 
 **Useful principle:** persist intent before effects; preserve deterministic
 history even when execution is concurrent; distinguish authorization from
-containment. Veasel persists proposed changes and operation state. Manually
-approved shell still runs without an OS sandbox; autonomous Linux shell uses a
-Bubblewrap mount/network namespace and fails closed if it cannot start. This is
+containment. Veasel persists proposed changes and operation state. On Linux,
+manually approved shell uses Bubblewrap when `bwrap` is available (graceful
+unsandboxed fallback otherwise); autonomous Linux shell uses the same mount
+layout, filters the environment, and fails closed if it cannot start. This is
 best-effort containment and does not provide Codex-level sandbox guarantees;
-platform-specific escape testing and stronger workspace isolation remain open.
+macOS/Windows OS sandbox parity and stronger workspace isolation remain open.
+See [`compatibility/shell-bubblewrap-sandbox.md`](compatibility/shell-bubblewrap-sandbox.md).
 
 ### mini-SWE-agent — a baseline small enough to falsify complexity
 
@@ -108,13 +110,16 @@ task-level evidence.
 Rechecked `environments/extra/bubblewrap.py` at the same commit
 `04d809ceab9df28f9adaed044884180159172930` on 2026-10-15. That optional
 environment bind-mounts the host `/usr`, `/bin`, `/lib`, `/etc`, and the
-working directory, and it does not unshare the network. Veasel's autonomous
-Linux path in `shell_commands.v` is stricter: `--unshare-all`, a read-only
-host root, hidden home and removable mounts, a writable workspace only, a
-filtered environment, and a hard failure when `bwrap` is missing or the
-workspace root is too broad. Do not relax that path to match mini-swe-agent.
-It is still not a Codex-level sandbox, and manually approved shell commands
-remain unsandboxed.
+working directory, and it does not unshare the network. Veasel's Linux paths in
+`shell_commands.v` are stricter: `--unshare-all`, a read-only host root, hidden
+home and removable mounts, a writable workspace only, and refusal of overly
+broad workspace roots. Autonomous execution always filters the environment and
+fails closed when `bwrap` is missing. Approved execution reuses the mount
+policy when `bwrap` is available, inherits environment (with `HOME`/`TMPDIR`
+remapped), allows optional `--share-net`, and falls back unsandboxed under
+`VEASEL_SHELL_SANDBOX=auto` when `bwrap` is missing—without advertising
+`shell.sandbox.bubblewrap`. Do not relax the autonomous path to match
+mini-swe-agent. This is still not a Codex-level sandbox.
 
 ### Goose — state machine and runtime effects
 
@@ -322,5 +327,5 @@ integrations already exist. For current verified feature status, see
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
 | Agent Plugins conformance gaps | Substantial v1.0.0 coverage; remaining gaps listed in `docs/compatibility/agent-plugins.md` (OAuth, GET notification streams, install UI). |
 | Durable job recovery across restart | Async ops become `uncertain` and are never replayed; durable queued workers remain open. |
-| Incomplete execution sandboxing | Manual shell/MCP unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level OS sandbox remains open. |
+| Incomplete execution sandboxing | Approved Linux shell uses Bubblewrap when available (honest fallback); MCP and non-Linux shell remain unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level / macOS / Windows OS sandbox remains open. |
 | Missing credible E2E benchmark comparisons | Harbor smoke adapter + ATIF validation exist; no Harbor Index / Terminal-Bench / SWE-bench submission or leaderboard claim. |

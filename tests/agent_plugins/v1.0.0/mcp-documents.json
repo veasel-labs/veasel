@@ -925,5 +925,91 @@
         }
       }
     }
+  },
+  {
+    "name": "IPv6 loopback HTTP is accepted",
+    "accepted": true,
+    "servers": [
+      "local6"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local6": {
+          "type": "streamable-http",
+          "url": "http://[::1]:9/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "server name starting with hyphen is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP server name is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "-bad": {
+          "type": "stdio",
+          "command": "echo"
+        }
+      }
+    }
+  },
+  {
+    "name": "server name ending with hyphen is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "MCP server name is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "bad-": {
+          "type": "stdio",
+          "command": "echo"
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio cwd with NUL is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "cwd must not contain control bytes"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "cwd": "./\u0000"
+        }
+      }
+    }
+  },
+  {
+    "name": "HTTP URL with invalid port is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "port"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://tools.example.invalid:99999/mcp"
+        }
+      }
+    }
   }
 ]

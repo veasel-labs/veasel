@@ -2508,12 +2508,29 @@ components:
             $ref: '#/components/schemas/PluginDiagnostic'
     PluginLink:
       type: object
-      required: [name, path]
+      required: [name, path, skill_count, mcp_server_count]
       properties:
         name: { type: string }
         path:
           type: string
           description: Absolute filesystem path of the linked Agent Plugin package.
+        version:
+          type: string
+          description: Optional package version from plugin.json when present.
+        description:
+          type: string
+          description: Optional package description from plugin.json when present.
+        display_name:
+          type: string
+          description: Optional com.veasel.code display_name when present.
+        skill_count:
+          type: integer
+          minimum: 0
+          description: Number of valid Skill components discovered in the package.
+        mcp_server_count:
+          type: integer
+          minimum: 0
+          description: Number of accepted MCP servers discovered in the package.
     PluginLinkInput:
       type: object
       required: [path]

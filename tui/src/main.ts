@@ -76,6 +76,7 @@ import {
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 import {
   jumpTranscriptScroll,
+  liveStreamStatusMessage,
   moveTranscriptScroll,
   transcriptBelowCue,
   transcriptPageSize,
@@ -874,11 +875,27 @@ function renderChat(messages: ChatTurn[]) {
 }
 
 function refreshScrollStatus() {
-  if (!activeSession || settingsOpen || sendingMessage) return
+  if (!activeSession || settingsOpen) return
+  // Keep scroll-follow cues while a turn streams so Home/PgUp + Esc cancel still
+  // announce End — even when other pending reviews would otherwise own the
+  // status row. Stick-to-bottom leaves the measured streaming busy status.
+  if (sendingMessage || activeTurnId) {
+    const live = liveStreamStatusMessage({
+      offsetFromBottom: transcriptScrollOffset,
+      streaming: Boolean(activeTurnId),
+      streamingChars: streamingAssistantText.length,
+      formatStreaming: formatStreamingBusyStatus,
+    })
+    if (live && transcriptScrollOffset > 0) {
+      status.content = formatWarnStatus(live)
+      status.fg = theme.statusWarn
+    }
+    return
+  }
   if (totalPendingReviews(lastPendingCounts) > 0) return
   const scrolled = transcriptScrollStatus({
     offsetFromBottom: transcriptScrollOffset,
-    streaming: Boolean(activeTurnId),
+    streaming: false,
   })
   if (scrolled) {
     status.content = formatWarnStatus(scrolled)
@@ -2626,9 +2643,18 @@ async function consumeEvents() {
                       streamingAssistantText += delta
                       renderChat(chatMessages)
                       // Stick-to-bottom streams announce measured growth; scrolled
-                      // views keep the existing "streaming below · End follows" cue.
-                      if (transcriptScrollOffset <= 0) {
-                        status.content = formatStreamingBusyStatus(streamingAssistantText.length)
+                      // views keep (and refresh) the End-follow cue so Esc cancel
+                      // while paged up still names streaming below.
+                      const live = liveStreamStatusMessage({
+                        offsetFromBottom: transcriptScrollOffset,
+                        streaming: true,
+                        streamingChars: streamingAssistantText.length,
+                        formatStreaming: formatStreamingBusyStatus,
+                      })
+                      if (live) {
+                        status.content = transcriptScrollOffset > 0
+                          ? formatWarnStatus(live)
+                          : live
                         status.fg = theme.statusWarn
                       }
                     }

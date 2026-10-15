@@ -16,6 +16,8 @@ describe("TUI quick help", () => {
     expect(help).toContain("type to filter by title or directory")
     expect(help).toContain("streaming below · End follows")
     expect(help).toContain("scrolled · End follows")
+    expect(help).toContain("Esc still cancels the turn")
+    expect(help).toContain("while scrolled")
     expect(help).toContain("Ctrl+U clears the composer draft")
     expect(help).toContain("Ctrl+_ (or Ctrl+-) undoes the last composer edit")
     expect(help).toContain("? opens the quick help overlay")

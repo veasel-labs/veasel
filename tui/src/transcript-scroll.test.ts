@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   jumpTranscriptScroll,
+  liveStreamStatusMessage,
   moveTranscriptScroll,
   transcriptBelowCue,
   transcriptPageSize,
@@ -54,5 +55,27 @@ describe("transcript page scroll", () => {
     expect(transcriptScrollStatus({ offsetFromBottom: 12, streaming: true })).toBe(
       "scrolled  ·  streaming below · End follows",
     )
+  })
+
+  test("live stream status prefers scroll-follow over busy growth while paged up", () => {
+    const formatStreaming = (chars: number) => `streaming  ·  ${chars} chars`
+    expect(liveStreamStatusMessage({
+      offsetFromBottom: 0,
+      streaming: true,
+      streamingChars: 42,
+      formatStreaming,
+    })).toBe("streaming  ·  42 chars")
+    expect(liveStreamStatusMessage({
+      offsetFromBottom: 20,
+      streaming: true,
+      streamingChars: 42,
+      formatStreaming,
+    })).toBe("scrolled  ·  streaming below · End follows")
+    expect(liveStreamStatusMessage({
+      offsetFromBottom: 20,
+      streaming: false,
+      streamingChars: 0,
+      formatStreaming,
+    })).toBe("scrolled  ·  End sticks to latest")
   })
 })

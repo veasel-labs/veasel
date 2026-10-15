@@ -34,6 +34,12 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if shell_sandbox_bubblewrap_capability() {
 		features << 'shell.sandbox.bubblewrap'
 	}
+	if shell_sandbox_seatbelt_capability() {
+		features << 'shell.sandbox.seatbelt'
+	}
+	if shell_sandbox_windows_capability() {
+		features << 'shell.sandbox.windows'
+	}
 	if app.configured_model() != none {
 		features << 'chat.complete'
 		features << 'chat.cancel'

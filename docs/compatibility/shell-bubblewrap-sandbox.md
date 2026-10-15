@@ -37,4 +37,6 @@ change extends a related policy to **manually approved** shell commands when
   never share network).
 
 No Codex or mini-SWE-agent source was copied. Veasel does not claim Codex-level
-sandbox guarantees or macOS/Windows OS sandbox parity.
+sandbox guarantees. macOS Seatbelt parity is documented in
+[`shell-seatbelt-sandbox.md`](shell-seatbelt-sandbox.md); Windows OS sandbox
+wrap remains an honest gap (`shell.sandbox.windows` stays false).

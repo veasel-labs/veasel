@@ -20,8 +20,27 @@ its persisted state is `uncertain` at the next startup and it is not replayed.
 
 Manually approved commands use `/bin/sh -c` on POSIX systems and `%COMSPEC% /D
 /S /C` on Windows. Standard input is non-interactive. Approval remains the
-authorization gate; Bubblewrap is defense-in-depth containment, not a bypass of
-review.
+authorization gate; OS sandboxing is defense-in-depth containment, not a bypass
+of review.
+
+## Shared configuration
+
+| Variable | Values | Behavior |
+|---|---|---|
+| `VEASEL_SHELL_SANDBOX` | `auto` (default), `off`, `require` | Wrap when the platform backend is available; never wrap; or fail closed if wrap cannot run |
+| `VEASEL_SHELL_SANDBOX_NETWORK` | unset/deny (default), `allow` | Whether the platform sandbox may share host network |
+
+Capability flags are advertised only when that platform will actually wrap:
+
+| Capability | When true |
+|---|---|
+| `shell.sandbox.bubblewrap` | Linux, mode not `off`, and `bwrap` on `PATH` |
+| `shell.sandbox.seatbelt` | macOS, mode not `off`, and `/usr/bin/sandbox-exec` present |
+| `shell.sandbox.windows` | Never yet — no honest Windows wrap ships |
+
+Under `require`, missing backends fail closed with no unsandboxed fallback
+(including Windows, where no wrap exists yet). Under `auto`, missing backends
+fall through unsandboxed and do **not** advertise a sandbox capability.
 
 ## Linux Bubblewrap for approved commands
 
@@ -36,24 +55,40 @@ approved commands run inside Bubblewrap with this default policy:
 | Namespaces | `--unshare-all` (no host network by default) |
 | Network | Denied unless `VEASEL_SHELL_SANDBOX_NETWORK=allow` (adds `--share-net`) |
 | Environment | Inherited from the Veasel process, with `HOME`/`TMPDIR` remapped to `/tmp` |
-| Capability flag | `shell.sandbox.bubblewrap` is advertised only when this wrap will run |
-
-Configuration:
-
-- `VEASEL_SHELL_SANDBOX=auto` (default): use Bubblewrap when available; otherwise
-  fall back to unsandboxed execution and do **not** advertise the capability.
-- `VEASEL_SHELL_SANDBOX=off`: never wrap approved commands.
-- `VEASEL_SHELL_SANDBOX=require`: fail closed if `bwrap` is missing (no
-  unsandboxed fallback).
+| Capability flag | `shell.sandbox.bubblewrap` |
 
 This is best-effort containment, not a VM. Host-readable files outside the
 masked paths can still be read; pre-existing hard links inside the workspace can
 refer to host inodes; inherited environment variables may still carry
-credentials. macOS and Windows approved shell remain unsandboxed.
+credentials.
 
-Workspace cwd validation only checks the initial working directory; a command
-can still attempt to leave it. Do not approve a command whose filesystem,
-network, or credential effects you have not reviewed.
+## macOS Seatbelt for approved commands
+
+On macOS, when `/usr/bin/sandbox-exec` exists and `VEASEL_SHELL_SANDBOX` is not
+`off`, approved commands run under a Seatbelt profile with this default policy:
+
+| Control | Default |
+|---|---|
+| Host filesystem | Readable |
+| Workspace | Writable via `(subpath (param "WORKSPACE"))` |
+| Temp writes | Allowed under `/tmp`, `/private/tmp`, and `/var/folders` |
+| Restricted paths | Deny read/write under `/Users`, `/var/root`, and `/Volumes` except the workspace carve-out |
+| Network | Denied unless `VEASEL_SHELL_SANDBOX_NETWORK=allow` |
+| Executable | Only `/usr/bin/sandbox-exec` (never a PATH lookup) |
+| Capability flag | `shell.sandbox.seatbelt` |
+
+Seatbelt via `sandbox-exec` is best-effort and may be constrained or deprecated
+by future macOS releases. It is not a VM. Inherited environment may still carry
+credentials. See [`compatibility/shell-seatbelt-sandbox.md`](compatibility/shell-seatbelt-sandbox.md).
+
+## Windows approved shell (honest gap)
+
+Windows approved shell still runs as the server OS user through `%COMSPEC%`.
+Veasel does **not** advertise `shell.sandbox.windows` and does not pretend Job
+Object, AppContainer, or restricted-token isolation is active. With
+`VEASEL_SHELL_SANDBOX=require`, approval fails closed rather than falling back
+unsandboxed. With `auto`/`off`, execution remains unsandboxed. A real Windows
+backend remains future work.
 
 ## Autonomous benchmark path
 
@@ -76,3 +111,7 @@ untrusted command safe.
 The API is loopback-only and has no authentication token. A local same-user
 process can access session APIs and invoke approvals. Treat same-user processes
 as trusted, keep the server local, and do not expose its API to a network.
+
+Workspace cwd validation only checks the initial working directory; a command
+can still attempt to leave it. Do not approve a command whose filesystem,
+network, or credential effects you have not reviewed.

@@ -42,7 +42,7 @@ export function renderHelp(compact = false) {
       "/history older  Load earlier messages",
       "/connect · /models · /theme  Auth, model, theme",
       "Files go to your provider. Review diffs and MCP calls.",
-      "Approved shell uses Bubblewrap on Linux when available.",
+      "Approved shell uses Bubblewrap on Linux or Seatbelt on macOS when available.",
     ].join("\n")
   }
 
@@ -51,7 +51,7 @@ export function renderHelp(compact = false) {
     .join("\n")
   return [
     "VEASEL CODE / QUICK HELP",
-    "Files go to your provider. Review diffs and MCP arguments; approved shell uses Bubblewrap on Linux when available, otherwise runs without an OS sandbox.",
+    "Files go to your provider. Review diffs and MCP arguments; approved shell uses Bubblewrap on Linux or Seatbelt on macOS when available, otherwise runs without an OS sandbox.",
     commands,
   ].join("\n")
 }

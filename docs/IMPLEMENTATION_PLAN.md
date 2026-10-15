@@ -210,9 +210,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
   manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,
   placeholder expansion, failure isolation, and per-call MCP consent have
-  substantial implementation and fixture coverage. Operator-managed local
+  substantial implementation and fixture coverage.   Operator-managed local
   package links (`/v1/plugins/links`, TUI `/plugin add|remove`, capability
-  `plugins.links`) are implemented; they do not fetch remote packages.
+  `plugins.links`) are implemented with a durable `$VEASEL_DATA_DIR/plugin-links.json`
+  sidecar (restore missing symlinks on list; optional `replace`); they do not
+  fetch remote packages.
   Operator-configured MCP servers support user scope, project scope
   (`<workspace>/.veasel/mcp-servers.json`), and read-only project-import of
   portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, TUI

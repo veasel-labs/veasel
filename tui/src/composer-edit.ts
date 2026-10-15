@@ -6,9 +6,9 @@
 export function killWordBackward(
   value: string,
   cursor: number,
-): { value: string; cursor: number } {
+): { value: string; cursor: number; killed: string } {
   const pos = Math.min(Math.max(0, cursor), value.length)
-  if (pos === 0) return { value, cursor: 0 }
+  if (pos === 0) return { value, cursor: 0, killed: "" }
   let end = pos
   while (end > 0 && /\s/.test(value[end - 1]!)) end -= 1
   let start = end
@@ -16,6 +16,7 @@ export function killWordBackward(
   return {
     value: value.slice(0, start) + value.slice(pos),
     cursor: start,
+    killed: value.slice(start, pos),
   }
 }
 
@@ -25,9 +26,9 @@ export function killWordBackward(
 export function killWordForward(
   value: string,
   cursor: number,
-): { value: string; cursor: number } {
+): { value: string; cursor: number; killed: string } {
   const pos = Math.min(Math.max(0, cursor), value.length)
-  if (pos >= value.length) return { value, cursor: pos }
+  if (pos >= value.length) return { value, cursor: pos, killed: "" }
   let end = pos
   if (!/\s/.test(value[end]!)) {
     while (end < value.length && !/\s/.test(value[end]!)) end += 1
@@ -38,6 +39,7 @@ export function killWordForward(
   return {
     value: value.slice(0, pos) + value.slice(end),
     cursor: pos,
+    killed: value.slice(pos, end),
   }
 }
 
@@ -115,10 +117,10 @@ export function composerLineCursor(value: string, where: "home" | "end"): number
 export function killLineForward(
   value: string,
   cursor: number,
-): { value: string; cursor: number } {
+): { value: string; cursor: number; killed: string } {
   const pos = Math.min(Math.max(0, cursor), value.length)
-  if (pos >= value.length) return { value, cursor: pos }
-  return { value: value.slice(0, pos), cursor: pos }
+  if (pos >= value.length) return { value, cursor: pos, killed: "" }
+  return { value: value.slice(0, pos), cursor: pos, killed: value.slice(pos) }
 }
 
 // Ctrl+T: transpose the character before the cursor with the one at the cursor

@@ -13,37 +13,37 @@ import {
 
 describe("killWordBackward", () => {
   test("deletes the word before the cursor and keeps the rest", () => {
-    expect(killWordBackward("hello world", 11)).toEqual({ value: "hello ", cursor: 6 })
-    expect(killWordBackward("hello world", 5)).toEqual({ value: " world", cursor: 0 })
-    expect(killWordBackward("hello  world", 7)).toEqual({ value: "world", cursor: 0 })
+    expect(killWordBackward("hello world", 11)).toEqual({ value: "hello ", cursor: 6, killed: "world" })
+    expect(killWordBackward("hello world", 5)).toEqual({ value: " world", cursor: 0, killed: "hello" })
+    expect(killWordBackward("hello  world", 7)).toEqual({ value: "world", cursor: 0, killed: "hello  " })
   })
 
   test("is a no-op at the start and on empty drafts", () => {
-    expect(killWordBackward("", 0)).toEqual({ value: "", cursor: 0 })
-    expect(killWordBackward("hello", 0)).toEqual({ value: "hello", cursor: 0 })
+    expect(killWordBackward("", 0)).toEqual({ value: "", cursor: 0, killed: "" })
+    expect(killWordBackward("hello", 0)).toEqual({ value: "hello", cursor: 0, killed: "" })
   })
 
   test("treats accented Latin letters as part of the word", () => {
-    expect(killWordBackward("café latte", 4)).toEqual({ value: " latte", cursor: 0 })
-    expect(killWordBackward("café latte", 10)).toEqual({ value: "café ", cursor: 5 })
+    expect(killWordBackward("café latte", 4)).toEqual({ value: " latte", cursor: 0, killed: "café" })
+    expect(killWordBackward("café latte", 10)).toEqual({ value: "café ", cursor: 5, killed: "latte" })
   })
 })
 
 describe("killWordForward", () => {
   test("deletes from the cursor through the current or next word", () => {
-    expect(killWordForward("hello world", 0)).toEqual({ value: " world", cursor: 0 })
-    expect(killWordForward("hello world", 6)).toEqual({ value: "hello ", cursor: 6 })
-    expect(killWordForward("hello  world", 5)).toEqual({ value: "hello", cursor: 5 })
+    expect(killWordForward("hello world", 0)).toEqual({ value: " world", cursor: 0, killed: "hello" })
+    expect(killWordForward("hello world", 6)).toEqual({ value: "hello ", cursor: 6, killed: "world" })
+    expect(killWordForward("hello  world", 5)).toEqual({ value: "hello", cursor: 5, killed: "  world" })
   })
 
   test("is a no-op at the end and on empty drafts", () => {
-    expect(killWordForward("", 0)).toEqual({ value: "", cursor: 0 })
-    expect(killWordForward("hello", 5)).toEqual({ value: "hello", cursor: 5 })
+    expect(killWordForward("", 0)).toEqual({ value: "", cursor: 0, killed: "" })
+    expect(killWordForward("hello", 5)).toEqual({ value: "hello", cursor: 5, killed: "" })
   })
 
   test("treats accented Latin letters as part of the word", () => {
-    expect(killWordForward("café latte", 0)).toEqual({ value: " latte", cursor: 0 })
-    expect(killWordForward("café latte", 5)).toEqual({ value: "café ", cursor: 5 })
+    expect(killWordForward("café latte", 0)).toEqual({ value: " latte", cursor: 0, killed: "café" })
+    expect(killWordForward("café latte", 5)).toEqual({ value: "café ", cursor: 5, killed: "latte" })
   })
 })
 
@@ -98,9 +98,9 @@ describe("composerLineCursor", () => {
 
 describe("killLineForward", () => {
   test("deletes from the cursor to the end of the draft", () => {
-    expect(killLineForward("hello world", 5)).toEqual({ value: "hello", cursor: 5 })
-    expect(killLineForward("hello world", 0)).toEqual({ value: "", cursor: 0 })
-    expect(killLineForward("hello", 5)).toEqual({ value: "hello", cursor: 5 })
+    expect(killLineForward("hello world", 5)).toEqual({ value: "hello", cursor: 5, killed: " world" })
+    expect(killLineForward("hello world", 0)).toEqual({ value: "", cursor: 0, killed: "hello world" })
+    expect(killLineForward("hello", 5)).toEqual({ value: "hello", cursor: 5, killed: "" })
   })
 })
 

@@ -539,6 +539,12 @@ def main() -> None:
         screen.wait_for("/theme")
         screen.send("\x1b", 0.25)
         screen.clear_line(6)  # "/color"
+        screen.wait_for("review needed", 4)
+        screen.wait_for("/patches")
+        screen.wait_for("Ctrl+R")
+        screen.send("\x12", 0.7)  # Ctrl+R opens the first pending list
+        screen.wait_for("WORKSPACE EDIT PROPOSALS", 4)
+        screen.wait_for("aaaaaaaa-aaaa")
         screen.send("/patch ", 0.8)
         screen.wait_for("approve")
         screen.send("\t", 0.4)

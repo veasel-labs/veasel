@@ -5,7 +5,7 @@ export type HelpItem = {
 
 export const helpItems: HelpItem[] = [
   { command: "/help, /?", description: "Show this guide." },
-  { command: "home · j/k · Enter · n", description: "Move the session list, open the selected session, or start one. A long list keeps the selection on screen and shows its position." },
+  { command: "home · j/k · Home/End · PgUp/PgDn · Enter · n", description: "Move the session list, jump to edges or page through it, open the selected session, or start one. A long list keeps the selection on screen and states Selected N of M in plain text." },
   { command: "/connect", description: "Authenticate: paste an API key, save it on this machine, and pick a model. Enter keeps a saved key; !clear removes it. Environment variables stay optional." },
   { command: "s · /models", description: "Full provider settings: authenticate, discover models, and adjust endpoint or output budget (Ctrl+U / Ctrl+O)." },
   { command: "/skills · /skill on|off <source>/<skill>", description: "List discovered Agent Skills (optional text filter; all tokens must match; header shows match counts), or enable and disable them for persistent prompt injection. Covers plugins and standalone SKILL.md. The model can also load a skill body on demand without enablement." },

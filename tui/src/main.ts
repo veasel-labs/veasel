@@ -27,7 +27,7 @@ import { homeFooterHint, sessionFooterHint } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
 import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
-import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
+import { formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
@@ -2823,10 +2823,32 @@ renderer.keyInput.on("keypress", (key) => {
   else if (key.name === "r") void refreshSessions()
   else if (key.name === "s") void openSettings("models")
   else if (key.name === "up" || key.name === "k") {
-    selected = Math.max(0, selected - 1)
+    selected = moveSessionSelection(selected, sessions.length, "up", 1)
     renderSessions()
   } else if (key.name === "down" || key.name === "j") {
-    selected = Math.min(Math.max(0, sessions.length - 1), selected + 1)
+    selected = moveSessionSelection(selected, sessions.length, "down", 1)
+    renderSessions()
+  } else if (key.name === "home") {
+    selected = moveSessionSelection(selected, sessions.length, "home", 1)
+    renderSessions()
+  } else if (key.name === "end") {
+    selected = moveSessionSelection(selected, sessions.length, "end", 1)
+    renderSessions()
+  } else if (key.name === "pageup") {
+    selected = moveSessionSelection(
+      selected,
+      sessions.length,
+      "pageup",
+      sessionListCapacity(process.stdout.rows ?? 40, sessions.length),
+    )
+    renderSessions()
+  } else if (key.name === "pagedown") {
+    selected = moveSessionSelection(
+      selected,
+      sessions.length,
+      "pagedown",
+      sessionListCapacity(process.stdout.rows ?? 40, sessions.length),
+    )
     renderSessions()
   } else if (key.name === "return" && sessions[selected]) {
     const session = sessions[selected]

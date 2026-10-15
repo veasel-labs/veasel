@@ -283,9 +283,15 @@ fn repository_map_looks_like_path(token string) bool {
 	return lower.ends_with('.v') || lower.ends_with('.go') || lower.ends_with('.py')
 		|| lower.ends_with('.rs') || lower.ends_with('.ts') || lower.ends_with('.tsx')
 		|| lower.ends_with('.js') || lower.ends_with('.jsx') || lower.ends_with('.c')
-		|| lower.ends_with('.h') || lower.ends_with('.cpp') || lower.ends_with('.md')
-		|| lower.ends_with('.toml') || lower.ends_with('.yaml') || lower.ends_with('.yml')
-		|| lower.ends_with('.json')
+		|| lower.ends_with('.h') || lower.ends_with('.hpp') || lower.ends_with('.cpp')
+		|| lower.ends_with('.cc') || lower.ends_with('.java') || lower.ends_with('.kt')
+		|| lower.ends_with('.kts') || lower.ends_with('.swift') || lower.ends_with('.cs')
+		|| lower.ends_with('.rb') || lower.ends_with('.php') || lower.ends_with('.sh')
+		|| lower.ends_with('.bash') || lower.ends_with('.zsh') || lower.ends_with('.sql')
+		|| lower.ends_with('.zig') || lower.ends_with('.vue') || lower.ends_with('.svelte')
+		|| lower.ends_with('.md') || lower.ends_with('.toml') || lower.ends_with('.yaml')
+		|| lower.ends_with('.yml') || lower.ends_with('.json') || lower.ends_with('.css')
+		|| lower.ends_with('.scss') || lower.ends_with('.html')
 }
 
 fn repository_map_stem(name string) string {
@@ -296,6 +302,26 @@ fn repository_map_stem(name string) string {
 	return name[..dot]
 }
 
+fn repository_map_eq_ci(left string, right string) bool {
+	return left.to_lower() == right.to_lower()
+}
+
+fn repository_map_path_matches_mention(path string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
+	path_l := path.to_lower()
+	mentioned_l := mentioned.to_lower().replace('\\', '/')
+	if path_l == mentioned_l || path_l.ends_with('/' + mentioned_l) {
+		return true
+	}
+	base_l := os.file_name(path).to_lower()
+	if base_l == mentioned_l || base_l == os.file_name(mentioned_l) {
+		return true
+	}
+	return path_l.contains(mentioned_l)
+}
+
 fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	mut score := 1.0
 	base := os.file_name(path)
@@ -303,13 +329,14 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		score += 1000.0
 	}
 	for mentioned in hints.paths {
-		if path == mentioned || path.ends_with('/' + mentioned) || path.contains(mentioned) {
+		if repository_map_path_matches_mention(path, mentioned) {
 			score += 500.0
 			break
 		}
 	}
 	for ident in hints.idents {
-		if base == ident || repository_map_stem(base) == ident {
+		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
+			ident) {
 			score += 300.0
 			break
 		}
@@ -325,8 +352,11 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 
 fn score_repository_map_symbol(name string, hints RepositoryMapHintSet) f64 {
 	mut score := 1.0
-	if name in hints.idents {
-		score += 200.0
+	for ident in hints.idents {
+		if repository_map_eq_ci(name, ident) {
+			score += 200.0
+			break
+		}
 	}
 	if repository_map_ident_is_interesting(name) {
 		score += 8.0
@@ -383,9 +413,11 @@ fn repository_map_path_is_source(path string) bool {
 	return lower.ends_with('.v') || lower.ends_with('.go') || lower.ends_with('.py')
 		|| lower.ends_with('.rs') || lower.ends_with('.ts') || lower.ends_with('.tsx')
 		|| lower.ends_with('.js') || lower.ends_with('.jsx') || lower.ends_with('.c')
-		|| lower.ends_with('.h') || lower.ends_with('.cpp') || lower.ends_with('.cc')
-		|| lower.ends_with('.java') || lower.ends_with('.kt') || lower.ends_with('.rb')
-		|| lower.ends_with('.cs')
+		|| lower.ends_with('.h') || lower.ends_with('.hpp') || lower.ends_with('.cpp')
+		|| lower.ends_with('.cc') || lower.ends_with('.java') || lower.ends_with('.kt')
+		|| lower.ends_with('.kts') || lower.ends_with('.swift') || lower.ends_with('.rb')
+		|| lower.ends_with('.cs') || lower.ends_with('.php') || lower.ends_with('.zig')
+		|| lower.ends_with('.vue') || lower.ends_with('.svelte')
 }
 
 fn extract_repository_map_symbols(content string) []RepositoryMapSymbol {

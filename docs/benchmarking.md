@@ -57,7 +57,7 @@ by default.
 
 `benchmarks/harbor/veasel_agent.py` is a custom Harbor `BaseInstalledAgent`
 adapter. It downloads an exact Veasel Linux x86_64 release, verifies its
-SHA-256 against the release checksum manifest, maps Harbor's model/provider
+SHA-256 against the release checksum manifest, maps Harbor's model/provider (including `openai-responses` and openai-family overrides)
 selection to Veasel's supported providers, runs the headless task command, and
 stores the ATIF trajectory at Harbor's agent log path. Provider-reported token
 usage is exported in `final_metrics` when the provider returns it; cost remains

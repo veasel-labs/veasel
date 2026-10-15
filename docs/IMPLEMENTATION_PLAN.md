@@ -110,6 +110,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   fixture completed one trial with reward 1.0 and a Harbor-validated four-step
   ATIF v1.8 trajectory. This is adapter plumbing evidence, not a benchmark
   score. Do not start a paid benchmark until a budget is authorized.
+- [x] Harbor adapter: accept `openai-responses` (and openai-family overrides),
+  forward provider-reported usage/cache counters into agent metadata when
+  `veasel run --json` reports them; cost stays unavailable. Pin:
+  `docs/compatibility/harbor.md`.
 - [ ] Prepare the Harbor upstream design discussion and contribution only after
   following its current policy, including the required human-authored first and
   final PR drafts.

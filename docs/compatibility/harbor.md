@@ -22,10 +22,12 @@ port, explicit provider/model configuration, an ATIF trace destination, and
 the autonomous opt-in. It keeps provider usage and cost unavailable when the
 V provider interface does not report authoritative values.
 
-Supported Harbor providers are `openai`, `anthropic`, `google` (mapped to
-Veasel's `gemini` provider), `gemini`, `openai-compatible`, and Meta Model API
-as `meta` (Responses API; use `meta/muse-wonder-1.0` or an account-enabled Muse
-Spark model). Other Harbor
+Supported Harbor providers are `openai`, `openai-responses`, `anthropic`,
+`google` (mapped to Veasel's `gemini` provider), `gemini`, `openai-compatible`,
+and Meta Model API as `meta` (Responses API; use `meta/muse-wonder-1.0` or an
+account-enabled Muse Spark model). `--veasel-provider openai-compatible` or
+`openai-responses` may override an `openai/...` Harbor model to select that
+Veasel transport without silent remapping of other families. Other Harbor
 providers fail with a clear error instead of being silently translated.
 Configured Harbor base URLs are passed through. Set `--veasel-timeout` to
 change the task deadline; the Harbor environment command has a slightly larger
@@ -33,6 +35,11 @@ hard timeout so it can shut down the Veasel server and flush task artifacts.
 The Meta adapter path uses Veasel's fixed high reasoning effort, automatic
 reasoning summary and stateless encrypted reasoning replay. It does not yet
 expose reasoning-effort, context-window or output-budget controls.
+
+When `veasel run --json` reports `usage_reported` (and optional
+`cache_reported`) counters, the adapter copies those into Harbor agent
+metadata. Cost remains unavailable without a price schedule; absent provider
+fields stay marked unavailable rather than estimated.
 
 The adapter is custom/local; Veasel is not in Harbor's built-in agent registry.
 Harbor's contribution policy asks contributors to discuss interface or core

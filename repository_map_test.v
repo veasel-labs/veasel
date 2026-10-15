@@ -34,6 +34,29 @@ fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 	assert other_pos < 0 || widget_pos < other_pos
 }
 
+fn test_repository_map_ranks_case_insensitive_path_and_symbol_mentions() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-case')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'AuthService.java'), 'public class AuthService {\n  void loginUser() {}\n}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'other.go'), 'package main\n\nfunc unusedHelper() {}\n')
+	result := build_repository_map(root, 'Please fix LoginUser in SRC/AUTHSERVICE.JAVA',
+		repository_map_default_budget_bytes) or { panic(err) }
+	assert result.text.contains('src/AuthService.java')
+	assert result.text.contains('loginUser') || result.ranked_paths.any(it.contains('AuthService.java'))
+	auth_pos := result.text.index('src/AuthService.java') or { -1 }
+	other_pos := result.text.index('src/other.go') or { -1 }
+	assert auth_pos >= 0
+	assert other_pos < 0 || auth_pos < other_pos
+	assert repository_map_looks_like_path('pkg/AuthService.java')
+	assert repository_map_looks_like_path('scripts/deploy.sh')
+	assert repository_map_path_matches_mention('src/AuthService.java', 'SRC/AUTHSERVICE.JAVA')
+	assert repository_map_eq_ci('loginUser', 'LoginUser')
+}
+
 fn test_repository_map_respects_byte_budget_on_large_trees() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-large')
 	os.rmdir_all(root) or {}

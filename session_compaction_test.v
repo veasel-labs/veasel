@@ -144,6 +144,12 @@ fn test_session_compaction_message_pressure_without_huge_payload() {
 	// when turns are tiny; do not require bytes_after < bytes_before here.
 }
 
+fn test_compaction_sanitize_strips_nul_bytes() {
+	assert sanitize_compaction_text('safe\0unsafe') == 'safeunsafe'
+	assert truncate_compaction_excerpt('a\0b\0c', 10) == 'abc'
+	assert truncate_compaction_excerpt('\0\0', 10) == ''
+}
+
 fn test_compaction_summary_preview_truncates() {
 	long_summary := 'a'.repeat(compaction_summary_preview_chars + 40)
 	preview := compaction_summary_preview(long_summary)

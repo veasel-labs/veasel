@@ -232,6 +232,21 @@ class Handler(BaseHTTPRequestHandler):
                 "max_output_tokens": state["saved"].get("max_output_tokens", 0),
             }
             return self._json(200, view)
+        if path == "/v1/mcp-oauth/authorize":
+            body = json.loads(raw.decode())
+            return self._json(200, {
+                "credential": body.get("credential", "docs"),
+                "state": "oauth-state-1",
+                "authorize_url": "https://auth.example/authorize?client_id=demo",
+                "redirect_uri": body.get("redirect_uri", "http://127.0.0.1:8765/callback"),
+                "code_challenge_method": "S256",
+            })
+        if path == "/v1/mcp-oauth/complete":
+            body = json.loads(raw.decode())
+            return self._json(200, {
+                "name": body.get("credential", "docs"),
+                "header_names": ["Authorization"],
+            })
         if path.endswith(f"/workspace/edits/{EDIT_ID}/approve"):
             state["edit_status"] = "applied"
             return self._json(200, {"status": "applied"})
@@ -700,6 +715,12 @@ def main() -> None:
             pass
         screen.send("/mcp credential remove docs-http\r", 0.7)
         screen.wait_for("Removed credential docs-http", 4)
+        screen.send("/mcp oauth authorize docs https://auth.example/authorize https://auth.example/token demo-client http://127.0.0.1:8765/callback\r", 0.8)
+        screen.wait_for("MCP OAUTH AUTHORIZE", 4)
+        screen.wait_for("https://auth.example/authorize?client_id=demo", 4)
+        screen.send("/mcp oauth complete docs http://127.0.0.1:8765/callback?code=abc&state=oauth-state-1\r", 0.7)
+        screen.wait_for("MCP OAUTH COMPLETE", 4)
+        screen.wait_for("Authorization", 4)
         screen.send("/command ", 0.6)
         screen.wait_for("Inspect before deciding")
         screen.send("\t", 0.45)

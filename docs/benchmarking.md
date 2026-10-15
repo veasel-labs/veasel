@@ -85,12 +85,13 @@ the server was started with `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`; the normal
 TUI and headless behavior stay approval-gated. This environment flag is an
 authorization opt-in, **not a sandbox**. Harbor must run the agent inside an
 isolated, disposable task environment with no host mounts, no unrelated secrets,
-and only the required model credential. The adapter installs Bubblewrap, and
-Veasel additionally runs autonomous Linux shell subprocesses with a read-only
-host filesystem, the task workspace writable, common private/runtime paths
-hidden, and networking isolated. These layers do not replace the benchmark
-environment's isolation. Do not enable autonomous execution against a developer
-workspace.
+and only the required model credential. The adapter installs Bubblewrap where
+needed, and Veasel additionally runs autonomous shell subprocesses under the
+platform OS sandbox (Linux Bubblewrap with a read-only host filesystem, the
+task workspace writable, common private/runtime paths hidden, and networking
+isolated; macOS Seatbelt / Windows AppContainer + Job when available). These
+layers do not replace the benchmark environment's isolation. Do not enable
+autonomous execution against a developer workspace.
 
 The custom adapter is locally implemented and has not been merged into Harbor.
 The upstream project asks contributors to initiate design discussions before

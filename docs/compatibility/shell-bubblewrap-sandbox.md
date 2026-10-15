@@ -33,7 +33,8 @@ change extends a related policy to **manually approved** shell commands when
 - `VEASEL_SHELL_SANDBOX=auto|off|require` controls wrap vs honest unsandboxed
   fallback; capability `shell.sandbox.bubblewrap` is true only when wrap will
   run.
-- Autonomous path remains stricter (filtered environment, always fail-closed,
+- Autonomous path remains stricter across Linux/macOS/Windows backends (filtered
+  environment on Linux Bubblewrap and macOS Seatbelt, always fail-closed,
   never share network).
 
 No Codex or mini-SWE-agent source was copied. Veasel does not claim Codex-level

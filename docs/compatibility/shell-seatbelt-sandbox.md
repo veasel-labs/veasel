@@ -29,6 +29,8 @@ Veasel can ship honestly in this slice.
 - Shared knobs `VEASEL_SHELL_SANDBOX=auto|off|require` and
   `VEASEL_SHELL_SANDBOX_NETWORK`; capability `shell.sandbox.seatbelt` is true
   only when wrap will run.
+- Autonomous macOS shell also uses Seatbelt fail-closed with a filtered
+  environment and network denied (never shares the approved-path network knob).
 - Windows AppContainer + Job Object wrap is documented separately in
   [`shell-windows-job-sandbox.md`](shell-windows-job-sandbox.md).
 

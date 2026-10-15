@@ -36,6 +36,9 @@ risks in the field; Veasel therefore avoids that logon pattern.
   and `VEASEL_SHELL_SANDBOX_NETWORK`.
 - Capability `shell.sandbox.windows` is true only when the AppContainer + Job
   Object wrap will run.
+- Autonomous Windows shell also uses AppContainer + Job fail-closed with
+  network denied; inherited process environment filtering remains a known
+  Windows backend limit (not yet filtered like Linux/macOS autonomous).
 
 No Codex source was copied. Veasel does **not** claim Codex-level WFP
 helper-service filters, private logon identities, or LPAC.

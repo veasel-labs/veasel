@@ -85,3 +85,14 @@ export function transcriptBelowCue(options: {
   if (options.streaming) return "\n▼ streaming below · End follows"
   return "\n▼ PgDn · later transcript"
 }
+
+// Status-line copy when the operator has paged away from the latest reply.
+// Returns undefined when stuck to the bottom so callers keep their idle cue.
+export function transcriptScrollStatus(options: {
+  offsetFromBottom: number
+  streaming: boolean
+}): string | undefined {
+  if (options.offsetFromBottom <= 0) return undefined
+  if (options.streaming) return "scrolled  ·  streaming below · End follows"
+  return "scrolled  ·  End sticks to latest"
+}

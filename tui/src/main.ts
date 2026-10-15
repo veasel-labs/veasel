@@ -63,6 +63,7 @@ import {
   moveTranscriptScroll,
   transcriptBelowCue,
   transcriptPageSize,
+  transcriptScrollStatus,
   transcriptSegmentLines,
   windowTranscriptSegments,
 } from "./transcript-scroll"
@@ -807,6 +808,22 @@ function renderChat(messages: ChatTurn[]) {
   sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
 }
 
+function refreshScrollStatus() {
+  if (!activeSession || settingsOpen || sendingMessage) return
+  if (totalPendingReviews(lastPendingCounts) > 0) return
+  const scrolled = transcriptScrollStatus({
+    offsetFromBottom: transcriptScrollOffset,
+    streaming: Boolean(activeTurnId),
+  })
+  if (scrolled) {
+    status.content = formatWarnStatus(scrolled)
+    status.fg = theme.statusWarn
+    return
+  }
+  status.content = formatListeningStatus(activeModelLabel || undefined)
+  status.fg = theme.statusOk
+}
+
 function scrollTranscript(where: "pageup" | "pagedown" | "home" | "end") {
   const pageSize = transcriptPageSize(process.stdout.rows ?? 40)
   if (where === "home" || where === "end") {
@@ -820,6 +837,7 @@ function scrollTranscript(where: "pageup" | "pagedown" | "home" | "end") {
     )
   }
   renderChat(chatMessages)
+  refreshScrollStatus()
 }
 
 let transcriptStyles: Record<TranscriptTone, (text: string) => TextChunk> = buildTranscriptStyles(theme)

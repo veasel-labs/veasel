@@ -210,8 +210,10 @@ fn parse_plugin_mcp_server(root string, name string, value json2.Any) !PluginMCP
 }
 
 fn validate_plugin_cwd(root string, cwd string) ! {
-	if cwd.contains('\0') {
-		return error('cwd must not contain NUL bytes')
+	for c in cwd {
+		if c < 32 || c == 127 {
+			return error('cwd must not contain control bytes')
+		}
 	}
 	root_token := '$' + '{PLUGIN_ROOT}'
 	data_token := '$' + '{PLUGIN_DATA}'

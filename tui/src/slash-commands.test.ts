@@ -46,6 +46,24 @@ describe("slashSuggestions", () => {
     expect(names("/trust")).toEqual(["/mcp trust", "/mcp untrust"])
   })
 
+  test("finds commands by description keywords after name matches", () => {
+    expect(names("/key")[0]).toBe("/connect")
+    expect(names("/auth")[0]).toBe("/connect")
+    expect(names("/color")[0]).toBe("/theme")
+    expect(names("/repo")[0]).toBe("/map")
+    expect(names("/approval")).toEqual(["/patches", "/commands"])
+  })
+
+  test("finds pending values by description path fragments", () => {
+    expect(slashSuggestions("/patch show main", slashCommands, {
+      patches: [
+        { value: "11111111-1111-1111-1111-111111111111", description: "pending · src/main.v" },
+        { value: "22222222-2222-2222-2222-222222222222", description: "pending · README.md" },
+      ],
+    }).map((item) => item.insert)).toEqual(["/patch show 11111111-1111-1111-1111-111111111111"])
+    expect(names("/theme warm")).toEqual(["/theme ember"])
+  })
+
   test("suggests theme ids for /theme", () => {
     expect(names("/theme")[0]).toBe("/theme")
     expect(names("/theme ")).toEqual(["/theme mint", "/theme ember", "/theme slate", "/theme mono", "/theme aurora"])

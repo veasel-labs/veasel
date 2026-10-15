@@ -35,8 +35,8 @@ export type SlashSuggestion = SlashCommand & {
 export const slashCommands: SlashCommand[] = [
   { name: "/help", description: "Show the quick guide" },
   { name: "/help advanced", description: "Show full command syntax" },
-  { name: "/connect", description: "Paste an API key and pick a model for a provider" },
-  { name: "/models", description: "Configure provider, model, and output budget" },
+  { name: "/connect", description: "Authenticate: paste an API key, save credentials, and pick a model" },
+  { name: "/models", description: "Configure provider, model, endpoint, and output budget" },
   { name: "/skills", description: "List discovered Skills; add text to filter" },
   { name: "/skill", description: "Turn a Skill on or off", usage: "/skill on|off <source>/<skill>" },
   { name: "/plugins", description: "List linked Agent Plugin packages" },
@@ -51,14 +51,14 @@ export const slashCommands: SlashCommand[] = [
   { name: "/mcp call", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
   { name: "/mcp trust", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
   { name: "/mcp untrust", description: "Stop trusting an MCP server", usage: "/mcp untrust <plugin>/<server>" },
-  { name: "/patches", description: "List proposed file edits" },
+  { name: "/patches", description: "List proposed file edits waiting for approval" },
   { name: "/patch", description: "Show, approve, or reject a file edit", usage: "/patch show|approve|reject <id>" },
-  { name: "/commands", description: "List proposed shell commands" },
+  { name: "/commands", description: "List proposed shell commands waiting for approval" },
   { name: "/command", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", description: "Load earlier messages in this session" },
   { name: "/usage", description: "Show provider-reported token totals for this session" },
   { name: "/map", description: "Show the extractive workspace repository map; add text to hint ranking" },
-  { name: "/theme", description: "List or switch TUI color themes", usage: "/theme <id>" },
+  { name: "/theme", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora)", usage: "/theme <id>" },
 ]
 
 export const maxSlashSuggestions = 6
@@ -170,12 +170,28 @@ function activeArgumentCommand(query: string): SlashCommand | undefined {
   return matches[0]
 }
 
+// Match description tokens so operators can find /connect via "key" or "auth",
+// /theme via "color", /map via "repo", and pending edits via a path fragment.
+// Substring-in-word matches are avoided ("repo" must not hit "provider").
+function matchesDescription(description: string, needle: string): boolean {
+  if (needle.length < 3) return false
+  const tokens = description.toLowerCase().split(/[^a-z0-9._-]+/).filter(Boolean)
+  return tokens.some((word) => {
+    if (word === needle || word.startsWith(needle)) return true
+    const stem = word.includes(".") ? word.slice(0, word.indexOf(".")) : word
+    return stem === needle || stem.startsWith(needle)
+  })
+}
+
 function filterArguments(values: SlashArgument[], typed: string): SlashArgument[] {
   const needle = typed.toLowerCase()
   if (!needle) return values
   const prefix = values.filter((value) => value.value.toLowerCase().startsWith(needle))
   const contains = values.filter((value) => !prefix.includes(value) && value.value.toLowerCase().includes(needle))
-  return [...prefix, ...contains]
+  const described = values.filter((value) =>
+    !prefix.includes(value) && !contains.includes(value) && matchesDescription(value.description, needle)
+  )
+  return [...prefix, ...contains, ...described]
 }
 
 function argumentSuggestions(command: SlashCommand, rest: string, context: SlashCompletionContext): SlashSuggestion[] {
@@ -228,13 +244,24 @@ export function slashSuggestions(
   if (argumentCommand && query.startsWith(`${argumentCommand.name} `)) {
     return argumentSuggestions(argumentCommand, query.slice(argumentCommand.name.length + 1), context)
   }
-  const prefix = commands.filter((command) => command.name.startsWith(query.trimEnd()))
+  const trimmed = query.trimEnd()
+  const prefix = commands.filter((command) => command.name.startsWith(trimmed))
   const needle = query.slice(1).trim()
   const contains = needle
     ? commands.filter((command) => !prefix.includes(command) && command.name.slice(1).includes(needle))
     : []
-  const exact = prefix.filter((command) => command.name === query.trimEnd())
-  return [...exact, ...prefix.filter((command) => !exact.includes(command)), ...contains].map(asSuggestion)
+  // Description search only fills gaps: keep name matches exclusive when any exist
+  // so /plugin does not also surface every command that mentions "plugin".
+  const described = needle && prefix.length === 0 && contains.length === 0
+    ? commands.filter((command) => matchesDescription(command.description, needle))
+    : []
+  const exact = prefix.filter((command) => command.name === trimmed)
+  return [
+    ...exact,
+    ...prefix.filter((command) => !exact.includes(command)),
+    ...contains,
+    ...described,
+  ].map(asSuggestion)
 }
 
 export function completeSlashCommand(command: { name: string; insert?: string; usage?: string }): string {

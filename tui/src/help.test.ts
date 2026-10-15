@@ -24,7 +24,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("/mcp remove · /mcp enable · /mcp disable")
     expect(help).toContain("s · /models")
     expect(help).toContain("/connect")
-    expect(help).toContain("Paste an API key")
+    expect(help).toContain("Authenticate: paste an API key")
     expect(help).toContain("Files go to your provider.")
     expect(help).toContain("Bubblewrap on Linux, Seatbelt on macOS, or AppContainer on Windows when available")
     expect(helpItems.length).toBeGreaterThan(5)

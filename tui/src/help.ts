@@ -6,7 +6,7 @@ export type HelpItem = {
 export const helpItems: HelpItem[] = [
   { command: "/help, /?", description: "Show this guide." },
   { command: "home · j/k · Enter · n", description: "Move the session list, open the selected session, or start one. A long list keeps the selection on screen and shows its position." },
-  { command: "/connect", description: "Paste an API key, save it on this machine, and pick a model. Enter keeps a saved key; !clear removes it. Environment variables stay optional." },
+  { command: "/connect", description: "Authenticate: paste an API key, save it on this machine, and pick a model. Enter keeps a saved key; !clear removes it. Environment variables stay optional." },
   { command: "s · /models", description: "Full provider settings: authenticate, discover models, and adjust endpoint or output budget (Ctrl+U / Ctrl+O)." },
   { command: "/skills · /skill on|off <source>/<skill>", description: "List discovered Agent Skills (optional text filter), or enable and disable them for persistent prompt injection. Covers plugins and standalone SKILL.md. The model can also load a skill body on demand without enablement." },
   { command: "/plugins · /plugin add · /plugin remove", description: "List operator-managed plugin directory links, or link/unlink an absolute local Agent Plugin package. PLUGIN_DATA stays keyed by plugin name. Only symlinks are removed." },

@@ -307,11 +307,15 @@ class Handler(BaseHTTPRequestHandler):
                 state["pending_op"] = operation
                 state["pending_user"] = body["content"]
                 self._json(202, {"operation_id": operation, "status": "running"})
-                # Long multi-line delta so PgUp during the live stream is real.
-                long_delta = "\n".join(
-                    [f"stream line {index:02d}" for index in range(1, 36)] + ["STREAM-TAIL"]
-                ) + "\n"
-                threading.Thread(target=emit_assistant_delta, args=(operation, long_delta), daemon=True).start()
+                # Multi-delta burst so End-follow after scroll and coalesced
+                # renders are exercised against racing assistant.delta frames.
+                lines = [f"stream line {index:02d}" for index in range(1, 36)] + ["STREAM-TAIL"]
+                chunks = [
+                    "\n".join(lines[:12]) + "\n",
+                    "\n".join(lines[12:24]) + "\n",
+                    "\n".join(lines[24:]) + "\n",
+                ]
+                threading.Thread(target=emit_assistant_delta_burst, args=(operation, chunks), daemon=True).start()
                 return
             remember_turn(body["content"], "The assistant turn failed.")
             self._json(202, {"operation_id": operation, "status": "running"})
@@ -378,8 +382,8 @@ def remember_turn(user: str, assistant: str) -> None:
     })
 
 
-def emit_assistant_delta(operation: str, delta: str) -> None:
-    time.sleep(0.15)
+def emit_assistant_delta(operation: str, delta: str, delay: float = 0.15) -> None:
+    time.sleep(delay)
     stream = state["sse"]
     if stream is None:
         return
@@ -397,6 +401,13 @@ def emit_assistant_delta(operation: str, delta: str) -> None:
         stream.flush()
     except Exception:
         pass
+
+
+def emit_assistant_delta_burst(operation: str, deltas: list[str]) -> None:
+    """Fire several assistant.delta frames in one burst (multi-delta race)."""
+    time.sleep(0.12)
+    for index, delta in enumerate(deltas):
+        emit_assistant_delta(operation, delta, delay=0.04 if index else 0.0)
 
 
 def emit_completion(operation: str, status: str, error: str) -> None:
@@ -1123,13 +1134,13 @@ def main() -> None:
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
         screen.wait_for("busy")
-        # Long live stream lands as one delta (█ / STREAM-TAIL may be clipped
-        # below the composer). Stick-to-bottom shows measured growth, then PgUp
-        # must advertise streaming below before Esc cancels while scrolled.
-        screen.wait_for("stream line 12", 4)
+        # Multi-delta live stream: stick-to-bottom shows measured growth, Home
+        # advertises End-follow, End restores follow + busy, then Esc cancels
+        # while scrolled again.
+        screen.wait_for("stream line 12", 6)
         screen.wait_for("streaming  ·  ", 4)
         screen.wait_for("chars", 4)
-        time.sleep(0.25)
+        time.sleep(0.35)
         # Home jumps to the earliest window (composer empty). Footer status is
         # reliable even when the in-panel ▼ cue is clipped under the composer.
         screen.send("\x1b[H", 0.45)  # Home while streaming
@@ -1137,6 +1148,17 @@ def main() -> None:
         visible = screen.terminal.text()
         if "stream line 01" not in visible:
             raise AssertionError(f"Home did not reveal the start of the live stream\n--- screen ---\n{visible}")
+        screen.send("\x1b[F", 0.45)  # End re-follows the live tail
+        screen.wait_for("streaming  ·  ", 4)
+        screen.wait_for("chars", 4)
+        time.sleep(0.2)
+        visible = screen.terminal.text()
+        if "scrolled  ·  streaming below · End follows" in visible:
+            raise AssertionError(f"End did not clear the scroll-follow status\n--- screen ---\n{visible}")
+        if "STREAM-TAIL" not in visible and "stream line 3" not in visible:
+            raise AssertionError(f"End did not return to the live stream tail\n--- screen ---\n{visible}")
+        screen.send("\x1b[H", 0.45)  # Home again before cancel-while-scrolled
+        screen.wait_for("scrolled  ·  streaming below · End follows", 4)
         screen.send("\x1b", 0.4)  # Esc cancels while scrolled — never leaves
         screen.wait_for("Turn cancelled.", 6)
         screen.wait_for("cancelled  ·  response cancelled", 4)

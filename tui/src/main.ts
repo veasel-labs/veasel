@@ -20,7 +20,10 @@ import {
   activeReviewIndex,
   moveActiveReviewIndex,
   pendingReviewsOfKind,
+  resolveSelectedReviews,
   reviewHotkey,
+  reviewSelectionKey,
+  toggleReviewSelection,
   withReviewHotkeyHint,
   type ActiveReview,
 } from "./active-review"
@@ -441,6 +444,7 @@ let pendingUserMessage = ""
 let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let pendingReviewQueue: ActiveReview[] = []
 let activeReview: ActiveReview | undefined
+let selectedReviewKeys = new Set<string>()
 let activePatchDiff = ""
 let activePatchPath = ""
 let activePatchStatus = ""
@@ -1638,7 +1642,11 @@ async function showMcpToolCall(callId: string) {
     })
     const reviewState: ActiveReview = { kind: "mcp", id: call.id, pending: call.status === "pending" }
     setActiveReview(reviewState)
-    skillNotice = withReviewHotkeyHint(`REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${review}`, reviewState)
+    skillNotice = withReviewHotkeyHint(
+      `REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${review}`,
+      reviewState,
+      reviewHintOptions(),
+    )
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not inspect MCP tool call: ${error instanceof Error ? error.message : "request failed"}`
@@ -1714,6 +1722,24 @@ function setActiveReview(review: ActiveReview | undefined) {
   activeReview = review
 }
 
+function reviewHintOptions(hunkCount?: number) {
+  return {
+    hunkCount,
+    selectedCount: selectedReviewKeys.size,
+    currentSelected: activeReview ? selectedReviewKeys.has(reviewSelectionKey(activeReview)) : false,
+  }
+}
+
+function refreshActiveReviewHint() {
+  if (!activeReview?.pending || !skillNotice) return
+  if (activeReview.kind === "patch" && activePatchDiff) {
+    renderActivePatchDiff()
+    return
+  }
+  skillNotice = withReviewHotkeyHint(skillNotice, activeReview, reviewHintOptions())
+  renderChat(chatMessages)
+}
+
 async function openActiveReview(review: ActiveReview) {
   setActiveReview(review)
   if (review.kind === "patch") await showWorkspaceEdit(review.id)
@@ -1730,13 +1756,26 @@ function renderActivePatchDiff() {
   skillNotice = withReviewHotkeyHint(
     `REVIEW WORKSPACE EDIT  /  ${activePatchStatus}\n${safeTerminalText(activePatchPath)}\n${safeTerminalText(review.text)}${activeReview.pending ? `\nAfter inspecting the diff, type /patch approve ${activeReview.id} or /patch reject ${activeReview.id}.` : ""}`,
     activeReview,
-    { hunkCount: review.hunkCount },
+    reviewHintOptions(review.hunkCount),
   )
   renderChat(chatMessages)
 }
 
-async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "next" | "prev" | "hunkNext" | "hunkPrev") {
+async function actOnReviewItems(action: "approve" | "reject", items: ActiveReview[]) {
+  for (const item of items) {
+    if (item.kind === "patch") await actOnWorkspaceEdit(action, item.id)
+    else if (item.kind === "command") await actOnShellCommand(action, item.id)
+    else await actOnMcpToolCall(item.id, action)
+  }
+}
+
+async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev") {
   if (!activeReview?.pending) return
+  if (action === "toggleSelect") {
+    selectedReviewKeys = toggleReviewSelection(selectedReviewKeys, activeReview)
+    refreshActiveReviewHint()
+    return
+  }
   if (action === "hunkNext" || action === "hunkPrev") {
     if (activeReview.kind !== "patch" || !activePatchDiff) return
     const probe = formatReviewDiff(activePatchDiff, reviewDiffLineBudget(process.stdout.rows ?? 40), {
@@ -1754,29 +1793,30 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
     const kind = activeReview.kind
     if (pendingReviewQueue.length === 0) await countPendingReviews()
     const batch = pendingReviewsOfKind(pendingReviewQueue, kind)
-    let approved = 0
-    for (const item of batch) {
-      if (item.kind === "patch") await actOnWorkspaceEdit("approve", item.id)
-      else if (item.kind === "command") await actOnShellCommand("approve", item.id)
-      else await actOnMcpToolCall(item.id, "approve")
-      approved++
-    }
+    await actOnReviewItems("approve", batch)
+    selectedReviewKeys = new Set()
     setActiveReview(undefined)
     await countPendingReviews()
     const label = kind === "patch" ? "edit" : kind === "command" ? "shell command" : "MCP call"
-    skillNotice = approved > 0
-      ? `Approved ${approved} pending ${label}${approved === 1 ? "" : "s"} of the same kind (Shift+A).`
+    skillNotice = batch.length > 0
+      ? `Approved ${batch.length} pending ${label}${batch.length === 1 ? "" : "s"} of the same kind (Shift+A).`
       : `No pending ${label}s left to approve.`
     renderChat(chatMessages)
     return
   }
   if (action === "approve" || action === "reject") {
-    const current = activeReview
-    if (current.kind === "patch") await actOnWorkspaceEdit(action, current.id)
-    else if (current.kind === "command") await actOnShellCommand(action, current.id)
-    else await actOnMcpToolCall(current.id, action)
+    if (pendingReviewQueue.length === 0) await countPendingReviews()
+    const selected = resolveSelectedReviews(pendingReviewQueue, selectedReviewKeys)
+    const batch = selected.length > 0 ? selected : [activeReview]
+    await actOnReviewItems(action, batch)
+    selectedReviewKeys = new Set()
     setActiveReview(undefined)
     await countPendingReviews()
+    if (selected.length > 0) {
+      const verb = action === "approve" ? "Approved" : "Rejected"
+      skillNotice = `${verb} ${batch.length} selected review${batch.length === 1 ? "" : "s"} (Space multi-select).`
+      renderChat(chatMessages)
+    }
     return
   }
   if (pendingReviewQueue.length === 0) await countPendingReviews()
@@ -1970,7 +2010,11 @@ async function showShellCommand(commandId: string) {
     })
     const reviewState: ActiveReview = { kind: "command", id: item.id, pending: item.status === "pending" }
     setActiveReview(reviewState)
-    skillNotice = withReviewHotkeyHint(`REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${review}`, reviewState)
+    skillNotice = withReviewHotkeyHint(
+      `REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${review}`,
+      reviewState,
+      reviewHintOptions(),
+    )
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not inspect shell command: ${error instanceof Error ? error.message : "request failed"}`
@@ -2884,6 +2928,8 @@ renderer.keyInput.on("keypress", (key) => {
       unmountSlashMenu()
       resetSlashContext()
       activeSession = undefined
+      selectedReviewKeys = new Set()
+      setActiveReview(undefined)
       portraitRenderable.visible = true
       brandLabel.visible = true
       footerHint.content = homeFooterHint

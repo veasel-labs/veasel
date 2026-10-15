@@ -10,13 +10,38 @@ export type ReviewHotkey =
   | { action: "approve" }
   | { action: "approveAll" }
   | { action: "reject" }
+  | { action: "toggleSelect" }
   | { action: "next" }
   | { action: "prev" }
   | { action: "hunkNext" }
   | { action: "hunkPrev" }
 
+export function reviewSelectionKey(review: Pick<ActiveReview, "kind" | "id">): string {
+  return `${review.kind}:${review.id}`
+}
+
+export function toggleReviewSelection(
+  selectedKeys: ReadonlySet<string>,
+  review: Pick<ActiveReview, "kind" | "id">,
+): Set<string> {
+  const key = reviewSelectionKey(review)
+  const next = new Set(selectedKeys)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  return next
+}
+
+export function resolveSelectedReviews(
+  queue: ActiveReview[],
+  selectedKeys: ReadonlySet<string>,
+): ActiveReview[] {
+  if (selectedKeys.size === 0) return []
+  return queue.filter((item) => item.pending && selectedKeys.has(reviewSelectionKey(item)))
+}
+
 // Single-key review actions when the composer is empty and a pending review is
 // on screen. Letters stay available for typing once the composer has text.
+// Space toggles multi-select; a/x then act on the selection when any are marked.
 // Shift+A approves every pending item of the same kind (patches, shell, or MCP).
 // `{`/`}` move between unified-diff hunks while a patch review is open.
 export function reviewHotkey(
@@ -25,6 +50,7 @@ export function reviewHotkey(
 ): ReviewHotkey | undefined {
   if (!context.composerEmpty || !context.review?.pending) return undefined
   if (key.ctrl || key.meta) return undefined
+  if (key.name === "space" || key.name === " ") return { action: "toggleSelect" }
   if (key.name === "a" && key.shift) return { action: "approveAll" }
   if (key.name === "a") return { action: "approve" }
   if (key.name === "x") return { action: "reject" }
@@ -37,13 +63,18 @@ export function reviewHotkey(
 
 export function reviewHotkeyHint(
   review: ActiveReview | undefined,
-  options: { hunkCount?: number } = {},
+  options: { hunkCount?: number; selectedCount?: number; currentSelected?: boolean } = {},
 ): string | undefined {
   if (!review?.pending) return undefined
   const hunks = review.kind === "patch" && (options.hunkCount ?? 0) > 1
     ? " · {/} hunks"
     : ""
-  return `a approve · A all same kind · x reject · ]/[ or n/p next/prev${hunks}`
+  const selected = options.selectedCount ?? 0
+  const mark = options.currentSelected ? "●" : "○"
+  const selectCue = selected > 0
+    ? ` · ${mark} Space · ${selected} selected · a/x act on selection`
+    : ` · ${mark} Space select`
+  return `a approve · A all same kind · x reject · ]/[ or n/p next/prev${selectCue}${hunks}`
 }
 
 export function pendingReviewsOfKind(queue: ActiveReview[], kind: ActiveReviewKind): ActiveReview[] {
@@ -64,7 +95,7 @@ export function activeReviewIndex(queue: ActiveReview[], current: ActiveReview |
 export function withReviewHotkeyHint(
   notice: string,
   review: ActiveReview | undefined,
-  options: { hunkCount?: number } = {},
+  options: { hunkCount?: number; selectedCount?: number; currentSelected?: boolean } = {},
 ): string {
   const hint = reviewHotkeyHint(review, options)
   if (!hint) return notice
@@ -72,5 +103,9 @@ export function withReviewHotkeyHint(
   // Keep the hotkey cue on the first screen above long diffs/commands/arguments.
   const lines = notice.split("\n")
   if (lines.length === 0) return hint
-  return `${lines[0]}\n${hint}\n${lines.slice(1).join("\n")}`
+  // Drop a previous hotkey hint line so selection count updates stay on screen.
+  const withoutOldHint = lines.length > 1 && lines[1]!.includes("Space")
+    ? [lines[0]!, ...lines.slice(2)]
+    : lines
+  return `${withoutOldHint[0]}\n${hint}\n${withoutOldHint.slice(1).join("\n")}`
 }

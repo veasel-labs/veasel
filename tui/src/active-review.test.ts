@@ -3,8 +3,11 @@ import {
   activeReviewIndex,
   moveActiveReviewIndex,
   pendingReviewsOfKind,
+  resolveSelectedReviews,
   reviewHotkey,
   reviewHotkeyHint,
+  reviewSelectionKey,
+  toggleReviewSelection,
   withReviewHotkeyHint,
   type ActiveReview,
 } from "./active-review"
@@ -27,11 +30,13 @@ describe("reviewHotkey", () => {
     })).toBeUndefined()
   })
 
-  test("maps approve, reject, bulk approve, and neighbor navigation", () => {
+  test("maps approve, reject, bulk approve, select, and neighbor navigation", () => {
     const ctx = { composerEmpty: true, review: pendingPatch }
     expect(reviewHotkey({ name: "a", ctrl: false, meta: false }, ctx)).toEqual({ action: "approve" })
     expect(reviewHotkey({ name: "a", ctrl: false, meta: false, shift: true }, ctx)).toEqual({ action: "approveAll" })
     expect(reviewHotkey({ name: "x", ctrl: false, meta: false }, ctx)).toEqual({ action: "reject" })
+    expect(reviewHotkey({ name: "space", ctrl: false, meta: false }, ctx)).toEqual({ action: "toggleSelect" })
+    expect(reviewHotkey({ name: " ", ctrl: false, meta: false }, ctx)).toEqual({ action: "toggleSelect" })
     expect(reviewHotkey({ name: "]", ctrl: false, meta: false }, ctx)).toEqual({ action: "next" })
     expect(reviewHotkey({ name: "[", ctrl: false, meta: false }, ctx)).toEqual({ action: "prev" })
     expect(reviewHotkey({ name: "n", ctrl: false, meta: false }, ctx)).toEqual({ action: "next" })
@@ -42,6 +47,36 @@ describe("reviewHotkey", () => {
       composerEmpty: true,
       review: { kind: "command", id: pendingPatch.id, pending: true },
     })).toBeUndefined()
+  })
+})
+
+describe("review multi-select", () => {
+  test("toggles selection keys and resolves pending queue members", () => {
+    const other: ActiveReview = {
+      kind: "patch",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+    }
+    const key = reviewSelectionKey(pendingPatch)
+    expect(key).toBe("patch:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+    let selected = toggleReviewSelection(new Set(), pendingPatch)
+    expect(selected.has(key)).toBe(true)
+    selected = toggleReviewSelection(selected, pendingPatch)
+    expect(selected.has(key)).toBe(false)
+    selected = toggleReviewSelection(new Set(), pendingPatch)
+    selected = toggleReviewSelection(selected, other)
+    expect(resolveSelectedReviews([pendingPatch, other], selected).map((item) => item.id)).toEqual([
+      pendingPatch.id,
+      other.id,
+    ])
+    expect(resolveSelectedReviews([pendingPatch], new Set(["command:nope"]))).toEqual([])
+  })
+
+  test("states the selection count in the hotkey hint", () => {
+    expect(reviewHotkeyHint(pendingPatch)?.includes("Space select")).toBe(true)
+    expect(reviewHotkeyHint(pendingPatch, { selectedCount: 2, currentSelected: true })).toContain(
+      "● Space · 2 selected · a/x act on selection",
+    )
   })
 })
 
@@ -69,11 +104,15 @@ describe("review queue navigation", () => {
     expect(activeReviewIndex([], pendingPatch)).toBe(0)
   })
 
-  test("keeps the hotkey hint on the first screen", () => {
+  test("keeps the hotkey hint on the first screen and refreshes selection cues", () => {
     const notice = "REVIEW WORKSPACE EDIT  /  PENDING\nsrc/main.v"
     const withHint = withReviewHotkeyHint(notice, pendingPatch)
     expect(withHint.startsWith("REVIEW WORKSPACE EDIT  /  PENDING\na approve · A all same kind")).toBe(true)
+    expect(withHint).toContain("Space select")
     expect(withReviewHotkeyHint(withHint, pendingPatch)).toBe(withHint)
+    const refreshed = withReviewHotkeyHint(withHint, pendingPatch, { selectedCount: 1, currentSelected: true })
+    expect(refreshed).toContain("1 selected")
+    expect(refreshed).not.toContain("Space select\n")
     expect(withReviewHotkeyHint(notice, undefined)).toBe(notice)
   })
 })

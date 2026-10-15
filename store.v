@@ -167,6 +167,12 @@ fn open_store(path string) !&Store {
 		db.close() or {}
 		return error('unable to configure SQLite journal mode')
 	}
+	// NORMAL with WAL is the usual durable+fast setting; FULL (default) fsyncs
+	// more aggressively than agent-session write patterns need.
+	db.synchronization_mode(.normal) or {
+		db.close() or {}
+		return error('unable to configure SQLite synchronous mode')
+	}
 	db.exec('PRAGMA foreign_keys=ON') or {
 		db.close() or {}
 		return error('unable to enable SQLite foreign keys')

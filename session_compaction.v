@@ -159,8 +159,13 @@ fn find_compaction_cut(messages []ChatMessage, keep_bytes int, reason string) in
 	return messages.len
 }
 
+fn sanitize_compaction_text(text string) string {
+	// Compaction summaries are injected into provider history; keep them text-safe.
+	return text.replace('\0', '')
+}
+
 fn truncate_compaction_excerpt(text string, limit int) string {
-	clean := text.trim_space()
+	clean := sanitize_compaction_text(text).trim_space()
 	if clean.len <= limit {
 		return clean
 	}
@@ -482,13 +487,14 @@ fn compact_session_messages_preferring(messages []ChatMessage, intended_mode str
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}
 	fallback_mode := compaction_fallback_mode(intended_mode)
-	if attempt.body.trim_space().len == 0 {
+	summary_body := sanitize_compaction_text(attempt.body)
+	if summary_body.trim_space().len == 0 {
 		return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, attempt.usage)
 	}
-	candidate := assemble_compacted_messages(messages, first, cut, attempt.body)
+	candidate := assemble_compacted_messages(messages, first, cut, summary_body)
 	if compaction_accepts_candidate(reason, bytes_before, messages.len, candidate) {
 		mode := if attempt.mode.len > 0 { attempt.mode } else { intended_mode }
-		return finalize_compaction_result(candidate, attempt.body, bytes_before, reason, older.len,
+		return finalize_compaction_result(candidate, summary_body, bytes_before, reason, older.len,
 			mode, attempt.usage)
 	}
 	return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, attempt.usage)

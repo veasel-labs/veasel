@@ -52,6 +52,9 @@ For Anthropic Messages (default on), Veasel emits:
 2. When a system prompt is present, a system text content block with the same
    `cache_control` (explicit breakpoint on the stable system prefix; helpful for
    gateways that honor block markers).
+3. The same `cache_control` on the **last** tool definition when tools are
+   present, so the tools array (including the skills catalog description) can
+   join the cached prefix across rounds.
 
 Control with `VEASEL_ANTHROPIC_PROMPT_CACHE`:
 

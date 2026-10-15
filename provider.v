@@ -937,9 +937,10 @@ struct AnthropicRequestMessage {
 }
 
 struct AnthropicTool {
-	name         string
-	description  string
-	input_schema json2.Any
+	name          string
+	description   string
+	input_schema  json2.Any
+	cache_control ?AnthropicCacheControl @[json: 'cache_control'; omitempty]
 }
 
 struct AnthropicContentBlock {
@@ -1987,16 +1988,23 @@ fn anthropic_system_blocks(system string, cache ?AnthropicCacheControl) []Anthro
 
 fn build_anthropic_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) AnthropicRequest {
 	system_text, conversation := anthropic_messages(messages)
+	cache := anthropic_prompt_cache_control()
 	mut anthropic_tools := []AnthropicTool{cap: tools.len}
 	mut scratch := new_json2_scratch()
-	for tool in tools {
+	for index, tool in tools {
+		// Breakpoint on the last tool caches the full tools array (including the
+		// skills catalog description) across rounds when the prefix is stable.
+		mut tool_cache := ?AnthropicCacheControl(none)
+		if cache != none && index == tools.len - 1 {
+			tool_cache = cache
+		}
 		anthropic_tools << AnthropicTool{
-			name:         tool.name
-			description:  tool.description
-			input_schema: provider_tool_parameters_reuse(tool, mut scratch)
+			name:          tool.name
+			description:   tool.description
+			input_schema:  provider_tool_parameters_reuse(tool, mut scratch)
+			cache_control: tool_cache
 		}
 	}
-	cache := anthropic_prompt_cache_control()
 	max_tokens := if config.max_output_tokens > 0 {
 		config.max_output_tokens
 	} else {

@@ -17,7 +17,7 @@ import {
 import { ComposerRenderable } from "./composer-input"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
-import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import {
   activeReviewIndex,
@@ -3128,11 +3128,15 @@ function showSettingsStep(manualModel = false) {
         optionCount,
         `Models ${matches.length}/${modelCatalog.length}`,
       )
-      const options = matches.map((model) => ({
-        name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
-        description: model.name === model.id ? "Provider model ID" : safeModelCatalogText(model.id),
-        value: model.id,
-      }))
+      const options = matches.map((model) => {
+        const base = model.name === model.id ? "Provider model ID" : safeModelCatalogText(model.id)
+        const cost = formatModelCatalogCostBadge(model)
+        return {
+          name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
+          description: cost ? `${base} · ${cost}` : base,
+          value: model.id,
+        }
+      })
       options.push({ name: "Enter a model ID manually", description: "Use a model not returned by the provider catalog", value: "__manual_model_id__" })
       const select = new SelectRenderable(renderer, {
         id: "model-id-select",

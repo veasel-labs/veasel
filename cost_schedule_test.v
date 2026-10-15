@@ -104,6 +104,38 @@ fn test_embedded_schedule_matches_checked_in_json() {
 	}
 }
 
+fn test_annotate_model_catalog_with_cost_schedule_rates() {
+	prior := os.getenv_opt(cost_schedule_env) or { '' }
+	os.unsetenv(cost_schedule_env)
+	defer {
+		if prior.len == 0 {
+			os.unsetenv(cost_schedule_env)
+		} else {
+			os.setenv(cost_schedule_env, prior, true)
+		}
+	}
+	models := [
+		ModelCatalogEntry{
+			id:   'claude-sonnet-4-5'
+			name: 'Claude Sonnet 4.5'
+		},
+		ModelCatalogEntry{
+			id:   'totally-unknown-model'
+			name: 'Unknown'
+		},
+	]
+	annotated := annotate_model_catalog_with_cost_schedule('anthropic', models)
+	assert annotated.len == 2
+	assert annotated[0].id == 'claude-sonnet-4-5'
+	assert (annotated[0].input_per_mtok or { -1.0 }) == 3.0
+	assert (annotated[0].output_per_mtok or { -1.0 }) == 15.0
+	assert annotated[0].cost_unit == embedded_cost_schedule_unit
+	assert annotated[1].id == 'totally-unknown-model'
+	assert annotated[1].input_per_mtok == none
+	assert annotated[1].output_per_mtok == none
+	assert annotated[1].cost_unit == ''
+}
+
 fn test_session_usage_summary_prices_matching_schedule_models() {
 	prior := os.getenv_opt(cost_schedule_env) or { '' }
 	os.unsetenv(cost_schedule_env)

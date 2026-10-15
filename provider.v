@@ -335,6 +335,11 @@ pub struct ModelCatalogEntry {
 pub:
 	id   string
 	name string
+	// Optional pinned schedule rates (USD per million tokens). Omitted when the
+	// model is not in the embedded cost schedule — never invented.
+	input_per_mtok  ?f64   @[json: 'input_per_mtok'; omitempty]
+	output_per_mtok ?f64   @[json: 'output_per_mtok'; omitempty]
+	cost_unit       string @[json: 'cost_unit'; omitempty]
 }
 
 struct OpenAIModelCatalog {

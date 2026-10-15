@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  formatReportedCacheHitRatio,
   formatReportedCacheUsage,
   formatReportedUsage,
   formatSessionUsageSummary,
@@ -122,7 +123,23 @@ describe("formatSessionUsageSummary", () => {
       cost: "unavailable",
     })
     expect(text).toContain("Prompt cache (provider-reported): 80k cache read · 1.2k cache write")
-    expect(text).toContain("not a % savings claim")
-    expect(text).not.toContain("saved")
+    expect(text).toContain("Cache-read share:")
+    expect(text).toContain("not USD saved")
+    expect(text).toContain("not a dollar savings claim")
+    expect(text).not.toContain("$ saved")
+  })
+})
+
+describe("formatReportedCacheHitRatio", () => {
+  test("returns undefined without cache reads or zero denominator", () => {
+    expect(formatReportedCacheHitRatio(100, 0, 0)).toBeUndefined()
+    expect(formatReportedCacheHitRatio(0, 0, 0)).toBeUndefined()
+  })
+
+  test("reports cache-read share of input+read+write counters", () => {
+    // 80k / (100 + 80k + 1200) ≈ 98.4%
+    expect(formatReportedCacheHitRatio(100, 80_000, 1200)).toBe(
+      "98.4% of reported prompt tokens were cache reads",
+    )
   })
 })

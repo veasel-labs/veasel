@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, prioritizeModelProviders, providerPickerScopeLabel, providerPickerScopes, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, moveProviderPickerScope, prioritizeModelProviders, providerPickerScopeLabel, providerPickerScopes, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 const providers: ModelProvider[] = [
   { id: "meta", name: "Meta Model API", description: "Muse Wonder and Muse Spark · OpenAI Responses API", protocol: "openai-responses", base_url: "https://api.meta.ai/v1", environment_key: "MODEL_API_KEY", documentation_url: "https://dev.meta.ai/docs/coding-agents", requires_api_key: true },
@@ -110,5 +110,16 @@ describe("provider model picker", () => {
 
   test("removes terminal control and bidirectional formatting characters from labels", () => {
     expect(safeModelCatalogText("safe\u001b[2J\u202Ename\u009b")).toBe("safe[2Jname")
+  })
+
+  test("formats pinned schedule rates as a model picker badge", () => {
+    expect(formatModelCatalogCostBadge({ id: "x", name: "x" })).toBe("")
+    expect(formatModelCatalogCostBadge({
+      id: "claude-haiku-4-5",
+      name: "Haiku",
+      input_per_mtok: 1,
+      output_per_mtok: 5,
+      cost_unit: "usd_per_million_tokens",
+    })).toBe("1/5 $/MTok in/out (pinned)")
   })
 })

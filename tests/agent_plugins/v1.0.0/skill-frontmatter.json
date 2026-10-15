@@ -106,5 +106,47 @@
     "directory": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "accepted": false,
     "content": "---\nname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "disable-model-invocation true is accepted",
+    "directory": "review",
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\ndisable-model-invocation: true\n---\nInstructions."
+  },
+  {
+    "name": "unterminated YAML frontmatter is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nInstructions without closing fence."
+  },
+  {
+    "name": "license with TAB is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nlicense: \"MIT\textra\"\n---\nInstructions."
+  },
+  {
+    "name": "metadata value with TAB is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\nmetadata:\n  author: \"bad\tauthor\"\n---\nInstructions."
+  },
+  {
+    "name": "compatibility longer than 500 characters is rejected",
+    "directory": "review",
+    "accepted": false,
+    "content": "---\nname: review\ndescription: Review source changes.\ncompatibility: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n---\nInstructions."
+  },
+  {
+    "name": "skill name with consecutive hyphens is rejected",
+    "directory": "bad--name",
+    "accepted": false,
+    "content": "---\nname: bad--name\ndescription: Review source changes.\n---\nInstructions."
+  },
+  {
+    "name": "skill name starting with hyphen is rejected",
+    "directory": "-leading",
+    "accepted": false,
+    "content": "---\nname: -leading\ndescription: Review source changes.\n---\nInstructions."
   }
 ]

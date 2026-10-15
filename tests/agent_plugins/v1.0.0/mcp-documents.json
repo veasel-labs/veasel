@@ -599,5 +599,145 @@
         }
       }
     }
+  },
+  {
+    "name": "loopback HTTP without TLS is accepted",
+    "accepted": true,
+    "servers": ["loopback"],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "loopback": {
+          "type": "streamable-http",
+          "url": "http://127.0.0.1:9876/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "command with leading space is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["command must be one executable token"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": " node"
+        }
+      }
+    }
+  },
+  {
+    "name": "command with CR is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["command must be one executable token"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node\r"
+        }
+      }
+    }
+  },
+  {
+    "name": "env key with equals is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["env entries are invalid or use reserved names"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "env": { "HAS=EQ": "1" }
+        }
+      }
+    }
+  },
+  {
+    "name": "env key with space is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["env entries are invalid or use reserved names"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "env": { "HAS SPACE": "1" }
+        }
+      }
+    }
+  },
+  {
+    "name": "absolute cwd is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["cwd must use plugin-relative or supported plugin-root placeholders"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "cwd": "/tmp"
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown HTTP field is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["unknown HTTP MCP field"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://tools.example.invalid/mcp",
+          "timeout": 30
+        }
+      }
+    }
+  },
+  {
+    "name": "server name with consecutive hyphens is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["MCP server name is invalid"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "bad--name": {
+          "type": "stdio",
+          "command": "echo"
+        }
+      }
+    }
+  },
+  {
+    "name": "args must be an array is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": ["args must be an array of strings"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "args": "--flag"
+        }
+      }
+    }
   }
 ]

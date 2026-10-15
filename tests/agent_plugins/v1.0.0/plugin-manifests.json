@@ -186,5 +186,76 @@
       "name": "cr-keyword",
       "keywords": ["ok", "bad\rkeyword"]
     }
+  },
+  {
+    "name": "empty name is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "   "
+    }
+  },
+  {
+    "name": "name with consecutive hyphens is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "bad--name"
+    }
+  },
+  {
+    "name": "homepage with LF is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "lf-homepage",
+      "homepage": "https://example.invalid/\npath"
+    }
+  },
+  {
+    "name": "license with DEL is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "del-license",
+      "license": "MIT\u007f"
+    }
+  },
+  {
+    "name": "author email with TAB is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "tab-author-email",
+      "author": { "email": "dev\t@example.invalid" }
+    }
+  },
+  {
+    "name": "non-object author is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "author-array",
+      "author": ["Example"]
+    }
+  },
+  {
+    "name": "keywords must be an array",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "keywords-string",
+      "keywords": "review"
+    }
+  },
+  {
+    "name": "non-object Veasel extension data is ignored",
+    "accepted": true,
+    "diagnostics": ["Ignoring invalid Veasel extension data"],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "bad-veasel-extension-shape",
+      "extensions": { "com.veasel.code": ["not", "an", "object"] }
+    }
   }
 ]

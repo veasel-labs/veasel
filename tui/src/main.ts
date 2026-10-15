@@ -16,6 +16,13 @@ import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
 import { filterModelCatalog, filterModelProviders, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
+import {
+  activeReviewIndex,
+  moveActiveReviewIndex,
+  reviewHotkey,
+  withReviewHotkeyHint,
+  type ActiveReview,
+} from "./active-review"
 import { homeFooterHint, sessionFooterHint } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
@@ -421,6 +428,8 @@ let activeTurnController: AbortController | undefined
 let activeTurnCancelled = false
 let pendingUserMessage = ""
 let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
+let pendingReviewQueue: ActiveReview[] = []
+let activeReview: ActiveReview | undefined
 let chatMessages: ChatTurn[] = []
 let chatHistoryHasOlder = false
 let chatHistoryLoading = false
@@ -1579,7 +1588,9 @@ async function showMcpToolCall(callId: string) {
       argumentsText: args,
       maxLines: mcpReviewLineBudget(process.stdout.rows ?? 40),
     })
-    skillNotice = `REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${review}`
+    const reviewState: ActiveReview = { kind: "mcp", id: call.id, pending: call.status === "pending" }
+    setActiveReview(reviewState)
+    skillNotice = withReviewHotkeyHint(`REVIEW MCP TOOL CALL  /  ${call.status.toUpperCase()}\n${review}`, reviewState)
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not inspect MCP tool call: ${error instanceof Error ? error.message : "request failed"}`
@@ -1607,8 +1618,10 @@ async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
 
 async function countPendingReviews(): Promise<PendingReviewCounts> {
   const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
+  const queue: ActiveReview[] = []
   if (!activeSession) {
     lastPendingCounts = counts
+    pendingReviewQueue = queue
     return counts
   }
   try {
@@ -1625,21 +1638,58 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
     ])
     if (editsResponse.ok) {
       const edits = await editsResponse.json() as WorkspaceEditSummary[]
-      counts.edits = edits.filter((edit) => edit.status === "pending").length
+      const pending = edits.filter((edit) => edit.status === "pending")
+      counts.edits = pending.length
+      for (const edit of pending) queue.push({ kind: "patch", id: edit.id, pending: true })
     }
     if (commandsResponse.ok) {
       const commands = await commandsResponse.json() as ShellCommandSummary[]
-      counts.commands = commands.filter((item) => item.status === "pending").length
+      const pending = commands.filter((item) => item.status === "pending")
+      counts.commands = pending.length
+      for (const item of pending) queue.push({ kind: "command", id: item.id, pending: true })
     }
     if (mcpResponse.ok) {
       const calls = await mcpResponse.json() as PluginMCPToolCallSummary[]
-      counts.mcp = calls.filter((call) => call.status === "pending").length
+      const pending = calls.filter((call) => call.status === "pending")
+      counts.mcp = pending.length
+      for (const call of pending) queue.push({ kind: "mcp", id: call.id, pending: true })
     }
   } catch {
     // Optional counts must not break the active turn.
   }
   lastPendingCounts = counts
+  pendingReviewQueue = queue
   return counts
+}
+
+function setActiveReview(review: ActiveReview | undefined) {
+  activeReview = review
+}
+
+async function openActiveReview(review: ActiveReview) {
+  setActiveReview(review)
+  if (review.kind === "patch") await showWorkspaceEdit(review.id)
+  else if (review.kind === "command") await showShellCommand(review.id)
+  else await showMcpToolCall(review.id)
+}
+
+async function handleReviewHotkey(action: "approve" | "reject" | "next" | "prev") {
+  if (!activeReview?.pending) return
+  if (action === "approve" || action === "reject") {
+    const current = activeReview
+    if (current.kind === "patch") await actOnWorkspaceEdit(action, current.id)
+    else if (current.kind === "command") await actOnShellCommand(action, current.id)
+    else await actOnMcpToolCall(current.id, action)
+    setActiveReview(undefined)
+    await countPendingReviews()
+    return
+  }
+  if (pendingReviewQueue.length === 0) await countPendingReviews()
+  if (pendingReviewQueue.length === 0) return
+  const index = activeReviewIndex(pendingReviewQueue, activeReview)
+  const nextIndex = moveActiveReviewIndex(index, action === "next" ? 1 : -1, pendingReviewQueue.length)
+  const next = pendingReviewQueue[nextIndex]
+  if (next) await openActiveReview(next)
 }
 
 async function notifyPendingMcpToolCalls() {
@@ -1729,7 +1779,12 @@ async function showWorkspaceEdit(editId: string) {
     const edit = await response.json() as WorkspaceEditProposal
     if (edit.status === "pending") reviewedEditIds.add(edit.id)
     const review = formatReviewDiff(edit.diff, reviewDiffLineBudget(process.stdout.rows ?? 40))
-    skillNotice = `REVIEW WORKSPACE EDIT  /  ${edit.status.toUpperCase()}\n${safeTerminalText(edit.path)}\n${safeTerminalText(review.text)}${edit.status === "pending" ? `\nAfter inspecting the diff, type /patch approve ${edit.id} or /patch reject ${edit.id}.` : ""}`
+    const reviewState: ActiveReview = { kind: "patch", id: edit.id, pending: edit.status === "pending" }
+    setActiveReview(reviewState)
+    skillNotice = withReviewHotkeyHint(
+      `REVIEW WORKSPACE EDIT  /  ${edit.status.toUpperCase()}\n${safeTerminalText(edit.path)}\n${safeTerminalText(review.text)}${edit.status === "pending" ? `\nAfter inspecting the diff, type /patch approve ${edit.id} or /patch reject ${edit.id}.` : ""}`,
+      reviewState,
+    )
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load workspace edit diff: ${error instanceof Error ? error.message : "request failed"}`
@@ -1796,7 +1851,9 @@ async function showShellCommand(commandId: string) {
       maxLines: shellReviewLineBudget(process.stdout.rows ?? 40),
       sandboxCapability: shellSandboxCapability,
     })
-    skillNotice = `REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${review}`
+    const reviewState: ActiveReview = { kind: "command", id: item.id, pending: item.status === "pending" }
+    setActiveReview(reviewState)
+    skillNotice = withReviewHotkeyHint(`REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${review}`, reviewState)
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not inspect shell command: ${error instanceof Error ? error.message : "request failed"}`
@@ -2688,6 +2745,16 @@ renderer.keyInput.on("keypress", (key) => {
         chatInput.submit()
         return
       }
+    }
+    const hotkey = reviewHotkey(key, {
+      composerEmpty: chatInput.value.trim() === "",
+      review: activeReview,
+    })
+    if (hotkey) {
+      key.preventDefault()
+      key.stopPropagation()
+      void handleReviewHotkey(hotkey.action)
+      return
     }
     if (key.name === "escape") {
       if (sendingMessage) {

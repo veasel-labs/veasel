@@ -179,6 +179,9 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 		}
 		entries << entry
 	}
+	// Pull same-directory siblings of strongly mentioned paths into budget
+	// without tree-sitter/PageRank — extractive co-location only.
+	boost_repository_map_directory_neighbors(mut entries)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)
@@ -359,6 +362,20 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			break
 		}
 	}
+	// Test/source pairing: mention of foo.v or stem foo also elevates
+	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
+	for mentioned in hints.paths {
+		if repository_map_is_test_pair(path, mentioned) {
+			score += 280.0
+			break
+		}
+	}
+	for ident in hints.idents {
+		if repository_map_is_test_pair_for_stem(path, ident) {
+			score += 180.0
+			break
+		}
+	}
 	depth := path.count('/')
 	if depth == 0 {
 		score += 25.0
@@ -409,6 +426,12 @@ fn score_repository_map_symbol(name string, hints RepositoryMapHintSet) f64 {
 			break
 		}
 	}
+	for ident in hints.idents {
+		if repository_map_symbol_part_match(name, ident) {
+			score += 80.0
+			break
+		}
+	}
 	if repository_map_ident_is_interesting(name) {
 		score += 8.0
 	}
@@ -416,6 +439,129 @@ fn score_repository_map_symbol(name string, hints RepositoryMapHintSet) f64 {
 		score *= 0.1
 	}
 	return score
+}
+
+fn boost_repository_map_directory_neighbors(mut entries []RepositoryMapEntry) {
+	mut hot_dirs := map[string]bool{}
+	for entry in entries {
+		// Path-mention tier from score_repository_map_path is +500.
+		if entry.score < 500.0 {
+			continue
+		}
+		dir := os.dir(entry.path).replace('\\', '/')
+		if dir.len == 0 || dir == '.' {
+			continue
+		}
+		hot_dirs[dir] = true
+	}
+	if hot_dirs.len == 0 {
+		return
+	}
+	for mut entry in entries {
+		if entry.score >= 500.0 {
+			continue
+		}
+		dir := os.dir(entry.path).replace('\\', '/')
+		if hot_dirs[dir] {
+			entry.score += 90.0
+		}
+	}
+}
+
+fn repository_map_is_test_pair(path string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
+	path_stem := repository_map_stem(os.file_name(path)).to_lower()
+	mentioned_stem := repository_map_stem(os.file_name(mentioned.replace('\\', '/'))).to_lower()
+	if path_stem.len < 2 || mentioned_stem.len < 2 {
+		return false
+	}
+	return repository_map_stems_are_test_pair(path_stem, mentioned_stem)
+}
+
+fn repository_map_is_test_pair_for_stem(path string, stem string) bool {
+	if stem.len < 2 {
+		return false
+	}
+	path_stem := repository_map_stem(os.file_name(path)).to_lower()
+	return repository_map_stems_are_test_pair(path_stem, stem.to_lower())
+}
+
+fn repository_map_stems_are_test_pair(left string, right string) bool {
+	if left == right {
+		return false
+	}
+	return repository_map_stem_base(left) == right || repository_map_stem_base(right) == left
+		|| repository_map_stem_base(left) == repository_map_stem_base(right)
+}
+
+fn repository_map_stem_base(stem string) string {
+	mut s := stem
+	for suffix in ['_test', '_spec', '.test', '.spec', '-test', '-spec'] {
+		if s.ends_with(suffix) {
+			s = s[..s.len - suffix.len]
+			break
+		}
+	}
+	for prefix in ['test_', 'spec_', 'test-', 'spec-'] {
+		if s.starts_with(prefix) {
+			s = s[prefix.len..]
+			break
+		}
+	}
+	return s
+}
+
+fn repository_map_symbol_part_match(name string, ident string) bool {
+	if name.len < 3 || ident.len < 3 {
+		return false
+	}
+	if repository_map_eq_ci(name, ident) {
+		return false
+	}
+	name_parts := repository_map_ident_parts(name)
+	ident_parts := repository_map_ident_parts(ident)
+	if name_parts.len == 0 || ident_parts.len == 0 {
+		return false
+	}
+	for part in ident_parts {
+		if part.len < 3 {
+			continue
+		}
+		for candidate in name_parts {
+			if repository_map_eq_ci(candidate, part) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+fn repository_map_ident_parts(name string) []string {
+	mut parts := []string{}
+	mut current := ''
+	for ch in name {
+		if ch == `_` || ch == `-` {
+			if current.len >= 3 {
+				parts << current.to_lower()
+			}
+			current = ''
+			continue
+		}
+		is_upper := ch >= `A` && ch <= `Z`
+		if is_upper && current.len > 0 {
+			if current.len >= 3 {
+				parts << current.to_lower()
+			}
+			current = ''
+		}
+		current += ch.ascii_str()
+	}
+	if current.len >= 3 {
+		parts << current.to_lower()
+	}
+	return parts
 }
 
 fn sort_repository_map_entries(mut entries []RepositoryMapEntry) {

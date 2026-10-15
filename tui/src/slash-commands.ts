@@ -81,6 +81,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/mcp untrust", category: "mcp", description: "Stop trusting an MCP server", usage: "/mcp untrust <plugin>/<server>" },
   { name: "/mcp credentials", category: "mcp", description: "List named Streamable HTTP credentials (header names only)" },
   { name: "/mcp credential", category: "mcp", description: "Set or remove a named MCP HTTP credential", usage: "/mcp credential set|remove …" },
+  { name: "/mcp oauth", category: "mcp", description: "Start or finish an MCP OAuth PKCE flow into a named credential", usage: "/mcp oauth authorize|complete …" },
   { name: "/mcp calls", category: "approvals", description: "List MCP calls waiting for review" },
   { name: "/mcp call", category: "approvals", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
   { name: "/patches", category: "approvals", description: "List proposed file edits waiting for approval; add text to filter by path or status" },
@@ -180,6 +181,15 @@ const argumentSpecs: Record<string, ArgSpec[]> = {
       choices: [
         { value: "set", description: "Upsert Header=value pairs (values never listed back)" },
         { value: "remove", description: "Delete a named credential" },
+      ],
+    },
+  ],
+  "/mcp oauth": [
+    {
+      kind: "choice",
+      choices: [
+        { value: "authorize", description: "Start PKCE authorize; open the returned URL in a browser" },
+        { value: "complete", description: "Finish with a loopback callback URL or state+code" },
       ],
     },
   ],

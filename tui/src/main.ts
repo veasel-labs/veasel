@@ -68,6 +68,11 @@ import {
   type McpCredentialCatalog,
   type McpCredentialView,
 } from "./mcp-credentials"
+import {
+  formatMcpOauthAuthorizeNotice,
+  formatMcpOauthCompleteNotice,
+  type McpOauthAuthorizeView,
+} from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -988,6 +993,45 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  const mcpOauthAuthorize = /^\/mcp oauth authorize\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?$/i.exec(content)
+  if (mcpOauthAuthorize) {
+    await startMcpOauth({
+      credential: mcpOauthAuthorize[1]!,
+      authorization_endpoint: mcpOauthAuthorize[2]!,
+      token_endpoint: mcpOauthAuthorize[3]!,
+      client_id: mcpOauthAuthorize[4]!,
+      redirect_uri: mcpOauthAuthorize[5]!,
+      scope: mcpOauthAuthorize[6],
+    })
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpOauthCompleteUrl = /^\/mcp oauth complete\s+(\S+)\s+(https?:\/\/\S+)$/i.exec(content)
+  if (mcpOauthCompleteUrl) {
+    await completeMcpOauth({ credential: mcpOauthCompleteUrl[1]!, callback_url: mcpOauthCompleteUrl[2]! })
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpOauthCompleteCode = /^\/mcp oauth complete\s+(\S+)\s+(\S+)\s+(\S+)$/i.exec(content)
+  if (mcpOauthCompleteCode) {
+    await completeMcpOauth({
+      credential: mcpOauthCompleteCode[1]!,
+      state: mcpOauthCompleteCode[2]!,
+      code: mcpOauthCompleteCode[3]!,
+    })
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content === "/mcp oauth" || content.startsWith("/mcp oauth ")) {
+    skillNotice = "Use /mcp oauth authorize <credential> <authorization_endpoint> <token_endpoint> <client_id> <redirect_uri> [scope], then /mcp oauth complete <credential> <callback_url> or <state> <code>. Token values are never shown. Prefer headless veasel mcp oauth --listen when Veasel should own the loopback listener."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/mcp calls") {
     await showMcpToolCalls()
     chatInput.value = ""
@@ -1674,6 +1718,75 @@ async function removeMcpCredential(name: string) {
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not remove MCP credential: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function startMcpOauth(input: {
+  credential: string
+  authorization_endpoint: string
+  token_endpoint: string
+  client_id: string
+  redirect_uri: string
+  scope?: string
+}) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-oauth/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        credential: input.credential,
+        authorization_endpoint: input.authorization_endpoint,
+        token_endpoint: input.token_endpoint,
+        client_id: input.client_id,
+        redirect_uri: input.redirect_uri,
+        scope: input.scope,
+      }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const view = await response.json() as McpOauthAuthorizeView
+    skillNotice = formatMcpOauthAuthorizeNotice({
+      credential: safeTerminalText(view.credential || input.credential),
+      state: safeTerminalText(view.state || ""),
+      authorize_url: safeTerminalText(view.authorize_url || ""),
+      redirect_uri: safeTerminalText(view.redirect_uri || input.redirect_uri),
+      code_challenge_method: view.code_challenge_method,
+    })
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not start MCP OAuth: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function completeMcpOauth(input: {
+  credential: string
+  callback_url?: string
+  state?: string
+  code?: string
+}) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-oauth/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        credential: input.credential,
+        callback_url: input.callback_url,
+        state: input.state,
+        code: input.code,
+      }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const view = await response.json() as McpCredentialView
+    skillNotice = formatMcpOauthCompleteNotice({
+      name: safeTerminalText(view.name || input.credential),
+      header_names: Array.isArray(view.header_names) ? view.header_names.map(safeTerminalText) : [],
+    })
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not complete MCP OAuth: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

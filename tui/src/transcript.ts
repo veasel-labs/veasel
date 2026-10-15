@@ -45,6 +45,8 @@ export type TranscriptInput = {
   pendingUserMessage?: string
   streamingText?: string
   streaming?: boolean
+  // Override the in-flight cursor glyph (reduced-motion / blink frames).
+  streamingCursor?: string
   hasOlder?: boolean
   showMessages?: boolean
   // Terminal columns for width-aware notice chrome (side-by-side word diffs).
@@ -111,9 +113,10 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
   }
   if (input.streaming || input.streamingText) {
     const body = input.streamingText ?? ""
+    const cursor = input.streamingCursor ?? streamingCursor
     turns.push({
       kind: "assistant",
-      content: input.streaming ? `${body}${streamingCursor}` : body,
+      content: input.streaming ? `${body}${cursor}` : body,
       status: input.streaming ? "streaming…" : "partial response",
     })
   }

@@ -26,6 +26,10 @@ describe("status a11y glyphs", () => {
     expect(formatBusyStatus("cancelling response…")).toBe("◌ busy  ·  cancelling response…")
     expect(formatBusyStatus("reconnecting to event stream…")).toBe("◌ busy  ·  reconnecting to event stream…")
     expect(formatBusyStatus("busy  ·  already labeled")).toBe("◌ busy  ·  already labeled")
+    expect(formatBusyStatus("Veasel is thinking…", { frame: 1 })).toBe("◍ busy  ·  Veasel is thinking…")
+    expect(formatBusyStatus("Veasel is thinking…", { reducedMotion: true, frame: 1 })).toBe(
+      "◌ busy  ·  Veasel is thinking…",
+    )
   })
 
   test("reports measured streaming character growth without inventing tokens", () => {

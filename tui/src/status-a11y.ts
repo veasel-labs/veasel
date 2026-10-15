@@ -2,26 +2,34 @@
 // Distinct glyphs plus spoken words ("attention", "error", "selected") help
 // high-contrast terminals and screen-reader-ish copy/paste of the status row.
 
+import { busyGlyphForMotion } from "./reduced-motion"
+
 export type StatusLevel = "ok" | "warn" | "error" | "busy"
 
-export function statusGlyph(level: StatusLevel): string {
+export type BusyStatusOptions = {
+  reducedMotion?: boolean
+  frame?: number
+}
+
+export function statusGlyph(level: StatusLevel, options: BusyStatusOptions = {}): string {
   if (level === "ok") return "●"
   if (level === "warn") return "▲"
   if (level === "error") return "✖"
-  return "◌"
+  return busyGlyphForMotion(Boolean(options.reducedMotion), options.frame ?? 0)
 }
 
-export function formatStatusLine(level: StatusLevel, message: string): string {
-  return `${statusGlyph(level)} ${message}`
+export function formatStatusLine(level: StatusLevel, message: string, options: BusyStatusOptions = {}): string {
+  return `${statusGlyph(level, options)} ${message}`
 }
 
-// In-flight turns and reconnects: ◌ plus the spoken word "busy" so the row
-// stays meaningful when color is flat or when the status is copied as text.
-export function formatBusyStatus(message: string): string {
+// In-flight turns and reconnects: ◌ (or a quiet frame under reduced motion)
+// plus the spoken word "busy" so the row stays meaningful when color is flat
+// or when the status is copied as text.
+export function formatBusyStatus(message: string, options: BusyStatusOptions = {}): string {
   const trimmed = message.trim()
-  if (!trimmed) return formatStatusLine("busy", "busy")
-  if (/^busy\b/i.test(trimmed)) return formatStatusLine("busy", trimmed)
-  return formatStatusLine("busy", `busy  ·  ${trimmed}`)
+  if (!trimmed) return formatStatusLine("busy", "busy", options)
+  if (/^busy\b/i.test(trimmed)) return formatStatusLine("busy", trimmed, options)
+  return formatStatusLine("busy", `busy  ·  ${trimmed}`, options)
 }
 
 // Compact measured length for the streaming busy cue (not a token estimate).
@@ -35,9 +43,9 @@ export function formatStreamingCharCount(chars: number): string {
 
 // In-flight assistant deltas: keep ◌ busy, speak "streaming", and show measured
 // character growth so operators see progress without color alone.
-export function formatStreamingBusyStatus(chars: number): string {
-  if (chars <= 0) return formatBusyStatus("Veasel is thinking…")
-  return formatBusyStatus(`streaming  ·  ${formatStreamingCharCount(chars)}`)
+export function formatStreamingBusyStatus(chars: number, options: BusyStatusOptions = {}): string {
+  if (chars <= 0) return formatBusyStatus("Veasel is thinking…", options)
+  return formatBusyStatus(`streaming  ·  ${formatStreamingCharCount(chars)}`, options)
 }
 
 export function formatWarnStatus(message: string): string {

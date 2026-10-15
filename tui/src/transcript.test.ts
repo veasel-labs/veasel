@@ -50,6 +50,16 @@ describe("transcriptSegments", () => {
     expect(text).toBe(`◆ assistant  ·  streaming…\n${streamingCursor}`)
   })
 
+  test("accepts an override streaming cursor for reduced-motion frames", () => {
+    const text = transcriptPlainText(transcriptSegments({
+      messages: [],
+      streamingText: "hi",
+      streaming: true,
+      streamingCursor: "·",
+    }))
+    expect(text).toBe("◆ assistant  ·  streaming…\nhi·")
+  })
+
   test("labels an interrupted response as partial without a cursor", () => {
     const segments = transcriptSegments({ messages: [], streamingText: "half", streaming: false })
     expect(segments).toContainEqual({ text: "  ·  partial response", tone: "status" })

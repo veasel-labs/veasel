@@ -808,7 +808,8 @@ fn test_chat_exchange_is_persisted_atomically_and_replayed() {
 	session := store.create_session(SessionInput{ title: 'Chat', directory: '/tmp/chat' }) or {
 		panic(err)
 	}
-	exchange := store.append_exchange(session.id, '', 'What is this?', 'A test reply.', '', '', '') or {
+	exchange := store.append_exchange(session.id, '', 'What is this?', 'A test reply.', '', '', '',
+		ProviderUsage{}) or {
 		panic(err)
 	}
 	assert exchange.len == 2
@@ -831,7 +832,8 @@ fn test_chat_history_pages_use_an_exclusive_message_cursor() {
 		panic(err)
 	}
 	for index in 0 .. 3 {
-		_ = store.append_exchange(session.id, '', 'Question ${index}', 'Answer ${index}', '', '', '') or {
+		_ = store.append_exchange(session.id, '', 'Question ${index}', 'Answer ${index}', '', '', '',
+			ProviderUsage{}) or {
 			panic(err)
 		}
 	}
@@ -859,7 +861,7 @@ fn test_async_session_turn_completion_event_commits_with_exchange() {
 	}
 	operation_id := 'b1f21cb9-6f34-43d6-b924-7e8b71d9b307'
 	_ = store.append_exchange(session.id, operation_id, 'Review this change', 'Looks good.',
-		'openai-compatible', 'fixture-model', '') or { panic(err) }
+		'openai-compatible', 'fixture-model', '', ProviderUsage{}) or { panic(err) }
 	events := store.events_after(0) or { panic(err) }
 	completion := events[events.len - 1]
 	assert completion.type == 'session.turn_completed'
@@ -868,6 +870,35 @@ fn test_async_session_turn_completion_event_commits_with_exchange() {
 	assert completion.data.status == 'completed'
 	assert completion.data.provider == 'openai-compatible'
 	assert completion.data.model == 'fixture-model'
+	assert !completion.data.usage_reported
+	assert completion.data.input_tokens == 0
+	assert completion.data.output_tokens == 0
+}
+
+fn test_session_operation_persists_provider_reported_token_usage() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'Usage chat', directory: '/tmp/usage' }) or {
+		panic(err)
+	}
+	operation_id := 'c2a31db0-7e45-44e7-8035-8f9c82e0c418'
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	_ = store.append_exchange(session.id, operation_id, 'Count tokens', 'Done.', 'openai-compatible',
+		'fixture-model', '', ProviderUsage{
+			input_tokens:  1200
+			output_tokens: 340
+			reported:      true
+		}) or { panic(err) }
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'completed'
+	assert operation.usage_reported
+	assert operation.input_tokens == 1200
+	assert operation.output_tokens == 340
+	events := store.events_after(0) or { panic(err) }
+	completion := events.filter(it.type == 'session.turn_completed')[0]
+	assert completion.data.usage_reported
+	assert completion.data.input_tokens == 1200
+	assert completion.data.output_tokens == 340
 }
 
 fn test_session_operation_survives_restart_and_uncertain_work_is_not_replayed() {
@@ -912,7 +943,7 @@ fn test_session_operation_completion_commits_with_chat_history() {
 	operation_id := 'a21fdf7a-cd12-49a2-9617-f60cf12b824c'
 	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
 	_ = store.append_exchange(session.id, operation_id, 'Question', 'Answer', 'openai-compatible',
-		'fixture-model', '') or { panic(err) }
+		'fixture-model', '', ProviderUsage{}) or { panic(err) }
 	mut duplicate_rejected := false
 	_ = store.create_session_operation(session.id, operation_id) or {
 		duplicate_rejected = err.msg() == 'session operation already exists'

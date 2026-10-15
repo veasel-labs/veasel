@@ -25,6 +25,7 @@ import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
 import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
+import { statusWithUsage } from "./usage"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
 const tuiCliAction = parseTuiCliAction(process.argv)
@@ -51,6 +52,9 @@ type ChatExchange = {
   messages: ChatTurn[]
   provider: string
   model: string
+  usage_reported?: boolean
+  input_tokens?: number
+  output_tokens?: number
 }
 
 type SessionTurnAccepted = {
@@ -64,6 +68,9 @@ type SessionTurnCompletion = {
   provider?: string
   model?: string
   error?: string
+  usage_reported?: boolean
+  input_tokens?: number
+  output_tokens?: number
 }
 
 type PluginCatalog = {
@@ -649,7 +656,7 @@ async function sendMessage(value: string) {
     chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
     renderChat(mergeChatTurns(chatMessages, latest))
     await notifyPendingProposals()
-    status.content = `● ${exchange.provider}  ·  ${exchange.model}`
+    status.content = statusWithUsage(exchange.provider, exchange.model, exchange)
     status.fg = "#a7f3d0"
   } catch (error) {
     if (activeTurnCancelled) {
@@ -788,7 +795,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   activeTurnCancelled = false
   if (completion.status === "completed") {
     if (historyLoaded) {
-      status.content = `● ${completion.provider ?? "provider"}  ·  ${completion.model ?? "assistant"}`
+      status.content = statusWithUsage(completion.provider ?? "provider", completion.model ?? "assistant", completion)
       status.fg = "#a7f3d0"
     }
   } else if (completion.status === "uncertain") {

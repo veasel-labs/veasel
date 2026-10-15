@@ -115,9 +115,13 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   workspace state before continuing; durable single-use approvals are recovered
   after restart (`main_test.v`: restart/uncertain cases for shell, MCP, edits
   and session operations).
-- [ ] General execution history and runtime observability beyond opt-in ATIF
-  traces: provider usage is captured there, but Veasel does not yet expose a
-  durable usage dashboard or comprehensive runtime metrics.
+- [x] Persist provider-reported token counts on completed session operations and
+  expose them on operation status/result, `session.turn_completed` events,
+  synchronous ChatExchange responses, the TUI status line, and `veasel run`
+  JSON. Counts are omitted unless an adapter set `usage.reported`; cost remains
+  unavailable without authoritative price schedules.
+- [ ] General execution history and a durable usage/cost dashboard beyond
+  per-turn reported tokens and opt-in ATIF `final_metrics`.
 
 ### Milestone 4 — extensibility
 

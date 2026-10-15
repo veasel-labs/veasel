@@ -10,9 +10,14 @@ The specification is normative; the upstream
 is a secondary comparison source and describes itself as a demonstration
 library, not a production dependency.
 **MCP protocol revision:** [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28)
-**Veasel status:** experimental local discovery, per-session Skills activation,
-and per-session trusted MCP stdio and Streamable HTTP tools are implemented.
-The full Agent Plugins v1.0.0 conformance gate remains open.
+**Veasel status:** **READY for local Agent Plugins** — directory packages,
+operator-managed links (durable registry + replace/restore), component
+enable/disable, install UX summaries, per-session Skills activation, and
+per-session trusted MCP stdio / Streamable HTTP tools ship with a CI-gated
+spec-derived fixture corpus (`plugin-manifests` ≥50, `mcp-documents` ≥73,
+`skill-frontmatter` ≥45 on Linux and Windows). This is **not** a remote
+marketplace, upstream cross-implementation suite, or full independent
+conformance certificate; those residuals stay open below.
 
 The pinned upstream repository publishes the v1.0.0 specification and JSON
 schemas, but no conformance fixture suite. Veasel's fixture corpus must
@@ -75,7 +80,7 @@ portable-format requirements, and will be exercised in tests.
 | Failure isolation | Invalid MCP config disables only MCP; invalid entries/unsupported transports/connection failures skip that server; independent skills still load. | Verified for component/config isolation; trusted stdio and HTTP connection, initialization, tool-list, and HTTP authorization failures skip that server while an independent trusted server still loads. | `plugins_test.v`: `test_agent_plugin_component_discovery_is_optional_and_isolated` and `test_agent_plugin_mcp_config_isolated_and_transport_bounded`; `plugin_mcp_http_transport_test.v:test_plugin_mcp_streamable_http_stateless_discovery_sse_tool_call_and_redirect_policy` covers a 401 server alongside the working fixture server. |
 | Client extension | Own and document reverse-domain `com.veasel.code`; read only its exact top-level directory and object-valued manifest namespace; ignore every unknown namespace. | Implemented for the documented `display_name` label and for recording that an exact `com.veasel.code` directory resolves inside the package. Unknown namespaces stay opaque. Directory contents are not listed, read, or executed, and the catalog does not return a filesystem path. This is not plugin installation or full conformance. | `plugins_test.v:test_veasel_code_extension_reads_label_and_contained_directory`; `tests/agent_plugins/v1.0.0/plugin-manifests.json` covers a valid label, an unsupported owned-namespace field, an invalid label, and an opaque foreign namespace. |
 | User control | The standard leaves permissions and sandboxing to each client. Veasel must display provenance, trust state and exact MCP effects before allowing execution. | Per-session server trust/revocation and explicit per-call review are implemented. Each model-requested MCP call durably stores its server, native tool and bounded exact argument JSON, pauses the turn, and waits for inspect plus approve/reject. Rejected calls never reach the server; restarted pending/approved calls are cancelled and running calls become uncertain without replay. TUI review visibly escapes terminal controls and direction characters. On Linux, trusted stdio may wrap in Bubblewrap when `VEASEL_MCP_STDIO_SANDBOX=auto|require` and `bwrap` is available (capability `mcp.stdio.sandbox.bubblewrap`; network shared; PLUGIN_ROOT/PLUGIN_DATA writable). On macOS, the same knobs wrap via `/usr/bin/sandbox-exec` when present (capability `mcp.stdio.sandbox.seatbelt`; network shared; PLUGIN_ROOT/PLUGIN_DATA writable). On Windows, the same knobs wrap via AppContainer + Job when available (capability `mcp.stdio.sandbox.windows`; PLUGIN_ROOT/PLUGIN_DATA ACL grants; network capability SIDs always on). Default/unset is unsandboxed (stderr warns when starting unsandboxed). Missing backends under auto fall back unsandboxed honestly; `require` fails closed. Operators can also add standalone stdio/Streamable HTTP servers outside plugin packages via `GET/POST /v1/mcp-servers` and `PATCH/DELETE /v1/mcp-servers/{name}` (capability `mcp.servers.configured`, synthetic catalog package `configured`, trust as `configured/<name>`, TUI `/mcp add|enable|disable|remove`). | `main_test.v:test_mcp_tool_call_requires_inspection_approval_and_recovers_without_replay`; `configured_mcp_test.v`; API smoke covers inspect/approve/reject and proves fixture effects happen only after approval. MCP server effects remain arbitrary within that process's privileges. OAuth authorize/complete, loopback listener, and headless `veasel mcp oauth` are shipped. |
-| Veasel plugin management (extension beyond v1) | Add/remove a local plugin directory; enable/disable components independently; display metadata, source path, unsupported items, and trust state; preserve its dedicated data directory across updates. | Partial: package links via `/v1/plugins/links`, TUI `/plugin add|remove`, and headless `veasel plugins links list|add|remove` (`plugins.links`). Link list/add responses include validated package summary fields (`version`, `description`, `display_name`, `skill_count`, `mcp_server_count`) for install UX without a second catalog round-trip. Intended link targets persist in `$VEASEL_DATA_DIR/plugin-links.json`; list restores a missing symlink when the registered package still validates, and `replace` updates an existing link that points elsewhere. Component enable/disable via `GET/PATCH /v1/plugins/components` (`plugins.components`, `$VEASEL_DATA_DIR/plugin-components.json`) and headless `veasel plugins components list|enable|disable`; catalog skill/MCP rows expose `enabled`; disabled skills cannot be session-activated and disabled MCP servers cannot be trusted. PLUGIN_DATA remains keyed by plugin name. A broader remote package marketplace remains open. | `plugins_links.v`, `plugins_components.v`, `headless_plugins.v`, OpenAPI `/v1/plugins/components` and `/v1/plugins/links`. |
+| Veasel plugin management (extension beyond v1) | Add/remove a local plugin directory; enable/disable components independently; display metadata, source path, unsupported items, and trust state; preserve its dedicated data directory across updates. | **READY (local):** package links via `/v1/plugins/links`, TUI `/plugin add [--replace]|remove`, and headless `veasel plugins links list|add [--replace]|remove` (`plugins.links`). Link list/add responses include validated package summary fields (`version`, `description`, `display_name`, `skill_count`, `mcp_server_count`) for install UX without a second catalog round-trip. Intended link targets persist in `$VEASEL_DATA_DIR/plugin-links.json`; list restores a missing symlink when the registered package still validates, and `replace` updates an existing link that points elsewhere. Component enable/disable via `GET/PATCH /v1/plugins/components` (`plugins.components`, `$VEASEL_DATA_DIR/plugin-components.json`) and headless `veasel plugins components list|enable|disable`; catalog skill/MCP rows expose `enabled`; disabled skills cannot be session-activated and disabled MCP servers cannot be trusted. PLUGIN_DATA remains keyed by plugin name. A remote package marketplace / registry install remains open and is **not** claimed. | `plugins_links.v`, `plugins_components.v`, `headless_plugins.v`, `headless_plugins_test.v`, OpenAPI `/v1/plugins/components` and `/v1/plugins/links`. |
 | Veasel configured MCP (extension beyond v1) | Add/list/update/remove MCP servers without packaging an Agent Plugin; optional enable/disable; reuse per-session trust and per-call approval. | Shipped for **user** (`$VEASEL_DATA_DIR/mcp-servers.json`), **project** (`<workspace>/.veasel/mcp-servers.json`), and read-only **project-import** of portable `mcpServers` layouts (`.mcp.json`, `.cursor/mcp.json`; not `.vscode/mcp.json`). Precedence for `configured/<name>`: project > project-import (`.mcp.json` then `.cursor/mcp.json`) > user. Plugin servers stay `<plugin>/<server>`. API/TUI and headless `veasel mcp` expose scope; imports are not writable. Stdio and Streamable HTTP only; unexpanded `${…}` entries skipped; named HTTP credentials via `/v1/mcp-credentials`; stdio `notifications/cancelled` on turn cancel; OAuth authorize/complete + loopback + headless `veasel mcp oauth` shipped; no install-script execution. Per-call approval remains mandatory. | `configured_mcp.v`, `mcp_credentials.v`, `headless_mcp.v`, `mcp_oauth_*.v`, `plugin_mcp_transport.v`, OpenAPI `/v1/mcp-servers`, `/v1/mcp-credentials`, `/v1/mcp-oauth/*`, TUI `/mcp`. |
 
 ## V standard-library reuse
@@ -93,7 +98,8 @@ for HTTPS, bounded body reads and `max_retries: 1` (one attempt). `vlib/mcp`
 still handles JSON-RPC, initialization, protocol negotiation and lifecycle.
 Configured headers never leave the declared origin because all redirects fail.
 Agent Plugins makes legacy HTTP+SSE optional, so Veasel does not claim that
-transport. This experimental implementation is not a full conformance claim.
+transport. Local host READY is not a marketplace or cross-implementation
+conformance certificate.
 
 ## Current implementation boundary
 
@@ -171,10 +177,9 @@ when a required authorization server refuses pre-registered clients.
 ## Local client readiness vs conformance claim
 
 **Local Agent Plugins client** (directory packages, Skills, MCP stdio/HTTP,
-links, component toggles, per-call consent, opt-in stdio sandbox) is
-substantially shipped with Linux/Windows fixture corpora. A product Build Board
-may label that local client **READY** when the matrix rows above are honest and
-automated.
+links with replace/restore + install summaries, component toggles, per-call
+consent, opt-in stdio sandbox) is **READY** on the product Build Board, backed
+by the Linux/Windows CI fixture corpora and management surfaces above.
 
 **Full Agent Plugins v1.0.0 conformance** remains a separate claim. Do not
 advertise cross-implementation conformance, a marketplace, or upstream fixture
@@ -182,12 +187,17 @@ parity until the release gate below passes. DCR stays deferred.
 
 ## Release gate
 
-Do not claim Agent Plugins compatibility until every required matrix row has
-automated fixture evidence, all core requirements in the pinned spec are
-covered, and independent valid components survive neighboring component
-failures. Derive and maintain local fixtures from the pinned specification and
-schemas, record their requirement mapping here, and include upstream license
-notices if any material is vendored. If the upstream repository publishes a
-fixture suite, pin its source revision and license before adopting it. Keep the
-spec commit, schema hashes, and fixture source revisions in this document when
-updated.
+**Local Agent Plugins host:** claim READY when every required portable-format
+matrix row has automated fixture evidence on CI, core pinned-spec behaviors are
+covered, independent valid components survive neighboring failures, and local
+install UX (links + summaries + component toggles + durable registry) is
+shipped. That bar is met for Veasel's local host.
+
+**Do not claim:** a remote marketplace, upstream-published cross-implementation
+fixtures (none exist at the pinned revision), legacy HTTP+SSE, OAuth DCR, or
+parity with every optional client behavior outside the portable format. Derive
+and maintain local fixtures from the pinned specification and schemas, record
+their requirement mapping here, and include upstream license notices if any
+material is vendored. If the upstream repository publishes a fixture suite, pin
+its source revision and license before adopting it. Keep the spec commit,
+schema hashes, and fixture source revisions in this document when updated.

@@ -99,8 +99,10 @@ The working vertical slice includes:
   `veasel run` when adapters set `usage.reported` (no invented cost)
 - Bounded workspace list/read/search; durable edit/shell/MCP proposals that
   require explicit review before effect
-- Experimental Agent Plugins Skills + trusted stdio / Streamable HTTP MCP
-  (not full v1.0.0 conformance — see the [ledger](docs/compatibility/agent-plugins.md))
+- Agent Plugins (local READY): package discovery, durable `/plugin` links with
+  install summaries, component toggles, Skills, and trusted stdio / Streamable
+  HTTP MCP with per-call review (no remote marketplace — see the
+  [ledger](docs/compatibility/agent-plugins.md))
 
 Honesty bounds that stay in the product voice:
 

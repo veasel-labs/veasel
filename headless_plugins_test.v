@@ -48,12 +48,26 @@ fn test_headless_plugins_parses_links_commands() {
 	]) or { panic(err) }
 	assert added.action == .links_add
 	assert added.path == '/tmp/external-plugin'
+	assert !added.replace
+
+	replaced := parse_headless_plugins_args([
+		'links',
+		'add',
+		'--replace',
+		'/tmp/retarget-plugin',
+	]) or { panic(err) }
+	assert replaced.action == .links_add
+	assert replaced.path == '/tmp/retarget-plugin'
+	assert replaced.replace
 
 	removed := parse_headless_plugins_args(['links', 'remove', 'demo']) or { panic(err) }
 	assert removed.action == .links_remove
 	assert removed.name == 'demo'
 
 	if _ := parse_headless_plugins_args(['links', 'add']) {
+		assert false
+	}
+	if _ := parse_headless_plugins_args(['links', 'list', '--replace']) {
 		assert false
 	}
 }

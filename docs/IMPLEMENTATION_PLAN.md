@@ -209,8 +209,16 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   Veasel still does not consume Muse's full advertised 1,048,576-token context
   window. Provider-reported token usage is aggregated into opt-in ATIF
   `final_metrics` (Milestone 3); cost remains unavailable because Veasel does not
-  yet integrate authoritative provider price schedules. Increasing input context
-  safely remains open work.
+  yet integrate authoritative provider price schedules.
+- [x] Adaptive session compaction for in-flight provider requests when measured
+  UTF-8 payload bytes (or conversation message count) cross a local pressure
+  threshold: older turns are replaced with an untrusted extractive summary,
+  recent turns stay verbatim, durable SQLite chat history is preserved, and a
+  `session.compaction` event records measured bytes before/after plus a
+  conservative bytes/4 token bound. This is not LLM summarization, not
+  provider-native compaction, and not a claim of Muse's advertised token window.
+  Repository maps, prompt-cache accounting, and LLM/native summarizers remain
+  open.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

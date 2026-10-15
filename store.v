@@ -71,15 +71,24 @@ pub:
 
 struct EventData {
 pub:
-	operation_id   string @[omitempty]
-	delta          string @[omitempty]
-	status         string @[omitempty]
-	provider       string @[omitempty]
-	model          string @[omitempty]
-	error          string @[omitempty]
-	input_tokens   i64    @[omitempty]
-	output_tokens  i64    @[omitempty]
-	usage_reported bool   @[omitempty]
+	operation_id                   string @[omitempty]
+	delta                          string @[omitempty]
+	status                         string @[omitempty]
+	provider                       string @[omitempty]
+	model                          string @[omitempty]
+	error                          string @[omitempty]
+	input_tokens                   i64    @[omitempty]
+	output_tokens                  i64    @[omitempty]
+	usage_reported                 bool   @[omitempty]
+	compaction_bytes_before        int    @[omitempty]
+	compaction_bytes_after         int    @[omitempty]
+	compaction_token_bound_before  int    @[omitempty]
+	compaction_token_bound_after   int    @[omitempty]
+	compaction_summarized_messages int    @[omitempty]
+	compaction_kept_messages       int    @[omitempty]
+	compaction_reason              string @[omitempty]
+	compaction_untrusted           bool   @[omitempty]
+	compaction_summary_preview     string @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -1151,6 +1160,46 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 		output_tokens:   row.val(3).i64()
 		usage_reported:  reported_turns > 0
 		cost:            'unavailable'
+	}
+}
+
+fn (mut store Store) record_session_compaction(session_id string, operation_id string,
+	measurement SessionCompactionMeasurement, summary string) ! {
+	if measurement.triggered == false {
+		return
+	}
+	if !validate_operation_id(operation_id) {
+		return error('invalid session operation identifier')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin() or {
+		return error('unable to begin session compaction event')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.compaction',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id:                   operation_id
+			compaction_bytes_before:        measurement.bytes_before
+			compaction_bytes_after:         measurement.bytes_after
+			compaction_token_bound_before:  measurement.estimated_token_bound_before
+			compaction_token_bound_after:   measurement.estimated_token_bound_after
+			compaction_summarized_messages: measurement.summarized_message_count
+			compaction_kept_messages:       measurement.kept_message_count
+			compaction_reason:              measurement.reason
+			compaction_untrusted:           true
+			compaction_summary_preview:     compaction_summary_preview(summary)
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record session compaction event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session compaction event')
 	}
 }
 

@@ -1101,7 +1101,7 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. Cost is never estimated.
+      description: Replays persisted events newer than Last-Event-ID, then streams new events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, and an untrusted summary preview; durable chat history rows are not deleted. Cost is never estimated.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -1112,7 +1112,7 @@ paths:
             minimum: 0
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, and session.turn_completed carries its final status.
+          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, session.compaction reports measured request-payload compaction, and session.turn_completed carries its final status.
           content:
             text/event-stream:
               schema:
@@ -1141,7 +1141,7 @@ components:
           type: string
         features:
           type: array
-          description: Includes sessions.operations.trace.atif_v1_8 for opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files.
+          description: Includes sessions.operations.trace.atif_v1_8 for opt-in successful operation trajectory export. Traces may contain prompt and workspace content. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted extractive summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings.
           items:
             type: string
     ModelSettingsInput:

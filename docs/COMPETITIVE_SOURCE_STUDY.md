@@ -46,6 +46,17 @@ does not have equivalent user-facing recovery/permission breadth. Preserve the
 existing approval boundary while improving event lifecycles; don't copy its
 TypeScript/Effect stack into V.
 
+Rechecked the session runner on 2026-10-15 at
+`37df62f4a1b6d89187a1169187a6cef10557c0ca` (`dev`), in
+`packages/core/src/session/runner/llm.ts` and `max-steps.ts`. When an agent
+reaches its step limit, that runner keeps the tool definitions for the cached
+prefix but sets tool choice to none and asks for a text-only status. The rest
+of the 2026-10-12 OpenCode notes above were not re-audited at this commit.
+Veasel still executes tools one at a time. Its own tool-round cap now spends
+the blocked round on one tools-disabled completion and keeps that text when it
+is non-empty. The pending tool calls are not executed. This does not copy
+OpenCode's prompt, compaction, or permission model.
+
 ### Codex CLI — concurrent work, ordered transcript, independent sandbox policy
 
 In [`stream_events_utils.rs`](https://github.com/openai/codex/blob/a9b0815167c27ab13719dd12d13b63e02b70d221/codex-rs/core/src/stream_events_utils.rs)

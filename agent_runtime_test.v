@@ -419,6 +419,37 @@ fn test_provider_tool_transcripts_preserve_native_context() {
 	assert !public_completion.contains('tool_calls')
 }
 
+fn test_tool_budget_summary_keeps_history_and_does_not_mutate_the_system_prompt() {
+	messages := [
+		ChatMessage{
+			role:    'system'
+			content: 'You are Veasel.'
+		},
+		ChatMessage{
+			role:    'user'
+			content: 'Fix the test.'
+		},
+		ChatMessage{
+			role:         'tool'
+			content:      'file contents'
+			tool_call_id: 'call-1'
+		},
+	]
+	summary := messages_for_tool_budget_summary(messages)
+	assert summary.len == messages.len
+	assert summary[0].role == 'system'
+	assert summary[0].content.starts_with('You are Veasel.')
+	assert summary[0].content.contains('tool budget')
+	assert summary[1].content == 'Fix the test.'
+	assert summary[2].tool_call_id == 'call-1'
+	assert messages[0].content == 'You are Veasel.'
+	without_system := messages_for_tool_budget_summary(messages[1..])
+	assert without_system.len == 3
+	assert without_system[0].role == 'system'
+	assert without_system[0].content.contains('were not run')
+	assert without_system[1].content == 'Fix the test.'
+}
+
 fn test_agent_context_byte_limit_accounts_for_opaque_provider_context() {
 	messages := [
 		ChatMessage{

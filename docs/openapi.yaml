@@ -243,6 +243,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/plugins/components:
+    get:
+      operationId: listPluginComponents
+      description: Lists durable per-plugin skill and MCP component enablement overrides persisted in `$VEASEL_DATA_DIR/plugin-components.json`. Absent entries default to enabled. Disabled components remain visible in `/v1/plugins` with `enabled=false` but cannot be trusted or session-activated.
+      responses:
+        '200':
+          description: Component overrides (disabled entries and restored enabled removals).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginComponentCatalog'
+    patch:
+      operationId: patchPluginComponent
+      description: Enables or disables one skill or MCP server inside an Agent Plugin package. Disabling refuses session skill activation and MCP trust for that component. Enabling removes the override (default on). Does not delete PLUGIN_DATA.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginComponentToggleInput'
+      responses:
+        '200':
+          description: Updated component view.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginComponentView'
+        '400':
+          description: Invalid plugin, kind, name, or body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/plugins/links:
     get:
       operationId: listPluginLinks
@@ -2050,6 +2083,30 @@ components:
       required: [removed]
       properties:
         removed: { type: string }
+    PluginComponentCatalog:
+      type: object
+      required: [components]
+      properties:
+        path: { type: string, description: Absolute path of plugin-components.json when available. }
+        components:
+          type: array
+          items: { $ref: '#/components/schemas/PluginComponentView' }
+    PluginComponentView:
+      type: object
+      required: [plugin, kind, name, enabled]
+      properties:
+        plugin: { type: string }
+        kind: { type: string, enum: [skill, mcp] }
+        name: { type: string }
+        enabled: { type: boolean }
+    PluginComponentToggleInput:
+      type: object
+      required: [plugin, kind, name, enabled]
+      properties:
+        plugin: { type: string }
+        kind: { type: string, enum: [skill, mcp] }
+        name: { type: string }
+        enabled: { type: boolean }
     PluginLinkCatalog:
       type: object
       required: [links, diagnostics]
@@ -2129,7 +2186,7 @@ components:
           description: True when a com.veasel.code directory resolves inside the package. Contents are not returned or executed.
     PluginSkillSummary:
       type: object
-      required: [name, description, allowed_tools_declared, allowed_tools]
+      required: [name, description, allowed_tools_declared, allowed_tools, enabled]
       properties:
         name: { type: string }
         description: { type: string }
@@ -2146,9 +2203,12 @@ components:
         scope:
           type: string
           description: Present for standalone discoveries; project, user, or configured.
+        enabled:
+          type: boolean
+          description: False when an operator disabled this skill via `/v1/plugins/components`.
     PluginMCPServerSummary:
       type: object
-      required: [name, transport, command, url_origin, header_count, header_names]
+      required: [name, transport, command, url_origin, header_count, header_names, enabled]
       properties:
         name: { type: string }
         transport: { type: string }

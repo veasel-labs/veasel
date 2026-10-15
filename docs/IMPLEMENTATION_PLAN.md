@@ -195,8 +195,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   client namespace `com.veasel.code` records an optional `display_name` and
   whether its directory stays inside the package; it does not read that
   directory. Remaining gaps (OAuth, GET notification streams,
-  `notifications/cancelled`, plugin component enable/disable) are tracked in
+  `notifications/cancelled`) are tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
+  Plugin skill/MCP component enable/disable is available via
+  `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
   persist per-session activation, include bounded instructions as untrusted
   model context, and let the model read bounded resources from active Skill

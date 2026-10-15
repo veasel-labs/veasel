@@ -91,7 +91,21 @@ describe("formatSessionUsageSummary", () => {
     expect(text).toContain("Total (in+out): 1.9k")
     expect(text).toContain("Avg per reported turn: 750 in · 200 out")
     expect(text).toContain("Prompt cache: unavailable")
-    expect(text).toContain("Cost: unavailable (no price schedule)")
+    expect(text).toContain("Cost: unavailable (no matching pinned schedule rates)")
+  })
+
+  test("surfaces USD cost when the server returns a priced total", () => {
+    const text = formatSessionUsageSummary({
+      session_id: "s",
+      completed_turns: 1,
+      reported_turns: 1,
+      input_tokens: 1000,
+      output_tokens: 500,
+      usage_reported: true,
+      cost: "$0.0123",
+    })
+    expect(text).toContain("Cost: $0.0123")
+    expect(text).not.toContain("Cost: unavailable")
   })
 
   test("surfaces provider-reported cache totals when present", () => {

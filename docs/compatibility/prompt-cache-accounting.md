@@ -120,6 +120,6 @@ hits; hits appear only when the provider reports cache usage fields.
 | OpenAI GPT-5.6+ `prompt_cache_options` / breakpoints | Not implemented |
 | Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire are explicit helpers (not turn path), fixture-tested over loopback HTTP |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |
-| Models.dev-priced USD cost | Still unavailable |
+| Models.dev-priced USD cost | Shipped for curated pinned schedule rows (`tools/cost-schedule/schedule.json`, embedded); session `cost` is USD only when every reported turn matches; else `unavailable` |
 | Reasoning-token split | Shipped as provider-reported `reasoning_tokens` / `reasoning_reported` (OpenAI Chat `completion_tokens_details.reasoning_tokens`, OpenAI Responses `output_tokens_details.reasoning_tokens`, Gemini `thoughtsTokenCount`); persisted on operations and session usage; never invented when keys are absent |
 | Claiming dollar savings without price pins | Forbidden |

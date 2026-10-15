@@ -33,6 +33,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		'workspace.commands.reject', 'sessions.operations.list', 'sessions.operations.result',
 		'sessions.operations.trace.atif_v1_8', 'sessions.operations.durable_queue',
 		'sessions.usage.prompt_cache']
+	if anthropic_prompt_cache_enabled() {
+		features << 'provider.anthropic.prompt_cache'
+	}
 	if shell_sandbox_bubblewrap_capability() {
 		features << 'shell.sandbox.bubblewrap'
 	}

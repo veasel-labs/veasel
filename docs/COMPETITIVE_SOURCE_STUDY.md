@@ -73,7 +73,8 @@ when providers include cache fields, `cache_read_tokens` /
 session usage, `veasel run` JSON, ATIF `final_metrics`, and the TUI `/usage`
 view when `usage.reported` / `cache_reported` are true. Field mapping pin:
 [`compatibility/prompt-cache-accounting.md`](compatibility/prompt-cache-accounting.md).
-Request-side cache breakpoints remain open.
+Anthropic Messages also emit request-side `cache_control` markers by default
+(`provider.anthropic.prompt_cache`); hits remain provider-reported only.
 
 ### Codex CLI — concurrent work, ordered transcript, independent sandbox policy
 

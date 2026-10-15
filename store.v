@@ -1202,6 +1202,15 @@ fn (mut store Store) enqueue_session_operation(session_id string, operation_id s
 	if request_json.len > max_chat_input_bytes + 2048 {
 		return error('queued session operation request exceeds the size limit')
 	}
+	input := json2.decode[ChatMessageInput](request_json) or {
+		return error('queued session operation request is invalid')
+	}
+	validate_messages([
+		ChatMessage{
+			role:    'user'
+			content: input.content
+		},
+	]) or { return error('queued session operation request is invalid') }
 	return store.insert_session_operation(session_id, operation_id, 'queued', request_json,
 		'session.turn_queued')
 }

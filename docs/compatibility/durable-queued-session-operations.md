@@ -32,6 +32,9 @@ loopback HTTP API (`queued` → `running` → terminal).
 - Capabilities: `sessions.operations.durable_queue`, `sessions.operations.list`
 - Bound: at most 32 `queued` rows per session; further enqueues return `503` with
   `Retry-After: 1` and do not persist another queue row
+- Enqueue fail-closed: request JSON must decode as `ChatMessageInput` with
+  non-empty user content (no NUL); invalid payloads never become `queued` rows.
+  Resume still re-validates for legacy or manually repaired rows
 
 Approvals for edits, shell, and MCP remain mandatory. Loopback Host/Origin
 defaults are unchanged. Cancel of a `queued` row is terminal without starting a

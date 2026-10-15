@@ -609,12 +609,15 @@ def main() -> None:
         screen.send("s", 0.5)
         screen.wait_for("Provider settings", 4)
         screen.wait_for("Tab cycles", 4)
-        screen.wait_for("Tab scope", 4)
+        screen.wait_for("Tab ·", 4)
         screen.wait_for("Home/End", 4)
-        screen.wait_for("Ctrl+L clear", 4)
+        screen.wait_for("j/k", 4)
+        screen.wait_for("Ctrl+L", 4)
         screen.wait_for("selected ", 4)
         screen.wait_for(" of ", 4)
         screen.wait_for("1 OF 3")
+        screen.send("j", 0.35)  # j moves down when filter is empty
+        screen.send("k", 0.35)  # k moves back up
         screen.send("zzz", 0.45)
         screen.wait_for("No providers match", 4)
         screen.send("\x0c", 0.4)  # Ctrl+L clears provider filter

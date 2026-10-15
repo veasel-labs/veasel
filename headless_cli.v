@@ -292,7 +292,7 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 			'failed', 'cancelled', 'uncertain' {
 				return headless_operation_result(port, session_id, operation_id, operation, options.trace_file)
 			}
-			'running', 'cancelling' {
+			'queued', 'running', 'cancelling' {
 				time.sleep(headless_poll_interval)
 			}
 			else {

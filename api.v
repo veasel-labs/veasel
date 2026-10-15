@@ -221,7 +221,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 	for _ in 0 .. session_turn_lock_stripes {
 		session_turn_locks << sync.new_semaphore_init(1)
 	}
-	return &App{
+	app := &App{
 		store:                    store
 		plugin_directory:         plugin_directory
 		plugin_data_directory:    os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
@@ -241,6 +241,9 @@ fn new_app(store &Store, plugin_directory string) &App {
 			workers: sync.new_waitgroup()
 		}
 	}
+	// Queued Prefer: respond-async turns survive store reopen; resume workers now.
+	app.resume_durable_queued_operations()
+	return app
 }
 
 fn (app &App) session_turn_lock(id string) &sync.Semaphore {
@@ -828,6 +831,21 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 	})
 }
 
+@['/v1/sessions/:id/operations'; get]
+pub fn (app &App) list_session_operations(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut store := app.store
+	operations := store.list_session_operations(id) or {
+		return json_server_error(mut ctx, 'Unable to list session operations')
+	}
+	return ctx.json(operations)
+}
+
 @['/v1/sessions/:id/operations/:operation_id'; get]
 pub fn (app &App) get_session_operation(mut ctx Context, id string, operation_id string) veb.Result {
 	_ := app.store.get_session(id) or {
@@ -910,16 +928,32 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 	canonical_id := canonical_operation_id(operation_id) or {
 		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
 	}
-	if !app.cancel_turn_operation(id, canonical_id) {
-		ctx.res.set_status(.not_found)
-		return ctx.json(APIError{
-			error: 'active operation not found'
+	mut store := app.store
+	operation := store.get_session_operation(id, canonical_id) or {
+		// Synchronous turns may exist only in the process-local registry.
+		if !app.cancel_turn_operation(id, canonical_id) {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'active operation not found'
+			})
+		}
+		ctx.res.set_status(.accepted)
+		return ctx.json(CancelTurnResponse{
+			operation_id: canonical_id
+			status:       'cancelling'
 		})
 	}
-	mut store := app.store
-	status := store.mark_session_operation_cancelling(id, canonical_id) or {
+	if operation.status in ['completed', 'failed', 'cancelled', 'uncertain'] {
+		ctx.res.set_status(.accepted)
+		return ctx.json(CancelTurnResponse{
+			operation_id: canonical_id
+			status:       operation.status
+		})
+	}
+	status := store.cancel_session_operation(id, canonical_id) or {
 		return json_server_error(mut ctx, 'Unable to persist cancellation state')
 	}
+	_ = app.cancel_turn_operation(id, canonical_id)
 	ctx.res.set_status(.accepted)
 	return ctx.json(CancelTurnResponse{
 		operation_id: canonical_id
@@ -1034,7 +1068,8 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	}
 	if request_prefers_async(mut ctx) {
 		mut store := app.store
-		store.create_session_operation(id, operation_id) or {
+		request_json := json2.encode(input)
+		store.enqueue_session_operation(id, operation_id, request_json) or {
 			app.finish_turn_operation(operation_id)
 			cancel()
 			if err.msg() == 'session operation already exists' {
@@ -1043,12 +1078,12 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
 		turn_done := turn_ctx.done()
-		app.start_async_session_message(operation_id, turn_done, cancel, id, session, input)
+		app.schedule_durable_session_operation(operation_id, turn_done, cancel, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
 		return ctx.json(SessionTurnAccepted{
 			operation_id: operation_id
-			status:       'running'
+			status:       'queued'
 		})
 	}
 	defer {
@@ -1103,35 +1138,6 @@ fn request_prefers_async(mut ctx Context) bool {
 		}
 	}
 	return false
-}
-
-fn (app &App) start_async_session_message(operation_id string, turn_done chan int,
-	cancel vcontext.CancelFn, id string, session Session, input ChatMessageInput) {
-	spawn fn (app &App, operation_id string, turn_done chan int, cancel vcontext.CancelFn, id string,
-		session Session, input ChatMessageInput) {
-		mut background := vcontext.background()
-		mut turn_ctx, cancel_turn := vcontext.with_timeout(mut background, max_agent_turn_duration)
-		worker_done := chan int{cap: 1}
-		spawn fn (turn_done chan int, worker_done chan int, cancel_turn vcontext.CancelFn) {
-			select {
-				_ := <-turn_done {
-					cancel_turn()
-				}
-				_ := <-worker_done {
-				}
-			}
-		}(turn_done, worker_done, cancel_turn)
-		defer {
-			worker_done <- 0
-			cancel_turn()
-			app.finish_turn_operation(operation_id)
-			cancel()
-		}
-		_ = app.run_session_message(mut turn_ctx, id, session, input, operation_id) or {
-			app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
-			return
-		}
-	}(app, operation_id, turn_done, cancel, id, session, input)
 }
 
 // persist_partial_trace keeps the steps captured before a turn failed or was

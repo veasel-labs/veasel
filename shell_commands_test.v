@@ -86,10 +86,11 @@ fn test_approved_shell_uses_bubblewrap_when_available() {
 	assert shell_sandbox_bubblewrap_capability()
 
 	parent := os.join_path(os.temp_dir(), 'veasel-approved-sandbox-${uuid.new_v4().str()}')
-	root := os.join_path(parent, 'workspace')
+	raw_root := os.join_path(parent, 'workspace')
 	os.mkdir_all(parent) or { panic(err) }
-	os.mkdir_all(root) or { panic(err) }
+	os.mkdir_all(raw_root) or { panic(err) }
 	defer { os.rmdir_all(parent) or {} }
+	root := canonical_workspace_root(raw_root) or { panic(err) }
 	outside_secret := os.join_path(parent, 'outside-secret.txt')
 	os.write_file(outside_secret, 'must stay hidden') or { panic(err) }
 
@@ -160,10 +161,11 @@ fn test_approved_shell_uses_seatbelt_when_available() {
 	assert shell_sandbox_seatbelt_capability()
 
 	parent := os.join_path(os.temp_dir(), 'veasel-approved-seatbelt-${uuid.new_v4().str()}')
-	root := os.join_path(parent, 'workspace')
+	raw_root := os.join_path(parent, 'workspace')
 	os.mkdir_all(parent) or { panic(err) }
-	os.mkdir_all(root) or { panic(err) }
+	os.mkdir_all(raw_root) or { panic(err) }
 	defer { os.rmdir_all(parent) or {} }
+	root := canonical_workspace_root(raw_root) or { panic(err) }
 
 	result := run_approved_shell_command(root, ShellCommandSummary{
 		command:         'touch sandbox-write.txt; printf approved-seatbelt-ok'

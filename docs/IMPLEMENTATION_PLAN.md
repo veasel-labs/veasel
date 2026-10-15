@@ -62,7 +62,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   approval; execution limits and recovery behavior are documented in
   [`SHELL_COMMANDS.md`](SHELL_COMMANDS.md).
 - [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
-- [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist the operation before accepting, expose status for reconnect, and commit successful history, operation state, and terminal events atomically. Active work is classified as uncertain on restart and never replayed. The worker itself remains process-local.
+- [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist the operation as `queued` with request payload before accepting, claim to `running` in a worker, expose status/list/cancel for reconnect, and commit successful history, operation state, and terminal events atomically. Queued jobs resume after restart; claimed `running`/`cancelling` work is classified as `uncertain` and never replayed.
 - [x] Add `veasel run` for non-interactive session turns using the shared server, provider, and agent runtime; persist and continue sessions, emit machine-readable JSON, and request cancellation on timeout. Default edit, shell, and MCP approvals remain intact.
 - [x] Add an explicitly opt-in autonomous path for isolated benchmark tasks. The running server must opt in separately; ordinary CLI/TUI approval behavior remains unchanged. Autonomous file edits and shell commands retain durable proposal/result records, shell subprocesses receive an allowlisted environment, and MCP sessions are rejected. On Linux, autonomous shell commands require Bubblewrap and run with a read-only host filesystem, a writable workspace, hidden home/removable/runtime paths, and an isolated network namespace; the process fails closed if this sandbox cannot start. Stdio MCP remains outside this sandbox.
 - [x] Wrap manually approved Linux shell commands in Bubblewrap when `bwrap` is available (`VEASEL_SHELL_SANDBOX=auto|off|require`, network deny by default with optional `VEASEL_SHELL_SANDBOX_NETWORK=allow`). Capability `shell.sandbox.bubblewrap` is true only when the wrap will run; missing bwrap falls back unsandboxed under auto and never pretends sandboxed. Approval remains mandatory.
@@ -75,10 +75,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   session-scoped status resource for reconnecting clients, atomically commit
   terminal success with chat history, and classify active work as `uncertain`
   after restart without replaying provider calls or tool effects.
-- [ ] Durable queued jobs and worker execution across server restarts, plus
-  bounded operation retention. Async operation state is persisted and
-  reconnectable, but workers remain process-local; interrupted operations are
-  classified and never replayed.
+- [x] Durable queued jobs and worker execution across server restarts, plus
+  bounded terminal operation retention (200 per session). `Prefer: respond-async`
+  persists `queued` + request JSON, workers claim to `running`,
+  `GET /v1/sessions/{id}/operations` lists state, and startup resumes only
+  `queued` rows. Claimed `running`/`cancelling` work still becomes `uncertain`
+  and is never replayed (provider/tool effects may already have started).
 - [x] Capture provider-reported token usage from all four adapters in opt-in
   ATIF `final_metrics`. Veasel does not yet maintain authoritative,
   versioned provider price schedules, so it does not calculate cost.
@@ -287,8 +289,8 @@ honoring its license and attribution.
   claim conformance until its release gate passes.
 - The initial tool loop caps in-flight provider calls and tool-loop steps;
   same-session turns are serialized so provider history cannot race. Opt-in
-  async turns remain process-local; durable job recovery, concurrent agents,
-  and their resource limits remain open.
+  async turns use a durable queued job row; concurrent agents and their
+  resource limits remain open.
 - The organization and repository publication are tracked separately from the
   code milestones; do not describe them as complete until GitHub confirms them.
 - Milestone 1 is complete only for the local Linux x64 development environment;

@@ -326,6 +326,6 @@ integrations already exist. For current verified feature status, see
 | Incomplete real-terminal keyboard testing | Partially addressed on Linux (`keyboard-exercise`); macOS/Windows interactive validation remains open. |
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
 | Agent Plugins conformance gaps | Substantial v1.0.0 coverage; remaining gaps listed in `docs/compatibility/agent-plugins.md` (OAuth, GET notification streams, install UI). |
-| Durable job recovery across restart | Async ops become `uncertain` and are never replayed; durable queued workers remain open. |
+| Durable job recovery across restart | Queued Prefer: respond-async jobs resume after restart; claimed running/cancelling ops become `uncertain` and are never replayed. See `docs/compatibility/durable-queued-session-operations.md`. |
 | Incomplete execution sandboxing | Approved Linux Bubblewrap and macOS Seatbelt wrap when available (honest capabilities); Windows remains unsandboxed under auto with require fail-closed; MCP remains unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level Windows isolation and deeper Seatbelt hardening remain open. |
 | Missing credible E2E benchmark comparisons | Harbor smoke adapter + ATIF validation exist; no Harbor Index / Terminal-Bench / SWE-bench submission or leaderboard claim. |

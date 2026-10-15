@@ -113,8 +113,9 @@ Honesty bounds that stay in the product voice:
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full
   1,048,576-token context window
-- Async workers are process-local; durable queued jobs across restart remain
-  open in the [implementation plan](docs/IMPLEMENTATION_PLAN.md)
+- `Prefer: respond-async` turns persist as `queued` and resume after restart;
+  claimed `running`/`cancelling` work becomes `uncertain` and is never replayed
+  ([durable queue](docs/compatibility/durable-queued-session-operations.md))
 
 <details>
 <summary>Provider settings, catalog scope, and credentials</summary>
@@ -159,8 +160,9 @@ instructions are untrusted reference context; Skill scripts are never
 auto-executed.
 
 Press Escape to cancel a running turn. Prefer `respond-async` clients follow
-operation IDs and `session.turn_completed`. If the process dies mid-turn,
-startup marks the operation `uncertain` and never replays effects. See
+operation IDs and `session.turn_completed`. Queued turns resume after restart;
+if the process dies after a worker claimed the turn, startup marks it
+`uncertain` and never replays effects. See
 [`docs/SHELL_COMMANDS.md`](docs/SHELL_COMMANDS.md) before enabling shell
 workflows.
 

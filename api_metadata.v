@@ -30,7 +30,8 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		'workspace.files', 'workspace.read', 'workspace.search', 'workspace.repository_map',
 		'workspace.edits.review', 'workspace.edits.approve', 'workspace.edits.reject',
 		'workspace.commands.propose', 'workspace.commands.review', 'workspace.commands.approve',
-		'workspace.commands.reject', 'sessions.operations.result', 'sessions.operations.trace.atif_v1_8']
+		'workspace.commands.reject', 'sessions.operations.list', 'sessions.operations.result',
+		'sessions.operations.trace.atif_v1_8', 'sessions.operations.durable_queue']
 	if shell_sandbox_bubblewrap_capability() {
 		features << 'shell.sandbox.bubblewrap'
 	}

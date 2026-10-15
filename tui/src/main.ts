@@ -39,6 +39,12 @@ import {
 } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
+import {
+  formatCatalogFilterEmpty,
+  formatCatalogFilterHeader,
+  isMcpManageRest,
+  matchesCatalogFilter,
+} from "./catalog-filter"
 
 import {
   formatReportedCacheUsage,
@@ -820,8 +826,9 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  if (content === "/plugins") {
-    await showPluginLinks()
+  if (content === "/plugins" || content.startsWith("/plugins ")) {
+    const filter = content === "/plugins" ? "" : content.slice("/plugins ".length).trim()
+    await showPluginLinks(filter)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -847,6 +854,12 @@ async function sendMessage(value: string) {
   }
   if (content === "/mcp") {
     await showMcpServers()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content.startsWith("/mcp ") && !isMcpManageRest(content.slice("/mcp ".length))) {
+    await showMcpServers(content.slice("/mcp ".length).trim())
     chatInput.value = ""
     chatInput.focus()
     return
@@ -1266,8 +1279,7 @@ async function showSkills(filter = "") {
     const catalog = await catalogResponse.json() as PluginCatalog
     const active = await activeResponse.json() as SessionPluginSkill[]
     const enabled = new Set(active.map((item) => `${item.plugin_name}/${item.skill_name}`))
-    const needle = filter.toLowerCase()
-    const lines = catalog.plugins.flatMap((plugin) => plugin.skills.map((skill) => {
+    const entries = catalog.plugins.flatMap((plugin) => plugin.skills.map((skill) => {
       const key = `${plugin.name}/${skill.name}`
       const origin = plugin.origin === "standalone" || skill.source
         ? `\n  Source: ${safeTerminalText(skill.source || plugin.name)} · ${safeTerminalText(skill.scope || "plugin")}`
@@ -1277,14 +1289,18 @@ async function showSkills(filter = "") {
       const restriction = skill.allowed_tools_declared
         ? `\n  Tool access: ${skill.allowed_tools.length > 0 ? skill.allowed_tools.join(", ") : "none"}`
         : ""
-      const haystack = `${key} ${skill.description} ${skill.source || ""} ${skill.scope || ""} ${plugin.origin || ""}`.toLowerCase()
-      if (needle && !haystack.includes(needle)) return ""
-      return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}${origin}${label}\n  ${skill.description}${restriction}`
-    })).filter((line) => line.length > 0)
-    skillNotice = lines.length > 0
-      ? `AGENT SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. Filter with /skills <text>. Standalone SKILL.md folders are discovered automatically from project and user agent skill directories. /skill on injects the body into later turns; the model can also load a discovered skill on demand with agent_skill_load without enabling it first, then read bounded text resources from that folder for the rest of the turn. Files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
+      const haystack = `${key} ${skill.description} ${skill.source || ""} ${skill.scope || ""} ${plugin.origin || ""} ${displayName || ""}`
+      return {
+        haystack,
+        line: `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}${origin}${label}\n  ${skill.description}${restriction}`,
+      }
+    }))
+    const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
+    const header = formatCatalogFilterHeader("AGENT SKILLS", matched.length, entries.length, filter)
+    skillNotice = matched.length > 0
+      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. Filter with /skills <text> (all tokens must match). Standalone SKILL.md folders are discovered automatically from project and user agent skill directories. /skill on injects the body into later turns; the model can also load a discovered skill on demand with agent_skill_load without enabling it first, then read bounded text resources from that folder for the rest of the turn. Files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
       : filter
-        ? `No skills matched “${safeTerminalText(filter)}”. Try /skills, or a broader filter like agents or project.`
+        ? formatCatalogFilterEmpty("skills", safeTerminalText(filter))
         : "No skills found. Add a plugin.json package under VEASEL_PLUGIN_DIR, or place SKILL.md folders under .agents/skills, .claude/skills, .cursor/skills, and the other discovered agent skill roots."
     renderChat(chatMessages)
   } catch (error) {
@@ -1298,17 +1314,28 @@ type PluginLinkCatalog = {
   diagnostics?: Array<{ component: string; message: string }>
 }
 
-async function showPluginLinks() {
+async function showPluginLinks(filter = "") {
   try {
     const response = await fetch(`${apiBase}/v1/plugins/links`, { signal: controller.signal })
     if (!response.ok) throw new Error("plugin links are unavailable")
     const catalog = await response.json() as PluginLinkCatalog
-    const lines = catalog.links.map((link) => `● ${safeTerminalText(link.name)}\n  ${safeTerminalText(link.path)}`)
+    const entries = catalog.links.map((link) => {
+      const name = safeTerminalText(link.name)
+      const path = safeTerminalText(link.path)
+      return {
+        haystack: `${link.name} ${link.path}`,
+        line: `● ${name}\n  ${path}`,
+      }
+    })
+    const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
     const diagnostics = (catalog.diagnostics ?? [])
       .map((item) => `! ${safeTerminalText(item.component)}: ${safeTerminalText(item.message)}`)
-    skillNotice = lines.length > 0
-      ? `PLUGIN LINKS\n${lines.join("\n\n")}${diagnostics.length > 0 ? `\n\n${diagnostics.join("\n")}` : ""}\n\nAdd with /plugin add <absolute-path>. Remove with /plugin remove <name>. Only managed symlinks are removed; PLUGIN_DATA for that name is kept.`
-      : "No managed plugin links. Use /plugin add <absolute-path> to link a local Agent Plugin package into VEASEL_PLUGIN_DIR."
+    const header = formatCatalogFilterHeader("PLUGIN LINKS", matched.length, entries.length, filter)
+    skillNotice = matched.length > 0
+      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}${diagnostics.length > 0 ? `\n\n${diagnostics.join("\n")}` : ""}\n\nAdd with /plugin add <absolute-path>. Remove with /plugin remove <name>. Filter with /plugins <text>. Only managed symlinks are removed; PLUGIN_DATA for that name is kept.`
+      : filter
+        ? formatCatalogFilterEmpty("plugin links", safeTerminalText(filter))
+        : "No managed plugin links. Use /plugin add <absolute-path> to link a local Agent Plugin package into VEASEL_PLUGIN_DIR."
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load plugin links: ${error instanceof Error ? error.message : "request failed"}`
@@ -1390,7 +1417,7 @@ function splitMcpArgs(raw: string): string[] {
   return args
 }
 
-async function showMcpServers() {
+async function showMcpServers(filter = "") {
   if (!activeSession) return
   try {
     const directory = encodeURIComponent(activeSession.directory || "")
@@ -1406,7 +1433,7 @@ async function showMcpServers() {
       ? await configuredResponse.json() as ConfiguredMcpCatalog
       : { servers: [] as ConfiguredMcpCatalog["servers"] }
     const trusted = new Set(active.map((item) => `${item.plugin_name}/${item.server_name}`))
-    const configuredLines = configured.servers.map((server) => {
+    const configuredEntries = configured.servers.map((server) => {
       const key = `configured/${server.name}`
       const scopeLabel = server.scope === "project"
         ? "project scope"
@@ -1427,9 +1454,11 @@ async function showMcpServers() {
         : trusted.has(key)
           ? "● trusted"
           : "○ available"
-      return `${state}  ${safeTerminalText(key)} [${safeTerminalText(server.transport)}] · ${scopeLabel}${configFile}${command}${cwd}${endpoint}${headers}`
+      const line = `${state}  ${safeTerminalText(key)} [${safeTerminalText(server.transport)}] · ${scopeLabel}${configFile}${command}${cwd}${endpoint}${headers}`
+      const haystack = `${key} ${server.transport} ${scopeLabel} ${server.command || ""} ${(server.args ?? []).join(" ")} ${server.url_origin || ""} ${server.cwd || ""} ${(server.header_names ?? []).join(" ")} ${state}`
+      return { haystack, line }
     })
-    const pluginLines = catalog.plugins
+    const pluginEntries = catalog.plugins
       .filter((plugin) => plugin.origin !== "configured")
       .flatMap((plugin) => plugin.mcp_servers.map((server) => {
         const key = `${plugin.name}/${server.name}`
@@ -1441,17 +1470,25 @@ async function showMcpServers() {
         const support = ["stdio", "streamable-http"].includes(server.transport)
           ? server.transport
           : `${server.transport} (unsupported)`
-        return `${trusted.has(key) ? "● trusted" : "○ available"}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}${endpoint}${headers}`
+        const state = trusted.has(key) ? "● trusted" : "○ available"
+        const line = `${state}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}${endpoint}${headers}`
+        const haystack = `${key} ${support} ${server.command || ""} ${server.url_origin || ""} ${server.header_names.join(" ")} ${state}`
+        return { haystack, line }
       }))
-    const inventory = [...configuredLines, ...pluginLines].length > 0
-      ? [...configuredLines, ...pluginLines].join("\n\n")
-      : "No MCP servers yet. Add one with /mcp add stdio <name> <command> [args…] or /mcp add project http <name> <url>, or link an Agent Plugin package that includes mcp.json."
+    const entries = [...configuredEntries, ...pluginEntries]
+    const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
+    const header = formatCatalogFilterHeader("MCP SERVERS", matched.length, entries.length, filter)
+    const inventory = matched.length > 0
+      ? matched.map((entry) => entry.line).join("\n\n")
+      : filter
+        ? formatCatalogFilterEmpty("MCP servers", safeTerminalText(filter))
+        : "No MCP servers yet. Add one with /mcp add stdio <name> <command> [args…] or /mcp add project http <name> <url>, or link an Agent Plugin package that includes mcp.json."
     const configPath = configured.path ? `\nUser-scope file: ${safeTerminalText(configured.path)}` : ""
     const projectPath = configured.project_path ? `\nProject-scope file: ${safeTerminalText(configured.project_path)}` : ""
     const importPaths = configured.import_paths?.length
       ? `\nImported project files: ${configured.import_paths.map(safeTerminalText).join(", ")}`
       : ""
-    skillNotice = `MCP SERVERS\n${inventory}${configPath}${projectPath}${importPaths}\n\nAdd: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio runs with your OS privileges. Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
+    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio runs with your OS privileges. Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`

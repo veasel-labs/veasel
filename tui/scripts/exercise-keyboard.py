@@ -601,6 +601,8 @@ def main() -> None:
     screen = Screen(master, rows, cols)
     try:
         screen.wait_for("Alpha", 8)
+        screen.wait_for("● 1 Alpha", 4)
+        screen.wait_for("○ 2 Beta", 4)
         screen.wait_for("/skills")
         screen.wait_for("/mcp")
         screen.wait_for("1-9")
@@ -608,10 +610,10 @@ def main() -> None:
         screen.wait_for("q quit")
         screen.send("2", 0.35)  # digit jump → second session (Beta)
         screen.wait_for("session 2 of 20 selected", 4)
-        screen.wait_for("Beta")
+        screen.wait_for("● 2 Beta", 4)
         screen.send("1", 0.35)  # back to Alpha
         screen.wait_for("session 1 of 20 selected", 4)
-        screen.wait_for("Alpha")
+        screen.wait_for("● 1 Alpha", 4)
         screen.send("s", 0.5)
         screen.wait_for("Provider settings", 4)
         screen.wait_for("Tab cycles", 4)

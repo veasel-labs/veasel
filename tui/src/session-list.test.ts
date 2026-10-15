@@ -23,8 +23,8 @@ describe("formatSessionList", () => {
   test("shows a short list without a position counter", () => {
     const text = formatSessionList(sessions.slice(0, 2), 1, { rows: 40, columns: 40 })
     expect(text.startsWith("●")).toBe(false)
-    expect(text).toContain("● Lane-01")
-    expect(text).toContain("○ Alpha")
+    expect(text).toContain("● 2 Lane-01")
+    expect(text).toContain("○ 1 Alpha")
     expect(text).not.toContain("Selected")
   })
 
@@ -33,6 +33,7 @@ describe("formatSessionList", () => {
     const text = formatSessionList(sessions, 19, { rows: 40, columns: 36 })
     expect(text.startsWith("Selected 20 of 20\n")).toBe(true)
     expect(text).toContain("● Lane-19")
+    expect(text).not.toContain("● 20 ")
     expect(text).not.toContain("Alpha")
     expect(text).not.toContain("Lane-01")
   })
@@ -40,8 +41,20 @@ describe("formatSessionList", () => {
   test("returns to the first session after moving back up", () => {
     const text = formatSessionList(sessions, 0, { rows: 40, columns: 36 })
     expect(text.startsWith("Selected 1 of 20\n")).toBe(true)
-    expect(text).toContain("● Alpha")
+    expect(text).toContain("● 1 Alpha")
+    expect(text).toContain("○ 2 Lane-01")
     expect(text).not.toContain("Lane-19")
+  })
+
+  test("hides jump digits while a filter is active", () => {
+    const text = formatSessionList(filterSessionList(sessions, "Alpha"), 0, {
+      rows: 40,
+      columns: 40,
+      filter: "Alpha",
+      totalCount: sessions.length,
+    })
+    expect(text).toContain("● Alpha")
+    expect(text).not.toContain("● 1 Alpha")
   })
 
   test("reserves the sidebar text width inside the border and padding", () => {
@@ -60,7 +73,7 @@ describe("formatSessionList", () => {
 
   test("strips control characters from titles before they can wrap", () => {
     const text = formatSessionList([{ title: "Alpha\nBeta\tGamma", directory: "/tmp/alpha" }], 0, { rows: 40, columns: 40 })
-    expect(text).toContain("● Alpha Beta Gamma")
+    expect(text).toContain("● 1 Alpha Beta Gamma")
     expect(text).not.toContain("\nBeta")
   })
 })

@@ -10,6 +10,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("/commands · /command show|approve|reject <id>")
     expect(help).toContain("home · j/k · 1-9 · type · Home/End · PgUp/PgDn · Enter · n")
     expect(help).toContain("press 1-9 to jump to the Nth visible session")
+    expect(help).toContain("the sidebar labels those slots")
     expect(help).toContain("type to filter by title or directory")
     expect(help).toContain("streaming below · End follows")
     expect(help).toContain("scrolled · End follows")

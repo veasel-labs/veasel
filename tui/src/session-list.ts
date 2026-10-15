@@ -134,9 +134,14 @@ export function formatSessionList(
     const session = sessions[cursor]
     if (!session) continue
     const marker = cursor === index ? "●" : "○"
-    const title = clipStart(clean(session.title) || "Untitled session", width - 2)
+    // Digits 1-9 label the jump targets when the home filter is empty so the
+    // 1-9 hotkeys stay discoverable without opening /help.
+    const jump = !filter && cursor < 9 ? `${cursor + 1} ` : ""
+    const prefix = `${marker} ${jump}`
+    const titleWidth = Math.max(1, width - [...prefix].length)
+    const title = clipStart(clean(session.title) || "Untitled session", titleWidth)
     const directory = clipEnd(clean(session.directory), width - 2)
-    lines.push(`${marker} ${title}`, `  ${directory}`)
+    lines.push(`${prefix}${title}`, `  ${directory}`)
     if (cursor < end - 1) lines.push("")
   }
   return lines.join("\n")

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   assistantLabel,
+  messageBodySegments,
   noticeSegments,
   streamingCursor,
   systemLabel,
@@ -83,6 +84,25 @@ describe("transcriptSegments", () => {
   test("renders notices and can hide messages behind the help guide", () => {
     const segments = transcriptSegments({ notice: "VEASEL CODE / QUICK HELP", messages: [{ role: "user", content: "hi" }], showMessages: false })
     expect(transcriptPlainText(segments)).toBe("VEASEL CODE / QUICK HELP\n\n")
+  })
+
+  test("tones fenced code distinctly from surrounding prose", () => {
+    const content = "Before\n```ts\nconst n = 1\n```\nAfter"
+    const body = messageBodySegments(content, "assistantText")
+    expect(body).toEqual([
+      { text: "Before\n", tone: "assistantText" },
+      { text: "```ts\n", tone: "codeFence" },
+      { text: "const n = 1\n", tone: "codeBody" },
+      { text: "```\n", tone: "codeFence" },
+      { text: "After", tone: "assistantText" },
+    ])
+    const text = transcriptPlainText(transcriptSegments({
+      messages: [{ role: "assistant", content }],
+    }))
+    expect(text).toBe(`◆ VEASEL\n${content}`)
+    expect(transcriptSegments({
+      messages: [{ role: "assistant", content }],
+    })).toContainEqual({ text: "```ts\n", tone: "codeFence" })
   })
 
   test("keeps system and tool roles distinct from the operator", () => {

@@ -15,6 +15,8 @@ export type TranscriptTone =
   | "systemText"
   | "toolLabel"
   | "toolText"
+  | "codeFence"
+  | "codeBody"
   | "status"
   | "hint"
 
@@ -105,9 +107,44 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
     const label = labelFor(turn.kind)
     push(label.text, label.tone)
     if (turn.status) push(`  ·  ${turn.status}`, "status")
-    push(`\n${turn.content}`, bodyTone(turn.kind))
+    const body = messageBodySegments(turn.content, bodyTone(turn.kind))
+    if (body.length === 0) {
+      push("\n", bodyTone(turn.kind))
+    } else {
+      body[0] = { text: `\n${body[0]!.text}`, tone: body[0]!.tone }
+      for (const segment of body) push(segment.text, segment.tone)
+    }
   })
   if (input.hasOlder) push("\n\n/history older · load earlier messages", "hint")
+  return segments
+}
+
+// Split prose from fenced code so ``` / ~~~ blocks stay visually distinct while
+// streaming and after the turn lands. Fence markers stay in the text itself.
+export function messageBodySegments(content: string, proseTone: TranscriptTone): TranscriptSegment[] {
+  if (!content) return []
+  const lines = content.split("\n")
+  const segments: TranscriptSegment[] = []
+  let inFence = false
+  let fenceMarker = ""
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!
+    const trailing = index < lines.length - 1 ? "\n" : ""
+    const open = /^(```|~~~)(.*)$/.exec(line)
+    if (open && !inFence) {
+      inFence = true
+      fenceMarker = open[1]!
+      segments.push({ text: `${line}${trailing}`, tone: "codeFence" })
+      continue
+    }
+    if (inFence && fenceMarker && line.startsWith(fenceMarker) && /^(`{3}|~{3})\s*$/.test(line)) {
+      inFence = false
+      fenceMarker = ""
+      segments.push({ text: `${line}${trailing}`, tone: "codeFence" })
+      continue
+    }
+    segments.push({ text: `${line}${trailing}`, tone: inFence ? "codeBody" : proseTone })
+  }
   return segments
 }
 

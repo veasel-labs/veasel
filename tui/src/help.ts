@@ -15,6 +15,7 @@ export const helpItems: HelpItem[] = [
   { command: "/commands · /command show|approve|reject <id>", description: "Review and decide shell commands. The sandbox warning stays above the command, including when the command is long." },
   { command: "/history older", description: "Load earlier messages in this session." },
   { command: "/usage", description: "Show provider-reported token totals for this session. Cost stays unavailable without a price schedule." },
+  { command: "/theme", description: "List TUI color themes, or pass mint, ember, slate, mono, or aurora to switch. The choice is stored for the next launch." },
 ]
 
 export function unknownSlashCommand(input: string): string | undefined {
@@ -33,7 +34,7 @@ export function renderHelp(compact = false) {
       "/help advanced  Show command syntax",
       "/skills · /mcp · /patches · /commands",
       "/history older  Load earlier messages",
-      "s · /models  Configure provider and model",
+      "s · /models · /theme  Provider, model, theme",
       "Files go to your provider. Review diffs and MCP calls.",
       "Approved shell runs as you without a sandbox.",
     ].join("\n")

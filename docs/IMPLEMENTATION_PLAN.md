@@ -122,6 +122,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   unavailable without authoritative price schedules.
 - [x] Aggregate those reported totals per session on `GET /v1/sessions/{id}/usage`
   and surface them through the TUI `/usage` command without inventing cost.
+- [x] Theme the OpenTUI shell to the mint product look (charcoal panels, mint
+  accents, LOCAL cue, session markers) and let operators switch among mint,
+  ember, slate, mono, and aurora via `/theme`, with the choice persisted under
+  `~/.config/veasel/tui-theme` (override with `VEASEL_TUI_THEME`).
 - [ ] General execution history and a durable usage/cost dashboard beyond
   per-session reported tokens and opt-in ATIF `final_metrics`.
 

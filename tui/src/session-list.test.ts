@@ -13,9 +13,9 @@ describe("formatSessionList", () => {
 
   test("shows a short list without a position counter", () => {
     const text = formatSessionList(sessions.slice(0, 2), 1, { rows: 40, columns: 40 })
-    expect(text.startsWith("›")).toBe(false)
-    expect(text).toContain("› Lane-01")
-    expect(text).toContain("  Alpha")
+    expect(text.startsWith("●")).toBe(false)
+    expect(text).toContain("● Lane-01")
+    expect(text).toContain("○ Alpha")
     expect(text).not.toContain("1/2")
     expect(text).not.toContain("2/2")
   })
@@ -24,7 +24,7 @@ describe("formatSessionList", () => {
     expect(sessionListCapacity(40, 20)).toBeLessThan(20)
     const text = formatSessionList(sessions, 19, { rows: 40, columns: 36 })
     expect(text.startsWith("20/20\n")).toBe(true)
-    expect(text).toContain("› Lane-19")
+    expect(text).toContain("● Lane-19")
     expect(text).not.toContain("Alpha")
     expect(text).not.toContain("Lane-01")
   })
@@ -32,7 +32,7 @@ describe("formatSessionList", () => {
   test("returns to the first session after moving back up", () => {
     const text = formatSessionList(sessions, 0, { rows: 40, columns: 36 })
     expect(text.startsWith("1/20\n")).toBe(true)
-    expect(text).toContain("› Alpha")
+    expect(text).toContain("● Alpha")
     expect(text).not.toContain("Lane-19")
   })
 
@@ -52,7 +52,7 @@ describe("formatSessionList", () => {
 
   test("strips control characters from titles before they can wrap", () => {
     const text = formatSessionList([{ title: "Alpha\nBeta\tGamma", directory: "/tmp/alpha" }], 0, { rows: 40, columns: 40 })
-    expect(text).toContain("› Alpha Beta Gamma")
+    expect(text).toContain("● Alpha Beta Gamma")
     expect(text).not.toContain("\nBeta")
   })
 })

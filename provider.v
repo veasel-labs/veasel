@@ -1742,9 +1742,15 @@ fn build_anthropic_request(config ModelConfig, messages []ChatMessage, tools []A
 		}
 	}
 	cache := anthropic_prompt_cache_control()
+	max_tokens := if config.max_output_tokens > 0 {
+		config.max_output_tokens
+	} else {
+		// Anthropic requires a positive max_tokens; zero means Veasel's default.
+		max_model_output_tokens
+	}
 	return AnthropicRequest{
 		model:         config.model
-		max_tokens:    config.max_output_tokens
+		max_tokens:    max_tokens
 		system:        anthropic_system_blocks(system_text, cache)
 		messages:      conversation
 		tools:         anthropic_tools

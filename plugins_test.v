@@ -748,7 +748,7 @@ fn test_agent_skill_v1_frontmatter_fixture_corpus() {
 	fixtures := json2.decode[[]AgentSkillFrontmatterFixture](os.read_file(path) or {
 		panic('unable to read pinned Agent Skills fixtures: ${err.msg()}')
 	}) or { panic('unable to decode pinned Agent Skills fixtures: ${err.msg()}') }
-	assert fixtures.len >= 6
+	assert fixtures.len >= 12
 	for fixture in fixtures {
 		if fixture.accepted {
 			skill := parse_agent_skill(fixture.directory, '/fixture/skills/${fixture.directory}/SKILL.md',

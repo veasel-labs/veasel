@@ -160,7 +160,8 @@ home directories and `VEASEL_SKILLS_DIRS`). `/skills [filter]` and
 `/mcp add [user|project] stdio <name> <command> [args…]` or
 `/mcp add [user|project] http <name> <url>` (user:
 `$VEASEL_DATA_DIR/mcp-servers.json`; project:
-`<workspace>/.veasel/mcp-servers.json`). Workspace `.mcp.json` and
+`<workspace>/.veasel/mcp-servers.json`), or from the headless CLI with
+`veasel mcp list|add|enable|disable|remove`. Workspace `.mcp.json` and
 `.cursor/mcp.json` with portable `mcpServers` are imported read-only.
 Precedence for the same name: project > project-import > user. Toggle with
 `/mcp enable|disable [user|project]`, remove with `/mcp remove`, then

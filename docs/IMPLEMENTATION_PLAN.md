@@ -220,7 +220,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `PATCH/DELETE /v1/mcp-servers/{name}` with scope, TUI `/mcp` with
   `user|project`, capability `mcp.servers.configured`, synthetic catalog
   package `configured`, trust as `configured/<name>`. Per-call approval is
-  unchanged. OAuth and `notifications/cancelled` remain open.
+  unchanged. Headless `veasel mcp list|add|enable|disable|remove` manages the
+  same scopes via the local API. OAuth and `notifications/cancelled` remain open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

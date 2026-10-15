@@ -60,6 +60,7 @@ import { transcriptSegments, type TranscriptTone } from "./transcript"
 import {
   jumpTranscriptScroll,
   moveTranscriptScroll,
+  transcriptBelowCue,
   transcriptPageSize,
   transcriptSegmentLines,
   windowTranscriptSegments,
@@ -793,8 +794,12 @@ function renderChat(messages: ChatTurn[]) {
   if (windowed.truncatedAbove) {
     withCues.unshift({ text: "▲ PgUp · earlier transcript\n", tone: "hint" })
   }
-  if (windowed.truncatedBelow) {
-    withCues.push({ text: "\n▼ PgDn · later transcript", tone: "hint" })
+  const belowCue = transcriptBelowCue({
+    truncatedBelow: windowed.truncatedBelow,
+    streaming: Boolean(activeTurnId),
+  })
+  if (belowCue) {
+    withCues.push({ text: belowCue, tone: "hint" })
   }
   sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
 }

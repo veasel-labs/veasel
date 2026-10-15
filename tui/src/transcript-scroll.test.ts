@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   jumpTranscriptScroll,
   moveTranscriptScroll,
+  transcriptBelowCue,
   transcriptPageSize,
   transcriptSegmentLines,
   windowTranscriptSegments,
@@ -36,5 +37,11 @@ describe("transcript page scroll", () => {
     expect(upper.truncatedAbove).toBe(false)
     expect(upper.truncatedBelow).toBe(true)
     expect(upper.segments.map((segment) => segment.text).join("")).toBe("one\ntwo\n")
+  })
+
+  test("names End as the follow key while streaming above the live reply", () => {
+    expect(transcriptBelowCue({ truncatedBelow: false, streaming: true })).toBe("")
+    expect(transcriptBelowCue({ truncatedBelow: true, streaming: false })).toBe("\n▼ PgDn · later transcript")
+    expect(transcriptBelowCue({ truncatedBelow: true, streaming: true })).toBe("\n▼ streaming below · End follows")
   })
 })

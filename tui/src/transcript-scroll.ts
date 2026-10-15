@@ -74,3 +74,14 @@ export function windowTranscriptSegments(
     truncatedBelow: end < lines.length,
   }
 }
+
+// Footer cue when the viewport is above the latest lines. Streaming turns need
+// an explicit "follow" hint so operators know End jumps back to the live reply.
+export function transcriptBelowCue(options: {
+  truncatedBelow: boolean
+  streaming: boolean
+}): string {
+  if (!options.truncatedBelow) return ""
+  if (options.streaming) return "\n▼ streaming below · End follows"
+  return "\n▼ PgDn · later transcript"
+}

@@ -293,3 +293,17 @@ These are implementation gates, not claims that the measurements or
 integrations already exist. For current verified feature status, see
 [`COMPETITIVE_CAPABILITIES.md`](COMPETITIVE_CAPABILITIES.md) and
 [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+
+## Known weakness status (2026-10-15)
+
+| Reported weakness | Current evidence |
+|---|---|
+| Failed turns missing from TUI transcript | Fixed: `store.record_session_turn_completion` persists user/assistant text for failed/cancelled turns; covered by `main_test.v`. |
+| `veasel run` concatenating text across tool calls | Fixed: tool-round boundaries keep newlines; tool-budget summary path added. |
+| Artificial 100k input limit | Fixed: `max_chat_input_bytes = 1_048_576` (1 MiB of text, not Muse's token window). |
+| Incomplete real-terminal keyboard testing | Partially addressed on Linux (`keyboard-exercise`); macOS/Windows interactive validation remains open. |
+| Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
+| Agent Plugins conformance gaps | Substantial v1.0.0 coverage; remaining gaps listed in `docs/compatibility/agent-plugins.md` (OAuth, GET notification streams, install UI). |
+| Durable job recovery across restart | Async ops become `uncertain` and are never replayed; durable queued workers remain open. |
+| Incomplete execution sandboxing | Manual shell/MCP unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level OS sandbox remains open. |
+| Missing credible E2E benchmark comparisons | Harbor smoke adapter + ATIF validation exist; no Harbor Index / Terminal-Bench / SWE-bench submission or leaderboard claim. |

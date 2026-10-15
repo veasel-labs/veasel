@@ -26,17 +26,22 @@ mut:
 
 struct HeadlessRunResult {
 pub:
-	session_id     string
-	operation_id   string
-	status         string
-	provider       string @[omitempty]
-	model          string @[omitempty]
-	response       string @[omitempty]
-	error          string @[omitempty]
-	trace_file     string @[omitempty]
-	input_tokens   i64    @[omitempty]
-	output_tokens  i64    @[omitempty]
-	usage_reported bool   @[omitempty]
+	session_id              string
+	operation_id            string
+	status                  string
+	provider                string @[omitempty]
+	model                   string @[omitempty]
+	response                string @[omitempty]
+	error                   string @[omitempty]
+	trace_file              string @[omitempty]
+	input_tokens            i64    @[omitempty]
+	output_tokens           i64    @[omitempty]
+	usage_reported          bool   @[omitempty]
+	session_completed_turns int    @[omitempty]
+	session_reported_turns  int    @[omitempty]
+	session_input_tokens    i64    @[omitempty]
+	session_output_tokens   i64    @[omitempty]
+	session_usage_reported  bool   @[omitempty]
 }
 
 fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {
@@ -377,6 +382,26 @@ fn format_headless_usage_summary(result HeadlessRunResult) string {
 	return parts.join(' · ')
 }
 
+fn attach_headless_session_usage(port int, mut result HeadlessRunResult) {
+	if result.session_id.len == 0 {
+		return
+	}
+	response := headless_json_request(port, .get, '/v1/sessions/${result.session_id}/usage',
+		'', false, '') or { return }
+	if response.status_code != 200 {
+		return
+	}
+	summary := json2.decode[SessionUsageSummary](response.body) or { return }
+	if summary.session_id != result.session_id {
+		return
+	}
+	result.session_completed_turns = summary.completed_turns
+	result.session_reported_turns = summary.reported_turns
+	result.session_input_tokens = summary.input_tokens
+	result.session_output_tokens = summary.output_tokens
+	result.session_usage_reported = summary.usage_reported
+}
+
 fn print_headless_help() {
 	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 1 MiB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to an ATIF v1.8 trace at this path (private file; partial on failure/cancellation)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the model-visible conversation and tool I/O with credentials\nredacted; they may still include private instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.\nWhen a provider reports token counts, --json includes them and the human summary prints them on stderr.')
 }
@@ -411,8 +436,9 @@ fn execute_headless_command(port int, args []string) {
 		}
 		exit(1)
 	}
-	result := run_headless_task(port, prepared_options)
+	mut result := run_headless_task(port, prepared_options)
 	if options.json {
+		attach_headless_session_usage(port, mut result)
 		println(json2.encode(result))
 	} else if result.status != 'completed' {
 		eprintln('veasel: model turn ${result.status}: ${result.error}\n${format_headless_usage_summary(result)} · operation ${result.operation_id}')

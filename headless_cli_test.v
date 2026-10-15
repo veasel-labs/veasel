@@ -184,3 +184,12 @@ fn test_headless_usage_summary_includes_reported_tokens_only() {
 	})
 	assert with_usage == 'session 123e4567-e89b-42d3-a456-426614174000 · openai-compatible / fixture · 1200 in · 340 out'
 }
+
+fn test_attach_headless_session_usage_skips_empty_session_ids() {
+	mut result := HeadlessRunResult{
+		status: 'completed'
+	}
+	attach_headless_session_usage(1, mut result)
+	assert !result.session_usage_reported
+	assert result.session_completed_turns == 0
+}

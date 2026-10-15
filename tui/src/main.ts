@@ -80,6 +80,7 @@ import {
   type ComposerHistory,
 } from "./composer-history"
 import {
+  capitalizeWord,
   composerLineCursor,
   killLineForward,
   killWordBackward,
@@ -3523,6 +3524,20 @@ renderer.keyInput.on("keypress", (key) => {
       key.stopPropagation()
       const edited = killWordForward(chatInput.value, chatInput.cursorOffset)
       if (edited.value !== chatInput.value) {
+        chatInput.value = edited.value
+        chatInput.cursorOffset = edited.cursor
+        updateSlashMenu(edited.value)
+        chatInput.focus()
+      }
+      return
+    }
+    // Alt+C capitalizes the current or next word (readline). Esc alone still
+    // cancels / leaves; this only handles the Alt+C / Esc+c sequence.
+    if ((key.meta && key.name === "c") || key.sequence === "\x1bc") {
+      key.preventDefault()
+      key.stopPropagation()
+      const edited = capitalizeWord(chatInput.value, chatInput.cursorOffset)
+      if (edited.value !== chatInput.value || edited.cursor !== chatInput.cursorOffset) {
         chatInput.value = edited.value
         chatInput.cursorOffset = edited.cursor
         updateSlashMenu(edited.value)

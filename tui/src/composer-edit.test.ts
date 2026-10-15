@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  capitalizeWord,
   composerLineCursor,
   killLineForward,
   killWordBackward,
@@ -41,6 +42,23 @@ describe("killWordForward", () => {
   test("treats accented Latin letters as part of the word", () => {
     expect(killWordForward("café latte", 0)).toEqual({ value: " latte", cursor: 0 })
     expect(killWordForward("café latte", 5)).toEqual({ value: "café ", cursor: 5 })
+  })
+})
+
+describe("capitalizeWord", () => {
+  test("uppercases the first letter of the current or next word", () => {
+    expect(capitalizeWord("hello world", 0)).toEqual({ value: "Hello world", cursor: 5 })
+    expect(capitalizeWord("hello world", 5)).toEqual({ value: "hello World", cursor: 11 })
+    expect(capitalizeWord("already OK", 0)).toEqual({ value: "Already OK", cursor: 7 })
+  })
+
+  test("is a no-op at the end and on empty drafts", () => {
+    expect(capitalizeWord("", 0)).toEqual({ value: "", cursor: 0 })
+    expect(capitalizeWord("hello", 5)).toEqual({ value: "hello", cursor: 5 })
+  })
+
+  test("treats accented Latin letters as part of the word", () => {
+    expect(capitalizeWord("café latte", 0)).toEqual({ value: "Café latte", cursor: 4 })
   })
 })
 

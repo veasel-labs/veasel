@@ -41,6 +41,27 @@ export function killWordForward(
   }
 }
 
+// Alt+C: capitalize the current or next word and move past it (readline
+// capitalize-word). Leading whitespace is skipped; the first letter is uppercased
+// and the rest of that word is left unchanged.
+export function capitalizeWord(
+  value: string,
+  cursor: number,
+): { value: string; cursor: number } {
+  let pos = Math.min(Math.max(0, cursor), value.length)
+  while (pos < value.length && /\s/.test(value[pos]!)) pos += 1
+  if (pos >= value.length) return { value, cursor: pos }
+  let end = pos
+  while (end < value.length && !/\s/.test(value[end]!)) end += 1
+  const word = value.slice(pos, end)
+  const first = word.slice(0, 1).toUpperCase()
+  const capped = first + word.slice(1)
+  return {
+    value: value.slice(0, pos) + capped + value.slice(end),
+    cursor: end,
+  }
+}
+
 // Ctrl+A / Ctrl+E: jump to the start or end of the draft (readline).
 export function composerLineCursor(value: string, where: "home" | "end"): number {
   return where === "home" ? 0 : value.length

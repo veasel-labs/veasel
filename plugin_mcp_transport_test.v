@@ -6,6 +6,24 @@ import os
 import time
 import uuid
 
+fn test_overlay_plugin_environment_replaces_case_variants_only_when_asked() {
+	base := {
+		'PATH': '/usr/bin'
+		'HOME': '/home/a'
+	}
+	configured := {
+		'Path': '/plugin/bin'
+	}
+	exact := overlay_plugin_environment(base, configured, false)
+	assert exact['PATH'] == '/usr/bin'
+	assert exact['Path'] == '/plugin/bin'
+	assert exact['HOME'] == '/home/a'
+	folded := overlay_plugin_environment(base, configured, true)
+	assert folded['Path'] == '/plugin/bin'
+	assert 'PATH' !in folded
+	assert folded['HOME'] == '/home/a'
+}
+
 fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() {
 	node := os.find_abs_path_of_executable('node') or {
 		if os.getenv('CI') == 'true' {

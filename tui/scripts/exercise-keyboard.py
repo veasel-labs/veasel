@@ -620,10 +620,17 @@ def main() -> None:
         screen.wait_for("Tab ·", 4)
         screen.wait_for("Home/End", 4)
         screen.wait_for("j/k", 4)
+        screen.wait_for("1-9", 4)
         screen.wait_for("Ctrl+L", 4)
         screen.wait_for("selected ", 4)
         screen.wait_for(" of ", 4)
         screen.wait_for("1 OF 3")
+        screen.send("2", 0.35)  # digit jump → second provider (Ollama)
+        screen.wait_for("Ollama", 4)
+        screen.wait_for("selected 2 of 3", 4)
+        screen.send("1", 0.35)  # back to OpenAI
+        screen.wait_for("OpenAI", 4)
+        screen.wait_for("selected 1 of 3", 4)
         screen.send("j", 0.35)  # j moves down when filter is empty
         screen.send("k", 0.35)  # k moves back up
         screen.send("zzz", 0.45)

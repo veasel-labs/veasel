@@ -104,8 +104,10 @@ The working vertical slice includes:
 
 Honesty bounds that stay in the product voice:
 
-- Manually approved shell/MCP run as the server user and are **not**
-  OS-sandboxed; inspect effects before approval
+- On Linux, approved shell uses Bubblewrap when `bwrap` is available
+  (capability `shell.sandbox.bubblewrap`); otherwise it falls back
+  unsandboxed. MCP and non-Linux shell remain unsandboxed—inspect effects
+  before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full

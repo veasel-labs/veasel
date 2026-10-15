@@ -21,7 +21,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("/connect")
     expect(help).toContain("Paste an API key")
     expect(help).toContain("Files go to your provider.")
-    expect(help).toContain("without a sandbox")
+    expect(help).toContain("Bubblewrap on Linux when available")
     expect(helpItems.length).toBeGreaterThan(5)
   })
 

@@ -310,6 +310,7 @@ jobs:
           v test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
           v test agent_runtime_test.v
+          v test shell_commands_test.v
           v test session_compaction_test.v
           v test repository_map_test.v
           v test atif_trace_test.v

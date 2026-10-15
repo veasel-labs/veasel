@@ -77,7 +77,7 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_propose_shell_command'
-			description: 'Propose one single-line shell command for the user to inspect and explicitly approve. This tool never executes commands. Execution uses /bin/sh on POSIX or COMSPEC on Windows, runs with the server OS user permissions, may access files and the network, inherits its environment, is not sandboxed, and is never replayed automatically after a restart. Use only when the requested task requires a shell side effect.'
+			description: 'Propose one single-line shell command for the user to inspect and explicitly approve. This tool never executes commands. Execution uses /bin/sh on POSIX or COMSPEC on Windows with the server OS user identity. On Linux, when bubblewrap (bwrap) is available and VEASEL_SHELL_SANDBOX is not off, approved commands run in a Bubblewrap sandbox (read-only host, writable workspace, network isolated by default); otherwise they inherit the server environment without an OS sandbox. Capability shell.sandbox.bubblewrap is true only when the sandbox will actually wrap approved commands. Execution is never replayed automatically after a restart. Use only when the requested task requires a shell side effect.'
 			parameters:  ToolParameters{
 				properties: {
 					'command':         ToolParameter{ type: 'string', description: 'Exact single-line command text shown for approval and passed to the platform shell.' }

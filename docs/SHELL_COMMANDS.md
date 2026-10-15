@@ -19,22 +19,52 @@ If the server is forcibly terminated, a running child may outlive the server;
 its persisted state is `uncertain` at the next startup and it is not replayed.
 
 Manually approved commands use `/bin/sh -c` on POSIX systems and `%COMSPEC% /D
-/S /C` on Windows. Standard input is non-interactive. These commands run as the
-Veasel server's OS user, inherit its environment (including credentials), and
-can access files and network services available to that user. Workspace cwd
-validation only checks the initial working directory; a command can access
-paths outside it. Do not approve a command whose filesystem, network, or
-credential effects you have not reviewed.
+/S /C` on Windows. Standard input is non-interactive. Approval remains the
+authorization gate; Bubblewrap is defense-in-depth containment, not a bypass of
+review.
+
+## Linux Bubblewrap for approved commands
+
+On Linux, when `bwrap` is on `PATH` and `VEASEL_SHELL_SANDBOX` is not `off`,
+approved commands run inside Bubblewrap with this default policy:
+
+| Control | Default |
+|---|---|
+| Host filesystem | Read-only bind of `/` |
+| Workspace | Writable bind of the session workspace only |
+| Hidden mounts | tmpfs over `/home`, `/root`, `/run`, `/mnt`, `/media`, and `/tmp` when present |
+| Namespaces | `--unshare-all` (no host network by default) |
+| Network | Denied unless `VEASEL_SHELL_SANDBOX_NETWORK=allow` (adds `--share-net`) |
+| Environment | Inherited from the Veasel process, with `HOME`/`TMPDIR` remapped to `/tmp` |
+| Capability flag | `shell.sandbox.bubblewrap` is advertised only when this wrap will run |
+
+Configuration:
+
+- `VEASEL_SHELL_SANDBOX=auto` (default): use Bubblewrap when available; otherwise
+  fall back to unsandboxed execution and do **not** advertise the capability.
+- `VEASEL_SHELL_SANDBOX=off`: never wrap approved commands.
+- `VEASEL_SHELL_SANDBOX=require`: fail closed if `bwrap` is missing (no
+  unsandboxed fallback).
+
+This is best-effort containment, not a VM. Host-readable files outside the
+masked paths can still be read; pre-existing hard links inside the workspace can
+refer to host inodes; inherited environment variables may still carry
+credentials. macOS and Windows approved shell remain unsandboxed.
+
+Workspace cwd validation only checks the initial working directory; a command
+can still attempt to leave it. Do not approve a command whose filesystem,
+network, or credential effects you have not reviewed.
+
+## Autonomous benchmark path
 
 The separately opt-in autonomous benchmark path is supported only on Linux. It
 requires Bubblewrap (`bwrap`) and fails closed if the executable or namespace
-setup is unavailable. Its command runs with the host filesystem read-only, the
-chosen workspace writable, `/home`, `/root`, `/run`, `/mnt`, `/media`, and `/tmp`
-masked where present, and networking isolated. The subprocess receives a
-filtered environment. Do not treat this as a VM or a boundary against a hostile
-kernel: other host-readable files outside the masked paths can still be read,
-and hard links already in the workspace can refer to host inodes. Manually
-approved commands and MCP stdio processes do not use this sandbox.
+setup is unavailable. Its command uses the same mount layout, always filters the
+environment to an allowlist, and never enables network sharing. Do not treat
+this as a VM or a boundary against a hostile kernel. MCP stdio processes do not
+use this sandbox.
+
+## Limits and API trust
 
 Commands are limited to 8 KiB of single-line UTF-8 text, a workspace-relative
 existing working directory, a timeout from 1 to 300 seconds, two concurrent

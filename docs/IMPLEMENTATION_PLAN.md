@@ -418,8 +418,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   are shipped; invented cost/savings remain refused.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
-- [ ] Complete cross-platform validation of provider settings and automatic
-  backend startup in the pinned CI matrix.
+- [x] Cross-platform validation of provider settings and automatic backend
+  startup probes in the pinned CI matrix: Linux/macOS/Windows run
+  `model_settings_test` / `headless_config_test`; macOS also runs `main_test`
+  (including `backend_is_healthy` / `ensure_backend` healthy-reuse); Windows
+  keeps `main_test` plus repository-map coverage. Interactive TUI matrix gaps
+  remain under the separate ConPTY / measured-baseline item.
 - [ ] Multi-agent isolation and orchestration.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.

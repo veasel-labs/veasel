@@ -269,7 +269,7 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "del-license",
-      "license": "MIT"
+      "license": "MIT\u007f"
     }
   },
   {
@@ -393,7 +393,7 @@
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "del-keyword",
       "keywords": [
-        "review"
+        "review\u007f"
       ]
     }
   },
@@ -403,6 +403,45 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "trailing."
+    }
+  },
+  {
+    "name": "empty keywords array is accepted",
+    "accepted": true,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "empty-keywords",
+      "keywords": []
+    }
+  },
+  {
+    "name": "repository with CR is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "repo-cr",
+      "repository": "https://example.invalid/repo\r"
+    }
+  },
+  {
+    "name": "version with TAB is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "ver-tab",
+      "version": "1.0.0\t"
+    }
+  },
+  {
+    "name": "author email with LF is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "author-lf",
+      "author": {
+        "name": "Ada",
+        "email": "ada\n@example.invalid"
+      }
     }
   }
 ]

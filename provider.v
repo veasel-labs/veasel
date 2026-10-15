@@ -6,6 +6,7 @@ import net.http
 import net.urllib
 import os
 import strconv
+import strings
 import time
 
 const max_chat_messages = 64
@@ -414,6 +415,10 @@ struct ProviderSSEDecoder {
 mut:
 	on_data ProviderSSEDataFn @[required]
 	pending string
+	// hold_cr is true when the previous chunk ended in CR that may still form
+	// CRLF with the next chunk's leading LF. Only the new chunk is normalized;
+	// rewriting all of pending on every feed was quadratic on large streams.
+	hold_cr bool
 }
 
 struct ProviderSSERequestState {
@@ -422,17 +427,37 @@ mut:
 	bytes   int
 }
 
+// normalize_sse_newlines maps CRLF and lone CR to LF without touching a buffer
+// that is already LF-only.
+fn normalize_sse_newlines(text string) string {
+	if !text.contains('\r') {
+		return text
+	}
+	return text.replace('\r\n', '\n').replace('\r', '\n')
+}
+
 fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
 	if chunk.contains('\0') {
 		return error('provider SSE chunk contained a NUL byte')
 	}
-	decoder.pending += chunk
-	trailing_cr := decoder.pending.ends_with('\r')
-	if trailing_cr {
-		prefix := decoder.pending[..decoder.pending.len - 1]
-		decoder.pending = prefix.replace('\r\n', '\n').replace('\r', '\n') + '\r'
-	} else {
-		decoder.pending = decoder.pending.replace('\r\n', '\n').replace('\r', '\n')
+	mut rest := chunk
+	if decoder.hold_cr {
+		decoder.hold_cr = false
+		if rest.len > 0 && rest[0] == `\n` {
+			// CR+LF split across chunks → one LF.
+			decoder.pending += '\n'
+			rest = rest[1..]
+		} else {
+			// Lone CR → LF.
+			decoder.pending += '\n'
+		}
+	}
+	if rest.ends_with('\r') {
+		decoder.hold_cr = true
+		rest = rest[..rest.len - 1]
+	}
+	if rest.len > 0 {
+		decoder.pending += normalize_sse_newlines(rest)
 	}
 	for {
 		lf_end := decoder.pending.index('\n\n') or { -1 }
@@ -447,24 +472,35 @@ fn (mut decoder ProviderSSEDecoder) feed(chunk string) ! {
 		}
 		block := decoder.pending[..lf_end]
 		decoder.pending = decoder.pending[lf_end + 2..]
-		mut lines := []string{}
+		mut data := strings.new_builder(block.len)
+		mut wrote := false
 		for line in block.split('\n') {
 			if line.starts_with('data:') {
 				value := line[5..]
-				lines << if value.starts_with(' ') { value[1..] } else { value }
+				payload := if value.starts_with(' ') { value[1..] } else { value }
+				if wrote {
+					data.write_u8(`\n`)
+				}
+				data.write_string(payload)
+				wrote = true
 			}
 		}
-		if lines.len > 0 {
-			decoder.on_data(lines.join('\n'))!
+		if wrote {
+			decoder.on_data(data.str())!
 		}
 	}
 }
 
 fn (mut decoder ProviderSSEDecoder) finish() ! {
-	if decoder.pending.len > 0 {
-		decoder.pending += '\n\n'
-		decoder.feed('')!
+	if decoder.hold_cr {
+		decoder.hold_cr = false
+		decoder.pending += '\n'
 	}
+	if decoder.pending.len == 0 {
+		return
+	}
+	decoder.pending += '\n\n'
+	decoder.feed('')!
 }
 
 struct ModelConfig {

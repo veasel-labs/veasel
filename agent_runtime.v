@@ -246,8 +246,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		tool_calls += output.tool_calls.len
 		mut trace_observations := []ATIFObservationResult{}
 		for call in output.tool_calls {
-			result := execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, operation_id,
-				call, mut skill_context, mcp_bindings, mut mcp_connections, autonomous)!
+			result := sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
+				root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
+				autonomous)!)
 			result_bytes += result.len
 			if result_bytes > max_agent_tool_result_bytes {
 				return error('agent tool result limit reached')
@@ -371,6 +372,15 @@ fn tool_round_text_boundary(content string) string {
 		return ''
 	}
 	return '\n'
+}
+
+// sanitize_agent_tool_result keeps untrusted tool output out of provider history
+// when it contains binary-unsafe NUL bytes, while letting the turn continue.
+fn sanitize_agent_tool_result(result string) string {
+	if result.contains('\0') {
+		return 'tool result rejected: contained a NUL byte'
+	}
+	return result
 }
 
 fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root string,

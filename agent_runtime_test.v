@@ -6,6 +6,12 @@ import context as vcontext
 import time
 import uuid
 
+fn test_sanitize_agent_tool_result_rejects_nul_bytes() {
+	assert sanitize_agent_tool_result('ok') == 'ok'
+	assert sanitize_agent_tool_result('bad\0data') == 'tool result rejected: contained a NUL byte'
+	assert !sanitize_agent_tool_result('bad\0data').contains('\0')
+}
+
 fn test_plugin_mcp_tool_result_failure_classification() {
 	assert plugin_mcp_tool_result_failed('{"error":"transport failed"}')
 	assert plugin_mcp_tool_result_failed('{"content":[{"type":"text","text":"tool failed"}],"isError":true}')

@@ -413,6 +413,26 @@
     }
   },
   {
+    "name": "HTTP header value with TAB is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "HTTP header is invalid"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "remote": {
+          "type": "streamable-http",
+          "url": "https://example.com/mcp",
+          "headers": {
+            "X-Token": "bad\tvalue"
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "overlong HTTP header value is skipped",
     "accepted": true,
     "servers": [],

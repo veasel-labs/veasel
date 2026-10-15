@@ -582,6 +582,32 @@ fn open_store(path string) !&Store {
 			return error('unable to commit reasoning usage migration')
 		}
 	}
+	if current < 16 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin session skill invoke migration')
+		}
+		db.exec('CREATE TABLE session_skill_invokes (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, plugin_name TEXT NOT NULL, skill_name TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create session skill invoke table')
+		}
+		db.exec('CREATE INDEX session_skill_invokes_session_id ON session_skill_invokes (session_id, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index session skill invokes')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (16)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record session skill invoke migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit session skill invoke migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued jobs never claimed a worker; their request_json is kept
@@ -1037,6 +1063,83 @@ fn (mut store Store) set_session_plugin_skill(session_id string, plugin_name str
 		store.db.rollback() or {}
 		return error('unable to commit session plugin skill update')
 	}
+}
+
+const max_session_skill_invokes = 8
+
+fn (mut store Store) enqueue_session_skill_invoke(session_id string, plugin_name string, skill_name string) ![]SessionPluginSkill {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	pending := store.db.exec_param('SELECT COUNT(*) FROM session_skill_invokes WHERE session_id = ?',
+		session_id) or {
+		store.db.rollback() or {}
+		return error('unable to count session skill invokes')
+	}
+	count := if pending.len > 0 { pending[0].val(0).int() } else { 0 }
+	if count >= max_session_skill_invokes {
+		store.db.rollback() or {}
+		return error('A session can queue at most ${max_session_skill_invokes} one-shot skill invokes')
+	}
+	_ = store.db.exec_param_many('INSERT INTO session_skill_invokes (session_id, plugin_name, skill_name) VALUES (?, ?, ?)',
+		[session_id, plugin_name, skill_name]) or {
+		store.db.rollback() or {}
+		return error('unable to enqueue session skill invoke')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+		['session.skill_invoked', session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to record session skill invoke event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session skill invoke')
+	}
+	rows := store.db.exec_param('SELECT plugin_name, skill_name FROM session_skill_invokes WHERE session_id = ? ORDER BY id',
+		session_id)!
+	mut skills := []SessionPluginSkill{cap: rows.len}
+	for row in rows {
+		skills << SessionPluginSkill{
+			plugin_name: row.val(0)
+			skill_name:  row.val(1)
+		}
+	}
+	return skills
+}
+
+// take_session_skill_invokes returns and clears pending one-shot skill invokes
+// so they inject into the next turn only.
+fn (mut store Store) take_session_skill_invokes(session_id string) ![]SessionPluginSkill {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	store.db.begin()!
+	rows := store.db.exec_param('SELECT plugin_name, skill_name FROM session_skill_invokes WHERE session_id = ? ORDER BY id',
+		session_id) or {
+		store.db.rollback() or {}
+		return error('unable to read session skill invokes')
+	}
+	mut skills := []SessionPluginSkill{cap: rows.len}
+	for row in rows {
+		skills << SessionPluginSkill{
+			plugin_name: row.val(0)
+			skill_name:  row.val(1)
+		}
+	}
+	if skills.len > 0 {
+		_ = store.db.exec_param('DELETE FROM session_skill_invokes WHERE session_id = ?', session_id) or {
+			store.db.rollback() or {}
+			return error('unable to clear session skill invokes')
+		}
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session skill invoke take')
+	}
+	return skills
 }
 
 fn (mut store Store) session_plugin_mcp_servers(session_id string) ![]SessionPluginMCPServer {

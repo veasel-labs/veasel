@@ -1234,15 +1234,26 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  const skillCommand = /^\/skill\s+(on|off)\s+([a-z0-9.-]+)\/([a-z0-9-]+)$/.exec(content)
+  const skillCommand = /^\/skill\s+(on|off|run)\s+([a-z0-9.-]+)\/([a-z0-9-]+)$/.exec(content)
   if (skillCommand) {
-    await setSkill(skillCommand[1] === "on", skillCommand[2], skillCommand[3])
+    if (skillCommand[1] === "run") {
+      await invokeSkill(skillCommand[2], skillCommand[3])
+    } else {
+      await setSkill(skillCommand[1] === "on", skillCommand[2], skillCommand[3])
+    }
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const dollarSkill = /^\$([a-z0-9.-]+)\/([a-z0-9-]+)$/.exec(content.trim())
+  if (dollarSkill) {
+    await invokeSkill(dollarSkill[1], dollarSkill[2])
     chatInput.value = ""
     chatInput.focus()
     return
   }
   if (content.startsWith("/skill ")) {
-    skillNotice = "Use /skill on <plugin>/<skill> or /skill off <plugin>/<skill>."
+    skillNotice = "Use /skill on|off|run <plugin>/<skill>, or $<plugin>/<skill> for a one-shot invoke."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1548,7 +1559,7 @@ async function showSkills(filter = "") {
     const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
     const header = formatCatalogFilterHeader("AGENT SKILLS", matched.length, entries.length, filter)
     skillNotice = matched.length > 0
-      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. Filter with /skills <text> (all tokens must match). Standalone SKILL.md folders are discovered automatically from project and user agent skill directories. /skill on injects the body into later turns; the model can also load a discovered skill on demand with agent_skill_load without enabling it first, then read bounded text resources from that folder for the rest of the turn. Files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
+      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. One-shot next turn with /skill run <source>/<skill> or $<source>/<skill>. Filter with /skills <text> (all tokens must match). Standalone SKILL.md folders are discovered automatically from project and user agent skill directories. /skill on injects the body into later turns; /skill run queues one turn only. The model can also load a non-project discovered skill on demand with agent_skill_load (project skills need /skill on first), then read bounded text resources from that folder for the rest of the turn. Files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
       : filter
         ? formatCatalogFilterEmpty("skills", safeTerminalText(filter))
         : "No skills found. Add a plugin.json package under VEASEL_PLUGIN_DIR, or place SKILL.md folders under .agents/skills, .claude/skills, .cursor/skills, and the other discovered agent skill roots."
@@ -2425,6 +2436,24 @@ async function setSkill(enabled: boolean, pluginName: string, skillName: string)
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not update skill: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function invokeSkill(pluginName: string, skillName: string) {
+  if (!activeSession) return
+  try {
+    const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/skills/invoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ plugin_name: pluginName, skill_name: skillName }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    skillNotice = `Queued one-shot ${pluginName}/${skillName} for the next turn. It will not stay enabled. Use /skill on to keep it for the session, or $plugin/skill again.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not invoke skill: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

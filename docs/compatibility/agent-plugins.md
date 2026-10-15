@@ -113,8 +113,9 @@ They appear under the synthetic catalog package `configured`
 (`origin=configured`) and are trusted as `configured/<name>`. Precedence for
 the same name: project > project-import > user.
 Session Skills are selected with
-`GET/POST /v1/sessions/{id}/skills`; the TUI exposes `/skills` and
-`/skill on|off <plugin>/<skill>`. MCP servers are listed with `/mcp` and
+`GET/POST /v1/sessions/{id}/skills`; one-shot next-turn invoke uses
+`POST /v1/sessions/{id}/skills/invoke`. The TUI exposes `/skills`,
+`/skill on|off|run <plugin>/<skill>`, and `$plugin/skill`. MCP servers are listed with `/mcp` and
 trusted per session with `/mcp trust <plugin>/<server>`; revoke with
 `/mcp untrust <plugin>/<server>`. Stdio and Streamable HTTP servers run; other
 transports are skipped. Their MCP

@@ -902,6 +902,68 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/skills/invoke:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: invokeSessionSkill
+      description: >
+        Queues a one-shot skill body injection for the next session turn without
+        lasting enablement. The TUI exposes `/skill run <source>/<skill>` and
+        `$source/skill`. Explicit invoke is the trust act for project-scoped
+        skills; content remains untrusted and is never executed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plugin_name, skill_name]
+              properties:
+                plugin_name:
+                  type: string
+                skill_name:
+                  type: string
+      responses:
+        '200':
+          description: Queued one-shot invoke and current pending queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plugin_name, skill_name, pending]
+                properties:
+                  plugin_name:
+                    type: string
+                  skill_name:
+                    type: string
+                  pending:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SessionPluginSkill'
+        '400':
+          description: Invalid request or skill instructions cannot be safely loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session or plugin skill not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Pending one-shot invoke queue is full.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/sessions/{id}/mcp-servers:
     parameters:
       - in: path

@@ -267,8 +267,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   enables them with session `/skill on` (existing POST `/v1/sessions/{id}/skills`);
   user/configured/plugin-package skills keep progressive disclosure. Capability
   `skills.project.trust`.
-- [ ] One-shot user skill invoke (API + TUI `/skill` or `$name` without
-  persistent session enablement).
+- [x] One-shot user skill invoke: `POST /v1/sessions/{id}/skills/invoke` queues
+  a skill body for the next turn only (cap 8); TUI `/skill run <source>/<skill>`
+  and `$source/skill`; capability `sessions.skills.invoke`.
 - [x] When a standalone skill source key collides with an Agent Plugin package
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the

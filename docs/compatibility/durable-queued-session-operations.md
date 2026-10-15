@@ -19,7 +19,7 @@ loopback HTTP API (`queued` → `running` → terminal).
 
 | Persisted status at crash | On next startup | Rationale |
 | --- | --- | --- |
-| `queued` | Kept and resumed by a worker that claims to `running` | Request JSON is durable; no provider or tool effect has started |
+| `queued` | Kept and resumed by a worker that claims to `running`, after request/workspace/model checks | Request JSON is durable; no provider or tool effect has started. Missing workspace, invalid request, or unset model fail closed as `cancelled` without claim |
 | `running` / `cancelling` | Marked `uncertain`; never replayed | Provider socket or tool side effects may have completed without a durable result |
 | Terminal (`completed` / `failed` / `cancelled` / `uncertain`) | Unchanged; oldest terminal rows pruned beyond 200 per session | Bounded retention |
 

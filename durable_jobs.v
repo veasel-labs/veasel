@@ -83,6 +83,15 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
+		if app.configured_model() == none {
+			eprintln('veasel: rejecting queued operation ${operation.id}; model not configured')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn cannot start because a model is not configured.') or {
+				eprintln('veasel: unable to reject queued operation without a model ${operation.id}')
+				''
+			}
+			continue
+		}
 		operation_id, mut turn_ctx, cancel := app.begin_turn_operation(operation.session_id,
 			operation.id) or {
 			eprintln('veasel: unable to resume queued operation ${operation.id} (${err.msg()})')

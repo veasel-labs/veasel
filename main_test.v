@@ -1324,6 +1324,36 @@ fn test_resume_rejects_empty_queued_request_without_claiming() {
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
+fn test_resume_rejects_when_model_is_not_configured() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-no-model-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-no-model-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'No model configured'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := '7a8b9c0d-1e2f-4a3b-8c4d-5e6f708192a3'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"still valid"}') or {
+		panic(err)
+	}
+	mut app := new_app(store, plugin_directory)
+	assert app.configured_model() == none
+	app.resume_durable_queued_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Queued turn cannot start because a model is not configured.'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_resume_rejects_nul_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-nul-queued-${uuid.new_v4().str()}')
 	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-nul-queued-${uuid.new_v4().str()}')

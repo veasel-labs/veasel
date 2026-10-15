@@ -52,8 +52,9 @@ pub:
 	description string
 	path        string
 	// Agent Skills hint only; it must never grant authority beyond user policy.
-	allowed_tools          string
-	allowed_tools_declared bool
+	allowed_tools            string
+	allowed_tools_declared   bool
+	disable_model_invocation bool
 mut:
 	directory string
 }
@@ -446,7 +447,8 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 	}
 	fields := doc.root as map[string]yaml.Any
 	for key, _ in fields {
-		if key !in ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools'] {
+		if key !in ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools',
+			'disable-model-invocation'] {
 			return error('unknown Agent Skill frontmatter field `${key}`')
 		}
 	}
@@ -487,11 +489,16 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 			}
 		}
 	}
+	mut disable_model_invocation := false
+	if value := fields['disable-model-invocation'] {
+		disable_model_invocation = skill_truthy_flag(value, 'disable-model-invocation')!
+	}
 	if metadata := fields['metadata'] {
 		if metadata !is map[string]yaml.Any {
 			return error('skill metadata must be a mapping')
 		}
-		for _, value in metadata as map[string]yaml.Any {
+		meta := metadata as map[string]yaml.Any
+		for _, value in meta {
 			if value !is string {
 				return error('skill metadata values must be strings')
 			}
@@ -499,14 +506,43 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 				return error('skill metadata values must not contain control bytes')
 			}
 		}
+		if value := meta['disable-model-invocation'] {
+			if skill_truthy_flag(value, 'metadata.disable-model-invocation')! {
+				disable_model_invocation = true
+			}
+		}
+		// OpenCode hides skills from the model catalog when autoinvoke is false.
+		if value := meta['opencode/autoinvoke'] {
+			if !skill_truthy_flag(value, 'metadata.opencode/autoinvoke')! {
+				disable_model_invocation = true
+			}
+		}
 	}
 	return PluginSkill{
-		name:                   name
-		description:            description
-		path:                   path
-		allowed_tools:          allowed_tools
-		allowed_tools_declared: allowed_tools_declared
+		name:                     name
+		description:              description
+		path:                     path
+		allowed_tools:            allowed_tools
+		allowed_tools_declared:   allowed_tools_declared
+		disable_model_invocation: disable_model_invocation
 	}
+}
+
+fn skill_truthy_flag(value yaml.Any, field string) !bool {
+	if value is bool {
+		return value as bool
+	}
+	if value is string {
+		text := (value as string).trim_space().to_lower()
+		if text in ['true', 'yes', '1'] {
+			return true
+		}
+		if text in ['false', 'no', '0'] {
+			return false
+		}
+		return error('skill field `${field}` must be a boolean')
+	}
+	return error('skill field `${field}` must be a boolean')
 }
 
 fn skill_text_has_unsafe_controls(value string) bool {

@@ -96,13 +96,24 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 	}]
 	definitions := agent_skill_resource_tools()
 	assert definitions.map(it.name) == ['agent_skill_read_resource']
-	load_definitions := agent_skill_load_tools('<available_skills>\n  <skill>\n    <plugin_name>review-tools</plugin_name>\n    <skill_name>review</skill_name>\n    <description>Review carefully.</description>\n  </skill>\n</available_skills>')
+	load_definitions := agent_skill_load_tools(AvailableSkillsDisclosure{
+		entries: [
+			AvailableSkillEntry{
+				plugin_name: 'review-tools'
+				skill_name:  'review'
+				description: 'Review carefully.'
+				location:    '/tmp/review-tools/skills/review'
+			},
+		]
+	})
 	assert load_definitions.map(it.name) == ['agent_skill_load']
 	assert load_definitions[0].description.contains('<available_skills>')
 	assert load_definitions[0].description.contains('review-tools')
 	assert load_definitions[0].description.contains('Review carefully.')
-	assert agent_skill_load_tools('').len == 0
-	assert agent_skill_load_tools('   ').len == 0
+	assert load_definitions[0].description.contains('<location>')
+	assert load_definitions[0].parameters.properties['plugin_name'].enum_values == ['review-tools']
+	assert load_definitions[0].parameters.properties['skill_name'].enum_values == ['review']
+	assert agent_skill_load_tools(AvailableSkillsDisclosure{}).len == 0
 	resource_policy := agent_tool_policy_for_skills([PluginSkill{
 		name:                   'references'
 		allowed_tools:          'agent_skill_read_resource'
@@ -197,22 +208,26 @@ fn test_available_skills_catalog_discloses_metadata_without_bodies() {
 	defer { store.close() or {} }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
-	catalog := app.available_skills_catalog_for_turn(project)
+	disclosure := app.available_skills_for_turn(project)
+	catalog := format_available_skills_catalog(disclosure.entries, disclosure.truncated)
 	assert catalog.contains('<available_skills>')
 	assert catalog.contains('<plugin_name>agents</plugin_name>')
 	assert catalog.contains('<skill_name>deep-review</skill_name>')
 	assert catalog.contains('Review carefully with references.')
+	assert catalog.contains('<location>')
 	assert catalog.contains('<plugin_name>claude</plugin_name>')
 	assert catalog.contains('<skill_name>quick-check</skill_name>')
 	assert catalog.contains('Fast lint-oriented check.')
 	assert !catalog.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
 	assert !catalog.contains('QUICK_BODY_SHOULD_STAY_OFF_CATALOG')
 	assert !catalog.contains('Use the reference guide.')
-	tools := agent_skill_load_tools(catalog)
+	tools := agent_skill_load_tools(disclosure)
 	assert tools.len == 1
 	assert tools[0].name == 'agent_skill_load'
 	assert tools[0].description.contains('deep-review')
 	assert tools[0].description.contains('quick-check')
+	assert tools[0].parameters.properties['plugin_name'].enum_values == ['agents', 'claude']
+	assert tools[0].parameters.properties['skill_name'].enum_values == ['deep-review', 'quick-check']
 	assert !tools[0].description.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
 	escaped, _ := available_skill_entries_from_catalog(PluginCatalog{
 		plugins: [
@@ -279,8 +294,8 @@ fn test_available_skills_catalog_omits_disabled_components() {
 	defer { store.close() or {} }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
-	before := app.available_skills_catalog_for_turn(project)
-	assert before.contains('deep-review')
+	before := app.available_skills_for_turn(project)
+	assert before.entries.any(it.skill_name == 'deep-review')
 	mut components := app.plugin_components
 	components.set_enabled(PluginComponentToggleInput{
 		plugin:  'agents'
@@ -288,9 +303,101 @@ fn test_available_skills_catalog_omits_disabled_components() {
 		name:    'deep-review'
 		enabled: false
 	}) or { panic(err) }
-	catalog := app.available_skills_catalog_for_turn(project)
-	assert catalog.len == 0
+	catalog := app.available_skills_for_turn(project)
+	assert catalog.entries.len == 0
 	assert agent_skill_load_tools(catalog).len == 0
+}
+
+fn test_available_skills_catalog_omits_disable_model_invocation() {
+	root := os.join_path(os.temp_dir(), 'veasel-available-skills-dmi-${uuid.new_v4().str()}')
+	project := os.join_path(root, 'workspace')
+	plugin_dir := os.join_path(root, 'plugins')
+	home := os.join_path(root, 'home')
+	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'manual-only')) or { panic(err) }
+	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'auto-open')) or { panic(err) }
+	os.mkdir_all(os.join_path(project, '.claude', 'skills', 'no-autoinvoke')) or { panic(err) }
+	os.mkdir_all(plugin_dir) or { panic(err) }
+	os.mkdir_all(home) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	prior_home := os.getenv('HOME')
+	prior_skills_dirs := os.getenv('VEASEL_SKILLS_DIRS')
+	prior_codex := os.getenv('CODEX_HOME')
+	prior_xdg := os.getenv('XDG_CONFIG_HOME')
+	had_skills_dirs := 'VEASEL_SKILLS_DIRS' in os.environ()
+	had_codex := 'CODEX_HOME' in os.environ()
+	had_xdg := 'XDG_CONFIG_HOME' in os.environ()
+	os.setenv('HOME', home, true)
+	os.unsetenv('VEASEL_SKILLS_DIRS')
+	os.unsetenv('CODEX_HOME')
+	os.unsetenv('XDG_CONFIG_HOME')
+	defer {
+		os.setenv('HOME', prior_home, true)
+		if had_skills_dirs {
+			os.setenv('VEASEL_SKILLS_DIRS', prior_skills_dirs, true)
+		} else {
+			os.unsetenv('VEASEL_SKILLS_DIRS')
+		}
+		if had_codex {
+			os.setenv('CODEX_HOME', prior_codex, true)
+		} else {
+			os.unsetenv('CODEX_HOME')
+		}
+		if had_xdg {
+			os.setenv('XDG_CONFIG_HOME', prior_xdg, true)
+		} else {
+			os.unsetenv('XDG_CONFIG_HOME')
+		}
+	}
+	os.write_file(os.join_path(project, '.agents', 'skills', 'manual-only', 'SKILL.md'),
+		'---\nname: manual-only\ndescription: Slash or explicit load only.\ndisable-model-invocation: true\n---\n\nMANUAL BODY') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(project, '.agents', 'skills', 'auto-open', 'SKILL.md'),
+		'---\nname: auto-open\ndescription: Shown in the model catalog.\n---\n\nAUTO BODY') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(project, '.claude', 'skills', 'no-autoinvoke', 'SKILL.md'),
+		'---\nname: no-autoinvoke\ndescription: Hidden via OpenCode autoinvoke metadata.\nmetadata:\n  opencode/autoinvoke: "false"\n---\n\nNO AUTO BODY') or {
+		panic(err)
+	}
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, plugin_dir)
+	defer { app.close() }
+	disclosure := app.available_skills_for_turn(project)
+	assert disclosure.entries.any(it.skill_name == 'auto-open')
+	assert !disclosure.entries.any(it.skill_name == 'manual-only')
+	assert !disclosure.entries.any(it.skill_name == 'no-autoinvoke')
+	catalog := format_available_skills_catalog(disclosure.entries, disclosure.truncated)
+	assert catalog.contains('auto-open')
+	assert !catalog.contains('manual-only')
+	assert !catalog.contains('no-autoinvoke')
+	assert !catalog.contains('MANUAL BODY')
+}
+
+fn test_available_skills_catalog_budget_shortens_before_omitting() {
+	mut skills := []PluginSkillSummary{cap: 12}
+	for index in 0 .. 12 {
+		skills << PluginSkillSummary{
+			name:        'skill-${index:02}'
+			description: 'D'.repeat(400)
+			location:    '/tmp/budget/skills/skill-${index:02}'
+			enabled:     true
+		}
+	}
+	entries, truncated := available_skill_entries_from_catalog(PluginCatalog{
+		plugins: [
+			PluginCatalogEntry{
+				name:   'budget'
+				skills: skills
+			},
+		]
+	})
+	assert entries.len > 0
+	xml := format_available_skills_catalog(entries, truncated)
+	assert xml.len <= max_available_skills_catalog_chars
+	assert entries[0].description.len <= max_available_skill_catalog_description_bytes + 3
+	assert entries.any(it.location.len > 0)
 }
 
 fn test_agent_skill_load_tool_loads_body_without_session_enable() {

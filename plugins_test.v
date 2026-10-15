@@ -565,12 +565,22 @@ fn test_agent_skill_frontmatter_enforces_supported_fields_and_limits() {
 	assert valid.description.len == 1024
 	assert valid.allowed_tools == 'Read'
 	assert valid.allowed_tools_declared
+	assert !valid.disable_model_invocation
 	unicode_skill := parse_agent_skill('café-分析-3', '/plugin/skills/café-分析-3/SKILL.md', '---\nname: café-分析-3\ndescription: Unicode skill.\n---\nBody') or {
 		panic(err)
 	}
 	assert unicode_skill.name == 'café-分析-3'
+	disabled := parse_agent_skill('review', '/plugin/skills/review/SKILL.md', '---\nname: review\ndescription: Manual only.\ndisable-model-invocation: true\n---\nBody') or {
+		panic(err)
+	}
+	assert disabled.disable_model_invocation
+	autoinvoke_off := parse_agent_skill('review', '/plugin/skills/review/SKILL.md', '---\nname: review\ndescription: Manual only.\nmetadata:\n  opencode/autoinvoke: "false"\n---\nBody') or {
+		panic(err)
+	}
+	assert autoinvoke_off.disable_model_invocation
 
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nextra: ignored')
+	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ndisable-model-invocation: maybe')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nlicense: true')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ""')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ' + 'x'.repeat(501))

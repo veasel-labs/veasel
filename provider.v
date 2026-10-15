@@ -403,7 +403,8 @@ struct StrictToolParameters {
 pub struct ToolParameter {
 pub:
 	type        string
-	description string @[omitempty]
+	description string   @[omitempty]
+	enum_values []string @[json: 'enum'; omitempty]
 }
 
 type ProviderTextDeltaFn = fn (delta string) !

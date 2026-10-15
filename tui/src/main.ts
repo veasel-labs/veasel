@@ -88,6 +88,12 @@ import {
   windowTranscriptSegments,
 } from "./transcript-scroll"
 import {
+  admitAssistantDelta,
+  appendStreamingDelta,
+  isAssistantDeltaEvent,
+  parseSseBlock,
+} from "./stream-events"
+import {
   copyLastReplyNotice,
   lastAssistantReply,
   writeClipboardOsc52,
@@ -886,22 +892,26 @@ function renderChat(messages: ChatTurn[]) {
   sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
 }
 
+function applyLiveStreamStatus() {
+  const live = liveStreamStatusMessage({
+    offsetFromBottom: transcriptScrollOffset,
+    streaming: Boolean(activeTurnId),
+    streamingChars: streamingAssistantText.length,
+    formatStreaming: formatStreamingBusyStatus,
+  })
+  if (!live) return
+  // End (offset 0) restores measured streaming busy; scrolled keeps End-follow.
+  status.content = transcriptScrollOffset > 0 ? formatWarnStatus(live) : live
+  status.fg = theme.statusWarn
+}
+
 function refreshScrollStatus() {
   if (!activeSession || settingsOpen) return
   // Keep scroll-follow cues while a turn streams so Home/PgUp + Esc cancel still
   // announce End — even when other pending reviews would otherwise own the
-  // status row. Stick-to-bottom leaves the measured streaming busy status.
+  // status row. Stick-to-bottom (including End after scroll) restores busy.
   if (sendingMessage || activeTurnId) {
-    const live = liveStreamStatusMessage({
-      offsetFromBottom: transcriptScrollOffset,
-      streaming: Boolean(activeTurnId),
-      streamingChars: streamingAssistantText.length,
-      formatStreaming: formatStreamingBusyStatus,
-    })
-    if (live && transcriptScrollOffset > 0) {
-      status.content = formatWarnStatus(live)
-      status.fg = theme.statusWarn
-    }
+    applyLiveStreamStatus()
     return
   }
   if (totalPendingReviews(lastPendingCounts) > 0) return
@@ -916,6 +926,21 @@ function refreshScrollStatus() {
   }
   status.content = formatListeningStatus(activeModelLabel || undefined)
   status.fg = theme.statusOk
+}
+
+// Coalesce rapid assistant.delta frames onto one render microtask so multi-delta
+// races do not thrash the transcript window or fight End-follow status updates.
+let pendingStreamDeltaRender = false
+function queueStreamingDelta(delta: string) {
+  streamingAssistantText = appendStreamingDelta(streamingAssistantText, delta)
+  if (pendingStreamDeltaRender) return
+  pendingStreamDeltaRender = true
+  queueMicrotask(() => {
+    pendingStreamDeltaRender = false
+    if (!activeTurnId) return
+    renderChat(chatMessages)
+    applyLiveStreamStatus()
+  })
 }
 
 function scrollTranscript(where: "pageup" | "pagedown" | "home" | "end") {
@@ -2667,58 +2692,39 @@ async function consumeEvents() {
         const blocks = buffer.split(/\r?\n\r?\n/)
         buffer = blocks.pop() ?? ""
         for (const block of blocks) {
-          let refreshSessionsForEvent = false
-          for (const line of block.split(/\r?\n/)) {
-            if (line.startsWith("id:")) lastEventId = line.slice(3).trim()
-            if (line.startsWith("event:") && line.slice(6).trim() !== "heartbeat") {
-              const eventType = line.slice(6).trim()
-              refreshSessionsForEvent ||= eventType !== "assistant.delta"
-              // Keep assistant.delta off the live flash so streaming busy / scroll
-              // cues are not overwritten by the raw event name.
-              if (eventType !== "assistant.delta") {
-                status.content = `● live  ·  ${eventType}`
+          const parsed = parseSseBlock(block)
+          if (parsed.id) lastEventId = parsed.id
+          const eventType = parsed.event
+          if (!eventType || eventType === "heartbeat") continue
+          const refreshSessionsForEvent = eventType !== "assistant.delta"
+          // Keep assistant.delta off the live flash so streaming busy / scroll
+          // cues are not overwritten by the raw event name.
+          if (!isAssistantDeltaEvent(eventType)) {
+            status.content = `● live  ·  ${eventType}`
+          }
+          if (isAssistantDeltaEvent(eventType) || eventType === "plugin.mcp_tool_call_pending"
+            || eventType === "session.turn_completed") {
+            try {
+              const event = JSON.parse(parsed.data) as {
+                session_id?: string
+                data?: SessionTurnCompletion & { delta?: string }
               }
-              if (eventType === "assistant.delta" || eventType === "plugin.mcp_tool_call_pending"
-                || eventType === "session.turn_completed") {
-                const data = block.split(/\r?\n/).filter((item) => item.startsWith("data:"))
-                  .map((item) => item.slice(5).trimStart()).join("\n")
-                try {
-                  const event = JSON.parse(data) as {
-                    session_id?: string
-                    data?: SessionTurnCompletion & { delta?: string }
-                  }
-                  if (eventType === "plugin.mcp_tool_call_pending" && event.session_id === activeSession?.id) {
-                    void notifyPendingMcpToolCalls()
-                  } else if (eventType === "assistant.delta" && activeSession && activeTurnId) {
-                    const delta = event.data?.delta
-                    if (event.session_id === activeSession.id
-                      && event.data?.operation_id === activeTurnId
-                      && typeof delta === "string" && delta.length > 0) {
-                      streamingAssistantText += delta
-                      renderChat(chatMessages)
-                      // Stick-to-bottom streams announce measured growth; scrolled
-                      // views keep (and refresh) the End-follow cue so Esc cancel
-                      // while paged up still names streaming below.
-                      const live = liveStreamStatusMessage({
-                        offsetFromBottom: transcriptScrollOffset,
-                        streaming: true,
-                        streamingChars: streamingAssistantText.length,
-                        formatStreaming: formatStreamingBusyStatus,
-                      })
-                      if (live) {
-                        status.content = transcriptScrollOffset > 0
-                          ? formatWarnStatus(live)
-                          : live
-                        status.fg = theme.statusWarn
-                      }
-                    }
-                  } else if (eventType === "session.turn_completed" && event.session_id) {
-                    void finishAsyncSessionTurn(event.session_id, event.data ?? {})
-                  }
-                } catch {
-                  // Ignore malformed event payloads; the persisted turn remains authoritative.
-                }
+              if (eventType === "plugin.mcp_tool_call_pending" && event.session_id === activeSession?.id) {
+                void notifyPendingMcpToolCalls()
+              } else if (isAssistantDeltaEvent(eventType)) {
+                const delta = admitAssistantDelta({
+                  sessionId: event.session_id,
+                  activeSessionId: activeSession?.id,
+                  operationId: event.data?.operation_id,
+                  activeTurnId,
+                  delta: event.data?.delta,
+                })
+                if (delta) queueStreamingDelta(delta)
+              } else if (eventType === "session.turn_completed" && event.session_id) {
+                void finishAsyncSessionTurn(event.session_id, event.data ?? {})
               }
+            } catch {
+              // Ignore malformed event payloads; the persisted turn remains authoritative.
             }
           }
           if (refreshSessionsForEvent) void refreshSessions()

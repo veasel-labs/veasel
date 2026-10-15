@@ -992,6 +992,31 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/workspace/git/worktrees:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listSessionGitWorktrees
+      description: Lists git worktrees for the session workspace by reading the repository git directory (no `git` subprocess). Includes the main checkout and linked worktrees under `.git/worktrees/`. Reports HEAD/branch when present and whether well-known git lock files exist. Does not create, add, or remove worktrees.
+      responses:
+        '200':
+          description: Discovered worktrees (capped).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceGitWorktreeCatalog' }
+        '400':
+          description: Workspace is not a readable git checkout.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/workspace/map:
     parameters:
       - in: path
@@ -2246,6 +2271,23 @@ components:
           maxItems: 100
           items: { $ref: '#/components/schemas/WorkspaceSearchMatch' }
         truncated: { type: boolean }
+    WorkspaceGitWorktreeCatalog:
+      type: object
+      required: [worktrees]
+      properties:
+        worktrees:
+          type: array
+          maxItems: 64
+          items: { $ref: '#/components/schemas/WorkspaceGitWorktree' }
+    WorkspaceGitWorktree:
+      type: object
+      required: [path, locked, is_main]
+      properties:
+        path: { type: string, description: Absolute worktree root path. }
+        head: { type: string, description: Raw HEAD contents (ref or detached SHA). }
+        branch: { type: string, description: Branch name when HEAD is refs/heads/*. }
+        locked: { type: boolean, description: True when a well-known git lock file is present for this worktree. }
+        is_main: { type: boolean, description: True for the primary checkout that owns `.git/`. }
     WorkspaceRepositoryMapResponse:
       type: object
       required: [text, bytes, estimated_token_bound, budget_bytes, file_count, symbol_count, files_scanned, truncated, untrusted, ranked_paths]

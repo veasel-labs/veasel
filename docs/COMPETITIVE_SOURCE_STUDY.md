@@ -93,11 +93,12 @@ concerns.
 history even when execution is concurrent; distinguish authorization from
 containment. Veasel persists proposed changes and operation state. On Linux,
 manually approved shell uses Bubblewrap when `bwrap` is available (graceful
-unsandboxed fallback otherwise); autonomous Linux shell uses the same mount
-layout, filters the environment, and fails closed if it cannot start. This is
-best-effort containment and does not provide Codex-level sandbox guarantees.
-macOS Seatbelt and Windows AppContainer + Job Object wraps exist for approved
-shell; Codex-level WFP helper-service / LPAC isolation remains open.
+unsandboxed fallback otherwise). Autonomous shell is fail-closed on Linux
+Bubblewrap, macOS Seatbelt, and Windows AppContainer + Job (filtered env on
+Linux/macOS; Windows still inherits process env). This is best-effort
+containment and does not provide Codex-level sandbox guarantees. Approved
+shell also has macOS Seatbelt and Windows AppContainer + Job wraps;
+Codex-level WFP helper-service / LPAC isolation remains open.
 See [`compatibility/shell-bubblewrap-sandbox.md`](compatibility/shell-bubblewrap-sandbox.md), [`compatibility/shell-seatbelt-sandbox.md`](compatibility/shell-seatbelt-sandbox.md), and [`compatibility/shell-windows-job-sandbox.md`](compatibility/shell-windows-job-sandbox.md).
 
 ### mini-SWE-agent — a baseline small enough to falsify complexity
@@ -336,5 +337,5 @@ integrations already exist. For current verified feature status, see
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
 | Agent Plugins conformance gaps | Substantial v1.0.0 coverage; remaining gaps listed in `docs/compatibility/agent-plugins.md` (OAuth, GET notification streams, install UI). |
 | Durable job recovery across restart | Queued Prefer: respond-async jobs resume after restart; claimed running/cancelling ops become `uncertain` and are never replayed. See `docs/compatibility/durable-queued-session-operations.md`. |
-| Incomplete execution sandboxing | Approved Linux Bubblewrap and macOS Seatbelt wrap when available (honest capabilities); Windows remains unsandboxed under auto with require fail-closed; MCP remains unsandboxed; autonomous Linux Bubblewrap is fail-closed and stricter than mini-swe-agent's optional bwrap. Codex-level Windows isolation and deeper Seatbelt hardening remain open. |
+| Incomplete execution sandboxing | Approved Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer+Job wrap when available (honest capabilities); `VEASEL_SHELL_SANDBOX=auto` may fall back unsandboxed when the backend is missing, while `require` fails closed. Autonomous shell is fail-closed on Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer+Job (allowlisted env on Linux/macOS; Windows AppContainer still inherits process env — documented limit). MCP remains unsandboxed. Codex-level Windows WFP/LPAC and deeper Seatbelt hardening remain open. |
 | Missing credible E2E benchmark comparisons | Harbor smoke adapter + ATIF validation exist; no Harbor Index / Terminal-Bench / SWE-bench submission or leaderboard claim. |

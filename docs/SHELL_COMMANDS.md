@@ -107,12 +107,14 @@ PACKAGES may remain readable/executable. See
 
 ## Autonomous benchmark path
 
-The separately opt-in autonomous benchmark path is supported only on Linux. It
-requires Bubblewrap (`bwrap`) and fails closed if the executable or namespace
-setup is unavailable. Its command uses the same mount layout, always filters the
-environment to an allowlist, and never enables network sharing. Do not treat
-this as a VM or a boundary against a hostile kernel. MCP stdio processes do not
-use this sandbox.
+The separately opt-in autonomous benchmark path is fail-closed OS-sandboxed on
+the platform backend when present: Linux Bubblewrap (`bwrap`), macOS Seatbelt
+(`/usr/bin/sandbox-exec`), and Windows AppContainer + Job Object. Platforms
+without that backend refuse to start a process. Autonomous commands always
+deny network sharing; Linux and macOS also filter the environment to an
+allowlist (Windows AppContainer still inherits process env — a documented
+backend limit). Do not treat this as a VM or a boundary against a hostile
+kernel. MCP stdio processes do not use this sandbox.
 
 ## Limits and API trust
 

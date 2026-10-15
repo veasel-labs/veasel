@@ -136,8 +136,8 @@ const shell_sandbox_mode_env = 'VEASEL_SHELL_SANDBOX'
 const shell_sandbox_network_env = 'VEASEL_SHELL_SANDBOX_NETWORK'
 
 // ApprovedShellSandboxMode selects defense-in-depth OS sandboxing for reviewed
-// commands (Bubblewrap on Linux, Seatbelt on macOS). Autonomous execution always
-// uses fail-closed Bubblewrap on Linux only.
+// commands (Bubblewrap on Linux, Seatbelt on macOS, AppContainer+Job on Windows).
+// Autonomous execution is always fail-closed on the platform backend when present.
 enum ApprovedShellSandboxMode {
 	auto
 	off
@@ -152,9 +152,10 @@ struct LinuxShellSandboxOptions {
 }
 
 struct MacosShellSandboxOptions {
-	purpose       string
-	fail_closed   bool
-	allow_network bool
+	purpose            string
+	fail_closed        bool
+	filter_environment bool
+	allow_network      bool
 }
 
 const macos_seatbelt_executable = '/usr/bin/sandbox-exec'
@@ -313,6 +314,21 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 					filter_environment: true
 					allow_network:      false
 				})
+		} $else $if macos {
+			return run_macos_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				MacosShellSandboxOptions{
+					purpose:            'Autonomous shell execution'
+					fail_closed:        true
+					filter_environment: true
+					allow_network:      false
+				})
+		} $else $if windows {
+			return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				WindowsShellSandboxOptions{
+					purpose:       'Autonomous shell execution'
+					fail_closed:   true
+					allow_network: false
+				})
 		} $else {
 			return ShellCommandResult{
 				status:    'failed'
@@ -347,9 +363,10 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 			if seatbelt_available() {
 				return run_macos_sandboxed_shell_command(canonical_root, verified.cwd, command,
 					MacosShellSandboxOptions{
-						purpose:       'Approved shell execution'
-						fail_closed:   mode == .require
-						allow_network: approved_shell_sandbox_network_allowed()
+						purpose:            'Approved shell execution'
+						fail_closed:        mode == .require
+						filter_environment: false
+						allow_network:      approved_shell_sandbox_network_allowed()
 					})
 			}
 			if mode == .require {
@@ -583,7 +600,11 @@ fn run_macos_sandboxed_shell_command(root string, cwd string, command ShellComma
 	]
 	mut process := os.new_process(macos_seatbelt_executable)
 	process.set_args(args)
-	mut environment := os.environ()
+	mut environment := if options.filter_environment {
+		autonomous_shell_environment()
+	} else {
+		os.environ()
+	}
 	tmpdir := os.temp_dir()
 	if tmpdir.len > 0 {
 		environment['TMPDIR'] = tmpdir

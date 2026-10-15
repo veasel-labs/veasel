@@ -414,7 +414,7 @@ fn test_autonomous_shell_environment_does_not_forward_credentials() {
 	assert !environment.keys().any(it.ends_with('_API_KEY') || it.contains('TOKEN') || it.contains('SECRET'))
 }
 
-fn test_autonomous_shell_runs_in_fail_closed_linux_sandbox() {
+fn test_autonomous_shell_runs_in_fail_closed_os_sandbox() {
 	parent := os.join_path(os.temp_dir(), 'veasel-autonomous-sandbox-${uuid.new_v4().str()}')
 	root := os.join_path(parent, 'workspace')
 	os.mkdir_all(parent) or { panic(err) }
@@ -432,6 +432,46 @@ fn test_autonomous_shell_runs_in_fail_closed_linux_sandbox() {
 		assert result.output.contains('sandbox-ok')
 		assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
 		assert os.read_file(outside_secret) or { panic(err) } == 'must stay hidden'
+	} $else $if macos {
+		if seatbelt_available() {
+			result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
+				command:         'touch sandbox-write.txt; test ! -e "${outside_secret}"; printf sandbox-ok'
+				cwd:             '.'
+				timeout_seconds: 5
+			}, true)
+			assert result.status == 'succeeded', result.output
+			assert result.output.contains('sandbox-ok')
+			assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
+			assert os.read_file(outside_secret) or { panic(err) } == 'must stay hidden'
+		} else {
+			result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
+				command:         'printf must-not-run'
+				cwd:             '.'
+				timeout_seconds: 5
+			}, true)
+			assert result.status == 'failed'
+			assert result.output.contains('sandbox-exec')
+			assert !result.output.contains('must-not-run')
+		}
+	} $else $if windows {
+		if windows_appcontainer_sandbox_available() {
+			result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
+				command:         'echo sandbox-ok> sandbox-write.txt'
+				cwd:             '.'
+				timeout_seconds: 5
+			}, true)
+			assert result.status == 'succeeded', result.output
+			assert os.is_file(os.join_path(root, 'sandbox-write.txt'))
+		} else {
+			result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
+				command:         'echo must-not-run'
+				cwd:             '.'
+				timeout_seconds: 5
+			}, true)
+			assert result.status == 'failed'
+			assert result.output.contains('AppContainer')
+			assert !result.output.contains('must-not-run')
+		}
 	} $else {
 		result := run_approved_shell_command_with_policy(root, ShellCommandSummary{
 			command:         'printf must-not-run'

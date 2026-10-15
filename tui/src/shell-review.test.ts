@@ -59,7 +59,7 @@ describe("formatShellReview", () => {
     expect(approvedShellSandboxWarning("seatbelt")).toContain("sandbox-exec")
   })
 
-  test("describes Windows Job Object when the capability is present", () => {
+  test("describes Windows AppContainer when the capability is present", () => {
     const text = formatShellReview({
       command: "echo hi",
       cwd: ".",
@@ -71,9 +71,9 @@ describe("formatShellReview", () => {
       maxLines: 20,
       sandboxCapability: "windows",
     })
-    expect(text).toContain("Job Object wrap")
+    expect(text).toContain("AppContainer + Job Object")
     expect(text).not.toContain("without an OS sandbox")
-    expect(approvedShellSandboxWarning("windows")).toContain("not AppContainer-isolated")
+    expect(approvedShellSandboxWarning("windows")).toContain("network isolated by default")
   })
 
   test("hides the tail of a command taller than the terminal", () => {

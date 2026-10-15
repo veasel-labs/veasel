@@ -235,24 +235,24 @@ fn shell_sandbox_seatbelt_capability() bool {
 	}
 }
 
-// windows_job_sandbox_available is true when CreateJobObject + limit setup works.
-// Non-Windows builds always return false so capability checks stay honest.
-fn windows_job_sandbox_available() bool {
+// windows_appcontainer_sandbox_available is true when AppContainer profile +
+// Job Object limits can be created. Non-Windows builds always return false.
+fn windows_appcontainer_sandbox_available() bool {
 	$if windows {
-		return windows_job_object_backend_available()
+		return windows_appcontainer_backend_available()
 	} $else {
 		return false
 	}
 }
 
-// shell_sandbox_windows_capability is true only when Windows Job Object
-// sandboxing will actually wrap approved shell commands for this process.
+// shell_sandbox_windows_capability is true only when Windows AppContainer +
+// Job Object sandboxing will actually wrap approved shell commands.
 fn shell_sandbox_windows_capability() bool {
 	$if windows {
 		if approved_shell_sandbox_mode() == .off {
 			return false
 		}
-		return windows_job_sandbox_available()
+		return windows_appcontainer_sandbox_available()
 	} $else {
 		return false
 	}
@@ -363,7 +363,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 		}
 	} $else $if windows {
 		if mode != .off {
-			if windows_job_sandbox_available() {
+			if windows_appcontainer_sandbox_available() {
 				return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
 					WindowsShellSandboxOptions{
 						purpose:       'Approved shell execution'
@@ -375,10 +375,10 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 				return ShellCommandResult{
 					status:    'failed'
 					exit_code: -1
-					output:    'Approved shell execution requires a Windows Job Object sandbox because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
+					output:    'Approved shell execution requires a Windows AppContainer sandbox because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
 				}
 			}
-			// VEASEL_SHELL_SANDBOX=auto and Job Object unavailable: fall through unsandboxed.
+			// VEASEL_SHELL_SANDBOX=auto and AppContainer unavailable: fall through unsandboxed.
 		}
 	} $else {
 		if mode == .require {

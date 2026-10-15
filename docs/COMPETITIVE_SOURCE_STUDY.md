@@ -94,8 +94,8 @@ manually approved shell uses Bubblewrap when `bwrap` is available (graceful
 unsandboxed fallback otherwise); autonomous Linux shell uses the same mount
 layout, filters the environment, and fails closed if it cannot start. This is
 best-effort containment and does not provide Codex-level sandbox guarantees.
-macOS Seatbelt and Windows Job Object wraps exist for approved shell; stronger
-workspace isolation (AppContainer/WFP) remains open.
+macOS Seatbelt and Windows AppContainer + Job Object wraps exist for approved
+shell; Codex-level WFP helper-service / LPAC isolation remains open.
 See [`compatibility/shell-bubblewrap-sandbox.md`](compatibility/shell-bubblewrap-sandbox.md), [`compatibility/shell-seatbelt-sandbox.md`](compatibility/shell-seatbelt-sandbox.md), and [`compatibility/shell-windows-job-sandbox.md`](compatibility/shell-windows-job-sandbox.md).
 
 ### mini-SWE-agent — a baseline small enough to falsify complexity

@@ -2,6 +2,9 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <userenv.h>
+#include <aclapi.h>
+#include <sddl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -18,14 +21,28 @@
 #ifndef JobObjectExtendedLimitInformation
 #define JobObjectExtendedLimitInformation 9
 #endif
-#ifndef DISABLE_MAX_PRIVILEGE
-#define DISABLE_MAX_PRIVILEGE 0x1
+#ifndef PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES
+#define PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES 0x00020009
+#endif
+/* Well-known capability SIDs (winnt.h); define if the toolchain headers lag. */
+#ifndef WinCapabilityInternetClientSid
+#define WinCapabilityInternetClientSid ((WELL_KNOWN_SID_TYPE)85)
+#endif
+#ifndef WinCapabilityInternetClientServerSid
+#define WinCapabilityInternetClientServerSid ((WELL_KNOWN_SID_TYPE)86)
+#endif
+#ifndef WinCapabilityPrivateNetworkClientServerSid
+#define WinCapabilityPrivateNetworkClientServerSid ((WELL_KNOWN_SID_TYPE)87)
 #endif
 
 enum {
 	VEASEL_WIN_ACTIVE_PROCESS_LIMIT = 64,
 	VEASEL_WIN_JOB_MEMORY_BYTES = 512 * 1024 * 1024
 };
+
+static const wchar_t *veasel_appcontainer_name = L"VeaselApprovedShell";
+static const wchar_t *veasel_appcontainer_display = L"Veasel Approved Shell";
+static const wchar_t *veasel_appcontainer_desc = L"Veasel approved-shell AppContainer sandbox";
 
 static void set_error(VeaselWinSandboxResult *result, const char *prefix, DWORD err) {
 	if (!result) {
@@ -67,7 +84,6 @@ static int append_quoted_arg(wchar_t *dest, size_t dest_cap, size_t *len, const 
 		return 0;
 	}
 	arg_len = wcslen(arg);
-	/* space + quotes + arg + NUL */
 	if (*len + arg_len + 4 >= dest_cap) {
 		return 0;
 	}
@@ -101,27 +117,162 @@ static int configure_job(HANDLE job) {
 		: 0;
 }
 
-static HANDLE try_restricted_primary_token(void) {
-	HANDLE process_token = NULL;
-	HANDLE restricted = NULL;
-	HANDLE primary = NULL;
-	if (!OpenProcessToken(GetCurrentProcess(),
-			TOKEN_DUPLICATE | TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY, &process_token)) {
-		return NULL;
+static PSID obtain_appcontainer_sid(void) {
+	PSID sid = NULL;
+	HRESULT hr = CreateAppContainerProfile(veasel_appcontainer_name, veasel_appcontainer_display,
+		veasel_appcontainer_desc, NULL, 0, &sid);
+	if (SUCCEEDED(hr) && sid) {
+		return sid;
 	}
-	if (!CreateRestrictedToken(process_token, DISABLE_MAX_PRIVILEGE, 0, NULL, 0, NULL, 0, NULL,
-			&restricted)) {
-		CloseHandle(process_token);
-		return NULL;
+	if (HRESULT_CODE(hr) == ERROR_ALREADY_EXISTS) {
+		sid = NULL;
+		hr = DeriveAppContainerSidFromAppContainerName(veasel_appcontainer_name, &sid);
+		if (SUCCEEDED(hr) && sid) {
+			return sid;
+		}
 	}
-	CloseHandle(process_token);
-	if (!DuplicateTokenEx(restricted, TOKEN_ALL_ACCESS, NULL, SecurityIdentification, TokenPrimary,
-			&primary)) {
-		CloseHandle(restricted);
-		return NULL;
+	return NULL;
+}
+
+static void free_capability_list(SID_AND_ATTRIBUTES *caps, DWORD count) {
+	DWORD i;
+	if (!caps) {
+		return;
 	}
-	CloseHandle(restricted);
-	return primary;
+	for (i = 0; i < count; i++) {
+		free(caps[i].Sid);
+		caps[i].Sid = NULL;
+	}
+	free(caps);
+}
+
+static int build_security_capabilities(PSID appcontainer_sid, int allow_network,
+	SECURITY_CAPABILITIES *out_sc, SID_AND_ATTRIBUTES **out_caps) {
+	WELL_KNOWN_SID_TYPE wanted[3];
+	DWORD wanted_count = 0;
+	SID_AND_ATTRIBUTES *caps = NULL;
+	DWORD i;
+	DWORD sid_size;
+
+	ZeroMemory(out_sc, sizeof(*out_sc));
+	*out_caps = NULL;
+	if (!appcontainer_sid) {
+		return 0;
+	}
+	if (allow_network) {
+		wanted[wanted_count++] = WinCapabilityInternetClientSid;
+		wanted[wanted_count++] = WinCapabilityInternetClientServerSid;
+		wanted[wanted_count++] = WinCapabilityPrivateNetworkClientServerSid;
+	}
+	if (wanted_count > 0) {
+		caps = (SID_AND_ATTRIBUTES *)calloc(wanted_count, sizeof(SID_AND_ATTRIBUTES));
+		if (!caps) {
+			return 0;
+		}
+		for (i = 0; i < wanted_count; i++) {
+			sid_size = SECURITY_MAX_SID_SIZE;
+			caps[i].Sid = (PSID)malloc(SECURITY_MAX_SID_SIZE);
+			if (!caps[i].Sid) {
+				free_capability_list(caps, wanted_count);
+				return 0;
+			}
+			if (!CreateWellKnownSid(wanted[i], NULL, caps[i].Sid, &sid_size)) {
+				free_capability_list(caps, wanted_count);
+				return 0;
+			}
+			caps[i].Attributes = SE_GROUP_ENABLED;
+		}
+	}
+	out_sc->AppContainerSid = appcontainer_sid;
+	out_sc->Capabilities = caps;
+	out_sc->CapabilityCount = wanted_count;
+	*out_caps = caps;
+	return 1;
+}
+
+static int grant_named_access(PSID appcontainer_sid, const wchar_t *path_utf16, DWORD access_mask,
+	DWORD inheritance) {
+	EXPLICIT_ACCESS_W explicit_access;
+	PACL original_acl = NULL;
+	PACL new_acl = NULL;
+	PSECURITY_DESCRIPTOR sd = NULL;
+	DWORD status;
+	int ok = 0;
+
+	if (!appcontainer_sid || !path_utf16) {
+		return 0;
+	}
+	ZeroMemory(&explicit_access, sizeof(explicit_access));
+	explicit_access.grfAccessMode = GRANT_ACCESS;
+	explicit_access.grfAccessPermissions = access_mask;
+	explicit_access.grfInheritance = inheritance;
+	explicit_access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+	explicit_access.Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+	explicit_access.Trustee.ptstrName = (LPWSTR)appcontainer_sid;
+
+	status = GetNamedSecurityInfoW(path_utf16, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL,
+		&original_acl, NULL, &sd);
+	if (status != ERROR_SUCCESS) {
+		return 0;
+	}
+	status = SetEntriesInAclW(1, &explicit_access, original_acl, &new_acl);
+	if (status != ERROR_SUCCESS) {
+		LocalFree(sd);
+		return 0;
+	}
+	status = SetNamedSecurityInfoW((LPWSTR)path_utf16, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL,
+		NULL, new_acl, NULL);
+	if (status == ERROR_SUCCESS) {
+		ok = 1;
+	}
+	if (new_acl) {
+		LocalFree(new_acl);
+	}
+	if (sd) {
+		LocalFree(sd);
+	}
+	return ok;
+}
+
+/* Grant workspace R/W plus execute-only traverse on each parent so CreateProcess
+ * can open the working directory without opening sibling trees for write. */
+static int grant_workspace_access(PSID appcontainer_sid, const wchar_t *workdir_utf16) {
+	wchar_t *path = NULL;
+	size_t len;
+	wchar_t *slash;
+	if (!grant_named_access(appcontainer_sid, workdir_utf16,
+			GENERIC_READ | GENERIC_WRITE | GENERIC_EXECUTE | DELETE,
+			OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE)) {
+		return 0;
+	}
+	len = wcslen(workdir_utf16);
+	path = (wchar_t *)malloc((len + 1) * sizeof(wchar_t));
+	if (!path) {
+		return 0;
+	}
+	memcpy(path, workdir_utf16, (len + 1) * sizeof(wchar_t));
+	for (;;) {
+		slash = wcsrchr(path, L'\\');
+		if (!slash) {
+			slash = wcsrchr(path, L'/');
+		}
+		if (!slash || slash == path) {
+			break;
+		}
+		/* Keep "C:\" as volume root; stop before stripping the drive. */
+		if (slash <= path + 2 && path[1] == L':') {
+			break;
+		}
+		*slash = L'\0';
+		if (wcslen(path) == 0) {
+			break;
+		}
+		if (!grant_named_access(appcontainer_sid, path, GENERIC_EXECUTE, 0)) {
+			/* Parent may already allow ALL APPLICATION PACKAGES; continue. */
+		}
+	}
+	free(path);
+	return 1;
 }
 
 static int read_available(HANDLE pipe, char *buffer, int capacity, int *written, int *limited) {
@@ -151,16 +302,25 @@ static int read_available(HANDLE pipe, char *buffer, int capacity, int *written,
 }
 
 int veasel_win_sandbox_available(void) {
-	HANDLE job = CreateJobObjectW(NULL, NULL);
-	if (!job) {
+	PSID sid = NULL;
+	HANDLE job = NULL;
+	int ok = 0;
+
+	sid = obtain_appcontainer_sid();
+	if (!sid) {
 		return 0;
 	}
-	if (!configure_job(job)) {
-		CloseHandle(job);
+	job = CreateJobObjectW(NULL, NULL);
+	if (!job) {
+		FreeSid(sid);
 		return 0;
+	}
+	if (configure_job(job)) {
+		ok = 1;
 	}
 	CloseHandle(job);
-	return 1;
+	FreeSid(sid);
+	return ok;
 }
 
 void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result) {
@@ -172,7 +332,7 @@ void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result) {
 	result->output_len = 0;
 }
 
-int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
+int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
 	const char *workdir_utf8, int timeout_ms, int max_output_bytes, int allow_network,
 	VeaselWinSandboxResult *result) {
 	wchar_t *comspec = NULL;
@@ -184,8 +344,12 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 	wchar_t arg_c[] = L"/C";
 	size_t cmdline_cap;
 	size_t cmdline_len = 0;
+	PSID appcontainer_sid = NULL;
+	SID_AND_ATTRIBUTES *capability_sids = NULL;
+	SECURITY_CAPABILITIES security_capabilities;
+	SIZE_T attr_size = 0;
+	LPPROC_THREAD_ATTRIBUTE_LIST attr_list = NULL;
 	HANDLE job = NULL;
-	HANDLE restricted_token = NULL;
 	HANDLE stdout_read = NULL;
 	HANDLE stdout_write = NULL;
 	HANDLE stderr_read = NULL;
@@ -193,7 +357,7 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 	HANDLE stdin_read = NULL;
 	HANDLE stdin_write = NULL;
 	SECURITY_ATTRIBUTES sa;
-	STARTUPINFOW si;
+	STARTUPINFOEXW siex;
 	PROCESS_INFORMATION pi;
 	DWORD creation_flags;
 	BOOL created = FALSE;
@@ -205,15 +369,17 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 	int output_len = 0;
 	int limited = 0;
 	ULONGLONG start_ms;
-	(void)allow_network;
 
 	if (!result) {
 		return 0;
 	}
 	ZeroMemory(result, sizeof(*result));
+	ZeroMemory(&security_capabilities, sizeof(security_capabilities));
+	ZeroMemory(&siex, sizeof(siex));
+	ZeroMemory(&pi, sizeof(pi));
 	if (!comspec_utf8 || !command_utf8 || !workdir_utf8 || timeout_ms <= 0 || max_output_bytes <= 0) {
 		result->setup_failed = 1;
-		set_error(result, "Windows Job Object sandbox received invalid arguments", 0);
+		set_error(result, "Windows AppContainer sandbox received invalid arguments", 0);
 		return 0;
 	}
 
@@ -222,8 +388,27 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 	workdir = utf8_to_wide(workdir_utf8);
 	if (!comspec || !command || !workdir) {
 		result->setup_failed = 1;
-		set_error(result, "Windows Job Object sandbox could not convert paths to UTF-16",
+		set_error(result, "Windows AppContainer sandbox could not convert paths to UTF-16",
 			GetLastError());
+		goto cleanup;
+	}
+
+	appcontainer_sid = obtain_appcontainer_sid();
+	if (!appcontainer_sid) {
+		result->setup_failed = 1;
+		set_error(result, "CreateAppContainerProfile/DeriveAppContainerSid failed", GetLastError());
+		goto cleanup;
+	}
+	if (!build_security_capabilities(appcontainer_sid, allow_network, &security_capabilities,
+			&capability_sids)) {
+		result->setup_failed = 1;
+		set_error(result, "Failed to build AppContainer SECURITY_CAPABILITIES", GetLastError());
+		goto cleanup;
+	}
+	/* Workspace must be explicitly readable/writable for the AppContainer SID. */
+	if (!grant_workspace_access(appcontainer_sid, workdir)) {
+		result->setup_failed = 1;
+		set_error(result, "Failed to grant AppContainer ACL on workspace", GetLastError());
 		goto cleanup;
 	}
 
@@ -231,7 +416,7 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 	cmdline = (wchar_t *)malloc(cmdline_cap * sizeof(wchar_t));
 	if (!cmdline) {
 		result->setup_failed = 1;
-		set_error(result, "Windows Job Object sandbox out of memory building command line", 0);
+		set_error(result, "Windows AppContainer sandbox out of memory building command line", 0);
 		goto cleanup;
 	}
 	cmdline[0] = L'\0';
@@ -241,7 +426,7 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 		|| !append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, arg_c)
 		|| !append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, command)) {
 		result->setup_failed = 1;
-		set_error(result, "Windows Job Object sandbox command line is too long", 0);
+		set_error(result, "Windows AppContainer sandbox command line is too long", 0);
 		goto cleanup;
 	}
 
@@ -270,49 +455,53 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 		set_error(result, "CreatePipe for sandboxed shell failed", GetLastError());
 		goto cleanup;
 	}
-	/* Non-interactive stdin: close the write end so reads see EOF. */
 	CloseHandle(stdin_write);
 	stdin_write = NULL;
 
 	output = (char *)malloc((size_t)max_output_bytes + 1);
 	if (!output) {
 		result->setup_failed = 1;
-		set_error(result, "Windows Job Object sandbox out of memory for output", 0);
+		set_error(result, "Windows AppContainer sandbox out of memory for output", 0);
 		goto cleanup;
 	}
 
-	restricted_token = try_restricted_primary_token();
+	InitializeProcThreadAttributeList(NULL, 1, 0, &attr_size);
+	attr_list = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attr_size);
+	if (!attr_list) {
+		result->setup_failed = 1;
+		set_error(result, "Out of memory for PROC_THREAD_ATTRIBUTE_LIST", 0);
+		goto cleanup;
+	}
+	if (!InitializeProcThreadAttributeList(attr_list, 1, 0, &attr_size)) {
+		result->setup_failed = 1;
+		set_error(result, "InitializeProcThreadAttributeList failed", GetLastError());
+		goto cleanup;
+	}
+	if (!UpdateProcThreadAttribute(attr_list, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+			&security_capabilities, sizeof(security_capabilities), NULL, NULL)) {
+		result->setup_failed = 1;
+		set_error(result, "UpdateProcThreadAttribute SECURITY_CAPABILITIES failed", GetLastError());
+		goto cleanup;
+	}
 
-	ZeroMemory(&si, sizeof(si));
-	si.cb = sizeof(si);
-	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = stdin_read;
-	si.hStdOutput = stdout_write;
-	si.hStdError = stderr_write;
-	ZeroMemory(&pi, sizeof(pi));
+	siex.StartupInfo.cb = sizeof(siex);
+	siex.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+	siex.StartupInfo.hStdInput = stdin_read;
+	siex.StartupInfo.hStdOutput = stdout_write;
+	siex.StartupInfo.hStdError = stderr_write;
+	siex.lpAttributeList = attr_list;
 
 	creation_flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED
-		| CREATE_NO_WINDOW;
+		| CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
 
-	if (restricted_token) {
-		created = CreateProcessAsUserW(restricted_token, NULL, cmdline, NULL, NULL, TRUE,
-			creation_flags, NULL, workdir, &si, &pi);
-		if (created) {
-			result->used_restricted_token = 1;
-		} else {
-			CloseHandle(restricted_token);
-			restricted_token = NULL;
-		}
-	}
-	if (!created) {
-		created = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, creation_flags, NULL, workdir, &si,
-			&pi);
-	}
+	created = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, creation_flags, NULL, workdir,
+		&siex.StartupInfo, &pi);
 	if (!created) {
 		result->setup_failed = 1;
-		set_error(result, "CreateProcess for Job Object sandbox failed", GetLastError());
+		set_error(result, "CreateProcess AppContainer sandbox failed", GetLastError());
 		goto cleanup;
 	}
+	result->used_appcontainer = 1;
 
 	CloseHandle(stdout_write);
 	stdout_write = NULL;
@@ -328,6 +517,7 @@ int veasel_win_run_job_sandboxed_shell(const char *comspec_utf8, const char *com
 		set_error(result, "AssignProcessToJobObject failed", GetLastError());
 		goto cleanup_process;
 	}
+	result->used_job_object = 1;
 	if (ResumeThread(pi.hThread) == (DWORD)-1) {
 		TerminateJobObject(job, 1);
 		result->setup_failed = 1;
@@ -385,8 +575,13 @@ cleanup_process:
 	}
 
 cleanup:
-	if (restricted_token) {
-		CloseHandle(restricted_token);
+	if (attr_list) {
+		DeleteProcThreadAttributeList(attr_list);
+		free(attr_list);
+	}
+	free_capability_list(capability_sids, security_capabilities.CapabilityCount);
+	if (appcontainer_sid) {
+		FreeSid(appcontainer_sid);
 	}
 	if (job) {
 		CloseHandle(job);

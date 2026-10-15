@@ -17,9 +17,11 @@ test("session footer surfaces reviews and the same discovery commands", () => {
   for (const command of ["/skills", "/mcp", "/theme", "/map"]) {
     expect(sessionFooterHint).toContain(command)
   }
+  expect(sessionFooterHint).toContain("Ctrl+U")
   expect(sessionFooterHint).toContain("Ctrl+R")
   expect(sessionFooterHint).toContain("Ctrl+Y")
-  expect(sessionFooterHint).toContain("↑ history")
+  expect(sessionFooterHint).toContain("↑")
   expect(sessionFooterHint).toContain("Esc")
-  expect(sessionFooterHint).toContain("PgUp/PgDn")
+  expect(sessionFooterHint).toContain("Pg")
+  expect(sessionFooterHint.length).toBeLessThanOrEqual(72)
 })

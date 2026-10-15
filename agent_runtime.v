@@ -37,17 +37,70 @@ struct ParallelReadonlyToolResult {
 	result string
 }
 
+struct AgentToolNote {
+	note string
+}
+
+// encode_agent_tool_note encodes a short advisory object (not a hard tool failure).
+fn encode_agent_tool_note(message string) string {
+	mut buf := []u8{cap: 96 + message.len}
+	json2.encode_append(AgentToolNote{
+		note: message
+	}, mut buf)
+	return buf.bytestr()
+}
+
+fn workspace_read_path_from_call(call ProviderToolCall) ?string {
+	if call.function.name != 'workspace_read_file' {
+		return none
+	}
+	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or { return none }
+	path := string_tool_argument(tool_arguments, 'path') or { return none }
+	normalized := path.replace('\\', '/').trim_space()
+	if normalized.len == 0 {
+		return none
+	}
+	return normalized
+}
+
+fn duplicate_workspace_read_note(path string) string {
+	return encode_agent_tool_note('Already provided this turn for path "${path}". Reuse the earlier workspace_read_file result; do not request it again.')
+}
+
+// execute_parallel_readonly_workspace_tools runs a read-only batch concurrently.
+// Duplicate workspace_read_file paths in the same batch or already seen this turn
+// receive a short note instead of re-injecting file bytes.
 fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id string,
-	calls []ProviderToolCall, tool_policy AgentToolPolicy) []string {
-	results_ch := chan ParallelReadonlyToolResult{cap: calls.len}
+	calls []ProviderToolCall, tool_policy AgentToolPolicy, mut read_paths map[string]bool) []string {
+	mut ordered := []string{len: calls.len}
+	mut run_indexes := []int{cap: calls.len}
+	mut run_calls := []ProviderToolCall{cap: calls.len}
 	for i, call in calls {
+		if path := workspace_read_path_from_call(call) {
+			if read_paths[path] {
+				ordered[i] = duplicate_workspace_read_note(path)
+				continue
+			}
+			read_paths[path] = true
+		}
+		run_indexes << i
+		run_calls << call
+	}
+	if run_calls.len == 0 {
+		return ordered
+	}
+	results_ch := chan ParallelReadonlyToolResult{cap: run_calls.len}
+	for i, call in run_calls {
 		spawn execute_parallel_readonly_workspace_tool_worker(app, root, session_id, tool_policy,
 			i, call, results_ch)
 	}
-	mut ordered := []string{len: calls.len}
-	for _ in 0 .. calls.len {
+	mut run_results := []string{len: run_calls.len}
+	for _ in 0 .. run_calls.len {
 		item := <-results_ch
-		ordered[item.index] = item.result
+		run_results[item.index] = item.result
+	}
+	for i, call_index in run_indexes {
+		ordered[call_index] = run_results[i]
 	}
 	return ordered
 }
@@ -251,6 +304,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
+	mut read_paths := map[string]bool{}
 	if collect_trace {
 		for message in messages {
 			source := match message.role {
@@ -344,7 +398,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				return error(context_error)
 			}
 			tool_results = execute_parallel_readonly_workspace_tools(app, root, session_id,
-				output.tool_calls, skill_context.tool_policy)
+				output.tool_calls, skill_context.tool_policy, mut read_paths)
 			if context_error := turn_context_error(mut turn_ctx) {
 				return error(context_error)
 			}
@@ -353,9 +407,19 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				if context_error := turn_context_error(mut turn_ctx) {
 					return error(context_error)
 				}
-				tool_results << sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
+				if path := workspace_read_path_from_call(call) {
+					if read_paths[path] {
+						tool_results << duplicate_workspace_read_note(path)
+						continue
+					}
+				}
+				result := sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
 					root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
 					policy)!)
+				if path := workspace_read_path_from_call(call) {
+					read_paths[path] = true
+				}
+				tool_results << result
 			}
 		}
 		mut trace_observations := []ATIFObservationResult{}

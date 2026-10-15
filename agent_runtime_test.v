@@ -722,12 +722,63 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		},
 	]
 	assert agent_tool_batch_allows_parallel_readonly(parallel_calls)
+	mut parallel_read_paths := map[string]bool{}
 	parallel_results := execute_parallel_readonly_workspace_tools(app, root, session.id, parallel_calls,
-		AgentToolPolicy{})
+		AgentToolPolicy{}, mut parallel_read_paths)
 	assert parallel_results.len == 3
 	assert parallel_results[0].contains('src/main.v')
 	assert parallel_results[1].contains('workspace-sentinel')
 	assert parallel_results[2].contains('workspace-sentinel')
+	assert parallel_read_paths['src/main.v']
+
+	duplicate_batch := [
+		ProviderToolCall{
+			id:       'read-a'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'read-b'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v"}'
+			}
+		},
+	]
+	mut batch_paths := map[string]bool{}
+	dup_results := execute_parallel_readonly_workspace_tools(app, root, session.id, duplicate_batch,
+		AgentToolPolicy{}, mut batch_paths)
+	assert dup_results.len == 2
+	assert dup_results[0].contains('workspace-sentinel')
+	assert dup_results[1].contains('Already provided this turn')
+	assert dup_results[1].contains('src/main.v')
+	assert !dup_results[1].contains('workspace-sentinel')
+	assert batch_paths['src/main.v']
+
+	mut turn_paths := map[string]bool{}
+	turn_paths['src/main.v'] = true
+	skipped := execute_parallel_readonly_workspace_tools(app, root, session.id, [
+		ProviderToolCall{
+			id:       'read-again'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v"}'
+			}
+		},
+	], AgentToolPolicy{}, mut turn_paths)
+	assert skipped.len == 1
+	assert skipped[0].contains('Already provided this turn')
+	assert !skipped[0].contains('workspace-sentinel')
+	assert workspace_read_path_from_call(duplicate_batch[0]) or { '' } == 'src/main.v'
+	assert workspace_read_path_from_call(ProviderToolCall{
+		id:       'list'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{}'
+		}
+	}) == none
 	listing := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'list-1'
 		function: ProviderFunctionCall{

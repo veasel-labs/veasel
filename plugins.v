@@ -469,6 +469,9 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 				return error('skill compatibility must contain 1 to 500 characters')
 			}
 			if key == 'allowed-tools' {
+				if text.trim_space().len == 0 {
+					return error('skill allowed-tools must not be empty when declared')
+				}
 				allowed_tools = text
 				allowed_tools_declared = true
 			}

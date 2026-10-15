@@ -84,6 +84,11 @@ fn encode_atif_trace_with_usage(session_id string, version string, model string,
 		// of the two reported counts below.
 		metrics['total_prompt_tokens'] = json2.Any(usage.input_tokens)
 		metrics['total_completion_tokens'] = json2.Any(usage.output_tokens)
+		if usage.cache_reported {
+			// Provider-reported cache counters only; not estimated savings.
+			metrics['cache_read_tokens'] = json2.Any(usage.cache_read_tokens)
+			metrics['cache_creation_tokens'] = json2.Any(usage.cache_creation_tokens)
+		}
 	}
 	// Every encoded trajectory is credential-redacted first: this encoder is
 	// the single path used for stored traces and headless trace files alike.
@@ -100,6 +105,11 @@ fn encode_atif_trace_with_usage(session_id string, version string, model string,
 			'veasel_trace_schema': json2.Any('veasel-trace-v1')
 			'outcome':             json2.Any(outcome)
 			'token_usage':         json2.Any(if usage.reported { 'reported' } else { 'unavailable' })
+			'prompt_cache':        json2.Any(if usage.cache_reported {
+				'reported'
+			} else {
+				'unavailable'
+			})
 			'cost':                json2.Any('unavailable')
 			'redaction':           json2.Any('credentials')
 		}

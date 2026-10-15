@@ -39,12 +39,216 @@ pub:
 // ProviderUsage carries token counts exactly as reported by a provider
 // adapter. `reported` stays false when the provider sent no usage data, so
 // callers never present estimated counts as authoritative.
+//
+// Cache fields are provider-reported only. `cache_reported` is true only when
+// the adapter saw cache-related keys in the provider payload (including explicit
+// zeros). OpenAI/Gemini treat cache_read as a subset of input_tokens; Anthropic
+// reports disjoint input_tokens + cache_read + cache_creation. Never invent
+// savings percentages or fake cache hits when keys are absent.
 pub struct ProviderUsage {
 pub:
-	input_tokens  i64
-	output_tokens i64
-	total_tokens  i64
-	reported      bool
+	input_tokens          i64
+	output_tokens         i64
+	total_tokens          i64
+	cache_read_tokens     i64
+	cache_creation_tokens i64
+	cache_reported        bool
+	reported              bool
+}
+
+fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
+	if !b.reported {
+		return a
+	}
+	if !a.reported {
+		return b
+	}
+	cache_reported := a.cache_reported || b.cache_reported
+	return ProviderUsage{
+		input_tokens:          a.input_tokens + b.input_tokens
+		output_tokens:         a.output_tokens + b.output_tokens
+		total_tokens:          a.total_tokens + b.total_tokens
+		cache_read_tokens:     if cache_reported {
+			a.cache_read_tokens + b.cache_read_tokens
+		} else {
+			i64(0)
+		}
+		cache_creation_tokens: if cache_reported {
+			a.cache_creation_tokens + b.cache_creation_tokens
+		} else {
+			i64(0)
+		}
+		cache_reported:        cache_reported
+		reported:              true
+	}
+}
+
+fn json_any_nonneg_i64(value json2.Any) i64 {
+	n := value.i64()
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
+	mut cache_read := i64(0)
+	mut cache_reported := false
+	if details := usage.prompt_tokens_details {
+		cache_read = if details.cached_tokens < 0 { i64(0) } else { details.cached_tokens }
+		cache_reported = true
+	}
+	total := if usage.total_tokens > 0 {
+		usage.total_tokens
+	} else {
+		usage.prompt_tokens + usage.completion_tokens
+	}
+	return ProviderUsage{
+		input_tokens:          usage.prompt_tokens
+		output_tokens:         usage.completion_tokens
+		total_tokens:          total
+		cache_read_tokens:     cache_read
+		cache_creation_tokens: 0
+		cache_reported:        cache_reported
+		reported:              true
+	}
+}
+
+fn provider_usage_from_openai_responses(usage OpenAIResponsesUsage) ProviderUsage {
+	mut cache_read := i64(0)
+	mut cache_creation := i64(0)
+	mut cache_reported := false
+	if details := usage.input_tokens_details {
+		cache_read = if details.cached_tokens < 0 { i64(0) } else { details.cached_tokens }
+		cache_creation = if details.cache_write_tokens < 0 {
+			i64(0)
+		} else {
+			details.cache_write_tokens
+		}
+		cache_reported = true
+	}
+	total := if usage.total_tokens > 0 {
+		usage.total_tokens
+	} else {
+		usage.input_tokens + usage.output_tokens
+	}
+	return ProviderUsage{
+		input_tokens:          usage.input_tokens
+		output_tokens:         usage.output_tokens
+		total_tokens:          total
+		cache_read_tokens:     cache_read
+		cache_creation_tokens: cache_creation
+		cache_reported:        cache_reported
+		reported:              usage.input_tokens > 0 || usage.output_tokens > 0 || cache_reported
+	}
+}
+
+fn merge_anthropic_stream_usage(prior ProviderUsage, delta ProviderUsage) ProviderUsage {
+	input_tokens := if prior.input_tokens > 0 { prior.input_tokens } else { delta.input_tokens }
+	output_tokens := if delta.output_tokens > 0 { delta.output_tokens } else { prior.output_tokens }
+	cache_reported := prior.cache_reported || delta.cache_reported
+	cache_read := if delta.cache_reported {
+		delta.cache_read_tokens
+	} else {
+		prior.cache_read_tokens
+	}
+	cache_creation := if delta.cache_reported {
+		delta.cache_creation_tokens
+	} else {
+		prior.cache_creation_tokens
+	}
+	return ProviderUsage{
+		input_tokens:          input_tokens
+		output_tokens:         output_tokens
+		total_tokens:          input_tokens + output_tokens
+		cache_read_tokens:     cache_read
+		cache_creation_tokens: cache_creation
+		cache_reported:        cache_reported
+		reported:              prior.reported || delta.reported
+	}
+}
+
+fn provider_usage_from_anthropic_map(usage map[string]json2.Any) ProviderUsage {
+	input_tokens := if v := usage['input_tokens'] {
+		json_any_nonneg_i64(v)
+	} else {
+		i64(0)
+	}
+	output_tokens := if v := usage['output_tokens'] {
+		json_any_nonneg_i64(v)
+	} else {
+		i64(0)
+	}
+	mut cache_read := i64(0)
+	mut cache_creation := i64(0)
+	mut cache_reported := false
+	if v := usage['cache_read_input_tokens'] {
+		cache_read = json_any_nonneg_i64(v)
+		cache_reported = true
+	}
+	if v := usage['cache_creation_input_tokens'] {
+		cache_creation = json_any_nonneg_i64(v)
+		cache_reported = true
+	}
+	return ProviderUsage{
+		input_tokens:          input_tokens
+		output_tokens:         output_tokens
+		total_tokens:          input_tokens + output_tokens
+		cache_read_tokens:     cache_read
+		cache_creation_tokens: cache_creation
+		cache_reported:        cache_reported
+		reported:              input_tokens > 0 || output_tokens > 0 || cache_reported
+	}
+}
+
+fn provider_usage_from_gemini(meta GeminiUsageMetadata) ProviderUsage {
+	mut cache_read := i64(0)
+	mut cache_reported := false
+	if cached := meta.cached_content_token_count {
+		cache_read = if cached < 0 { i64(0) } else { cached }
+		cache_reported = true
+	}
+	total := if meta.total_token_count > 0 {
+		meta.total_token_count
+	} else {
+		meta.prompt_token_count + meta.candidates_token_count
+	}
+	return ProviderUsage{
+		input_tokens:          meta.prompt_token_count
+		output_tokens:         meta.candidates_token_count
+		total_tokens:          total
+		cache_read_tokens:     cache_read
+		cache_creation_tokens: 0
+		cache_reported:        cache_reported
+		reported:              meta.total_token_count > 0 || meta.prompt_token_count > 0
+			|| meta.candidates_token_count > 0 || cache_reported
+	}
+}
+
+// Parses provider usage JSON fixtures for OpenAI Chat Completions, OpenAI
+// Responses, Anthropic Messages, and Gemini usageMetadata shapes.
+fn provider_usage_from_fixture_json(kind string, raw string) !ProviderUsage {
+	match kind {
+		'openai-chat' {
+			usage := json2.decode[OpenAIUsage](raw)!
+			return provider_usage_from_openai_chat(usage)
+		}
+		'openai-responses' {
+			usage := json2.decode[OpenAIResponsesUsage](raw)!
+			return provider_usage_from_openai_responses(usage)
+		}
+		'anthropic' {
+			usage := json2.decode[map[string]json2.Any](raw)!
+			return provider_usage_from_anthropic_map(usage)
+		}
+		'gemini' {
+			meta := json2.decode[GeminiUsageMetadata](raw)!
+			return provider_usage_from_gemini(meta)
+		}
+		else {
+			return error('unknown provider usage fixture kind')
+		}
+	}
 }
 
 pub struct CompletionOutput {
@@ -393,10 +597,16 @@ struct OpenAIResponsesResponse {
 	usage       OpenAIResponsesUsage
 }
 
+struct OpenAIResponsesInputTokensDetails {
+	cached_tokens      i64 @[json: 'cached_tokens']
+	cache_write_tokens i64 @[json: 'cache_write_tokens']
+}
+
 struct OpenAIResponsesUsage {
-	input_tokens  i64
-	output_tokens i64
-	total_tokens  i64
+	input_tokens         i64
+	output_tokens        i64
+	total_tokens         i64
+	input_tokens_details ?OpenAIResponsesInputTokensDetails @[json: 'input_tokens_details']
 }
 
 struct OpenAIResponsesOutputItem {
@@ -441,10 +651,15 @@ struct OpenAIStreamChunk {
 	usage   ?OpenAIUsage
 }
 
+struct OpenAIPromptTokensDetails {
+	cached_tokens i64 @[json: 'cached_tokens']
+}
+
 struct OpenAIUsage {
-	prompt_tokens     i64
-	completion_tokens i64
-	total_tokens      i64
+	prompt_tokens         i64
+	completion_tokens     i64
+	total_tokens          i64
+	prompt_tokens_details ?OpenAIPromptTokensDetails @[json: 'prompt_tokens_details']
 }
 
 struct OpenAIStreamChoice {
@@ -506,8 +721,10 @@ struct AnthropicStreamMessage {
 }
 
 struct AnthropicUsage {
-	input_tokens  i64
-	output_tokens i64
+	input_tokens                i64
+	output_tokens               i64
+	cache_creation_input_tokens i64 @[json: 'cache_creation_input_tokens']
+	cache_read_input_tokens     i64 @[json: 'cache_read_input_tokens']
 }
 
 struct AnthropicStreamDelta {
@@ -527,8 +744,26 @@ struct AnthropicStreamOutput {
 mut:
 	content_parts []string
 	tools         []AnthropicStreamToolCall
-	input_tokens  i64
-	output_tokens i64
+	usage         ProviderUsage
+}
+
+fn anthropic_stream_apply_usage(mut stream_state AnthropicStreamOutput, event_type string, data string) ! {
+	root := json2.decode[map[string]json2.Any](data) or { return error('response_parse') }
+	if event_type == 'message_start' {
+		message := (root['message'] or { json2.Any(map[string]json2.Any{}) }).as_map()
+		if usage_any := message['usage'] {
+			stream_state.usage = provider_usage_from_anthropic_map(usage_any.as_map())
+		}
+		return
+	}
+	if event_type == 'message_delta' {
+		if usage_any := root['usage'] {
+			delta_usage := provider_usage_from_anthropic_map(usage_any.as_map())
+			if delta_usage.output_tokens > 0 || delta_usage.cache_reported {
+				stream_state.usage = merge_anthropic_stream_usage(stream_state.usage, delta_usage)
+			}
+		}
+	}
 }
 
 struct AnthropicRequestMessage {
@@ -603,9 +838,10 @@ struct GeminiResponse {
 }
 
 struct GeminiUsageMetadata {
-	prompt_token_count     i64 @[json: 'promptTokenCount']
-	candidates_token_count i64 @[json: 'candidatesTokenCount']
-	total_token_count      i64 @[json: 'totalTokenCount']
+	prompt_token_count         i64  @[json: 'promptTokenCount']
+	candidates_token_count     i64  @[json: 'candidatesTokenCount']
+	total_token_count          i64  @[json: 'totalTokenCount']
+	cached_content_token_count ?i64 @[json: 'cachedContentTokenCount']
 }
 
 struct GeminiStreamOutput {
@@ -812,16 +1048,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 		}
 		chunk := json2.decode[OpenAIStreamChunk](data) or { return error('response_parse') }
 		if usage := chunk.usage {
-			stream_state.usage = ProviderUsage{
-				input_tokens:  usage.prompt_tokens
-				output_tokens: usage.completion_tokens
-				total_tokens:  if usage.total_tokens > 0 {
-					usage.total_tokens
-				} else {
-					usage.prompt_tokens + usage.completion_tokens
-				}
-				reported:      true
-			}
+			stream_state.usage = provider_usage_from_openai_chat(usage)
 		}
 		for choice in chunk.choices {
 			if text := choice.delta.content {
@@ -995,17 +1222,7 @@ fn (provider OpenAIResponsesProvider) complete(mut turn_ctx vcontext.Context, co
 		content:          content
 		tool_calls:       tool_calls
 		provider_context: provider_context
-		usage:            ProviderUsage{
-			input_tokens:  stream_state.response.usage.input_tokens
-			output_tokens: stream_state.response.usage.output_tokens
-			total_tokens:  if stream_state.response.usage.total_tokens > 0 {
-				stream_state.response.usage.total_tokens
-			} else {
-				stream_state.response.usage.input_tokens + stream_state.response.usage.output_tokens
-			}
-			reported:      stream_state.response.usage.input_tokens > 0
-				|| stream_state.response.usage.output_tokens > 0
-		}
+		usage:            provider_usage_from_openai_responses(stream_state.response.usage)
 	}
 }
 
@@ -1118,10 +1335,8 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 	mut stream_state := &AnthropicStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {
 		event := json2.decode[AnthropicStreamEvent](data) or { return error('response_parse') }
-		if event.type == 'message_start' {
-			stream_state.input_tokens = event.message.usage.input_tokens
-		} else if event.type == 'message_delta' && event.usage.output_tokens > 0 {
-			stream_state.output_tokens = event.usage.output_tokens
+		if event.type == 'message_start' || event.type == 'message_delta' {
+			anthropic_stream_apply_usage(mut stream_state, event.type, data)!
 		}
 		if event.index < 0 || event.index > 128 {
 			return error('invalid streamed block index')
@@ -1182,12 +1397,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 		model:      config.model
 		content:    content.join('')
 		tool_calls: tool_calls
-		usage:      ProviderUsage{
-			input_tokens:  stream_state.input_tokens
-			output_tokens: stream_state.output_tokens
-			total_tokens:  stream_state.input_tokens + stream_state.output_tokens
-			reported:      stream_state.input_tokens > 0 || stream_state.output_tokens > 0
-		}
+		usage:      stream_state.usage
 	}
 }
 
@@ -1225,19 +1435,9 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 	mut stream_state := &GeminiStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta, messages] (data string) ! {
 		decoded := json2.decode[GeminiResponse](data) or { return error('response_parse') }
-		if decoded.usage_metadata.total_token_count > 0
-			|| decoded.usage_metadata.prompt_token_count > 0 {
-			stream_state.usage = ProviderUsage{
-				input_tokens:  decoded.usage_metadata.prompt_token_count
-				output_tokens: decoded.usage_metadata.candidates_token_count
-				total_tokens:  if decoded.usage_metadata.total_token_count > 0 {
-					decoded.usage_metadata.total_token_count
-				} else {
-					decoded.usage_metadata.prompt_token_count +
-						decoded.usage_metadata.candidates_token_count
-				}
-				reported:      true
-			}
+		parsed := provider_usage_from_gemini(decoded.usage_metadata)
+		if parsed.reported {
+			stream_state.usage = parsed
 		}
 		for candidate in decoded.candidates {
 			for part in candidate.content.parts {

@@ -26,24 +26,30 @@ mut:
 
 struct HeadlessRunResult {
 pub:
-	session_id     string
-	operation_id   string
-	status         string
-	provider       string @[omitempty]
-	model          string @[omitempty]
-	response       string @[omitempty]
-	error          string @[omitempty]
-	trace_file     string @[omitempty]
-	input_tokens   i64    @[omitempty]
-	output_tokens  i64    @[omitempty]
-	usage_reported bool   @[omitempty]
+	session_id            string
+	operation_id          string
+	status                string
+	provider              string @[omitempty]
+	model                 string @[omitempty]
+	response              string @[omitempty]
+	error                 string @[omitempty]
+	trace_file            string @[omitempty]
+	input_tokens          i64    @[omitempty]
+	output_tokens         i64    @[omitempty]
+	usage_reported        bool   @[omitempty]
+	cache_read_tokens     i64    @[omitempty]
+	cache_creation_tokens i64    @[omitempty]
+	cache_reported        bool   @[omitempty]
 pub mut:
 	// Filled after the turn finishes when session usage is available.
-	session_completed_turns int  @[omitempty]
-	session_reported_turns  int  @[omitempty]
-	session_input_tokens    i64  @[omitempty]
-	session_output_tokens   i64  @[omitempty]
-	session_usage_reported  bool @[omitempty]
+	session_completed_turns       int  @[omitempty]
+	session_reported_turns        int  @[omitempty]
+	session_input_tokens          i64  @[omitempty]
+	session_output_tokens         i64  @[omitempty]
+	session_usage_reported        bool @[omitempty]
+	session_cache_read_tokens     i64  @[omitempty]
+	session_cache_creation_tokens i64  @[omitempty]
+	session_cache_reported        bool @[omitempty]
 }
 
 fn parse_headless_run_args(args []string, cwd string) !HeadlessRunOptions {
@@ -360,16 +366,27 @@ fn headless_operation_result(port int, session_id string, operation_id string,
 		}
 	}
 	return HeadlessRunResult{
-		session_id:     session_id
-		operation_id:   operation_id
-		status:         operation.status
-		provider:       operation.provider
-		model:          operation.model
-		error:          operation.error
-		trace_file:     written_trace
-		input_tokens:   if operation.usage_reported { operation.input_tokens } else { 0 }
-		output_tokens:  if operation.usage_reported { operation.output_tokens } else { 0 }
-		usage_reported: operation.usage_reported
+		session_id:            session_id
+		operation_id:          operation_id
+		status:                operation.status
+		provider:              operation.provider
+		model:                 operation.model
+		error:                 operation.error
+		trace_file:            written_trace
+		input_tokens:          if operation.usage_reported { operation.input_tokens } else { 0 }
+		output_tokens:         if operation.usage_reported { operation.output_tokens } else { 0 }
+		usage_reported:        operation.usage_reported
+		cache_read_tokens:     if operation.cache_reported {
+			operation.cache_read_tokens
+		} else {
+			0
+		}
+		cache_creation_tokens: if operation.cache_reported {
+			operation.cache_creation_tokens
+		} else {
+			0
+		}
+		cache_reported:        operation.cache_reported
 	}
 }
 
@@ -380,6 +397,9 @@ fn format_headless_usage_summary(result HeadlessRunResult) string {
 	}
 	if result.usage_reported {
 		parts << '${result.input_tokens} in · ${result.output_tokens} out'
+	}
+	if result.cache_reported {
+		parts << '${result.cache_read_tokens} cache read · ${result.cache_creation_tokens} cache write'
 	}
 	return parts.join(' · ')
 }
@@ -402,10 +422,13 @@ fn attach_headless_session_usage(port int, mut result HeadlessRunResult) {
 	result.session_input_tokens = summary.input_tokens
 	result.session_output_tokens = summary.output_tokens
 	result.session_usage_reported = summary.usage_reported
+	result.session_cache_read_tokens = summary.cache_read_tokens
+	result.session_cache_creation_tokens = summary.cache_creation_tokens
+	result.session_cache_reported = summary.cache_reported
 }
 
 fn print_headless_help() {
-	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 1 MiB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to an ATIF v1.8 trace at this path (private file; partial on failure/cancellation)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the model-visible conversation and tool I/O with credentials\nredacted; they may still include private instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.\nWhen a provider reports token counts, --json includes them and the human summary prints them on stderr.')
+	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 1 MiB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to an ATIF v1.8 trace at this path (private file; partial on failure/cancellation)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the model-visible conversation and tool I/O with credentials\nredacted; they may still include private instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.\nWhen a provider reports token counts, --json includes them and the human summary prints them on stderr. Provider-reported prompt-cache counters appear only when the adapter saw cache fields; Veasel never invents cache hits or savings.')
 }
 
 fn execute_headless_command(port int, args []string) {

@@ -183,12 +183,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools, on_text_delta)!
 		if output.usage.reported {
-			trace_usage = ProviderUsage{
-				input_tokens:  trace_usage.input_tokens + output.usage.input_tokens
-				output_tokens: trace_usage.output_tokens + output.usage.output_tokens
-				total_tokens:  trace_usage.total_tokens + output.usage.total_tokens
-				reported:      true
-			}
+			trace_usage = add_provider_usage(trace_usage, output.usage)
 		}
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
@@ -343,12 +338,7 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, mes
 	summary := app.complete_agent_with_provider_limit(mut turn_ctx, summary_messages, [],
 		on_text_delta)!
 	if summary.usage.reported {
-		trace_usage = ProviderUsage{
-			input_tokens:  trace_usage.input_tokens + summary.usage.input_tokens
-			output_tokens: trace_usage.output_tokens + summary.usage.output_tokens
-			total_tokens:  trace_usage.total_tokens + summary.usage.total_tokens
-			reported:      true
-		}
+		trace_usage = add_provider_usage(trace_usage, summary.usage)
 	}
 	if summary.content.trim_space().len == 0 {
 		return error('agent tool round limit reached')

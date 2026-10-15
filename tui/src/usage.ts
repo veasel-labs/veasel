@@ -15,16 +15,33 @@ export function formatReportedUsage(inputTokens: number, outputTokens: number): 
   return `${formatTokenCount(inputTokens)} in · ${formatTokenCount(outputTokens)} out`
 }
 
+export function formatReportedCacheUsage(cacheReadTokens: number, cacheCreationTokens: number): string {
+  return `${formatTokenCount(cacheReadTokens)} cache read · ${formatTokenCount(cacheCreationTokens)} cache write`
+}
+
+export type ReportedUsageFields = {
+  usage_reported?: boolean
+  input_tokens?: number
+  output_tokens?: number
+  cache_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+}
+
 export function statusWithUsage(
   provider: string,
   model: string,
-  usage?: { usage_reported?: boolean; input_tokens?: number; output_tokens?: number },
+  usage?: ReportedUsageFields,
 ): string {
   const base = `● ${provider}  ·  ${model}`
   if (!usage?.usage_reported) return base
   const input = usage.input_tokens ?? 0
   const output = usage.output_tokens ?? 0
-  return `${base}  ·  ${formatReportedUsage(input, output)}`
+  let line = `${base}  ·  ${formatReportedUsage(input, output)}`
+  if (usage.cache_reported) {
+    line += `  ·  ${formatReportedCacheUsage(usage.cache_read_tokens ?? 0, usage.cache_creation_tokens ?? 0)}`
+  }
+  return line
 }
 
 export type SessionUsageSummary = {
@@ -34,6 +51,9 @@ export type SessionUsageSummary = {
   input_tokens: number
   output_tokens: number
   usage_reported: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
   cost: string
 }
 
@@ -47,6 +67,13 @@ export function formatSessionUsageSummary(summary: SessionUsageSummary): string 
     lines.push(`Tokens: ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`)
   } else {
     lines.push("Tokens: unavailable (no provider reported usage yet)")
+  }
+  if (summary.cache_reported) {
+    lines.push(
+      `Prompt cache (provider-reported): ${formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0)}`,
+    )
+  } else {
+    lines.push("Prompt cache: unavailable (provider omitted cache fields)")
   }
   lines.push(`Cost: ${summary.cost === "unavailable" ? "unavailable (no price schedule)" : summary.cost}`)
   return lines.join("\n")

@@ -87,6 +87,13 @@ fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() 
 	assert second_values[4] == data_env_expected
 	assert second_values[5] == 'filtered'
 	assert second_values[6] == 'survives-restart'
+	os.write_file(script, fixture + '\n// package files replaced\n') or { panic(err) }
+	third_read := plugin_mcp_persistence_call(root, data, server, 'read')
+	third_values := third_read.split('|')
+	assert third_values.len == 7
+	assert third_values[0] == root_expected
+	assert third_values[1] == data_expected
+	assert third_values[6] == 'survives-restart'
 }
 
 fn plugin_mcp_persistence_call(root string, data string, server PluginMCPServer, action string) string {

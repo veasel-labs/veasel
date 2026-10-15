@@ -51,6 +51,20 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
+		validate_messages([
+			ChatMessage{
+				role:    'user'
+				content: input.content
+			},
+		]) or {
+			eprintln('veasel: rejecting queued operation ${operation.id}; request content invalid')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn request content was invalid and will not be claimed.') or {
+				eprintln('veasel: unable to reject queued operation with invalid content ${operation.id}')
+				''
+			}
+			continue
+		}
 		operation_id, mut turn_ctx, cancel := app.begin_turn_operation(operation.session_id,
 			operation.id) or {
 			eprintln('veasel: unable to resume queued operation ${operation.id} (${err.msg()})')

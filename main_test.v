@@ -1146,6 +1146,32 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
+fn test_resume_rejects_blank_queued_content_without_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-blank-queued-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'Blank queued content'
+		directory: '/tmp/blank-queued'
+	}) or { panic(err) }
+	operation_id := '3c4d5e6f-7081-92a3-b4c5-d6e7f8091a2b'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"   "}') or {
+		panic(err)
+	}
+	mut app := new_app(store, plugin_directory)
+	app.resume_durable_queued_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Queued turn request content was invalid and will not be claimed.'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_resume_rejects_empty_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-empty-queued-${uuid.new_v4().str()}')
 	os.mkdir_all(plugin_directory) or { panic(err) }

@@ -1942,6 +1942,11 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 		stop_receiving_limit: max_provider_stream_bytes + 1
 		validate:             true
 		verify:               provider_tls_verify_path(url)!
+		on_progress:          fn [mut turn_ctx] (_ &http.Request, _ []u8, _ u64) ! {
+			if context_error := turn_context_error(mut turn_ctx) {
+				return error(context_error)
+			}
+		}
 		on_progress_body:     fn [mut stream_state, mut turn_ctx] (_ &http.Request, chunk []u8, _ u64, _ u64, status_code int) ! {
 			provider_sse_handle_progress(mut stream_state, mut turn_ctx, chunk, status_code)!
 		}

@@ -60,6 +60,7 @@ import {
   stepComposerHistory,
   type ComposerHistory,
 } from "./composer-history"
+import { sessionEscapeAction } from "./session-escape"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -3038,9 +3039,26 @@ renderer.keyInput.on("keypress", (key) => {
       return
     }
     if (key.name === "escape") {
-      if (sendingMessage) {
+      const action = sessionEscapeAction({
+        sending: sendingMessage,
+        hasNotice: skillNotice.length > 0,
+      })
+      if (action === "cancel-turn") {
         key.stopPropagation()
         void cancelActiveTurn()
+        return
+      }
+      if (action === "dismiss-notice") {
+        key.preventDefault()
+        key.stopPropagation()
+        skillNotice = ""
+        activePatchDiff = ""
+        activePatchPath = ""
+        activePatchStatus = ""
+        activePatchHunkIndex = 0
+        selectedReviewKeys = new Set()
+        setActiveReview(undefined)
+        renderChat(chatMessages)
         return
       }
       detail.remove(chatInput)

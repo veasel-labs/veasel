@@ -589,6 +589,13 @@ def main() -> None:
         screen.wait_for("/help", 4)
         screen.send("\x1b", 0.25)
         screen.clear_line(1)  # "/"
+        screen.send("/help\r", 0.7)
+        screen.wait_for("VEASEL CODE / QUICK HELP", 4)
+        screen.send("\x1b", 0.4)  # Esc dismisses help notice, stays in session
+        screen.wait_for("Ask Veasel", 4)
+        if "VEASEL CODE / QUICK HELP" in screen.terminal.text():
+            raise AssertionError("Esc did not dismiss the help notice")
+        screen.wait_for("Ctrl+Y")
         # Description search: find /connect and /theme without typing their names.
         screen.send("/key", 0.7)
         screen.wait_for("/connect")
@@ -687,7 +694,8 @@ def main() -> None:
         screen.send("\x1b", 0.4)
         screen.wait_for("Turn cancelled.", 6)
         screen.wait_for("stop this")
-        screen.send("\x1b", 0.45)
+        screen.send("\x1b", 0.35)  # dismiss notice overlay if any
+        screen.send("\x1b", 0.45)  # leave session
         screen.wait_for("q quit")
         screen.send("\x1b[F", 0.35)  # End → last session
         screen.wait_for("Selected 20 of 20", 4)
@@ -708,8 +716,9 @@ def main() -> None:
         screen.send("\r", 0.5)
         screen.wait_for("Ask Veasel")
         screen.send("/patch ", 0.2)
-        screen.send("\x1b", 0.15)
-        screen.send("\x1b", 0.3)
+        screen.send("\x1b", 0.2)  # clear slash menu
+        screen.send("\x1b", 0.3)  # dismiss notice if any
+        screen.send("\x1b", 0.4)  # leave session
         screen.wait_for("q quit")
         screen.send("j", 0.25)
         screen.send("\r", 0.55)

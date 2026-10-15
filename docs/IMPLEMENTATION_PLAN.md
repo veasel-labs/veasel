@@ -209,14 +209,17 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   session API. Listing reports `missing` for stale linked checkouts; `POST`
   with `prune: true` runs argv-only `git worktree prune`.
 
-- [ ] Complete Agent Plugins v1.0.0 client conformance. Directory loading,
-  manifest and Skill validation, MCP stdio/Streamable HTTP, `PLUGIN_DATA`,
-  placeholder expansion, failure isolation, and per-call MCP consent have
-  substantial implementation and fixture coverage.   Operator-managed local
-  package links (`/v1/plugins/links`, TUI `/plugin add|remove`, capability
-  `plugins.links`) are implemented with a durable `$VEASEL_DATA_DIR/plugin-links.json`
-  sidecar (restore missing symlinks on list; optional `replace`); they do not
-  fetch remote packages.
+- [x] Local Agent Plugins host READY (portable format + install UX). Directory
+  loading, manifest and Skill validation, MCP stdio/Streamable HTTP,
+  `PLUGIN_DATA`, placeholder expansion, failure isolation, and per-call MCP
+  consent are CI-gated with the spec-derived fixture corpus. Operator-managed
+  local package links (`/v1/plugins/links`, TUI `/plugin add [--replace]|remove`,
+  headless `veasel plugins links … [--replace]`, capability `plugins.links`)
+  ship with a durable `$VEASEL_DATA_DIR/plugin-links.json` sidecar (restore
+  missing symlinks on list; optional `replace`) and validated package summary
+  fields for install UX; they do not fetch remote packages. Remaining open:
+  remote marketplace, upstream cross-implementation fixtures (none published at
+  the pinned revision), OAuth DCR (deferred), legacy HTTP+SSE.
   Operator-configured MCP servers support user scope, project scope
   (`<workspace>/.veasel/mcp-servers.json`), and read-only project-import of
   portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, TUI

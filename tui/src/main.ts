@@ -1314,7 +1314,8 @@ async function sendMessage(value: string) {
     return
   }
   if (content.startsWith("/plugin")) {
-    skillNotice = "Use /plugins to list managed links, /plugin add <absolute-path> to link a local package, or /plugin remove <name> to unlink. Only symlinks are removed; PLUGIN_DATA stays on disk."
+    skillNotice =
+      "Use /plugins to list managed links, /plugin add [--replace] <absolute-path> to link a local package, or /plugin remove <name> to unlink. Only symlinks are removed; PLUGIN_DATA stays on disk."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1872,9 +1873,42 @@ async function showSkills(filter = "") {
   }
 }
 
+type PluginLinkView = {
+  name: string
+  path: string
+  version?: string
+  description?: string
+  display_name?: string
+  skill_count?: number
+  mcp_server_count?: number
+}
+
 type PluginLinkCatalog = {
-  links: Array<{ name: string; path: string }>
+  links: PluginLinkView[]
   diagnostics?: Array<{ component: string; message: string }>
+}
+
+function formatPluginLinkSummary(link: PluginLinkView): string {
+  const bits: string[] = []
+  if (link.version) bits.push(`v${safeTerminalText(link.version)}`)
+  if (link.display_name) bits.push(`(${safeTerminalText(link.display_name)})`)
+  bits.push(`skills=${link.skill_count ?? 0}`)
+  bits.push(`mcp=${link.mcp_server_count ?? 0}`)
+  return bits.join("  ")
+}
+
+function parsePluginAddArgs(raw: string): { path: string; replace: boolean } {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean)
+  let replace = false
+  const pathParts: string[] = []
+  for (const token of tokens) {
+    if (token === "--replace") {
+      replace = true
+      continue
+    }
+    pathParts.push(token)
+  }
+  return { path: pathParts.join(" "), replace }
 }
 
 async function showPluginLinks(filter = "") {
@@ -1885,9 +1919,10 @@ async function showPluginLinks(filter = "") {
     const entries = catalog.links.map((link) => {
       const name = safeTerminalText(link.name)
       const path = safeTerminalText(link.path)
+      const summary = formatPluginLinkSummary(link)
       return {
-        haystack: `${link.name} ${link.path}`,
-        line: `● ${name}\n  ${path}`,
+        haystack: `${link.name} ${link.path} ${link.display_name ?? ""} ${link.description ?? ""}`,
+        line: `● ${name}\n  ${path}\n  ${summary}`,
       }
     })
     const matched = entries.filter((entry) => matchesCatalogFilter(entry.haystack, filter))
@@ -1895,10 +1930,10 @@ async function showPluginLinks(filter = "") {
       .map((item) => `! ${safeTerminalText(item.component)}: ${safeTerminalText(item.message)}`)
     const header = formatCatalogFilterHeader("PLUGIN LINKS", matched.length, entries.length, filter)
     skillNotice = matched.length > 0
-      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}${diagnostics.length > 0 ? `\n\n${diagnostics.join("\n")}` : ""}\n\nAdd with /plugin add <absolute-path>. Remove with /plugin remove <name>. Filter with /plugins <text>. Only managed symlinks are removed; PLUGIN_DATA for that name is kept.`
+      ? `${header}\n${matched.map((entry) => entry.line).join("\n\n")}${diagnostics.length > 0 ? `\n\n${diagnostics.join("\n")}` : ""}\n\nAdd with /plugin add [--replace] <absolute-path>. Remove with /plugin remove <name>. Filter with /plugins <text>. Only managed symlinks are removed; PLUGIN_DATA for that name is kept.`
       : filter
         ? formatCatalogFilterEmpty("plugin links", safeTerminalText(filter))
-        : "No managed plugin links. Use /plugin add <absolute-path> to link a local Agent Plugin package into VEASEL_PLUGIN_DIR."
+        : "No managed plugin links. Use /plugin add [--replace] <absolute-path> to link a local Agent Plugin package into VEASEL_PLUGIN_DIR."
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load plugin links: ${error instanceof Error ? error.message : "request failed"}`
@@ -1906,9 +1941,11 @@ async function showPluginLinks(filter = "") {
   }
 }
 
-async function addPluginLink(path: string) {
+async function addPluginLink(raw: string) {
+  const { path, replace } = parsePluginAddArgs(raw)
   if (!path) {
-    skillNotice = "Use /plugin add <absolute-path> with a local Agent Plugin package directory."
+    skillNotice =
+      "Use /plugin add [--replace] <absolute-path> with a local Agent Plugin package directory."
     renderChat(chatMessages)
     return
   }
@@ -1916,12 +1953,14 @@ async function addPluginLink(path: string) {
     const response = await fetch(`${apiBase}/v1/plugins/links`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path, replace }),
       signal: controller.signal,
     })
-    const body = await response.json().catch(() => ({})) as { name?: string; path?: string; error?: string }
+    const body = await response.json().catch(() => ({})) as PluginLinkView & { error?: string }
     if (!response.ok) throw new Error(body.error || "unable to add plugin link")
-    skillNotice = `Linked ${safeTerminalText(body.name || "plugin")} → ${safeTerminalText(body.path || path)}. Use /plugins to review, then /skill or /mcp as needed.`
+    const verb = replace ? "Replaced" : "Linked"
+    const summary = formatPluginLinkSummary(body)
+    skillNotice = `${verb} ${safeTerminalText(body.name || "plugin")} → ${safeTerminalText(body.path || path)}  ${summary}. Use /plugins to review, then /skill or /mcp as needed.`
     slashContextAt = 0
     renderChat(chatMessages)
   } catch (error) {

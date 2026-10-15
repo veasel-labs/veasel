@@ -19,16 +19,17 @@ enum HeadlessPluginsAction {
 
 struct HeadlessPluginsOptions {
 mut:
-	action HeadlessPluginsAction
-	plugin string
-	kind   string
-	name   string
-	path   string
-	json   bool
+	action  HeadlessPluginsAction
+	plugin  string
+	kind    string
+	name    string
+	path    string
+	replace bool
+	json    bool
 }
 
 fn print_headless_plugins_help() {
-	println('Usage: veasel plugins <components|links> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add <absolute-package-path>\n  links remove <name>\n\nOptions:\n      --json  Emit machine-readable JSON\n  -h, --help  Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR and record targets in \$VEASEL_DATA_DIR/plugin-links.json; list restores a missing symlink when the registered package still validates. PLUGIN_DATA stays keyed by plugin name.')
+	println('Usage: veasel plugins <components|links> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add [--replace] <absolute-package-path>\n  links remove <name>\n\nOptions:\n      --replace  Retarget an existing managed link that points elsewhere\n      --json     Emit machine-readable JSON\n  -h, --help     Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR and record targets in \$VEASEL_DATA_DIR/plugin-links.json; list restores a missing symlink when the registered package still validates. PLUGIN_DATA stays keyed by plugin name.')
 }
 
 fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
@@ -100,6 +101,12 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 			'--json' {
 				options.json = true
 			}
+			'--replace' {
+				if options.action != .links_add {
+					return error('--replace is only valid for plugins links add')
+				}
+				options.replace = true
+			}
 			'--help', '-h' {
 				return error('help')
 			}
@@ -131,7 +138,7 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 		}
 		.links_add {
 			if positional.len != 1 {
-				return error('plugins links add expects <absolute-package-path>')
+				return error('plugins links add expects [--replace] <absolute-package-path>')
 			}
 			options.path = positional[0]
 		}
@@ -230,7 +237,8 @@ fn execute_headless_plugins_links_list(port int, options HeadlessPluginsOptions)
 
 fn execute_headless_plugins_links_add(port int, options HeadlessPluginsOptions) !string {
 	payload := PluginLinkInput{
-		path: options.path
+		path:    options.path
+		replace: options.replace
 	}
 	response := headless_json_request(port, .post, '/v1/plugins/links', json2.encode(payload),
 		false, '')!
@@ -241,7 +249,11 @@ fn execute_headless_plugins_links_add(port int, options HeadlessPluginsOptions) 
 		return response.body
 	}
 	link := json2.decode[PluginLink](response.body)!
-	mut line := 'Linked ${link.name}  ->  ${link.path}'
+	mut line := if options.replace {
+		'Replaced ${link.name}  ->  ${link.path}'
+	} else {
+		'Linked ${link.name}  ->  ${link.path}'
+	}
 	if link.version.len > 0 {
 		line += '  v${link.version}'
 	}

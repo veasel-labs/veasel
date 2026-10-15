@@ -71,7 +71,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter (all tokens must match)" },
   { name: "/skill", category: "skills", description: "Enable, disable, or one-shot invoke a Skill", usage: "/skill on|off|run <source>/<skill>" },
   { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages; add text to filter" },
-  { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
+  { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory (optional --replace)", usage: "/plugin add [--replace] <absolute-path>" },
   { name: "/plugin remove", category: "plugins", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
   { name: "/mcp", category: "mcp", description: "List MCP servers; add text to filter (stdio, trusted, name…)" },
   { name: "/mcp add", category: "mcp", description: "Add a configured MCP server (user or project scope)", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>" },

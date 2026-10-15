@@ -1423,6 +1423,9 @@ fn test_model_endpoint_requires_tls_or_exact_loopback() {
 	assert model_endpoint_rejected('https://api.example.test/v1#fragment')
 	assert model_endpoint_rejected('ftp://api.example.test/v1')
 	assert model_endpoint_rejected('not a URL')
+	assert model_endpoint_rejected('https://api.example.test/v1\nbad')
+	assert model_endpoint_rejected('https://api.example.test/\0path')
+	assert model_endpoint_rejected('https://api.example.test/v1\ttrail')
 }
 
 fn test_local_api_accepts_only_loopback_host_and_origin() {

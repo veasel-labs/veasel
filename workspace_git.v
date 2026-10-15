@@ -6,6 +6,7 @@ import time
 const max_workspace_git_worktrees = 64
 const max_workspace_git_branch_len = 128
 const max_workspace_git_worktree_path_len = 1024
+const max_workspace_git_worktree_lock_reason_len = 256
 const workspace_git_command_timeout = 30 * time.second
 
 pub struct WorkspaceGitWorktree {
@@ -39,6 +40,13 @@ pub struct WorkspaceGitWorktreeRemoval {
 pub:
 	removed string
 	force   bool
+}
+
+pub struct WorkspaceGitWorktreeLockInput {
+pub:
+	path   string
+	locked bool
+	reason string @[omitempty]
 }
 
 // workspace_git_common_directory returns the shared git directory that owns
@@ -300,4 +308,55 @@ fn remove_workspace_git_worktree(root string, input WorkspaceGitWorktreeRemoveIn
 	}
 	args << path
 	_ := run_workspace_git_command(checkout, args)!
+}
+
+fn validate_workspace_git_worktree_lock_reason(reason string) !string {
+	trimmed := reason.trim_space()
+	if trimmed.len == 0 {
+		return ''
+	}
+	if trimmed.len > max_workspace_git_worktree_lock_reason_len {
+		return error('worktree lock reason is too long')
+	}
+	for c in trimmed {
+		if c < 32 || c == 127 {
+			return error('worktree lock reason is invalid')
+		}
+	}
+	return trimmed
+}
+
+fn find_workspace_git_worktree(root string, path string) !WorkspaceGitWorktree {
+	resolved := os.real_path(path)
+	catalog := list_workspace_git_worktrees(root)!
+	for entry in catalog.worktrees {
+		if entry.path == resolved || entry.path == path {
+			return entry
+		}
+	}
+	return error('worktree not found')
+}
+
+fn set_workspace_git_worktree_locked(root string, input WorkspaceGitWorktreeLockInput) !WorkspaceGitWorktree {
+	refuse_workspace_edit_while_git_locked(root)!
+	checkout := workspace_git_main_checkout(root)!
+	path := validate_workspace_git_worktree_path(input.path)!
+	_ := find_workspace_git_worktree(root, path)!
+	reason := validate_workspace_git_worktree_lock_reason(input.reason)!
+	mut args := ['worktree']
+	if input.locked {
+		args << 'lock'
+		if reason.len > 0 {
+			args << '--reason'
+			args << reason
+		}
+	} else {
+		if reason.len > 0 {
+			return error('worktree unlock does not accept a reason')
+		}
+		args << 'unlock'
+	}
+	args << path
+	_ := run_workspace_git_command(checkout, args)!
+	return find_workspace_git_worktree(root, path)!
 }

@@ -83,6 +83,18 @@ fn test_add_and_remove_workspace_git_worktree_via_git() {
 	listed := list_workspace_git_worktrees(main_root) or { panic(err) }
 	assert listed.worktrees.len == 2
 
+	locked := set_workspace_git_worktree_locked(main_root, WorkspaceGitWorktreeLockInput{
+		path:   worktree
+		locked: true
+		reason: 'veasel-test'
+	}) or { panic(err) }
+	assert locked.locked
+	unlocked := set_workspace_git_worktree_locked(main_root, WorkspaceGitWorktreeLockInput{
+		path:   worktree
+		locked: false
+	}) or { panic(err) }
+	assert !unlocked.locked
+
 	remove_workspace_git_worktree(main_root, WorkspaceGitWorktreeRemoveInput{
 		path:  worktree
 		force: true

@@ -8,6 +8,8 @@ enum HeadlessWorktreesAction {
 	list
 	add
 	remove
+	lock
+	unlock
 }
 
 struct HeadlessWorktreesOptions {
@@ -18,12 +20,13 @@ mut:
 	path       string
 	branch     string
 	new_branch string
+	reason     string
 	force      bool
 	json       bool
 }
 
 fn print_headless_worktrees_help() {
-	println('Usage: veasel worktrees <list|add|remove> [options]\n\nCommands:\n  list\n  add --path <abs> (--branch <name> | --new-branch <name>)\n  remove --path <abs> [--force]\n\nOptions:\n  -w, --workspace <dir>  Workspace for a new session (default: cwd)\n      --session <uuid>   Reuse an existing session instead of creating one\n      --path <abs>       Absolute worktree path (add/remove)\n      --branch <name>    Existing branch for add\n      --new-branch <n>   Create branch with git worktree add -b\n      --force            Pass --force to git worktree remove\n      --json             Emit machine-readable JSON\n  -h, --help             Show this help\n\nUses the local API: GET/POST/DELETE /v1/sessions/{id}/workspace/git/worktrees.\nAdd/remove invoke argv-only git; listing is filesystem-only.')
+	println('Usage: veasel worktrees <list|add|remove|lock|unlock> [options]\n\nCommands:\n  list\n  add --path <abs> (--branch <name> | --new-branch <name>)\n  remove --path <abs> [--force]\n  lock --path <abs> [--reason <text>]\n  unlock --path <abs>\n\nOptions:\n  -w, --workspace <dir>  Workspace for a new session (default: cwd)\n      --session <uuid>   Reuse an existing session instead of creating one\n      --path <abs>       Absolute worktree path (add/remove/lock/unlock)\n      --branch <name>    Existing branch for add\n      --new-branch <n>   Create branch with git worktree add -b\n      --reason <text>    Optional lock reason\n      --force            Pass --force to git worktree remove\n      --json             Emit machine-readable JSON\n  -h, --help             Show this help\n\nUses the local API: GET/POST/PATCH/DELETE /v1/sessions/{id}/workspace/git/worktrees.\nAdd/remove/lock/unlock invoke argv-only git; listing is filesystem-only.')
 }
 
 fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOptions {
@@ -45,6 +48,12 @@ fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOp
 		}
 		'remove' {
 			options.action = .remove
+		}
+		'lock' {
+			options.action = .lock
+		}
+		'unlock' {
+			options.action = .unlock
 		}
 		'--help', '-h', 'help' {
 			return error('help')
@@ -91,6 +100,13 @@ fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOp
 				}
 				options.new_branch = args[index].trim_space()
 			}
+			'--reason' {
+				index++
+				if index >= args.len || args[index].trim_space().len == 0 {
+					return error('--reason expects lock reason text')
+				}
+				options.reason = args[index].trim_space()
+			}
 			'--force' {
 				options.force = true
 			}
@@ -119,6 +135,19 @@ fn parse_headless_worktrees_args(args []string, cwd string) !HeadlessWorktreesOp
 		.remove {
 			if options.path.len == 0 {
 				return error('worktrees remove requires --path')
+			}
+		}
+		.lock {
+			if options.path.len == 0 {
+				return error('worktrees lock requires --path')
+			}
+		}
+		.unlock {
+			if options.path.len == 0 {
+				return error('worktrees unlock requires --path')
+			}
+			if options.reason.len > 0 {
+				return error('worktrees unlock does not accept --reason')
 			}
 		}
 	}
@@ -216,6 +245,29 @@ fn execute_headless_worktrees_remove(port int, session_id string, options Headle
 	return 'Removed worktree ${removal.removed}'
 }
 
+fn execute_headless_worktrees_set_locked(port int, session_id string, options HeadlessWorktreesOptions,
+	locked bool) !string {
+	mut payload := map[string]json2.Any{}
+	payload['path'] = options.path
+	payload['locked'] = locked
+	if locked && options.reason.len > 0 {
+		payload['reason'] = options.reason
+	}
+	response := headless_json_request(port, .patch, '/v1/sessions/${session_id}/workspace/git/worktrees',
+		json2.encode(payload), false, '')!
+	if response.status_code != 200 {
+		return error(headless_worktrees_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	tree := json2.decode[WorkspaceGitWorktree](response.body)!
+	if locked {
+		return 'Locked worktree ${tree.path}'
+	}
+	return 'Unlocked worktree ${tree.path}'
+}
+
 fn execute_headless_worktrees_command(port int, args []string) {
 	options := parse_headless_worktrees_args(args, os.getwd()) or {
 		if err.msg() == 'help' {
@@ -249,6 +301,18 @@ fn execute_headless_worktrees_command(port int, args []string) {
 		}
 		.remove {
 			execute_headless_worktrees_remove(port, session_id, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.lock {
+			execute_headless_worktrees_set_locked(port, session_id, options, true) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.unlock {
+			execute_headless_worktrees_set_locked(port, session_id, options, false) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

@@ -30,6 +30,8 @@ loopback HTTP API (`queued` → `running` → terminal).
 - Get / cancel / result: existing operation routes
 - Events: `session.turn_queued`, then `session.turn_started`, then `session.turn_completed`
 - Capabilities: `sessions.operations.durable_queue`, `sessions.operations.list`
+- Bound: at most 32 `queued` rows per session; further enqueues return `503` with
+  `Retry-After: 1` and do not persist another queue row
 
 Approvals for edits, shell, and MCP remain mandatory. Loopback Host/Origin
 defaults are unchanged. Cancel of a `queued` row is terminal without starting a

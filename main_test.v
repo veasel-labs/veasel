@@ -1167,6 +1167,31 @@ fn test_queued_session_operation_survives_restart_and_claims_to_completion() {
 	recovered.close() or { panic(err) }
 }
 
+fn test_enqueue_session_operation_rejects_when_queued_cap_reached() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'Queued cap'
+		directory: '/tmp/queued-cap'
+	}) or { panic(err) }
+	for i in 0 .. max_queued_session_operations_per_session {
+		id := 'aaaaaaaa-bbbb-4ccc-8ddd-${i:012}'
+		_ = store.enqueue_session_operation(session.id, id, '{"content":"queued ${i}"}') or {
+			panic(err)
+		}
+	}
+	mut rejected := false
+	_ = store.enqueue_session_operation(session.id, 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+		'{"content":"overflow"}') or {
+		rejected = err.msg() == 'queued_operations_full'
+		SessionOperation{}
+	}
+	assert rejected
+	assert (store.list_queued_session_operations() or { panic(err) }).len == max_queued_session_operations_per_session
+}
+
 fn test_enqueue_session_operation_rejects_nul_in_request_json() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer {

@@ -10,6 +10,7 @@ import uuid
 const max_session_history_page_size = 100
 const max_retained_terminal_session_operations = 200
 const max_retained_session_events = 5_000
+const max_queued_session_operations_per_session = 32
 
 pub struct Session {
 pub:
@@ -1221,6 +1222,17 @@ fn (mut store Store) insert_session_operation(session_id string, operation_id st
 	if existing.len > 0 {
 		store.db.rollback() or {}
 		return error('session operation already exists')
+	}
+	if status == 'queued' {
+		queued_rows := store.db.exec_param("SELECT COUNT(*) FROM session_operations WHERE session_id = ? AND status = 'queued'",
+			session_id) or {
+			store.db.rollback() or {}
+			return error('unable to count queued session operations')
+		}
+		if queued_rows.len == 1 && queued_rows[0].val(0).int() >= max_queued_session_operations_per_session {
+			store.db.rollback() or {}
+			return error('queued_operations_full')
+		}
 	}
 	_ = store.db.exec_param_many('INSERT INTO session_operations (id, session_id, status, request_json) VALUES (?, ?, ?, ?)', [
 		operation_id,

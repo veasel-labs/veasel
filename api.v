@@ -1406,6 +1406,13 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			if err.msg() == 'session operation already exists' {
 				return json_conflict_error(mut ctx, 'Operation identifier has already been used by this session')
 			}
+			if err.msg() == 'queued_operations_full' {
+				ctx.res.set_status(.service_unavailable)
+				ctx.res.header.add_custom('Retry-After', '1') or {}
+				return ctx.json(APIError{
+					error: 'Too many queued operations for this session; retry shortly'
+				})
+			}
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
 		turn_done := turn_ctx.done()

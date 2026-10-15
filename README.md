@@ -108,8 +108,11 @@ Honesty bounds that stay in the product voice:
   on macOS (`shell.sandbox.seatbelt`), or AppContainer + Job Object on Windows
   (`shell.sandbox.windows`) when the backend is available; otherwise it falls
   back unsandboxed. Windows grants workspace ACL to the AppContainer SID and
-  denies network by default; it is not Codex-level WFP/LPAC. MCP remains
-  unsandboxed—inspect effects before approval
+  denies network by default; it is not Codex-level WFP/LPAC. Trusted MCP stdio
+  defaults unsandboxed (`VEASEL_MCP_STDIO_SANDBOX` unset/off); set
+  `auto`/`require` for Linux Bubblewrap, macOS Seatbelt, or Windows
+  AppContainer when available (`mcp.stdio.sandbox.*` only when wrap will run)—
+  inspect effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full

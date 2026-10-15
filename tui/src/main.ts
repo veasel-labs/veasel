@@ -162,9 +162,13 @@ import {
   type WorkspaceRepositoryMap,
 } from "./repository-map"
 import {
+  ensureThemeDirs,
   formatThemeList,
   formatThemeLoadStatusHint,
+  formatThemeOpenNotice,
   formatThemePreviewStatus,
+  formatThemeReloadStatus,
+  isThemeActionId,
   isThemeId,
   listThemeChoices,
   loadCustomThemes,
@@ -176,8 +180,9 @@ import {
   type ThemeId,
 } from "./themes"
 
-const customThemeLoad = loadCustomThemes({
-  projectDir: process.env.VEASEL_PROJECT_DIR?.trim() || process.cwd(),
+const themeProjectDir = process.env.VEASEL_PROJECT_DIR?.trim() || process.cwd()
+let customThemeLoad = loadCustomThemes({
+  projectDir: themeProjectDir,
 })
 
 function themeListNotice(activeId: ThemeId): string {
@@ -185,6 +190,29 @@ function themeListNotice(activeId: ThemeId): string {
     errors: customThemeLoad.errors,
     scans: customThemeLoad.scans,
   })
+}
+
+function refreshThemeSlashChoices() {
+  slashContext = { ...slashContext, themes: listThemeChoices() }
+}
+
+function reloadCustomThemesFromDisk(): void {
+  customThemeLoad = loadCustomThemes({ projectDir: themeProjectDir })
+  refreshThemeSlashChoices()
+  // If the saved/custom id vanished after reload, fall back to a known theme.
+  if (!isThemeId(committedThemeId)) {
+    setTheme(loadThemeId())
+    return
+  }
+  applyTheme(resolveTheme(committedThemeId))
+}
+
+function openThemeDirectories(): void {
+  const result = ensureThemeDirs({ projectDir: themeProjectDir })
+  skillNotice = formatThemeOpenNotice(result)
+  renderChat(chatMessages)
+  status.content = `● theme dirs ready  ·  /theme reload after editing JSON`
+  status.fg = theme.statusOk
 }
 
 const reducedMotion = prefersReducedMotion()
@@ -1122,6 +1150,21 @@ async function sendMessage(value: string) {
   const themeMatch = content.match(/^\/theme\s+([a-z][a-z0-9-]*)$/i)
   if (themeMatch) {
     const id = themeMatch[1]!.toLowerCase()
+    if (isThemeActionId(id)) {
+      if (id === "reload") {
+        reloadCustomThemesFromDisk()
+        skillNotice = themeListNotice(committedThemeId)
+        renderChat(chatMessages)
+        const reloadStatus = formatThemeReloadStatus(customThemeLoad.loaded.length, customThemeLoad.errors.length)
+        status.content = reloadStatus
+        status.fg = customThemeLoad.errors.length > 0 ? theme.statusWarn : theme.statusOk
+      } else {
+        openThemeDirectories()
+      }
+      chatInput.value = ""
+      chatInput.focus()
+      return
+    }
     if (!isThemeId(id)) {
       skillNotice = `Unknown theme "${id}".\n\n${themeListNotice(theme.id)}`
       renderChat(chatMessages)

@@ -77,6 +77,8 @@ describe("slashSuggestions", () => {
   test("suggests theme ids for /theme", () => {
     expect(names("/theme")[0]).toBe("/theme")
     expect(names("/theme ")).toEqual([
+      "/theme reload",
+      "/theme open",
       "/theme mint",
       "/theme ember",
       "/theme slate",
@@ -85,6 +87,8 @@ describe("slashSuggestions", () => {
       "/theme day",
       "/theme contrast",
     ])
+    expect(names("/theme re")).toEqual(["/theme reload"])
+    expect(names("/theme op")).toEqual(["/theme open"])
     expect(names("/theme au")).toEqual(["/theme aurora"])
     expect(names("/theme da")).toEqual(["/theme day"])
     expect(names("/theme co")).toEqual(["/theme contrast"])

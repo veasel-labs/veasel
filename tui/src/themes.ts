@@ -2,6 +2,19 @@ import { homedir } from "node:os"
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 
+// Slash actions that are not theme ids. Keep these out of the custom-id shape
+// so /theme reload|open never collide with a user JSON file named reload.json.
+export const themeActionChoices = [
+  { value: "reload", description: "Rescan custom theme JSON without restarting the TUI" },
+  { value: "open", description: "Create and show the user/workspace theme directories" },
+] as const
+
+export type ThemeActionId = (typeof themeActionChoices)[number]["value"]
+
+export function isThemeActionId(value: string): value is ThemeActionId {
+  return value === "reload" || value === "open"
+}
+
 // Visual tokens for the OpenTUI shell. The default "mint" theme matches the
 // product mock: charcoal panels, mint accents, and a clear LOCAL cue.
 // Builtin ids stay fixed; custom JSON under ~/.config/veasel/themes/ (and
@@ -451,10 +464,13 @@ export function listThemes(): Theme[] {
 }
 
 export function listThemeChoices(): Array<{ value: string; description: string }> {
-  return listThemes().map((theme) => ({
-    value: theme.id,
-    description: theme.description,
-  }))
+  return [
+    ...themeActionChoices.map((action) => ({ value: action.value, description: action.description })),
+    ...listThemes().map((theme) => ({
+      value: theme.id,
+      description: theme.description,
+    })),
+  ]
 }
 
 export function clearCustomThemes(): void {
@@ -544,6 +560,9 @@ export function parseThemeJson(
   }
   if (isBuiltinThemeId(id)) {
     return { error: `${sourcePath}: cannot replace builtin theme "${id}"` }
+  }
+  if (isThemeActionId(id)) {
+    return { error: `${sourcePath}: "${id}" is reserved for /theme ${id}` }
   }
   const name = typeof parsed.name === "string" ? parsed.name.trim() : ""
   if (!name) return { error: `${sourcePath}: name is required` }
@@ -710,8 +729,96 @@ export function formatThemeList(activeId: ThemeId, options: FormatThemeListOptio
   }
 
   lines.push("", "Choose with /theme <id>. Preference is stored in ~/.config/veasel/tui-theme.")
+  lines.push("Reload custom JSON with /theme reload (no restart). Create/show dirs with /theme open.")
   lines.push("While the /theme menu is open, ↑/↓ preview colors live; Enter keeps the choice and Esc restores the saved theme.")
   return lines.join("\n")
+}
+
+export type EnsureThemeDirsResult = {
+  userDir: string
+  workspaceDir?: string
+  created: string[]
+  alreadyPresent: string[]
+}
+
+// Ensures the user themes directory exists so operators can drop JSON without
+// leaving the TUI. Optionally creates the workspace themes dir when a project
+// root is known. Does not launch a file manager (SSH/headless safe).
+export function ensureThemeDirs(options: {
+  env?: NodeJS.ProcessEnv
+  home?: string
+  projectDir?: string
+  mkdir?: (path: string) => void
+  existsDir?: (path: string) => boolean
+} = {}): EnsureThemeDirsResult {
+  const env = options.env ?? process.env
+  const home = options.home ?? homedir()
+  const mkdir =
+    options.mkdir ??
+    ((path: string) => {
+      mkdirSync(path, { recursive: true, mode: 0o700 })
+    })
+  const existsDir =
+    options.existsDir ??
+    ((path: string) => {
+      try {
+        return readdirSync(path) !== undefined
+      } catch {
+        return false
+      }
+    })
+
+  const userDir = themeThemesDir(env, home)
+  const created: string[] = []
+  const alreadyPresent: string[] = []
+  if (existsDir(userDir)) {
+    alreadyPresent.push(userDir)
+  } else {
+    mkdir(userDir)
+    created.push(userDir)
+  }
+
+  const projectDir = options.projectDir?.trim()
+  let workspaceDir: string | undefined
+  if (projectDir) {
+    workspaceDir = projectThemesDir(projectDir)
+    if (existsDir(workspaceDir)) {
+      alreadyPresent.push(workspaceDir)
+    } else {
+      mkdir(workspaceDir)
+      created.push(workspaceDir)
+    }
+  }
+
+  return { userDir, workspaceDir, created, alreadyPresent }
+}
+
+export function formatThemeOpenNotice(result: EnsureThemeDirsResult, home = homedir()): string {
+  const lines = [
+    "THEME DIRECTORIES",
+    "",
+    `User: ${displayThemePath(result.userDir, home)}`,
+  ]
+  if (result.workspaceDir) {
+    lines.push(`Workspace: ${displayThemePath(result.workspaceDir, home)}`)
+  }
+  lines.push("")
+  if (result.created.length > 0) {
+    lines.push("Created:")
+    for (const path of result.created) {
+      lines.push(`  + ${displayThemePath(path, home)}`)
+    }
+    lines.push("")
+  }
+  lines.push("Drop *.json theme files into either directory (optional \"extends\" builtin id),")
+  lines.push("then run /theme reload to pick them up without restarting.")
+  return lines.join("\n")
+}
+
+export function formatThemeReloadStatus(loaded: number, errors: number): string {
+  const parts = [`reloaded ${loaded} custom theme${loaded === 1 ? "" : "s"}`]
+  if (errors > 0) parts.push(`${errors} JSON error${errors === 1 ? "" : "s"}`)
+  return `● ${parts.join("  ·  ")}  ·  /theme`
 }
 
 export function formatThemeLoadStatusHint(errors: string[]): string | undefined {
@@ -721,10 +828,12 @@ export function formatThemeLoadStatusHint(errors: string[]): string | undefined 
 }
 
 // Extracts a concrete theme id from a slash suggestion such as "/theme ember".
+// Action tokens (/theme reload|open) are never theme ids, so preview stays off.
 export function themeIdFromSlashSuggestion(name: string): ThemeId | undefined {
   const match = /^\/theme\s+([a-z][a-z0-9-]*)$/i.exec(name.trim())
   if (!match) return undefined
   const id = match[1]!.toLowerCase()
+  if (isThemeActionId(id)) return undefined
   return isThemeId(id) ? id : undefined
 }
 

@@ -60,6 +60,8 @@ describe("TUI quick help", () => {
     expect(help).toContain("~/.config/veasel/themes")
     expect(help).toContain("<workspace>/.veasel/themes")
     expect(help).toContain("bad JSON")
+    expect(help).toContain("/theme reload")
+    expect(help).toContain("/theme open")
     expect(help).toContain("VEASEL_TUI_REDUCED_MOTION")
     expect(help).toContain("you / assistant / system / tool")
     expect(help).toContain("/plugins · /plugin add · /plugin remove")

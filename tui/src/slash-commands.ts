@@ -67,7 +67,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/help advanced", category: "guide", description: "Show full command syntax" },
   { name: "/connect", category: "setup", description: "Authenticate: paste an API key, save credentials, and pick a model" },
   { name: "/models", category: "setup", description: "Configure provider, model, endpoint, and output budget" },
-  { name: "/theme", category: "setup", description: "List or switch TUI color themes (builtins plus ~/.config/veasel/themes JSON)", usage: "/theme <id>" },
+  { name: "/theme", category: "setup", description: "List, switch, reload, or open TUI color themes (builtins plus ~/.config/veasel/themes JSON)", usage: "/theme <id|reload|open>" },
   { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter (all tokens must match)" },
   { name: "/skill", category: "skills", description: "Enable, disable, or one-shot invoke a Skill", usage: "/skill on|off|run <source>/<skill>" },
   { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages; add text to filter" },
@@ -116,11 +116,21 @@ const builtinThemeChoices: SlashArgument[] = [
   { value: "contrast", description: "Near-black on white with strong status hues for high-contrast displays" },
 ]
 
+const themeActionChoices: SlashArgument[] = [
+  { value: "reload", description: "Rescan custom theme JSON without restarting the TUI" },
+  { value: "open", description: "Create and show the user/workspace theme directories" },
+]
+
 const argumentSpecs: Record<string, ArgSpec[]> = {
   "/theme": [
     {
       kind: "value",
-      values: (context) => context.themes ?? builtinThemeChoices,
+      values: (context) => {
+        // Prefer the live registry (includes reload/open + customs). Fall back
+        // to builtins plus the fixed actions when context has not loaded yet.
+        if (context.themes && context.themes.length > 0) return context.themes
+        return [...themeActionChoices, ...builtinThemeChoices]
+      },
       empty: "No themes are available",
     },
   ],

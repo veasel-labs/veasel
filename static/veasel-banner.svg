@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-labelledby="title desc">
+  <title id="title">Veasel Code</title>
+  <desc id="desc">Mint accent bar over a charcoal field for the Veasel Code README.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0c0f12"/>
+      <stop offset="55%" stop-color="#12171c"/>
+      <stop offset="100%" stop-color="#0e1a18"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#9af7c9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="280" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1200" height="4" fill="url(#mint)"/>
+  <circle cx="108" cy="140" r="46" fill="none" stroke="#9af7c9" stroke-width="3"/>
+  <circle cx="108" cy="140" r="14" fill="#9af7c9"/>
+  <text x="190" y="128" fill="#9af7c9" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="42" letter-spacing="6">VEASEL / CODE</text>
+  <text x="190" y="178" fill="#b7c0c8" font-family="ui-sans-serif, system-ui, sans-serif" font-size="22">V-native coding agent · local by default · review before effect</text>
+  <text x="190" y="220" fill="#7a8794" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">● LOCAL</text>
+</svg>

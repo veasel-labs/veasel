@@ -248,3 +248,101 @@ fn test_remove_mcp_credential_clears_oauth_refresh_metadata() {
 	}) or { panic(err) }
 	assert cleared.cleared == 'already-gone'
 }
+
+struct MCPOAuthTransportRefreshFixture {
+mut:
+	mcp_hits   int
+	token_hits int
+	last_auth  string
+}
+
+fn (mut fixture MCPOAuthTransportRefreshFixture) handle(request http.Request) http.Response {
+	mut response := http.Response{}
+	if request.url == '/token' && request.method == .post {
+		fixture.token_hits++
+		values := urllib.parse_query(request.data) or {
+			response.set_status(.bad_request)
+			return response
+		}
+		if (values.get('grant_type') or { '' }) != 'refresh_token'
+			|| (values.get('refresh_token') or { '' }) != 'refresh-secret' {
+			response.set_status(.bad_request)
+			response.body = '{"error":"invalid_grant"}'
+			return response
+		}
+		response.header.set(.content_type, 'application/json')
+		response.body = '{"access_token":"refreshed-access","token_type":"Bearer","expires_in":120}'
+		return response
+	}
+	if request.url == '/mcp' && request.method == .post {
+		fixture.mcp_hits++
+		fixture.last_auth = request.header.get_custom('Authorization') or { '' }
+		if fixture.last_auth != 'Bearer refreshed-access' {
+			response.set_status(.unauthorized)
+			response.header.set(.www_authenticate, 'Bearer realm="fixture"')
+			response.body = 'expired'
+			return response
+		}
+		response.header.set(.content_type, 'application/json')
+		response.body = '{"jsonrpc":"2.0","id":1,"result":{"ok":true}}'
+		return response
+	}
+	response.set_status(.not_found)
+	return response
+}
+
+fn test_plugin_mcp_http_transport_refreshes_once_on_401() {
+	mut fixture := &MCPOAuthTransportRefreshFixture{}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	cred_path := os.join_path(os.temp_dir(), 'veasel-oauth-401-creds-${uuid.new_v4().str()}.json')
+	refresh_path := os.join_path(os.temp_dir(), 'veasel-oauth-401-meta-${uuid.new_v4().str()}.json')
+	defer {
+		os.rm(cred_path) or {}
+		os.rm(refresh_path) or {}
+	}
+	mut credentials := new_mcp_credential_state(cred_path)
+	credentials.upsert(MCPCredentialInput{
+		name:    'mcp-oauth'
+		headers: {
+			'Authorization': 'Bearer stale-access'
+		}
+	}) or { panic(err) }
+	mut refresh := new_mcp_oauth_refresh_state(refresh_path)
+	refresh.put('mcp-oauth', MCPOAuthRefreshRecord{
+		refresh_token:  'refresh-secret'
+		token_endpoint: 'http://${server.addr}/token'
+		client_id:      'veasel-local'
+	}) or { panic(err) }
+	mut transport := new_plugin_mcp_http_transport(PluginMCPServer{
+		name:       'oauth-mcp'
+		transport:  'streamable-http'
+		url:        'http://${server.addr}/mcp'
+		credential: 'mcp-oauth'
+		headers:    {
+			'Authorization': 'Bearer stale-access'
+		}
+	}) or { panic(err) }
+	transport.attach_oauth_refresh('mcp-oauth', refresh, credentials)
+	transport.send('{"jsonrpc":"2.0","id":1,"method":"ping"}') or { panic(err) }
+	assert fixture.mcp_hits == 2
+	assert fixture.token_hits == 1
+	assert fixture.last_auth == 'Bearer refreshed-access'
+	assert transport.headers['Authorization'] == 'Bearer refreshed-access'
+	stored := credentials.get_headers('mcp-oauth') or { panic(err) }
+	assert stored['Authorization'] == 'Bearer refreshed-access'
+}

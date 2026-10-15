@@ -90,3 +90,57 @@ export function credentialStepCopy(options: {
     hint: `\n\n${saved} Enter keeps an already-saved key. Type !clear to remove it.${env} Key characters are hidden.`,
   }
 }
+
+export type SettingsWizardMode = "connect" | "models"
+
+// Connect is the short auth path; /models (s) is the full provider cockpit.
+export function settingsModeIntro(mode: SettingsWizardMode): string {
+  if (mode === "connect") {
+    return "Quick connect · pick a provider, paste a key if needed, then choose a model. Press s later for endpoint and output-budget controls."
+  }
+  return "Provider settings · switch providers, override endpoints (Ctrl+U), and set an output budget (Ctrl+O)."
+}
+
+export function settingsProviderStepPrompt(mode: SettingsWizardMode): string {
+  if (mode === "connect") {
+    return "Choose the provider to authenticate. Tab cycles All / Configured / Local / …; type to filter."
+  }
+  return "Choose a provider. Tab cycles All / Configured / Local / Specialized / OpenAI-compatible; type to filter by name, model, or key."
+}
+
+// When the highlighted provider differs from the active profile, say so plainly.
+export function providerSwitchNote(
+  activeProviderId: string | undefined,
+  selectedProviderId: string | undefined,
+  selectedProviderName?: string,
+): string {
+  const active = activeProviderId?.trim()
+  const selected = selectedProviderId?.trim()
+  if (!active || !selected || active === selected) return ""
+  const label = selectedProviderName?.trim() || selected
+  return `\n\nSwitching from ${active} → ${label}. Saving replaces the active provider for new turns.`
+}
+
+export function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
+  if (step === 0) return "Tab scope · type filter · Enter · Esc"
+  const parts = [
+    step === 2 ? "Enter discovers" : step === 4 ? "Enter saves budget" : step === 1 ? "Enter keeps endpoint" : "Enter selects",
+    "Ctrl+B back",
+  ]
+  if (endpoint) parts.push("Ctrl+U endpoint")
+  if (budget) parts.push("Ctrl+O budget")
+  parts.push("Esc")
+  return parts.join(" · ")
+}
+
+export function homeWorkspaceBlurb(options: {
+  providersConfigured: boolean
+  modelLabel?: string
+}): string {
+  if (!options.providersConfigured) {
+    return "Your V-powered coding companion.\n\nConnect provider · /connect\nPaste an API key, save it on this machine, then pick a model. Or press s for full provider settings (endpoint, budget)."
+  }
+  const model = options.modelLabel?.trim()
+  const modelLine = model ? `\nActive model · ${model}` : ""
+  return `Your V-powered coding companion.${modelLine}\n\nChoose a session on the left, press n to start a workspace, or use /connect · s to manage providers.`
+}

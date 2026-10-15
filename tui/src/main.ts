@@ -30,7 +30,20 @@ import {
 import { homeFooterHint, sessionFooterHint } from "./footer-hints"
 import { shouldQuitOnKey } from "./keyboard"
 import { initialOutputTokenBudget, parseOutputTokenBudget } from "./model-settings"
-import { adjacentSettingsStep, credentialStepCopy, endpointHost, providerHasKnownEndpoint, settingsBackTarget, settingsPath, settingsProgress } from "./settings-flow"
+import {
+  adjacentSettingsStep,
+  credentialStepCopy,
+  endpointHost,
+  homeWorkspaceBlurb,
+  providerHasKnownEndpoint,
+  providerSwitchNote,
+  settingsBackTarget,
+  settingsFooterHint,
+  settingsModeIntro,
+  settingsPath,
+  settingsProgress,
+  settingsProviderStepPrompt,
+} from "./settings-flow"
 import { formatSettingsLoadError, formatSettingsSaveError } from "./settings-errors"
 import { formatSessionList, moveSessionSelection, sessionListCapacity, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, jumpSuggestion, moveSuggestion, runsOnAccept, slashCategoryLabel, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
@@ -421,22 +434,10 @@ function appendSessionDetail(text: string) {
 }
 
 function homeDetailContent(providersConfigured: boolean): string {
-  if (!providersConfigured) {
-    return "Your V-powered coding companion.\n\nConnect provider · /connect\nPaste an API key, save it on this machine, then pick a model. Or press s for full provider settings."
-  }
-  return "Your V-powered coding companion.\n\nChoose a session on the left, press n to start a workspace, or use /connect · s to manage providers."
-}
-
-function settingsFooterHint(step: number, endpoint: boolean, budget: boolean): string {
-  if (step === 0) return "Tab group · Enter configure · Esc close"
-  const parts = [
-    step === 2 ? "Enter discovers" : step === 4 ? "Enter saves budget" : step === 1 ? "Enter keeps endpoint" : "Enter selects",
-    "Ctrl+B back",
-  ]
-  if (endpoint) parts.push("Ctrl+U endpoint")
-  if (budget) parts.push("Ctrl+O budget")
-  parts.push("Esc")
-  return parts.join(" · ")
+  return homeWorkspaceBlurb({
+    providersConfigured,
+    modelLabel: activeModelLabel || undefined,
+  })
 }
 const footer = new BoxRenderable(renderer, {
   height: 4,
@@ -2583,14 +2584,22 @@ function showSettingsStep(manualModel = false) {
     })
     : undefined
   const hint = credential?.hint ?? ""
-  const stepPrompt = settingsStep === 2 && credential ? credential.prompt : settingPrompts[settingsStep]
+  const stepPrompt = settingsStep === 0
+    ? settingsProviderStepPrompt(settingsMode)
+    : settingsStep === 2 && credential
+      ? credential.prompt
+      : settingPrompts[settingsStep]
+  const modeIntro = settingsStep === 0 ? `\n\n${settingsModeIntro(settingsMode)}` : ""
   const providerSearchHint = settingsStep === 0
     ? `\n\n${providerPickerScopeLabel(settingsProviderScope)} providers · ${settingsProviderQuery ? `Filter: ${settingsProviderQuery}` : "search by name, model, or key"}`
     : ""
+  const switchNote = settingsStep === 0
+    ? providerSwitchNote(active, settingsValues.provider || active, providerInfo?.name)
+    : providerSwitchNote(active, settingsValues.provider, providerInfo?.name)
   const navigationHint = settingsStep === 0
-    ? "Enter selects · Esc cancels"
+    ? "Enter selects · Tab changes scope · Esc cancels"
     : "Enter continues · Ctrl+B goes back · Esc cancels"
-  sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${stepPrompt}${knownEndpointNote()}${providerSearchHint}${providerGuide}${hint}\n\n${navigationHint}`
+  sessionDetail.content = `${settingsTitle(settingsStep)}\n\n${stepPrompt}${modeIntro}${knownEndpointNote()}${providerSearchHint}${switchNote}${providerGuide}${hint}\n\n${navigationHint}`
   const modeLabel = settingsMode === "connect" ? "connect" : "provider settings"
   status.content = `● ${modeLabel} · ${settingsTitle(settingsStep).replace(/^CONNECT  \/  |^MODEL SETTINGS  \/  /, "")}`
   status.fg = theme.statusOk
@@ -2607,7 +2616,7 @@ function showSettingsStep(manualModel = false) {
     const configuredProviders = new Set(settingsView?.configured_providers ?? [])
     const matches = filterModelProviders(catalog, settingsProviderQuery, settingsProviderScope, configuredProviders, settingsView?.profiles)
     const providers = prioritizeModelProviders(matches, active, configuredProviders)
-    sessionDetail.content = `${settingsTitle(0)}  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingPrompts[0]}${providerSearchHint}`
+    sessionDetail.content = `${settingsTitle(0)}  ·  ${providerPickerScopeLabel(settingsProviderScope)}  ·  ${matches.length}/${catalog.length}\n\n${settingsProviderStepPrompt(settingsMode)}${modeIntro}${providerSearchHint}`
     status.content = `● ${providerPickerScopeLabel(settingsProviderScope)} ${matches.length}/${catalog.length}`
     if (providers.length === 0) {
       appendSessionDetail("\n\nNo providers match this filter. Backspace clears characters.")

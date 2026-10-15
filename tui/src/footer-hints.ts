@@ -5,5 +5,13 @@
 export const homeFooterHint =
   "n new · j/k · type · /connect · /skills · /mcp · /theme · q quit"
 
+// Shown while a home session filter is active so clear keys stay visible.
+export const homeFilterFooterHint =
+  "type · Backspace · Ctrl+L clear · Esc clear · j/k · Enter · q quit"
+
 export const sessionFooterHint =
   "Esc · ↑ · Pg · Ctrl+U · Ctrl+R · Ctrl+Y · /skills · /mcp · /theme · /map"
+
+export function homeFooterForFilter(filter: string): string {
+  return filter.trim().length > 0 ? homeFilterFooterHint : homeFooterHint
+}

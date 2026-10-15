@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { homeFooterHint, sessionFooterHint } from "./footer-hints"
+import { homeFilterFooterHint, homeFooterForFilter, homeFooterHint, sessionFooterHint } from "./footer-hints"
 
 test("home footer surfaces the discovery slash commands", () => {
   for (const command of ["/connect", "/skills", "/mcp", "/theme"]) {
@@ -11,6 +11,14 @@ test("home footer surfaces the discovery slash commands", () => {
   expect(homeFooterHint).toContain("q quit")
   expect(homeFooterHint).not.toContain("Home/End") // Home/End stays in /help; footer budget prefers type-to-filter
   expect(homeFooterHint.length).toBeLessThanOrEqual(72)
+})
+
+test("home filter footer names clear keys within the column budget", () => {
+  expect(homeFooterForFilter("")).toBe(homeFooterHint)
+  expect(homeFooterForFilter("Lane")).toBe(homeFilterFooterHint)
+  expect(homeFilterFooterHint).toContain("Ctrl+L clear")
+  expect(homeFilterFooterHint).toContain("Esc clear")
+  expect(homeFilterFooterHint.length).toBeLessThanOrEqual(72)
 })
 
 test("session footer surfaces reviews and the same discovery commands", () => {

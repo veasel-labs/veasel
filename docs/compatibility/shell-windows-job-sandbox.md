@@ -43,6 +43,19 @@ risks in the field; Veasel therefore avoids that logon pattern.
 No Codex source was copied. Veasel does **not** claim Codex-level WFP
 helper-service filters, private logon identities, or LPAC.
 
+## Trusted MCP stdio (same C helper, separate profile)
+
+Opt-in via `VEASEL_MCP_STDIO_SANDBOX=auto|require` (default/unset = off,
+unsandboxed). When wrapping:
+
+- Uses AppContainer profile `VeaselTrustedMcp` (not the approved-shell profile).
+- Grants ACL on `PLUGIN_ROOT` and `PLUGIN_DATA` (and cwd when distinct).
+- Always adds network capability SIDs (parity with Linux Bubblewrap / macOS
+  Seatbelt MCP wraps; many servers need outbound HTTPS).
+- Advertises `mcp.stdio.sandbox.windows` only when the wrap will run.
+- Long-lived stdio pipes are returned to the V MCP transport (not a fire-and-
+  forget shell capture).
+
 ## Residual risks (must stay visible)
 
 | Risk | Status |

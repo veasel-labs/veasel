@@ -69,6 +69,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if mcp_stdio_sandbox_seatbelt_capability() {
 		features << 'mcp.stdio.sandbox.seatbelt'
 	}
+	if mcp_stdio_sandbox_windows_capability() {
+		features << 'mcp.stdio.sandbox.windows'
+	}
 	if app.configured_model() != none {
 		features << 'chat.complete'
 		features << 'chat.cancel'

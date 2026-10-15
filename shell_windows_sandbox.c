@@ -43,9 +43,12 @@ enum {
 	VEASEL_WIN_JOB_MEMORY_BYTES = 512 * 1024 * 1024
 };
 
-static const wchar_t *veasel_appcontainer_name = L"VeaselApprovedShell";
-static const wchar_t *veasel_appcontainer_display = L"Veasel Approved Shell";
-static const wchar_t *veasel_appcontainer_desc = L"Veasel approved-shell AppContainer sandbox";
+static const wchar_t *veasel_shell_appcontainer_name = L"VeaselApprovedShell";
+static const wchar_t *veasel_shell_appcontainer_display = L"Veasel Approved Shell";
+static const wchar_t *veasel_shell_appcontainer_desc = L"Veasel approved-shell AppContainer sandbox";
+static const wchar_t *veasel_mcp_appcontainer_name = L"VeaselTrustedMcp";
+static const wchar_t *veasel_mcp_appcontainer_display = L"Veasel Trusted MCP";
+static const wchar_t *veasel_mcp_appcontainer_desc = L"Veasel trusted MCP stdio AppContainer sandbox";
 
 static void set_error(VeaselWinSandboxResult *result, const char *prefix, DWORD err) {
 	if (!result) {
@@ -55,6 +58,18 @@ static void set_error(VeaselWinSandboxResult *result, const char *prefix, DWORD 
 		snprintf(result->error_message, sizeof(result->error_message), "%s", prefix);
 	} else {
 		snprintf(result->error_message, sizeof(result->error_message), "%s (Win32 %lu)", prefix,
+			(unsigned long)err);
+	}
+}
+
+static void set_mcp_error(VeaselWinMcpStdio *proc, const char *prefix, DWORD err) {
+	if (!proc) {
+		return;
+	}
+	if (err == 0) {
+		snprintf(proc->error_message, sizeof(proc->error_message), "%s", prefix);
+	} else {
+		snprintf(proc->error_message, sizeof(proc->error_message), "%s (Win32 %lu)", prefix,
 			(unsigned long)err);
 	}
 }
@@ -138,21 +153,35 @@ static int configure_job(HANDLE job) {
 		: 0;
 }
 
-static PSID obtain_appcontainer_sid(void) {
+static PSID obtain_named_appcontainer_sid(const wchar_t *name, const wchar_t *display,
+	const wchar_t *desc) {
 	PSID sid = NULL;
-	HRESULT hr = CreateAppContainerProfile(veasel_appcontainer_name, veasel_appcontainer_display,
-		veasel_appcontainer_desc, NULL, 0, &sid);
+	HRESULT hr;
+	if (!name || !display || !desc) {
+		return NULL;
+	}
+	hr = CreateAppContainerProfile(name, display, desc, NULL, 0, &sid);
 	if (SUCCEEDED(hr) && sid) {
 		return sid;
 	}
 	if (HRESULT_CODE(hr) == ERROR_ALREADY_EXISTS) {
 		sid = NULL;
-		hr = DeriveAppContainerSidFromAppContainerName(veasel_appcontainer_name, &sid);
+		hr = DeriveAppContainerSidFromAppContainerName(name, &sid);
 		if (SUCCEEDED(hr) && sid) {
 			return sid;
 		}
 	}
 	return NULL;
+}
+
+static PSID obtain_shell_appcontainer_sid(void) {
+	return obtain_named_appcontainer_sid(veasel_shell_appcontainer_name,
+		veasel_shell_appcontainer_display, veasel_shell_appcontainer_desc);
+}
+
+static PSID obtain_mcp_appcontainer_sid(void) {
+	return obtain_named_appcontainer_sid(veasel_mcp_appcontainer_name,
+		veasel_mcp_appcontainer_display, veasel_mcp_appcontainer_desc);
 }
 
 static void free_capability_list(SID_AND_ATTRIBUTES *caps, DWORD count) {
@@ -327,7 +356,7 @@ int veasel_win_sandbox_available(void) {
 	HANDLE job = NULL;
 	int ok = 0;
 
-	sid = obtain_appcontainer_sid();
+	sid = obtain_shell_appcontainer_sid();
 	if (!sid) {
 		return 0;
 	}
@@ -415,7 +444,7 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 		goto cleanup;
 	}
 
-	appcontainer_sid = obtain_appcontainer_sid();
+	appcontainer_sid = obtain_shell_appcontainer_sid();
 	if (!appcontainer_sid) {
 		result->setup_failed = 1;
 		set_error(result, "CreateAppContainerProfile/DeriveAppContainerSid failed", GetLastError());
@@ -646,4 +675,492 @@ cleanup:
 	free(command);
 	free(workdir);
 	return result->ok ? 1 : 0;
+}
+
+static wchar_t *build_mcp_cmdline(const char *exe_utf8, const char *const *args_utf8, int argc) {
+	wchar_t *exe = NULL;
+	wchar_t **wide_args = NULL;
+	wchar_t *cmdline = NULL;
+	size_t cap = 0;
+	size_t len = 0;
+	int i;
+
+	if (!exe_utf8 || argc < 0 || (argc > 0 && !args_utf8)) {
+		return NULL;
+	}
+	exe = utf8_to_wide(exe_utf8);
+	if (!exe) {
+		return NULL;
+	}
+	cap = wcslen(exe) + 8;
+	if (argc > 0) {
+		wide_args = (wchar_t **)calloc((size_t)argc, sizeof(wchar_t *));
+		if (!wide_args) {
+			free(exe);
+			return NULL;
+		}
+		for (i = 0; i < argc; i++) {
+			wide_args[i] = utf8_to_wide(args_utf8[i] ? args_utf8[i] : "");
+			if (!wide_args[i]) {
+				for (i = i - 1; i >= 0; i--) {
+					free(wide_args[i]);
+				}
+				free(wide_args);
+				free(exe);
+				return NULL;
+			}
+			cap += wcslen(wide_args[i]) + 4;
+		}
+	}
+	cmdline = (wchar_t *)malloc(cap * sizeof(wchar_t));
+	if (!cmdline) {
+		if (wide_args) {
+			for (i = 0; i < argc; i++) {
+				free(wide_args[i]);
+			}
+			free(wide_args);
+		}
+		free(exe);
+		return NULL;
+	}
+	cmdline[0] = L'\0';
+	if (!append_quoted_arg(cmdline, cap, &len, exe)) {
+		free(cmdline);
+		cmdline = NULL;
+		goto done;
+	}
+	for (i = 0; i < argc; i++) {
+		if (!append_quoted_arg(cmdline, cap, &len, wide_args[i])) {
+			free(cmdline);
+			cmdline = NULL;
+			goto done;
+		}
+	}
+done:
+	if (wide_args) {
+		for (i = 0; i < argc; i++) {
+			free(wide_args[i]);
+		}
+		free(wide_args);
+	}
+	free(exe);
+	return cmdline;
+}
+
+static wchar_t *utf8_env_block_to_wide(const char *env_utf8) {
+	size_t total = 0;
+	const char *p;
+	wchar_t *wide;
+	wchar_t *out;
+	size_t out_len = 0;
+	if (!env_utf8) {
+		return NULL;
+	}
+	/* Count bytes including the final double-NUL. */
+	p = env_utf8;
+	while (!(p[0] == '\0' && p[1] == '\0')) {
+		p++;
+		total++;
+		if (total > 1024 * 1024) {
+			return NULL;
+		}
+	}
+	total += 2;
+	wide = (wchar_t *)malloc(total * sizeof(wchar_t) * 2);
+	if (!wide) {
+		return NULL;
+	}
+	out = wide;
+	p = env_utf8;
+	while (*p) {
+		int needed = MultiByteToWideChar(CP_UTF8, 0, p, -1, NULL, 0);
+		if (needed <= 0) {
+			free(wide);
+			return NULL;
+		}
+		if (MultiByteToWideChar(CP_UTF8, 0, p, -1, out, needed) <= 0) {
+			free(wide);
+			return NULL;
+		}
+		out += needed;
+		out_len += (size_t)needed;
+		p += strlen(p) + 1;
+	}
+	*out = L'\0';
+	(void)out_len;
+	return wide;
+}
+
+int veasel_win_mcp_stdio_start(const char *exe_utf8, const char *const *args_utf8, int argc,
+	const char *workdir_utf8, const char *plugin_root_utf8, const char *plugin_data_utf8,
+	const char *env_utf8, VeaselWinMcpStdio *out) {
+	wchar_t *workdir = NULL;
+	wchar_t *plugin_root = NULL;
+	wchar_t *plugin_data = NULL;
+	wchar_t *cmdline = NULL;
+	wchar_t *env_block = NULL;
+	PSID appcontainer_sid = NULL;
+	SID_AND_ATTRIBUTES *capability_sids = NULL;
+	SECURITY_CAPABILITIES security_capabilities;
+	SIZE_T attr_size = 0;
+	LPPROC_THREAD_ATTRIBUTE_LIST attr_list = NULL;
+	HANDLE inherited_handles[3];
+	HANDLE job = NULL;
+	HANDLE stdout_read = NULL;
+	HANDLE stdout_write = NULL;
+	HANDLE stderr_read = NULL;
+	HANDLE stderr_write = NULL;
+	HANDLE stdin_read = NULL;
+	HANDLE stdin_write = NULL;
+	SECURITY_ATTRIBUTES sa;
+	STARTUPINFOEXW siex;
+	PROCESS_INFORMATION pi;
+	DWORD creation_flags;
+	BOOL created = FALSE;
+
+	if (!out) {
+		return 0;
+	}
+	ZeroMemory(out, sizeof(*out));
+	ZeroMemory(&security_capabilities, sizeof(security_capabilities));
+	ZeroMemory(&siex, sizeof(siex));
+	ZeroMemory(&pi, sizeof(pi));
+	if (!exe_utf8 || !workdir_utf8 || !plugin_root_utf8 || !plugin_data_utf8) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "Windows MCP AppContainer received invalid arguments", 0);
+		return 0;
+	}
+
+	workdir = utf8_to_wide(workdir_utf8);
+	plugin_root = utf8_to_wide(plugin_root_utf8);
+	plugin_data = utf8_to_wide(plugin_data_utf8);
+	cmdline = build_mcp_cmdline(exe_utf8, args_utf8, argc);
+	if (!workdir || !plugin_root || !plugin_data || !cmdline) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "Windows MCP AppContainer could not convert paths/command line",
+			GetLastError());
+		goto cleanup;
+	}
+	if (env_utf8) {
+		env_block = utf8_env_block_to_wide(env_utf8);
+		if (!env_block) {
+			out->setup_failed = 1;
+			set_mcp_error(out, "Windows MCP AppContainer could not convert environment",
+				GetLastError());
+			goto cleanup;
+		}
+	}
+
+	appcontainer_sid = obtain_mcp_appcontainer_sid();
+	if (!appcontainer_sid) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "CreateAppContainerProfile/DeriveAppContainerSid failed for MCP",
+			GetLastError());
+		goto cleanup;
+	}
+	/* MCP always gets network capability SIDs (parity with Linux/macOS MCP wraps). */
+	if (!build_security_capabilities(appcontainer_sid, 1, &security_capabilities,
+			&capability_sids)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "Failed to build MCP AppContainer SECURITY_CAPABILITIES", GetLastError());
+		goto cleanup;
+	}
+	if (!grant_workspace_access(appcontainer_sid, plugin_root)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "Failed to grant AppContainer ACL on PLUGIN_ROOT", GetLastError());
+		goto cleanup;
+	}
+	if (_wcsicmp(plugin_root, plugin_data) != 0
+		&& !grant_workspace_access(appcontainer_sid, plugin_data)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "Failed to grant AppContainer ACL on PLUGIN_DATA", GetLastError());
+		goto cleanup;
+	}
+	/* Ensure the working directory is reachable when it differs from the roots. */
+	if (_wcsicmp(workdir, plugin_root) != 0 && _wcsicmp(workdir, plugin_data) != 0) {
+		if (!grant_workspace_access(appcontainer_sid, workdir)) {
+			out->setup_failed = 1;
+			set_mcp_error(out, "Failed to grant AppContainer ACL on MCP cwd", GetLastError());
+			goto cleanup;
+		}
+	}
+
+	job = CreateJobObjectW(NULL, NULL);
+	if (!job) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "CreateJobObjectW failed for MCP", GetLastError());
+		goto cleanup;
+	}
+	if (!configure_job(job)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "SetInformationJobObject failed for MCP", GetLastError());
+		goto cleanup;
+	}
+
+	ZeroMemory(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.bInheritHandle = TRUE;
+	if (!CreatePipe(&stdout_read, &stdout_write, &sa, 65536)
+		|| !SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0)
+		|| !CreatePipe(&stderr_read, &stderr_write, &sa, 65536)
+		|| !SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0)
+		|| !CreatePipe(&stdin_read, &stdin_write, &sa, 65536)
+		|| !SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "CreatePipe for MCP AppContainer failed", GetLastError());
+		goto cleanup;
+	}
+
+	InitializeProcThreadAttributeList(NULL, 2, 0, &attr_size);
+	attr_list = (LPPROC_THREAD_ATTRIBUTE_LIST)malloc(attr_size);
+	if (!attr_list) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "Out of memory for MCP PROC_THREAD_ATTRIBUTE_LIST", 0);
+		goto cleanup;
+	}
+	if (!InitializeProcThreadAttributeList(attr_list, 2, 0, &attr_size)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "InitializeProcThreadAttributeList failed for MCP", GetLastError());
+		goto cleanup;
+	}
+	inherited_handles[0] = stdin_read;
+	inherited_handles[1] = stdout_write;
+	inherited_handles[2] = stderr_write;
+	if (!UpdateProcThreadAttribute(attr_list, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+			inherited_handles, sizeof(inherited_handles), NULL, NULL)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "UpdateProcThreadAttribute HANDLE_LIST failed for MCP", GetLastError());
+		goto cleanup;
+	}
+	if (!UpdateProcThreadAttribute(attr_list, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+			&security_capabilities, sizeof(security_capabilities), NULL, NULL)) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "UpdateProcThreadAttribute SECURITY_CAPABILITIES failed for MCP",
+			GetLastError());
+		goto cleanup;
+	}
+
+	siex.StartupInfo.cb = sizeof(siex);
+	siex.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+	siex.StartupInfo.hStdInput = stdin_read;
+	siex.StartupInfo.hStdOutput = stdout_write;
+	siex.StartupInfo.hStdError = stderr_write;
+	siex.lpAttributeList = attr_list;
+
+	creation_flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED
+		| CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
+
+	created = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, creation_flags,
+		env_block ? env_block : NULL, workdir, &siex.StartupInfo, &pi);
+	if (!created) {
+		out->setup_failed = 1;
+		set_mcp_error(out, "CreateProcess AppContainer MCP stdio failed", GetLastError());
+		goto cleanup;
+	}
+	out->used_appcontainer = 1;
+
+	CloseHandle(stdout_write);
+	stdout_write = NULL;
+	CloseHandle(stderr_write);
+	stderr_write = NULL;
+	CloseHandle(stdin_read);
+	stdin_read = NULL;
+
+	if (!AssignProcessToJobObject(job, pi.hProcess)) {
+		TerminateProcess(pi.hProcess, 1);
+		WaitForSingleObject(pi.hProcess, 5000);
+		out->setup_failed = 1;
+		set_mcp_error(out, "AssignProcessToJobObject failed for MCP", GetLastError());
+		goto cleanup_process;
+	}
+	out->used_job_object = 1;
+	if (ResumeThread(pi.hThread) == (DWORD)-1) {
+		TerminateJobObject(job, 1);
+		out->setup_failed = 1;
+		set_mcp_error(out, "ResumeThread failed for MCP", GetLastError());
+		goto cleanup_process;
+	}
+
+	out->ok = 1;
+	out->pid = pi.dwProcessId;
+	out->process_handle = pi.hProcess;
+	out->thread_handle = pi.hThread;
+	out->job_handle = job;
+	out->stdin_write = stdin_write;
+	out->stdout_read = stdout_read;
+	out->stderr_read = stderr_read;
+	pi.hProcess = NULL;
+	pi.hThread = NULL;
+	job = NULL;
+	stdin_write = NULL;
+	stdout_read = NULL;
+	stderr_read = NULL;
+	goto cleanup;
+
+cleanup_process:
+	if (pi.hThread) {
+		CloseHandle(pi.hThread);
+		pi.hThread = NULL;
+	}
+	if (pi.hProcess) {
+		CloseHandle(pi.hProcess);
+		pi.hProcess = NULL;
+	}
+
+cleanup:
+	if (attr_list) {
+		DeleteProcThreadAttributeList(attr_list);
+		free(attr_list);
+	}
+	free_capability_list(capability_sids, security_capabilities.CapabilityCount);
+	if (appcontainer_sid) {
+		FreeSid(appcontainer_sid);
+	}
+	if (job) {
+		CloseHandle(job);
+	}
+	if (stdout_write) {
+		CloseHandle(stdout_write);
+	}
+	if (stdout_read) {
+		CloseHandle(stdout_read);
+	}
+	if (stderr_write) {
+		CloseHandle(stderr_write);
+	}
+	if (stderr_read) {
+		CloseHandle(stderr_read);
+	}
+	if (stdin_write) {
+		CloseHandle(stdin_write);
+	}
+	if (stdin_read) {
+		CloseHandle(stdin_read);
+	}
+	free(env_block);
+	free(cmdline);
+	free(workdir);
+	free(plugin_root);
+	free(plugin_data);
+	return out->ok ? 1 : 0;
+}
+
+int veasel_win_mcp_stdio_is_alive(VeaselWinMcpStdio *proc) {
+	DWORD exit_code = 0;
+	if (!proc || !proc->process_handle) {
+		return 0;
+	}
+	if (!GetExitCodeProcess((HANDLE)proc->process_handle, &exit_code)) {
+		return 0;
+	}
+	return exit_code == STILL_ACTIVE ? 1 : 0;
+}
+
+int veasel_win_mcp_stdio_write_stdin(VeaselWinMcpStdio *proc, const char *data, int len) {
+	DWORD written = 0;
+	if (!proc || !proc->stdin_write || !data || len < 0) {
+		return 0;
+	}
+	if (len == 0) {
+		return 1;
+	}
+	if (!WriteFile((HANDLE)proc->stdin_write, data, (DWORD)len, &written, NULL)) {
+		return 0;
+	}
+	return (int)written == len ? 1 : 0;
+}
+
+static HANDLE mcp_stdio_handle(VeaselWinMcpStdio *proc, int which) {
+	if (!proc) {
+		return NULL;
+	}
+	if (which == 1) {
+		return (HANDLE)proc->stdout_read;
+	}
+	if (which == 2) {
+		return (HANDLE)proc->stderr_read;
+	}
+	return NULL;
+}
+
+int veasel_win_mcp_stdio_pending(VeaselWinMcpStdio *proc, int which) {
+	HANDLE pipe = mcp_stdio_handle(proc, which);
+	DWORD avail = 0;
+	if (!pipe) {
+		return 0;
+	}
+	if (!PeekNamedPipe(pipe, NULL, 0, NULL, &avail, NULL)) {
+		return 0;
+	}
+	return avail > 0 ? 1 : 0;
+}
+
+int veasel_win_mcp_stdio_read(VeaselWinMcpStdio *proc, int which, char *buf, int cap, int *out_len) {
+	HANDLE pipe = mcp_stdio_handle(proc, which);
+	DWORD avail = 0;
+	DWORD got = 0;
+	if (out_len) {
+		*out_len = 0;
+	}
+	if (!pipe || !buf || cap <= 0) {
+		return 0;
+	}
+	if (!PeekNamedPipe(pipe, NULL, 0, NULL, &avail, NULL)) {
+		return 0;
+	}
+	if (avail == 0) {
+		return 1;
+	}
+	if ((int)avail > cap) {
+		avail = (DWORD)cap;
+	}
+	if (!ReadFile(pipe, buf, avail, &got, NULL)) {
+		return 0;
+	}
+	if (out_len) {
+		*out_len = (int)got;
+	}
+	return 1;
+}
+
+void veasel_win_mcp_stdio_terminate(VeaselWinMcpStdio *proc) {
+	if (!proc) {
+		return;
+	}
+	if (proc->job_handle) {
+		TerminateJobObject((HANDLE)proc->job_handle, 1);
+	} else if (proc->process_handle) {
+		TerminateProcess((HANDLE)proc->process_handle, 1);
+	}
+}
+
+void veasel_win_mcp_stdio_close(VeaselWinMcpStdio *proc) {
+	if (!proc) {
+		return;
+	}
+	if (proc->stdin_write) {
+		CloseHandle((HANDLE)proc->stdin_write);
+		proc->stdin_write = NULL;
+	}
+	if (proc->stdout_read) {
+		CloseHandle((HANDLE)proc->stdout_read);
+		proc->stdout_read = NULL;
+	}
+	if (proc->stderr_read) {
+		CloseHandle((HANDLE)proc->stderr_read);
+		proc->stderr_read = NULL;
+	}
+	if (proc->thread_handle) {
+		CloseHandle((HANDLE)proc->thread_handle);
+		proc->thread_handle = NULL;
+	}
+	if (proc->process_handle) {
+		CloseHandle((HANDLE)proc->process_handle);
+		proc->process_handle = NULL;
+	}
+	if (proc->job_handle) {
+		CloseHandle((HANDLE)proc->job_handle);
+		proc->job_handle = NULL;
+	}
+	proc->ok = 0;
 }

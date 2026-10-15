@@ -42,7 +42,8 @@ network shared (many servers need outbound HTTPS), carves writable
 `PLUGIN_ROOT` and `PLUGIN_DATA` instead of a workspace root, and advertises
 `mcp.stdio.sandbox.seatbelt` only when wrap will run. Default/unset stays
 unsandboxed; `require` fails closed without pretending otherwise. Windows MCP
-stdio AppContainer parity remains open and stays fail-closed under `require`.
+stdio AppContainer wrap is documented in
+[`shell-windows-job-sandbox.md`](shell-windows-job-sandbox.md).
 
 No Codex Seatbelt source or SBPL files were copied. Veasel does not claim
 Codex-level sandbox guarantees. `sandbox-exec` remains best-effort and may be

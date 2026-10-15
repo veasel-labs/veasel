@@ -33,10 +33,13 @@ mut:
 
 // PluginMCPTransport supplies the process configuration missing from the
 // stdlib convenience constructor while keeping MCP JSON-RPC in vlib/mcp.
+// On Windows, win_mcp holds an AppContainer-backed stdio process when
+// VEASEL_MCP_STDIO_SANDBOX wraps the child; otherwise process is used.
 @[heap]
 struct PluginMCPTransport {
 mut:
-	process            &os.Process
+	process            &os.Process = unsafe { nil }
+	win_mcp            voidptr     = unsafe { nil } // &WindowsMcpStdioProcess on Windows
 	buffer             string
 	response_timeout   time.Duration = plugin_mcp_response_timeout
 	cancel_requested   bool
@@ -53,6 +56,10 @@ fn mcp_stdio_sandbox_mode() ApprovedShellSandboxMode {
 		return .off
 	}
 	return approved_shell_sandbox_mode_from(raw)
+}
+
+fn warn_mcp_stdio_unsandboxed_default() {
+	eprintln('veasel: trusted MCP stdio starts unsandboxed (VEASEL_MCP_STDIO_SANDBOX unset/off). Set VEASEL_MCP_STDIO_SANDBOX=auto or require for Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer when available. Default stays off.')
 }
 
 // mcp_stdio_sandbox_bubblewrap_capability is true only when Linux Bubblewrap
@@ -76,6 +83,19 @@ fn mcp_stdio_sandbox_seatbelt_capability() bool {
 			return false
 		}
 		return seatbelt_available()
+	} $else {
+		return false
+	}
+}
+
+// mcp_stdio_sandbox_windows_capability is true only when Windows AppContainer
+// will actually wrap trusted stdio MCP processes for the current configuration.
+fn mcp_stdio_sandbox_windows_capability() bool {
+	$if windows {
+		if mcp_stdio_sandbox_mode() == .off {
+			return false
+		}
+		return windows_appcontainer_sandbox_available()
 	} $else {
 		return false
 	}
@@ -127,10 +147,25 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 				return error('Trusted MCP stdio requires /usr/bin/sandbox-exec because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
 			}
 		}
+	} $else $if windows {
+		if mode != .off {
+			if windows_appcontainer_sandbox_available() {
+				return start_plugin_mcp_transport_windows_sandboxed(root, data, cwd, server.command,
+					args, env)
+			}
+			if mode == .require {
+				return error('Trusted MCP stdio requires a Windows AppContainer because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
+			}
+		}
 	} $else {
 		if mode == .require {
-			return error('VEASEL_MCP_STDIO_SANDBOX=require is only implemented for Linux Bubblewrap and macOS Seatbelt; refuse to start unsandboxed MCP stdio')
+			return error('VEASEL_MCP_STDIO_SANDBOX=require is only implemented for Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer; refuse to start unsandboxed MCP stdio')
 		}
+	}
+	if mode == .off {
+		warn_mcp_stdio_unsandboxed_default()
+	} else if mode == .auto {
+		eprintln('veasel: trusted MCP stdio falling back unsandboxed (VEASEL_MCP_STDIO_SANDBOX=auto but platform sandbox unavailable)')
 	}
 	mut process := os.new_process(server.command)
 	process.set_args(args)
@@ -144,6 +179,32 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	}
 	return &PluginMCPTransport{
 		process: process
+	}
+}
+
+// Windows AppContainer policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// - separate VeaselTrustedMcp profile; PLUGIN_ROOT and PLUGIN_DATA ACL grants
+// - network capability SIDs always enabled (many MCP servers need outbound HTTPS)
+// - Job Object kill-on-close + process/memory caps; not Codex WFP/LPAC
+// - missing AppContainer under auto falls back unsandboxed and never pretends sandboxed
+fn start_plugin_mcp_transport_windows_sandboxed(root string, data string, cwd string, command string,
+	args []string, env map[string]string) !&PluginMCPTransport {
+	$if windows {
+		mut sandboxed_env := env.clone()
+		sandboxed_env['HOME'] = data
+		sandboxed_env['USERPROFILE'] = data
+		tmpdir := os.temp_dir()
+		if tmpdir.len > 0 {
+			sandboxed_env['TMP'] = tmpdir
+			sandboxed_env['TEMP'] = tmpdir
+			sandboxed_env['TMPDIR'] = tmpdir
+		}
+		win := start_windows_mcp_stdio_process(root, data, cwd, command, args, sandboxed_env)!
+		return &PluginMCPTransport{
+			win_mcp: voidptr(win)
+		}
+	} $else {
+		return error('Windows MCP AppContainer wrap is unavailable on this platform')
 	}
 }
 
@@ -328,11 +389,89 @@ fn (mut transport PluginMCPTransport) request_cancel() {
 	transport.cancel_requested = true
 }
 
+fn (transport &PluginMCPTransport) mcp_stdio_alive() bool {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			return win.is_alive()
+		}
+	}
+	if isnil(transport.process) {
+		return false
+	}
+	return transport.process.is_alive()
+}
+
+fn (mut transport PluginMCPTransport) mcp_stdio_stdin_write(s string) {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			mut win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			win.stdin_write(s)
+			return
+		}
+	}
+	if !isnil(transport.process) {
+		transport.process.stdin_write(s)
+	}
+}
+
+fn (transport &PluginMCPTransport) mcp_stdio_pending_stdout() bool {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			return win.is_pending_stdout()
+		}
+	}
+	if isnil(transport.process) {
+		return false
+	}
+	return transport.process.is_pending(.stdout)
+}
+
+fn (transport &PluginMCPTransport) mcp_stdio_pending_stderr() bool {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			return win.is_pending_stderr()
+		}
+	}
+	if isnil(transport.process) {
+		return false
+	}
+	return transport.process.is_pending(.stderr)
+}
+
+fn (mut transport PluginMCPTransport) mcp_stdio_stdout_read() string {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			mut win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			return win.stdout_read()
+		}
+	}
+	if isnil(transport.process) {
+		return ''
+	}
+	return transport.process.stdout_read()
+}
+
+fn (mut transport PluginMCPTransport) mcp_stdio_stderr_read() string {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			mut win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			return win.stderr_read()
+		}
+	}
+	if isnil(transport.process) {
+		return ''
+	}
+	return transport.process.stderr_read()
+}
+
 fn (mut transport PluginMCPTransport) emit_cancelled_notification() {
 	if transport.cancelled_notified || transport.active_request_id.len == 0 {
 		return
 	}
-	if !transport.process.is_alive() {
+	if !transport.mcp_stdio_alive() {
 		return
 	}
 	transport.cancelled_notified = true
@@ -340,7 +479,7 @@ fn (mut transport PluginMCPTransport) emit_cancelled_notification() {
 	if notification.len > max_plugin_mcp_frame_bytes {
 		return
 	}
-	transport.process.stdin_write(notification + '\n')
+	transport.mcp_stdio_stdin_write(notification + '\n')
 }
 
 // overlay_plugin_environment applies configured server variables onto the
@@ -391,7 +530,7 @@ fn (mut transport PluginMCPTransport) send(message string) ! {
 		transport.active_request_id = request_id
 		transport.cancelled_notified = false
 	}
-	transport.process.stdin_write(message + '\n')
+	transport.mcp_stdio_stdin_write(message + '\n')
 }
 
 fn (mut transport PluginMCPTransport) receive() !string {
@@ -404,11 +543,11 @@ fn (mut transport PluginMCPTransport) receive() !string {
 		if time.since(started) > transport.response_timeout {
 			return error('MCP server response timed out')
 		}
-		if transport.process.is_pending(.stderr) {
-			_ := transport.process.stderr_read()
+		if transport.mcp_stdio_pending_stderr() {
+			_ := transport.mcp_stdio_stderr_read()
 		}
-		if transport.process.is_pending(.stdout) {
-			transport.buffer += transport.process.stdout_read()
+		if transport.mcp_stdio_pending_stdout() {
+			transport.buffer += transport.mcp_stdio_stdout_read()
 			if transport.buffer.len > max_plugin_mcp_frame_bytes {
 				return error('MCP response exceeds the frame size limit')
 			}
@@ -421,7 +560,7 @@ fn (mut transport PluginMCPTransport) receive() !string {
 				return frame
 			}
 		}
-		if !transport.process.is_alive() {
+		if !transport.mcp_stdio_alive() {
 			return error('MCP server exited before responding')
 		}
 		time.sleep(5 * time.millisecond)
@@ -429,6 +568,26 @@ fn (mut transport PluginMCPTransport) receive() !string {
 }
 
 fn (mut transport PluginMCPTransport) close() {
+	$if windows {
+		if !isnil(transport.win_mcp) {
+			mut win := unsafe { &WindowsMcpStdioProcess(transport.win_mcp) }
+			if win.is_alive() {
+				win.signal_kill()
+				for _ in 0 .. 20 {
+					if !win.is_alive() {
+						break
+					}
+					time.sleep(10 * time.millisecond)
+				}
+			}
+			win.close()
+			transport.win_mcp = unsafe { nil }
+			return
+		}
+	}
+	if isnil(transport.process) {
+		return
+	}
 	if transport.process.is_alive() {
 		transport.process.signal_term()
 		for _ in 0 .. 20 {

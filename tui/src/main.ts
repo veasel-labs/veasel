@@ -22,6 +22,7 @@ import { adjacentSettingsStep, endpointHost, providerHasKnownEndpoint, settingsB
 import { formatSessionList, sessionListColumns, sessionSidebarWidth } from "./session-list"
 import { completeSlashCommand, moveSuggestion, runsOnAccept, slashCommands, slashContextApplies, slashContextNeeded, slashSuggestions, suggestionWindow, type SlashCompletionContext, type SlashSuggestion } from "./slash-commands"
 import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
+import { formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
 import { transcriptSegments, type TranscriptTone } from "./transcript"
 
 const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
@@ -1077,7 +1078,17 @@ async function showShellCommand(commandId: string) {
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     const item = await response.json() as ShellCommandSummary
     if (item.status === "pending") reviewedShellCommandIds.add(item.id)
-    skillNotice = `REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${safeTerminalText(item.command)}\nCWD: ${safeTerminalText(item.cwd)} · timeout ${item.timeout_seconds}s\nRunner: ${process.platform === "win32" ? "COMSPEC" : "/bin/sh"} · non-interactive stdin\nRuns as your OS user, inherits its environment, and has filesystem and network access without a sandbox. Review every effect before approval.${item.status === "pending" ? `\nType /command approve ${item.id} or /command reject ${item.id}.` : item.output ? `\n\n${safeTerminalText(item.output)}` : ""}`
+    const review = formatShellReview({
+      command: safeTerminalText(item.command),
+      cwd: safeTerminalText(item.cwd),
+      timeoutSeconds: item.timeout_seconds,
+      runner: process.platform === "win32" ? "COMSPEC" : "/bin/sh",
+      id: item.id,
+      pending: item.status === "pending",
+      output: safeTerminalText(item.output),
+      maxLines: shellReviewLineBudget(process.stdout.rows ?? 40),
+    })
+    skillNotice = `REVIEW SHELL COMMAND  /  ${item.status.toUpperCase()}\n${review}`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not inspect shell command: ${error instanceof Error ? error.message : "request failed"}`
@@ -1097,8 +1108,9 @@ async function actOnShellCommand(action: "approve" | "reject", commandId: string
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
     const result = await response.json() as ShellCommandSummary
     reviewedShellCommandIds.delete(commandId)
+    const output = formatBoundedBlock(safeTerminalText(result.output || "(no output)"), shellReviewLineBudget(process.stdout.rows ?? 40))
     skillNotice = action === "approve"
-      ? `Command ${result.status} · exit ${result.exit_code}\n${safeTerminalText(result.output || "(no output)")}\n\nInspect workspace effects before continuing with the agent.`
+      ? `Command ${result.status} · exit ${result.exit_code}\n${output.text}\n\nInspect workspace effects before continuing with the agent.`
       : `Rejected shell command ${commandId}. It was not executed.`
     renderChat(chatMessages)
   } catch (error) {

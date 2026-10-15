@@ -199,6 +199,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] A workspace diff review states how many lines were added and removed.
   A diff taller than the terminal keeps the first screen and says how many
   lines remain hidden. The + and - markers stay on the visible lines.
+- [x] A shell-command review states the sandbox warning and the approve
+  instruction before the command text. A command or captured output taller
+  than the terminal keeps the first screen and says how many lines remain.
 - [ ] Context retrieval, rich diff review, accessibility, and UX refinement.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.

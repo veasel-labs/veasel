@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 
 const tuiRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 
-test("drives the real terminal through setup, completion, diff review, long session lists, and session switching", async () => {
+test("drives the real terminal through setup, completion, diff review, shell review, long session lists, and session switching", async () => {
   const result = await new Promise<{ code: number | null, stderr: string }>((resolve, reject) => {
     const child = spawn("python3", [join(tuiRoot, "scripts/exercise-keyboard.py")], {
       cwd: tuiRoot,
@@ -20,4 +20,4 @@ test("drives the real terminal through setup, completion, diff review, long sess
   })
   expect(result.stderr).toBe("")
   expect(result.code).toBe(0)
-}, 80_000)
+}, 85_000)

@@ -74,6 +74,7 @@ describe("transcriptSegments", () => {
     expect(segments).toContainEqual({ text: "+", tone: "diffAdd" })
     expect(segments).toContainEqual({ text: "new", tone: "diffAdd" })
     expect(segments).toContainEqual({ text: "@@ -1 +1 @@\n", tone: "diffMeta" })
+    expect(segments).toContainEqual({ text: " context\n", tone: "diffContext" })
     expect(segments).toContainEqual({ text: "--- a/src/main.v\n", tone: "diffMeta" })
     expect(segments).toContainEqual({ text: "+++ b/src/main.v\n\n", tone: "diffMeta" })
     expect(noticeSegments("No workspace edit proposals.")).toEqual([
@@ -91,7 +92,9 @@ describe("transcriptSegments", () => {
     const body = messageBodySegments(content, "assistantText")
     expect(body).toEqual([
       { text: "Before\n", tone: "assistantText" },
-      { text: "```ts\n", tone: "codeFence" },
+      { text: "```", tone: "codeFence" },
+      { text: "ts", tone: "codeLang" },
+      { text: "\n", tone: "codeFence" },
       { text: "const n = 1\n", tone: "codeBody" },
       { text: "```\n", tone: "codeFence" },
       { text: "After", tone: "assistantText" },
@@ -102,7 +105,18 @@ describe("transcriptSegments", () => {
     expect(text).toBe(`◆ VEASEL\n${content}`)
     expect(transcriptSegments({
       messages: [{ role: "assistant", content }],
-    })).toContainEqual({ text: "```ts\n", tone: "codeFence" })
+    })).toContainEqual({ text: "ts", tone: "codeLang" })
+  })
+
+  test("tones markdown blockquotes without dropping the marker", () => {
+    const content = "> note `x`\nbody"
+    expect(messageBodySegments(content, "assistantText")).toEqual([
+      { text: "> ", tone: "blockquote" },
+      { text: "note ", tone: "blockquote" },
+      { text: "`x`\n", tone: "inlineCode" },
+      { text: "body", tone: "assistantText" },
+    ])
+    expect(transcriptPlainText(messageBodySegments(content, "assistantText"))).toBe(content)
   })
 
   test("tones inline code and bold spans without dropping markers", () => {

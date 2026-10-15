@@ -81,12 +81,15 @@ export function formatReviewDiff(
   const shown = lines.slice(startLine, Math.min(lines.length, startLine + limit))
   const hunkLabel = hunkCount > 1 ? `Hunk ${hunkIndex + 1} of ${hunkCount}. ` : ""
   const counts = `${additions} added, ${removals} removed.`
-  const truncated = shown.length < lines.length - startLine
+  const remaining = Math.max(0, lines.length - startLine - shown.length)
+  const truncated = remaining > 0
+  const remainCue = truncated ? ` · ${remaining} remain` : ""
+  const hunkCue = truncated && hunkCount > 1 ? " · } next hunk" : ""
   const summary = startLine === 0
     ? truncated
-      ? `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines.`
+      ? `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines${remainCue}${hunkCue}.`
       : `${hunkLabel}${counts}`
-    : `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines from offset ${startLine + 1}.`
+    : `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines from offset ${startLine + 1}${remainCue}${hunkCue}.`
   return {
     text: `${summary}\n${shown.join("\n")}`,
     additions,

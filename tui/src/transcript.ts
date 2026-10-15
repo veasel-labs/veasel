@@ -9,6 +9,10 @@ export type TranscriptTone =
   | "userText"
   | "assistantLabel"
   | "assistantText"
+  | "systemLabel"
+  | "systemText"
+  | "toolLabel"
+  | "toolText"
   | "status"
   | "hint"
 
@@ -29,6 +33,38 @@ export type TranscriptInput = {
 
 export const userLabel = "● YOU"
 export const assistantLabel = "◆ VEASEL"
+export const systemLabel = "○ SYSTEM"
+export const toolLabel = "▸ TOOL"
+export const streamingCursor = "█"
+
+type TurnKind = "user" | "assistant" | "system" | "tool"
+
+type Turn = {
+  kind: TurnKind
+  content: string
+  status?: string
+}
+
+function turnKind(role: string): TurnKind {
+  if (role === "assistant") return "assistant"
+  if (role === "system") return "system"
+  if (role === "tool" || role === "tool_result") return "tool"
+  return "user"
+}
+
+function labelFor(kind: TurnKind): { text: string; tone: TranscriptTone } {
+  if (kind === "assistant") return { text: assistantLabel, tone: "assistantLabel" }
+  if (kind === "system") return { text: systemLabel, tone: "systemLabel" }
+  if (kind === "tool") return { text: toolLabel, tone: "toolLabel" }
+  return { text: userLabel, tone: "userLabel" }
+}
+
+function bodyTone(kind: TurnKind): TranscriptTone {
+  if (kind === "assistant") return "assistantText"
+  if (kind === "system") return "systemText"
+  if (kind === "tool") return "toolText"
+  return "userText"
+}
 
 // Builds the session transcript as tone-tagged text. Roles stay in the text
 // itself, so the transcript remains readable without color, and each body uses
@@ -44,22 +80,30 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
   }
   if (input.notice) segments.push(...noticeSegments(input.notice))
   if (input.showMessages === false) return segments
-  const turns: Array<{ user: boolean; content: string; status?: string }> = input.messages.map((message) => ({
-    user: message.role !== "assistant",
+  const turns: Turn[] = input.messages.map((message) => ({
+    kind: turnKind(message.role),
     content: message.content,
   }))
-  if (input.pendingUserMessage) turns.push({ user: true, content: input.pendingUserMessage, status: "sending" })
-  if (input.streamingText) {
-    turns.push({ user: false, content: input.streamingText, status: input.streaming ? "streaming…" : "partial response" })
+  if (input.pendingUserMessage) {
+    turns.push({ kind: "user", content: input.pendingUserMessage, status: "sending" })
+  }
+  if (input.streaming || input.streamingText) {
+    const body = input.streamingText ?? ""
+    turns.push({
+      kind: "assistant",
+      content: input.streaming ? `${body}${streamingCursor}` : body,
+      status: input.streaming ? "streaming…" : "partial response",
+    })
   }
   if (turns.length === 0) {
     push("Start with a question or describe a coding task.", "hint")
   }
   turns.forEach((turn, index) => {
     if (index > 0) push("\n\n", "meta")
-    push(turn.user ? userLabel : assistantLabel, turn.user ? "userLabel" : "assistantLabel")
+    const label = labelFor(turn.kind)
+    push(label.text, label.tone)
     if (turn.status) push(`  ·  ${turn.status}`, "status")
-    push(`\n${turn.content}`, turn.user ? "userText" : "assistantText")
+    push(`\n${turn.content}`, bodyTone(turn.kind))
   })
   if (input.hasOlder) push("\n\n/history older · load earlier messages", "hint")
   return segments

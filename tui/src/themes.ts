@@ -230,7 +230,7 @@ export const themes: Record<ThemeId, Theme> = {
     userLabel: "#ffffff",
     userText: "#e8e8e8",
     assistantLabel: "#7dffa0",
-    assistantText: "#d8d8d8",
+    assistantText: "#ececec",
     status: "#9a9a9a",
     hint: "#9a9a9a",
     portrait: {
@@ -291,9 +291,6 @@ export const themes: Record<ThemeId, Theme> = {
     },
   },
 }
-
-// Fix typo in mint.sidebarFg - I accidentally wrote "#c5 recd4"
-// Let me fix that in the object above - I'll use search_replace
 
 export const defaultThemeId: ThemeId = "mint"
 

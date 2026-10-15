@@ -477,6 +477,70 @@ fn test_gemini_prompt_cache_off_suppresses_cached_content() {
 	assert gemini_prompt_cache_enabled() == false
 }
 
+fn test_openai_chat_request_omits_zero_max_tokens() {
+	omitted := build_openai_chat_request(ModelConfig{
+		provider:          'openai-compatible'
+		model:             'fixture'
+		max_output_tokens: 0
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'omit budget'
+		},
+	], [])
+	omitted_payload := json2.encode[OpenAIRequest](omitted)
+	omitted_root := json2.decode[map[string]json2.Any](omitted_payload) or { panic(err) }
+	assert 'max_tokens' !in omitted_root
+
+	included := build_openai_chat_request(ModelConfig{
+		provider:          'openai-compatible'
+		model:             'fixture'
+		max_output_tokens: 2048
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'include budget'
+		},
+	], [])
+	included_payload := json2.encode[OpenAIRequest](included)
+	included_root := json2.decode[map[string]json2.Any](included_payload) or { panic(err) }
+	assert (included_root['max_tokens'] or { panic('missing max_tokens') }).int() == 2048
+}
+
+fn test_gemini_request_omits_zero_max_output_tokens() {
+	omitted := build_gemini_request(ModelConfig{
+		provider:          'gemini'
+		model:             'gemini-2.0-flash'
+		max_output_tokens: 0
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'omit budget'
+		},
+	], [])
+	omitted_payload := json2.encode[GeminiRequest](omitted)
+	omitted_root := json2.decode[map[string]json2.Any](omitted_payload) or { panic(err) }
+	generation := (omitted_root['generationConfig'] or { panic('missing generationConfig') }).as_map()
+	assert 'maxOutputTokens' !in generation
+
+	included := build_gemini_request(ModelConfig{
+		provider:          'gemini'
+		model:             'gemini-2.0-flash'
+		max_output_tokens: 1024
+	}, [
+		ChatMessage{
+			role:    'user'
+			content: 'include budget'
+		},
+	], [])
+	included_payload := json2.encode[GeminiRequest](included)
+	included_root := json2.decode[map[string]json2.Any](included_payload) or { panic(err) }
+	included_generation := (included_root['generationConfig'] or {
+		panic('missing generationConfig')
+	}).as_map()
+	assert (included_generation['maxOutputTokens'] or { panic('missing maxOutputTokens') }).int() == 1024
+}
+
 fn test_gemini_cached_content_create_body_shape() {
 	body := build_gemini_cached_content_create('gemini-2.0-flash', 'veasel-prefix', 'Be concise',
 		[

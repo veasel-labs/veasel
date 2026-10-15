@@ -903,6 +903,17 @@ fn test_chat_history_pages_use_an_exclusive_message_cursor() {
 	assert invalid_cursor_rejected
 }
 
+fn test_prefer_header_includes_respond_async_is_case_insensitive() {
+	assert prefer_header_includes_respond_async('respond-async')
+	assert prefer_header_includes_respond_async('Respond-Async')
+	assert prefer_header_includes_respond_async(' wait=10, RESPOND-ASYNC;foo=bar ')
+	assert prefer_header_includes_respond_async('respond-async; wait=5, handling=strict')
+	assert !prefer_header_includes_respond_async('')
+	assert !prefer_header_includes_respond_async('wait=10')
+	assert !prefer_header_includes_respond_async('respond-async-later')
+	assert !prefer_header_includes_respond_async('x-respond-async')
+}
+
 fn test_async_session_turn_completion_event_commits_with_exchange() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

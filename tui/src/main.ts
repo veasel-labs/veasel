@@ -62,6 +62,12 @@ import {
 } from "./composer-history"
 import { sessionEscapeAction } from "./session-escape"
 import { formatActiveModelLabel, formatListeningStatus } from "./session-model"
+import {
+  formatMcpCredentialCatalog,
+  parseMcpCredentialHeaders,
+  type McpCredentialCatalog,
+  type McpCredentialView,
+} from "./mcp-credentials"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
 import {
@@ -955,6 +961,33 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  if (content === "/mcp credentials") {
+    await showMcpCredentials()
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpCredentialSet = /^\/mcp credential set\s+([a-z0-9][a-z0-9._-]{0,62})\s+(.+)$/i.exec(content)
+  if (mcpCredentialSet) {
+    await upsertMcpCredential(mcpCredentialSet[1]!, mcpCredentialSet[2]!)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpCredentialRemove = /^\/mcp credential remove\s+([a-z0-9][a-z0-9._-]{0,62})$/i.exec(content)
+  if (mcpCredentialRemove) {
+    await removeMcpCredential(mcpCredentialRemove[1]!)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  if (content === "/mcp credential" || content.startsWith("/mcp credential ")) {
+    skillNotice = "Use /mcp credentials to list named HTTP credentials (header names only). Set with /mcp credential set <name> <Header>=<value>… (values cannot contain spaces). Remove with /mcp credential remove <name>."
+    renderChat(chatMessages)
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   if (content === "/mcp calls") {
     await showMcpToolCalls()
     chatInput.value = ""
@@ -1015,7 +1048,7 @@ async function sendMessage(value: string) {
     return
   }
   if (content.startsWith("/mcp ")) {
-    skillNotice = "Use /mcp to list servers. Add with /mcp add [user|project] stdio <name> <command> [args…] or /mcp add [user|project] http <name> <url>. Toggle with /mcp enable|disable [user|project] <name>, remove with /mcp remove [user|project] <name>, then /mcp trust configured/<name>. Project scope writes <workspace>/.veasel/mcp-servers.json."
+    skillNotice = "Use /mcp to list servers. Add with /mcp add [user|project] stdio <name> <command> [args…] or /mcp add [user|project] http <name> <url>. Toggle with /mcp enable|disable [user|project] <name>, remove with /mcp remove [user|project] <name>, then /mcp trust configured/<name>. Named HTTP credentials: /mcp credentials · /mcp credential set|remove. Project scope writes <workspace>/.veasel/mcp-servers.json."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1585,6 +1618,62 @@ async function showMcpServers(filter = "") {
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function showMcpCredentials() {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-credentials`, { signal: controller.signal })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const catalog = await response.json() as McpCredentialCatalog
+    skillNotice = formatMcpCredentialCatalog({
+      path: catalog.path,
+      credentials: Array.isArray(catalog.credentials) ? catalog.credentials : [],
+    })
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not load MCP credentials: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function upsertMcpCredential(name: string, headerRaw: string) {
+  const parsed = parseMcpCredentialHeaders(headerRaw)
+  if (parsed.error) {
+    skillNotice = parsed.error
+    renderChat(chatMessages)
+    return
+  }
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-credentials`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, headers: parsed.headers }),
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const view = await response.json() as McpCredentialView
+    skillNotice = `Saved credential ${safeTerminalText(view.name || name)}. Headers stored: ${(view.header_names ?? []).join(", ") || "(none)"}. Values are never listed back. Reference it from a streamable-http server with --credential / credential field.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not save MCP credential: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function removeMcpCredential(name: string) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-credentials/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
+    const body = await response.json() as { removed?: string }
+    skillNotice = `Removed credential ${safeTerminalText(body.removed || name)}. Servers that still reference it will fail at connect until updated.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not remove MCP credential: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }

@@ -37,5 +37,5 @@ export function formatCatalogFilterEmpty(kind: string, filter: string): string {
 
 // Reserved /mcp verbs so free-text filters do not steal manage commands.
 export function isMcpManageRest(rest: string): boolean {
-  return /^(add|remove|enable|disable|trust|untrust|calls|call)\b/i.test(rest.trim())
+  return /^(add|remove|enable|disable|trust|untrust|calls|call|credentials|credential|oauth)\b/i.test(rest.trim())
 }

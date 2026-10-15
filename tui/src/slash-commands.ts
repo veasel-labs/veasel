@@ -79,6 +79,8 @@ export const slashCommands: SlashCommand[] = [
   { name: "/mcp disable", category: "mcp", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>" },
   { name: "/mcp trust", category: "mcp", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
   { name: "/mcp untrust", category: "mcp", description: "Stop trusting an MCP server", usage: "/mcp untrust <plugin>/<server>" },
+  { name: "/mcp credentials", category: "mcp", description: "List named Streamable HTTP credentials (header names only)" },
+  { name: "/mcp credential", category: "mcp", description: "Set or remove a named MCP HTTP credential", usage: "/mcp credential set|remove …" },
   { name: "/mcp calls", category: "approvals", description: "List MCP calls waiting for review" },
   { name: "/mcp call", category: "approvals", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
   { name: "/patches", category: "approvals", description: "List proposed file edits waiting for approval; add text to filter by path or status" },
@@ -171,6 +173,15 @@ const argumentSpecs: Record<string, ArgSpec[]> = {
   ],
   "/mcp untrust": [
     { kind: "value", values: (context) => context.mcpServers ?? [], empty: "No MCP servers are available" },
+  ],
+  "/mcp credential": [
+    {
+      kind: "choice",
+      choices: [
+        { value: "set", description: "Upsert Header=value pairs (values never listed back)" },
+        { value: "remove", description: "Delete a named credential" },
+      ],
+    },
   ],
   "/patch": [
     { kind: "choice", choices: decisionChoices },

@@ -23,6 +23,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("/plugins · /plugin add · /plugin remove")
     expect(help).toContain("/mcp add")
     expect(help).toContain("/mcp remove · /mcp enable · /mcp disable")
+    expect(help).toContain("/mcp credentials · /mcp credential set|remove")
     expect(help).toContain("s · /models")
     expect(help).toContain("/connect")
     expect(help).toContain("Authenticate: paste an API key")

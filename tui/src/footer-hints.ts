@@ -9,8 +9,10 @@ export const homeFooterHint =
 export const homeFilterFooterHint =
   "type · Backspace · Ctrl+L clear · Esc clear · j/k · Enter · q quit"
 
+// Keep under ~72 columns: @ path complete and Shift+Enter multiline stay visible
+// beside reviews; /theme and reduced-motion stay in /help.
 export const sessionFooterHint =
-  "Esc · ↑ · Pg · ? · Ctrl+U · Ctrl+W · Ctrl+Y · /skills · /mcp · /map"
+  "Esc · ↑ · ? · @ · S-↵ · Ctrl+U/W/Y · /skills · /mcp · /map"
 
 export function homeFooterForFilter(filter: string): string {
   return filter.trim().length > 0 ? homeFilterFooterHint : homeFooterHint

@@ -3,6 +3,7 @@ import {
   clearCustomThemes,
   defaultThemeId,
   formatThemeList,
+  formatThemeLoadStatusHint,
   formatThemePreviewStatus,
   isThemeId,
   loadCustomThemes,
@@ -84,6 +85,30 @@ describe("TUI themes", () => {
     expect(text).toContain("preview colors live")
   })
 
+  test("lists custom theme directories and surfaces JSON errors", () => {
+    const text = formatThemeList("mint", {
+      home: "/home/dev",
+      scans: [
+        { path: "/home/dev/.config/veasel/themes", label: "user", present: false, files: [] },
+        {
+          path: "/tmp/proj/.veasel/themes",
+          label: "workspace",
+          present: true,
+          files: ["ocean.json", "broken.json"],
+        },
+      ],
+      errors: ["/tmp/proj/.veasel/themes/broken.json: invalid JSON"],
+    })
+    expect(text).toContain("Custom theme directories:")
+    expect(text).toContain("~/.config/veasel/themes  (user, missing — create to add JSON)")
+    expect(text).toContain("/tmp/proj/.veasel/themes  (workspace, ocean.json, broken.json)")
+    expect(text).toContain("Theme JSON errors (1):")
+    expect(text).toContain("✖ /tmp/proj/.veasel/themes/broken.json: invalid JSON")
+    expect(formatThemeLoadStatusHint(["a"])).toBe("1 theme JSON error · /theme")
+    expect(formatThemeLoadStatusHint(["a", "b"])).toBe("2 theme JSON errors · /theme")
+    expect(formatThemeLoadStatusHint([])).toBeUndefined()
+  })
+
   test("reads a theme id from a /theme suggestion", () => {
     expect(themeIdFromSlashSuggestion("/theme ember")).toBe("ember")
     expect(themeIdFromSlashSuggestion("/theme AURORA")).toBe("aurora")
@@ -163,13 +188,22 @@ describe("TUI themes", () => {
     })
     expect(result.loaded.map((theme) => theme.id).sort()).toEqual(["forest", "ocean"])
     expect(result.errors.some((error) => error.includes("broken.json"))).toBe(true)
+    expect(result.scans).toEqual([
+      { path: userDir, label: "user", present: true, files: ["ocean.json"] },
+      {
+        path: `${projectDir}/.veasel/themes`,
+        label: "workspace",
+        present: true,
+        files: ["broken.json", "forest.json"],
+      },
+    ])
     expect(isThemeId("ocean")).toBe(true)
     expect(isThemeId("forest")).toBe(true)
     expect(resolveTheme("ocean").brand).toBe("#7dd3fc")
     expect(resolveTheme("forest").brand).toBe("#86efac")
     expect(themeIdFromSlashSuggestion("/theme ocean")).toBe("ocean")
-    expect(formatThemeList("ocean")).toContain("(custom)")
-    expect(formatThemeList("ocean")).toContain("~/.config/veasel/themes")
+    expect(formatThemeList("ocean", { errors: result.errors, scans: result.scans, home })).toContain("(custom)")
+    expect(formatThemeList("ocean", { errors: result.errors, scans: result.scans, home })).toContain("Theme JSON errors")
     clearCustomThemes()
   })
 })

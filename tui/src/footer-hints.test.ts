@@ -27,14 +27,14 @@ test("session footer surfaces reviews and the same discovery commands", () => {
   for (const command of ["/skills", "/mcp", "/map"]) {
     expect(sessionFooterHint).toContain(command)
   }
-  expect(sessionFooterHint).toContain("Ctrl+U")
-  expect(sessionFooterHint).toContain("Ctrl+W")
-  expect(sessionFooterHint).toContain("Ctrl+Y")
+  expect(sessionFooterHint).toContain("Ctrl+U/W/Y")
   expect(sessionFooterHint).toContain("↑")
   expect(sessionFooterHint).toContain("Esc")
-  expect(sessionFooterHint).toContain("Pg")
+  expect(sessionFooterHint).toContain("@") // workspace path autocomplete
+  expect(sessionFooterHint).toContain("S-↵") // Shift+Enter multiline
   expect(sessionFooterHint).toContain("?") // empty-composer ? opens /help
-  expect(sessionFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers Ctrl+W
-  expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers Ctrl+W
+  expect(sessionFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers @ / S-↵
+  expect(sessionFooterHint).not.toContain("Ctrl+R") // Ctrl+R stays in /help; footer budget prefers @ / S-↵
+  expect(sessionFooterHint).not.toContain("Pg") // PgUp/PgDn stay in /help; footer budget prefers @ / S-↵
   expect(sessionFooterHint.length).toBeLessThanOrEqual(72)
 })

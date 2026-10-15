@@ -14,8 +14,22 @@ export function reviewDiffSurfaceHint(surface: ReviewDiffSurface): string {
   return surface === "split" ? " · v word-diff" : " · v split view"
 }
 
+// Relative luminance of a #RGB / #RRGGBB shell background — light day/contrast
+// themes need pale hunk washes instead of charcoal DiffRenderable fills.
+function isLightShellBackground(hex: string): boolean {
+  const raw = hex.trim().replace(/^#/, "")
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/.test(raw)) return false
+  const full = raw.length === 3
+    ? raw.split("").map((ch) => `${ch}${ch}`).join("")
+    : raw.slice(0, 6)
+  const r = Number.parseInt(full.slice(0, 2), 16)
+  const g = Number.parseInt(full.slice(2, 4), 16)
+  const b = Number.parseInt(full.slice(4, 6), 16)
+  return 0.299 * r + 0.587 * g + 0.114 * b > 160
+}
+
 // Colors for DiffRenderable so split view tracks /theme without a custom SyntaxStyle
-// rewrite. Backgrounds stay charcoal-adjacent so mint/ember/day remain readable.
+// rewrite. Dark themes keep charcoal-adjacent washes; light themes use pale fills.
 export function diffRenderableTheme(theme: Theme): {
   fg: string
   addedSignColor: string
@@ -28,13 +42,14 @@ export function diffRenderableTheme(theme: Theme): {
   syncScroll: boolean
   wrapMode: "none"
 } {
+  const light = isLightShellBackground(theme.shellBg)
   return {
     fg: theme.body,
     addedSignColor: theme.diffAdd,
     removedSignColor: theme.diffRemove,
     lineNumberFg: theme.meta,
-    addedBg: "#1a3328",
-    removedBg: "#33201f",
+    addedBg: light ? "#dcfce7" : "#1a3328",
+    removedBg: light ? "#fee2e2" : "#33201f",
     contextBg: "transparent",
     showLineNumbers: true,
     syncScroll: true,

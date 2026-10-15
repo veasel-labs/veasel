@@ -15,6 +15,15 @@ export function formatStatusLine(level: StatusLevel, message: string): string {
   return `${statusGlyph(level)} ${message}`
 }
 
+// In-flight turns and reconnects: ◌ plus the spoken word "busy" so the row
+// stays meaningful when color is flat or when the status is copied as text.
+export function formatBusyStatus(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed) return formatStatusLine("busy", "busy")
+  if (/^busy\b/i.test(trimmed)) return formatStatusLine("busy", trimmed)
+  return formatStatusLine("busy", `busy  ·  ${trimmed}`)
+}
+
 // Home session switcher cue: always states which session is focused so the
 // selection is not only the ● marker in the sidebar.
 export function formatHomeSessionStatus(selected: number, count: number): string {

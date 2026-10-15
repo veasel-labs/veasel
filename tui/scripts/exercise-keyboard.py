@@ -795,6 +795,7 @@ def main() -> None:
         screen.clear_line(24)
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
+        screen.wait_for("busy")
         screen.wait_for("thinking")
         screen.wait_for("streaming")
         screen.wait_for("█")

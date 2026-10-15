@@ -14,23 +14,28 @@ enum HeadlessMcpAction {
 	enable
 	disable
 	remove
+	credentials_list
+	credentials_set
+	credentials_remove
 }
 
 struct HeadlessMcpOptions {
 mut:
-	action    HeadlessMcpAction
-	scope     string = configured_mcp_scope_user
-	directory string
-	name      string
-	transport string
-	command   string
-	args      []string
-	url       string
-	json      bool
+	action     HeadlessMcpAction
+	scope      string = configured_mcp_scope_user
+	directory  string
+	name       string
+	transport  string
+	command    string
+	args       []string
+	url        string
+	credential string
+	headers    map[string]string
+	json       bool
 }
 
 fn print_headless_mcp_help() {
-	println('Usage: veasel mcp <list|add|enable|disable|remove> [options]\n\nCommands:\n  list [--directory <dir>] [--json]\n  add [user|project] stdio <name> <command> [args…]\n  add [user|project] http <name> <url>\n  enable|disable|remove [user|project] <name>\n\nOptions:\n  -w, --directory <dir>  Workspace for project scope and list imports (default: cwd)\n      --json             Emit machine-readable JSON\n  -h, --help             Show this help\n\nPersistence:\n  user     \$VEASEL_DATA_DIR/mcp-servers.json\n  project  <directory>/.veasel/mcp-servers.json\n\nList also reports read-only imports of portable .mcp.json and .cursor/mcp.json.\nTrust remains separate (TUI /mcp trust configured/<name>). No install scripts run.\nStdio processes use your OS privileges; MCP results go to the model provider.')
+	println('Usage: veasel mcp <list|add|enable|disable|remove|credentials> [options]\n\nCommands:\n  list [--directory <dir>] [--json]\n  add [user|project] stdio <name> <command> [args…]\n  add [user|project] http <name> <url> [--credential <name>]\n  enable|disable|remove [user|project] <name>\n  credentials list [--json]\n  credentials set <name> --header <Name>=<value> [--header …]\n  credentials remove <name>\n\nOptions:\n  -w, --directory <dir>  Workspace for project scope and list imports (default: cwd)\n      --json             Emit machine-readable JSON\n      --credential <n>   Named HTTP credential for streamable-http add\n      --header <N>=<v>   Header for credentials set (repeatable)\n  -h, --help             Show this help\n\nPersistence:\n  user         \$VEASEL_DATA_DIR/mcp-servers.json\n  project      <directory>/.veasel/mcp-servers.json\n  credentials  \$VEASEL_DATA_DIR/mcp-credentials.json\n\nList also reports read-only imports of portable .mcp.json and .cursor/mcp.json.\nTrust remains separate (TUI /mcp trust configured/<name>). No install scripts run.\nStdio processes use your OS privileges; MCP results go to the model provider.\nCredential values are never printed by list; only names and header names.')
 }
 
 fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
@@ -58,6 +63,30 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 		}
 		'remove' {
 			options.action = .remove
+		}
+		'credentials' {
+			if index >= args.len {
+				return error('mcp credentials expects list|set|remove')
+			}
+			sub := args[index]
+			index++
+			match sub {
+				'list' {
+					options.action = .credentials_list
+				}
+				'set' {
+					options.action = .credentials_set
+				}
+				'remove' {
+					options.action = .credentials_remove
+				}
+				'--help', '-h', 'help' {
+					return error('help')
+				}
+				else {
+					return error('unknown mcp credentials command: ${sub}')
+				}
+			}
 		}
 		'--help', '-h', 'help' {
 			return error('help')
@@ -91,6 +120,24 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 					index++
 					continue
 				}
+				'--credential' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--credential expects a name')
+					}
+					options.credential = args[index].trim_space()
+					index++
+					continue
+				}
+				'--header' {
+					index++
+					if index >= args.len || args[index].trim_space().len == 0 {
+						return error('--header expects Name=value')
+					}
+					parse_headless_mcp_header(mut options, args[index])!
+					index++
+					continue
+				}
 				'--help', '-h' {
 					return error('help')
 				}
@@ -114,11 +161,50 @@ fn parse_headless_mcp_args(args []string, cwd string) !HeadlessMcpOptions {
 		.enable, .disable, .remove {
 			parse_headless_mcp_named(mut options, positional)!
 		}
+		.credentials_list {
+			if positional.len > 0 {
+				return error('mcp credentials list does not take positional arguments')
+			}
+		}
+		.credentials_set {
+			if positional.len != 1 {
+				return error('mcp credentials set expects <name>')
+			}
+			options.name = positional[0]
+			if options.headers.len == 0 {
+				return error('mcp credentials set requires at least one --header Name=value')
+			}
+		}
+		.credentials_remove {
+			if positional.len != 1 {
+				return error('mcp credentials remove expects <name>')
+			}
+			options.name = positional[0]
+		}
 	}
 	if options.scope == configured_mcp_scope_project && options.directory.trim_space().len == 0 {
 		return error('project-scoped MCP requires --directory')
 	}
 	return options
+}
+
+fn parse_headless_mcp_header(mut options HeadlessMcpOptions, raw string) ! {
+	trimmed := raw.trim_space()
+	eq := trimmed.index('=') or { -1 }
+	if eq <= 0 || eq >= trimmed.len - 1 {
+		return error('--header expects Name=value')
+	}
+	key := trimmed[..eq]
+	value := trimmed[eq + 1..]
+	if options.headers.len == 0 {
+		options.headers = map[string]string{}
+	}
+	for existing, _ in options.headers {
+		if existing.to_lower() == key.to_lower() {
+			return error('HTTP header names must be unique regardless of case')
+		}
+	}
+	options.headers[key] = value
 }
 
 fn parse_headless_mcp_add(mut options HeadlessMcpOptions, positional []string) ! {
@@ -136,6 +222,9 @@ fn parse_headless_mcp_add(mut options HeadlessMcpOptions, positional []string) !
 		'stdio' {
 			if rest.len < 3 {
 				return error('mcp add stdio expects <name> <command> [args…]')
+			}
+			if options.credential.len > 0 {
+				return error('stdio servers do not accept --credential')
 			}
 			options.transport = 'stdio'
 			options.command = rest[2]
@@ -255,6 +344,9 @@ fn execute_headless_mcp_add(port int, options HeadlessMcpOptions) !string {
 		payload['args'] = args
 	} else {
 		payload['url'] = options.url
+		if options.credential.len > 0 {
+			payload['credential'] = options.credential
+		}
 	}
 	response := headless_json_request(port, .post, '/v1/mcp-servers', json2.encode(payload),
 		false, '')!
@@ -299,6 +391,63 @@ fn execute_headless_mcp_remove(port int, options HeadlessMcpOptions) !string {
 	return 'Removed configured/${removal.removed} (${options.scope})'
 }
 
+fn execute_headless_mcp_credentials_list(port int, options HeadlessMcpOptions) !string {
+	response := headless_json_request(port, .get, '/v1/mcp-credentials', '', false, '')!
+	if response.status_code != 200 {
+		return error(headless_mcp_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	catalog := json2.decode[MCPCredentialCatalog](response.body)!
+	mut lines := []string{cap: catalog.credentials.len + 2}
+	lines << 'MCP credentials'
+	if catalog.path.len > 0 {
+		lines << 'file: ${catalog.path}'
+	}
+	if catalog.credentials.len == 0 {
+		lines << '(none)'
+	}
+	for credential in catalog.credentials {
+		lines << '${credential.name}  headers: ${credential.header_names.join(', ')}'
+	}
+	return lines.join('\n')
+}
+
+fn execute_headless_mcp_credentials_set(port int, options HeadlessMcpOptions) !string {
+	mut headers := map[string]json2.Any{}
+	for key, value in options.headers {
+		headers[key] = value
+	}
+	payload := {
+		'name':    json2.Any(options.name)
+		'headers': json2.Any(headers)
+	}
+	response := headless_json_request(port, .post, '/v1/mcp-credentials', json2.encode(payload),
+		false, '')!
+	if response.status_code != 200 {
+		return error(headless_mcp_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	view := json2.decode[MCPCredentialView](response.body)!
+	return 'Saved credential ${view.name} (headers: ${view.header_names.join(', ')})'
+}
+
+fn execute_headless_mcp_credentials_remove(port int, options HeadlessMcpOptions) !string {
+	path := '/v1/mcp-credentials/${urllib.path_escape(options.name)}'
+	response := headless_json_request(port, .delete, path, '', false, '')!
+	if response.status_code != 200 {
+		return error(headless_mcp_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	removal := json2.decode[MCPCredentialRemoval](response.body)!
+	return 'Removed credential ${removal.removed}'
+}
+
 fn execute_headless_mcp_command(port int, args []string) {
 	options := parse_headless_mcp_args(args, os.getwd()) or {
 		if err.msg() == 'help' {
@@ -340,6 +489,24 @@ fn execute_headless_mcp_command(port int, args []string) {
 		}
 		.remove {
 			execute_headless_mcp_remove(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.credentials_list {
+			execute_headless_mcp_credentials_list(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.credentials_set {
+			execute_headless_mcp_credentials_set(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.credentials_remove {
+			execute_headless_mcp_credentials_remove(port, options) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

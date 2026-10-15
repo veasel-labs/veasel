@@ -43,6 +43,43 @@ fn test_headless_mcp_parses_list_add_toggle_and_remove() {
 	assert removed.name == 'echo-tools'
 }
 
+fn test_headless_mcp_parses_credentials_commands() {
+	listed := parse_headless_mcp_args(['credentials', 'list', '--json'], '/tmp') or { panic(err) }
+	assert listed.action == .credentials_list
+	assert listed.json
+
+	set := parse_headless_mcp_args([
+		'credentials',
+		'set',
+		'docs-token',
+		'--header',
+		'Authorization=Bearer secret',
+		'--header',
+		'X-Tenant=acme',
+	], '/tmp') or { panic(err) }
+	assert set.action == .credentials_set
+	assert set.name == 'docs-token'
+	assert set.headers['Authorization'] == 'Bearer secret'
+	assert set.headers['X-Tenant'] == 'acme'
+
+	http := parse_headless_mcp_args([
+		'add',
+		'http',
+		'docs',
+		'https://example.com/mcp',
+		'--credential',
+		'docs-token',
+	], '/tmp') or { panic(err) }
+	assert http.transport == 'streamable-http'
+	assert http.credential == 'docs-token'
+
+	removed := parse_headless_mcp_args(['credentials', 'remove', 'docs-token'], '/tmp') or {
+		panic(err)
+	}
+	assert removed.action == .credentials_remove
+	assert removed.name == 'docs-token'
+}
+
 fn test_headless_mcp_rejects_invalid_shapes() {
 	if _ := parse_headless_mcp_args(['add', 'sse', 'name', 'http://x'], '/tmp') {
 		assert false
@@ -63,6 +100,16 @@ fn test_headless_mcp_rejects_invalid_shapes() {
 		assert false
 	} else {
 		assert err.msg().contains('unknown mcp command')
+	}
+	if _ := parse_headless_mcp_args(['credentials', 'set', 'x'], '/tmp') {
+		assert false
+	} else {
+		assert err.msg().contains('--header')
+	}
+	if _ := parse_headless_mcp_args(['add', 'stdio', 'x', 'true', '--credential', 'y'], '/tmp') {
+		assert false
+	} else {
+		assert err.msg().contains('credential')
 	}
 }
 

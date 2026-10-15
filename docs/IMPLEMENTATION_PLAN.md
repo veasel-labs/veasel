@@ -226,7 +226,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `user|project`, capability `mcp.servers.configured`, synthetic catalog
   package `configured`, trust as `configured/<name>`. Per-call approval is
   unchanged. Headless `veasel mcp list|add|enable|disable|remove` manages the
-  same scopes via the local API. Named HTTP credentials via
+  same scopes via the local API, including `veasel mcp credentials
+  list|set|remove` for named HTTP header sets. Named HTTP credentials via
   `/v1/mcp-credentials`. OAuth discovery and `notifications/cancelled` remain
   open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and

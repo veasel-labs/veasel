@@ -269,7 +269,7 @@
     "document": {
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "del-license",
-      "license": "MIT\u007f"
+      "license": "MIT"
     }
   },
   {
@@ -393,7 +393,7 @@
       "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
       "name": "del-keyword",
       "keywords": [
-        "review\u007f"
+        "review"
       ]
     }
   },
@@ -442,6 +442,78 @@
         "name": "Ada",
         "email": "ada\n@example.invalid"
       }
+    }
+  },
+  {
+    "name": "empty extensions object is accepted",
+    "accepted": true,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "empty-ext",
+      "extensions": {}
+    }
+  },
+  {
+    "name": "non-string schema is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": 1,
+      "name": "bad-schema"
+    }
+  },
+  {
+    "name": "empty description string is accepted",
+    "accepted": true,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "empty-desc",
+      "description": ""
+    }
+  },
+  {
+    "name": "empty version string is accepted",
+    "accepted": true,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "empty-ver",
+      "version": ""
+    }
+  },
+  {
+    "name": "author with only name is accepted",
+    "accepted": true,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "author-name",
+      "author": {
+        "name": "Ada"
+      }
+    }
+  },
+  {
+    "name": "single-character name is accepted",
+    "accepted": true,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "a"
+    }
+  },
+  {
+    "name": "description with LF is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "desc-lf",
+      "description": "line\nbreak"
+    }
+  },
+  {
+    "name": "homepage with NUL is rejected",
+    "accepted": false,
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      "name": "home-nul",
+      "homepage": "https://example.invalid/\u0000"
     }
   }
 ]

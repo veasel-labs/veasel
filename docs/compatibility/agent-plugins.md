@@ -154,6 +154,17 @@ the selected component. If a Skill fails to load, the request fails closed;
 an unavailable MCP server is skipped and reported to the server log. Skills do
 not grant tools or permissions.
 
+## OAuth DCR deferral (2026-10-15)
+
+RFC 7591 Dynamic Client Registration is **not** implemented. Authorize /
+complete / refresh require an operator-supplied `client_id` (public client +
+PKCE S256). Authorization-server metadata may still surface a validated
+`registration_endpoint` in discovery summaries for operators; Veasel never
+POSTs a registration body. Spike conclusion: current Streamable HTTP MCP
+targets work with pre-registered clients; DCR would expand redirect_uri /
+client-metadata attack surface without unblocking a shipped path. Reopen only
+when a required authorization server refuses pre-registered clients.
+
 ## Release gate
 
 Do not claim Agent Plugins compatibility until every required matrix row has

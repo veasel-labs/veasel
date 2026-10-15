@@ -154,6 +154,32 @@ fn test_effective_max_output_tokens_defaults_except_meta() {
 	assert effective_max_output_tokens('meta', 8192) == 8192
 }
 
+fn test_resolve_provider_model_config_rejects_control_bytes_in_model_or_key() {
+	root := os.join_path(os.temp_dir(), 'veasel-model-control-resolve-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	mut model_rejected := false
+	_ := app.resolve_provider_model_config('openai', 'gpt\nbad', 'https://api.openai.com/v1',
+		'sk-ok', false) or {
+		model_rejected = err.msg() == 'model settings are invalid'
+		ModelConfig{}
+	}
+	assert model_rejected
+	mut key_rejected := false
+	_ := app.resolve_provider_model_config('openai', 'gpt-ok', 'https://api.openai.com/v1',
+		'sk-\0bad', false) or {
+		key_rejected = err.msg() == 'model settings are invalid'
+		ModelConfig{}
+	}
+	assert key_rejected
+	app.close()
+	store.close() or { panic(err) }
+}
+
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len

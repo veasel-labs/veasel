@@ -260,10 +260,16 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	if info.requires_api_key && api_key.trim_space().len == 0 {
 		return error('model credentials are not configured for ${provider}')
 	}
+	resolved_model := model.trim_space()
+	if resolved_model.len == 0 || resolved_model.len > 200
+		|| model_settings_text_has_unsafe_controls(resolved_model)
+		|| model_settings_text_has_unsafe_controls(api_key) {
+		return error('model settings are invalid')
+	}
 	return ModelConfig{
 		provider:          provider
 		base_url:          secure_endpoint(base_url)!
-		model:             model.trim_space()
+		model:             resolved_model
 		api_key:           api_key
 		max_output_tokens: effective_max_output_tokens(provider, profile.max_output_tokens)
 	}

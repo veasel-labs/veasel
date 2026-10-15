@@ -84,7 +84,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Durable queued jobs and worker execution across server restarts, plus
   bounded terminal operation retention (200 per session) and bounded session
   event retention (5,000 per session, FIFO by event id) on the streaming
-  assistant-delta path so reconnect replay stays finite. `Prefer: respond-async`
+  assistant-delta path and after committed chat exchanges so reconnect
+  replay stays finite. `Prefer: respond-async`
   persists `queued` + request JSON, workers claim to `running`,
   `GET /v1/sessions/{id}/operations` lists state, and startup resumes only
   `queued` rows after validating request JSON/content and that the session

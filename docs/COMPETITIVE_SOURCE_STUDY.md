@@ -68,8 +68,8 @@ Rechecked usage accounting on 2026-10-15 at the same OpenCode commit in
 [`packages/core/src/session/usage.ts`](https://github.com/anomalyco/opencode/blob/37df62f4a1b6d89187a1169187a6cef10557c0ca/packages/core/src/session/usage.ts).
 That module normalizes provider token fields (including `cache.read` /
 `cache.write`) and multiplies them by Models.dev price tiers to produce USD
-cost. Veasel deliberately does not calculate cost without a pinned authoritative
-price schedule. It now persists adapter-reported input/output token totals and,
+cost. Veasel calculates USD only from a pinned authoritative price schedule
+(curated Models.dev `[cost]` rows; `VEASEL_COST_SCHEDULE` override). It now persists adapter-reported input/output token totals and,
 when providers include cache fields, `cache_read_tokens` /
 `cache_creation_tokens` on completed operations, completion events, ChatExchange,
 session usage, `veasel run` JSON, ATIF `final_metrics`, and the TUI `/usage`
@@ -246,8 +246,7 @@ must not treat this archived tree as a latency or quality baseline.
 At `a72ad30628fd6583fb492a84badf36bd9dba0aee`, Kilo's multisurface product
 surfaces model/provider switching and cost visibility as part of session UX.
 Veasel now exposes honest provider-reported token totals per turn and per
-session (`GET /v1/sessions/{id}/usage`, TUI `/usage`) while keeping cost marked
-unavailable until a pinned price schedule exists. Do not invent USD figures from
+session (`GET /v1/sessions/{id}/usage`, TUI `/usage`) and surfaces USD cost when every reported turn matches the pinned schedule. Do not invent USD figures from
 unauthenticated catalogs.
 
 ### Crush — status chrome and interaction-tested TUI surfaces

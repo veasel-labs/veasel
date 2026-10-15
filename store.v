@@ -452,7 +452,7 @@ fn open_store(path string) !&Store {
 			return error('unable to begin operation usage migration')
 		}
 		// Provider-reported token totals only. Cost stays unavailable until Veasel
-		// pins authoritative price schedules; never invent estimates here.
+		// cost uses the pinned schedule only; never invent rates here.
 		db.exec('ALTER TABLE session_operations ADD COLUMN input_tokens INTEGER NOT NULL DEFAULT 0') or {
 			db.rollback() or {}
 			db.close() or {}
@@ -1629,6 +1629,21 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 	reported_turns := row.val(1).int()
 	cache_turns := row.val(6).int()
 	reasoning_turns := row.val(8).int()
+	turn_rows := store.db.exec_param("SELECT provider, model, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported FROM session_operations WHERE session_id = ? AND status = 'completed' ORDER BY created_at ASC, id ASC",
+		session_id)!
+	mut cost_turns := []CostScheduleTurn{cap: turn_rows.len}
+	for turn_row in turn_rows {
+		cost_turns << CostScheduleTurn{
+			provider:              turn_row.val(0)
+			model:                 turn_row.val(1)
+			input_tokens:          turn_row.val(2).i64()
+			output_tokens:         turn_row.val(3).i64()
+			usage_reported:        turn_row.val(4).int() == 1
+			cache_read_tokens:     turn_row.val(5).i64()
+			cache_creation_tokens: turn_row.val(6).i64()
+			cache_reported:        turn_row.val(7).int() == 1
+		}
+	}
 	return SessionUsageSummary{
 		session_id:            session_id
 		completed_turns:       row.val(0).int()
@@ -1641,7 +1656,7 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 		cache_reported:        cache_turns > 0
 		reasoning_tokens:      row.val(7).i64()
 		reasoning_reported:    reasoning_turns > 0
-		cost:                  'unavailable'
+		cost:                  session_usage_cost_label(cost_turns)
 	}
 }
 

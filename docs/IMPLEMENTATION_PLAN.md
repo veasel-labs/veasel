@@ -99,8 +99,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   becomes `uncertain` and is never replayed (provider/tool effects may already
   have started).
 - [x] Capture provider-reported token usage from all four adapters in opt-in
-  ATIF `final_metrics`. Veasel does not yet maintain authoritative,
-  versioned provider price schedules, so it does not calculate cost.
+  ATIF `final_metrics`. USD cost uses a pinned Models.dev-derived schedule for
+  curated models (`sessions.usage.cost` when present); unmatched models stay
+  `unavailable`.
 - [x] Opt-in `veasel run --trace-file` export of successful turns as ATIF v1.8,
   including the current prompt, provider model responses, tool-call arguments,
   and tool observations. Collection is disabled unless a trace path is supplied.
@@ -109,7 +110,7 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   operation result endpoint when trace collection was enabled); add provider
   usage/cost metadata only when adapters return authoritative values (usage
   done: all four adapters report token counts, aggregated into ATIF
-  `final_metrics`; cost still unavailable, providers return no prices); redact
+  `final_metrics`; cost from pinned schedule when models match); redact
   credentials from trace content (done: at ATIF encode time, sensitive
   environment values, credential token shapes and credential-named fields in
   text and structured arguments are replaced with `[REDACTED]`, marked with
@@ -143,10 +144,10 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
 - [x] Persist provider-reported token counts on completed session operations and
   expose them on operation status/result, `session.turn_completed` events,
   synchronous ChatExchange responses, the TUI status line, and `veasel run`
-  JSON. Counts are omitted unless an adapter set `usage.reported`; cost remains
-  unavailable without authoritative price schedules.
+  JSON. Counts are omitted unless an adapter set `usage.reported`. Session cost
+  is USD only when every reported turn matches the pinned schedule.
 - [x] Aggregate those reported totals per session on `GET /v1/sessions/{id}/usage`
-  and surface them through the TUI `/usage` command without inventing cost.
+  and surface them through the TUI `/usage` command without inventing rates.
 - [x] Persist provider-reported prompt-cache counters (`cache_read_tokens`,
   `cache_creation_tokens`) when adapters see provider cache fields; expose them
   on operations, turn completion events, ChatExchange, session usage, TUI
@@ -354,8 +355,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   ([Meta Responses API](https://dev.meta.ai/docs/protocols/responses)).
   Veasel still does not consume Muse's full advertised 1,048,576-token context
   window. Provider-reported token usage is aggregated into opt-in ATIF
-  `final_metrics` (Milestone 3); cost remains unavailable because Veasel does not
-  yet integrate authoritative provider price schedules.
+  `final_metrics` (Milestone 3); cost uses the pinned curated schedule when every
+  reported turn matches, otherwise `unavailable`.
 - [x] Adaptive session compaction for in-flight provider requests when measured
   UTF-8 payload bytes (or conversation message count) cross a local pressure
   threshold: older turns are replaced with an untrusted extractive summary,

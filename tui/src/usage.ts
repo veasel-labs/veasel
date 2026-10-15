@@ -84,6 +84,12 @@ export function formatSessionUsageSummary(summary: SessionUsageSummary): string 
   } else {
     lines.push("Prompt cache: unavailable (provider omitted cache fields)")
   }
-  lines.push(`Cost: ${summary.cost === "unavailable" ? "unavailable (no price schedule)" : summary.cost}`)
+  lines.push(
+    `Cost: ${
+      summary.cost === "unavailable"
+        ? "unavailable (no matching pinned schedule rates)"
+        : summary.cost
+    }`,
+  )
   return lines.join("\n")
 }

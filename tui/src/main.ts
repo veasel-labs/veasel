@@ -1780,7 +1780,7 @@ async function actOnReviewItems(action: "approve" | "reject", items: ActiveRevie
   }
 }
 
-async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev") {
+async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "rejectAll" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev") {
   if (!activeReview?.pending) return
   if (action === "toggleSelect") {
     selectedReviewKeys = toggleReviewSelection(selectedReviewKeys, activeReview)
@@ -1800,18 +1800,22 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
     renderActivePatchDiff()
     return
   }
-  if (action === "approveAll") {
+  if (action === "approveAll" || action === "rejectAll") {
     const kind = activeReview.kind
+    const decide = action === "approveAll" ? "approve" : "reject"
     if (pendingReviewQueue.length === 0) await countPendingReviews()
     const batch = pendingReviewsOfKind(pendingReviewQueue, kind)
-    await actOnReviewItems("approve", batch)
+    await actOnReviewItems(decide, batch)
     selectedReviewKeys = new Set()
     setActiveReview(undefined)
     await countPendingReviews()
     const label = kind === "patch" ? "edit" : kind === "command" ? "shell command" : "MCP call"
+    const hotkey = decide === "approve" ? "Shift+A" : "Shift+X"
+    const verb = decide === "approve" ? "Approved" : "Rejected"
+    const emptyVerb = decide === "approve" ? "approve" : "reject"
     skillNotice = batch.length > 0
-      ? `Approved ${batch.length} pending ${label}${batch.length === 1 ? "" : "s"} of the same kind (Shift+A).`
-      : `No pending ${label}s left to approve.`
+      ? `${verb} ${batch.length} pending ${label}${batch.length === 1 ? "" : "s"} of the same kind (${hotkey}).`
+      : `No pending ${label}s left to ${emptyVerb}.`
     renderChat(chatMessages)
     return
   }

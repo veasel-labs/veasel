@@ -965,6 +965,7 @@ def main() -> None:
         time.sleep(0.35)
         screen.send("\x1b", 0.4)
         screen.wait_for("Turn cancelled.", 6)
+        screen.wait_for("cancelled  ·  response cancelled", 4)
         screen.wait_for("stop this")
         screen.send("\x1b", 0.35)  # dismiss notice overlay if any
         screen.send("\x1b", 0.45)  # leave session

@@ -319,6 +319,7 @@ jobs:
           v test plugins_links_test.v
           v test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
+          v test plugin_mcp_cancel_test.v
           v test agent_runtime_test.v
           v test shell_commands_test.v
           v test session_compaction_test.v
@@ -336,17 +337,20 @@ jobs:
         env:
           VJOBS: 2
         run: |
-          & v -cc gcc -d windows_7 test main_test.v plugins_test.v plugins_links_test.v plugin_mcp_transport_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v
+          & v -cc gcc -d windows_7 test main_test.v plugins_test.v plugins_links_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -cc gcc test model_settings_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v
+          & v -cc gcc test model_settings_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run macOS provider settings and shell sandbox tests
+      - name: Run macOS provider settings, backend startup, and shell sandbox tests
         if: runner.os == 'macOS'
         run: |
+          v test main_test.v
           v test model_settings_test.v
           v test api_metadata_test.v
           v test headless_config_test.v
           v test plugins_links_test.v
+          v test plugin_mcp_cancel_test.v
+          v test repository_map_test.v
           v test shell_commands_test.v
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'

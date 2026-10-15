@@ -1011,5 +1011,67 @@
         }
       }
     }
+  },
+  {
+    "name": "empty mcpServers object is accepted",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {}
+    }
+  },
+  {
+    "name": "loopback IPv6 HTTP is accepted",
+    "accepted": true,
+    "servers": [
+      "local6"
+    ],
+    "diagnostics": [],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local6": {
+          "type": "streamable-http",
+          "url": "http://[::1]:8787/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "unsupported websocket transport is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "unsupported"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "ws": {
+          "type": "websocket",
+          "url": "wss://example.invalid/mcp"
+        }
+      }
+    }
+  },
+  {
+    "name": "stdio args as non-array is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "args"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "echo",
+          "args": "not-an-array"
+        }
+      }
+    }
   }
 ]

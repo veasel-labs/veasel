@@ -6,6 +6,7 @@ import context as vcontext
 import sync
 import uuid
 import time
+import net.http
 
 fn test_openai_responses_history_replays_encrypted_reasoning_and_tool_outputs() {
 	messages := [
@@ -492,6 +493,47 @@ fn test_tui_backend_output_goes_to_the_server_log() {
 	// The CLI's own descriptors must be restored to their original targets.
 	assert os.fd_dup2(1, 1) == 1
 	assert os.fd_dup2(2, 2) == 2
+}
+
+struct BackendHealthFixture {}
+
+fn (mut _ BackendHealthFixture) handle(request http.Request) http.Response {
+	mut response := http.Response{}
+	if request.url == '/v1/health' {
+		response.header.set(.content_type, 'application/json')
+		response.body = '{"healthy":true}'
+		return response
+	}
+	response.set_status(.not_found)
+	return response
+}
+
+fn test_backend_health_probe_and_ensure_reuses_healthy_listener() {
+	assert !backend_is_healthy(1)
+	mut fixture := &BackendHealthFixture{}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	host_port := server.addr.all_after_last(':')
+	port := host_port.int()
+	assert port > 0
+	assert backend_is_healthy(port)
+	// Healthy reuse must not spawn; ensure_backend returns immediately.
+	ensure_backend(port, '') or { panic(err) }
+	assert backend_is_healthy(port)
 }
 
 fn test_tui_directory_is_resolved_next_to_the_executable() {

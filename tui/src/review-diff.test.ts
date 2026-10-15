@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
-import { noticeSegments } from "./transcript"
+import { alignWordDiff, formatReviewDiff, reviewDiffLineBudget } from "./review-diff"
+import { noticeSegments, transcriptPlainText } from "./transcript"
 
 function sampleDiff(extra = 0): string {
   const lines = [
@@ -42,7 +42,47 @@ describe("formatReviewDiff", () => {
     const review = formatReviewDiff(sampleDiff(1), 20)
     const segments = noticeSegments(review.text)
     expect(segments[0]).toMatchObject({ tone: "notice" })
-    expect(segments.some((segment) => segment.tone === "diffAdd" && segment.text.startsWith("+kept"))).toBe(true)
-    expect(segments.some((segment) => segment.tone === "diffRemove" && segment.text.startsWith("-old"))).toBe(true)
+    expect(segments.some((segment) => segment.tone === "diffAdd" && segment.text.includes("kept"))).toBe(true)
+    expect(segments.some((segment) => segment.tone === "diffRemove" && (segment.text === "-" || segment.text.includes("old")))).toBe(true)
+  })
+})
+
+describe("alignWordDiff", () => {
+  test("marks only the tokens that changed between paired lines", () => {
+    const aligned = alignWordDiff("-const answer = 1", "+const answer = 2")
+    expect(aligned.removed.map((token) => `${token.kind}:${token.text}`)).toEqual([
+      "equal:const",
+      "equal: ",
+      "equal:answer",
+      "equal: ",
+      "equal:=",
+      "equal: ",
+      "change:1",
+    ])
+    expect(aligned.added.map((token) => `${token.kind}:${token.text}`)).toEqual([
+      "equal:const",
+      "equal: ",
+      "equal:answer",
+      "equal: ",
+      "equal:=",
+      "equal: ",
+      "change:2",
+    ])
+  })
+
+  test("tones only changed tokens in notice segments for paired lines", () => {
+    const notice = [
+      "REVIEW",
+      "src/main.v",
+      "@@ -1 +1 @@",
+      "-const answer = 1",
+      "+const answer = 2",
+    ].join("\n")
+    const segments = noticeSegments(notice)
+    expect(transcriptPlainText(segments)).toBe(`${notice}\n\n`)
+    expect(segments).toContainEqual({ text: "1", tone: "diffRemove" })
+    expect(segments).toContainEqual({ text: "2", tone: "diffAdd" })
+    expect(segments).toContainEqual({ text: "const", tone: "notice" })
+    expect(segments).toContainEqual({ text: "answer", tone: "notice" })
   })
 })

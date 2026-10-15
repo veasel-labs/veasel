@@ -193,12 +193,15 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 	mut bindings := map[string]PluginMCPToolBinding{}
 	mut connections := []PluginMCPConnection{}
 	for selected in active {
-		plugin_root, server := find_agent_mcp_server(app.plugin_directory, selected.plugin_name,
-			selected.server_name) or {
+		plugin_root, server := app.find_session_mcp_server(selected.plugin_name, selected.server_name) or {
 			eprintln('veasel: trusted MCP server configuration is no longer available')
 			continue
 		}
-		plugin_data := os.join_path(app.plugin_data_directory, selected.plugin_name)
+		plugin_data := if selected.plugin_name == configured_mcp_plugin_name {
+			app.configured_mcp_package_root(selected.server_name)
+		} else {
+			os.join_path(app.plugin_data_directory, selected.plugin_name)
+		}
 		mut client := new_plugin_mcp_client(plugin_root, plugin_data, server) or {
 			eprintln('veasel: trusted MCP server could not be started')
 			continue

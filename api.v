@@ -219,6 +219,7 @@ pub:
 	plugin_directory      string
 	plugin_data_directory string
 	model_settings        &ModelSettingsState
+	configured_mcp        &ConfiguredMCPState
 	allow_autonomous      bool
 }
 
@@ -232,6 +233,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		plugin_directory:         plugin_directory
 		plugin_data_directory:    os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
 		model_settings:           new_model_settings_state(store.model_settings_path())
+		configured_mcp:           new_configured_mcp_state(store.configured_mcp_path())
 		allow_autonomous:         os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		session_turn_locks:       session_turn_locks
 		operation_registry:       &TurnOperationRegistry{
@@ -617,10 +619,67 @@ pub fn (app &App) get_workspace_repository_map(mut ctx Context, id string) veb.R
 @['/v1/plugins'; get]
 pub fn (app &App) list_plugins(mut ctx Context) veb.Result {
 	project_directory := project_directory_for_skills(ctx.query['directory'] or { '' })
-	catalog := discover_agent_plugins_with_standalone(app.plugin_directory, project_directory) or {
+	catalog := app.plugin_catalog_for_directory(project_directory) or {
 		return json_server_error(mut ctx, 'Unable to read the plugin directory')
 	}
 	return ctx.json(catalog)
+}
+
+@['/v1/mcp-servers'; get]
+pub fn (app &App) list_configured_mcp_servers(mut ctx Context) veb.Result {
+	mut state := app.configured_mcp
+	return ctx.json(state.view())
+}
+
+@['/v1/mcp-servers'; post]
+pub fn (app &App) upsert_configured_mcp_server(mut ctx Context) veb.Result {
+	if ctx.req.data.len > 64_000 {
+		return json_request_error(mut ctx, 'Configured MCP server exceeds the size limit')
+	}
+	input := decode_configured_mcp_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut state := app.configured_mcp
+	view := state.upsert(input) or { return json_request_error(mut ctx, err.msg()) }
+	return ctx.json(view)
+}
+
+@['/v1/mcp-servers/:name'; patch]
+pub fn (app &App) patch_configured_mcp_server(mut ctx Context, name string) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'Configured MCP update exceeds the size limit')
+	}
+	input := decode_configured_mcp_enable_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut state := app.configured_mcp
+	view := state.set_enabled(name, input.enabled) or {
+		if err.msg() == 'configured MCP server not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(view)
+}
+
+@['/v1/mcp-servers/:name'; delete]
+pub fn (app &App) remove_configured_mcp_server(mut ctx Context, name string) veb.Result {
+	mut state := app.configured_mcp
+	state.remove(name) or {
+		if err.msg() == 'configured MCP server not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(ConfiguredMCPRemoval{
+		removed: name
+	})
 }
 
 @['/v1/plugins/links'; get]
@@ -767,7 +826,7 @@ pub fn (app &App) set_session_mcp_server(mut ctx Context, id string) veb.Result 
 		})
 	}
 	if input.trusted {
-		_, _ := find_agent_mcp_server(app.plugin_directory, input.plugin_name, input.server_name) or {
+		_, _ := app.find_session_mcp_server(input.plugin_name, input.server_name) or {
 			return json_request_error(mut ctx, 'MCP server is invalid or its transport is not supported')
 		}
 	}

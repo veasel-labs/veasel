@@ -74,7 +74,9 @@ session usage, `veasel run` JSON, ATIF `final_metrics`, and the TUI `/usage`
 view when `usage.reported` / `cache_reported` are true. Field mapping pin:
 [`compatibility/prompt-cache-accounting.md`](compatibility/prompt-cache-accounting.md).
 Anthropic Messages also emit request-side `cache_control` markers by default
-(`provider.anthropic.prompt_cache`); hits remain provider-reported only.
+(`provider.anthropic.prompt_cache`). OpenAI Chat/Responses emit
+`prompt_cache_key` (optional retention) by default
+(`provider.openai.prompt_cache`); hits remain provider-reported only.
 
 ### Codex CLI — concurrent work, ordered transcript, independent sandbox policy
 

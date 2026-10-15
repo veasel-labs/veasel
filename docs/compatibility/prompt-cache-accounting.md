@@ -1,4 +1,4 @@
-# Prompt-cache accounting and Anthropic request markers — study pin
+# Prompt-cache accounting and request markers — study pin
 
 **OpenCode upstream:** [anomalyco/opencode](https://github.com/anomalyco/opencode)
 **Pinned commit:** [`37df62f4a1b6d89187a1169187a6cef10557c0ca`](https://github.com/anomalyco/opencode/tree/37df62f4a1b6d89187a1169187a6cef10557c0ca)
@@ -6,6 +6,8 @@
 **License:** MIT
 
 **Anthropic docs (field semantics + request markers):** [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) (rechecked 2026-10-15)
+
+**OpenAI docs (request-side cache knobs):** [Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching) (rechecked 2026-10-15) — `prompt_cache_key` and `prompt_cache_retention` on Chat Completions and Responses; keys influence routing/accounting and do not guarantee hits.
 
 **Study date:** 2026-10-15
 
@@ -62,6 +64,31 @@ Control with `VEASEL_ANTHROPIC_PROMPT_CACHE`:
 Capability `provider.anthropic.prompt_cache` appears when request markers are
 enabled. Fixture evidence: `provider_cache_test.v`.
 
+### Request-side OpenAI knobs
+
+For catalog providers `openai` (Chat Completions) and `openai-responses`
+(Responses) only—not Meta Responses or generic openai-compatible gateways—
+Veasel emits:
+
+1. Top-level `prompt_cache_key` (default `veasel`; override with
+   `VEASEL_OPENAI_PROMPT_CACHE_KEY`, max 64 UTF-8 bytes after trim).
+2. Optional `prompt_cache_retention` when the mode requests it.
+
+Control with `VEASEL_OPENAI_PROMPT_CACHE`:
+
+| Value | Behavior |
+|---|---|
+| unset / `auto` / other | `prompt_cache_key` only; omit retention (provider org default) |
+| `24h` | Key plus `prompt_cache_retention: "24h"` |
+| `in_memory` / `in-memory` | Key plus `prompt_cache_retention: "in_memory"` |
+| `off` / `0` / `false` / `no` | No cache request fields |
+
+Capability `provider.openai.prompt_cache` appears when these knobs are enabled
+(env not `off`). OpenAI automatic prefix caching can still apply without a key;
+the key helps routing on pre–GPT-5.6 models and separate cache accounting.
+GPT-5.6+ `prompt_cache_options` / explicit breakpoints are not implemented.
+Fixture evidence: `provider_cache_test.v`.
+
 No OpenCode source was copied. Veasel does **not** invent % savings or dollar
 amounts from cache counters. Enabling request markers does not guarantee cache
 hits; hits appear only when the provider reports cache usage fields.
@@ -71,7 +98,9 @@ hits; hits appear only when the provider reports cache usage fields.
 | Gap | Status |
 |---|---|
 | Request-side Anthropic `cache_control` | Shipped (default auto; env opt-out) |
-| OpenAI `prompt_cache_key` / Gemini explicit cache APIs | Not implemented |
+| OpenAI `prompt_cache_key` / `prompt_cache_retention` | Shipped for `openai` + `openai-responses` (default auto; env opt-out) |
+| OpenAI GPT-5.6+ `prompt_cache_options` / breakpoints | Not implemented |
+| Gemini explicit cache APIs | Not implemented |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |
 | Models.dev-priced USD cost | Still unavailable |
 | Reasoning-token split | Not surfaced yet |

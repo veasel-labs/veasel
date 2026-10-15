@@ -149,6 +149,14 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   `sessions.usage.prompt_cache`. Fixture evidence: `provider_cache_test.v`;
   pin: `docs/compatibility/prompt-cache-accounting.md`. Does not invent hit
   rates or USD savings.
+- [x] Request-side OpenAI `prompt_cache_key` (and optional
+  `prompt_cache_retention` for `24h` / `in_memory`) on Chat Completions
+  (`openai`) and Responses (`openai-responses`) via
+  `VEASEL_OPENAI_PROMPT_CACHE` / `VEASEL_OPENAI_PROMPT_CACHE_KEY`, capability
+  `provider.openai.prompt_cache` distinct from accounting. Not applied to Meta
+  or generic openai-compatible gateways. Fixture evidence:
+  `provider_cache_test.v`; pin: `docs/compatibility/prompt-cache-accounting.md`.
+  Keys do not invent hit rates; hits remain provider-reported.
 
 ### Milestone 4 — extensibility
 

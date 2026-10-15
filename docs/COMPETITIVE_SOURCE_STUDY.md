@@ -183,19 +183,21 @@ more lifecycle complexity; adopt only interfaces needed by real clients.
 
 ### OpenHands — typed remote execution and session identity
 
-The inspected repository revision is the OpenHands web client, not the
-separately maintained agent-server runtime. In
-[`agent-server-runtime-service.ts`](https://github.com/All-Hands-AI/OpenHands/blob/0f1b6f62507f1ccdb4e63f61cf3dc48356a0d4fa/src/api/runtime-service/agent-server-runtime-service.ts),
-commands and file access go through typed SDK clients using a per-conversation
-runtime URL and session credential; timeout units are deliberately handled at
-the request boundary. Session frames and sequence cursors are typed and tested.
+The OpenHands web client at
+`1c75a05d587bcb502cd3f63d7e13eaa98ca84d53` still routes commands through a
+typed runtime-service client. The separately maintained Agent Server in
+[`software-agent-sdk`](https://github.com/OpenHands/software-agent-sdk/tree/8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547)
+at `8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547` was inspected in
+`openhands-agent-server/openhands/agent_server/event_service.py`: conversation
+leases, pub/sub event fan-out, goal controllers, and resume prompts keep a
+durable remote session distinct from the UI. That is a much larger distributed
+runtime than Veasel's loopback server.
 
 **Useful principle:** runtime APIs need explicit session identity, bounded
-timeouts, typed results, and cursor/reconnect behavior. Veasel has a loopback
-API and operation IDs but no remote runtime or distributed session model. The
-web-client snapshot cannot support claims about OpenHands' container
-enforcement or internal agent loop; study those in the agent-server repository
-before any direct comparison.
+timeouts, typed results, and cursor/reconnect behavior. Veasel already has
+operation IDs, SSE replay, and uncertain-on-restart classification. Adopt
+leases or remote workspaces only when a real multi-client product need appears;
+keep the V loopback core for local TUI/headless use.
 
 ### Continue — context providers compose without owning retrieval policy
 
@@ -210,6 +212,15 @@ users scope what enters a request. Veasel's current provider prompts contain
 bounded, tool-requested repository data; a future retrieval layer should have
 an inspectable budget and source provenance. Avoid porting Continue's IDE
 context catalog into a terminal agent without matching user workflows.
+
+### Roo Code — archived mode personas, not a performance baseline
+
+At archived commit `b867ec9145750d0ae1ff7f02d35406e9bf2a0b16`, Roo Code's
+product surface centers on Code / Architect / Ask / Debug modes plus custom
+mode prompts (`src/` custom-modes migration and README). Those personas are a
+workflow UX pattern, not evidence of superior task success. Veasel should keep
+task-oriented slash commands and Skills rather than cloning mode menus, and
+must not treat this archived tree as a latency or quality baseline.
 
 ### Kilo Code — cost visibility without forcing priced estimates
 

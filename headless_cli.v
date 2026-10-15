@@ -366,8 +366,19 @@ fn headless_operation_result(port int, session_id string, operation_id string,
 	}
 }
 
+fn format_headless_usage_summary(result HeadlessRunResult) string {
+	mut parts := ['session ${result.session_id}']
+	if result.provider.len > 0 || result.model.len > 0 {
+		parts << '${result.provider} / ${result.model}'
+	}
+	if result.usage_reported {
+		parts << '${result.input_tokens} in · ${result.output_tokens} out'
+	}
+	return parts.join(' · ')
+}
+
 fn print_headless_help() {
-	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 1 MiB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to an ATIF v1.8 trace at this path (private file; partial on failure/cancellation)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the model-visible conversation and tool I/O with credentials\nredacted; they may still include private instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.')
+	println('Usage: veasel run --prompt <text> [options]\n\nOptions:\n  -p, --prompt <text>   Task instructions (required; max 1 MiB)\n  -w, --workspace <dir> Workspace directory for a new session (default: current directory)\n      --session <uuid>  Continue an existing session instead of creating one\n      --timeout <secs>  Wait limit from 1 to 86400 seconds (default: 1800)\n      --trace-file <p>  Opt in to an ATIF v1.8 trace at this path (private file; partial on failure/cancellation)\n      --json            Emit a machine-readable result\n      --autonomous      Execute edits and shell proposals without review (isolated sandboxes only)\n  -h, --help            Show this help\n\nThe headless command uses the same local server and provider configuration as the TUI.\nBy default, edits, shell commands, and MCP calls still require user approval.\n--autonomous is a dangerous opt-in for disposable, externally sandboxed benchmark\nenvironments only. It requires VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1 when the server starts;\nthat switch does not create a sandbox or restrict arbitrary shell access. Never enable it\non a host workspace or with credentials or data you would not expose to task commands.\nATIF traces contain the model-visible conversation and tool I/O with credentials\nredacted; they may still include private instructions and source code. The owner-only output file is written only when\n--trace-file is explicitly supplied.\nWhen a provider reports token counts, --json includes them and the human summary prints them on stderr.')
 }
 
 fn execute_headless_command(port int, args []string) {
@@ -404,11 +415,11 @@ fn execute_headless_command(port int, args []string) {
 	if options.json {
 		println(json2.encode(result))
 	} else if result.status != 'completed' {
-		eprintln('veasel: model turn ${result.status}: ${result.error}\nsession ${result.session_id} · operation ${result.operation_id}')
+		eprintln('veasel: model turn ${result.status}: ${result.error}\n${format_headless_usage_summary(result)} · operation ${result.operation_id}')
 		exit(1)
 	} else {
 		println(result.response)
-		eprintln('session ${result.session_id} · ${result.provider} / ${result.model}')
+		eprintln(format_headless_usage_summary(result))
 	}
 	if result.status != 'completed' {
 		exit(1)

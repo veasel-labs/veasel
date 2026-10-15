@@ -53,20 +53,22 @@ state = {
 
 
 def review_diff() -> str:
+    # Hunk headers must match parsePatch (OpenTUI DiffRenderable) — word-diff
+    # segments are tolerant, but split view rejects mismatched counts.
+    added_body = [f"+kept line {index:02d}" for index in range(1, 27)] + ["+TAIL-SENTINEL"]
     lines = [
         "diff --git a/src/main.v b/src/main.v",
         "--- a/src/main.v",
         "+++ b/src/main.v",
-        "@@ -1,2 +1,3 @@",
+        f"@@ -1,2 +1,{1 + len(added_body)} @@",
         "-const answer = alpha",
         "+const answer = beta",
         "-old line",
     ]
-    lines.extend(f"+kept line {index:02d}" for index in range(1, 27))
-    lines.append("+TAIL-SENTINEL")
+    lines.extend(added_body)
     # Second hunk so {/} navigation is real-terminal covered.
     lines.extend([
-        "@@ -200 +200 @@",
+        "@@ -200,1 +200,1 @@",
         "-unused line",
         "+hunk-two-marker",
     ])
@@ -827,11 +829,25 @@ def main() -> None:
         screen.wait_for("beta")
         screen.wait_for(" │ ", 4)  # short -/+ pair renders side-by-side at 100 cols
         screen.wait_for("a approve")
+        screen.wait_for("v split view", 4)
         reviewed = screen.terminal.text()
         if "TAIL-SENTINEL" in reviewed or "hunk-two-marker" in reviewed:
             raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
         if "alpha" not in reviewed or "beta" not in reviewed or " │ " not in reviewed:
             raise AssertionError(f"diff review missed side-by-side alpha/beta pair\n--- screen ---\n{reviewed}")
+        screen.send("v", 0.55)  # toggle OpenTUI DiffRenderable split view
+        screen.wait_for("v word-diff", 4)
+        screen.wait_for("OpenTUI split", 4)
+        # Counts may wrap across the panel width ("29" then "added, 3 removed").
+        screen.wait_for("added, 3 removed", 4)
+        screen.wait_for("const answer = alpha", 4)
+        screen.wait_for("const answer = beta", 4)
+        split_view = screen.terminal.text()
+        if "Error parsing diff" in split_view:
+            raise AssertionError(f"DiffRenderable rejected the review patch\n--- screen ---\n{split_view}")
+        screen.send("v", 0.55)  # back to word-diff segments
+        screen.wait_for("v split view", 4)
+        screen.wait_for(" │ ", 4)
         screen.send("}", 0.5)  # next unified-diff hunk
         screen.wait_for("Hunk 2 of 2", 4)
         screen.wait_for("hunk-two-marker", 4)

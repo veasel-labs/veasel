@@ -1,5 +1,6 @@
 import {
   BoxRenderable,
+  DiffRenderable,
   InputRenderable,
   InputRenderableEvents,
   SelectRenderable,
@@ -58,6 +59,14 @@ import {
 } from "./path-autocomplete"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
 import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
+import {
+  cycleReviewDiffSurface,
+  diffRenderableTheme,
+  filetypeFromReviewPath,
+  formatPatchSplitChrome,
+  reviewDiffSurfaceHint,
+  type ReviewDiffSurface,
+} from "./diff-view"
 import {
   formatBoundedBlock,
   formatShellReview,
@@ -458,6 +467,18 @@ const sessionDetail = new TextRenderable(renderer, {
   wrapMode: "word",
 })
 detail.add(sessionDetail)
+// OpenTUI DiffRenderable split view for patch reviews (toggled with v). Mounted
+// only while split surface is active so it never steals flex height from chat.
+const reviewDiffRenderable = new DiffRenderable(renderer, {
+  id: "review-diff",
+  diff: "",
+  view: "split",
+  visible: false,
+  flexGrow: 1,
+  minHeight: 8,
+  ...diffRenderableTheme(theme),
+})
+let reviewDiffMounted = false
 body.add(sidebar)
 body.add(detail)
 
@@ -522,6 +543,7 @@ let activePatchDiff = ""
 let activePatchPath = ""
 let activePatchStatus = ""
 let activePatchHunkIndex = 0
+let reviewDiffSurface: ReviewDiffSurface = "segments"
 let chatMessages: ChatTurn[] = []
 let composerHistory: ComposerHistory = emptyComposerHistory()
 let composerKillRing: KillRing = emptyKillRing()
@@ -647,6 +669,14 @@ function applyTheme(next: Theme) {
   detail.borderColor = theme.panelBorder
   brandLabel.fg = theme.brand
   sessionDetail.fg = theme.body
+  const diffColors = diffRenderableTheme(theme)
+  reviewDiffRenderable.fg = diffColors.fg
+  reviewDiffRenderable.addedSignColor = diffColors.addedSignColor
+  reviewDiffRenderable.removedSignColor = diffColors.removedSignColor
+  reviewDiffRenderable.lineNumberFg = diffColors.lineNumberFg
+  reviewDiffRenderable.addedBg = diffColors.addedBg
+  reviewDiffRenderable.removedBg = diffColors.removedBg
+  reviewDiffRenderable.contextBg = diffColors.contextBg
   footer.backgroundColor = theme.headerBg
   footer.borderColor = theme.panelBorder
   footerHint.fg = theme.muted
@@ -1996,6 +2026,7 @@ async function showMcpToolCalls() {
 
 async function showMcpToolCall(callId: string) {
   if (!activeSession) return
+  hideReviewDiffRenderable()
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls/${callId}`, {
       signal: controller.signal,
@@ -2100,6 +2131,36 @@ function reviewHintOptions(hunkCount?: number) {
     hunkCount,
     selectedCount: selectedReviewKeys.size,
     currentSelected: activeReview ? selectedReviewKeys.has(reviewSelectionKey(activeReview)) : false,
+    diffSurfaceHint: activeReview?.kind === "patch" ? reviewDiffSurfaceHint(reviewDiffSurface) : undefined,
+  }
+}
+
+function hideReviewDiffRenderable() {
+  reviewDiffRenderable.visible = false
+  reviewDiffRenderable.diff = ""
+  if (reviewDiffMounted) {
+    detail.remove(reviewDiffRenderable)
+    reviewDiffMounted = false
+  }
+}
+
+function syncReviewDiffRenderable(diff: string, path: string) {
+  const colors = diffRenderableTheme(theme)
+  reviewDiffRenderable.fg = colors.fg
+  reviewDiffRenderable.addedSignColor = colors.addedSignColor
+  reviewDiffRenderable.removedSignColor = colors.removedSignColor
+  reviewDiffRenderable.lineNumberFg = colors.lineNumberFg
+  reviewDiffRenderable.addedBg = colors.addedBg
+  reviewDiffRenderable.removedBg = colors.removedBg
+  reviewDiffRenderable.contextBg = colors.contextBg
+  reviewDiffRenderable.view = "split"
+  reviewDiffRenderable.syncScroll = true
+  reviewDiffRenderable.filetype = filetypeFromReviewPath(path)
+  reviewDiffRenderable.diff = diff
+  reviewDiffRenderable.visible = true
+  if (!reviewDiffMounted) {
+    detail.add(reviewDiffRenderable)
+    reviewDiffMounted = true
   }
 }
 
@@ -2126,11 +2187,31 @@ function renderActivePatchDiff() {
     hunkIndex: activePatchHunkIndex,
   })
   activePatchHunkIndex = review.hunkIndex
-  skillNotice = withReviewHotkeyHint(
-    `REVIEW WORKSPACE EDIT  /  ${activePatchStatus}\n${safeTerminalText(activePatchPath)}\n${safeTerminalText(review.text)}${activeReview.pending ? `\nAfter inspecting the diff, type /patch approve ${activeReview.id} or /patch reject ${activeReview.id}.` : ""}`,
-    activeReview,
-    reviewHintOptions(review.hunkCount),
-  )
+  const pendingInstruction = activeReview.pending
+    ? `After inspecting the diff, type /patch approve ${activeReview.id} or /patch reject ${activeReview.id}.`
+    : undefined
+  if (reviewDiffSurface === "split") {
+    syncReviewDiffRenderable(activePatchDiff, activePatchPath)
+    skillNotice = withReviewHotkeyHint(
+      formatPatchSplitChrome({
+        status: activePatchStatus,
+        path: safeTerminalText(activePatchPath),
+        additions: review.additions,
+        removals: review.removals,
+        hunkCount: review.hunkCount,
+        pendingInstruction,
+      }),
+      activeReview,
+      reviewHintOptions(review.hunkCount),
+    )
+  } else {
+    hideReviewDiffRenderable()
+    skillNotice = withReviewHotkeyHint(
+      `REVIEW WORKSPACE EDIT  /  ${activePatchStatus}\n${safeTerminalText(activePatchPath)}\n${safeTerminalText(review.text)}${pendingInstruction ? `\n${pendingInstruction}` : ""}`,
+      activeReview,
+      reviewHintOptions(review.hunkCount),
+    )
+  }
   renderChat(chatMessages)
 }
 
@@ -2142,8 +2223,14 @@ async function actOnReviewItems(action: "approve" | "reject", items: ActiveRevie
   }
 }
 
-async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "rejectAll" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev") {
+async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "rejectAll" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev" | "toggleDiffSurface") {
   if (!activeReview?.pending) return
+  if (action === "toggleDiffSurface") {
+    if (activeReview.kind !== "patch" || !activePatchDiff) return
+    reviewDiffSurface = cycleReviewDiffSurface(reviewDiffSurface)
+    renderActivePatchDiff()
+    return
+  }
   if (action === "toggleSelect") {
     selectedReviewKeys = toggleReviewSelection(selectedReviewKeys, activeReview)
     refreshActiveReviewHint()
@@ -2170,6 +2257,8 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
     await actOnReviewItems(decide, batch)
     selectedReviewKeys = new Set()
     setActiveReview(undefined)
+    reviewDiffSurface = "segments"
+    hideReviewDiffRenderable()
     await countPendingReviews()
     const label = kind === "patch" ? "edit" : kind === "command" ? "shell command" : "MCP call"
     const hotkey = decide === "approve" ? "Shift+A" : "Shift+X"
@@ -2188,6 +2277,8 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
     await actOnReviewItems(action, batch)
     selectedReviewKeys = new Set()
     setActiveReview(undefined)
+    reviewDiffSurface = "segments"
+    hideReviewDiffRenderable()
     await countPendingReviews()
     if (selected.length > 0) {
       const verb = action === "approve" ? "Approved" : "Rejected"
@@ -2369,6 +2460,7 @@ async function showShellCommands(filter = "") {
 
 async function showShellCommand(commandId: string) {
   if (!activeSession) return
+  hideReviewDiffRenderable()
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands/${commandId}`, { signal: controller.signal })
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
@@ -3857,6 +3949,8 @@ renderer.keyInput.on("keypress", (key) => {
         activePatchPath = ""
         activePatchStatus = ""
         activePatchHunkIndex = 0
+        reviewDiffSurface = "segments"
+        hideReviewDiffRenderable()
         selectedReviewKeys = new Set()
         setActiveReview(undefined)
         renderChat(chatMessages)
@@ -3869,6 +3963,8 @@ renderer.keyInput.on("keypress", (key) => {
       activeSession = undefined
       selectedReviewKeys = new Set()
       setActiveReview(undefined)
+      reviewDiffSurface = "segments"
+      hideReviewDiffRenderable()
       portraitRenderable.visible = true
       brandLabel.visible = true
       footerHint.content = homeFooterHint

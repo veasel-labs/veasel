@@ -16,6 +16,7 @@ export type ReviewHotkey =
   | { action: "prev" }
   | { action: "hunkNext" }
   | { action: "hunkPrev" }
+  | { action: "toggleDiffSurface" }
 
 export function reviewSelectionKey(review: Pick<ActiveReview, "kind" | "id">): string {
   return `${review.kind}:${review.id}`
@@ -60,23 +61,33 @@ export function reviewHotkey(
   if (key.name === "[" || key.name === "p") return { action: "prev" }
   if (context.review.kind === "patch" && key.name === "}") return { action: "hunkNext" }
   if (context.review.kind === "patch" && key.name === "{") return { action: "hunkPrev" }
+  // v toggles OpenTUI DiffRenderable split vs word-diff segments (patch only).
+  if (context.review.kind === "patch" && key.name === "v") return { action: "toggleDiffSurface" }
   return undefined
 }
 
 export function reviewHotkeyHint(
   review: ActiveReview | undefined,
-  options: { hunkCount?: number; selectedCount?: number; currentSelected?: boolean } = {},
+  options: {
+    hunkCount?: number
+    selectedCount?: number
+    currentSelected?: boolean
+    diffSurfaceHint?: string
+  } = {},
 ): string | undefined {
   if (!review?.pending) return undefined
   const hunks = review.kind === "patch" && (options.hunkCount ?? 0) > 1
     ? " · {/} hunks"
+    : ""
+  const split = review.kind === "patch"
+    ? (options.diffSurfaceHint ?? " · v split view")
     : ""
   const selected = options.selectedCount ?? 0
   const mark = options.currentSelected ? "●" : "○"
   const selectCue = selected > 0
     ? ` · ${mark} Space · ${selected} selected · a/x act on selection`
     : ` · ${mark} Space select`
-  return `a approve · A/X all same kind · x reject · ]/[ or n/p next/prev${selectCue}${hunks}`
+  return `a approve · A/X all same kind · x reject · ]/[ or n/p next/prev${selectCue}${hunks}${split}`
 }
 
 export function pendingReviewsOfKind(queue: ActiveReview[], kind: ActiveReviewKind): ActiveReview[] {
@@ -97,7 +108,12 @@ export function activeReviewIndex(queue: ActiveReview[], current: ActiveReview |
 export function withReviewHotkeyHint(
   notice: string,
   review: ActiveReview | undefined,
-  options: { hunkCount?: number; selectedCount?: number; currentSelected?: boolean } = {},
+  options: {
+    hunkCount?: number
+    selectedCount?: number
+    currentSelected?: boolean
+    diffSurfaceHint?: string
+  } = {},
 ): string {
   const hint = reviewHotkeyHint(review, options)
   if (!hint) return notice

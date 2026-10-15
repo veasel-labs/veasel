@@ -244,6 +244,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   sample relative resource paths, and read bounded UTF-8 resources for the rest
   of the turn; content stays untrusted and files are never executed. Session
   `/skill on` remains the path for persistent prompt injection.
+- [x] Disclose a bounded metadata-only `<available_skills>` catalog (plugin/source
+  name, skill name, truncated description) inside the `agent_skill_load` tool
+  description at turn start so the model can see discovered skills before load;
+  omit the tool when the catalog is empty or every skill component is disabled;
+  never embed instruction bodies in the catalog.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

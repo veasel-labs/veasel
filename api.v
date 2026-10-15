@@ -1757,15 +1757,28 @@ pub fn (app &App) get_session_usage(mut ctx Context, id string) veb.Result {
 @['/v1/events'; get]
 pub fn (app &App) event_stream(mut ctx Context) veb.Result {
 	last_id := ctx.req.header.get_custom('Last-Event-ID', exact: false) or { '0' }
-	after := strconv.atoi(last_id) or {
-		return json_request_error(mut ctx, 'Last-Event-ID must be a non-negative integer')
-	}
-	if after < 0 {
+	after := parse_sse_last_event_id(last_id) or {
 		return json_request_error(mut ctx, 'Last-Event-ID must be a non-negative integer')
 	}
 	ctx.takeover_conn()
 	spawn stream_events(mut ctx, app.store, after)
 	return veb.no_result()
+}
+
+// SSE Last-Event-ID is digit-only (no sign, spaces, or leading zeros except "0").
+fn parse_sse_last_event_id(raw string) !int {
+	if raw.len == 0 {
+		return error('Last-Event-ID must be a non-negative integer')
+	}
+	for c in raw {
+		if c < `0` || c > `9` {
+			return error('Last-Event-ID must be a non-negative integer')
+		}
+	}
+	if raw.len > 1 && raw[0] == `0` {
+		return error('Last-Event-ID must be a non-negative integer')
+	}
+	return strconv.atoi(raw) or { return error('Last-Event-ID must be a non-negative integer') }
 }
 
 fn stream_events(mut ctx Context, store &Store, start_after int) {

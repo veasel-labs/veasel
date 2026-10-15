@@ -45,3 +45,23 @@ export function formatHomeSessionStatus(selected: number, count: number): string
   const index = Math.min(Math.max(0, selected), count - 1)
   return formatStatusLine("ok", `connected  ·  session ${index + 1} of ${count} selected`)
 }
+
+// Home type-to-filter cue: spoken "filter" plus which match is focused so the
+// status row stays meaningful when color is flat or when copied as text.
+export function formatHomeFilterStatus(
+  selected: number,
+  matched: number,
+  total: number,
+  filter: string,
+): string {
+  const trimmed = filter.trim()
+  if (!trimmed) return formatHomeSessionStatus(selected, total)
+  if (matched <= 0) {
+    return formatStatusLine("ok", `connected  ·  filter  ·  0 of ${total} match “${trimmed}”`)
+  }
+  const index = Math.min(Math.max(0, selected), matched - 1)
+  return formatStatusLine(
+    "ok",
+    `connected  ·  filter  ·  session ${index + 1} of ${matched} match “${trimmed}” (${total} total)`,
+  )
+}

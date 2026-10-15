@@ -43,10 +43,10 @@ export const slashCommands: SlashCommand[] = [
   { name: "/plugin add", description: "Link an absolute local plugin directory", usage: "/plugin add <absolute-path>" },
   { name: "/plugin remove", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
   { name: "/mcp", description: "List MCP servers (configured + Agent Plugins)" },
-  { name: "/mcp add", description: "Add a user-scoped MCP server", usage: "/mcp add stdio <name> <command> [args…]  or  /mcp add http <name> <url>" },
-  { name: "/mcp remove", description: "Remove a configured MCP server", usage: "/mcp remove <name>" },
-  { name: "/mcp enable", description: "Enable a configured MCP server", usage: "/mcp enable <name>" },
-  { name: "/mcp disable", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable <name>" },
+  { name: "/mcp add", description: "Add a configured MCP server (user or project scope)", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>" },
+  { name: "/mcp remove", description: "Remove a configured MCP server", usage: "/mcp remove [user|project] <name>" },
+  { name: "/mcp enable", description: "Enable a configured MCP server", usage: "/mcp enable [user|project] <name>" },
+  { name: "/mcp disable", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>" },
   { name: "/mcp calls", description: "List MCP calls waiting for review" },
   { name: "/mcp call", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
   { name: "/mcp trust", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
@@ -96,18 +96,41 @@ const argumentSpecs: Record<string, ArgSpec[]> = {
     {
       kind: "choice",
       choices: [
-        { value: "stdio", description: "Local process (bare command or absolute path)" },
-        { value: "http", description: "Streamable HTTP endpoint" },
+        { value: "stdio", description: "Local process (bare command or absolute path); user scope" },
+        { value: "http", description: "Streamable HTTP endpoint; user scope" },
+        { value: "project", description: "Write under <workspace>/.veasel/mcp-servers.json" },
+        { value: "user", description: "Write under VEASEL_DATA_DIR/mcp-servers.json" },
       ],
     },
   ],
   "/mcp remove": [
+    {
+      kind: "choice",
+      choices: [
+        { value: "user", description: "Remove from user-scope mcp-servers.json" },
+        { value: "project", description: "Remove from project-scope .veasel/mcp-servers.json" },
+      ],
+    },
     { kind: "value", values: (context) => context.configuredMcpServers ?? [], empty: "No configured MCP servers yet" },
   ],
   "/mcp enable": [
+    {
+      kind: "choice",
+      choices: [
+        { value: "user", description: "Enable in user-scope mcp-servers.json" },
+        { value: "project", description: "Enable in project-scope .veasel/mcp-servers.json" },
+      ],
+    },
     { kind: "value", values: (context) => context.configuredMcpServers ?? [], empty: "No configured MCP servers yet" },
   ],
   "/mcp disable": [
+    {
+      kind: "choice",
+      choices: [
+        { value: "user", description: "Disable in user-scope mcp-servers.json" },
+        { value: "project", description: "Disable in project-scope .veasel/mcp-servers.json" },
+      ],
+    },
     { kind: "value", values: (context) => context.configuredMcpServers ?? [], empty: "No configured MCP servers yet" },
   ],
   "/mcp call": [

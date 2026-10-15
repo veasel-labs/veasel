@@ -817,35 +817,38 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  const mcpAddStdio = /^\/mcp add stdio\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)(?:\s+(.+))?$/.exec(content)
+  const mcpAddStdio = /^\/mcp add(?:\s+(user|project))?\s+stdio\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)(?:\s+(.+))?$/.exec(content)
   if (mcpAddStdio) {
     await addConfiguredMcpServer({
-      name: mcpAddStdio[1],
+      name: mcpAddStdio[2],
       transport: "stdio",
-      command: mcpAddStdio[2],
-      args: mcpAddStdio[3] ? splitMcpArgs(mcpAddStdio[3]) : [],
+      command: mcpAddStdio[3],
+      args: mcpAddStdio[4] ? splitMcpArgs(mcpAddStdio[4]) : [],
+      scope: mcpAddStdio[1] === "project" ? "project" : "user",
     })
     chatInput.value = ""
     chatInput.focus()
     return
   }
-  const mcpAddHttp = /^\/mcp add http\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)$/.exec(content)
+  const mcpAddHttp = /^\/mcp add(?:\s+(user|project))?\s+http\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)$/.exec(content)
   if (mcpAddHttp) {
     await addConfiguredMcpServer({
-      name: mcpAddHttp[1],
+      name: mcpAddHttp[2],
       transport: "streamable-http",
-      url: mcpAddHttp[2],
+      url: mcpAddHttp[3],
+      scope: mcpAddHttp[1] === "project" ? "project" : "user",
     })
     chatInput.value = ""
     chatInput.focus()
     return
   }
-  const mcpToggle = /^\/mcp\s+(remove|enable|disable)\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])$/.exec(content)
+  const mcpToggle = /^\/mcp\s+(remove|enable|disable)(?:\s+(user|project))?\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])$/.exec(content)
   if (mcpToggle) {
     const action = mcpToggle[1]
-    const name = mcpToggle[2]
-    if (action === "remove") await removeConfiguredMcpServer(name)
-    else await setConfiguredMcpEnabled(name, action === "enable")
+    const scope = mcpToggle[2] === "project" ? "project" : "user"
+    const name = mcpToggle[3]
+    if (action === "remove") await removeConfiguredMcpServer(name, scope)
+    else await setConfiguredMcpEnabled(name, action === "enable", scope)
     chatInput.value = ""
     chatInput.focus()
     return
@@ -858,7 +861,7 @@ async function sendMessage(value: string) {
     return
   }
   if (content.startsWith("/mcp ")) {
-    skillNotice = "Use /mcp to list servers. Add with /mcp add stdio <name> <command> [args…] or /mcp add http <name> <url>. Toggle with /mcp enable|disable <name>, remove with /mcp remove <name>, then /mcp trust configured/<name>. Review the command or origin before trusting."
+    skillNotice = "Use /mcp to list servers. Add with /mcp add [user|project] stdio <name> <command> [args…] or /mcp add [user|project] http <name> <url>. Toggle with /mcp enable|disable [user|project] <name>, remove with /mcp remove [user|project] <name>, then /mcp trust configured/<name>. Project scope writes <workspace>/.veasel/mcp-servers.json."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1312,9 +1315,12 @@ async function removePluginLink(name: string) {
 type ConfiguredMcpCatalog = {
   scope?: string
   path?: string
+  project_path?: string
+  import_paths?: string[]
   servers: Array<{
     name: string
     scope?: string
+    config_file?: string
     enabled: boolean
     transport: string
     command?: string
@@ -1337,10 +1343,11 @@ function splitMcpArgs(raw: string): string[] {
 async function showMcpServers() {
   if (!activeSession) return
   try {
+    const directory = encodeURIComponent(activeSession.directory || "")
     const [catalogResponse, activeResponse, configuredResponse] = await Promise.all([
-      fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/plugins?directory=${directory}`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-servers`, { signal: controller.signal }),
-      fetch(`${apiBase}/v1/mcp-servers`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/mcp-servers?directory=${directory}`, { signal: controller.signal }),
     ])
     if (!catalogResponse.ok || !activeResponse.ok) throw new Error("plugin catalog is unavailable")
     const catalog = await catalogResponse.json() as PluginCatalog
@@ -1351,6 +1358,12 @@ async function showMcpServers() {
     const trusted = new Set(active.map((item) => `${item.plugin_name}/${item.server_name}`))
     const configuredLines = configured.servers.map((server) => {
       const key = `configured/${server.name}`
+      const scopeLabel = server.scope === "project"
+        ? "project scope"
+        : server.scope === "project-import"
+          ? "project-import (read-only)"
+          : "user scope"
+      const configFile = server.config_file ? `\n  config: ${safeTerminalText(server.config_file)}` : ""
       const command = server.command
         ? `\n  command: ${safeTerminalText([server.command, ...(server.args ?? [])].join(" "))}`
         : ""
@@ -1364,7 +1377,7 @@ async function showMcpServers() {
         : trusted.has(key)
           ? "● trusted"
           : "○ available"
-      return `${state}  ${safeTerminalText(key)} [${safeTerminalText(server.transport)}] · user scope${command}${cwd}${endpoint}${headers}`
+      return `${state}  ${safeTerminalText(key)} [${safeTerminalText(server.transport)}] · ${scopeLabel}${configFile}${command}${cwd}${endpoint}${headers}`
     })
     const pluginLines = catalog.plugins
       .filter((plugin) => plugin.origin !== "configured")
@@ -1382,9 +1395,13 @@ async function showMcpServers() {
       }))
     const inventory = [...configuredLines, ...pluginLines].length > 0
       ? [...configuredLines, ...pluginLines].join("\n\n")
-      : "No MCP servers yet. Add one with /mcp add stdio <name> <command> [args…] or /mcp add http <name> <url>, or link an Agent Plugin package that includes mcp.json."
+      : "No MCP servers yet. Add one with /mcp add stdio <name> <command> [args…] or /mcp add project http <name> <url>, or link an Agent Plugin package that includes mcp.json."
     const configPath = configured.path ? `\nUser-scope file: ${safeTerminalText(configured.path)}` : ""
-    skillNotice = `MCP SERVERS\n${inventory}${configPath}\n\nAdd: /mcp add stdio <name> <command> [args…] · /mcp add http <name> <url>\nManage: /mcp enable|disable|remove <name>\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio runs with your OS privileges. Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
+    const projectPath = configured.project_path ? `\nProject-scope file: ${safeTerminalText(configured.project_path)}` : ""
+    const importPaths = configured.import_paths?.length
+      ? `\nImported project files: ${configured.import_paths.map(safeTerminalText).join(", ")}`
+      : ""
+    skillNotice = `MCP SERVERS\n${inventory}${configPath}${projectPath}${importPaths}\n\nAdd: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio runs with your OS privileges. Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
@@ -1398,18 +1415,33 @@ async function addConfiguredMcpServer(input: {
   command?: string
   args?: string[]
   url?: string
+  scope?: "user" | "project"
 }) {
   try {
+    const scope = input.scope === "project" ? "project" : "user"
+    if (scope === "project" && !activeSession?.directory) {
+      throw new Error("project-scoped MCP requires an active session workspace")
+    }
     const response = await fetch(`${apiBase}/v1/mcp-servers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...input, enabled: true }),
+      body: JSON.stringify({
+        name: input.name,
+        transport: input.transport,
+        command: input.command,
+        args: input.args,
+        url: input.url,
+        enabled: true,
+        scope,
+        directory: scope === "project" ? activeSession?.directory : undefined,
+      }),
       signal: controller.signal,
     })
-    const body = await response.json().catch(() => ({})) as { name?: string; error?: string; transport?: string }
+    const body = await response.json().catch(() => ({})) as { name?: string; error?: string; transport?: string; scope?: string }
     if (!response.ok) throw new Error(body.error || "unable to add MCP server")
     slashContextAt = 0
-    skillNotice = `Added configured/${safeTerminalText(body.name || input.name)} [${safeTerminalText(body.transport || input.transport)}] (user scope). Trust with /mcp trust configured/${safeTerminalText(body.name || input.name)} after reviewing the command or origin. Every tool call still needs explicit approval.`
+    const resolvedScope = body.scope === "project" ? "project" : "user"
+    skillNotice = `Added configured/${safeTerminalText(body.name || input.name)} [${safeTerminalText(body.transport || input.transport)}] (${resolvedScope} scope). Trust with /mcp trust configured/${safeTerminalText(body.name || input.name)} after reviewing the command or origin. Every tool call still needs explicit approval.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not add MCP server: ${error instanceof Error ? error.message : "request failed"}`
@@ -1417,16 +1449,22 @@ async function addConfiguredMcpServer(input: {
   }
 }
 
-async function removeConfiguredMcpServer(name: string) {
+async function removeConfiguredMcpServer(name: string, scope: "user" | "project" = "user") {
   try {
-    const response = await fetch(`${apiBase}/v1/mcp-servers/${encodeURIComponent(name)}`, {
+    if (scope === "project" && !activeSession?.directory) {
+      throw new Error("project-scoped MCP requires an active session workspace")
+    }
+    const query = scope === "project"
+      ? `?scope=project&directory=${encodeURIComponent(activeSession!.directory)}`
+      : ""
+    const response = await fetch(`${apiBase}/v1/mcp-servers/${encodeURIComponent(name)}${query}`, {
       method: "DELETE",
       signal: controller.signal,
     })
     const body = await response.json().catch(() => ({})) as { removed?: string; error?: string }
     if (!response.ok) throw new Error(body.error || "unable to remove MCP server")
     slashContextAt = 0
-    skillNotice = `Removed configured MCP server ${safeTerminalText(body.removed || name)}. Session trust rows for configured/${safeTerminalText(name)} stop loading on the next turn.`
+    skillNotice = `Removed ${scope}-scope configured MCP server ${safeTerminalText(body.removed || name)}. Session trust rows for configured/${safeTerminalText(name)} stop loading on the next turn when no other scope still defines it.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not remove MCP server: ${error instanceof Error ? error.message : "request failed"}`
@@ -1434,9 +1472,15 @@ async function removeConfiguredMcpServer(name: string) {
   }
 }
 
-async function setConfiguredMcpEnabled(name: string, enabled: boolean) {
+async function setConfiguredMcpEnabled(name: string, enabled: boolean, scope: "user" | "project" = "user") {
   try {
-    const response = await fetch(`${apiBase}/v1/mcp-servers/${encodeURIComponent(name)}`, {
+    if (scope === "project" && !activeSession?.directory) {
+      throw new Error("project-scoped MCP requires an active session workspace")
+    }
+    const query = scope === "project"
+      ? `?scope=project&directory=${encodeURIComponent(activeSession!.directory)}`
+      : ""
+    const response = await fetch(`${apiBase}/v1/mcp-servers/${encodeURIComponent(name)}${query}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
@@ -1445,7 +1489,7 @@ async function setConfiguredMcpEnabled(name: string, enabled: boolean) {
     const body = await response.json().catch(() => ({})) as { name?: string; enabled?: boolean; error?: string }
     if (!response.ok) throw new Error(body.error || "unable to update MCP server")
     slashContextAt = 0
-    skillNotice = `${enabled ? "Enabled" : "Disabled"} configured/${safeTerminalText(body.name || name)}. ${enabled ? "Trust it with /mcp trust configured/" + safeTerminalText(body.name || name) + " when ready." : "It stays on disk but will not connect until enabled again."}`
+    skillNotice = `${enabled ? "Enabled" : "Disabled"} ${scope}-scope configured/${safeTerminalText(body.name || name)}. ${enabled ? "Trust it with /mcp trust configured/" + safeTerminalText(body.name || name) + " when ready." : "It stays on disk but will not connect until enabled again."}`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not update MCP server: ${error instanceof Error ? error.message : "request failed"}`
@@ -2336,7 +2380,7 @@ async function refreshSlashContext(typed: string) {
       fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-servers`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/plugins/links`, { signal: controller.signal }),
-      fetch(`${apiBase}/v1/mcp-servers`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/mcp-servers?directory=${encodeURIComponent(activeSession?.directory || "")}`, { signal: controller.signal }),
     ])
     const edits = editsResponse.ok ? await editsResponse.json() as WorkspaceEditSummary[] : []
     const commands = commandsResponse.ok ? await commandsResponse.json() as ShellCommandSummary[] : []
@@ -2356,7 +2400,7 @@ async function refreshSlashContext(typed: string) {
       pluginLinks: links.links.map((link) => ({ value: link.name, description: link.path })),
       configuredMcpServers: configured.servers.map((server) => ({
         value: server.name,
-        description: `${server.enabled ? "enabled" : "disabled"} · ${server.transport}`,
+        description: `${server.scope === "project" ? "project" : "user"} · ${server.enabled ? "enabled" : "disabled"} · ${server.transport}`,
       })),
       mcpServers: plugins.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
         const value = `${plugin.name}/${server.name}`

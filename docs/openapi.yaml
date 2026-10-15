@@ -142,17 +142,23 @@ paths:
   /v1/mcp-servers:
     get:
       operationId: listConfiguredMcpServers
-      description: Lists operator-configured MCP servers persisted in `$VEASEL_DATA_DIR/mcp-servers.json` (user scope). Secrets in headers are not returned; only header names and URL origins are shown. Agent Plugin MCP servers remain listed under `/v1/plugins`.
+      description: Lists operator-configured MCP servers. User scope is always `$VEASEL_DATA_DIR/mcp-servers.json`. When `directory` is provided, also includes writable project-scope servers from `<directory>/.veasel/mcp-servers.json` and read-only imported portable `mcpServers` files (`.mcp.json`, `.cursor/mcp.json`). `.vscode/mcp.json` (`servers` key) is not imported. Secrets in headers are not returned; only header names and URL origins are shown. Agent Plugin MCP servers remain listed under `/v1/plugins`.
+      parameters:
+        - in: query
+          name: directory
+          required: false
+          schema: { type: string }
+          description: Absolute or resolvable workspace directory. When set, project-scope and imported servers are included; `project_path` and `import_paths` are reported.
       responses:
         '200':
-          description: User-scoped configured MCP servers.
+          description: Configured MCP servers (user, optional project, and optional project-import scopes).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConfiguredMCPCatalog'
     post:
       operationId: upsertConfiguredMcpServer
-      description: Adds or replaces a user-scoped MCP server (stdio or streamable-http). Does not download packages or run install scripts. Stdio commands must be a bare PATH name or absolute regular file; optional cwd must be an absolute directory. HTTP URLs follow the same origin/header rules as Agent Plugin MCP. Trust is separate (`POST /v1/sessions/{id}/mcp-servers` with `plugin_name=configured`).
+      description: Adds or replaces a configured MCP server (stdio or streamable-http). Default scope is user (`$VEASEL_DATA_DIR/mcp-servers.json`). With `scope=project`, requires `directory` and writes `<directory>/.veasel/mcp-servers.json`. Does not download packages or run install scripts. Stdio commands must be a bare PATH name or absolute regular file; optional cwd must be an absolute directory. HTTP URLs follow the same origin/header rules as Agent Plugin MCP. Trust is separate (`POST /v1/sessions/{id}/mcp-servers` with `plugin_name=configured`). For a session workspace, a project-scoped server with the same name overrides the user-scoped entry in the plugin catalog.
       requestBody:
         required: true
         content:
@@ -167,7 +173,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConfiguredMCPServerView'
         '400':
-          description: Invalid name, transport, command, URL, or headers.
+          description: Invalid name, transport, command, URL, headers, scope, or directory.
           content:
             application/json:
               schema:
@@ -178,9 +184,18 @@ paths:
         name: name
         required: true
         schema: { type: string }
+      - in: query
+        name: scope
+        required: false
+        schema: { type: string, enum: [user, project], default: user }
+      - in: query
+        name: directory
+        required: false
+        schema: { type: string }
+        description: Required when scope is project.
     patch:
       operationId: patchConfiguredMcpServer
-      description: Enables or disables a configured MCP server without deleting it. Disabled servers are omitted from the plugin catalog and cannot be trusted until re-enabled.
+      description: Enables or disables a configured MCP server without deleting it. Disabled servers are omitted from the plugin catalog and cannot be trusted until re-enabled. Use `scope` and `directory` query parameters for project-scope updates.
       requestBody:
         required: true
         content:
@@ -195,7 +210,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConfiguredMCPServerView'
         '400':
-          description: Invalid name or body.
+          description: Invalid name, body, scope, or directory.
           content:
             application/json:
               schema:
@@ -208,7 +223,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     delete:
       operationId: removeConfiguredMcpServer
-      description: Removes a user-scoped configured MCP server from `$VEASEL_DATA_DIR/mcp-servers.json`. Does not delete PLUGIN_DATA under `plugin-data/configured/<name>`.
+      description: Removes a configured MCP server from user or project scope. Does not delete PLUGIN_DATA under `plugin-data/configured/<name>`.
       responses:
         '200':
           description: Server removed.
@@ -217,7 +232,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ConfiguredMCPRemoval'
         '400':
-          description: Name is invalid.
+          description: Name, scope, or directory is invalid.
           content:
             application/json:
               schema:
@@ -1938,11 +1953,18 @@ components:
       properties:
         scope:
           type: string
-          enum: [user]
-          description: Persistence scope. Currently only user (`$VEASEL_DATA_DIR/mcp-servers.json`).
+          enum: [user, mixed]
+          description: `user` when only `$VEASEL_DATA_DIR/mcp-servers.json` is considered; `mixed` when a workspace directory also contributes project or imported servers.
         path:
           type: string
-          description: Absolute path of the persisted JSON file when available.
+          description: Absolute path of the user-scope JSON file when available.
+        project_path:
+          type: string
+          description: Absolute path of `<workspace>/.veasel/mcp-servers.json` when a workspace directory was supplied.
+        import_paths:
+          type: array
+          items: { type: string }
+          description: Absolute paths of read-only imported portable mcpServers files (`.mcp.json`, `.cursor/mcp.json`) when present.
         servers:
           type: array
           items:
@@ -1952,7 +1974,10 @@ components:
       required: [name, scope, enabled, transport]
       properties:
         name: { type: string }
-        scope: { type: string, enum: [user] }
+        scope: { type: string, enum: [user, project, project-import] }
+        config_file:
+          type: string
+          description: Relative or basename path of the file that defined this server (for example `.veasel/mcp-servers.json` or `.mcp.json`).
         enabled: { type: boolean }
         transport: { type: string, enum: [stdio, streamable-http] }
         command: { type: string }
@@ -1988,6 +2013,8 @@ components:
           type: object
           additionalProperties: { type: string }
         enabled: { type: boolean, default: true }
+        scope: { type: string, enum: [user, project], default: user }
+        directory: { type: string, description: Workspace directory required when scope is project. }
     ConfiguredMCPEnableInput:
       type: object
       required: [enabled]

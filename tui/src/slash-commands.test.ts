@@ -25,10 +25,13 @@ describe("slashSuggestions", () => {
     expect(names("/mcp")[0]).toBe("/mcp")
     expect(names("/mcp c")).toEqual(["/mcp calls", "/mcp call"])
     expect(names("/mcp a")).toEqual(["/mcp add"])
-    expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http"])
+    expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http", "/mcp add project", "/mcp add user"])
     expect(slashSuggestions("/mcp remove ", slashCommands, {
       configuredMcpServers: [{ value: "echo-tools", description: "enabled · stdio" }],
-    }).map((item) => item.insert)).toEqual(["/mcp remove echo-tools"])
+    }).map((item) => item.insert)).toEqual(["/mcp remove user ", "/mcp remove project "])
+    expect(slashSuggestions("/mcp remove user ", slashCommands, {
+      configuredMcpServers: [{ value: "echo-tools", description: "user · enabled · stdio" }],
+    }).map((item) => item.insert)).toEqual(["/mcp remove user echo-tools"])
     expect(names("/con")[0]).toBe("/connect")
     expect(names("/connect")[0]).toBe("/connect")
   })
@@ -75,10 +78,10 @@ describe("slashSuggestions", () => {
       pluginLinks: [{ value: "review-tools", description: "/tmp/review-tools" }],
     }).map((item) => item.insert)).toEqual(["/plugin remove review-tools"])
     expect(names("/mcp add")).toEqual(["/mcp add"])
-    expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http"])
-    expect(slashSuggestions("/mcp remove ", slashCommands, {
-      configuredMcpServers: [{ value: "local-echo", description: "enabled · stdio" }],
-    }).map((item) => item.insert)).toEqual(["/mcp remove local-echo"])
+    expect(names("/mcp add ")).toEqual(["/mcp add stdio", "/mcp add http", "/mcp add project", "/mcp add user"])
+    expect(slashSuggestions("/mcp remove project ", slashCommands, {
+      configuredMcpServers: [{ value: "local-echo", description: "project · enabled · stdio" }],
+    }).map((item) => item.insert)).toEqual(["/mcp remove project local-echo"])
   })
 
   test("returns nothing for an unknown command", () => {

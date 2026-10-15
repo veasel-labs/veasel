@@ -37,14 +37,16 @@ const openai_prompt_cache_default_key = 'veasel'
 const openai_prompt_cache_key_max_bytes = 64
 // Request-side Gemini explicit context cache. When VEASEL_GEMINI_CACHED_CONTENT
 // names a `cachedContents/...` resource and VEASEL_GEMINI_PROMPT_CACHE is not
-// `off`, generateContent requests set `cachedContent` to that name. Veasel does
-// not create/expire caches on the turn path; create payload encoding is
-// fixture-tested separately. Hits still require provider-reported
-// `cachedContentTokenCount`.
+// `off`, generateContent requests set `cachedContent` to that name. Create and
+// expire use explicit management helpers (POST/DELETE .../cachedContents) and
+// are never invoked on the assistant turn path. Hits still require
+// provider-reported `cachedContentTokenCount`.
 const gemini_prompt_cache_env = 'VEASEL_GEMINI_PROMPT_CACHE'
 const gemini_cached_content_env = 'VEASEL_GEMINI_CACHED_CONTENT'
 const gemini_cached_content_prefix = 'cachedContents/'
 const gemini_cached_content_ttl_default = '3600s'
+const max_gemini_cached_content_response_bytes = 256_000
+const gemini_cached_content_http_timeout = 30 * time.second
 
 pub struct ChatMessage {
 pub:
@@ -924,14 +926,24 @@ struct GeminiRequest {
 }
 
 // GeminiCachedContentCreate is the JSON body for POST .../cachedContents.
-// Encoded for fixtures and future management tooling; the turn path does not
-// call create automatically.
+// Encoded for fixtures and create_gemini_cached_content; the turn path does
+// not call create automatically.
 struct GeminiCachedContentCreate {
 	model              string        @[omitempty]
 	display_name       string        @[json: 'displayName'; omitempty]
 	system_instruction GeminiContent @[json: 'systemInstruction']
 	contents           []GeminiContent
 	ttl                string @[omitempty]
+}
+
+// GeminiCachedContentResource is the create/get response subset Veasel keeps.
+struct GeminiCachedContentResource {
+	name         string
+	model        string @[omitempty]
+	display_name string @[json: 'displayName'; omitempty]
+	expire_time  string @[json: 'expireTime'; omitempty]
+	create_time  string @[json: 'createTime'; omitempty]
+	update_time  string @[json: 'updateTime'; omitempty]
 }
 
 struct GeminiToolGroup {
@@ -1638,6 +1650,111 @@ fn build_gemini_cached_content_create(model string, display_name string, system 
 		}
 		contents:           contents
 		ttl:                normalize_gemini_cached_content_ttl(ttl)
+	}
+}
+
+fn gemini_cached_content_resource_url(base_url string, name string) !string {
+	normalized := normalize_gemini_cached_content_name(name)!
+	id := normalized[gemini_cached_content_prefix.len..]
+	return '${base_url}/cachedContents/${urllib.path_escape(id)}'
+}
+
+fn parse_gemini_cached_content_resource(body string) !GeminiCachedContentResource {
+	if body.len == 0 || body.len > max_gemini_cached_content_response_bytes {
+		return error('gemini cached content response is invalid')
+	}
+	resource := json2.decode[GeminiCachedContentResource](body) or {
+		return error('gemini cached content response is invalid')
+	}
+	name := normalize_gemini_cached_content_name(resource.name) or {
+		return error('gemini cached content response name is invalid')
+	}
+	return GeminiCachedContentResource{
+		name:         name
+		model:        resource.model.trim_space()
+		display_name: resource.display_name.trim_space()
+		expire_time:  resource.expire_time.trim_space()
+		create_time:  resource.create_time.trim_space()
+		update_time:  resource.update_time.trim_space()
+	}
+}
+
+fn gemini_cached_content_headers(api_key string) !http.Header {
+	if api_key.len == 0 {
+		return error('gemini api key is required')
+	}
+	if provider_text_has_unsafe_controls(api_key) {
+		return error('gemini api key is invalid')
+	}
+	mut headers := http.new_header(key: .content_type, value: 'application/json')
+	headers.add_custom('Accept', 'application/json')!
+	headers.add_custom('x-goog-api-key', api_key)!
+	return headers
+}
+
+// create_gemini_cached_content POSTs CachedContent to the provider. Callers
+// must pass an explicit ModelConfig; the assistant turn path never invokes this.
+fn create_gemini_cached_content(config ModelConfig, body GeminiCachedContentCreate) !GeminiCachedContentResource {
+	if config.provider != 'gemini' {
+		return error('gemini cached content requires the gemini provider')
+	}
+	if body.model.trim_space().len == 0 {
+		return error('gemini cached content model is required')
+	}
+	base := secure_endpoint(config.base_url)!
+	url := '${base}/cachedContents'
+	verify := provider_tls_verify_path(url)!
+	headers := gemini_cached_content_headers(config.api_key)!
+	payload := json2.encode[GeminiCachedContentCreate](body)
+	if payload.len > max_chat_input_bytes {
+		return error('gemini cached content create body exceeds the size limit')
+	}
+	response := http.fetch(
+		method:               .post
+		url:                  url
+		header:               headers
+		data:                 payload
+		read_timeout:         gemini_cached_content_http_timeout
+		write_timeout:        10 * time.second
+		max_retries:          1
+		allow_redirect:       false
+		stop_receiving_limit: max_gemini_cached_content_response_bytes + 1
+		validate:             true
+		verify:               verify
+	) or { return error('gemini cached content create failed') }
+	if response.status_code < 200 || response.status_code >= 300 {
+		return error('gemini cached content create returned HTTP ${response.status_code}')
+	}
+	if response.body.len > max_gemini_cached_content_response_bytes {
+		return error('gemini cached content create response is too large')
+	}
+	return parse_gemini_cached_content_resource(response.body)!
+}
+
+// expire_gemini_cached_content DELETEs a CachedContent resource. Callers must
+// pass an explicit ModelConfig; the assistant turn path never invokes this.
+fn expire_gemini_cached_content(config ModelConfig, name string) ! {
+	if config.provider != 'gemini' {
+		return error('gemini cached content requires the gemini provider')
+	}
+	base := secure_endpoint(config.base_url)!
+	url := gemini_cached_content_resource_url(base, name)!
+	verify := provider_tls_verify_path(url)!
+	headers := gemini_cached_content_headers(config.api_key)!
+	response := http.fetch(
+		method:               .delete
+		url:                  url
+		header:               headers
+		read_timeout:         gemini_cached_content_http_timeout
+		write_timeout:        10 * time.second
+		max_retries:          1
+		allow_redirect:       false
+		stop_receiving_limit: max_gemini_cached_content_response_bytes + 1
+		validate:             true
+		verify:               verify
+	) or { return error('gemini cached content expire failed') }
+	if response.status_code < 200 || response.status_code >= 300 {
+		return error('gemini cached content expire returned HTTP ${response.status_code}')
 	}
 }
 

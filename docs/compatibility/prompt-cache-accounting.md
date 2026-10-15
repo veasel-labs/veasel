@@ -99,9 +99,13 @@ For catalog provider `gemini`, when `VEASEL_GEMINI_CACHED_CONTENT` is set to a
 
 Capability `provider.gemini.prompt_cache` appears only when a resource name is
 configured and not disabled. Veasel does **not** create or expire Gemini caches
-on the assistant turn path; `build_gemini_cached_content_create` encodes the
-`POST .../cachedContents` body for fixtures and future management tooling.
-Hits remain provider-reported via `cachedContentTokenCount` only.
+on the assistant turn path. Explicit management helpers
+`create_gemini_cached_content` (`POST .../cachedContents`) and
+`expire_gemini_cached_content` (`DELETE .../cachedContents/{id}`) perform the
+live HTTP calls against the configured Gemini base URL; fixture evidence is in
+`provider_gemini_cache_test.v` (loopback HTTP server) plus the create-body
+encoder in `provider_cache_test.v`. Hits remain provider-reported via
+`cachedContentTokenCount` only.
 
 No OpenCode source was copied. Veasel does **not** invent % savings or dollar
 amounts from cache counters. Enabling request markers does not guarantee cache
@@ -114,7 +118,7 @@ hits; hits appear only when the provider reports cache usage fields.
 | Request-side Anthropic `cache_control` | Shipped (default auto; env opt-out) |
 | OpenAI `prompt_cache_key` / `prompt_cache_retention` | Shipped for `openai` + `openai-responses` (default auto; env opt-out). Keys with C0/DEL fall back to `veasel`. Gemini `cachedContent` names reject all C0/DEL (not only NUL/CR/LF). |
 | OpenAI GPT-5.6+ `prompt_cache_options` / breakpoints | Not implemented |
-| Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire management is not on the turn path (create body encoder fixture-tested) |
+| Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire are explicit helpers (not turn path), fixture-tested over loopback HTTP |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |
 | Models.dev-priced USD cost | Still unavailable |
 | Reasoning-token split | Shipped as provider-reported `reasoning_tokens` / `reasoning_reported` (OpenAI Chat `completion_tokens_details.reasoning_tokens`, OpenAI Responses `output_tokens_details.reasoning_tokens`, Gemini `thoughtsTokenCount`); persisted on operations and session usage; never invented when keys are absent |

@@ -247,12 +247,22 @@ fn apply_mcp_oauth_tokens_to_credential(mut credentials MCPCredentialState, name
 }
 
 fn complete_mcp_oauth_authorization_code(mut pending MCPOAuthPendingState, mut credentials MCPCredentialState,
-	credential_name string, callback MCPOAuthCallbackResult) !MCPCredentialView {
+	mut refresh MCPOAuthRefreshState, credential_name string, callback MCPOAuthCallbackResult) !MCPCredentialView {
 	if !is_valid_mcp_credential_name(credential_name) {
 		return error('MCP credential name is invalid')
 	}
 	session := pending.take(callback.state)!
 	code := mcp_oauth_callback_matches_session(session, callback)!
 	tokens := exchange_mcp_oauth_authorization_code(session, code)!
-	return apply_mcp_oauth_tokens_to_credential(mut credentials, credential_name, tokens)!
+	view := apply_mcp_oauth_tokens_to_credential(mut credentials, credential_name, tokens)!
+	if tokens.refresh_token.len > 0 {
+		refresh.put(credential_name, MCPOAuthRefreshRecord{
+			refresh_token:  tokens.refresh_token
+			token_endpoint: session.token_endpoint
+			client_id:      session.client_id
+			resource:       session.resource
+			scope:          if tokens.scope.len > 0 { tokens.scope } else { session.scope }
+		})!
+	}
+	return view
 }

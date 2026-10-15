@@ -30,6 +30,8 @@ function isLightShellBackground(hex: string): boolean {
 
 // Colors for DiffRenderable so split view tracks /theme without a custom SyntaxStyle
 // rewrite. Dark themes keep charcoal-adjacent washes; light themes use pale fills.
+// `*ContentBg` tints the code column separately from the line-number gutter so
+// hunks read with clearer depth; selection tracks brand/input tokens.
 export function diffRenderableTheme(theme: Theme): {
   fg: string
   addedSignColor: string
@@ -38,6 +40,11 @@ export function diffRenderableTheme(theme: Theme): {
   addedBg: string
   removedBg: string
   contextBg: string
+  addedContentBg: string
+  removedContentBg: string
+  contextContentBg: string
+  selectionBg: string
+  selectionFg: string
   showLineNumbers: boolean
   syncScroll: boolean
   wrapMode: "none"
@@ -51,6 +58,11 @@ export function diffRenderableTheme(theme: Theme): {
     addedBg: light ? "#dcfce7" : "#1a3328",
     removedBg: light ? "#fee2e2" : "#33201f",
     contextBg: "transparent",
+    addedContentBg: light ? "#bbf7d0" : "#243f34",
+    removedContentBg: light ? "#fecaca" : "#3d2624",
+    contextContentBg: light ? theme.inputBg : theme.panelBg,
+    selectionBg: light ? theme.inputFocusBg || theme.inputBg : theme.inputBg,
+    selectionFg: theme.inputText,
     showLineNumbers: true,
     syncScroll: true,
     wrapMode: "none",

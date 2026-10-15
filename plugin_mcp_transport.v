@@ -276,6 +276,12 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 			connection.client.close()
 			continue
 		}
+		// Best-effort Streamable HTTP GET notification stream. Failures are
+		// non-fatal; notifications stay off the RPC pending queue.
+		if !isnil(connection.http_transport) {
+			mut http_transport := connection.http_transport
+			_ := http_transport.listen_notifications() or { 0 }
+		}
 		connection_index := connections.len
 		mut connection_has_tools := false
 		mut cursor := ''

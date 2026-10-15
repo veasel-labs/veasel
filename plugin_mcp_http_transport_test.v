@@ -279,7 +279,8 @@ fn test_plugin_mcp_http_get_notification_stream_appends_pending_messages() {
 	}) or { panic(err) }
 	count := transport.listen_notifications() or { panic(err) }
 	assert count == 1
-	message := transport.receive() or { panic(err) }
+	assert transport.pending.len == 0
+	message := transport.receive_notification() or { panic(err) }
 	assert message.contains('notifications/message')
 	assert message.contains('fixture-notification')
 

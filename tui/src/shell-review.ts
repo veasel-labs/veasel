@@ -6,9 +6,34 @@ export type BoundedBlock = {
 
 export type ApprovedShellSandboxCapability = "bubblewrap" | "seatbelt" | "windows" | null
 
+export type ReviewSandboxPreview = {
+  mode: "off" | "auto" | "require" | string
+  will_wrap: boolean
+  backend: "none" | "bubblewrap" | "seatbelt" | "windows" | string
+}
+
 // Leaves the safety warning and the approve instruction on the first screen.
 export function shellReviewLineBudget(terminalRows: number): number {
   return Math.max(6, terminalRows - 20)
+}
+
+/** Prefer the per-response preview from the API when present. */
+export function sandboxCapabilityFromPreview(
+  preview: ReviewSandboxPreview | undefined,
+  fallback: ApprovedShellSandboxCapability = null,
+): ApprovedShellSandboxCapability {
+  if (!preview) return fallback
+  if (!preview.will_wrap) return null
+  if (preview.backend === "bubblewrap" || preview.backend === "seatbelt" || preview.backend === "windows") {
+    return preview.backend
+  }
+  return fallback
+}
+
+export function formatSandboxPreviewLine(preview: ReviewSandboxPreview | undefined, label = "Sandbox"): string | null {
+  if (!preview) return null
+  const wrap = preview.will_wrap ? `will wrap (${preview.backend})` : "will not wrap"
+  return `${label}: mode ${preview.mode} · ${wrap}`
 }
 
 function textLines(text: string): string[] {
@@ -53,18 +78,23 @@ export function formatShellReview(input: {
   pending: boolean
   output: string
   maxLines: number
+  sandbox?: ReviewSandboxPreview
   sandboxCapability?: ApprovedShellSandboxCapability
   /** @deprecated Prefer sandboxCapability. */
   bubblewrapCapable?: boolean
 }): string {
-  const capability: ApprovedShellSandboxCapability = input.sandboxCapability
-    ?? (input.bubblewrapCapable === true ? "bubblewrap" : null)
+  const capability = sandboxCapabilityFromPreview(
+    input.sandbox,
+    input.sandboxCapability ?? (input.bubblewrapCapable === true ? "bubblewrap" : null),
+  )
   const command = formatBoundedBlock(input.command, input.maxLines)
   const parts = [
     `CWD: ${input.cwd} · timeout ${input.timeoutSeconds}s`,
     `Runner: ${input.runner} · non-interactive stdin`,
-    approvedShellSandboxWarning(capability),
   ]
+  const previewLine = formatSandboxPreviewLine(input.sandbox)
+  if (previewLine) parts.push(previewLine)
+  parts.push(approvedShellSandboxWarning(capability))
   if (input.pending) parts.push(`Type /command approve ${input.id} or /command reject ${input.id}.`)
   if (command.text) parts.push(command.text)
   if (!input.pending && input.output) {

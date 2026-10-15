@@ -715,6 +715,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 			output:          result.output
 			created_at:      proposal.created_at
 			updated_at:      proposal.updated_at
+			sandbox:         shell_review_sandbox_preview()
 		})
 	}
 	return encode_agent_tool_error('Tool is not available under autonomous benchmark policy.')

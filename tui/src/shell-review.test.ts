@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { approvedShellSandboxWarning, formatBoundedBlock, formatShellReview, shellReviewLineBudget } from "./shell-review"
+import {
+  approvedShellSandboxWarning,
+  formatBoundedBlock,
+  formatShellReview,
+  sandboxCapabilityFromPreview,
+  shellReviewLineBudget,
+} from "./shell-review"
 
 function longCommand(): string {
   const lines = Array.from({ length: 30 }, (_, index) => `echo step ${String(index + 1).padStart(2, "0")}`)
@@ -102,5 +108,25 @@ describe("formatShellReview", () => {
     const text = formatBoundedBlock(output, 6)
     expect(text.text.startsWith("Showing 6 of 13 lines.")).toBe(true)
     expect(text.text).not.toContain("TAIL")
+  })
+
+  test("prefers the API sandbox preview over the session capability fallback", () => {
+    expect(sandboxCapabilityFromPreview({ mode: "off", will_wrap: false, backend: "none" }, "bubblewrap")).toBeNull()
+    expect(sandboxCapabilityFromPreview({ mode: "auto", will_wrap: true, backend: "seatbelt" }, "bubblewrap")).toBe("seatbelt")
+    const text = formatShellReview({
+      command: "echo hi",
+      cwd: ".",
+      timeoutSeconds: 10,
+      runner: "/bin/sh",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+      output: "",
+      maxLines: 20,
+      sandbox: { mode: "auto", will_wrap: true, backend: "bubblewrap" },
+      sandboxCapability: null,
+    })
+    expect(text).toContain("Sandbox: mode auto · will wrap (bubblewrap)")
+    expect(text).toContain("inside Bubblewrap")
+    expect(text).not.toContain("without an OS sandbox")
   })
 })

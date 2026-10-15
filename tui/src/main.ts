@@ -413,6 +413,12 @@ type SessionPluginMCPServer = {
   server_name: string
 }
 
+type ReviewSandboxPreview = {
+  mode: string
+  will_wrap: boolean
+  backend: string
+}
+
 type PluginMCPToolCallApproval = {
   id: string
   operation_id: string
@@ -424,6 +430,7 @@ type PluginMCPToolCallApproval = {
   reviewed_at: string
   created_at: string
   updated_at: string
+  stdio_sandbox?: ReviewSandboxPreview
 }
 
 type PluginMCPToolCallSummary = Omit<PluginMCPToolCallApproval, "arguments_json"> & {
@@ -450,6 +457,7 @@ type ShellCommandSummary = {
   output: string
   created_at: string
   updated_at: string
+  sandbox?: ReviewSandboxPreview
 }
 
 const port = process.env.VEASEL_PORT ?? "4097"
@@ -2043,7 +2051,7 @@ async function showMcpServers(filter = "") {
     const importPaths = configured.import_paths?.length
       ? `\nImported project files: ${configured.import_paths.map(safeTerminalText).join(", ")}`
       : ""
-    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nHTTP auth: /mcp credentials · /mcp credential set|remove · /mcp oauth authorize|complete|refresh (header names only; token values never shown; --listen stays headless)\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio is dangerous and unsandboxed by default (full OS privileges). On Linux set VEASEL_MCP_STDIO_SANDBOX=auto|require to wrap with Bubblewrap when bwrap is present (capability mcp.stdio.sandbox.bubblewrap). Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
+    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nHTTP auth: /mcp credentials · /mcp credential set|remove · /mcp oauth authorize|complete|refresh (header names only; token values never shown; --listen stays headless)\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio is dangerous and unsandboxed by default (full OS privileges). Set VEASEL_MCP_STDIO_SANDBOX=auto|require to wrap with Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer when available (capabilities mcp.stdio.sandbox.* only when wrap will run). Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
@@ -2330,6 +2338,7 @@ async function showMcpToolCall(callId: string) {
       pending: call.status === "pending",
       argumentsText: args,
       maxLines: mcpReviewLineBudget(process.stdout.rows ?? 40),
+      stdioSandbox: call.stdio_sandbox,
     })
     const reviewState: ActiveReview = { kind: "mcp", id: call.id, pending: call.status === "pending" }
     setActiveReview(reviewState)
@@ -2797,6 +2806,7 @@ async function showShellCommand(commandId: string) {
       pending: item.status === "pending",
       output: safeTerminalText(item.output),
       maxLines: shellReviewLineBudget(process.stdout.rows ?? 40),
+      sandbox: item.sandbox,
       sandboxCapability: shellSandboxCapability,
     })
     const reviewState: ActiveReview = { kind: "command", id: item.id, pending: item.status === "pending" }

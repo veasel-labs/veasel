@@ -788,6 +788,26 @@ def run_core_suite() -> None:
             raise AssertionError(f"Tab did not insert @src/main.ts\n--- screen ---\n{visible}")
         screen.send("\x15", 0.35)  # Ctrl+U clears the draft (keep Esc for leave-after-cancel)
         screen.wait_for("/skills", 4)
+        # $ skill autocomplete against the mocked /v1/plugins catalog.
+        screen.send("$rev", 0.7)
+        screen.wait_for("── skills ──", 6)
+        screen.wait_for("$review-tools/review", 4)
+        screen.wait_for("$ skills", 4)  # context footer while the skill menu is open
+        screen.send("\t", 0.45)
+        visible = screen.terminal.text()
+        if "$review-tools/review" not in visible:
+            raise AssertionError(f"Tab did not insert $review-tools/review\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.35)  # Ctrl+U clears the draft
+        # Fuzzy skill name: one typo still ranks the intended Skill.
+        screen.send("$reveiw", 0.7)
+        screen.wait_for("$review-tools/review", 4)
+        screen.wait_for("close match", 4)
+        screen.send("\t", 0.45)
+        visible = screen.terminal.text()
+        if "$review-tools/review" not in visible:
+            raise AssertionError(f"Tab did not insert $review-tools/review\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.35)  # Ctrl+U clears the draft (keep Esc for leave-after-cancel)
+        screen.wait_for("/skills", 4)
         screen.send("/", 0.6)
         screen.wait_for("── guide ──")
         screen.wait_for("── setup ──")

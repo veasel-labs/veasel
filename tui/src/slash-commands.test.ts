@@ -76,8 +76,18 @@ describe("slashSuggestions", () => {
 
   test("suggests theme ids for /theme", () => {
     expect(names("/theme")[0]).toBe("/theme")
-    expect(names("/theme ")).toEqual(["/theme mint", "/theme ember", "/theme slate", "/theme mono", "/theme aurora"])
+    expect(names("/theme ")).toEqual([
+      "/theme mint",
+      "/theme ember",
+      "/theme slate",
+      "/theme mono",
+      "/theme aurora",
+      "/theme day",
+      "/theme contrast",
+    ])
     expect(names("/theme au")).toEqual(["/theme aurora"])
+    expect(names("/theme da")).toEqual(["/theme day"])
+    expect(names("/theme co")).toEqual(["/theme contrast"])
   })
 
   test("suggests subcommands and filters contextual values", () => {

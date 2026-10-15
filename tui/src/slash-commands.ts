@@ -66,7 +66,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/help advanced", category: "guide", description: "Show full command syntax" },
   { name: "/connect", category: "setup", description: "Authenticate: paste an API key, save credentials, and pick a model" },
   { name: "/models", category: "setup", description: "Configure provider, model, endpoint, and output budget" },
-  { name: "/theme", category: "setup", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora)", usage: "/theme <id>" },
+  { name: "/theme", category: "setup", description: "List or switch TUI color themes (mint, ember, slate, mono, aurora, day, contrast)", usage: "/theme <id>" },
   { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter (all tokens must match)" },
   { name: "/skill", category: "skills", description: "Turn a Skill on or off", usage: "/skill on|off <source>/<skill>" },
   { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages; add text to filter" },
@@ -111,6 +111,8 @@ const themeChoices: SlashArgument[] = [
   { value: "slate", description: "Cool blue-gray workspace with steel accents" },
   { value: "mono", description: "High-contrast black and white with green only for status" },
   { value: "aurora", description: "Deep teal field with cyan highlights" },
+  { value: "day", description: "Light panels with mint accents for bright terminals" },
+  { value: "contrast", description: "Near-black on white with strong status hues for high-contrast displays" },
 ]
 
 const argumentSpecs: Record<string, ArgSpec[]> = {

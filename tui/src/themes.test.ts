@@ -22,11 +22,33 @@ describe("TUI themes", () => {
   })
 
   test("exposes a fixed set of selectable theme ids", () => {
-    expect(Object.keys(themes).sort()).toEqual(["aurora", "ember", "mint", "mono", "slate"])
+    expect(Object.keys(themes).sort()).toEqual([
+      "aurora",
+      "contrast",
+      "day",
+      "ember",
+      "mint",
+      "mono",
+      "slate",
+    ])
     expect(isThemeId("mint")).toBe(true)
+    expect(isThemeId("day")).toBe(true)
+    expect(isThemeId("contrast")).toBe(true)
     expect(isThemeId("neon")).toBe(false)
     expect(resolveTheme("ember").id).toBe("ember")
     expect(resolveTheme("missing").id).toBe("mint")
+  })
+
+  test("ships a light day theme and a high-contrast white theme", () => {
+    expect(themes.day.shellBg).toBe("#f4f7f5")
+    expect(themes.day.panelBg).toBe("#ffffff")
+    expect(themes.day.brand).toBe("#0f6b4c")
+    expect(themes.day.inputText).toBe("#121a16")
+    expect(themes.contrast.shellBg).toBe("#ffffff")
+    expect(themes.contrast.body).toBe("#000000")
+    expect(themes.contrast.panelBorder).toBe("#000000")
+    expect(themes.contrast.statusOk).toBe("#006600")
+    expect(themes.contrast.statusError).toBe("#990000")
   })
 
   test("loads the saved theme id and falls back safely", () => {

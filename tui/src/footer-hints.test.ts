@@ -17,6 +17,7 @@ test("session footer surfaces reviews and the same discovery commands", () => {
     expect(sessionFooterHint).toContain(command)
   }
   expect(sessionFooterHint).toContain("Ctrl+R")
-  expect(sessionFooterHint).toContain("Esc home")
+  expect(sessionFooterHint).toContain("Ctrl+Y")
+  expect(sessionFooterHint).toContain("Esc")
   expect(sessionFooterHint).toContain("PgUp/PgDn")
 })

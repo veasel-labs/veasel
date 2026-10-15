@@ -203,13 +203,14 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   directory.   Named Streamable HTTP credentials are available via `/v1/mcp-credentials`
   (`mcp.credentials`). Stdio emits `notifications/cancelled` when a turn is
   cancelled mid-call; Streamable HTTP cancels mid-body via progress callbacks.
-  Remaining gaps (interactive OAuth dance, GET notification streams,
-  TTFB-before-progress cancel) are tracked in
+  Remaining gaps (interactive OAuth dance, TTFB-before-progress cancel) are
+  tracked in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
   Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
   including RFC 9728 `resource_metadata`, then best-effort fetch protected-
   resource metadata (authorization_servers/scopes) without forwarding MCP
-  headers; the authorization-code dance remains open.
+  headers; GET notification streams append SSE `message` events into pending
+  with mid-stream cancel. The authorization-code dance remains open.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
@@ -318,7 +319,8 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   /v1/sessions/{id}/workspace/map`, capabilities `workspace.repository_map` /
   `session.repository_map`, and `session.repository_map` events. This is not
   tree-sitter/PageRank parity with Aider and does not claim provider token or
-  cost savings. Prompt-cache accounting remains open.
+  cost savings. Provider-reported prompt-cache accounting and request markers
+  are shipped; invented cost/savings remain refused.
 - [x] Start or reuse a healthy local backend when `veasel` or `veasel tui` is
   invoked, then open the TUI.
 - [ ] Complete cross-platform validation of provider settings and automatic

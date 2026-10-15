@@ -93,6 +93,10 @@ function buildTranscriptStyles(active: Theme): Record<TranscriptTone, (text: str
     userText: (text) => fg(active.userText)(text),
     assistantLabel: (text) => fg(active.assistantLabel)(bold(text)),
     assistantText: (text) => fg(active.assistantText)(text),
+    systemLabel: (text) => fg(active.meta)(bold(text)),
+    systemText: (text) => fg(active.meta)(text),
+    toolLabel: (text) => fg(active.statusWarn)(bold(text)),
+    toolText: (text) => fg(active.notice)(text),
     status: (text) => fg(active.status)(text),
     hint: (text) => fg(active.hint)(text),
   }

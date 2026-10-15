@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { assistantLabel, noticeSegments, transcriptPlainText, transcriptSegments, userLabel } from "./transcript"
+import {
+  assistantLabel,
+  noticeSegments,
+  streamingCursor,
+  systemLabel,
+  toolLabel,
+  transcriptPlainText,
+  transcriptSegments,
+  userLabel,
+} from "./transcript"
 
 const session = { title: "fix tests", directory: "/work/app" }
 
@@ -21,19 +30,29 @@ describe("transcriptSegments", () => {
     )
   })
 
-  test("marks in-flight turns with a status", () => {
+  test("marks in-flight turns with a status and a streaming cursor", () => {
     const text = transcriptPlainText(transcriptSegments({
       messages: [],
       pendingUserMessage: "add a test",
       streamingText: "Reading",
       streaming: true,
     }))
-    expect(text).toBe("● YOU  ·  sending\nadd a test\n\n◆ VEASEL  ·  streaming…\nReading")
+    expect(text).toBe(`● YOU  ·  sending\nadd a test\n\n◆ VEASEL  ·  streaming…\nReading${streamingCursor}`)
   })
 
-  test("labels an interrupted response as partial", () => {
+  test("shows a cursor while streaming before the first token arrives", () => {
+    const text = transcriptPlainText(transcriptSegments({
+      messages: [],
+      streamingText: "",
+      streaming: true,
+    }))
+    expect(text).toBe(`◆ VEASEL  ·  streaming…\n${streamingCursor}`)
+  })
+
+  test("labels an interrupted response as partial without a cursor", () => {
     const segments = transcriptSegments({ messages: [], streamingText: "half", streaming: false })
     expect(segments).toContainEqual({ text: "  ·  partial response", tone: "status" })
+    expect(transcriptPlainText(segments)).toBe("◆ VEASEL  ·  partial response\nhalf")
   })
 
   test("shows the empty-state hint and the older-history hint", () => {
@@ -64,8 +83,17 @@ describe("transcriptSegments", () => {
     expect(transcriptPlainText(segments)).toBe("VEASEL CODE / QUICK HELP\n\n")
   })
 
-  test("treats any non-assistant role as the user", () => {
-    const segments = transcriptSegments({ messages: [{ role: "system", content: "x" }] })
-    expect(segments[0]).toEqual({ text: userLabel, tone: "userLabel" })
+  test("keeps system and tool roles distinct from the operator", () => {
+    const segments = transcriptSegments({
+      messages: [
+        { role: "system", content: "workspace tools available" },
+        { role: "tool", content: "read src/main.v" },
+      ],
+    })
+    expect(segments).toContainEqual({ text: systemLabel, tone: "systemLabel" })
+    expect(segments).toContainEqual({ text: "\nworkspace tools available", tone: "systemText" })
+    expect(segments).toContainEqual({ text: toolLabel, tone: "toolLabel" })
+    expect(segments).toContainEqual({ text: "\nread src/main.v", tone: "toolText" })
+    expect(transcriptPlainText(segments)).not.toContain(userLabel)
   })
 })

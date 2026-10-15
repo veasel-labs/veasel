@@ -599,6 +599,8 @@ def main() -> None:
         state["next_message"] = "cancel"
         screen.send("stop this\r", 0.45)
         screen.wait_for("thinking")
+        screen.wait_for("streaming")
+        screen.wait_for("█")
         time.sleep(0.35)
         screen.send("\x1b", 0.4)
         screen.wait_for("Turn cancelled.", 6)

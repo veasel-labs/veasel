@@ -36,6 +36,18 @@ pub:
 	bearer_methods_supported []string
 }
 
+// MCPAuthorizationServerMetadata is the subset of RFC 8414 authorization
+// server metadata used for credential binding. No tokens are requested.
+pub struct MCPAuthorizationServerMetadata {
+pub:
+	issuer                           string
+	authorization_endpoint           string
+	token_endpoint                   string
+	registration_endpoint            string
+	scopes_supported                 []string
+	code_challenge_methods_supported []string
+}
+
 fn mcp_auth_challenge_from_params(scheme string, params map[string]string) MCPAuthChallenge {
 	mut realm := ''
 	mut scope := ''
@@ -197,8 +209,96 @@ fn parse_mcp_oauth_url_list(fields map[string]json2.Any, key string, max_items i
 }
 
 fn fetch_mcp_protected_resource_metadata(url string) !MCPProtectedResourceMetadata {
+	body := fetch_mcp_oauth_json_document(url, 'resource metadata')!
+	return parse_mcp_protected_resource_metadata(body)!
+}
+
+fn mcp_authorization_server_metadata_summary(metadata MCPAuthorizationServerMetadata) string {
+	mut parts := []string{cap: 5}
+	if metadata.issuer.len > 0 {
+		parts << 'issuer=${metadata.issuer}'
+	}
+	if metadata.authorization_endpoint.len > 0 {
+		parts << 'authorization_endpoint=${metadata.authorization_endpoint}'
+	}
+	if metadata.token_endpoint.len > 0 {
+		parts << 'token_endpoint=${metadata.token_endpoint}'
+	}
+	if metadata.registration_endpoint.len > 0 {
+		parts << 'registration_endpoint=${metadata.registration_endpoint}'
+	}
+	if metadata.code_challenge_methods_supported.len > 0 {
+		parts << 'code_challenge_methods=${metadata.code_challenge_methods_supported.join(',')}'
+	}
+	return parts.join(' ')
+}
+
+fn mcp_oauth_authorization_server_metadata_url(issuer string) ?string {
+	validated := validate_mcp_oauth_resource_metadata_url(issuer) or { return none }
+	parsed := urllib.parse(validated) or { return none }
+	path := parsed.path.trim_right('/')
+	well_known := '/.well-known/oauth-authorization-server'
+	mut built := '${parsed.scheme}://${parsed.host}'
+	if path.len == 0 || path == '/' {
+		built += well_known
+	} else {
+		built += well_known + path
+	}
+	return validate_mcp_oauth_resource_metadata_url(built)
+}
+
+fn parse_mcp_authorization_server_metadata(body string) !MCPAuthorizationServerMetadata {
+	if body.len == 0 || body.len > max_mcp_oauth_metadata_bytes {
+		return error('MCP OAuth authorization server metadata response is invalid')
+	}
+	fields := json2.decode[map[string]json2.Any](body) or {
+		return error('MCP OAuth authorization server metadata JSON is invalid')
+	}
+	mut issuer := ''
+	if value := fields['issuer'] {
+		if value is string {
+			if validated := validate_mcp_oauth_resource_metadata_url(value as string) {
+				issuer = validated
+			}
+		}
+	}
+	authorization_endpoint := mcp_oauth_optional_https_url(fields, 'authorization_endpoint')
+	token_endpoint := mcp_oauth_optional_https_url(fields, 'token_endpoint')
+	registration_endpoint := mcp_oauth_optional_https_url(fields, 'registration_endpoint')
+	scopes_supported := parse_mcp_oauth_string_list(fields, 'scopes_supported', max_mcp_oauth_metadata_scopes)
+	code_challenge := parse_mcp_oauth_string_list(fields, 'code_challenge_methods_supported', 8)
+	if issuer.len == 0 && authorization_endpoint.len == 0 && token_endpoint.len == 0 {
+		return error('MCP OAuth authorization server metadata is empty')
+	}
+	return MCPAuthorizationServerMetadata{
+		issuer:                           issuer
+		authorization_endpoint:           authorization_endpoint
+		token_endpoint:                   token_endpoint
+		registration_endpoint:            registration_endpoint
+		scopes_supported:                 scopes_supported
+		code_challenge_methods_supported: code_challenge
+	}
+}
+
+fn mcp_oauth_optional_https_url(fields map[string]json2.Any, key string) string {
+	value := fields[key] or { return '' }
+	if value !is string {
+		return ''
+	}
+	return validate_mcp_oauth_resource_metadata_url(value as string) or { '' }
+}
+
+fn fetch_mcp_authorization_server_metadata(issuer string) !MCPAuthorizationServerMetadata {
+	metadata_url := mcp_oauth_authorization_server_metadata_url(issuer) or {
+		return error('MCP OAuth authorization server issuer is invalid')
+	}
+	body := fetch_mcp_oauth_json_document(metadata_url, 'authorization server metadata')!
+	return parse_mcp_authorization_server_metadata(body)!
+}
+
+fn fetch_mcp_oauth_json_document(url string, label string) !string {
 	validated := validate_mcp_oauth_resource_metadata_url(url) or {
-		return error('MCP OAuth resource metadata URL is invalid')
+		return error('MCP OAuth ${label} URL is invalid')
 	}
 	mut header := http.new_header()
 	header.set(.accept, 'application/json')
@@ -213,14 +313,14 @@ fn fetch_mcp_protected_resource_metadata(url string) !MCPProtectedResourceMetada
 		write_timeout:        mcp_oauth_metadata_timeout
 		stop_copying_limit:   max_mcp_oauth_metadata_bytes + 1
 		stop_receiving_limit: max_mcp_oauth_metadata_bytes + 1
-	) or { return error('MCP OAuth resource metadata request failed') }
+	) or { return error('MCP OAuth ${label} request failed') }
 	if response.status_code < 200 || response.status_code >= 300 {
-		return error('MCP OAuth resource metadata returned HTTP ${response.status_code}')
+		return error('MCP OAuth ${label} returned HTTP ${response.status_code}')
 	}
 	if response.body.len > max_mcp_oauth_metadata_bytes {
-		return error('MCP OAuth resource metadata response is too large')
+		return error('MCP OAuth ${label} response is too large')
 	}
-	return parse_mcp_protected_resource_metadata(response.body)!
+	return response.body
 }
 
 fn split_www_authenticate_challenges(header string) []string {

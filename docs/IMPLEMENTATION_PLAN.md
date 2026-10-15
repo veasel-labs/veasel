@@ -27,8 +27,9 @@ and TUI bundle for x64 Linux, macOS, and Windows and publishes verified main
 builds automatically. Standalone interactive TUI PTY smoke runs on Linux and
 macOS in CI; Windows interactive validation still needs a ConPTY harness (see
 [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md)).
-Measured performance baselines remain open; see [`RESEARCH.md`](RESEARCH.md)
-and [`VLIB_REUSE.md`](VLIB_REUSE.md).
+Linux TUI CLI + PTY-connected baselines are recorded there; macOS/Windows
+baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
+[`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ## Milestones and backlog
 
@@ -448,8 +449,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   Windows in CI and attach verified artifacts to automated prereleases.
 - [ ] Validate interactive TUI behavior on each platform and establish
   measured performance baselines. Linux + macOS standalone PTY smoke is in
-  CI; Windows remains a ConPTY checklist in
+  CI; one Linux workstation CLI/PTY baseline is recorded in
   [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
+  Windows remains a ConPTY checklist; macOS/Windows timing baselines are open.
 
 ## Initial compatibility target
 

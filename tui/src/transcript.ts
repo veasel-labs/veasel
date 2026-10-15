@@ -47,10 +47,13 @@ export type TranscriptInput = {
   streaming?: boolean
   // Override the in-flight cursor glyph (reduced-motion / blink frames).
   streamingCursor?: string
-  // "external" keeps the streaming assistant label in the TextChunk transcript
-  // while MarkdownRenderable owns the live body (follow mode). "inline" is the
-  // classic TextChunk markdown-tone path used when scrolled or offline.
+  // "external" keeps assistant labels in the TextChunk transcript while
+  // MarkdownRenderable owns the body (follow-mode live stream and/or the
+  // latest completed assistant). "inline" is the TextChunk tone path when scrolled.
   streamingBodyMode?: "inline" | "external"
+  // When "external-latest", omit only the last completed assistant body (label stays).
+  // Streaming omission still follows streamingBodyMode.
+  assistantBodyMode?: "inline" | "external-latest"
   hasOlder?: boolean
   showMessages?: boolean
   // Terminal columns for width-aware notice chrome (side-by-side word diffs).
@@ -108,9 +111,22 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
   }
   if (input.notice) segments.push(...noticeSegments(input.notice, { cols: input.cols }))
   if (input.showMessages === false) return segments
-  const turns: Turn[] = input.messages.map((message) => ({
+  const externalLatest = input.assistantBodyMode === "external-latest"
+  let latestAssistantIndex = -1
+  if (externalLatest) {
+    for (let index = input.messages.length - 1; index >= 0; index--) {
+      if (turnKind(input.messages[index]!.role) === "assistant") {
+        latestAssistantIndex = index
+        break
+      }
+    }
+  }
+  const turns: Turn[] = input.messages.map((message, index) => ({
     kind: turnKind(message.role),
-    content: message.content,
+    content: externalLatest && index === latestAssistantIndex
+        && !(input.streaming || input.streamingText)
+      ? ""
+      : message.content,
   }))
   if (input.pendingUserMessage) {
     turns.push({ kind: "user", content: input.pendingUserMessage, status: "sending" })

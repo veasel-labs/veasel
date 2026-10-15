@@ -52,6 +52,22 @@ describe("transcriptSegments", () => {
     expect(text).not.toContain("# Heading")
   })
 
+  test("omits only the latest completed assistant body when Markdown owns it", () => {
+    const text = transcriptPlainText(transcriptSegments({
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "older reply" },
+        { role: "user", content: "again" },
+        { role: "assistant", content: "# Done\n\nshipped" },
+      ],
+      assistantBodyMode: "external-latest",
+    }))
+    expect(text).toContain("  older reply")
+    expect(text).toContain("◆ assistant\n")
+    expect(text).not.toContain("# Done")
+    expect(text).not.toContain("shipped")
+  })
+
   test("shows a cursor while streaming before the first token arrives", () => {
     const text = transcriptPlainText(transcriptSegments({
       messages: [],

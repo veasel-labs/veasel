@@ -79,7 +79,8 @@ import {
 } from "./diff-view"
 import {
   createMarkdownSyntaxStyle,
-  shouldStreamMarkdownSurface,
+  latestAssistantMarkdown,
+  shouldUseMarkdownSurface,
 } from "./markdown-view"
 import {
   formatBoundedBlock,
@@ -579,8 +580,9 @@ const reviewDiffRenderable = new DiffRenderable(renderer, {
   ...diffRenderableTheme(theme),
 })
 let reviewDiffMounted = false
-// Live assistant stream via MarkdownRenderable while stick-to-bottom. Scrolled
-// windows fall back to TextChunk markdown tones so Home/PgUp still page deltas.
+// Follow-mode latest assistant via MarkdownRenderable (live stream + completed
+// history). Scrolled windows fall back to TextChunk markdown tones so Home/PgUp
+// still page earlier deltas.
 let streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme)
 const streamMarkdownRenderable = new MarkdownRenderable(renderer, {
   id: "stream-markdown",
@@ -971,16 +973,24 @@ function renderChat(messages: ChatTurn[]) {
   portraitRenderable.content = activeSession ? "" : portraitText
   brandLabel.content = activeSession ? "" : "VEASEL CODE"
   const streaming = Boolean(activeTurnId)
+  const safeMessages = messages.map((message) => ({ role: message.role, content: safeTerminalText(message.content) }))
+  const streamingCursor = streamingCursorForMotion(reducedMotion, motionFrame)
+  const markdownBody = latestAssistantMarkdown({
+    messages: safeMessages,
+    streaming,
+    streamingText: safeTerminalText(streamingAssistantText),
+    streamingCursor,
+  })
   const baseInput = {
     session: activeSession && !helpVisible
       ? { title: safeTerminalText(activeSession.title), directory: safeTerminalText(activeSession.directory) }
       : undefined,
     notice: skillNotice ? safeTerminalText(skillNotice) : undefined,
-    messages: messages.map((message) => ({ role: message.role, content: safeTerminalText(message.content) })),
+    messages: safeMessages,
     pendingUserMessage: safeTerminalText(pendingUserMessage),
     streamingText: safeTerminalText(streamingAssistantText),
     streaming,
-    streamingCursor: streamingCursorForMotion(reducedMotion, motionFrame),
+    streamingCursor,
     hasOlder: chatHistoryHasOlder,
     showMessages: !helpVisible,
     cols: process.stdout.columns ?? 80,
@@ -992,20 +1002,24 @@ function renderChat(messages: ChatTurn[]) {
   if (skillNotice) {
     transcriptScrollOffset = 0
     sessionDetail.content = new StyledText(scrollSegments.map(({ text, tone }) => transcriptStyles[tone](text)))
-    syncStreamMarkdown(false)
+    syncAssistantMarkdown(null)
     refreshSessionFooter()
     return
   }
   const pageSize = transcriptPageSize(process.stdout.rows ?? 40)
   transcriptScrollOffset = moveTranscriptScroll(transcriptScrollOffset, 0, lastTranscriptLineCount, pageSize)
-  const markdownFollow = shouldStreamMarkdownSurface({
-    streaming,
+  const markdownFollow = shouldUseMarkdownSurface({
     followBottom: transcriptScrollOffset === 0,
     noticeOpen: false,
     reviewSplitOpen: reviewDiffMounted && reviewDiffSurface === "split",
+    hasAssistantMarkdown: Boolean(markdownBody),
   })
   const segments = markdownFollow
-    ? transcriptSegments({ ...baseInput, streamingBodyMode: "external" })
+    ? transcriptSegments({
+      ...baseInput,
+      streamingBodyMode: streaming ? "external" : "inline",
+      assistantBodyMode: streaming ? "inline" : "external-latest",
+    })
     : scrollSegments
   const windowed = windowTranscriptSegments(segments, transcriptScrollOffset, pageSize)
   const withCues = [...windowed.segments]
@@ -1020,12 +1034,12 @@ function renderChat(messages: ChatTurn[]) {
     withCues.push({ text: belowCue, tone: "hint" })
   }
   sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
-  syncStreamMarkdown(markdownFollow)
+  syncAssistantMarkdown(markdownFollow ? markdownBody : null)
   refreshSessionFooter()
 }
 
-function syncStreamMarkdown(active: boolean) {
-  if (!active) {
+function syncAssistantMarkdown(body: { content: string; streaming: boolean } | null) {
+  if (!body) {
     if (streamMarkdownMounted) {
       streamMarkdownRenderable.streaming = false
       streamMarkdownRenderable.content = ""
@@ -1035,15 +1049,13 @@ function syncStreamMarkdown(active: boolean) {
     }
     return
   }
-  const body = safeTerminalText(streamingAssistantText)
-  const cursor = streamingCursorForMotion(reducedMotion, motionFrame)
   streamMarkdownRenderable.syntaxStyle = streamMarkdownSyntaxStyle
   streamMarkdownRenderable.fg = theme.assistantText
-  streamMarkdownRenderable.streaming = true
-  streamMarkdownRenderable.content = `${body}${cursor}`
+  streamMarkdownRenderable.streaming = body.streaming
+  streamMarkdownRenderable.content = body.content
   streamMarkdownRenderable.visible = true
   if (!streamMarkdownMounted) {
-    // Keep the composer below the live markdown panel.
+    // Keep the composer below the markdown panel (live or finalized latest reply).
     if (chatInput) detail.insertBefore(streamMarkdownRenderable, chatInput)
     else detail.add(streamMarkdownRenderable)
     streamMarkdownMounted = true

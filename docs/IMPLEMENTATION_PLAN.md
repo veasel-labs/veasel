@@ -445,7 +445,8 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [ ] Richer context retrieval beyond the extractive repository map, rich diff
   review, accessibility, and UX refinement. Extractive map ranking now includes
   test/source pairing, CamelCase/snake symbol-part matches, same-directory
-  neighbor boosts, and cross-directory same-basename-stem sibling boosts
+  neighbor boosts, cross-directory same-basename-stem sibling boosts, and
+  file↔package stem pairing (`lib/session.v` ↔ `lib/session/`)
   (still not tree-sitter/PageRank).
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.

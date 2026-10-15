@@ -185,6 +185,8 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	// Also elevate same basename-stem files in other directories (e.g. lib/foo.v
 	// mention helps cmd/foo.v) — still extractive, not graph ranking.
 	boost_repository_map_same_stem_siblings(mut entries)
+	// File↔package pairing: lib/session.v helps lib/session/*.v and the reverse.
+	boost_repository_map_stem_packages(mut entries)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)
@@ -501,6 +503,54 @@ fn boost_repository_map_same_stem_siblings(mut entries []RepositoryMapEntry) {
 		base := repository_map_stem_base(stem)
 		if hot_stems[stem] || (base.len >= 2 && hot_stems[base]) {
 			entry.score += 70.0
+		}
+	}
+}
+
+fn boost_repository_map_stem_packages(mut entries []RepositoryMapEntry) {
+	mut hot_package_prefixes := []string{}
+	mut hot_package_files := map[string]bool{}
+	for entry in entries {
+		if entry.score < 500.0 {
+			continue
+		}
+		path_l := entry.path.to_lower().replace('\\', '/')
+		stem := repository_map_stem(os.file_name(path_l))
+		if stem.len >= 2 {
+			dir := os.dir(path_l).replace('\\', '/')
+			prefix := if dir.len == 0 || dir == '.' {
+				stem + '/'
+			} else {
+				dir + '/' + stem + '/'
+			}
+			if prefix !in hot_package_prefixes {
+				hot_package_prefixes << prefix
+			}
+		}
+		// Nested hot path lib/session/foo.v also elevates lib/session.v.
+		parent := os.dir(path_l).replace('\\', '/')
+		if parent.len > 0 && parent != '.' {
+			hot_package_files[parent] = true
+		}
+	}
+	if hot_package_prefixes.len == 0 && hot_package_files.len == 0 {
+		return
+	}
+	for mut entry in entries {
+		if entry.score >= 500.0 {
+			continue
+		}
+		path_l := entry.path.to_lower().replace('\\', '/')
+		mut boosted := false
+		for prefix in hot_package_prefixes {
+			if path_l.starts_with(prefix) {
+				entry.score += 80.0
+				boosted = true
+				break
+			}
+		}
+		if !boosted && hot_package_files[repository_map_stem(path_l)] {
+			entry.score += 80.0
 		}
 	}
 }

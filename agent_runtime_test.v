@@ -96,8 +96,13 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 	}]
 	definitions := agent_skill_resource_tools()
 	assert definitions.map(it.name) == ['agent_skill_read_resource']
-	load_definitions := agent_skill_load_tools()
+	load_definitions := agent_skill_load_tools('<available_skills>\n  <skill>\n    <plugin_name>review-tools</plugin_name>\n    <skill_name>review</skill_name>\n    <description>Review carefully.</description>\n  </skill>\n</available_skills>')
 	assert load_definitions.map(it.name) == ['agent_skill_load']
+	assert load_definitions[0].description.contains('<available_skills>')
+	assert load_definitions[0].description.contains('review-tools')
+	assert load_definitions[0].description.contains('Review carefully.')
+	assert agent_skill_load_tools('').len == 0
+	assert agent_skill_load_tools('   ').len == 0
 	resource_policy := agent_tool_policy_for_skills([PluginSkill{
 		name:                   'references'
 		allowed_tools:          'agent_skill_read_resource'
@@ -135,6 +140,157 @@ fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 	disabled := execute_test_agent_tool(app, os.join_path(root, 'workspace'), session.id, call,
 		mut disabled_context, {}, mut mcp_connections)
 	assert disabled.contains('has not been loaded in this turn')
+}
+
+fn test_available_skills_catalog_discloses_metadata_without_bodies() {
+	root := os.join_path(os.temp_dir(), 'veasel-available-skills-${uuid.new_v4().str()}')
+	project := os.join_path(root, 'workspace')
+	plugin_dir := os.join_path(root, 'plugins')
+	home := os.join_path(root, 'home')
+	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'deep-review', 'references')) or {
+		panic(err)
+	}
+	os.mkdir_all(os.join_path(project, '.claude', 'skills', 'quick-check')) or { panic(err) }
+	os.mkdir_all(plugin_dir) or { panic(err) }
+	os.mkdir_all(home) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	prior_home := os.getenv('HOME')
+	prior_skills_dirs := os.getenv('VEASEL_SKILLS_DIRS')
+	prior_codex := os.getenv('CODEX_HOME')
+	prior_xdg := os.getenv('XDG_CONFIG_HOME')
+	had_skills_dirs := 'VEASEL_SKILLS_DIRS' in os.environ()
+	had_codex := 'CODEX_HOME' in os.environ()
+	had_xdg := 'XDG_CONFIG_HOME' in os.environ()
+	os.setenv('HOME', home, true)
+	os.unsetenv('VEASEL_SKILLS_DIRS')
+	os.unsetenv('CODEX_HOME')
+	os.unsetenv('XDG_CONFIG_HOME')
+	defer {
+		os.setenv('HOME', prior_home, true)
+		if had_skills_dirs {
+			os.setenv('VEASEL_SKILLS_DIRS', prior_skills_dirs, true)
+		} else {
+			os.unsetenv('VEASEL_SKILLS_DIRS')
+		}
+		if had_codex {
+			os.setenv('CODEX_HOME', prior_codex, true)
+		} else {
+			os.unsetenv('CODEX_HOME')
+		}
+		if had_xdg {
+			os.setenv('XDG_CONFIG_HOME', prior_xdg, true)
+		} else {
+			os.unsetenv('XDG_CONFIG_HOME')
+		}
+	}
+	os.write_file(os.join_path(project, '.agents', 'skills', 'deep-review', 'SKILL.md'),
+		'---\nname: deep-review\ndescription: Review carefully with references.\n---\n\nSECRET_BODY_SHOULD_STAY_OFF_CATALOG\nUse the reference guide.') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(project, '.agents', 'skills', 'deep-review', 'references', 'guide.md'),
+		'Turn-loaded reference.') or { panic(err) }
+	os.write_file(os.join_path(project, '.claude', 'skills', 'quick-check', 'SKILL.md'),
+		'---\nname: quick-check\ndescription: Fast lint-oriented check.\n---\n\nQUICK_BODY_SHOULD_STAY_OFF_CATALOG') or {
+		panic(err)
+	}
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, plugin_dir)
+	defer { app.close() }
+	catalog := app.available_skills_catalog_for_turn(project)
+	assert catalog.contains('<available_skills>')
+	assert catalog.contains('<plugin_name>agents</plugin_name>')
+	assert catalog.contains('<skill_name>deep-review</skill_name>')
+	assert catalog.contains('Review carefully with references.')
+	assert catalog.contains('<plugin_name>claude</plugin_name>')
+	assert catalog.contains('<skill_name>quick-check</skill_name>')
+	assert catalog.contains('Fast lint-oriented check.')
+	assert !catalog.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
+	assert !catalog.contains('QUICK_BODY_SHOULD_STAY_OFF_CATALOG')
+	assert !catalog.contains('Use the reference guide.')
+	tools := agent_skill_load_tools(catalog)
+	assert tools.len == 1
+	assert tools[0].name == 'agent_skill_load'
+	assert tools[0].description.contains('deep-review')
+	assert tools[0].description.contains('quick-check')
+	assert !tools[0].description.contains('SECRET_BODY_SHOULD_STAY_OFF_CATALOG')
+	escaped, _ := available_skill_entries_from_catalog(PluginCatalog{
+		plugins: [
+			PluginCatalogEntry{
+				name:   'demo'
+				skills: [
+					PluginSkillSummary{
+						name:        'ampersand'
+						description: 'Use A < B & C > D "quoted"'
+						enabled:     true
+					},
+				]
+			},
+		]
+	})
+	formatted := format_available_skills_catalog(escaped, false)
+	assert formatted.contains('Use A &lt; B &amp; C &gt; D &quot;quoted&quot;')
+	assert !formatted.contains('Use A < B & C > D "quoted"')
+}
+
+fn test_available_skills_catalog_omits_disabled_components() {
+	root := os.join_path(os.temp_dir(), 'veasel-available-skills-disabled-${uuid.new_v4().str()}')
+	project := os.join_path(root, 'workspace')
+	plugin_dir := os.join_path(root, 'plugins')
+	home := os.join_path(root, 'home')
+	os.mkdir_all(os.join_path(project, '.agents', 'skills', 'deep-review')) or { panic(err) }
+	os.mkdir_all(plugin_dir) or { panic(err) }
+	os.mkdir_all(home) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	prior_home := os.getenv('HOME')
+	prior_skills_dirs := os.getenv('VEASEL_SKILLS_DIRS')
+	prior_codex := os.getenv('CODEX_HOME')
+	prior_xdg := os.getenv('XDG_CONFIG_HOME')
+	had_skills_dirs := 'VEASEL_SKILLS_DIRS' in os.environ()
+	had_codex := 'CODEX_HOME' in os.environ()
+	had_xdg := 'XDG_CONFIG_HOME' in os.environ()
+	os.setenv('HOME', home, true)
+	os.unsetenv('VEASEL_SKILLS_DIRS')
+	os.unsetenv('CODEX_HOME')
+	os.unsetenv('XDG_CONFIG_HOME')
+	defer {
+		os.setenv('HOME', prior_home, true)
+		if had_skills_dirs {
+			os.setenv('VEASEL_SKILLS_DIRS', prior_skills_dirs, true)
+		} else {
+			os.unsetenv('VEASEL_SKILLS_DIRS')
+		}
+		if had_codex {
+			os.setenv('CODEX_HOME', prior_codex, true)
+		} else {
+			os.unsetenv('CODEX_HOME')
+		}
+		if had_xdg {
+			os.setenv('XDG_CONFIG_HOME', prior_xdg, true)
+		} else {
+			os.unsetenv('XDG_CONFIG_HOME')
+		}
+	}
+	os.write_file(os.join_path(project, '.agents', 'skills', 'deep-review', 'SKILL.md'),
+		'---\nname: deep-review\ndescription: Review carefully.\n---\n\nBody') or {
+		panic(err)
+	}
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, plugin_dir)
+	defer { app.close() }
+	before := app.available_skills_catalog_for_turn(project)
+	assert before.contains('deep-review')
+	mut components := app.plugin_components
+	components.set_enabled(PluginComponentToggleInput{
+		plugin:  'agents'
+		kind:    plugin_component_kind_skill
+		name:    'deep-review'
+		enabled: false
+	}) or { panic(err) }
+	catalog := app.available_skills_catalog_for_turn(project)
+	assert catalog.len == 0
+	assert agent_skill_load_tools(catalog).len == 0
 }
 
 fn test_agent_skill_load_tool_loads_body_without_session_enable() {

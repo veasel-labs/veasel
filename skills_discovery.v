@@ -6,6 +6,8 @@ const max_standalone_skill_roots = 256
 const max_standalone_skills_per_root = 256
 const max_standalone_skill_scan_depth = 4
 const max_project_skill_ancestors = 64
+const max_available_skills_catalog_entries = 64
+const max_available_skill_catalog_description_bytes = 256
 
 // StandaloneSkillRoot is one filesystem location that may contain Agent Skills
 // without a plugin.json package.
@@ -607,4 +609,91 @@ fn project_directory_for_skills(session_directory string) string {
 		}
 	}
 	return os.getwd()
+}
+
+// AvailableSkillEntry is one metadata-only skill row disclosed to the model so
+// it can choose plugin_name/skill_name for agent_skill_load. Bodies stay on disk.
+struct AvailableSkillEntry {
+pub:
+	plugin_name string
+	skill_name  string
+	description string
+}
+
+fn available_skill_entries_from_catalog(catalog PluginCatalog) ([]AvailableSkillEntry, bool) {
+	mut by_key := map[string]AvailableSkillEntry{}
+	mut keys := []string{}
+	for plugin in catalog.plugins {
+		for skill in plugin.skills {
+			if !skill.enabled {
+				continue
+			}
+			key := '${plugin.name}/${skill.name}'
+			if key in by_key {
+				continue
+			}
+			by_key[key] = AvailableSkillEntry{
+				plugin_name: plugin.name
+				skill_name:  skill.name
+				description: skill.description
+			}
+			keys << key
+		}
+	}
+	keys.sort()
+	truncated := keys.len > max_available_skills_catalog_entries
+	limit := if truncated {
+		max_available_skills_catalog_entries
+	} else {
+		keys.len
+	}
+	mut entries := []AvailableSkillEntry{cap: limit}
+	for key in keys[..limit] {
+		entries << by_key[key]
+	}
+	return entries, truncated
+}
+
+fn escape_available_skill_xml(value string) string {
+	return value.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+}
+
+fn truncate_available_skill_catalog_description(description string) string {
+	if description.len <= max_available_skill_catalog_description_bytes {
+		return description
+	}
+	return description[..max_available_skill_catalog_description_bytes] + '...'
+}
+
+fn format_available_skills_catalog(entries []AvailableSkillEntry, truncated bool) string {
+	if entries.len == 0 {
+		return ''
+	}
+	mut lines := []string{cap: entries.len * 6 + 4}
+	lines << '<available_skills>'
+	for entry in entries {
+		lines << '  <skill>'
+		lines << '    <plugin_name>${escape_available_skill_xml(entry.plugin_name)}</plugin_name>'
+		lines << '    <skill_name>${escape_available_skill_xml(entry.skill_name)}</skill_name>'
+		lines << '    <description>${escape_available_skill_xml(truncate_available_skill_catalog_description(entry.description))}</description>'
+		lines << '  </skill>'
+	}
+	lines << '</available_skills>'
+	if truncated {
+		lines << 'Catalog truncated to ${max_available_skills_catalog_entries} skills; use GET /v1/skills or /v1/plugins for the full metadata list.'
+	}
+	return lines.join('\n')
+}
+
+fn (app &App) available_skills_catalog_for_turn(project_directory string) string {
+	catalog := app.plugin_catalog_for_directory(project_directory) or {
+		discovery := discover_standalone_agent_skills(project_directory)
+		mut components := app.plugin_components
+		fallback := apply_plugin_component_state(merge_standalone_skills_into_catalog(PluginCatalog{},
+			discovery), mut components)
+		entries, truncated := available_skill_entries_from_catalog(fallback)
+		return format_available_skills_catalog(entries, truncated)
+	}
+	entries, truncated := available_skill_entries_from_catalog(catalog)
+	return format_available_skills_catalog(entries, truncated)
 }

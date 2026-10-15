@@ -1276,6 +1276,39 @@ fn test_resume_rejects_empty_queued_request_without_claiming() {
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
+fn test_resume_rejects_nul_queued_request_without_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-nul-queued-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-nul-queued-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	session := store.create_session(SessionInput{
+		title:     'NUL queued payload'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := '6f708192-a3b4-c5d6-e7f8-091a2b3c4d5e'
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"placeholder"}') or {
+		panic(err)
+	}
+	store.mu.lock()
+	_ = store.db.exec_param_many('UPDATE session_operations SET request_json = ? WHERE id = ? AND session_id = ?',
+		['{"content":"bad\0json"}', operation_id, session.id]) or { panic(err) }
+	store.mu.unlock()
+	mut app := new_app(store, plugin_directory)
+	app.resume_durable_queued_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert operation.error == 'Queued turn request was invalid and will not be claimed.'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
 fn test_resume_rejects_invalid_queued_request_without_claiming() {
 	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-invalid-queued-${uuid.new_v4().str()}')
 	workspace := os.join_path(os.temp_dir(), 'veasel-workspace-invalid-queued-${uuid.new_v4().str()}')

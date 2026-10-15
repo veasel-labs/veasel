@@ -51,6 +51,15 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
+		if request_json.contains('\0') {
+			eprintln('veasel: rejecting queued operation ${operation.id}; request contains NUL')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn request was invalid and will not be claimed.') or {
+				eprintln('veasel: unable to reject queued operation with NUL request ${operation.id}')
+				''
+			}
+			continue
+		}
 		input := json2.decode[ChatMessageInput](request_json) or {
 			eprintln('veasel: skipping queued operation ${operation.id}; request invalid')
 			store.reject_queued_session_operation(operation.session_id, operation.id,

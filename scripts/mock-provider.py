@@ -85,14 +85,28 @@ SESSION_SYSTEM = (
 )
 
 
+def session_system_text(content):
+    """Normalize Anthropic system string or text-block list to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text") or "")
+        return "\n\n".join(parts)
+    return ""
+
+
 def is_session_system(content):
-    if content in ("Be concise", SESSION_SYSTEM):
+    text = session_system_text(content)
+    if text in ("Be concise", SESSION_SYSTEM):
         return True
-    if "Autonomous benchmark execution is enabled by an explicit caller opt-in" in content:
+    if "Autonomous benchmark execution is enabled by an explicit caller opt-in" in text:
         return True
-    if not isinstance(content, str) or not content.startswith(SESSION_SYSTEM):
+    if not text.startswith(SESSION_SYSTEM):
         return False
-    remainder = content[len(SESSION_SYSTEM) :]
+    remainder = text[len(SESSION_SYSTEM) :]
     if remainder == "":
         return True
     if not remainder.startswith("\n\n"):
@@ -104,8 +118,8 @@ def is_session_system(content):
         "\n\nUser-enabled Agent Plugin skills"
     ):
         return (
-            "Skill: review-tools/review" in content
-            and "Fixture skill instructions for verifying session activation." in content
+            "Skill: review-tools/review" in text
+            and "Fixture skill instructions for verifying session activation." in text
         )
     return False
 
@@ -401,10 +415,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 self.path != "/v1/messages"
                 or payload.get("model") != "smoke-model"
                 or payload.get("max_tokens") != 4096
-                or not (
-                    payload.get("system") == "Be concise"
-                    or is_session_system(payload.get("system"))
-                )
+                or not is_session_system(payload.get("system"))
                 or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command")
                     and not is_tool_follow_up)
             ):

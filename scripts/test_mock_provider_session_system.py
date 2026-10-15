@@ -58,6 +58,36 @@ class SessionSystemGuardTests(unittest.TestCase):
             self.mock.is_session_system(self.mock.SESSION_SYSTEM + "\n\nUnexpected trailer")
         )
 
+    def test_anthropic_system_blocks_with_cache_control_are_accepted(self):
+        concise = [
+            {
+                "type": "text",
+                "text": "Be concise",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        self.assertEqual(self.mock.session_system_text(concise), "Be concise")
+        self.assertTrue(self.mock.is_session_system(concise))
+
+        session_blocks = [
+            {
+                "type": "text",
+                "text": self.mock.SESSION_SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        self.assertTrue(self.mock.is_session_system(session_blocks))
+
+        with_map = [
+            {
+                "type": "text",
+                "text": self.mock.SESSION_SYSTEM
+                + "\n\n<veasel-repository-map untrusted=\"true\">\nmap\n</veasel-repository-map>",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+        self.assertTrue(self.mock.is_session_system(with_map))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -92,7 +92,7 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
-import { formatBusyStatus, formatHomeSessionStatus, formatStatusLine } from "./status-a11y"
+import { formatBusyStatus, formatErrorStatus, formatHomeSessionStatus, formatStatusLine, formatWarnStatus } from "./status-a11y"
 import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
@@ -454,7 +454,7 @@ const footer = new BoxRenderable(renderer, {
   borderStyle: "rounded",
   borderColor: theme.panelBorder,
 })
-const status = new TextRenderable(renderer, { content: "● connecting", fg: theme.statusWarn, wrapMode: "none" })
+const status = new TextRenderable(renderer, { content: formatBusyStatus("connecting"), fg: theme.statusWarn, wrapMode: "none" })
 footer.add(status)
 const footerHint = new TextRenderable(renderer, {
   content: homeFooterHint,
@@ -1248,12 +1248,12 @@ async function sendMessage(value: string) {
     status.fg = pendingReviewStatusColor(pendingCounts)
   } catch (error) {
     if (activeTurnCancelled) {
-      status.content = "● response cancelled"
+      status.content = formatWarnStatus("response cancelled")
       status.fg = theme.statusWarn
       return
     }
     if (controller.signal.aborted) return
-    status.content = `● message failed  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.content = formatErrorStatus(`message failed  ·  ${error instanceof Error ? error.message : "request failed"}`)
     status.fg = theme.statusError
   } finally {
     if (!awaitingAsyncCompletion && activeTurnId === operationId) {
@@ -1289,7 +1289,7 @@ async function showSessionUsage() {
     status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
-    status.content = `● usage unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.content = formatErrorStatus(`usage unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`)
     status.fg = theme.statusError
   }
 }
@@ -1311,7 +1311,7 @@ async function showRepositoryMap(hint = "") {
     status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
-    status.content = `● repository map unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.content = formatErrorStatus(`repository map unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`)
     status.fg = theme.statusError
   }
 }
@@ -1346,7 +1346,7 @@ async function loadOlderChatHistory() {
     status.fg = theme.statusOk
   } catch (error) {
     if (controller.signal.aborted) return
-    status.content = `● history load failed  ·  ${error instanceof Error ? error.message : "request failed"}`
+    status.content = formatErrorStatus(`history load failed  ·  ${error instanceof Error ? error.message : "request failed"}`)
     status.fg = theme.statusError
   } finally {
     chatHistoryLoading = false
@@ -1364,7 +1364,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   if (activeTurnId !== operationId) {
     if (activeSession?.id === sessionId) {
       if (completion.status === "uncertain") {
-        status.content = "● operation outcome uncertain · inspect the workspace before retrying"
+        status.content = formatWarnStatus("operation outcome uncertain · inspect the workspace before retrying")
         status.fg = theme.statusWarn
       }
       try {
@@ -1415,7 +1415,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   } catch (error) {
     if (activeSession?.id === sessionId) renderChat(chatMessages)
     if (completion.status === "completed") {
-      status.content = `● turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`
+      status.content = formatWarnStatus(`turn completed  ·  ${error instanceof Error ? error.message : "history refresh failed"}`)
       status.fg = theme.statusWarn
     }
   }
@@ -1438,13 +1438,13 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
       status.fg = pendingReviewStatusColor(pendingCounts)
     }
   } else if (completion.status === "uncertain") {
-    status.content = "● operation outcome uncertain · inspect the workspace before retrying"
+    status.content = formatWarnStatus("operation outcome uncertain · inspect the workspace before retrying")
     status.fg = theme.statusWarn
   } else if (completion.status === "cancelled") {
-    status.content = userCancelled ? "● response cancelled" : "● turn cancelled"
+    status.content = formatWarnStatus(userCancelled ? "response cancelled" : "turn cancelled")
     status.fg = theme.statusWarn
   } else {
-    status.content = `● message failed  ·  ${completion.error ?? "assistant turn failed"}`
+    status.content = formatErrorStatus(`message failed  ·  ${completion.error ?? "assistant turn failed"}`)
     status.fg = theme.statusError
   }
   chatInput?.focus()
@@ -2493,7 +2493,7 @@ function beginCreate() {
     titleInput = undefined
     creating = false
     void createSession(title).catch((error) => {
-      status.content = `● could not create session  ·  ${error instanceof Error ? error.message : "request failed"}`
+      status.content = formatErrorStatus(`could not create session  ·  ${error instanceof Error ? error.message : "request failed"}`)
       status.fg = theme.statusError
     })
   })
@@ -2582,7 +2582,7 @@ function closeSettings(message = "Settings unchanged.") {
     const session = activeSession
     chatInput = undefined
     void openSession(session).catch(() => {
-      status.content = "● settings saved · unable to restore session view"
+      status.content = formatWarnStatus("settings saved · unable to restore session view")
       status.fg = theme.statusWarn
     })
   }
@@ -3493,7 +3493,7 @@ renderer.keyInput.on("keypress", (key) => {
     const session = visibleSessions()[selected]
     if (!session) return
     void openSession(session).catch((error) => {
-      status.content = `● unable to open session  ·  ${error instanceof Error ? error.message : "request failed"}`
+      status.content = formatErrorStatus(`unable to open session  ·  ${error instanceof Error ? error.message : "request failed"}`)
       status.fg = theme.statusError
     })
   }

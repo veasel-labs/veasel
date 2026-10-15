@@ -77,6 +77,24 @@ static wchar_t *utf8_to_wide(const char *utf8) {
 	return wide;
 }
 
+static int append_raw_arg(wchar_t *dest, size_t dest_cap, size_t *len, const wchar_t *arg) {
+	size_t arg_len;
+	if (!dest || !len || !arg) {
+		return 0;
+	}
+	arg_len = wcslen(arg);
+	if (*len + arg_len + 2 >= dest_cap) {
+		return 0;
+	}
+	if (*len > 0) {
+		dest[(*len)++] = L' ';
+	}
+	memcpy(dest + *len, arg, arg_len * sizeof(wchar_t));
+	*len += arg_len;
+	dest[*len] = L'\0';
+	return 1;
+}
+
 static int append_quoted_arg(wchar_t *dest, size_t dest_cap, size_t *len, const wchar_t *arg) {
 	size_t arg_len;
 	size_t i;
@@ -419,11 +437,13 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 		set_error(result, "Windows AppContainer sandbox out of memory building command line", 0);
 		goto cleanup;
 	}
+	/* cmd.exe expects: "comspec" /D /S /C "command". Quoting /D /S /C breaks
+	 * /S quote stripping and yields errors like '"echo …' is not recognized. */
 	cmdline[0] = L'\0';
 	if (!append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, comspec)
-		|| !append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, arg_d)
-		|| !append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, arg_s)
-		|| !append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, arg_c)
+		|| !append_raw_arg(cmdline, cmdline_cap, &cmdline_len, arg_d)
+		|| !append_raw_arg(cmdline, cmdline_cap, &cmdline_len, arg_s)
+		|| !append_raw_arg(cmdline, cmdline_cap, &cmdline_len, arg_c)
 		|| !append_quoted_arg(cmdline, cmdline_cap, &cmdline_len, command)) {
 		result->setup_failed = 1;
 		set_error(result, "Windows AppContainer sandbox command line is too long", 0);

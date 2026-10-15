@@ -26,6 +26,17 @@ describe("filterWorkspacePaths", () => {
       "docs/main.md",
     ])
     expect(filterWorkspacePaths(paths, "read").map((item) => item.name)).toEqual(["@README.md"])
+    expect(filterWorkspacePaths(paths, "src/m")[0]?.description).toBe("exact prefix")
+  })
+
+  test("tolerates one typo in the basename for longer queries", () => {
+    const paths = ["src/main.ts", "src/help.ts", "README.md", "docs/manual.md"]
+    expect(filterWorkspacePaths(paths, "mein").map((item) => item.path)).toEqual(["src/main.ts"])
+    expect(filterWorkspacePaths(paths, "READNE").map((item) => item.path)).toEqual(["README.md"])
+    expect(filterWorkspacePaths(paths, "mein")[0]?.description).toBe("close match")
+    // Exact basename prefix still beats a fuzzy neighbor.
+    expect(filterWorkspacePaths(paths, "main").map((item) => item.path)[0]).toBe("src/main.ts")
+    expect(filterWorkspacePaths(paths, "main")[0]?.description).toBe("name match")
   })
 })
 

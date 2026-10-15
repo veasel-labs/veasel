@@ -777,6 +777,15 @@ def run_core_suite() -> None:
         visible = screen.terminal.text()
         if "@src/main.ts" not in visible:
             raise AssertionError(f"Tab did not insert @src/main.ts\n--- screen ---\n{visible}")
+        screen.send("\x15", 0.35)  # Ctrl+U clears the draft
+        # Fuzzy basename: one typo still ranks the intended file.
+        screen.send("@mein", 0.7)
+        screen.wait_for("@src/main.ts", 4)
+        screen.wait_for("close match", 4)
+        screen.send("\t", 0.45)
+        visible = screen.terminal.text()
+        if "@src/main.ts" not in visible:
+            raise AssertionError(f"Tab did not insert @src/main.ts\n--- screen ---\n{visible}")
         screen.send("\x15", 0.35)  # Ctrl+U clears the draft (keep Esc for leave-after-cancel)
         screen.wait_for("/skills", 4)
         screen.send("/", 0.6)

@@ -1,8 +1,15 @@
 # Contributing to Veasel Code
 
-Thanks for helping build a safe, fast coding agent in V. Start with the current
-implementation status in `docs/IMPLEMENTATION_PLAN.md`; documented plans are
-not claims that a feature already works.
+Thanks for helping build a safe, fast coding agent in V.
+
+| Before you change… | Read |
+|--------------------|------|
+| Scope / milestones | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) |
+| Docs map | [`docs/README.md`](docs/README.md) |
+| API surface | [`docs/openapi.yaml`](docs/openapi.yaml) |
+| Shell / approvals | [`docs/SHELL_COMMANDS.md`](docs/SHELL_COMMANDS.md) |
+
+Documented plans are not claims that a feature already works.
 
 ## Development
 

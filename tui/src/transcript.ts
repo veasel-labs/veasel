@@ -47,6 +47,10 @@ export type TranscriptInput = {
   streaming?: boolean
   // Override the in-flight cursor glyph (reduced-motion / blink frames).
   streamingCursor?: string
+  // "external" keeps the streaming assistant label in the TextChunk transcript
+  // while MarkdownRenderable owns the live body (follow mode). "inline" is the
+  // classic TextChunk markdown-tone path used when scrolled or offline.
+  streamingBodyMode?: "inline" | "external"
   hasOlder?: boolean
   showMessages?: boolean
   // Terminal columns for width-aware notice chrome (side-by-side word diffs).
@@ -112,11 +116,12 @@ export function transcriptSegments(input: TranscriptInput): TranscriptSegment[] 
     turns.push({ kind: "user", content: input.pendingUserMessage, status: "sending" })
   }
   if (input.streaming || input.streamingText) {
-    const body = input.streamingText ?? ""
+    const external = input.streamingBodyMode === "external"
+    const body = external ? "" : (input.streamingText ?? "")
     const cursor = input.streamingCursor ?? streamingCursor
     turns.push({
       kind: "assistant",
-      content: input.streaming ? `${body}${cursor}` : body,
+      content: input.streaming && !external ? `${body}${cursor}` : body,
       status: input.streaming ? "streaming…" : "partial response",
     })
   }

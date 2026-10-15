@@ -89,6 +89,10 @@ pub:
 	compaction_reason              string @[omitempty]
 	compaction_untrusted           bool   @[omitempty]
 	compaction_summary_preview     string @[omitempty]
+	compaction_summarizer_mode     string @[omitempty]
+	compaction_usage_reported      bool   @[omitempty]
+	compaction_input_tokens        i64    @[omitempty]
+	compaction_output_tokens       i64    @[omitempty]
 	repository_map_bytes           int    @[omitempty]
 	repository_map_token_bound     int    @[omitempty]
 	repository_map_budget_bytes    int    @[omitempty]
@@ -1201,6 +1205,10 @@ fn (mut store Store) record_session_compaction(session_id string, operation_id s
 			compaction_reason:              measurement.reason
 			compaction_untrusted:           true
 			compaction_summary_preview:     compaction_summary_preview(summary)
+			compaction_summarizer_mode:     measurement.summarizer_mode
+			compaction_usage_reported:      measurement.usage_reported
+			compaction_input_tokens:        measurement.input_tokens
+			compaction_output_tokens:       measurement.output_tokens
 		}),
 	]) or {
 		store.db.rollback() or {}

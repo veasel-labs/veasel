@@ -257,11 +257,14 @@ summary entry without deleting raw history. OpenCode
 `37df62f4a1b6d89187a1169187a6cef10557c0ca` similarly triggers on estimated
 context vs a model ceiling, keeps recent tokens, and may summarize via an LLM
 or native provider compaction. Veasel sessions remain linear SQLite histories;
-the runtime now applies a Veasel-native extractive compaction to the in-flight
-provider request under measured UTF-8 payload or message-count pressure, emits
-`session.compaction` with honest before/after byte bounds, and leaves durable
-chat rows intact. LLM/native summarizers and session forks stay deferred until
-provider-reported token and task measurements justify them.
+the runtime applies Veasel-native extractive compaction to the in-flight
+provider request under measured UTF-8 payload or message-count pressure, and
+optionally upgrades to a structured native summary or one no-tools LLM
+summarizer (`VEASEL_SESSION_COMPACTION_SUMMARIZER`) with extractive fallback,
+emitting `session.compaction` with honest before/after byte bounds and
+provider usage only when reported. Durable chat rows stay intact. Study pin:
+[`compatibility/session-compaction-summarizer.md`](compatibility/session-compaction-summarizer.md).
+Provider-native compaction APIs and session forks remain deferred.
 
 ## Benchmark integration implications
 

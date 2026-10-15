@@ -241,6 +241,24 @@
     }
   },
   {
+    "name": "stdio cwd with CR is skipped",
+    "accepted": true,
+    "servers": [],
+    "diagnostics": [
+      "control bytes"
+    ],
+    "document": {
+      "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      "mcpServers": {
+        "local": {
+          "type": "stdio",
+          "command": "node",
+          "cwd": "./bad\rcwd"
+        }
+      }
+    }
+  },
+  {
     "name": "stdio args with path separator in bare command is skipped",
     "accepted": true,
     "servers": [],

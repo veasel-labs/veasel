@@ -3260,6 +3260,22 @@ renderer.keyInput.on("keypress", (key) => {
             showSettingsStep()
           }
         }
+      } else if (
+        settingsProviderQuery.length === 0
+        && !key.ctrl
+        && !key.meta
+        && key.name === "g"
+      ) {
+        key.stopPropagation()
+        const next = moveSettingsListIndex(
+          settingsListHighlight,
+          settingsListCount,
+          key.shift ? "end" : "home",
+        )
+        if (next !== settingsListHighlight) {
+          settingsListHighlight = next
+          showSettingsStep()
+        }
       } else if (key.name === "home" || key.name === "end" || key.name === "pageup" || key.name === "pagedown") {
         key.stopPropagation()
         const next = moveSettingsListIndex(settingsListHighlight, settingsListCount, key.name)
@@ -3272,6 +3288,8 @@ renderer.keyInput.on("keypress", (key) => {
         settingsProviderQuery = [...settingsProviderQuery].slice(0, -1).join("")
         showSettingsStep()
       } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+        // g/G are reserved for list edges when the filter is empty.
+        if (settingsProviderQuery.length === 0 && /^[gG]$/.test(key.sequence)) return
         key.stopPropagation()
         settingsProviderQuery = (settingsProviderQuery + key.sequence).slice(0, 200)
         showSettingsStep()
@@ -3314,6 +3332,22 @@ renderer.keyInput.on("keypress", (key) => {
             showSettingsStep()
           }
         }
+      } else if (
+        settingsModelSearchQuery.length === 0
+        && !key.ctrl
+        && !key.meta
+        && key.name === "g"
+      ) {
+        key.stopPropagation()
+        const next = moveSettingsListIndex(
+          settingsListHighlight,
+          settingsListCount,
+          key.shift ? "end" : "home",
+        )
+        if (next !== settingsListHighlight) {
+          settingsListHighlight = next
+          showSettingsStep()
+        }
       } else if (key.name === "home" || key.name === "end" || key.name === "pageup" || key.name === "pagedown") {
         key.stopPropagation()
         const next = moveSettingsListIndex(settingsListHighlight, settingsListCount, key.name)
@@ -3326,6 +3360,7 @@ renderer.keyInput.on("keypress", (key) => {
         settingsModelSearchQuery = [...settingsModelSearchQuery].slice(0, -1).join("")
         showSettingsStep()
       } else if (!key.ctrl && !key.meta && /^[\x20-\x7e]+$/.test(key.sequence)) {
+        if (settingsModelSearchQuery.length === 0 && /^[gG]$/.test(key.sequence)) return
         key.stopPropagation()
         settingsModelSearchQuery = (settingsModelSearchQuery + key.sequence).slice(0, 200)
         showSettingsStep()

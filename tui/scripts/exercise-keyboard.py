@@ -624,8 +624,8 @@ def main() -> None:
         screen.wait_for("Provider settings", 4)
         screen.wait_for("Tab cycles", 4)
         screen.wait_for("Tab ·", 4)
-        screen.wait_for("Home/End", 4)
         screen.wait_for("j/k", 4)
+        screen.wait_for("g/G", 4)
         screen.wait_for("1-9", 4)
         screen.wait_for("Ctrl+L", 4)
         screen.wait_for("selected ", 4)
@@ -635,6 +635,12 @@ def main() -> None:
         screen.wait_for("Ollama", 4)
         screen.wait_for("selected 2 of 3", 4)
         screen.send("1", 0.35)  # back to OpenAI
+        screen.wait_for("OpenAI", 4)
+        screen.wait_for("selected 1 of 3", 4)
+        screen.send("G", 0.35)  # vim End → last provider
+        screen.wait_for("Cloudflare", 4)
+        screen.wait_for("selected 3 of 3", 4)
+        screen.send("g", 0.35)  # vim Home → first provider
         screen.wait_for("OpenAI", 4)
         screen.wait_for("selected 1 of 3", 4)
         screen.send("j", 0.35)  # j moves down when filter is empty

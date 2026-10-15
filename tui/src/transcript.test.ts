@@ -27,7 +27,7 @@ describe("transcriptSegments", () => {
     expect(segments).toContainEqual({ text: assistantLabel, tone: "assistantLabel" })
     expect(segments).toContainEqual({ text: "\nThe Windows job times out.", tone: "assistantText" })
     expect(transcriptPlainText(segments)).toBe(
-      "fix tests\n/work/app\n\n● YOU\nWhy does CI fail?\n\n◆ VEASEL\nThe Windows job times out.",
+      "fix tests\n/work/app\n\n● you\nWhy does CI fail?\n\n◆ assistant\nThe Windows job times out.",
     )
   })
 
@@ -38,7 +38,7 @@ describe("transcriptSegments", () => {
       streamingText: "Reading",
       streaming: true,
     }))
-    expect(text).toBe(`● YOU  ·  sending\nadd a test\n\n◆ VEASEL  ·  streaming…\nReading${streamingCursor}`)
+    expect(text).toBe(`● you  ·  sending\nadd a test\n\n◆ assistant  ·  streaming…\nReading${streamingCursor}`)
   })
 
   test("shows a cursor while streaming before the first token arrives", () => {
@@ -47,13 +47,13 @@ describe("transcriptSegments", () => {
       streamingText: "",
       streaming: true,
     }))
-    expect(text).toBe(`◆ VEASEL  ·  streaming…\n${streamingCursor}`)
+    expect(text).toBe(`◆ assistant  ·  streaming…\n${streamingCursor}`)
   })
 
   test("labels an interrupted response as partial without a cursor", () => {
     const segments = transcriptSegments({ messages: [], streamingText: "half", streaming: false })
     expect(segments).toContainEqual({ text: "  ·  partial response", tone: "status" })
-    expect(transcriptPlainText(segments)).toBe("◆ VEASEL  ·  partial response\nhalf")
+    expect(transcriptPlainText(segments)).toBe("◆ assistant  ·  partial response\nhalf")
   })
 
   test("shows the empty-state hint and the older-history hint", () => {
@@ -102,7 +102,7 @@ describe("transcriptSegments", () => {
     const text = transcriptPlainText(transcriptSegments({
       messages: [{ role: "assistant", content }],
     }))
-    expect(text).toBe(`◆ VEASEL\n${content}`)
+    expect(text).toBe(`◆ assistant\n${content}`)
     expect(transcriptSegments({
       messages: [{ role: "assistant", content }],
     })).toContainEqual({ text: "ts", tone: "codeLang" })
@@ -130,7 +130,7 @@ describe("transcriptSegments", () => {
     ])
     expect(transcriptPlainText(transcriptSegments({
       messages: [{ role: "assistant", content }],
-    }))).toBe(`◆ VEASEL\n${content}`)
+    }))).toBe(`◆ assistant\n${content}`)
   })
 
   test("tones list markers and markdown links in streamed prose", () => {

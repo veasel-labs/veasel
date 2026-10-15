@@ -23,7 +23,7 @@ export const helpItems: HelpItem[] = [
   { command: "/history older", description: "Load earlier messages in this session." },
   { command: "/usage", description: "Show provider-reported token totals for this session (totals, average per reported turn, optional cache counters). Never estimates tokens or invents savings. Cost stays unavailable without a price schedule." },
   { command: "/map", description: "Show the untrusted extractive workspace repository map (ranked paths and declarations) with measured UTF-8 bytes and a bytes/4 bound. Add text after /map to reweight ranking. Capability workspace.repository_map." },
-  { command: "/theme", description: "List TUI color themes, or pass mint, ember, slate, mono, or aurora to switch. The choice is stored for the next launch." },
+  { command: "/theme", description: "List TUI color themes, or pass mint, ember, slate, mono, aurora, day (light), or contrast (high-contrast light) to switch. The choice is stored for the next launch. Transcript roles stay spoken in plain text (you / assistant / system / tool)." },
 ]
 
 export function unknownSlashCommand(input: string): string | undefined {

@@ -770,6 +770,18 @@ def main() -> None:
         screen.wait_for("openai/gpt-5", 4)
         screen.wait_for("/patches")
         screen.clear_line(7)  # "/theme "
+        # Light and high-contrast themes: live-preview day then contrast, Esc restores mint.
+        screen.send("/theme day", 0.7)
+        screen.wait_for("preview Day", 4)
+        screen.wait_for("Enter keeps")
+        screen.send("\x1b", 0.35)
+        screen.wait_for("openai/gpt-5", 4)
+        screen.clear_line(10)  # "/theme day"
+        screen.send("/theme contrast", 0.7)
+        screen.wait_for("preview Contrast", 4)
+        screen.send("\x1b", 0.35)
+        screen.wait_for("openai/gpt-5", 4)
+        screen.clear_line(15)  # "/theme contrast"
         screen.wait_for("/patches")
         screen.wait_for("Ctrl+W")  # session footer (Ctrl+R stays in /help)
         screen.send("\x12", 0.7)  # Ctrl+R opens the first pending list

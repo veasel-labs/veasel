@@ -43,10 +43,12 @@ export type TranscriptInput = {
   showMessages?: boolean
 }
 
-export const userLabel = "● YOU"
-export const assistantLabel = "◆ VEASEL"
-export const systemLabel = "○ SYSTEM"
-export const toolLabel = "▸ TOOL"
+// Spoken role words stay in the plain-text transcript so roles remain clear
+// without color (and when the row is copied). Brand lives in the header.
+export const userLabel = "● you"
+export const assistantLabel = "◆ assistant"
+export const systemLabel = "○ system"
+export const toolLabel = "▸ tool"
 export const streamingCursor = "█"
 
 type TurnKind = "user" | "assistant" | "system" | "tool"

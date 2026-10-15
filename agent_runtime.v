@@ -6,6 +6,7 @@ import time
 
 const max_agent_tool_rounds = 6
 const max_agent_tool_calls = 12
+const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 const max_agent_context_bytes = max_chat_input_bytes + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
@@ -198,7 +199,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent tool call limit reached')
 		}
 		if round == max_agent_tool_rounds - 1 {
-			return error('agent tool round limit reached')
+			return app.finish_with_tool_budget_summary(mut turn_ctx, messages, output, on_text_delta,
+				mut trace_steps, mut trace_usage, collect_trace)
 		}
 		for call in output.tool_calls {
 			if context_error := turn_context_error(mut turn_ctx) {
@@ -269,6 +271,75 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 	}
 	return error('agent tool round limit reached')
+}
+
+fn messages_for_tool_budget_summary(messages []ChatMessage) []ChatMessage {
+	mut summary_messages := []ChatMessage{cap: messages.len + 1}
+	if messages.len > 0 && messages[0].role == 'system' {
+		summary_messages << ChatMessage{
+			role:    'system'
+			content: messages[0].content + '\n\n' + tool_budget_summary_note
+		}
+		for index in 1 .. messages.len {
+			summary_messages << messages[index]
+		}
+		return summary_messages
+	}
+	summary_messages << ChatMessage{
+		role:    'system'
+		content: tool_budget_summary_note
+	}
+	for message in messages {
+		summary_messages << message
+	}
+	return summary_messages
+}
+
+fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, messages []ChatMessage,
+	blocked CompletionOutput, on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep,
+	mut trace_usage ProviderUsage, collect_trace bool) !AgentTraceResult {
+	summary_messages := messages_for_tool_budget_summary(messages)
+	if agent_context_bytes(summary_messages) > max_agent_context_bytes {
+		return error('agent tool round limit reached')
+	}
+	boundary := tool_round_text_boundary(blocked.content)
+	if boundary.len > 0 {
+		on_text_delta(boundary)!
+	}
+	summary := app.complete_agent_with_provider_limit(mut turn_ctx, summary_messages, [],
+		on_text_delta)!
+	if summary.usage.reported {
+		trace_usage = ProviderUsage{
+			input_tokens:  trace_usage.input_tokens + summary.usage.input_tokens
+			output_tokens: trace_usage.output_tokens + summary.usage.output_tokens
+			total_tokens:  trace_usage.total_tokens + summary.usage.total_tokens
+			reported:      true
+		}
+	}
+	if summary.content.trim_space().len == 0 {
+		return error('agent tool round limit reached')
+	}
+	if collect_trace && blocked.content.trim_space().len > 0 {
+		trace_steps << ATIFStep{
+			step_id:    trace_steps.len + 1
+			source:     'agent'
+			model_name: blocked.model
+			message:    blocked.content
+		}
+	}
+	if collect_trace {
+		trace_steps << ATIFStep{
+			step_id:    trace_steps.len + 1
+			source:     'agent'
+			model_name: summary.model
+			message:    summary.content
+		}
+	}
+	return AgentTraceResult{
+		output: summary
+		steps:  trace_steps
+		usage:  trace_usage
+	}
 }
 
 fn tool_round_text_boundary(content string) string {

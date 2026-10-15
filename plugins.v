@@ -15,6 +15,8 @@ const max_plugin_skill_bytes = 1_000_000
 const max_plugin_skill_resource_bytes = 512_000
 const max_plugin_skill_frontmatter_bytes = 64_000
 const max_plugin_skills = 256
+const max_agent_skill_listed_resources = 10
+const max_agent_skill_list_scan_entries = 256
 const max_plugin_mcp_servers = 128
 const max_plugin_mcp_args = 4096
 const max_plugin_mcp_env = 256
@@ -484,7 +486,7 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 
 // load_skill_instructions implements Agent Skills progressive disclosure: the
 // host keeps metadata available for discovery and reads the body only when the
-// user or model activates the skill.
+// user enables the skill for the session or the model calls agent_skill_load.
 fn load_skill_instructions(plugin_root string, skill PluginSkill) !string {
 	root := canonical_plugin_root(plugin_root)!
 	path := os.real_path(skill.path)
@@ -523,6 +525,69 @@ fn load_agent_skill_resource(skill_root string, relative_path string) !string {
 		return error('Agent Skill resource must be UTF-8 text')
 	}
 	return content
+}
+
+struct AgentSkillResourceLister {
+mut:
+	root      string
+	files     []string
+	scanned   int
+	truncated bool
+}
+
+fn (mut lister AgentSkillResourceLister) visit(path string, entry os.WalkDirEntry) os.WalkDirAction {
+	if entry.err != none {
+		lister.truncated = true
+		return .proceed
+	}
+	if entry.is_dir {
+		return .proceed
+	}
+	if entry.typ != .regular || os.is_link(path) {
+		return .proceed
+	}
+	lister.scanned++
+	if lister.scanned > max_agent_skill_list_scan_entries {
+		lister.truncated = true
+		return .stop
+	}
+	if entry.name == 'SKILL.md' && os.dir(path) == lister.root {
+		return .proceed
+	}
+	relative_path := os.path_rel(lister.root, path) or {
+		lister.truncated = true
+		return .proceed
+	}
+	normalized := relative_path.replace('\\', '/')
+	if normalized.len == 0 || normalized.contains('\0') || normalized.contains('..') {
+		return .proceed
+	}
+	lister.files << normalized
+	if lister.files.len >= max_agent_skill_listed_resources {
+		lister.truncated = lister.scanned < max_agent_skill_list_scan_entries
+		return .stop
+	}
+	return .proceed
+}
+
+// list_agent_skill_resource_paths samples relative files inside a skill folder
+// for model guidance. It never reads file contents and never follows symlinks.
+fn list_agent_skill_resource_paths(skill_root string) !([]string, bool) {
+	root := canonical_plugin_root(skill_root)!
+	if root != skill_root {
+		return error('Agent Skill resource root changed after discovery')
+	}
+	mut lister := AgentSkillResourceLister{
+		root:  root
+		files: []string{cap: max_agent_skill_listed_resources}
+	}
+	os.walk_dir(root, lister.visit)!
+	lister.files.sort()
+	if lister.files.len > max_agent_skill_listed_resources {
+		lister.files = lister.files[..max_agent_skill_listed_resources]
+		lister.truncated = true
+	}
+	return lister.files, lister.truncated
 }
 
 fn extract_agent_skill_body(content string) !string {

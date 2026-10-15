@@ -1063,7 +1063,7 @@ async function showSkills(filter = "") {
       return `${enabled.has(key) ? "● enabled" : "○ available"}  ${key}${origin}${label}\n  ${skill.description}${restriction}`
     })).filter((line) => line.length > 0)
     skillNotice = lines.length > 0
-      ? `AGENT SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. Filter with /skills <text>. Standalone SKILL.md folders are discovered automatically from project and user agent skill directories; instruction bodies load only after you enable a skill. Active skills can let the model read bounded text resources from their own folder; files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
+      ? `AGENT SKILLS\n${lines.join("\n\n")}\n\nEnable with /skill on <source>/<skill>. Disable with /skill off <source>/<skill>. Filter with /skills <text>. Standalone SKILL.md folders are discovered automatically from project and user agent skill directories. /skill on injects the body into later turns; the model can also load a discovered skill on demand with agent_skill_load without enabling it first, then read bounded text resources from that folder for the rest of the turn. Files are not executed. A declared tool list only restricts tools already available to this session; approval rules still apply.`
       : filter
         ? `No skills matched “${safeTerminalText(filter)}”. Try /skills, or a broader filter like agents or project.`
         : "No skills found. Add a plugin.json package under VEASEL_PLUGIN_DIR, or place SKILL.md folders under .agents/skills, .claude/skills, .cursor/skills, and the other discovered agent skill roots."

@@ -151,6 +151,11 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   without `plugin.json`, expose `/v1/skills` plus synthetic `/v1/plugins`
   catalog entries, and keep `/skills` / `/skill` enablement on the same
   metadata-first, never-auto-execute path.
+- [x] Let the model load a discovered skill body on demand via `agent_skill_load`
+  without prior session enablement (OpenCode-style progressive disclosure),
+  sample relative resource paths, and read bounded UTF-8 resources for the rest
+  of the turn; content stays untrusted and files are never executed. Session
+  `/skill on` remains the path for persistent prompt injection.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,
   discover bounded tools, route calls through provider adapters, and keep nested

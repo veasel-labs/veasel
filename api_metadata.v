@@ -37,6 +37,7 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		features << 'agent.tools.workspace_readonly'
 		features << 'agent.tools.workspace_edit_proposal'
 		features << 'agent.tools.shell_command_proposal'
+		features << 'agent.tools.skill_load'
 		features << 'agent.tools.skill_read_resource'
 	}
 	return ctx.json(Capabilities{

@@ -524,7 +524,7 @@ def main() -> None:
         screen.send("gpt", 0.5)
         screen.wait_for("GPT-5")
         screen.send("\r", 0.8)
-        screen.wait_for("press s to configure")
+        screen.wait_for("/connect · s to manage providers")
         saved = state["saved"] or {}
         if saved.get("model") != "gpt-5" or not saved.get("api_key"):
             raise AssertionError("selected model and api key were not saved")

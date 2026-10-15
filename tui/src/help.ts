@@ -45,6 +45,7 @@ export function renderHelp(compact = false) {
       "VEASEL CODE / QUICK HELP",
       "/help advanced  Show command syntax",
       "/skills · /plugins · /mcp · /patches · /commands",
+      "/mcp credentials · /mcp oauth  Named HTTP auth (no secrets shown)",
       "/history older  Load earlier messages",
       "/connect · /models · /theme · /map  Auth, model, map",
       "Files go to your provider. Review diffs and MCP calls.",

@@ -57,6 +57,8 @@ describe("slashSuggestions", () => {
     expect(names("/key")[0]).toBe("/connect")
     // Prefer a full word: substring "auth" also hits "/mcp oauth".
     expect(names("/authenticate")[0]).toBe("/connect")
+    expect(names("/pkce")[0]).toBe("/mcp oauth")
+    expect(names("/bearer")[0]).toBe("/mcp credential")
     expect(names("/color")[0]).toBe("/theme")
     expect(names("/repo")[0]).toBe("/map")
     expect(names("/approval")).toEqual(["/patches", "/commands"])

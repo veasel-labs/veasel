@@ -43,8 +43,10 @@ describe("TUI quick help", () => {
     const help = renderHelp(true)
 
     expect(help).toContain("/help advanced")
+    expect(help).toContain("/mcp credentials · /mcp oauth")
+    expect(help).toContain("Named HTTP auth")
     expect(help).toContain("Files go to your provider.")
-    expect(help.split("\n")).toHaveLength(7)
+    expect(help.split("\n")).toHaveLength(8)
   })
 
   test("identifies only messages that begin with an unknown slash command", () => {

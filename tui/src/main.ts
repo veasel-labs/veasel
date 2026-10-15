@@ -817,6 +817,39 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
+  const mcpAddStdio = /^\/mcp add stdio\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)(?:\s+(.+))?$/.exec(content)
+  if (mcpAddStdio) {
+    await addConfiguredMcpServer({
+      name: mcpAddStdio[1],
+      transport: "stdio",
+      command: mcpAddStdio[2],
+      args: mcpAddStdio[3] ? splitMcpArgs(mcpAddStdio[3]) : [],
+    })
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpAddHttp = /^\/mcp add http\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)$/.exec(content)
+  if (mcpAddHttp) {
+    await addConfiguredMcpServer({
+      name: mcpAddHttp[1],
+      transport: "streamable-http",
+      url: mcpAddHttp[2],
+    })
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
+  const mcpToggle = /^\/mcp\s+(remove|enable|disable)\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])$/.exec(content)
+  if (mcpToggle) {
+    const action = mcpToggle[1]
+    const name = mcpToggle[2]
+    if (action === "remove") await removeConfiguredMcpServer(name)
+    else await setConfiguredMcpEnabled(name, action === "enable")
+    chatInput.value = ""
+    chatInput.focus()
+    return
+  }
   const mcpCommand = /^\/mcp\s+(trust|untrust)\s+([a-z0-9.-]+)\/([^\r\n]+)$/.exec(content)
   if (mcpCommand) {
     await setMcpServerTrust(mcpCommand[1] === "trust", mcpCommand[2], mcpCommand[3].trim())
@@ -825,7 +858,7 @@ async function sendMessage(value: string) {
     return
   }
   if (content.startsWith("/mcp ")) {
-    skillNotice = "Use /mcp to list servers, then /mcp trust <plugin>/<server> or /mcp untrust <plugin>/<server>. Review the stdio command or remote origin before trusting a server."
+    skillNotice = "Use /mcp to list servers. Add with /mcp add stdio <name> <command> [args…] or /mcp add http <name> <url>. Toggle with /mcp enable|disable <name>, remove with /mcp remove <name>, then /mcp trust configured/<name>. Review the command or origin before trusting."
     renderChat(chatMessages)
     chatInput.value = ""
     chatInput.focus()
@@ -1276,36 +1309,146 @@ async function removePluginLink(name: string) {
   }
 }
 
+type ConfiguredMcpCatalog = {
+  scope?: string
+  path?: string
+  servers: Array<{
+    name: string
+    scope?: string
+    enabled: boolean
+    transport: string
+    command?: string
+    args?: string[]
+    cwd?: string
+    url_origin?: string
+    header_names?: string[]
+  }>
+}
+
+function splitMcpArgs(raw: string): string[] {
+  const args: string[] = []
+  const matcher = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g
+  for (const match of raw.matchAll(matcher)) {
+    args.push((match[1] ?? match[2] ?? match[3] ?? "").replace(/\\(["'\\])/g, "$1"))
+  }
+  return args
+}
+
 async function showMcpServers() {
   if (!activeSession) return
   try {
-    const [catalogResponse, activeResponse] = await Promise.all([
+    const [catalogResponse, activeResponse, configuredResponse] = await Promise.all([
       fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-servers`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/mcp-servers`, { signal: controller.signal }),
     ])
     if (!catalogResponse.ok || !activeResponse.ok) throw new Error("plugin catalog is unavailable")
     const catalog = await catalogResponse.json() as PluginCatalog
     const active = await activeResponse.json() as SessionPluginMCPServer[]
+    const configured = configuredResponse.ok
+      ? await configuredResponse.json() as ConfiguredMcpCatalog
+      : { servers: [] as ConfiguredMcpCatalog["servers"] }
     const trusted = new Set(active.map((item) => `${item.plugin_name}/${item.server_name}`))
-    const lines = catalog.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
-      const key = `${plugin.name}/${server.name}`
-      const command = server.command ? `\n  command: ${safeTerminalText(server.command)}` : ""
+    const configuredLines = configured.servers.map((server) => {
+      const key = `configured/${server.name}`
+      const command = server.command
+        ? `\n  command: ${safeTerminalText([server.command, ...(server.args ?? [])].join(" "))}`
+        : ""
       const endpoint = server.url_origin ? `\n  endpoint: ${safeTerminalText(server.url_origin)}` : ""
-      const headers = server.header_count
+      const cwd = server.cwd ? `\n  cwd: ${safeTerminalText(server.cwd)}` : ""
+      const headers = server.header_names?.length
         ? `\n  configured headers: ${server.header_names.map(safeTerminalText).join(", ")}`
         : ""
-      const support = ["stdio", "streamable-http"].includes(server.transport)
-        ? server.transport
-        : `${server.transport} (unsupported)`
-      return `${trusted.has(key) ? "● trusted" : "○ available"}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}${endpoint}${headers}`
-    }))
-    const inventory = lines.length > 0
-      ? lines.join("\n\n")
-      : "No Agent Plugin MCP servers found. Add a package with mcp.json under VEASEL_PLUGIN_DIR (or the data/plugins directory)."
-    skillNotice = `AGENT PLUGIN MCP SERVERS\n${inventory}\n\nTrust with /mcp trust <plugin>/<server>; revoke with /mcp untrust <plugin>/<server>. Trust allows the server to connect and expose tools; every model-requested tool call still requires you to inspect its exact arguments and approve it with /mcp calls. Stdio servers run with your OS privileges and can access files and network available to your user. Streamable HTTP servers receive configured headers and approved MCP tool inputs only at the displayed origin; redirects are refused. MCP tool inputs and results are sent to your configured model provider. Review each package and endpoint before trusting it.`
+      const state = !server.enabled
+        ? "○ disabled"
+        : trusted.has(key)
+          ? "● trusted"
+          : "○ available"
+      return `${state}  ${safeTerminalText(key)} [${safeTerminalText(server.transport)}] · user scope${command}${cwd}${endpoint}${headers}`
+    })
+    const pluginLines = catalog.plugins
+      .filter((plugin) => plugin.origin !== "configured")
+      .flatMap((plugin) => plugin.mcp_servers.map((server) => {
+        const key = `${plugin.name}/${server.name}`
+        const command = server.command ? `\n  command: ${safeTerminalText(server.command)}` : ""
+        const endpoint = server.url_origin ? `\n  endpoint: ${safeTerminalText(server.url_origin)}` : ""
+        const headers = server.header_count
+          ? `\n  configured headers: ${server.header_names.map(safeTerminalText).join(", ")}`
+          : ""
+        const support = ["stdio", "streamable-http"].includes(server.transport)
+          ? server.transport
+          : `${server.transport} (unsupported)`
+        return `${trusted.has(key) ? "● trusted" : "○ available"}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}${endpoint}${headers}`
+      }))
+    const inventory = [...configuredLines, ...pluginLines].length > 0
+      ? [...configuredLines, ...pluginLines].join("\n\n")
+      : "No MCP servers yet. Add one with /mcp add stdio <name> <command> [args…] or /mcp add http <name> <url>, or link an Agent Plugin package that includes mcp.json."
+    const configPath = configured.path ? `\nUser-scope file: ${safeTerminalText(configured.path)}` : ""
+    skillNotice = `MCP SERVERS\n${inventory}${configPath}\n\nAdd: /mcp add stdio <name> <command> [args…] · /mcp add http <name> <url>\nManage: /mcp enable|disable|remove <name>\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Stdio runs with your OS privileges. Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function addConfiguredMcpServer(input: {
+  name: string
+  transport: "stdio" | "streamable-http"
+  command?: string
+  args?: string[]
+  url?: string
+}) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-servers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, enabled: true }),
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => ({})) as { name?: string; error?: string; transport?: string }
+    if (!response.ok) throw new Error(body.error || "unable to add MCP server")
+    slashContextAt = 0
+    skillNotice = `Added configured/${safeTerminalText(body.name || input.name)} [${safeTerminalText(body.transport || input.transport)}] (user scope). Trust with /mcp trust configured/${safeTerminalText(body.name || input.name)} after reviewing the command or origin. Every tool call still needs explicit approval.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not add MCP server: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function removeConfiguredMcpServer(name: string) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-servers/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => ({})) as { removed?: string; error?: string }
+    if (!response.ok) throw new Error(body.error || "unable to remove MCP server")
+    slashContextAt = 0
+    skillNotice = `Removed configured MCP server ${safeTerminalText(body.removed || name)}. Session trust rows for configured/${safeTerminalText(name)} stop loading on the next turn.`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not remove MCP server: ${error instanceof Error ? error.message : "request failed"}`
+    renderChat(chatMessages)
+  }
+}
+
+async function setConfiguredMcpEnabled(name: string, enabled: boolean) {
+  try {
+    const response = await fetch(`${apiBase}/v1/mcp-servers/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => ({})) as { name?: string; enabled?: boolean; error?: string }
+    if (!response.ok) throw new Error(body.error || "unable to update MCP server")
+    slashContextAt = 0
+    skillNotice = `${enabled ? "Enabled" : "Disabled"} configured/${safeTerminalText(body.name || name)}. ${enabled ? "Trust it with /mcp trust configured/" + safeTerminalText(body.name || name) + " when ready." : "It stays on disk but will not connect until enabled again."}`
+    renderChat(chatMessages)
+  } catch (error) {
+    skillNotice = `Could not update MCP server: ${error instanceof Error ? error.message : "request failed"}`
     renderChat(chatMessages)
   }
 }
@@ -2186,13 +2329,14 @@ async function refreshSlashContext(typed: string) {
   const sessionId = encodeURIComponent(requestedSessionId)
   let nextContext: SlashCompletionContext | undefined
   try {
-    const [editsResponse, commandsResponse, callsResponse, pluginsResponse, serversResponse, linksResponse] = await Promise.all([
+    const [editsResponse, commandsResponse, callsResponse, pluginsResponse, serversResponse, linksResponse, configuredResponse] = await Promise.all([
       fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/edits`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/workspace/commands`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-tool-calls`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/plugins`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/sessions/${sessionId}/mcp-servers`, { signal: controller.signal }),
       fetch(`${apiBase}/v1/plugins/links`, { signal: controller.signal }),
+      fetch(`${apiBase}/v1/mcp-servers`, { signal: controller.signal }),
     ])
     const edits = editsResponse.ok ? await editsResponse.json() as WorkspaceEditSummary[] : []
     const commands = commandsResponse.ok ? await commandsResponse.json() as ShellCommandSummary[] : []
@@ -2200,6 +2344,9 @@ async function refreshSlashContext(typed: string) {
     const plugins = pluginsResponse.ok ? await pluginsResponse.json() as PluginCatalog : { plugins: [] }
     const trustedServers = serversResponse.ok ? await serversResponse.json() as SessionPluginMCPServer[] : []
     const links = linksResponse.ok ? await linksResponse.json() as PluginLinkCatalog : { links: [] }
+    const configured = configuredResponse.ok
+      ? await configuredResponse.json() as ConfiguredMcpCatalog
+      : { servers: [] as ConfiguredMcpCatalog["servers"] }
     const trusted = new Set(trustedServers.map((server) => `${server.plugin_name}/${server.server_name}`))
     nextContext = {
       patches: edits.filter((edit) => edit.status === "pending").map((edit) => ({ value: edit.id, description: `pending · ${edit.path}` })),
@@ -2207,6 +2354,10 @@ async function refreshSlashContext(typed: string) {
       mcpCalls: calls.filter((call) => call.status === "pending").map((call) => ({ value: call.id, description: `pending · ${call.plugin_name}/${call.tool_name}` })),
       skills: plugins.plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ value: `${plugin.name}/${skill.name}`, description: skill.description }))),
       pluginLinks: links.links.map((link) => ({ value: link.name, description: link.path })),
+      configuredMcpServers: configured.servers.map((server) => ({
+        value: server.name,
+        description: `${server.enabled ? "enabled" : "disabled"} · ${server.transport}`,
+      })),
       mcpServers: plugins.plugins.flatMap((plugin) => plugin.mcp_servers.map((server) => {
         const value = `${plugin.name}/${server.name}`
         return { value, description: trusted.has(value) ? `trusted · ${server.transport}` : server.transport }

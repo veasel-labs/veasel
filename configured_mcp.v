@@ -36,12 +36,12 @@ pub:
 	scope        string = 'user'
 	enabled      bool
 	transport    string
-	command      string              @[omitempty]
-	args         []string            @[omitempty]
-	cwd          string              @[omitempty]
-	env_keys     []string            @[json: 'env_keys'; omitempty]
-	url_origin   string              @[json: 'url_origin'; omitempty]
-	header_names []string            @[json: 'header_names'; omitempty]
+	command      string   @[omitempty]
+	args         []string @[omitempty]
+	cwd          string   @[omitempty]
+	env_keys     []string @[json: 'env_keys'; omitempty]
+	url_origin   string   @[json: 'url_origin'; omitempty]
+	header_names []string @[json: 'header_names'; omitempty]
 }
 
 pub struct ConfiguredMCPCatalog {

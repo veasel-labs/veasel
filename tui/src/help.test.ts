@@ -20,6 +20,8 @@ describe("TUI quick help", () => {
     expect(help).toContain("extractive workspace repository map")
     expect(help).toContain("/theme")
     expect(help).toContain("/plugins · /plugin add · /plugin remove")
+    expect(help).toContain("/mcp add")
+    expect(help).toContain("/mcp remove · /mcp enable · /mcp disable")
     expect(help).toContain("s · /models")
     expect(help).toContain("/connect")
     expect(help).toContain("Paste an API key")

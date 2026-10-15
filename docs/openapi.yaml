@@ -139,6 +139,95 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/mcp-servers:
+    get:
+      operationId: listConfiguredMcpServers
+      description: Lists operator-configured MCP servers persisted in `$VEASEL_DATA_DIR/mcp-servers.json` (user scope). Secrets in headers are not returned; only header names and URL origins are shown. Agent Plugin MCP servers remain listed under `/v1/plugins`.
+      responses:
+        '200':
+          description: User-scoped configured MCP servers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfiguredMCPCatalog'
+    post:
+      operationId: upsertConfiguredMcpServer
+      description: Adds or replaces a user-scoped MCP server (stdio or streamable-http). Does not download packages or run install scripts. Stdio commands must be a bare PATH name or absolute regular file; optional cwd must be an absolute directory. HTTP URLs follow the same origin/header rules as Agent Plugin MCP. Trust is separate (`POST /v1/sessions/{id}/mcp-servers` with `plugin_name=configured`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfiguredMCPServerInput'
+      responses:
+        '200':
+          description: Created or updated configured MCP server (secrets omitted).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfiguredMCPServerView'
+        '400':
+          description: Invalid name, transport, command, URL, or headers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/mcp-servers/{name}:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema: { type: string }
+    patch:
+      operationId: patchConfiguredMcpServer
+      description: Enables or disables a configured MCP server without deleting it. Disabled servers are omitted from the plugin catalog and cannot be trusted until re-enabled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfiguredMCPEnableInput'
+      responses:
+        '200':
+          description: Updated configured MCP server view.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfiguredMCPServerView'
+        '400':
+          description: Invalid name or body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Configured MCP server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: removeConfiguredMcpServer
+      description: Removes a user-scoped configured MCP server from `$VEASEL_DATA_DIR/mcp-servers.json`. Does not delete PLUGIN_DATA under `plugin-data/configured/<name>`.
+      responses:
+        '200':
+          description: Server removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfiguredMCPRemoval'
+        '400':
+          description: Name is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Configured MCP server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/plugins/links:
     get:
       operationId: listPluginLinks
@@ -202,67 +291,6 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Link not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /v1/mcp-servers:
-    get:
-      operationId: listConfiguredMcpServers
-      description: Lists operator-configured MCP servers persisted under the Veasel data directory (mcp-servers.json). Header and env values are omitted from the response; only names/keys and URL origins are shown. These servers appear in the plugin catalog under the synthetic package name configured with origin=configured. Trust and per-call approval still apply before any tool runs.
-      responses:
-        '200':
-          description: Configured MCP servers without secret values.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConfiguredMCPCatalog'
-    post:
-      operationId: upsertConfiguredMcpServer
-      description: Creates or replaces one configured MCP server (stdio or streamable-http). Persists to mcp-servers.json with owner-only permissions when the filesystem supports them. Does not connect or execute the server until a session trusts configured/<name> and a model turn requests a tool that is then inspected and approved.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConfiguredMCPServerInput'
-      responses:
-        '200':
-          description: Stored configured MCP server metadata without secret values.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConfiguredMCPServerView'
-        '400':
-          description: Invalid name, transport, or fields.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /v1/mcp-servers/{name}:
-    delete:
-      operationId: removeConfiguredMcpServer
-      description: Removes a configured MCP server definition. Does not revoke existing session trust rows; the next turn fails closed if the trusted server is gone. PLUGIN_DATA under plugin-data/configured/<name> is left in place.
-      parameters:
-        - in: path
-          name: name
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Server removed.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PluginLinkRemoval'
-        '400':
-          description: Invalid name.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: Server not found.
           content:
             application/json:
               schema:
@@ -1903,7 +1931,73 @@ components:
           description: Present only when the package declares a valid Veasel client extension. Omitted otherwise.
         origin:
           type: string
-          description: Set to standalone for synthetic SKILL.md entries, or link for operator-managed symlink packages; omitted for ordinary in-directory Agent Plugin packages.
+          description: Set to standalone for synthetic SKILL.md entries, link for operator-managed symlink packages, or configured for user-scoped MCP servers from `/v1/mcp-servers`; omitted for ordinary in-directory Agent Plugin packages.
+    ConfiguredMCPCatalog:
+      type: object
+      required: [scope, servers]
+      properties:
+        scope:
+          type: string
+          enum: [user]
+          description: Persistence scope. Currently only user (`$VEASEL_DATA_DIR/mcp-servers.json`).
+        path:
+          type: string
+          description: Absolute path of the persisted JSON file when available.
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfiguredMCPServerView'
+    ConfiguredMCPServerView:
+      type: object
+      required: [name, scope, enabled, transport]
+      properties:
+        name: { type: string }
+        scope: { type: string, enum: [user] }
+        enabled: { type: boolean }
+        transport: { type: string, enum: [stdio, streamable-http] }
+        command: { type: string }
+        args:
+          type: array
+          items: { type: string }
+        cwd: { type: string }
+        env_keys:
+          type: array
+          items: { type: string }
+          description: Environment variable names only; values are never returned.
+        url_origin: { type: string }
+        header_names:
+          type: array
+          items: { type: string }
+          description: Header names only; values are never returned.
+    ConfiguredMCPServerInput:
+      type: object
+      required: [name, transport]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        transport: { type: string, enum: [stdio, streamable-http] }
+        command: { type: string, description: Bare executable name or absolute file path for stdio. }
+        args:
+          type: array
+          items: { type: string }
+        cwd: { type: string, description: Optional absolute working directory for stdio. }
+        env:
+          type: object
+          additionalProperties: { type: string }
+        url: { type: string, description: Absolute HTTP(S) URL for streamable-http. }
+        headers:
+          type: object
+          additionalProperties: { type: string }
+        enabled: { type: boolean, default: true }
+    ConfiguredMCPEnableInput:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+    ConfiguredMCPRemoval:
+      type: object
+      required: [removed]
+      properties:
+        removed: { type: string }
     PluginLinkCatalog:
       type: object
       required: [links, diagnostics]
@@ -1936,38 +2030,6 @@ components:
       required: [removed]
       properties:
         removed: { type: string }
-    ConfiguredMCPCatalog:
-      type: object
-      required: [servers]
-      properties:
-        servers:
-          type: array
-          items:
-            $ref: '#/components/schemas/ConfiguredMCPServerView'
-    ConfiguredMCPServerView:
-      type: object
-      required: [name, transport]
-      properties:
-        name: { type: string }
-        transport: { type: string, enum: [stdio, streamable-http] }
-        command: { type: string }
-        args: { type: array, items: { type: string } }
-        cwd: { type: string }
-        env_keys: { type: array, items: { type: string } }
-        url_origin: { type: string }
-        header_names: { type: array, items: { type: string } }
-    ConfiguredMCPServerInput:
-      type: object
-      required: [name, transport]
-      properties:
-        name: { type: string, description: 'Server id used as configured/<name> for trust.' }
-        transport: { type: string, enum: [stdio, streamable-http] }
-        command: { type: string, description: 'Bare executable name or absolute path for stdio.' }
-        args: { type: array, items: { type: string } }
-        cwd: { type: string, description: 'Optional absolute working directory for stdio.' }
-        env: { type: object, additionalProperties: { type: string } }
-        url: { type: string, description: 'Absolute HTTP(S) URL for streamable-http.' }
-        headers: { type: object, additionalProperties: { type: string } }
     SkillsCatalog:
       type: object
       required: [skills, diagnostics, roots]

@@ -41,6 +41,17 @@ describe("transcriptSegments", () => {
     expect(text).toBe(`● you  ·  sending\n  add a test\n\n◆ assistant  ·  streaming…\n  Reading${streamingCursor}`)
   })
 
+  test("keeps the streaming label when Markdown owns the live body", () => {
+    const text = transcriptPlainText(transcriptSegments({
+      messages: [],
+      streamingText: "# Heading\n\nbody",
+      streaming: true,
+      streamingBodyMode: "external",
+    }))
+    expect(text).toBe("◆ assistant  ·  streaming…\n")
+    expect(text).not.toContain("# Heading")
+  })
+
   test("shows a cursor while streaming before the first token arrives", () => {
     const text = transcriptPlainText(transcriptSegments({
       messages: [],

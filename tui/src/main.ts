@@ -3,6 +3,7 @@ import {
   DiffRenderable,
   InputRenderable,
   InputRenderableEvents,
+  MarkdownRenderable,
   SelectRenderable,
   SelectRenderableEvents,
   StyledText,
@@ -76,6 +77,10 @@ import {
   scrollDiffRenderableToHunk,
   type ReviewDiffSurface,
 } from "./diff-view"
+import {
+  createMarkdownSyntaxStyle,
+  shouldStreamMarkdownSurface,
+} from "./markdown-view"
 import {
   formatBoundedBlock,
   formatShellReview,
@@ -574,6 +579,22 @@ const reviewDiffRenderable = new DiffRenderable(renderer, {
   ...diffRenderableTheme(theme),
 })
 let reviewDiffMounted = false
+// Live assistant stream via MarkdownRenderable while stick-to-bottom. Scrolled
+// windows fall back to TextChunk markdown tones so Home/PgUp still page deltas.
+let streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme)
+const streamMarkdownRenderable = new MarkdownRenderable(renderer, {
+  id: "stream-markdown",
+  content: "",
+  visible: false,
+  flexGrow: 1,
+  minHeight: 4,
+  fg: theme.assistantText,
+  syntaxStyle: streamMarkdownSyntaxStyle,
+  treeSitterClient: reviewDiffTreeSitter,
+  streaming: true,
+  conceal: true,
+})
+let streamMarkdownMounted = false
 body.add(sidebar)
 body.add(detail)
 
@@ -784,6 +805,10 @@ function applyTheme(next: Theme) {
   reviewDiffSyntaxStyle.destroy()
   reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme)
   reviewDiffRenderable.syntaxStyle = reviewDiffSyntaxStyle
+  streamMarkdownSyntaxStyle.destroy()
+  streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme)
+  streamMarkdownRenderable.syntaxStyle = streamMarkdownSyntaxStyle
+  streamMarkdownRenderable.fg = theme.assistantText
   footer.backgroundColor = theme.headerBg
   footer.borderColor = theme.panelBorder
   footerHint.fg = theme.muted
@@ -945,7 +970,8 @@ function renderChat(messages: ChatTurn[]) {
   sidebar.visible = !helpVisible
   portraitRenderable.content = activeSession ? "" : portraitText
   brandLabel.content = activeSession ? "" : "VEASEL CODE"
-  const segments = transcriptSegments({
+  const streaming = Boolean(activeTurnId)
+  const baseInput = {
     session: activeSession && !helpVisible
       ? { title: safeTerminalText(activeSession.title), directory: safeTerminalText(activeSession.directory) }
       : undefined,
@@ -953,23 +979,34 @@ function renderChat(messages: ChatTurn[]) {
     messages: messages.map((message) => ({ role: message.role, content: safeTerminalText(message.content) })),
     pendingUserMessage: safeTerminalText(pendingUserMessage),
     streamingText: safeTerminalText(streamingAssistantText),
-    streaming: Boolean(activeTurnId),
+    streaming,
     streamingCursor: streamingCursorForMotion(reducedMotion, motionFrame),
     hasOlder: chatHistoryHasOlder,
     showMessages: !helpVisible,
     cols: process.stdout.columns ?? 80,
-  })
-  // Notices (reviews, help, status) already budget their own lines — keep them
-  // unwindowed so headers like "a approve" stay on screen.
-  lastTranscriptLineCount = transcriptSegmentLines(segments).length
+  } as const
+  // Scroll metrics always use the inline body so Home/PgUp can leave follow-mode
+  // Markdown and still page through the full streamed text.
+  const scrollSegments = transcriptSegments({ ...baseInput, streamingBodyMode: "inline" })
+  lastTranscriptLineCount = transcriptSegmentLines(scrollSegments).length
   if (skillNotice) {
     transcriptScrollOffset = 0
-    sessionDetail.content = new StyledText(segments.map(({ text, tone }) => transcriptStyles[tone](text)))
+    sessionDetail.content = new StyledText(scrollSegments.map(({ text, tone }) => transcriptStyles[tone](text)))
+    syncStreamMarkdown(false)
     refreshSessionFooter()
     return
   }
   const pageSize = transcriptPageSize(process.stdout.rows ?? 40)
   transcriptScrollOffset = moveTranscriptScroll(transcriptScrollOffset, 0, lastTranscriptLineCount, pageSize)
+  const markdownFollow = shouldStreamMarkdownSurface({
+    streaming,
+    followBottom: transcriptScrollOffset === 0,
+    noticeOpen: false,
+    reviewSplitOpen: reviewDiffMounted && reviewDiffSurface === "split",
+  })
+  const segments = markdownFollow
+    ? transcriptSegments({ ...baseInput, streamingBodyMode: "external" })
+    : scrollSegments
   const windowed = windowTranscriptSegments(segments, transcriptScrollOffset, pageSize)
   const withCues = [...windowed.segments]
   if (windowed.truncatedAbove) {
@@ -977,13 +1014,43 @@ function renderChat(messages: ChatTurn[]) {
   }
   const belowCue = transcriptBelowCue({
     truncatedBelow: windowed.truncatedBelow,
-    streaming: Boolean(activeTurnId),
+    streaming,
   })
   if (belowCue) {
     withCues.push({ text: belowCue, tone: "hint" })
   }
   sessionDetail.content = new StyledText(withCues.map(({ text, tone }) => transcriptStyles[tone](text)))
+  syncStreamMarkdown(markdownFollow)
   refreshSessionFooter()
+}
+
+function syncStreamMarkdown(active: boolean) {
+  if (!active) {
+    if (streamMarkdownMounted) {
+      streamMarkdownRenderable.streaming = false
+      streamMarkdownRenderable.content = ""
+      streamMarkdownRenderable.visible = false
+      detail.remove(streamMarkdownRenderable)
+      streamMarkdownMounted = false
+    }
+    return
+  }
+  const body = safeTerminalText(streamingAssistantText)
+  const cursor = streamingCursorForMotion(reducedMotion, motionFrame)
+  streamMarkdownRenderable.syntaxStyle = streamMarkdownSyntaxStyle
+  streamMarkdownRenderable.fg = theme.assistantText
+  streamMarkdownRenderable.streaming = true
+  streamMarkdownRenderable.content = `${body}${cursor}`
+  streamMarkdownRenderable.visible = true
+  if (!streamMarkdownMounted) {
+    // Keep the composer below the live markdown panel.
+    if (chatInput) detail.insertBefore(streamMarkdownRenderable, chatInput)
+    else detail.add(streamMarkdownRenderable)
+    streamMarkdownMounted = true
+  }
+  if (typeof streamMarkdownRenderable.requestRender === "function") {
+    streamMarkdownRenderable.requestRender()
+  }
 }
 
 function applyLiveStreamStatus() {

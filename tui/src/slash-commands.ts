@@ -311,6 +311,15 @@ export function moveSuggestion(index: number, delta: number, count: number): num
   return (((index + delta) % count) + count) % count
 }
 
+// Home/End and page keys jump without wrapping past the list edges.
+export function jumpSuggestion(index: number, count: number, where: "home" | "end" | "pageup" | "pagedown", page = maxSlashSuggestions): number {
+  if (count <= 0) return 0
+  if (where === "home") return 0
+  if (where === "end") return count - 1
+  if (where === "pageup") return Math.max(0, index - page)
+  return Math.min(count - 1, index + page)
+}
+
 export function suggestionWindow(selected: number, count: number, size = maxSlashSuggestions): { start: number; end: number } {
   if (count <= size) return { start: 0, end: count }
   const start = Math.min(Math.max(0, selected - size + 1), count - size)

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { helpItems } from "./help"
 import {
   completeSlashCommand,
+  jumpSuggestion,
   moveSuggestion,
   runsOnAccept,
   slashCategoryLabel,
@@ -139,6 +140,16 @@ describe("suggestion navigation", () => {
     expect(suggestionWindow(8, 15)).toEqual({ start: 3, end: 9 })
     expect(suggestionWindow(14, 15)).toEqual({ start: 9, end: 15 })
     expect(suggestionWindow(2, 4)).toEqual({ start: 0, end: 4 })
+  })
+
+  test("jumps to edges and pages without wrapping", () => {
+    expect(jumpSuggestion(4, 20, "home")).toBe(0)
+    expect(jumpSuggestion(4, 20, "end")).toBe(19)
+    expect(jumpSuggestion(8, 20, "pageup")).toBe(2)
+    expect(jumpSuggestion(8, 20, "pagedown")).toBe(14)
+    expect(jumpSuggestion(0, 20, "pageup")).toBe(0)
+    expect(jumpSuggestion(18, 20, "pagedown")).toBe(19)
+    expect(jumpSuggestion(0, 0, "end")).toBe(0)
   })
 })
 

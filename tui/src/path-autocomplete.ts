@@ -60,18 +60,86 @@ export function filterWorkspacePaths(paths: string[], query: string, limit = max
     .map((path) => path.replaceAll("\\", "/").replace(/^\.\//, ""))
     .filter((path) => path.length > 0 && !path.startsWith("/") && !path.includes("\0"))
   const unique = [...new Set(normalized)]
-  const prefix = unique.filter((path) => path.toLowerCase().startsWith(needle))
-  const contains = unique.filter((path) => !prefix.includes(path) && path.toLowerCase().includes(needle))
-  const basename = unique.filter((path) => {
-    if (prefix.includes(path) || contains.includes(path)) return false
-    const base = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path
-    return base.toLowerCase().startsWith(needle) || base.toLowerCase().includes(needle)
+  if (!needle) {
+    return unique.slice(0, limit).map((path) => pathSuggestion(path, "workspace path"))
+  }
+  // Rank like provider search: exact/prefix/substring first, then one-typo fuzzy
+  // basename hits so `@mein` still finds `src/main.ts` without drowning exacts.
+  const scored = unique.flatMap((path, index) => {
+    const score = pathMatchScore(needle, path)
+    return score === undefined ? [] : [{ path, index, score }]
   })
-  return [...prefix, ...contains, ...basename].slice(0, limit).map((path) => ({
+  scored.sort((left, right) => right.score - left.score || left.index - right.index)
+  return scored.slice(0, limit).map(({ path, score }) => pathSuggestion(path, pathScoreDescription(score)))
+}
+
+function pathSuggestion(path: string, description: string): PathSuggestion {
+  return {
     name: `@${path}`,
-    description: path.includes("/") ? "workspace path" : "workspace file",
+    description: path.includes("/") && description === "workspace path" ? "workspace path" : description,
     path,
-  }))
+  }
+}
+
+function pathScoreDescription(score: number): string {
+  if (score >= 1_000) return "exact prefix"
+  if (score >= 900) return "name match"
+  if (score >= 800) return "path match"
+  if (score >= 700) return "name match"
+  if (score >= 500) return "close match"
+  return "workspace path"
+}
+
+function pathMatchScore(needle: string, path: string): number | undefined {
+  const lower = path.toLowerCase()
+  const base = lower.includes("/") ? lower.slice(lower.lastIndexOf("/") + 1) : lower
+  if (lower === needle || base === needle) return 1_200 - path.length
+  // Cap length penalties so longer paths still keep the prefix band (≥1000).
+  if (lower.startsWith(needle)) return 1_050 - Math.min(40, lower.length - needle.length)
+  if (base.startsWith(needle)) return 940 - Math.min(30, base.length - needle.length)
+  const pathAt = lower.indexOf(needle)
+  if (pathAt >= 0) return 820 - pathAt * 4 - (lower.length - needle.length)
+  const baseAt = base.indexOf(needle)
+  if (baseAt >= 0) return 740 - baseAt * 4 - (base.length - needle.length)
+
+  // Typo-tolerant basename / stem match (same OSA budget as provider search).
+  // Prefer the file stem so `@mein` finds `main.ts` without requiring the
+  // extension in the query.
+  if (needle.length < 4) return undefined
+  const stem = base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base
+  const maximumDistance = needle.length < 8 ? 1 : Math.floor(needle.length / 4)
+  let best: number | undefined
+  for (const candidate of [stem, base]) {
+    if (Math.abs(needle.length - candidate.length) > maximumDistance) continue
+    const distance = optimalStringAlignmentDistance(needle, candidate)
+    if (distance > maximumDistance) continue
+    const score = 560 - distance * 32 - Math.abs(candidate.length - needle.length) * 2
+    best = Math.max(best ?? 0, score)
+  }
+  return best
+}
+
+function optimalStringAlignmentDistance(left: string, right: string) {
+  const rows = left.length + 1
+  const columns = right.length + 1
+  const distance = Array.from({ length: rows }, () => Array<number>(columns).fill(0))
+  for (let row = 0; row < rows; row++) distance[row]![0] = row
+  for (let column = 0; column < columns; column++) distance[0]![column] = column
+
+  for (let row = 1; row < rows; row++) {
+    for (let column = 1; column < columns; column++) {
+      const substitution = left[row - 1] === right[column - 1] ? 0 : 1
+      distance[row]![column] = Math.min(
+        distance[row - 1]![column]! + 1,
+        distance[row]![column - 1]! + 1,
+        distance[row - 1]![column - 1]! + substitution,
+      )
+      if (row > 1 && column > 1 && left[row - 1] === right[column - 2] && left[row - 2] === right[column - 1]) {
+        distance[row]![column] = Math.min(distance[row]![column]!, distance[row - 2]![column - 2]! + substitution)
+      }
+    }
+  }
+  return distance[left.length]![right.length]!
 }
 
 // Bounded recursive listing under root. Paths are relative with `/` separators.

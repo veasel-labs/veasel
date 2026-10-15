@@ -42,6 +42,21 @@ class VeaselOptions(InstalledAgentOptions):
     ] = Field(default=None, description="Maximum Veasel task duration in seconds.")
 
 
+_VEASEL_HARBOR_PROVIDERS = frozenset(
+    {
+        "openai",
+        "openai-responses",
+        "anthropic",
+        "gemini",
+        "openai-compatible",
+        "meta",
+    }
+)
+
+# Overrides that keep Harbor's model family while selecting a Veasel transport.
+_OPENAI_FAMILY_OVERRIDES = frozenset({"openai-compatible", "openai-responses"})
+
+
 def _veasel_provider(
     provider: str | None, model_name: str | None, provider_override: str | None = None
 ) -> tuple[str, str]:
@@ -58,14 +73,53 @@ def _veasel_provider(
         raise ValueError("Harbor model provider does not match its model identifier")
     selected = normalize(provider_override) if provider_override else configured_provider
     if selected != configured_provider and not (
-        selected == "openai-compatible" and configured_provider == "openai"
+        selected in _OPENAI_FAMILY_OVERRIDES and configured_provider == "openai"
     ):
         raise ValueError("Veasel provider override must match Harbor's configured model provider")
-    if selected not in {"openai", "anthropic", "gemini", "openai-compatible", "meta"}:
+    if selected not in _VEASEL_HARBOR_PROVIDERS:
         raise ValueError(f"Veasel does not support Harbor provider {selected!r}")
     if not model:
         raise ValueError("Harbor model identifier must not be empty")
     return selected, model
+
+
+def _metadata_from_veasel_result(result: dict[str, object]) -> dict[str, object]:
+    """Forward only provider-reported usage; never invent cost or cache hits."""
+    metadata: dict[str, object] = {
+        "veasel_status": result.get("status"),
+        "veasel_provider": result.get("provider"),
+        "veasel_model": result.get("model"),
+        "cost": "unavailable_from_provider_adapter",
+    }
+    if result.get("usage_reported") is True:
+        usage: dict[str, object] = {
+            "input_tokens": result.get("input_tokens", 0),
+            "output_tokens": result.get("output_tokens", 0),
+            "reported": True,
+        }
+        if result.get("cache_reported") is True:
+            usage["cache_read_tokens"] = result.get("cache_read_tokens", 0)
+            usage["cache_creation_tokens"] = result.get("cache_creation_tokens", 0)
+            usage["cache_reported"] = True
+        metadata["usage"] = usage
+    else:
+        metadata["usage"] = "unavailable_from_provider_adapter"
+    if result.get("session_usage_reported") is True:
+        session_usage: dict[str, object] = {
+            "completed_turns": result.get("session_completed_turns", 0),
+            "reported_turns": result.get("session_reported_turns", 0),
+            "input_tokens": result.get("session_input_tokens", 0),
+            "output_tokens": result.get("session_output_tokens", 0),
+            "reported": True,
+        }
+        if result.get("session_cache_reported") is True:
+            session_usage["cache_read_tokens"] = result.get("session_cache_read_tokens", 0)
+            session_usage["cache_creation_tokens"] = result.get(
+                "session_cache_creation_tokens", 0
+            )
+            session_usage["cache_reported"] = True
+        metadata["session_usage"] = session_usage
+    return metadata
 
 
 class VeaselCode(BaseInstalledAgent):
@@ -159,11 +213,7 @@ class VeaselCode(BaseInstalledAgent):
         if isinstance(result, dict):
             context.metadata = {
                 **(context.metadata or {}),
-                "veasel_status": result.get("status"),
-                "veasel_provider": result.get("provider"),
-                "veasel_model": result.get("model"),
-                "usage": "unavailable_from_provider_adapter",
-                "cost": "unavailable_from_provider_adapter",
+                **_metadata_from_veasel_result(result),
             }
 
     @override

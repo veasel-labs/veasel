@@ -14,6 +14,7 @@ from harbor.models.agent.context import AgentContext
 
 from benchmarks.harbor.veasel_agent import (
     VeaselCode,
+    _metadata_from_veasel_result,
     _veasel_provider,
     validate_trace,
 )
@@ -48,12 +49,24 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_veasel_provider("meta", "meta/muse-wonder-1.0"), ("meta", "muse-wonder-1.0"))
         self.assertEqual(_veasel_provider("google", "google/gemini-test"), ("gemini", "gemini-test"))
         self.assertEqual(
+            _veasel_provider("openai-responses", "openai-responses/gpt-test"),
+            ("openai-responses", "gpt-test"),
+        )
+        self.assertEqual(
             _veasel_provider(
                 "openai",
                 "openai/gpt-test",
                 "openai-compatible",
             ),
             ("openai-compatible", "gpt-test"),
+        )
+        self.assertEqual(
+            _veasel_provider(
+                "openai",
+                "openai/gpt-test",
+                "openai-responses",
+            ),
+            ("openai-responses", "gpt-test"),
         )
         self.assertEqual(
             _veasel_provider(
@@ -69,6 +82,48 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
             _veasel_provider("openai", "anthropic/model")
         with self.assertRaisesRegex(ValueError, "override must match"):
             _veasel_provider("anthropic", "anthropic/model", "openai-compatible")
+
+    def test_metadata_forwards_provider_reported_usage_only(self) -> None:
+        unavailable = _metadata_from_veasel_result(
+            {"status": "completed", "provider": "openai", "model": "gpt-test"}
+        )
+        self.assertEqual(unavailable["usage"], "unavailable_from_provider_adapter")
+        self.assertEqual(unavailable["cost"], "unavailable_from_provider_adapter")
+
+        reported = _metadata_from_veasel_result(
+            {
+                "status": "completed",
+                "provider": "anthropic",
+                "model": "claude",
+                "usage_reported": True,
+                "input_tokens": 120,
+                "output_tokens": 40,
+                "cache_reported": True,
+                "cache_read_tokens": 80,
+                "cache_creation_tokens": 0,
+                "session_usage_reported": True,
+                "session_completed_turns": 1,
+                "session_reported_turns": 1,
+                "session_input_tokens": 120,
+                "session_output_tokens": 40,
+                "session_cache_reported": True,
+                "session_cache_read_tokens": 80,
+                "session_cache_creation_tokens": 0,
+            }
+        )
+        self.assertEqual(
+            reported["usage"],
+            {
+                "input_tokens": 120,
+                "output_tokens": 40,
+                "reported": True,
+                "cache_read_tokens": 80,
+                "cache_creation_tokens": 0,
+                "cache_reported": True,
+            },
+        )
+        self.assertEqual(reported["cost"], "unavailable_from_provider_adapter")
+        self.assertEqual(reported["session_usage"]["cache_read_tokens"], 80)
 
     def test_harbor_factory_loads_documented_import_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -137,6 +192,32 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("uname -m", command)
         self.assertNotIn("grep", command)
         subprocess.run(["bash", "-n"], input=command, text=True, check=True)
+
+    def test_populate_context_reads_reported_usage_from_result_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            logs = Path(directory)
+            (logs / "veasel-result.json").write_text(
+                json.dumps(
+                    {
+                        "status": "completed",
+                        "provider": "openai-responses",
+                        "model": "gpt-test",
+                        "usage_reported": True,
+                        "input_tokens": 10,
+                        "output_tokens": 5,
+                    }
+                )
+            )
+            agent = VeaselCode(logs_dir=logs, veasel_version="1.2.3")
+            context = AgentContext()
+            agent.populate_context_post_run(context)
+
+        self.assertEqual(context.metadata["veasel_provider"], "openai-responses")
+        self.assertEqual(
+            context.metadata["usage"],
+            {"input_tokens": 10, "output_tokens": 5, "reported": True},
+        )
+        self.assertEqual(context.metadata["cost"], "unavailable_from_provider_adapter")
 
     def test_trajectory_validation_uses_harbors_atif_model(self) -> None:
         trajectory = {

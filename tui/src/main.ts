@@ -140,6 +140,10 @@ import {
 import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
 import { formatBusyStatus, formatCancelledStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
 import {
+  prefersReducedMotion,
+  streamingCursorForMotion,
+} from "./reduced-motion"
+import {
   formatCatalogFilterEmpty,
   formatCatalogFilterHeader,
   isMcpManageRest,
@@ -175,9 +179,36 @@ loadCustomThemes({
   projectDir: process.env.VEASEL_PROJECT_DIR?.trim() || process.cwd(),
 })
 
+const reducedMotion = prefersReducedMotion()
+let motionFrame = 0
+let motionTimer: ReturnType<typeof setInterval> | undefined
+
 let theme: Theme = resolveTheme(loadThemeId())
 let committedThemeId: ThemeId = theme.id
 let themePreviewActive = false
+
+function busyMotionOptions() {
+  return { reducedMotion, frame: motionFrame }
+}
+
+function stopMotionPulse() {
+  if (!motionTimer) return
+  clearInterval(motionTimer)
+  motionTimer = undefined
+}
+
+function ensureMotionPulse() {
+  if (reducedMotion || motionTimer) return
+  motionTimer = setInterval(() => {
+    if (!activeTurnId && !sendingMessage) {
+      stopMotionPulse()
+      return
+    }
+    motionFrame += 1
+    if (activeTurnId) renderChat(chatMessages)
+    applyLiveStreamStatus()
+  }, 530)
+}
 
 function pendingReviewStatusColor(counts: PendingReviewCounts): string {
   return totalPendingReviews(counts) > 0 ? theme.statusWarn : theme.statusOk
@@ -871,6 +902,7 @@ function renderChat(messages: ChatTurn[]) {
     pendingUserMessage: safeTerminalText(pendingUserMessage),
     streamingText: safeTerminalText(streamingAssistantText),
     streaming: Boolean(activeTurnId),
+    streamingCursor: streamingCursorForMotion(reducedMotion, motionFrame),
     hasOlder: chatHistoryHasOlder,
     showMessages: !helpVisible,
     cols: process.stdout.columns ?? 80,
@@ -905,7 +937,7 @@ function applyLiveStreamStatus() {
     offsetFromBottom: transcriptScrollOffset,
     streaming: Boolean(activeTurnId),
     streamingChars: streamingAssistantText.length,
-    formatStreaming: formatStreamingBusyStatus,
+    formatStreaming: (chars) => formatStreamingBusyStatus(chars, busyMotionOptions()),
   })
   if (!live) return
   // End (offset 0) restores measured streaming busy; scrolled keeps End-follow.
@@ -1372,13 +1404,15 @@ async function sendMessage(value: string) {
   activeTurnCancelled = false
   pendingUserMessage = content
   streamingAssistantText = ""
+  motionFrame = 0
+  ensureMotionPulse()
   renderChat(chatMessages)
   const operationId = activeTurnId
   const turnController = activeTurnController
   let awaitingAsyncCompletion = false
   chatInput.value = ""
   chatInput.blur()
-  status.content = formatBusyStatus("Veasel is thinking…")
+  status.content = formatBusyStatus("Veasel is thinking…", busyMotionOptions())
   status.fg = theme.statusWarn
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/messages`, {
@@ -1427,6 +1461,7 @@ async function sendMessage(value: string) {
       pendingUserMessage = ""
       activeTurnId = undefined
       activeTurnController = undefined
+      stopMotionPulse()
       if (streamingAssistantText) renderChat(chatMessages)
       chatInput?.focus()
     }
@@ -1555,6 +1590,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     activeTurnId = undefined
     activeTurnController = undefined
     activeTurnCancelled = false
+    stopMotionPulse()
     return
   }
   const userCancelled = activeTurnCancelled
@@ -1569,6 +1605,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
       activeTurnId = undefined
       activeTurnController = undefined
       activeTurnCancelled = false
+      stopMotionPulse()
       return
     }
     const latest = await historyResponse.json() as ChatTurn[]
@@ -1590,12 +1627,14 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     activeTurnId = undefined
     activeTurnController = undefined
     activeTurnCancelled = false
+    stopMotionPulse()
     return
   }
   sendingMessage = false
   activeTurnId = undefined
   activeTurnController = undefined
   activeTurnCancelled = false
+  stopMotionPulse()
   if (completion.status === "completed") {
     if (historyLoaded) {
       const completedStatus = statusWithUsage(completion.provider ?? "provider", completion.model ?? "assistant", completion)

@@ -24,6 +24,15 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
+		_ := canonical_workspace_root(session.directory) or {
+			eprintln('veasel: rejecting queued operation ${operation.id}; workspace missing')
+			store.reject_queued_session_operation(operation.session_id, operation.id,
+				'Queued turn session workspace is missing and will not be claimed.') or {
+				eprintln('veasel: unable to reject queued operation with missing workspace ${operation.id}')
+				''
+			}
+			continue
+		}
 		request_json := store.session_operation_request_json(operation.session_id, operation.id) or {
 			eprintln('veasel: rejecting queued operation ${operation.id}; request missing')
 			store.reject_queued_session_operation(operation.session_id, operation.id,

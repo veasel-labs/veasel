@@ -208,11 +208,12 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md).
   Streamable HTTP 401 responses parse WWW-Authenticate Bearer challenges
   including RFC 9728 `resource_metadata`, then best-effort fetch protected-
-  resource metadata (authorization_servers/scopes) without forwarding MCP
-  headers; GET notification streams append SSE `message` events into a
-  dedicated notifications queue (not RPC pending) with mid-stream cancel, and
-  trusted HTTP connects best-effort listen after initialize. The
-  authorization-code dance remains open.
+  resource metadata and the first authorization server's RFC 8414 metadata
+  (issuer/authorize/token endpoints) without forwarding MCP headers; GET
+  notification streams append SSE `message` events into a dedicated
+  notifications queue (not RPC pending) with mid-stream cancel, and trusted
+  HTTP connects best-effort listen after initialize. The authorization-code
+  dance remains open.
   Plugin skill/MCP component enable/disable is available via
   `/v1/plugins/components`.
 - [x] Discover local Agent Plugin Skills, expose metadata through the API,
@@ -246,9 +247,9 @@ and [`VLIB_REUSE.md`](VLIB_REUSE.md).
   list|set|remove` for named HTTP header sets. Named HTTP credentials via
   `/v1/mcp-credentials`. Stdio `notifications/cancelled` on turn cancel is
   implemented; HTTP mid-body cancel via progress callbacks is shipped.
-  WWW-Authenticate Bearer challenge discovery and RFC 9728 protected-
-  resource metadata fetch are shipped on 401; interactive OAuth dance and
-  TTFB-before-progress cancel remain open.
+  WWW-Authenticate Bearer challenge discovery, RFC 9728 protected-resource
+  metadata, and RFC 8414 authorization-server metadata fetch are shipped on
+  401; interactive OAuth dance and TTFB-before-progress cancel remain open.
 - [x] Require durable per-call MCP argument inspection and approval, pause and
   resume the active provider turn, persist rejection and execution outcomes,
   and recover interrupted calls without replay. API smoke proves no fixture

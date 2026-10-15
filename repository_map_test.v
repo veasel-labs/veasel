@@ -82,6 +82,46 @@ fn test_repository_map_ranks_directory_prefix_and_segment_mentions() {
 	assert !repository_map_path_has_segment('src/other/noise.v', 'auth')
 }
 
+fn test_repository_map_ranks_test_pairs_and_symbol_parts() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-pairs')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'session.v'), 'module session\n\npub fn open_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'session_test.v'), 'module session\n\nfn test_open_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'unrelated.v'), 'module unrelated\n\nfn noise() {}\n')
+	write_map_fixture_file(os.join_path(root, 'pkg', 'auth_service.v'), 'module auth\n\npub fn login_user() {}\n')
+	paired := build_repository_map(root, 'Inspect session.v behavior', repository_map_default_budget_bytes) or {
+		panic(err)
+	}
+	assert paired.ranked_paths.any(it.ends_with('session_test.v'))
+	parts := build_repository_map(root, 'Where is loginUser defined?', repository_map_default_budget_bytes) or {
+		panic(err)
+	}
+	assert parts.text.contains('login_user') || parts.ranked_paths.any(it.contains('auth_service'))
+	assert repository_map_is_test_pair('src/session_test.v', 'session.v')
+	assert repository_map_stems_are_test_pair('session_test', 'session')
+	assert repository_map_symbol_part_match('login_user', 'loginUser')
+	assert !repository_map_symbol_part_match('login_user', 'login_user')
+}
+
+fn test_repository_map_boosts_directory_neighbors_of_mentions() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-neighbors')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'auth', 'session.v'), 'module auth\n\npub fn open_session() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'auth', 'tokens.v'), 'module auth\n\npub fn mint_token() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'other', 'noise.v'), 'module other\n\npub fn ignore_me() {}\n')
+	result := build_repository_map(root, 'Please read src/auth/session.v', 2_048) or { panic(err) }
+	assert result.ranked_paths.any(it.ends_with('tokens.v'))
+	assert result.text.contains('src/auth/tokens.v')
+}
+
 fn test_repository_map_respects_byte_budget_on_large_trees() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-large')
 	os.rmdir_all(root) or {}

@@ -34,6 +34,16 @@ const openai_prompt_cache_env = 'VEASEL_OPENAI_PROMPT_CACHE'
 const openai_prompt_cache_key_env = 'VEASEL_OPENAI_PROMPT_CACHE_KEY'
 const openai_prompt_cache_default_key = 'veasel'
 const openai_prompt_cache_key_max_bytes = 64
+// Request-side Gemini explicit context cache. When VEASEL_GEMINI_CACHED_CONTENT
+// names a `cachedContents/...` resource and VEASEL_GEMINI_PROMPT_CACHE is not
+// `off`, generateContent requests set `cachedContent` to that name. Veasel does
+// not create/expire caches on the turn path; create payload encoding is
+// fixture-tested separately. Hits still require provider-reported
+// `cachedContentTokenCount`.
+const gemini_prompt_cache_env = 'VEASEL_GEMINI_PROMPT_CACHE'
+const gemini_cached_content_env = 'VEASEL_GEMINI_CACHED_CONTENT'
+const gemini_cached_content_prefix = 'cachedContents/'
+const gemini_cached_content_ttl_default = '3600s'
 
 pub struct ChatMessage {
 pub:
@@ -818,6 +828,18 @@ struct GeminiRequest {
 	contents           []GeminiContent
 	generation_config  GeminiGenerationConfig @[json: 'generationConfig']
 	tools              []GeminiToolGroup      @[omitempty]
+	cached_content     string                 @[json: 'cachedContent'; omitempty]
+}
+
+// GeminiCachedContentCreate is the JSON body for POST .../cachedContents.
+// Encoded for fixtures and future management tooling; the turn path does not
+// call create automatically.
+struct GeminiCachedContentCreate {
+	model              string        @[omitempty]
+	display_name       string        @[json: 'displayName'; omitempty]
+	system_instruction GeminiContent @[json: 'systemInstruction']
+	contents           []GeminiContent
+	ttl                string @[omitempty]
 }
 
 struct GeminiToolGroup {
@@ -1374,31 +1396,7 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 	messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	base := secure_endpoint(config.base_url)!
-	system, conversation := gemini_messages(messages)
-	mut declarations := []GeminiFunctionDeclaration{cap: tools.len}
-	for tool in tools {
-		declarations << GeminiFunctionDeclaration{
-			name:        tool.name
-			description: tool.description
-			parameters:  tool_parameters_json(tool)
-		}
-	}
-	request := GeminiRequest{
-		system_instruction: GeminiContent{
-			parts: [GeminiPart{ text: system }]
-		}
-		contents:           conversation
-		generation_config:  GeminiGenerationConfig{
-			max_output_tokens: config.max_output_tokens
-		}
-		tools:              if declarations.len > 0 {
-			[GeminiToolGroup{
-				function_declarations: declarations
-			}]
-		} else {
-			[]
-		}
-	}
+	request := build_gemini_request(config, messages, tools)
 	model_path := urllib.path_escape(config.model)
 	url := '${base}/models/${model_path}:streamGenerateContent?alt=sse'
 	mut stream_state := &GeminiStreamOutput{}
@@ -1444,6 +1442,86 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 		content:    stream_state.content.join('')
 		tool_calls: stream_state.tools
 		usage:      stream_state.usage
+	}
+}
+
+fn gemini_prompt_cache_mode() string {
+	raw := os.getenv_opt(gemini_prompt_cache_env) or { 'auto' }
+	value := raw.trim_space().to_lower()
+	return match value {
+		'off', '0', 'false', 'no' { 'off' }
+		else { 'auto' }
+	}
+}
+
+fn gemini_prompt_cache_enabled() bool {
+	return gemini_prompt_cache_mode() != 'off'
+}
+
+fn gemini_cached_content_name() string {
+	if !gemini_prompt_cache_enabled() {
+		return ''
+	}
+	raw := os.getenv_opt(gemini_cached_content_env) or { '' }
+	name := raw.trim_space()
+	if name.len == 0 {
+		return ''
+	}
+	if name.starts_with(gemini_cached_content_prefix) {
+		return name
+	}
+	return gemini_cached_content_prefix + name.trim_left('/')
+}
+
+fn build_gemini_cached_content_create(model string, display_name string, system string,
+	contents []GeminiContent, ttl string) GeminiCachedContentCreate {
+	model_name := if model.starts_with('models/') {
+		model
+	} else {
+		'models/' + model.trim_left('/')
+	}
+	ttl_value := if ttl.trim_space().len > 0 {
+		ttl.trim_space()
+	} else {
+		gemini_cached_content_ttl_default
+	}
+	return GeminiCachedContentCreate{
+		model:              model_name
+		display_name:       display_name.trim_space()
+		system_instruction: GeminiContent{
+			parts: if system.len > 0 { [GeminiPart{ text: system }] } else { [] }
+		}
+		contents:           contents
+		ttl:                ttl_value
+	}
+}
+
+fn build_gemini_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) GeminiRequest {
+	system, conversation := gemini_messages(messages)
+	mut declarations := []GeminiFunctionDeclaration{cap: tools.len}
+	for tool in tools {
+		declarations << GeminiFunctionDeclaration{
+			name:        tool.name
+			description: tool.description
+			parameters:  tool_parameters_json(tool)
+		}
+	}
+	return GeminiRequest{
+		system_instruction: GeminiContent{
+			parts: if system.len > 0 { [GeminiPart{ text: system }] } else { [] }
+		}
+		contents:           conversation
+		generation_config:  GeminiGenerationConfig{
+			max_output_tokens: config.max_output_tokens
+		}
+		tools:              if declarations.len > 0 {
+			[GeminiToolGroup{
+				function_declarations: declarations
+			}]
+		} else {
+			[]
+		}
+		cached_content:     gemini_cached_content_name()
 	}
 }
 

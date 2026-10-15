@@ -89,6 +89,20 @@ the key helps routing on pre–GPT-5.6 models and separate cache accounting.
 GPT-5.6+ `prompt_cache_options` / explicit breakpoints are not implemented.
 Fixture evidence: `provider_cache_test.v`.
 
+### Request-side Gemini explicit cache
+
+For catalog provider `gemini`, when `VEASEL_GEMINI_CACHED_CONTENT` is set to a
+`cachedContents/...` resource name (bare ids are prefixed automatically) and
+`VEASEL_GEMINI_PROMPT_CACHE` is not `off`, Veasel emits top-level
+`cachedContent` on `streamGenerateContent` requests. Default mode is `auto`
+(reference when named); `off` suppresses the field even if a name is set.
+
+Capability `provider.gemini.prompt_cache` appears only when a resource name is
+configured and not disabled. Veasel does **not** create or expire Gemini caches
+on the assistant turn path; `build_gemini_cached_content_create` encodes the
+`POST .../cachedContents` body for fixtures and future management tooling.
+Hits remain provider-reported via `cachedContentTokenCount` only.
+
 No OpenCode source was copied. Veasel does **not** invent % savings or dollar
 amounts from cache counters. Enabling request markers does not guarantee cache
 hits; hits appear only when the provider reports cache usage fields.
@@ -100,7 +114,7 @@ hits; hits appear only when the provider reports cache usage fields.
 | Request-side Anthropic `cache_control` | Shipped (default auto; env opt-out) |
 | OpenAI `prompt_cache_key` / `prompt_cache_retention` | Shipped for `openai` + `openai-responses` (default auto; env opt-out) |
 | OpenAI GPT-5.6+ `prompt_cache_options` / breakpoints | Not implemented |
-| Gemini explicit cache APIs | Not implemented |
+| Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire management is not on the turn path (create body encoder fixture-tested) |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |
 | Models.dev-priced USD cost | Still unavailable |
 | Reasoning-token split | Not surfaced yet |

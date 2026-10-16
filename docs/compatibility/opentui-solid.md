@@ -58,15 +58,20 @@ compatibility and does not authorize copying branding or product chrome.
   `veasel.reviews.open`. Demo fixture queue for `start:solid` / tests. Engineering
   reference only: OpenCode `permission.tsx` / diff-viewer — Veasel mint chrome,
   not OpenCode branding. HTTP approve/reject wiring remains on the legacy path.
+- Toast host (`solid/ui/toast.tsx`): non-modal top-right mint notices with
+  variant borders, optional title/action, queue (`+N more`), hover pause/resume,
+  click dismiss/activate. Pattern from OpenCode `ui/toast.tsx` (engineering
+  only; Veasel tokens and copy). Palette `veasel.toast.demo`. Does not steal Esc
+  from the dialog stack.
 
 ## Startup note (light)
 
 Solid entry (`bun run start:solid`) loads `@opentui/solid` + the transcript
-scrollbox, dialog/palette, and review-panel modules in addition to core. A local
-import smoke (~2026-10-16) showed `solid/transcript.tsx` ~280 ms vs a thin
-legacy helper ~160 ms cold; keep measuring with `benchmarks/tui-startup*` before
-default cutover. No V backend changes in the transcript, palette, or reviews
-slices.
+scrollbox, dialog/palette, review-panel, and toast modules in addition to core.
+A local import smoke (~2026-10-16) showed `solid/transcript.tsx` ~280 ms vs a
+thin legacy helper ~160 ms cold; keep measuring with `benchmarks/tui-startup*`
+before default cutover. No V backend changes in the transcript, palette,
+reviews, or toast slices.
 
 Do not copy OpenCode logos, splash art, or product strings. Prefer Veasel mint
 tokens and HTTP-API client boundaries.

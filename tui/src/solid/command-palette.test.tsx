@@ -19,6 +19,9 @@ afterEach(() => {
 const demoSize = { width: 80, height: 30, kittyKeyboard: true } as const
 
 const noopPaletteHandlers = {
+  previousUserMessage: () => {},
+  nextUserMessage: () => {},
+  lastUserMessage: () => {},
   showOpen: () => {},
   showStatus: () => {},
   showAgent: () => {},
@@ -61,14 +64,14 @@ describe("Solid dialog host + command palette", () => {
     setup.mockInput.pressKey("p", { ctrl: true })
     await setup.renderOnce()
     // Chrome actions stay on the first screen; slash commands are filter-reachable.
-    expect(setup.captureCharFrame()).toContain("Open pending reviews")
+    expect(setup.captureCharFrame()).toContain("Previous user message")
 
     await setup.mockInput.typeText("theme")
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
     expect(frame).toContain("/theme")
     expect(frame).toContain("Cycle theme")
-    expect(frame).not.toContain("Open pending reviews")
+    expect(frame).not.toContain("Previous user message")
     expect(frame).not.toContain("/connect")
   })
 

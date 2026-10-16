@@ -157,6 +157,28 @@ function LiveAppShell(props: LiveAppProps) {
   const [composerDraft, setComposerDraft] = createSignal("")
   const [restoreToken, setRestoreToken] = createSignal<{ id: string; text: string } | undefined>()
   const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(loadDraftStash())
+  const [messageNavRequest, setMessageNavRequest] = createSignal<
+    | { tick: number; direction: "next" | "prev"; userOnly?: boolean }
+    | { tick: number; action: "last-user" }
+    | undefined
+  >(undefined)
+  let messageNavTick = 0
+  const requestMessageNav = (
+    request:
+      | { direction: "next" | "prev"; userOnly?: boolean }
+      | { action: "last-user" },
+  ) => {
+    messageNavTick += 1
+    if ("action" in request) {
+      setMessageNavRequest({ tick: messageNavTick, action: request.action })
+      return
+    }
+    setMessageNavRequest({
+      tick: messageNavTick,
+      direction: request.direction,
+      userOnly: request.userOnly,
+    })
+  }
   const terminalColumns = () => process.stdout.columns ?? 80
   const [sidebarWidth, setSidebarWidth] = createSignal(
     loadHomeSidebarWidth({}, terminalColumns()),
@@ -1341,6 +1363,9 @@ function LiveAppShell(props: LiveAppProps) {
         showSkills: () => {
           void openLiveSkills()
         },
+        previousUserMessage: () => requestMessageNav({ direction: "prev", userOnly: true }),
+        nextUserMessage: () => requestMessageNav({ direction: "next", userOnly: true }),
+        lastUserMessage: () => requestMessageNav({ action: "last-user" }),
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -1566,6 +1591,11 @@ function LiveAppShell(props: LiveAppProps) {
           streaming={streaming()}
           streamingText={streamingText()}
           followTail={true}
+          enableActivityKeys={!dialog.open()}
+          messageNavRequest={messageNavRequest}
+          onMessageNavigated={(info) => {
+            toast.info(`Jumped to ${info.role} message`, "Transcript")
+          }}
           cols={80}
         />
         <SolidComposer
@@ -1584,7 +1614,7 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

@@ -3,6 +3,7 @@ import { slashCommands } from "../slash-commands"
 import { themes, type BuiltinThemeId } from "../themes"
 import { activityToggleShortcut } from "./activity-group"
 import { reviewShortcut } from "./reviews"
+import { messageNavShortcut } from "./transcript-nav"
 
 /** Discoverable palette binding. Ctrl+K stays readline kill-line in the composer. */
 export const paletteShortcut = {
@@ -31,6 +32,12 @@ export type PaletteActionHandlers = {
   showSessions: () => void
   /** Document / cue activity-group toggle (Ctrl+G owns the real toggle). */
   toggleActivity: () => void
+  /** Jump to the previous user message in the transcript. */
+  previousUserMessage: () => void
+  /** Jump to the next user message in the transcript. */
+  nextUserMessage: () => void
+  /** Jump to the last user message in the transcript. */
+  lastUserMessage: () => void
   /** Open the Solid pending-review panel (Ctrl+R owns the real shortcut). */
   openReviews: () => void
   /** Demo / cue the non-modal toast host. */
@@ -160,6 +167,33 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       keywords: ["activity", "tools", "group", "collapse", "expand"],
       shortcut: activityToggleShortcut.label,
       run: () => handlers.toggleActivity(),
+    },
+    {
+      id: "veasel.message.user.previous",
+      title: "Previous user message",
+      description: `Jump to the previous user turn (${messageNavShortcut.previousUser.label})`,
+      group: "session",
+      keywords: ["message", "user", "previous", "prev", "jump", "anchor", "navigate"],
+      shortcut: messageNavShortcut.previousUser.label,
+      run: () => handlers.previousUserMessage(),
+    },
+    {
+      id: "veasel.message.user.next",
+      title: "Next user message",
+      description: `Jump to the next user turn (${messageNavShortcut.nextUser.label})`,
+      group: "session",
+      keywords: ["message", "user", "next", "jump", "anchor", "navigate"],
+      shortcut: messageNavShortcut.nextUser.label,
+      run: () => handlers.nextUserMessage(),
+    },
+    {
+      id: "veasel.message.user.last",
+      title: "Last user message",
+      description: `Jump to the latest user turn (${messageNavShortcut.lastUser.label})`,
+      group: "session",
+      keywords: ["message", "user", "last", "end", "jump", "anchor", "navigate"],
+      shortcut: messageNavShortcut.lastUser.label,
+      run: () => handlers.lastUserMessage(),
     },
     {
       id: "veasel.reviews.open",
@@ -361,6 +395,9 @@ export type LivePaletteHandlers = {
   showExport: () => void
   showMcp: () => void
   showSkills: () => void
+  previousUserMessage: () => void
+  nextUserMessage: () => void
+  lastUserMessage: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -562,6 +599,33 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["timeline", "history", "turns", "messages", "restore"],
       shortcut: "Ctrl+T",
       run: () => handlers.showSessionTimeline(),
+    },
+    {
+      id: "veasel.message.user.previous",
+      title: "Previous user message",
+      description: `Jump to the previous user turn (${messageNavShortcut.previousUser.label})`,
+      group: "session",
+      keywords: ["message", "user", "previous", "prev", "jump", "anchor", "navigate"],
+      shortcut: messageNavShortcut.previousUser.label,
+      run: () => handlers.previousUserMessage(),
+    },
+    {
+      id: "veasel.message.user.next",
+      title: "Next user message",
+      description: `Jump to the next user turn (${messageNavShortcut.nextUser.label})`,
+      group: "session",
+      keywords: ["message", "user", "next", "jump", "anchor", "navigate"],
+      shortcut: messageNavShortcut.nextUser.label,
+      run: () => handlers.nextUserMessage(),
+    },
+    {
+      id: "veasel.message.user.last",
+      title: "Last user message",
+      description: `Jump to the latest user turn (${messageNavShortcut.lastUser.label})`,
+      group: "session",
+      keywords: ["message", "user", "last", "end", "jump", "anchor", "navigate"],
+      shortcut: messageNavShortcut.lastUser.label,
+      run: () => handlers.lastUserMessage(),
     },
     {
       id: "veasel.status",

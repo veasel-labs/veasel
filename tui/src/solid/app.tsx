@@ -169,6 +169,12 @@ function AppShell(props: SolidAppProps) {
   const [activeWorkspaceId, setActiveWorkspaceId] = createSignal(demoWorkspaces()[0]!.id)
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
+  const [messageNavRequest, setMessageNavRequest] = createSignal<
+    | { tick: number; direction: "next" | "prev"; userOnly?: boolean }
+    | { tick: number; action: "last-user" }
+    | undefined
+  >(undefined)
+  let messageNavTick = 0
 
   const status = createMemo(() => {
     const pending = pendingStatusForReviews(reviews())
@@ -248,6 +254,18 @@ function AppShell(props: SolidAppProps) {
       toggleActivity: () => {
         setActivityToggleTick((tick) => tick + 1)
         toast.info(`Toggled latest group (${activityToggleShortcut.label})`, "Activity")
+      },
+      previousUserMessage: () => {
+        messageNavTick += 1
+        setMessageNavRequest({ tick: messageNavTick, direction: "prev", userOnly: true })
+      },
+      nextUserMessage: () => {
+        messageNavTick += 1
+        setMessageNavRequest({ tick: messageNavTick, direction: "next", userOnly: true })
+      },
+      lastUserMessage: () => {
+        messageNavTick += 1
+        setMessageNavRequest({ tick: messageNavTick, action: "last-user" })
       },
       openReviews: () => {
         openReviews()
@@ -560,6 +578,10 @@ function AppShell(props: SolidAppProps) {
           scrollRef={props.scrollRef}
           enableActivityKeys={!dialog.open()}
           activityToggleTick={activityToggleTick()}
+          messageNavRequest={messageNavRequest}
+          onMessageNavigated={(info) => {
+            toast.info(`Jumped to ${info.role} message`, "Transcript")
+          }}
           cols={80}
         />
 

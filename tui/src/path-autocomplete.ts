@@ -54,23 +54,49 @@ export function pathMentionAt(value: string, cursor: number): PathMention | unde
   }
 }
 
-export function filterWorkspacePaths(paths: string[], query: string, limit = maxPathSuggestions): PathSuggestion[] {
+export type PathFrecencyLookup = {
+  get: (path: string) => number
+}
+
+export function filterWorkspacePaths(
+  paths: string[],
+  query: string,
+  limit = maxPathSuggestions,
+  pathFrecency?: PathFrecencyLookup,
+): PathSuggestion[] {
   const needle = query.trim().toLowerCase().replaceAll("\\", "/")
   const normalized = paths
     .map((path) => path.replaceAll("\\", "/").replace(/^\.\//, ""))
     .filter((path) => path.length > 0 && !path.startsWith("/") && !path.includes("\0"))
   const unique = [...new Set(normalized)]
   if (!needle) {
-    return unique.slice(0, limit).map((path) => pathSuggestion(path, "workspace path"))
+    const ranked = unique
+      .map((path, index) => ({
+        path,
+        index,
+        frecency: pathFrecency?.get(path) ?? 0,
+      }))
+      .sort(
+        (left, right) =>
+          right.frecency - left.frecency
+          || left.path.localeCompare(right.path)
+          || left.index - right.index,
+      )
+    return ranked.slice(0, limit).map(({ path, frecency }) =>
+      pathSuggestion(path, frecency > 0 ? "recent path" : "workspace path"),
+    )
   }
   // Rank like provider search: exact/prefix/substring first, then one-typo fuzzy
   // basename hits so `@mein` still finds `src/main.ts` without drowning exacts.
+  // OpenCode-style boost: matchScore * (1 + frecencyDecay).
   const scored = unique.flatMap((path, index) => {
     const score = pathMatchScore(needle, path)
-    return score === undefined ? [] : [{ path, index, score }]
+    if (score === undefined) return []
+    const frecency = pathFrecency?.get(path) ?? 0
+    return [{ path, index, score: score * (1 + frecency), base: score }]
   })
   scored.sort((left, right) => right.score - left.score || left.index - right.index)
-  return scored.slice(0, limit).map(({ path, score }) => pathSuggestion(path, pathScoreDescription(score)))
+  return scored.slice(0, limit).map(({ path, base }) => pathSuggestion(path, pathScoreDescription(base)))
 }
 
 function pathSuggestion(path: string, description: string): PathSuggestion {
@@ -191,8 +217,9 @@ export function suggestWorkspacePaths(
   root: string,
   listPaths: (root: string) => string[] = listWorkspacePaths,
   limit = maxPathSuggestions,
+  pathFrecency?: PathFrecencyLookup,
 ): PathSuggestion[] {
-  return filterWorkspacePaths(listPaths(root), query, limit)
+  return filterWorkspacePaths(listPaths(root), query, limit, pathFrecency)
 }
 
 export function completePathMention(

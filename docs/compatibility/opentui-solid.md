@@ -26,6 +26,21 @@ compatibility and does not authorize copying branding or product chrome.
 - Solid entry under `tui/src/solid/` with Veasel mint chrome (no OpenCode branding)
 - Standalone build optional `--solid` path using `createSolidTransformPlugin()` from `@opentui/solid/bun-plugin`
 - Component tests via `testRender` + `captureCharFrame` at 80×30
+- Session transcript (`solid/transcript.tsx`) mounts OpenTUI `scrollbox` with
+  `stickyScroll` / `stickyStart="bottom"` for streaming follow-tail; tone-tagged
+  lines come from existing `transcriptSegments` + `transcriptSegmentLines` (no
+  forked role rules). `transcriptMessagesFromChatTurns` bridges `chat-history`
+  turns. Mint tone colors mirror `main.ts` `buildTranscriptStyles`.
+  MarkdownRenderable follow-mode (`markdown-view.ts`) remains on the imperative
+  path until a later dual-surface slice.
+
+## Startup note (light)
+
+Solid entry (`bun run start:solid`) loads `@opentui/solid` + the transcript
+scrollbox in addition to core. A local import smoke (~2026-10-16) showed
+`solid/transcript.tsx` ~280 ms vs a thin legacy helper ~160 ms cold; keep
+measuring with `benchmarks/tui-startup*` before default cutover. No V backend
+changes in the transcript slice.
 
 Do not copy OpenCode logos, splash art, or product strings. Prefer Veasel mint
 tokens and HTTP-API client boundaries.

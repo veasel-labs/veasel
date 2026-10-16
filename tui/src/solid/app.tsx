@@ -1,25 +1,50 @@
 /** @jsxImportSource @opentui/solid */
-import { For, createSignal } from "solid-js"
+import { createSignal } from "solid-js"
+import type { ScrollBoxRenderable } from "@opentui/core"
 import { SolidComposer } from "./composer"
+import { SolidTranscript, type TranscriptMessage } from "./transcript"
 import { solidMint } from "./theme"
 
 export type SolidAppProps = {
   status?: string
   sessionTitle?: string
+  directory?: string
+  /** Seed messages for the conversation pane (fixture / tests / demo). */
+  initialMessages?: TranscriptMessage[]
+  streaming?: boolean
+  streamingText?: string
+  streamingCursor?: string
+  notice?: string
+  followTail?: boolean
+  scrollRef?: (box: ScrollBoxRenderable | undefined) => void
+  onSubmit?: (text: string) => void
 }
 
-// Veasel-branded Solid shell stub. Session/transcript wiring comes in later
-// migration slices; this PR proves layout + reactive composer only.
+const demoFixture: TranscriptMessage[] = [
+  {
+    role: "user",
+    content: "Show the Solid transcript pane with Veasel mint chrome.",
+  },
+  {
+    role: "assistant",
+    content:
+      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.",
+  },
+]
+
+// Veasel-branded Solid shell: header + session chrome + transcript + composer.
+// HTTP session wiring stays optional; fixtures prove the conversation pane.
 export function App(props: SolidAppProps = {}) {
   const status = () => props.status ?? "LOCAL · Solid shell"
-  const sessionTitle = () => props.sessionTitle ?? "No session"
-  const [lines, setLines] = createSignal<string[]>([
-    "Transcript stub — Solid migration P0.",
-    "Legacy OpenTUI main.ts remains the default entry until cutover.",
-  ])
+  const sessionTitle = () => props.sessionTitle ?? "Solid transcript"
+  const directory = () => props.directory ?? "~/veasel"
+  const [messages, setMessages] = createSignal<TranscriptMessage[]>(
+    props.initialMessages ?? demoFixture,
+  )
 
   const onSubmit = (text: string) => {
-    setLines((prev) => [...prev, `you › ${text}`])
+    props.onSubmit?.(text)
+    setMessages((prev) => [...prev, { role: "user", content: text }])
   }
 
   return (
@@ -65,32 +90,32 @@ export function App(props: SolidAppProps = {}) {
         <text fg={solidMint.body}>{sessionTitle()}</text>
       </box>
 
-      <scrollbox
-        width="100%"
-        flexGrow={1}
-        backgroundColor={solidMint.shellBg}
-        stickyScroll={true}
-        stickyStart="bottom"
-      >
-        <box
-          width="100%"
-          flexDirection="column"
-          paddingLeft={1}
-          paddingRight={1}
-          paddingTop={1}
-          gap={0}
-        >
-          <For each={lines()}>
-            {(line) => (
-              <text fg={solidMint.body} wrapMode="word">
-                {line}
-              </text>
-            )}
-          </For>
-        </box>
-      </scrollbox>
+      <SolidTranscript
+        messages={messages}
+        session={{ title: sessionTitle(), directory: directory() }}
+        notice={props.notice}
+        streaming={props.streaming}
+        streamingText={props.streamingText}
+        streamingCursor={props.streamingCursor}
+        followTail={props.followTail}
+        scrollRef={props.scrollRef}
+        cols={80}
+      />
 
       <SolidComposer onSubmit={onSubmit} focused={true} />
     </box>
   )
+}
+
+/** Build padded fixture turns for scroll / follow-tail tests. */
+export function fixtureTurns(count: number, pad = "padding "): TranscriptMessage[] {
+  const turns: TranscriptMessage[] = []
+  for (let index = 0; index < count; index++) {
+    const role = index % 2 === 0 ? "user" : "assistant"
+    turns.push({
+      role,
+      content: `Turn ${index + 1}: ${pad.repeat(6)}${role === "user" ? "ask" : "reply"}`,
+    })
+  }
+  return turns
 }

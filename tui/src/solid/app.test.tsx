@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "./app"
 import { SolidComposer } from "./composer"
+import { userLabel } from "../transcript"
 
 const setups: Array<Awaited<ReturnType<typeof testRender>>> = []
 
@@ -26,6 +27,7 @@ describe("Solid shell P0", () => {
     expect(frame).toContain("LOCAL")
     expect(frame).toContain("SESSION")
     expect(frame).toContain("Compose")
+    expect(frame).toContain(userLabel)
     expect(frame.split("\n").length).toBeGreaterThanOrEqual(10)
   })
 
@@ -57,16 +59,20 @@ describe("Solid shell P0", () => {
   })
 
   test("app transcript records a submitted turn", async () => {
-    const setup = await testRender(() => <App />, demoSize)
+    const setup = await testRender(
+      () => <App initialMessages={[]} sessionTitle="submit-demo" />,
+      demoSize,
+    )
     setups.push(setup)
     await setup.renderOnce()
 
-    await setup.mockInput.typeText("ship P0")
+    await setup.mockInput.typeText("ship transcript")
     setup.mockInput.pressEnter()
     await setup.renderOnce()
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("VEASEL")
-    expect(frame).toContain("you › ship P0")
+    expect(frame).toContain(userLabel)
+    expect(frame).toContain("ship transcript")
   })
 })

@@ -20,7 +20,16 @@ const demoSize = { width: 80, height: 30, kittyKeyboard: true } as const
 
 describe("Solid dialog host + command palette", () => {
   test("Ctrl+P opens the palette and Esc dismisses it", async () => {
-    const setup = await testRender(() => <App initialMessages={[]} />, demoSize)
+    // Seed a turn so the session chrome (with Ctrl+P hint) is shown, not home splash.
+    const setup = await testRender(
+      () => (
+        <App
+          initialMessages={[{ role: "user", content: "palette smoke" }]}
+          initialReviews={[]}
+        />
+      ),
+      demoSize,
+    )
     setups.push(setup)
     await setup.renderOnce()
 
@@ -42,7 +51,15 @@ describe("Solid dialog host + command palette", () => {
   })
 
   test("filter narrows the command list", async () => {
-    const setup = await testRender(() => <App initialMessages={[]} />, demoSize)
+    const setup = await testRender(
+      () => (
+        <App
+          initialMessages={[{ role: "user", content: "filter smoke" }]}
+          initialReviews={[]}
+        />
+      ),
+      demoSize,
+    )
     setups.push(setup)
     await setup.renderOnce()
 

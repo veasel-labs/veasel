@@ -47,6 +47,12 @@ export type PaletteActionHandlers = {
   showErrorDetails: () => void
   /** Open shell output viewer dialog. */
   showShellOutput: () => void
+  /** Open MCP servers dialog. */
+  showMcp: () => void
+  /** Open skill selector dialog. */
+  showSkills: () => void
+  /** Open session export options dialog. */
+  showExport: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -193,6 +199,30 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       group: "session",
       keywords: ["shell", "output", "terminal", "stdout"],
       run: () => handlers.showShellOutput(),
+    },
+    {
+      id: "veasel.mcp.list",
+      title: "MCP servers",
+      description: "Browse MCP status; open error details when failed",
+      group: "setup",
+      keywords: ["mcp", "servers", "tools", "stdio", "oauth"],
+      run: () => handlers.showMcp(),
+    },
+    {
+      id: "veasel.skills.list",
+      title: "Skills",
+      description: "Pick a skill from the discovered catalog",
+      group: "session",
+      keywords: ["skills", "skill", "catalog", "$"],
+      run: () => handlers.showSkills(),
+    },
+    {
+      id: "veasel.session.export",
+      title: "Export session",
+      description: "Copy or export the session as Markdown or JSON",
+      group: "session",
+      keywords: ["export", "copy", "markdown", "json", "download"],
+      run: () => handlers.showExport(),
     },
   ]
 

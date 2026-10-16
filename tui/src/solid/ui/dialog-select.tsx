@@ -27,6 +27,11 @@ export type DialogSelectProps<T = string> = {
   /** Fires when the highlight moves (theme live-preview). */
   onMove?: (option: DialogSelectOption<T>) => void
   onCancel?: () => void
+  /**
+   * When false, leave the dialog stack alone after onSelect (caller may
+   * `replace`/`push` a follow-up dialog). Default true.
+   */
+  dismissOnSelect?: boolean
 }
 
 const visibleDefault = 10
@@ -71,7 +76,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     const option = flat()[selected()]
     if (!option) return
     props.onSelect?.(option)
-    dialog.clear()
+    if (props.dismissOnSelect !== false) dialog.clear()
   }
 
   onMount(() => {
@@ -159,7 +164,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                         paddingRight={1}
                         onMouseUp={() => {
                           props.onSelect?.(option)
-                          dialog.clear()
+                          if (props.dismissOnSelect !== false) dialog.clear()
                         }}
                       >
                         <text fg={active() ? solidMint.brand : solidMint.body}>

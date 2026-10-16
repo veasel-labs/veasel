@@ -23,8 +23,12 @@ import {
 import { demoStashEntries, openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { demoErrorDetails, openErrorDetailsDialog } from "./component/error-details-dialog"
 import { demoShellOutput, openShellOutputDialog } from "./component/shell-output-dialog"
+import { demoMcpServers, openMcpDialog } from "./component/mcp-dialog"
+import { demoSkills, openSkillDialog } from "./component/skill-dialog"
 import { openDialogConfirm } from "./ui/dialog-confirm"
 import { openDialogHelp } from "./ui/dialog-help"
+import { openDialogExportOptions } from "./ui/dialog-export-options"
+import { openDialogExportResult } from "./ui/dialog-export-result"
 import { ToastProvider, useToast } from "./ui/toast"
 import { openCommandPalette } from "./component/command-palette"
 import { openReviewPanel } from "./component/review-panel"
@@ -269,6 +273,46 @@ function AppShell(props: SolidAppProps) {
       showShellOutput: () => {
         setComposerFocused(false)
         openShellOutputDialog(dialog, demoShellOutput())
+      },
+      showMcp: () => {
+        setComposerFocused(false)
+        openMcpDialog(dialog, {
+          servers: demoMcpServers(),
+          onSelect: (server) => {
+            toast.info(`MCP · ${server.name} · ${server.status}`, "MCP")
+          },
+        })
+      },
+      showSkills: () => {
+        setComposerFocused(false)
+        openSkillDialog(dialog, {
+          skills: demoSkills(),
+          onSelect: (skill) => {
+            setNotice(`Skill · $${skill.key} (Solid stub — composer insert next)`)
+            toast.success(`Selected · $${skill.key}`, "Skills")
+          },
+        })
+      },
+      showExport: () => {
+        setComposerFocused(false)
+        openDialogExportOptions(dialog, {
+          defaultThinking: true,
+          onConfirm: (options) => {
+            if (options.action === "copy") {
+              dialog.clear()
+              toast.success(
+                `Copied · ${options.format}${options.thinking ? " · thinking" : ""}${options.tools ? " · tools" : ""}`,
+                "Export",
+              )
+              return
+            }
+            const ext = options.format === "json" ? "json" : "md"
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+            openDialogExportResult(dialog, {
+              path: `~/veasel-exports/veasel-session-${stamp}.${ext}`,
+            })
+          },
+        })
       },
     }),
   )

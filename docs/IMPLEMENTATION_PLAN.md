@@ -83,7 +83,8 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `veasel.session.list`; fixture demos + `testRender`.
 - [x] Solid dialog primitives (`dialog-select`, alert/confirm/prompt/help +
   `DialogLayout`) and product dialogs (theme list, model favorites/recents,
-  stash, error details, shell output) with palette commands + `testRender`.
+  stash, error details, shell output, MCP servers, skills) with palette
+  commands + `testRender`.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.
 
@@ -553,3 +554,4 @@ honoring its license and attribution.
   shared library. CI checks these platform-specific linkage guarantees.
 - SSE and SQLite behavior must be tested under concurrent clients before the
   server claims durable or restart-resilient background execution.
+- Solid MCP/Skills dialogs + session export options/result (OpenCode parity rows 7–8, 11–12).

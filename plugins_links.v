@@ -278,13 +278,23 @@ fn add_plugin_link(plugin_directory string, registry_path string, package_path s
 		if !replace {
 			return error('plugin link `${plugin.manifest.name}` already points elsewhere')
 		}
-		os.rm(link_path) or { return error('unable to replace plugin link: ${err.msg()}') }
+		remove_plugin_symlink(link_path) or {
+			return error('unable to replace plugin link: ${err.msg()}')
+		}
 	}
 	os.symlink(canonical_package, link_path) or {
 		return error('unable to create plugin link: ${err.msg()}')
 	}
 	remember_plugin_link(registry_path, plugin.manifest.name, canonical_package)!
 	return plugin_link_from_package(plugin, canonical_package)
+}
+
+// remove_plugin_symlink unlinks a package symlink/junction. On Windows, directory
+// junctions often reject os.rm with "Permission denied"; fall back to os.rmdir.
+fn remove_plugin_symlink(link_path string) ! {
+	os.rm(link_path) or {
+		os.rmdir(link_path) or { return error(err.msg()) }
+	}
 }
 
 fn remove_plugin_link(plugin_directory string, registry_path string, name string) ! {
@@ -298,7 +308,9 @@ fn remove_plugin_link(plugin_directory string, registry_path string, name string
 		if !os.is_link(link_path) {
 			return error('refusing to remove a non-link plugin package; delete it outside Veasel')
 		}
-		os.rm(link_path) or { return error('unable to remove plugin link: ${err.msg()}') }
+		remove_plugin_symlink(link_path) or {
+			return error('unable to remove plugin link: ${err.msg()}')
+		}
 		removed_link = true
 	}
 	registry := load_persisted_plugin_links(registry_path)

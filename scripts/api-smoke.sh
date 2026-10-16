@@ -639,7 +639,8 @@ PY
 			|| fail 'autonomous workspace edit failed'
 		grep -Fq 'fn greet(name string)' "$work_dir/workspace/src/main.v" \
 			|| fail 'autonomous workspace edit did not update the fixture'
-		grep -Fq 'Applied by explicit autonomous benchmark policy' "$work_dir/autonomous-edit.json" \
+		grep -Eq 'Applied by (explicit autonomous benchmark policy|graduated execution policy)' \
+			"$work_dir/autonomous-edit.json" \
 			|| fail 'autonomous ATIF trace omitted the edit result'
 		env VEASEL_PORT="$autonomous_port" VEASEL_DATA_DIR="$work_dir/autonomous-data" \
 			"$work_dir/veasel" run --autonomous --prompt 'Autonomous shell' \

@@ -436,7 +436,11 @@ class MockProvider(BaseHTTPRequestHandler):
                 }}]}
             elif is_tool_follow_up:
                 tool_result = last_message.get("content", "")
-                is_edit_result = "Stored for human review" in tool_result or "Applied by explicit autonomous benchmark policy" in tool_result
+                applied_edit = (
+                    "Applied by explicit autonomous benchmark policy" in tool_result
+                    or "Applied by graduated execution policy" in tool_result
+                )
+                is_edit_result = "Stored for human review" in tool_result or applied_edit
                 is_shell_result = "No command was executed" in tool_result or "autonomous-shell-ok" in tool_result
                 is_mcp_result = "fixture effect" in tool_result or "fixture tool error" in tool_result or "rejected this MCP tool call" in tool_result
                 if "workspace-search-sentinel" not in tool_result and "Skill reference smoke sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result and not is_mcp_result:
@@ -453,7 +457,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 ):
                     self.reject(payload)
                     return
-                final_text = "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if "Applied by explicit autonomous benchmark policy" in tool_result else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                final_text = "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                 body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 body = {"choices": [{"message": {"role": "assistant", "content": REPLY}}]}

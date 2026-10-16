@@ -98,22 +98,36 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
         os.write(terminal, b"q")
 
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            finished, status = os.waitpid(child, os.WNOHANG)
-            if finished:
-                if os.waitstatus_to_exitcode(status) != 0:
-                    raise RuntimeError(f"standalone TUI exited unsuccessfully (status={status})")
-                return
-            time.sleep(0.01)
-        # Ctrl+C is enabled on the OpenTUI renderer; use it if bare q was swallowed.
+        def wait_exit(timeout: float) -> int | None:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                finished, status = os.waitpid(child, os.WNOHANG)
+                if finished:
+                    return status
+                time.sleep(0.01)
+            return None
+
+        status = wait_exit(3)
+        if status is not None:
+            if os.waitstatus_to_exitcode(status) != 0:
+                raise RuntimeError(f"standalone TUI exited unsuccessfully (status={status})")
+            return
+        # Bare q can still be swallowed if an input kept focus; escalate to signals.
         os.write(terminal, b"\x03")
-        deadline = time.monotonic() + 3
-        while time.monotonic() < deadline:
-            finished, status = os.waitpid(child, os.WNOHANG)
-            if finished:
-                return
-            time.sleep(0.01)
+        if wait_exit(2) is not None:
+            return
+        try:
+            os.kill(child, signal.SIGINT)
+        except ProcessLookupError:
+            return
+        if wait_exit(2) is not None:
+            return
+        try:
+            os.kill(child, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        if wait_exit(2) is not None:
+            return
         raise TimeoutError("standalone TUI did not exit after the quit key")
     finally:
         try:

@@ -3,7 +3,8 @@ import { createEffect, createMemo, createSignal } from "solid-js"
 import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
 import { SolidComposer } from "./composer"
-import { SolidTranscript, type TranscriptMessage } from "./transcript"
+import { SolidTranscript, type ToolAwareMessage } from "./transcript"
+import { activityToggleShortcut } from "./activity-group"
 import { solidMint } from "./theme"
 import {
   buildPaletteCommands,
@@ -21,7 +22,7 @@ export type SolidAppProps = {
   sessionTitle?: string
   directory?: string
   /** Seed messages for the conversation pane (fixture / tests / demo). */
-  initialMessages?: TranscriptMessage[]
+  initialMessages?: ToolAwareMessage[]
   streaming?: boolean
   streamingText?: string
   streamingCursor?: string
@@ -31,7 +32,7 @@ export type SolidAppProps = {
   onSubmit?: (text: string) => void
 }
 
-const demoFixture: TranscriptMessage[] = [
+const demoFixture: ToolAwareMessage[] = [
   {
     role: "user",
     content: "Show the Solid transcript pane with Veasel mint chrome.",
@@ -39,7 +40,23 @@ const demoFixture: TranscriptMessage[] = [
   {
     role: "assistant",
     content:
-      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.\nPress Ctrl+P for the command palette.",
+      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.\nPress Ctrl+P for commands · Ctrl+G toggles the latest activity group.",
+  },
+  {
+    role: "tool",
+    content: "read: tui/src/solid/transcript.tsx",
+    toolName: "read",
+    toolStatus: "done",
+  },
+  {
+    role: "tool",
+    content: "grep: activityGroupHeader",
+    toolName: "grep",
+    toolStatus: "done",
+  },
+  {
+    role: "assistant",
+    content: "Consecutive tool calls collapse into a mint activity group with running/done/error status.",
   },
 ]
 
@@ -48,12 +65,13 @@ function AppShell(props: SolidAppProps) {
   const status = () => props.status ?? "LOCAL · Solid shell"
   const sessionTitle = () => props.sessionTitle ?? "Solid transcript"
   const directory = () => props.directory ?? "~/veasel"
-  const [messages, setMessages] = createSignal<TranscriptMessage[]>(
+  const [messages, setMessages] = createSignal<ToolAwareMessage[]>(
     props.initialMessages ?? demoFixture,
   )
   const [notice, setNotice] = createSignal(props.notice ?? "")
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
   const [composerFocused, setComposerFocused] = createSignal(true)
+  const [activityToggleTick, setActivityToggleTick] = createSignal(0)
 
   const commands = createMemo(() =>
     buildPaletteCommands({
@@ -71,6 +89,10 @@ function AppShell(props: SolidAppProps) {
       },
       showSessions: () => {
         setNotice("Sessions · home list stub (Solid route next)")
+      },
+      toggleActivity: () => {
+        setActivityToggleTick((tick) => tick + 1)
+        setNotice(`Activity · toggled latest group (${activityToggleShortcut.label})`)
       },
     }),
   )
@@ -138,7 +160,10 @@ function AppShell(props: SolidAppProps) {
       >
         <text fg={solidMint.muted}>SESSION </text>
         <text fg={solidMint.body}>{sessionTitle()}</text>
-        <text fg={solidMint.muted}> · {paletteShortcut.label} commands</text>
+        <text fg={solidMint.muted}>
+          {" "}
+          · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity
+        </text>
       </box>
 
       <SolidTranscript
@@ -150,6 +175,8 @@ function AppShell(props: SolidAppProps) {
         streamingCursor={props.streamingCursor}
         followTail={props.followTail}
         scrollRef={props.scrollRef}
+        enableActivityKeys={!dialog.open()}
+        activityToggleTick={activityToggleTick()}
         cols={80}
       />
 
@@ -169,8 +196,8 @@ export function App(props: SolidAppProps = {}) {
 }
 
 /** Build padded fixture turns for scroll / follow-tail tests. */
-export function fixtureTurns(count: number, pad = "padding "): TranscriptMessage[] {
-  const turns: TranscriptMessage[] = []
+export function fixtureTurns(count: number, pad = "padding "): ToolAwareMessage[] {
+  const turns: ToolAwareMessage[] = []
   for (let index = 0; index < count; index++) {
     const role = index % 2 === 0 ? "user" : "assistant"
     turns.push({

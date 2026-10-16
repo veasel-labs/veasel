@@ -26,18 +26,21 @@ describe("Solid palette commands", () => {
         return "ember"
       },
       showSessions: () => ran.push("sessions"),
+      toggleActivity: () => ran.push("activity"),
     })
 
     expect(commands.some((command) => command.id === "veasel.help")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.theme.cycle")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.session.list")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.activity.toggle")).toBe(true)
     expect(commands.filter((command) => command.id.startsWith("veasel.slash.")).length).toBe(
       slashCommands.length,
     )
 
     commands.find((command) => command.id === "veasel.help")!.run()
     commands.find((command) => command.title === "/map")!.run()
-    expect(ran).toEqual(["help", "/map"])
+    commands.find((command) => command.id === "veasel.activity.toggle")!.run()
+    expect(ran).toEqual(["help", "/map", "activity"])
   })
 
   test("filters by title, group, and keywords", () => {

@@ -4,7 +4,11 @@ import { createSignal } from "solid-js"
 import { testRender } from "@opentui/solid"
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { App, fixtureTurns } from "./app"
-import { SolidTranscript, transcriptMessagesFromChatTurns } from "./transcript"
+import {
+  SolidTranscript,
+  transcriptMessagesFromChatTurns,
+  type ToolAwareMessage,
+} from "./transcript"
 import { assistantLabel, userLabel } from "../transcript"
 import type { ChatTurn } from "../chat-history"
 
@@ -165,5 +169,110 @@ describe("Solid transcript scrollbox", () => {
     const frame = setup.captureCharFrame()
     expect(frame).toContain("from chat-history")
     expect(frame).toContain("bridged reply")
+  })
+
+  test("groups consecutive tools with collapsed done status at 80×30", async () => {
+    const activityFixture: ToolAwareMessage[] = [
+      { role: "user", content: "inspect helpers" },
+      {
+        role: "tool",
+        content: "read: activity-group.ts",
+        toolName: "read",
+        toolStatus: "done",
+      },
+      {
+        role: "tool",
+        content: "grep: summarizeActivityGroup",
+        toolName: "grep",
+        toolStatus: "done",
+      },
+      { role: "assistant", content: "grouped above" },
+    ]
+    const setup = await testRender(
+      () => (
+        <App
+          sessionTitle="activity-demo"
+          initialMessages={activityFixture}
+        />
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("VEASEL")
+    expect(frame).toContain("activity")
+    expect(frame).toContain("2 tools")
+    expect(frame).toContain("done")
+    expect(frame).toContain("Ctrl+G")
+    // Collapsed by default when done — item details stay hidden.
+    expect(frame).not.toContain("summarizeActivityGroup")
+    expect(frame).toContain("grouped above")
+    expect(frame.split("\n").length).toBeLessThanOrEqual(31)
+  })
+
+  test("Ctrl+G expands the latest activity group", async () => {
+    const toolRun: ToolAwareMessage[] = [
+      { role: "user", content: "run tools" },
+      {
+        role: "tool",
+        content: "read: unique-expand-marker.ts",
+        toolName: "read",
+        toolStatus: "done",
+      },
+      {
+        role: "tool",
+        content: "shell: echo ok",
+        toolName: "shell",
+        toolStatus: "done",
+      },
+    ]
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript messages={toolRun} followTail={true} />
+        </box>
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    expect(setup.captureCharFrame()).not.toContain("unique-expand-marker")
+
+    setup.mockInput.pressKey("g", { ctrl: true })
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("unique-expand-marker")
+    expect(frame).toContain("shell")
+    expect(frame).toMatch(/▾ activity|activity/)
+  })
+
+  test("running groups start expanded with busy status", async () => {
+    const running: ToolAwareMessage[] = [
+      {
+        role: "tool",
+        content: "read: live-file.v",
+        toolName: "read",
+        toolStatus: "running",
+      },
+    ]
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript messages={running} followTail={true} />
+        </box>
+      ),
+      { width: 80, height: 20 },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("running")
+    expect(frame).toContain("live-file.v")
+    expect(frame).toContain("busy")
   })
 })

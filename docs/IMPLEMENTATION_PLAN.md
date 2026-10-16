@@ -21,9 +21,10 @@ The TUI is TypeScript with OpenTUI, kept as a separate API client; the agent
 runtime, tools and persistence remain in V. Core renderables ship as the
 default (`bun run start` → `src/main.ts`). A SolidJS + `@opentui/solid` **0.5.17**
 migration is in progress under `tui/src/solid/` (`bun run start:solid`): shell +
-composer, session transcript on OpenTUI `scrollbox` (follow-tail), and a thin
-dialog host with **Ctrl+P** command palette (Veasel command ids; Ctrl+K stays
-readline kill-line). Pins and adapted patterns are recorded in
+composer, session transcript on OpenTUI `scrollbox` (follow-tail), collapsible
+tool/activity grouping (**Ctrl+G** toggles the latest group; click header also
+works), and a thin dialog host with **Ctrl+P** command palette (Veasel command
+ids; Ctrl+K stays readline kill-line). Pins and adapted patterns are recorded in
 [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
 the default entry and feature parity (reviews, settings, toast) are later
 slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
@@ -56,6 +57,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Solid dialog host + Ctrl+P command palette (`solid/ui/dialog.tsx`,
   `solid/component/command-palette.tsx`) wired to slash/help/theme-cycle/
   session-list stubs; `testRender` for open/close, filter, keyboard select, Esc.
+- [x] Solid tool/activity grouping on the transcript (`solid/activity-group.ts`):
+  consecutive tool roles collapse into mint activity groups with
+  running/done/error status, expand/collapse via **Ctrl+G** (or click / palette
+  `veasel.activity.toggle`); pure helper tests + `testRender` at 80×30.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.
 
@@ -378,9 +383,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 - [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
   shell → composer → session/transcript → dialogs/palette → reviews →
-  settings). Shell+composer+transcript+dialog/palette dual-path shipped; next
-  slices are tool/activity grouping, reviews on Solid, then settings/toast.
-  Default entry remains legacy until parity. See
+  settings). Shell+composer+transcript+dialog/palette+activity-grouping
+  dual-path shipped; next slices are reviews on Solid (thin surface), then
+  settings/toast / mount-budget. Default entry remains legacy until parity. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.

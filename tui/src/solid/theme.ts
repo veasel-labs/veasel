@@ -20,6 +20,10 @@ export const solidMint = {
   inputFocusBg: themes.mint.inputFocusBg,
   inputText: themes.mint.inputText,
   cursor: themes.mint.cursor,
+  statusOk: themes.mint.statusOk,
+  statusError: themes.mint.statusError,
+  statusWarn: themes.mint.statusWarn,
+  toolLabel: themes.mint.toolLabel,
 } as const
 
 // Map transcript tones to mint colors — same pairing as main.ts

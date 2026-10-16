@@ -192,6 +192,7 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
   const [verbosity, setVerbosity] = createSignal<TranscriptVerbosity>("default")
+  const [thinkingToggleTick, setThinkingToggleTick] = createSignal(0)
   const terminalColumns = () => process.stdout.columns ?? 80
   const [sidebarWidth, setSidebarWidth] = createSignal(
     loadHomeSidebarWidth({}, terminalColumns()),
@@ -1390,6 +1391,10 @@ function LiveAppShell(props: LiveAppProps) {
           toast.info(`Verbosity · ${transcriptVerbosityLabel(next)}`, "Transcript")
           return next
         },
+        toggleThinking: () => {
+          setThinkingToggleTick((tick) => tick + 1)
+          toast.info("Toggled latest thinking block", "Transcript")
+        },
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -1618,6 +1623,7 @@ function LiveAppShell(props: LiveAppProps) {
           enableActivityKeys={!dialog.open()}
           messageNavRequest={messageNavRequest}
           verbosity={verbosity}
+          thinkingToggleTick={thinkingToggleTick()}
           onMessageNavigated={(info) => {
             toast.info(`Jumped to ${info.role} message`, "Transcript")
           }}

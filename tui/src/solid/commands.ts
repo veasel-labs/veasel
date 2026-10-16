@@ -5,6 +5,7 @@ import { activityToggleShortcut } from "./activity-group"
 import { reviewShortcut } from "./reviews"
 import { messageNavShortcut } from "./transcript-nav"
 import type { TranscriptVerbosity } from "./transcript-verbosity"
+import { thinkingToggleShortcut } from "./thinking-blocks"
 
 /** Discoverable palette binding. Ctrl+K stays readline kill-line in the composer. */
 export const paletteShortcut = {
@@ -41,6 +42,8 @@ export type PaletteActionHandlers = {
   lastUserMessage: () => void
   /** Cycle transcript verbosity (quiet → default → everything). */
   cycleVerbosity: () => TranscriptVerbosity
+  /** Expand or collapse the latest thinking fence. */
+  toggleThinking: () => void
   /** Open the Solid pending-review panel (Ctrl+R owns the real shortcut). */
   openReviews: () => void
   /** Demo / cue the non-modal toast host. */
@@ -207,6 +210,15 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       run: () => {
         handlers.cycleVerbosity()
       },
+    },
+    {
+      id: "veasel.thinking.toggle",
+      title: "Toggle thinking block",
+      description: `Expand or collapse the latest thinking fence (${thinkingToggleShortcut.label})`,
+      group: "session",
+      keywords: ["thinking", "reasoning", "collapse", "expand", "fence"],
+      shortcut: thinkingToggleShortcut.label,
+      run: () => handlers.toggleThinking(),
     },
     {
       id: "veasel.reviews.open",
@@ -412,6 +424,7 @@ export type LivePaletteHandlers = {
   nextUserMessage: () => void
   lastUserMessage: () => void
   cycleVerbosity: () => TranscriptVerbosity
+  toggleThinking: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -650,6 +663,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       run: () => {
         handlers.cycleVerbosity()
       },
+    },
+    {
+      id: "veasel.thinking.toggle",
+      title: "Toggle thinking block",
+      description: `Expand or collapse the latest thinking fence (${thinkingToggleShortcut.label})`,
+      group: "session",
+      keywords: ["thinking", "reasoning", "collapse", "expand", "fence"],
+      shortcut: thinkingToggleShortcut.label,
+      run: () => handlers.toggleThinking(),
     },
     {
       id: "veasel.status",

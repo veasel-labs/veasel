@@ -73,6 +73,10 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   `veasel.transcript.verbosity` cycles Quiet (hide tools + thinking) →
   Default (current activity groups) → Everything (force-expand groups).
   Pattern informed by OpenCode `mini/verbosity.ts` (engineering only).
+- Thinking collapse (`solid/thinking-blocks.ts` + `transcript.tsx`):
+  fenced thinking code blocks start collapsed with a mint preview header;
+  **Ctrl+H** / palette `veasel.thinking.toggle` expands the latest.
+  Pattern informed by OpenCode reasoning disclosure (engineering only).
 - Reviews / approvals (`solid/reviews.ts` + `solid/component/review-panel.tsx`):
   large dialog overlay for pending file edits, shell commands, and MCP calls.
   Reuses `reviewHotkey` / `formatReviewDiff` / `formatShellReview` /

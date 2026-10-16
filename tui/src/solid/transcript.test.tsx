@@ -334,6 +334,44 @@ describe("Solid transcript scrollbox", () => {
     expect(frame).not.toContain("activity")
   })
 
+
+  test("thinking fences start collapsed and expand via thinkingToggleTick", async () => {
+    const [tick, setTick] = createSignal(0)
+    const longBody = "reasoning-body-line ".repeat(12).trim()
+    const turns: ToolAwareMessage[] = [
+      {
+        role: "assistant",
+        content: `\`\`\`thinking
+${longBody}
+\`\`\`
+visible-answer-marker`,
+      },
+    ]
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript messages={turns} followTail={true} thinkingToggleTick={tick} />
+        </box>
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    let frame = setup.captureCharFrame()
+    expect(frame).toContain("▸ thinking")
+    expect(frame).toContain("visible-answer-marker")
+    expect(frame).toContain("Ctrl+H")
+    // Collapsed body is not fully mounted as a wrapped paragraph.
+    expect(frame).not.toContain("▾ thinking")
+
+    setTick(1)
+    await setup.renderOnce()
+    frame = setup.captureCharFrame()
+    expect(frame).toContain("▾ thinking")
+    expect(frame).toContain("reasoning-body-line")
+  })
+
+
   test("messageNavRequest jumps last then previous user message", async () => {
     const turns: ToolAwareMessage[] = [
       { role: "user", content: "alpha-user-marker unique" },

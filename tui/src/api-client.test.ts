@@ -26,6 +26,40 @@ describe("resolveLoopbackApiBase", () => {
   })
 })
 
+describe("VeaselApiClient renameSession", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("PATCHes session title", async () => {
+    let method = ""
+    let body = ""
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      url = String(input)
+      method = String(init?.method ?? "GET")
+      body = String(init?.body ?? "")
+      return new Response(
+        JSON.stringify({
+          id: "sess-1",
+          title: "Renamed",
+          directory: "/tmp",
+          created_at: "2026-10-16T00:00:00Z",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const session = await client.renameSession("sess-1", "Renamed")
+    expect(method).toBe("PATCH")
+    expect(url).toContain("/v1/sessions/sess-1")
+    expect(JSON.parse(body)).toEqual({ title: "Renamed" })
+    expect(session.title).toBe("Renamed")
+  })
+})
+
 describe("VeaselApiClient git worktrees", () => {
   const originalFetch = globalThis.fetch
 

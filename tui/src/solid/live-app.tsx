@@ -28,6 +28,7 @@ import { openCommandPalette } from "./component/command-palette"
 import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
+import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { SessionTabs } from "./component/session-tabs"
 import { openDialogPrompt } from "./ui/dialog-prompt"
 import { moveSessionTabIndex, sessionTabsFromEntries } from "./session-tabs"
@@ -246,6 +247,21 @@ function LiveAppShell(props: LiveAppProps) {
     const id = activeSessionId()
     return sessions().find((item) => item.id === id)?.title ?? "Session"
   })
+
+  const openSessionTimeline = () => {
+    if (!inSession()) {
+      toast.info("Open a session to browse the timeline", "Timeline")
+      return
+    }
+    setComposerFocused(false)
+    openSessionTimelineDialog(dialog, {
+      messages: messages(),
+      onRestore: (entry) => {
+        setRestoreToken({ id: `timeline-${entry.id}-${Date.now()}`, text: entry.content })
+        toast.success(`Restored turn ${entry.turn}`, "Timeline")
+      },
+    })
+  }
 
   const refreshSessions = async () => {
     try {
@@ -602,6 +618,7 @@ function LiveAppShell(props: LiveAppProps) {
         showSessionDiffs: () => {
           void openSessionDiffs()
         },
+        showSessionTimeline: () => openSessionTimeline(),
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -648,6 +665,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "d" && !key.meta) {
       key.preventDefault()
       void openSessionDiffs()
+      return
+    }
+    if (key.ctrl && key.name === "t" && !key.meta) {
+      key.preventDefault()
+      openSessionTimeline()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {
@@ -790,7 +812,7 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

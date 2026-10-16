@@ -345,6 +345,7 @@ export type LivePaletteHandlers = {
   cycleTheme: () => void
   attachFile: () => void
   showSessionDiffs: () => void
+  showSessionTimeline: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -443,6 +444,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["diff", "patch", "edits", "files", "review"],
       shortcut: "Ctrl+D",
       run: () => handlers.showSessionDiffs(),
+    },
+    {
+      id: "veasel.session.timeline",
+      title: "Session timeline",
+      description: "Jump user turns and restore a prompt into Compose",
+      group: "session",
+      keywords: ["timeline", "history", "turns", "messages", "restore"],
+      shortcut: "Ctrl+T",
+      run: () => handlers.showSessionTimeline(),
     },
     {
       id: "veasel.session.tab.next",

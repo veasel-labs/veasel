@@ -38,9 +38,15 @@ describe("Solid palette commands", () => {
       showMcp: () => ran.push("mcp"),
       showSkills: () => ran.push("skills"),
       showExport: () => ran.push("export"),
+      showOpen: () => ran.push("open"),
+      showStatus: () => ran.push("status"),
       showAgent: () => ran.push("agent"),
       showVariant: () => ran.push("variant"),
       showWorkspaces: () => ran.push("workspaces"),
+      showUpdate: () => ran.push("update"),
+      showPair: () => ran.push("pair"),
+      showHighlights: () => ran.push("highlights"),
+      showImagePreview: () => ran.push("image"),
     })
 
     expect(commands.some((command) => command.id === "veasel.help")).toBe(true)
@@ -58,8 +64,9 @@ describe("Solid palette commands", () => {
     expect(commands.some((command) => command.id === "veasel.mcp.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.skills.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.session.export")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.open.dialog")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.status.dialog")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.agent.picker")).toBe(true)
-    expect(commands.some((command) => command.id === "veasel.variant.picker")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.workspaces.list")).toBe(true)
     expect(commands.filter((command) => command.id.startsWith("veasel.slash.")).length).toBe(
       slashCommands.length,

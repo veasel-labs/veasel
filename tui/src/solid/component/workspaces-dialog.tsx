@@ -28,9 +28,9 @@ export function demoWorkspaces(): SolidWorkspace[] {
       kind: "worktree",
     },
     {
-      id: "wt-dialogs",
-      name: "tui-dialogs",
-      path: "~/.ai-workspace/worktrees/veasel-tui-dialogs",
+      id: "wt-parity",
+      name: "tui-parity",
+      path: "~/.ai-workspace/worktrees/veasel-tui-parity",
       kind: "worktree",
     },
   ]
@@ -60,7 +60,7 @@ export function openWorkspacesDialog(
               title: "+ New worktree…",
               value: "__new__",
               category: "Actions",
-              description: "Name a git worktree for this session",
+              description: "POST /v1/sessions/{id}/workspace/git/worktrees (wire next)",
             },
           ]
         : []),
@@ -70,7 +70,7 @@ export function openWorkspacesDialog(
         openDialogPrompt(dialog, {
           title: "Worktree name",
           placeholder: "feature-branch",
-          description: "Creates a Solid stub worktree entry (HTTP wire next)",
+          description: "Names a linked git worktree (Solid stub until HTTP session host)",
           onConfirm: (name) => {
             const trimmed = name.trim()
             if (!trimmed) return

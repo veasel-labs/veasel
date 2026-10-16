@@ -34,6 +34,23 @@ import {
   openWorkspacesDialog,
   type SolidWorkspace,
 } from "./component/workspaces-dialog"
+import {
+  demoOpenProjects,
+  demoOpenWorktrees,
+  groupWorktreesByProject,
+  openOpenDialog,
+} from "./component/open-dialog"
+import { demoStatusSnapshot, openStatusDialog } from "./component/status-dialog"
+import {
+  demoUpdateAvailable,
+  openUpdateDialog,
+} from "./component/update-dialog"
+import { openPairDialog } from "./component/pair-dialog"
+import { openHighlightsDialog } from "./component/highlights-dialog"
+import {
+  demoImagePreview,
+  openImagePreviewDialog,
+} from "./component/image-preview-dialog"
 import { openDialogConfirm } from "./ui/dialog-confirm"
 import { openDialogHelp } from "./ui/dialog-help"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
@@ -327,6 +344,36 @@ function AppShell(props: SolidAppProps) {
           },
         })
       },
+      showOpen: () => {
+        setComposerFocused(false)
+        openOpenDialog(dialog, {
+          recentSessions: sessions(),
+          projects: demoOpenProjects(),
+          worktreesByProject: groupWorktreesByProject(demoOpenWorktrees()),
+          onOpenSession: (session) => {
+            setActiveSessionId(session.id)
+            toast.info(`Opened · ${session.title}`, "Open")
+          },
+          onOpenWorktree: (worktree) => {
+            setNotice(`Worktree · ${worktree.path} (Solid stub — session.move wire next)`)
+            toast.success(`Opened worktree · ${worktree.name}`, "Open")
+          },
+        })
+      },
+      showStatus: () => {
+        setComposerFocused(false)
+        const model = activeModel()
+        openStatusDialog(dialog, {
+          ...demoStatusSnapshot(),
+          sessionTitle: sessionTitle(),
+          directory: directory(),
+          model: model.name,
+          provider: model.providerID,
+          agent: activeAgent(),
+          variant: activeVariant() ?? "default",
+          mcpServers: demoMcpServers(),
+        })
+      },
       showAgent: () => {
         setComposerFocused(false)
         openAgentDialog(dialog, {
@@ -371,6 +418,26 @@ function AppShell(props: SolidAppProps) {
           },
         })
       },
+      showUpdate: () => {
+        setComposerFocused(false)
+        openUpdateDialog(dialog, {
+          state: demoUpdateAvailable(),
+          onSkip: () => toast.info("Skipped update (stub)", "Update"),
+          onInstall: () => toast.success("Install queued (stub)", "Update"),
+        })
+      },
+      showPair: () => {
+        setComposerFocused(false)
+        openPairDialog(dialog)
+      },
+      showHighlights: () => {
+        setComposerFocused(false)
+        openHighlightsDialog(dialog)
+      },
+      showImagePreview: () => {
+        setComposerFocused(false)
+        openImagePreviewDialog(dialog, demoImagePreview())
+      },
     }),
   )
 
@@ -389,6 +456,11 @@ function AppShell(props: SolidAppProps) {
     if (key.ctrl && key.name === paletteShortcut.name && !key.meta) {
       key.preventDefault()
       openPalette()
+      return
+    }
+    if (key.ctrl && key.name === "o" && !key.meta) {
+      key.preventDefault()
+      commands().find((command) => command.id === "veasel.open.dialog")?.run()
       return
     }
     if (key.ctrl && key.name === reviewShortcut.name && !key.meta) {

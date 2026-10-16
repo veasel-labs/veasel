@@ -349,6 +349,7 @@ export type LivePaletteHandlers = {
   renameSession: () => void
   attachFile: () => void
   showSessionDiffs: () => void
+  showReviews: () => void
   showSessionTimeline: () => void
   showStatus: () => void
   showExport: () => void
@@ -487,6 +488,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["diff", "patch", "edits", "files", "review"],
       shortcut: "Ctrl+D",
       run: () => handlers.showSessionDiffs(),
+    },
+    {
+      id: "veasel.reviews.open",
+      title: "Pending reviews",
+      description: `Approve or reject edits, shell, and MCP (${reviewShortcut.label})`,
+      group: "session",
+      keywords: ["review", "approve", "reject", "patch", "shell", "mcp"],
+      shortcut: reviewShortcut.label,
+      run: () => handlers.showReviews(),
     },
     {
       id: "veasel.session.timeline",

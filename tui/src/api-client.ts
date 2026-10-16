@@ -108,6 +108,64 @@ export type ApiWorkspaceEditProposal = ApiWorkspaceEditSummary & {
   diff: string
 }
 
+export type ApiReviewSandboxPreview = {
+  mode: string
+  will_wrap: boolean
+  backend: string
+  network?: string
+}
+
+export type ApiShellCommandStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "timed_out"
+  | "output_limited"
+  | "rejected"
+  | "uncertain"
+
+export type ApiShellCommandSummary = {
+  id: string
+  command: string
+  cwd: string
+  timeout_seconds: number
+  status: ApiShellCommandStatus
+  exit_code?: number
+  output?: string
+  created_at?: string
+  updated_at?: string
+  sandbox?: ApiReviewSandboxPreview
+}
+
+export type ApiMcpToolCallStatus =
+  | "pending"
+  | "approved"
+  | "running"
+  | "completed"
+  | "rejected"
+  | "failed"
+  | "cancelled"
+  | "uncertain"
+
+export type ApiMcpToolCallSummary = {
+  id: string
+  operation_id: string
+  plugin_name: string
+  server_name: string
+  tool_name: string
+  arguments_bytes?: number
+  status: ApiMcpToolCallStatus
+  reviewed_at?: string
+  created_at?: string
+  updated_at?: string
+  stdio_sandbox?: ApiReviewSandboxPreview
+}
+
+export type ApiMcpToolCallApproval = ApiMcpToolCallSummary & {
+  arguments_json: string
+}
+
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
   onTurnCompleted?: (sessionId: string, completion: SessionTurnCompletion) => void
@@ -340,6 +398,84 @@ export class VeaselApiClient {
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as ApiWorkspaceEditProposal
+  }
+
+  async decideWorkspaceEdit(
+    sessionId: string,
+    editId: string,
+    decision: "approve" | "reject",
+  ): Promise<{ id: string; status: string }> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/edits/${encodeURIComponent(editId)}/${decision}`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { id: string; status: string }
+  }
+
+  async listWorkspaceCommands(sessionId: string): Promise<ApiShellCommandSummary[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/commands`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiShellCommandSummary[]
+  }
+
+  async getWorkspaceCommand(
+    sessionId: string,
+    commandId: string,
+  ): Promise<ApiShellCommandSummary> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/commands/${encodeURIComponent(commandId)}`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiShellCommandSummary
+  }
+
+  async decideWorkspaceCommand(
+    sessionId: string,
+    commandId: string,
+    decision: "approve" | "reject",
+  ): Promise<{ id: string; status: string }> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/commands/${encodeURIComponent(commandId)}/${decision}`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { id: string; status: string }
+  }
+
+  async listMcpToolCalls(sessionId: string): Promise<ApiMcpToolCallSummary[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-tool-calls`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiMcpToolCallSummary[]
+  }
+
+  async getMcpToolCall(sessionId: string, callId: string): Promise<ApiMcpToolCallApproval> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-tool-calls/${encodeURIComponent(callId)}`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiMcpToolCallApproval
+  }
+
+  async decideMcpToolCall(
+    sessionId: string,
+    callId: string,
+    decision: "approve" | "reject",
+  ): Promise<{ id: string; status: string }> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-tool-calls/${encodeURIComponent(callId)}/${decision}`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { id: string; status: string }
   }
 
   async sendMessage(

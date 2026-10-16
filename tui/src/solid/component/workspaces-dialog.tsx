@@ -60,7 +60,7 @@ export function openWorkspacesDialog(
               title: "+ New worktree…",
               value: "__new__",
               category: "Actions",
-              description: "POST /v1/sessions/{id}/workspace/git/worktrees (wire next)",
+              description: "POST /v1/sessions/{id}/workspace/git/worktrees",
             },
           ]
         : []),
@@ -70,7 +70,7 @@ export function openWorkspacesDialog(
         openDialogPrompt(dialog, {
           title: "Worktree name",
           placeholder: "feature-branch",
-          description: "Names a linked git worktree (Solid stub until HTTP session host)",
+          description: "Creates a linked git worktree (new branch) via the session API",
           onConfirm: (name) => {
             const trimmed = name.trim()
             if (!trimmed) return

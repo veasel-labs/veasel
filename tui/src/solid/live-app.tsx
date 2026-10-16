@@ -10,6 +10,9 @@ import {
 } from "../api-client"
 import { formatHomeSessionStatus, formatBusyStatus, formatErrorStatus } from "../status-a11y"
 import { homeFooterHint } from "../footer-hints"
+
+/** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
+const liveFooterHint = `${homeFooterHint} · Ctrl+O open · Ctrl+W worktrees`
 import { themes, defaultThemeId, type BuiltinThemeId } from "../themes"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
@@ -17,8 +20,21 @@ import { SolidComposer } from "./composer"
 import { SolidTranscript, transcriptMessagesFromChatTurns, type ToolAwareMessage } from "./transcript"
 import { LiveHome } from "./component/live-home"
 import { openProviderSettingsDialog } from "./component/provider-settings-dialog"
+import {
+  demoOpenProjects,
+  groupWorktreesByProject,
+  openOpenDialog,
+} from "./component/open-dialog"
+import { openWorkspacesDialog } from "./component/workspaces-dialog"
 import { solidMint } from "./theme"
 import type { SolidSessionEntry } from "./component/session-list-dialog"
+import {
+  findSessionForDirectory,
+  mapApiWorktreesToOpenCatalog,
+  mapApiWorktreesToSolidWorkspaces,
+  suggestedLinkedWorktreePath,
+  sanitizeWorktreeName,
+} from "./workspace-git"
 
 export type LiveAppProps = {
   api: VeaselApiClient
@@ -212,6 +228,139 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const sessionIdForWorktrees = () =>
+    activeSessionId() ?? sessions()[selectedIndex()]?.id ?? sessions()[0]?.id
+
+  const openLiveOpenDialog = async () => {
+    setComposerFocused(false)
+    const sessionId = sessionIdForWorktrees()
+    try {
+      const listed = await props.api.listSessions()
+      setSessions(listed.map(sessionEntry))
+      let projects = demoOpenProjects()
+      let worktreesByProject = groupWorktreesByProject([])
+      if (sessionId) {
+        const catalog = await props.api.listGitWorktrees(sessionId)
+        const mapped = mapApiWorktreesToOpenCatalog(catalog.worktrees)
+        projects = mapped.projects
+        worktreesByProject = groupWorktreesByProject(mapped.worktrees)
+      }
+      openOpenDialog(dialog, {
+        recentSessions: listed.map(sessionEntry),
+        projects,
+        worktreesByProject,
+        onOpenSession: (session) => {
+          void openSession(session)
+          toast.info(`Opened · ${session.title}`, "Open")
+        },
+        onOpenWorktree: (worktree) => {
+          void (async () => {
+            const match = findSessionForDirectory(listed, worktree.path)
+            if (match) {
+              await openSession(sessionEntry(match))
+              toast.success(`Opened session · ${match.title}`, "Open")
+              return
+            }
+            const created = await props.api.createSession(
+              `Worktree · ${worktree.name}`,
+              worktree.path,
+            )
+            await refreshSessions()
+            await openSession(sessionEntry(created))
+            toast.success(`Session in · ${worktree.name}`, "Open")
+          })().catch((error) => {
+            setStatus(
+              formatErrorStatus(
+                `open worktree failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
+              ),
+            )
+          })
+        },
+      })
+    } catch (error) {
+      setStatus(
+        formatErrorStatus(
+          `open dialog failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        ),
+      )
+      setComposerFocused(true)
+    }
+  }
+
+  const openLiveWorkspacesDialog = async () => {
+    const sessionId = sessionIdForWorktrees()
+    if (!sessionId) {
+      toast.info("Create or select a session first", "Workspaces")
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const catalog = await props.api.listGitWorktrees(sessionId)
+      const workspaces = mapApiWorktreesToSolidWorkspaces(catalog.worktrees)
+      const main = catalog.worktrees.find((tree) => tree.is_main) ?? catalog.worktrees[0]
+      const current =
+        workspaces.find((item) => item.path === directory())?.id ?? workspaces[0]?.id
+      openWorkspacesDialog(dialog, {
+        workspaces,
+        current,
+        onSelect: (workspace) => {
+          void (async () => {
+            const listed = await props.api.listSessions()
+            const match = findSessionForDirectory(listed, workspace.path)
+            if (match) {
+              await openSession(sessionEntry(match))
+              toast.info(`Workspace · ${workspace.name}`, "Workspaces")
+              return
+            }
+            const created = await props.api.createSession(
+              `Workspace · ${workspace.name}`,
+              workspace.path,
+            )
+            await refreshSessions()
+            await openSession(sessionEntry(created))
+            toast.success(`Session · ${workspace.name}`, "Workspaces")
+          })().catch((error) => {
+            setStatus(
+              formatErrorStatus(
+                `workspace switch failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
+              ),
+            )
+          })
+        },
+        onCreateWorktree: (name) => {
+          if (!main) {
+            toast.info("No main checkout to attach a worktree", "Workspaces")
+            return
+          }
+          const branch = sanitizeWorktreeName(name)
+          const path = suggestedLinkedWorktreePath(main.path, branch)
+          void (async () => {
+            const created = await props.api.addGitWorktree(sessionId, {
+              path,
+              new_branch: branch,
+            })
+            toast.success(`Worktree · ${created.path}`, "Workspaces")
+            await openLiveWorkspacesDialog()
+          })().catch((error) => {
+            setStatus(
+              formatErrorStatus(
+                `worktree add failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
+              ),
+            )
+            setComposerFocused(true)
+          })
+        },
+      })
+    } catch (error) {
+      setStatus(
+        formatErrorStatus(
+          `workspaces unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        ),
+      )
+      setComposerFocused(true)
+    }
+  }
+
   onMount(() => {
     void refreshSessions()
     void props.api.consumeEvents(
@@ -247,6 +396,16 @@ function LiveAppShell(props: LiveAppProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (dialog.open()) return
+    if (key.ctrl && key.name === "o" && !key.meta) {
+      key.preventDefault()
+      void openLiveOpenDialog()
+      return
+    }
+    if (key.ctrl && key.name === "w" && !key.meta) {
+      key.preventDefault()
+      void openLiveWorkspacesDialog()
+      return
+    }
     if (!inSession()) {
       if (key.name === "s" && !key.ctrl && !key.meta) {
         key.preventDefault()
@@ -361,7 +520,7 @@ function LiveAppShell(props: LiveAppProps) {
           focused={composerFocused()}
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
-          <text fg={solidMint.muted}>{homeFooterHint}</text>
+          <text fg={solidMint.muted}>{liveFooterHint}</text>
         </box>
       </Show>
     </box>

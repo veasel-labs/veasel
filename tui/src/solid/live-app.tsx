@@ -195,8 +195,12 @@ function LiveAppShell(props: LiveAppProps) {
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(
     isBuiltinThemeId(initialTheme) ? initialTheme : "mint",
   )
-  /** Home starts unfocused so j/k session nav works; `/` focuses the slash composer. */
+  /**
+   * Home keeps session-nav hotkeys (s/n/q/j/k) until `/` opens the slash bar.
+   * Always-on home composer stole `s` from the standalone smoke / classic bindings.
+   */
   const [composerFocused, setComposerFocused] = createSignal(false)
+  const [homeComposerOpen, setHomeComposerOpen] = createSignal(false)
 
   const applyHistoryPage = (turns: ChatTurn[], mode: "replace" | "prepend") => {
     const mapped = transcriptMessagesFromChatTurns(turns)
@@ -605,6 +609,7 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const inSession = createMemo(() => Boolean(activeSessionId()))
+  const composerVisible = createMemo(() => inSession() || homeComposerOpen())
   const sessionTitle = createMemo(() => {
     const id = activeSessionId()
     return sessions().find((item) => item.id === id)?.title ?? "Session"
@@ -960,6 +965,7 @@ function LiveAppShell(props: LiveAppProps) {
     setHistoryHasOlder(false)
     setStreamingText("")
     setStreaming(false)
+    setHomeComposerOpen(false)
     setComposerFocused(true)
     try {
       const turns = await props.api.listMessages(session.id, { limit: historyPageSize })
@@ -1789,19 +1795,21 @@ function LiveAppShell(props: LiveAppProps) {
         )
         return
       }
-      // Slash composer on home: `/` focuses it; Esc blurs back to session nav.
-      if (key.name === "/" && !key.ctrl && !key.meta && !composerFocused()) {
+      // Slash composer on home: `/` mounts it; Esc dismisses back to session nav.
+      if (key.name === "/" && !key.ctrl && !key.meta && !homeComposerOpen()) {
         key.preventDefault()
+        setHomeComposerOpen(true)
         setRestoreToken({ id: `home-slash-${Date.now()}`, text: "/" })
         setComposerFocused(true)
         return
       }
-      if (key.name === "escape" && composerFocused()) {
+      if (key.name === "escape" && homeComposerOpen()) {
         key.preventDefault()
+        setHomeComposerOpen(false)
         setComposerFocused(false)
         return
       }
-      if (composerFocused()) return
+      if (homeComposerOpen()) return
       if (key.name === "s" && !key.ctrl && !key.meta) {
         key.preventDefault()
         void openSettings()
@@ -1890,7 +1898,7 @@ function LiveAppShell(props: LiveAppProps) {
             sidebarWidth={sidebarWidth()}
             terminalColumns={terminalColumns()}
             onSidebarWidthChange={commitSidebarWidth}
-            showFooter={false}
+            showFooter={!homeComposerOpen()}
           />
         }
       >
@@ -1910,6 +1918,7 @@ function LiveAppShell(props: LiveAppProps) {
             setOldestTurnId(undefined)
             setHistoryHasOlder(false)
             setAttachments([])
+            setHomeComposerOpen(false)
             setComposerFocused(false)
             setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
           }}
@@ -1931,35 +1940,39 @@ function LiveAppShell(props: LiveAppProps) {
           hasOlder={historyHasOlder()}
         />
       </Show>
-      <SolidComposer
-        placeholder={
-          inSession()
-            ? undefined
-            : "Type /connect · /skills · /help  (or press / )"
-        }
-        onSubmit={(text) => {
-          setAttachments([])
-          handleComposerSubmit(text)
-        }}
-        focused={composerFocused()}
-        restoreToken={restoreToken()}
-        onDraftChange={setComposerDraft}
-        attachments={inSession() ? attachments() : []}
-        onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
-        onPreviewAttachment={previewAttachment}
-        onPathPaste={(path) => stageAttachmentPath(path)}
-        workspaceRoot={directory()}
-      />
-      <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
-        <text fg={solidMint.muted}>
-          <Show
-            when={inSession()}
-            fallback={`${homeFooterHint} · / slash · Esc blur composer · drag │ · Alt+←/→ resize`}
-          >
-            {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
-          </Show>
-        </text>
-      </box>
+      <Show when={composerVisible()}>
+        <SolidComposer
+          placeholder={
+            inSession()
+              ? undefined
+              : "Type /connect · /skills · /help  (Esc dismisses)"
+          }
+          onSubmit={(text) => {
+            setAttachments([])
+            handleComposerSubmit(text)
+          }}
+          focused={composerFocused()}
+          restoreToken={restoreToken()}
+          onDraftChange={setComposerDraft}
+          attachments={inSession() ? attachments() : []}
+          onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
+          onPreviewAttachment={previewAttachment}
+          onPathPaste={(path) => stageAttachmentPath(path)}
+          workspaceRoot={directory()}
+        />
+      </Show>
+      <Show when={inSession() || homeComposerOpen()}>
+        <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
+          <text fg={solidMint.muted}>
+            <Show
+              when={inSession()}
+              fallback={`${homeFooterHint} · Esc dismiss slash · drag │ · Alt+←/→ resize`}
+            >
+              {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            </Show>
+          </text>
+        </box>
+      </Show>
     </box>
   )
 }

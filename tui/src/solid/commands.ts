@@ -346,6 +346,7 @@ export type LivePaletteHandlers = {
   attachFile: () => void
   showSessionDiffs: () => void
   showSessionTimeline: () => void
+  showStatus: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -453,6 +454,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["timeline", "history", "turns", "messages", "restore"],
       shortcut: "Ctrl+T",
       run: () => handlers.showSessionTimeline(),
+    },
+    {
+      id: "veasel.status",
+      title: "Status",
+      description: "Session, model, and connection snapshot",
+      group: "guide",
+      keywords: ["status", "info", "usage", "connection", "mcp"],
+      shortcut: "Ctrl+I",
+      run: () => handlers.showStatus(),
     },
     {
       id: "veasel.session.tab.next",

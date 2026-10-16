@@ -225,6 +225,32 @@ export class VeaselApiClient {
     }
   }
 
+  async listPlugins(directory: string): Promise<{
+    plugins: Array<{
+      name: string
+      skills: Array<{ name: string; description: string; source?: string; scope?: string }>
+    }>
+  }> {
+    const query = new URLSearchParams({ directory })
+    const response = await fetch(`${this.base}/v1/plugins?${query}`, { signal: this.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as {
+      plugins: Array<{
+        name: string
+        skills: Array<{ name: string; description: string; source?: string; scope?: string }>
+      }>
+    }
+  }
+
+  async listSessionSkills(sessionId: string): Promise<Array<{ plugin_name: string; skill_name: string }>> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/skills`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as Array<{ plugin_name: string; skill_name: string }>
+  }
+
   async listGitWorktrees(sessionId: string): Promise<ApiGitWorktreeCatalog> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/git/worktrees`,

@@ -170,4 +170,19 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(calls[1]).toContain("/v1/sessions/sess-1/mcp-servers")
     expect(servers[0]?.server_name).toBe("workspace")
   })
+
+  test("listConfiguredMcpServers passes directory query", async () => {
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      url = String(input)
+      return new Response(JSON.stringify({ servers: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    await client.listConfiguredMcpServers("/tmp/proj")
+    expect(url).toContain("/v1/mcp-servers?")
+    expect(url).toContain("directory=%2Ftmp%2Fproj")
+  })
 })

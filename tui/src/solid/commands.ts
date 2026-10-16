@@ -348,6 +348,7 @@ export type LivePaletteHandlers = {
   showSessionTimeline: () => void
   showStatus: () => void
   showExport: () => void
+  showMcp: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -473,6 +474,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["export", "copy", "markdown", "json", "download"],
       shortcut: "Ctrl+E",
       run: () => handlers.showExport(),
+    },
+    {
+      id: "veasel.mcp.list",
+      title: "MCP servers",
+      description: "Browse configured and session-trusted MCP servers",
+      group: "setup",
+      keywords: ["mcp", "servers", "tools", "plugins", "trust"],
+      shortcut: "Ctrl+M",
+      run: () => handlers.showMcp(),
     },
     {
       id: "veasel.session.tab.next",

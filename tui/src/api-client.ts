@@ -198,6 +198,33 @@ export class VeaselApiClient {
     return await response.json() as ApiSessionPluginMcpServer[]
   }
 
+  async listConfiguredMcpServers(directory: string): Promise<{
+    servers: Array<{
+      name: string
+      scope?: string
+      enabled: boolean
+      transport: string
+      command?: string
+      url_origin?: string
+    }>
+  }> {
+    const query = new URLSearchParams({ directory })
+    const response = await fetch(`${this.base}/v1/mcp-servers?${query}`, {
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as {
+      servers: Array<{
+        name: string
+        scope?: string
+        enabled: boolean
+        transport: string
+        command?: string
+        url_origin?: string
+      }>
+    }
+  }
+
   async listGitWorktrees(sessionId: string): Promise<ApiGitWorktreeCatalog> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/git/worktrees`,

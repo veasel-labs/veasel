@@ -29,8 +29,10 @@ import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
+import { openMcpDialog } from "./component/mcp-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { SessionTabs } from "./component/session-tabs"
+import { solidMcpServersFromCatalog } from "./mcp-inventory"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
 import { openDialogExportResult } from "./ui/dialog-export-result"
 import { openDialogPrompt } from "./ui/dialog-prompt"
@@ -320,6 +322,42 @@ function LiveAppShell(props: LiveAppProps) {
       connection: "LOCAL · loopback",
       mcpServers,
     })
+  }
+
+  const openLiveMcp = async () => {
+    setComposerFocused(false)
+    const sessionId = activeSessionId()
+    try {
+      const [configured, trusted] = await Promise.all([
+        props.api.listConfiguredMcpServers(directory()),
+        sessionId
+          ? props.api.listSessionMcpServers(sessionId)
+          : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionMcpServers>>),
+      ])
+      const servers = solidMcpServersFromCatalog(configured, trusted)
+      if (servers.length === 0) {
+        toast.info("No configured or trusted MCP servers yet", "MCP")
+        setComposerFocused(true)
+        return
+      }
+      openMcpDialog(dialog, {
+        servers,
+        onSelect: (server) => {
+          toast.info(
+            server.status === "connected"
+              ? `Trusted · ${server.name}`
+              : `${server.status} · ${server.name}`,
+            "MCP",
+          )
+        },
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not list MCP servers",
+        "MCP",
+      )
+      setComposerFocused(true)
+    }
   }
 
   const openLiveExport = () => {
@@ -736,6 +774,9 @@ function LiveAppShell(props: LiveAppProps) {
           void openLiveStatus()
         },
         showExport: () => openLiveExport(),
+        showMcp: () => {
+          void openLiveMcp()
+        },
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -797,6 +838,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "e" && !key.meta) {
       key.preventDefault()
       openLiveExport()
+      return
+    }
+    if (key.ctrl && key.name === "m" && !key.meta) {
+      key.preventDefault()
+      void openLiveMcp()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {
@@ -939,7 +985,7 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+E export · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

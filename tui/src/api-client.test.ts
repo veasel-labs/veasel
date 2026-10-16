@@ -26,6 +26,72 @@ describe("resolveLoopbackApiBase", () => {
   })
 })
 
+describe("VeaselApiClient model settings", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("listProviderModels GETs the catalog for a provider", async () => {
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      url = String(input)
+      return new Response(
+        JSON.stringify({
+          provider: "openai-compatible",
+          models: [{ id: "muse-wonder", name: "Muse Wonder" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const catalog = await client.listProviderModels("openai-compatible")
+    expect(url).toContain("/v1/config/models?provider=openai-compatible")
+    expect(catalog.models[0]?.id).toBe("muse-wonder")
+  })
+
+  test("updateModelSettings POSTs the active model profile", async () => {
+    let method = ""
+    let body = ""
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      method = String(init?.method ?? "GET")
+      body = String(init?.body ?? "")
+      return new Response(
+        JSON.stringify({
+          active_provider: "openai-compatible",
+          profiles: {
+            "openai-compatible": {
+              model: "muse-wonder",
+              base_url: "https://api.example",
+              api_key_saved: true,
+              max_output_tokens: 8192,
+            },
+          },
+          providers: [],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const view = await client.updateModelSettings({
+      provider: "openai-compatible",
+      model: "muse-wonder",
+      base_url: "https://api.example",
+      max_output_tokens: 8192,
+    })
+    expect(method).toBe("POST")
+    expect(JSON.parse(body)).toEqual({
+      provider: "openai-compatible",
+      model: "muse-wonder",
+      base_url: "https://api.example",
+      max_output_tokens: 8192,
+    })
+    expect(view.active_provider).toBe("openai-compatible")
+    expect(view.profiles["openai-compatible"]?.model).toBe("muse-wonder")
+  })
+})
+
 describe("VeaselApiClient renameSession", () => {
   const originalFetch = globalThis.fetch
 

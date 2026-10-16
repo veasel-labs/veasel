@@ -121,6 +121,7 @@ describe("Solid palette commands", () => {
     const commands = buildLivePaletteCommands({
       showHelp: () => ran.push("help"),
       openSettings: () => ran.push("settings"),
+      showModelPicker: () => ran.push("model"),
       createSession: () => ran.push("new"),
       openRecent: () => ran.push("open"),
       openWorkspaces: () => ran.push("workspaces"),
@@ -146,6 +147,7 @@ describe("Solid palette commands", () => {
     expect(commands.map((command) => command.id)).toEqual([
       "veasel.help",
       "veasel.settings",
+      "veasel.model.picker",
       "veasel.theme.cycle",
       "veasel.theme.list",
       "veasel.session.new",
@@ -168,14 +170,18 @@ describe("Solid palette commands", () => {
       "veasel.layout.sidebar.reset",
       "veasel.quit",
     ])
-    expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual(["veasel.settings"])
+    expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual([
+      "veasel.settings",
+      "veasel.model.picker",
+    ])
     expect(filterPaletteCommands(commands, "stash").map((c) => c.id)).toEqual([
       "veasel.stash.push",
       "veasel.stash.list",
     ])
     commands.find((command) => command.id === "veasel.settings")!.run()
+    commands.find((command) => command.id === "veasel.model.picker")!.run()
     commands.find((command) => command.id === "veasel.open")!.run()
     commands.find((command) => command.id === "veasel.theme.cycle")!.run()
-    expect(ran).toEqual(["settings", "open", "theme"])
+    expect(ran).toEqual(["settings", "model", "open", "theme"])
   })
 })

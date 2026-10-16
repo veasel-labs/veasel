@@ -337,6 +337,7 @@ export function paletteHelpText(compact = true): string {
 export type LivePaletteHandlers = {
   showHelp: () => void
   openSettings: () => void
+  showModelPicker: () => void
   createSession: () => void
   openRecent: () => void
   openWorkspaces: () => void
@@ -377,9 +378,18 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       title: "Provider settings",
       description: "Connect Meta / models · paste API key · pick muse-wonder",
       group: "setup",
-      keywords: ["connect", "models", "provider", "meta", "settings"],
+      keywords: ["connect", "provider", "meta", "settings", "api"],
       shortcut: "s",
       run: () => handlers.openSettings(),
+    },
+    {
+      id: "veasel.model.picker",
+      title: "Select model",
+      description: "Pick the active provider model from the HTTP catalog",
+      group: "setup",
+      keywords: ["model", "models", "llm", "provider", "catalog"],
+      shortcut: "F2",
+      run: () => handlers.showModelPicker(),
     },
     {
       id: "veasel.theme.cycle",

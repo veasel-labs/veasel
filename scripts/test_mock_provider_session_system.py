@@ -67,6 +67,14 @@ class SessionSystemGuardTests(unittest.TestCase):
             self.mock.is_session_system(self.mock.SESSION_SYSTEM + "\n\nUnexpected trailer")
         )
 
+    def test_fixture_user_prompt_strips_repository_map_focus(self):
+        focused = (
+            "Say hello\n\n<veasel-repository-map-focus untrusted=\"true\">\n"
+            "## Repository map\n</veasel-repository-map-focus>"
+        )
+        self.assertEqual(self.mock.fixture_user_prompt(focused), "Say hello")
+        self.assertEqual(self.mock.fixture_user_prompt("Inspect workspace"), "Inspect workspace")
+
     def test_anthropic_system_blocks_with_cache_control_are_accepted(self):
         concise = [
             {

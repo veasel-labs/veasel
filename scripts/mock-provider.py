@@ -135,6 +135,16 @@ def session_system_text(content):
     return ""
 
 
+def fixture_user_prompt(content):
+    """Strip optional repository-map focus trailer from a user prompt."""
+    if not isinstance(content, str):
+        return ""
+    marker = "\n\n<veasel-repository-map-focus"
+    if marker in content:
+        return content.split(marker, 1)[0]
+    return content
+
+
 def session_system_remainder_ok(text, base):
     remainder = text[len(base) :]
     if remainder == "":
@@ -249,7 +259,7 @@ class MockProvider(BaseHTTPRequestHandler):
             input_items = payload.get("input", [])
             user_texts = [item.get("content", "") for item in input_items
                           if item.get("type") == "message" and item.get("role") == "user"]
-            user_text = user_texts[-1] if user_texts else ""
+            user_text = fixture_user_prompt(user_texts[-1] if user_texts else "")
             is_tool_follow_up = bool(input_items) and input_items[-1].get("type") == "function_call_output"
             if (
                 self.path != "/v1/responses"
@@ -346,11 +356,13 @@ class MockProvider(BaseHTTPRequestHandler):
         elif has_openai_compatible_auth(self.headers.get("Authorization")):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
-            user_text = last_message.get("content", "")
+            user_text = fixture_user_prompt(last_message.get("content", ""))
             is_cancellation_fixture_turn = user_text.startswith("Wait for cancellation ")
             is_tool_follow_up = last_message.get("role") == "tool"
             is_mcp_fixture_turn = any(
-                message.get("role") == "user" and message.get("content") in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                message.get("role") == "user"
+                and fixture_user_prompt(message.get("content", ""))
+                in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                 for message in messages
             )
             if is_mcp_fixture_turn:
@@ -449,7 +461,8 @@ class MockProvider(BaseHTTPRequestHandler):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             last_blocks = last_message.get("content", [])
-            user_text = next((block.get("text", "") for block in last_blocks if block.get("type") == "text"), "") if isinstance(last_blocks, list) else last_blocks
+            raw_user = next((block.get("text", "") for block in last_blocks if block.get("type") == "text"), "") if isinstance(last_blocks, list) else last_blocks
+            user_text = fixture_user_prompt(raw_user)
             is_tool_follow_up = any(block.get("type") == "tool_result" for block in last_blocks) if isinstance(last_blocks, list) else False
             if (
                 self.path != "/v1/messages"
@@ -508,7 +521,9 @@ class MockProvider(BaseHTTPRequestHandler):
         elif self.headers.get("x-goog-api-key") == API_KEYS["gemini"]:
             contents = payload.get("contents", [])
             last_parts = contents[-1].get("parts", []) if contents else []
-            user_text = next((part.get("text", "") for part in last_parts if part.get("text")), "")
+            user_text = fixture_user_prompt(
+                next((part.get("text", "") for part in last_parts if part.get("text")), "")
+            )
             is_tool_follow_up = any("functionResponse" in part for part in last_parts)
             if (
                 self.path != "/v1beta/models/smoke-model:streamGenerateContent?alt=sse"

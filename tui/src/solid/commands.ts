@@ -53,6 +53,12 @@ export type PaletteActionHandlers = {
   showSkills: () => void
   /** Open session export options dialog. */
   showExport: () => void
+  /** Open agent picker dialog. */
+  showAgent: () => void
+  /** Open model variant picker dialog. */
+  showVariant: () => void
+  /** Open workspaces / worktree move dialog. */
+  showWorkspaces: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -223,6 +229,30 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       group: "session",
       keywords: ["export", "copy", "markdown", "json", "download"],
       run: () => handlers.showExport(),
+    },
+    {
+      id: "veasel.agent.picker",
+      title: "Select agent",
+      description: "Switch the active Solid agent profile",
+      group: "setup",
+      keywords: ["agent", "build", "plan", "review"],
+      run: () => handlers.showAgent(),
+    },
+    {
+      id: "veasel.variant.picker",
+      title: "Select variant",
+      description: "Model variant / effort preset (stub)",
+      group: "setup",
+      keywords: ["variant", "effort", "fast", "max"],
+      run: () => handlers.showVariant(),
+    },
+    {
+      id: "veasel.workspaces.list",
+      title: "Workspaces",
+      description: "Switch or create a git worktree",
+      group: "session",
+      keywords: ["workspace", "worktree", "move", "git"],
+      run: () => handlers.showWorkspaces(),
     },
   ]
 

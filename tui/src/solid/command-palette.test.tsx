@@ -84,6 +84,9 @@ describe("Solid dialog host + command palette", () => {
         showMcp: () => ran.push("mcp"),
         showSkills: () => ran.push("skills"),
         showExport: () => ran.push("export"),
+        showAgent: () => ran.push("agent"),
+        showVariant: () => ran.push("variant"),
+        showWorkspaces: () => ran.push("workspaces"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -135,6 +138,9 @@ describe("Solid dialog host + command palette", () => {
         showMcp: () => {},
         showSkills: () => {},
         showExport: () => {},
+        showAgent: () => {},
+        showVariant: () => {},
+        showWorkspaces: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

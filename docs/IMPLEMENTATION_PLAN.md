@@ -20,12 +20,12 @@ route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode
 The TUI is TypeScript with OpenTUI, kept as a separate API client; the agent
 runtime, tools and persistence remain in V. Core renderables ship as the
 default (`bun run start` → `src/main.ts`). A SolidJS + `@opentui/solid` **0.5.17**
-migration is in progress: P0 adds a parallel shell + reactive composer under
-`tui/src/solid/` (`bun run start:solid`), bunfig preload, JSX tsconfig, dual
-standalone entry (`--solid`), and `testRender` coverage. Pins and adapted
-patterns are recorded in
+migration is in progress: P0 shipped shell + reactive composer; the next slice
+adds a session transcript on OpenTUI `scrollbox` (follow-tail while streaming)
+under `tui/src/solid/` (`bun run start:solid`), reusing `transcript*` /
+`chat-history` helpers. Pins and adapted patterns are recorded in
 [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
-the default entry and feature parity (sessions, reviews, settings) are later
+the default entry and feature parity (dialogs, reviews, settings) are later
 slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
 interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
@@ -50,6 +50,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] OpenTUI terminal client connected to the server; Solid remains evaluated.
 - [x] Solid P0 shell + composer dual-path (`tui/src/solid/`, `start:solid`,
   `testRender`); legacy `main.ts` remains default until later cutover.
+- [x] Solid session transcript on `scrollbox` with sticky follow-tail,
+  `transcriptSegments` tone rendering, and `testRender` coverage (long scroll,
+  streaming append, 80×30); HTTP session wiring still optional.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.
 
@@ -372,8 +375,8 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 - [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
   shell → composer → session/transcript → dialogs/palette → reviews →
-  settings). P0 shell+composer dual-path shipped; default entry remains
-  legacy until parity. See
+  settings). Shell+composer+transcript dual-path shipped; next slice is
+  dialogs/command palette. Default entry remains legacy until parity. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.

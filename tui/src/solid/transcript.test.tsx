@@ -1,0 +1,169 @@
+/** @jsxImportSource @opentui/solid */
+import { afterEach, describe, expect, test } from "bun:test"
+import { createSignal } from "solid-js"
+import { testRender } from "@opentui/solid"
+import type { ScrollBoxRenderable } from "@opentui/core"
+import { App, fixtureTurns } from "./app"
+import { SolidTranscript, transcriptMessagesFromChatTurns } from "./transcript"
+import { assistantLabel, userLabel } from "../transcript"
+import type { ChatTurn } from "../chat-history"
+
+const setups: Array<Awaited<ReturnType<typeof testRender>>> = []
+
+afterEach(() => {
+  for (const setup of setups.splice(0)) {
+    setup.renderer.destroy()
+  }
+})
+
+const demoSize = { width: 80, height: 30 } as const
+
+describe("Solid transcript scrollbox", () => {
+  test("renders role labels from transcript helpers at 80×30", async () => {
+    const setup = await testRender(
+      () => (
+        <App
+          sessionTitle="fixture-session"
+          initialMessages={[
+            { role: "user", content: "hello transcript" },
+            { role: "assistant", content: "mint reply body" },
+          ]}
+        />
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("VEASEL")
+    expect(frame).toContain("fixture-session")
+    expect(frame).toContain(userLabel)
+    expect(frame).toContain("hello transcript")
+    expect(frame).toContain(assistantLabel)
+    expect(frame).toContain("mint reply body")
+    // Demo viewport is 80×30; frame may include a trailing newline from capture.
+    expect(frame.split("\n").length).toBeLessThanOrEqual(31)
+  })
+
+  test("long transcript sticks to latest turns", async () => {
+    let scroll: ScrollBoxRenderable | undefined
+    const turns = fixtureTurns(36, "wide-pad ")
+    const latest = turns[turns.length - 1]!.content
+    const earliest = turns[0]!.content
+
+    const setup = await testRender(
+      () => (
+        <App
+          sessionTitle="long-session"
+          initialMessages={turns}
+          followTail={true}
+          scrollRef={(box) => {
+            scroll = box
+          }}
+        />
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    // Sticky bottom needs a layout pass after content mounts.
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Turn 36")
+    expect(frame).toContain(latest.slice(0, 24))
+    // Earliest turns should be scrolled out of the 80×30 viewport.
+    expect(frame).not.toContain(earliest.slice(0, 24))
+    expect(scroll).toBeDefined()
+    expect(scroll!.scrollHeight).toBeGreaterThan(scroll!.height)
+    expect(scroll!.scrollTop).toBeGreaterThan(0)
+  })
+
+  test("streaming append follows the tail", async () => {
+    const [stream, setStream] = createSignal("partial stream…")
+    let scroll: ScrollBoxRenderable | undefined
+    const turns = fixtureTurns(28, "stream-pad ")
+
+    const setup = await testRender(
+      () => (
+        <App
+          sessionTitle="stream-session"
+          initialMessages={turns}
+          streaming={true}
+          streamingText={stream()}
+          followTail={true}
+          scrollRef={(box) => {
+            scroll = box
+          }}
+        />
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    expect(setup.captureCharFrame()).toContain("partial stream")
+
+    setStream("TAIL_MARKER_STREAM_END unique")
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("TAIL_MARKER_STREAM_END")
+    expect(frame).toContain(assistantLabel)
+    expect(frame).toContain("streaming")
+    expect(scroll).toBeDefined()
+    expect(scroll!.scrollTop).toBeGreaterThan(0)
+  })
+
+  test("empty transcript shows the start hint", async () => {
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript messages={[]} followTail={true} />
+        </box>
+      ),
+      { width: 80, height: 20 },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    expect(setup.captureCharFrame()).toContain("Start with a question")
+  })
+
+  test("maps chat-history turns into transcript messages", async () => {
+    const turns: ChatTurn[] = [
+      {
+        id: 1,
+        session_id: "s1",
+        role: "user",
+        content: "from chat-history",
+        created_at: "2026-10-16T00:00:00Z",
+      },
+      {
+        id: 2,
+        session_id: "s1",
+        role: "assistant",
+        content: "bridged reply",
+        created_at: "2026-10-16T00:00:01Z",
+      },
+    ]
+    const setup = await testRender(
+      () => (
+        <App
+          sessionTitle="history-bridge"
+          initialMessages={transcriptMessagesFromChatTurns(turns)}
+        />
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("from chat-history")
+    expect(frame).toContain("bridged reply")
+  })
+})

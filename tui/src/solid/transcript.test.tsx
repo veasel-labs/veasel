@@ -137,6 +137,33 @@ describe("Solid transcript scrollbox", () => {
     expect(setup.captureCharFrame()).toContain("Start with a question")
   })
 
+  test("mount budget keeps a sticky-tail window and cues earlier blocks", async () => {
+    const turns = fixtureTurns(48, "budget-pad ")
+    const earliest = turns[0]!.content
+    const latest = turns[turns.length - 1]!.content
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript
+            messages={turns}
+            followTail={true}
+            mountBudget={10}
+            session={{ title: "budget-session", directory: "/tmp" }}
+          />
+        </box>
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("earlier")
+    expect(frame).toContain(latest.slice(0, 20))
+    expect(frame).not.toContain(earliest.slice(0, 20))
+  })
+
   test("maps chat-history turns into transcript messages", async () => {
     const turns: ChatTurn[] = [
       {

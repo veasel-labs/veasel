@@ -28,10 +28,13 @@ Ctrl+K stays readline kill-line), a pending **reviews** overlay (**Ctrl+R**)
 for file/shell/MCP approvals with `formatReviewDiff` segments or OpenTUI `<diff>`
 split view, a non-modal **toast** host (queue, hover-pause, click dismiss), and Solid
 **session list / rename** dialogs (filter, `r` rename / `n` create when the
-filter is empty). Pins and adapted patterns are recorded in
+filter is empty), Solid **dialog primitives** (select / alert / confirm / prompt
+/ help / layout), and product dialogs for **theme list**, **model
+favorites/recents**, **stash**, **error details**, and **shell output** (fixture
+demos + palette). Pins and adapted patterns are recorded in
 [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
-the default entry and feature parity (model favorites, pane-resize, HTTP session
-wiring) are later slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
+the default entry and remaining parity (pane-resize, HTTP session wiring) are
+later slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
 interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
 validation still needs a ConPTY harness (see
@@ -78,6 +81,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `session-rename-dialog.tsx`): filter via `session-list.ts`, digit jump,
   `r` rename (dialog `push`/`pop`), `n` create stub when filter empty; palette
   `veasel.session.list`; fixture demos + `testRender`.
+- [x] Solid dialog primitives (`dialog-select`, alert/confirm/prompt/help +
+  `DialogLayout`) and product dialogs (theme list, model favorites/recents,
+  stash, error details, shell output) with palette commands + `testRender`.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.
 
@@ -399,10 +405,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 ### Milestone 5 — competitive experience
 
 - [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
-  shell → … → toast → session dialogs → model dialogs → settings). Shell
-  through session-list/rename dual-path shipped; next slices are model
-  favorites/recents, pane-resize/sidebar, fade/spinner, or HTTP session
-  wiring / mount-budget. Default entry remains legacy until parity. See
+  shell → … → toast → session dialogs → dialog primitives → product dialogs →
+  settings). Shell through model/theme/stash/error/shell dual-path shipped;
+  next slices are pane-resize/sidebar, fade/spinner, HTTP session wiring /
+  mount-budget, or remaining OpenCode dialogs (MCP/skill/agent/workspaces).
+  Default entry remains legacy until parity. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.

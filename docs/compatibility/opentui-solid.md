@@ -72,6 +72,17 @@ compatibility and does not authorize copying branding or product chrome.
   Pattern from OpenCode `dialog-session-list.tsx` / `dialog-session-rename.tsx`
   (engineering only). HTTP list/update still on the legacy path; Solid uses
   fixture sessions until session wiring lands. Palette `veasel.session.list`.
+- Dialog primitives (`solid/ui/dialog-select.tsx`, `dialog-alert.tsx`,
+  `dialog-confirm.tsx`, `dialog-prompt.tsx`, `dialog-help.tsx` + `DialogLayout`):
+  fuzzy/category select, modal alert/confirm/prompt, help overlay. Pattern from
+  OpenCode `ui/dialog-*.tsx` (engineering only). Palette help opens
+  `DialogHelp`; `veasel.confirm.demo` smokes confirm.
+- Product dialogs on DialogSelect / layout: theme list (`dialog-theme-list.tsx`,
+  live preview on move), model favorites/recents (`model-dialog.tsx`), stash
+  (`stash-dialog.tsx`), error details (`error-details-dialog.tsx`), shell
+  output (`shell-output-dialog.tsx`). Fixture catalogs until HTTP wiring.
+  Palette: `veasel.theme.list`, `veasel.model.picker`, `veasel.stash.list`,
+  `veasel.error.details`, `veasel.shell.output`.
 
 ## Startup note (light)
 

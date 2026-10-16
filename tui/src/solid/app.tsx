@@ -9,10 +9,22 @@ import { solidMint } from "./theme"
 import {
   buildPaletteCommands,
   nextBuiltinThemeId,
-  paletteHelpText,
   paletteShortcut,
 } from "./commands"
 import { DialogProvider, useDialog } from "./ui/dialog"
+import { openDialogThemeList } from "./component/dialog-theme-list"
+import {
+  demoFavoriteModels,
+  demoModels,
+  demoRecentModels,
+  openModelDialog,
+  type SolidModelRef,
+} from "./component/model-dialog"
+import { demoStashEntries, openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
+import { demoErrorDetails, openErrorDetailsDialog } from "./component/error-details-dialog"
+import { demoShellOutput, openShellOutputDialog } from "./component/shell-output-dialog"
+import { openDialogConfirm } from "./ui/dialog-confirm"
+import { openDialogHelp } from "./ui/dialog-help"
 import { ToastProvider, useToast } from "./ui/toast"
 import { openCommandPalette } from "./component/command-palette"
 import { openReviewPanel } from "./component/review-panel"
@@ -106,6 +118,8 @@ function AppShell(props: SolidAppProps) {
   )
   const [notice, setNotice] = createSignal(props.notice ?? "")
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
+  const [activeModel, setActiveModel] = createSignal<SolidModelRef>(demoModels()[0]!)
+  const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(demoStashEntries())
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
 
@@ -170,7 +184,7 @@ function AppShell(props: SolidAppProps) {
   const commands = createMemo(() =>
     buildPaletteCommands({
       showHelp: (compact) => {
-        setNotice(paletteHelpText(compact ?? true))
+        openDialogHelp(dialog, { compact: compact ?? true })
       },
       runSlash: (command) => {
         setNotice(`Slash · ${command} (Solid stub — wire to session handler next)`)
@@ -198,6 +212,63 @@ function AppShell(props: SolidAppProps) {
           message: "Solid mint notice · hover pauses · click dismisses",
           duration: 8_000,
         })
+      },
+      showConfirm: () => {
+        openDialogConfirm(dialog, {
+          title: "Confirm",
+          message: "Apply this Solid shell action?",
+          onConfirm: () => {
+            toast.success("Confirmed (Solid DialogConfirm)", "Confirm")
+          },
+          onCancel: () => {
+            toast.info("Cancelled", "Confirm")
+          },
+        })
+      },
+      showThemeList: () => {
+        openDialogThemeList(dialog, {
+          current: themeId(),
+          onPreview: (id) => setThemeId(id),
+          onSelect: (id) => {
+            setThemeId(id)
+            toast.info(`Theme · ${id} (Solid list · /theme persists on legacy path)`, "Theme")
+          },
+        })
+      },
+      showModelPicker: () => {
+        setComposerFocused(false)
+        openModelDialog(dialog, {
+          models: demoModels(),
+          favorites: demoFavoriteModels(),
+          recents: demoRecentModels(),
+          current: activeModel(),
+          onSelect: (model) => {
+            setActiveModel(model)
+            toast.success(`Model · ${model.name}`, "Models")
+          },
+        })
+      },
+      showStash: () => {
+        setComposerFocused(false)
+        openStashDialog(dialog, {
+          entries: stashEntries(),
+          onSelect: (entry) => {
+            setStashEntries((prev) => prev.filter((item) => item.id !== entry.id))
+            setNotice(`Stash restored · ${entry.text.slice(0, 60)}`)
+            toast.success("Stash restored into notice (composer wire next)", "Stash")
+          },
+        })
+      },
+      showErrorDetails: () => {
+        setComposerFocused(false)
+        openErrorDetailsDialog(dialog, {
+          ...demoErrorDetails(),
+          onCopy: () => toast.info("Error details copied (stub)", "Error"),
+        })
+      },
+      showShellOutput: () => {
+        setComposerFocused(false)
+        openShellOutputDialog(dialog, demoShellOutput())
       },
     }),
   )

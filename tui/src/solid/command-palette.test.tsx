@@ -75,6 +75,12 @@ describe("Solid dialog host + command palette", () => {
         toggleActivity: () => ran.push("activity"),
         openReviews: () => ran.push("reviews"),
         showToast: () => ran.push("toast"),
+        showConfirm: () => ran.push("confirm"),
+        showThemeList: () => ran.push("themes"),
+        showModelPicker: () => ran.push("model"),
+        showStash: () => ran.push("stash"),
+        showErrorDetails: () => ran.push("error"),
+        showShellOutput: () => ran.push("shell"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -117,6 +123,12 @@ describe("Solid dialog host + command palette", () => {
         toggleActivity: () => {},
         openReviews: () => {},
         showToast: () => {},
+        showConfirm: () => {},
+        showThemeList: () => {},
+        showModelPicker: () => {},
+        showStash: () => {},
+        showErrorDetails: () => {},
+        showShellOutput: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)
@@ -158,8 +170,8 @@ describe("Solid dialog host + command palette", () => {
   })
 })
 
-describe("Solid palette notice stubs", () => {
-  test("selecting help from App writes a notice into the transcript", async () => {
+describe("Solid palette dialog stubs", () => {
+  test("selecting help from App opens the Help dialog", async () => {
     const setup = await testRender(() => <App initialMessages={[]} />, demoSize)
     setups.push(setup)
     await setup.renderOnce()
@@ -170,7 +182,9 @@ describe("Solid palette notice stubs", () => {
     await setup.renderOnce()
 
     const frame = setup.captureCharFrame()
+    expect(frame).toContain("Help")
     expect(frame).toContain("VEASEL CODE / QUICK HELP")
+    expect(frame).toContain(paletteShortcut.label)
     expect(frame).not.toContain("Filter commands")
   })
 })

@@ -131,6 +131,9 @@ describe("Solid palette commands", () => {
       showSessionDiffs: () => ran.push("diff"),
       nextSessionTab: () => ran.push("tab-next"),
       prevSessionTab: () => ran.push("tab-prev"),
+      widenSidebar: () => ran.push("widen"),
+      narrowSidebar: () => ran.push("narrow"),
+      resetSidebar: () => ran.push("reset-sidebar"),
       quit: () => ran.push("quit"),
     })
     expect(commands.map((command) => command.id)).toEqual([
@@ -146,6 +149,9 @@ describe("Solid palette commands", () => {
       "veasel.session.diff",
       "veasel.session.tab.next",
       "veasel.session.tab.prev",
+      "veasel.layout.sidebar.widen",
+      "veasel.layout.sidebar.narrow",
+      "veasel.layout.sidebar.reset",
       "veasel.quit",
     ])
     expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual(["veasel.settings"])

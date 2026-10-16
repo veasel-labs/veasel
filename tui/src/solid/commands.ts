@@ -347,6 +347,9 @@ export type LivePaletteHandlers = {
   showSessionDiffs: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
+  widenSidebar: () => void
+  narrowSidebar: () => void
+  resetSidebar: () => void
   quit: () => void
 }
 
@@ -458,6 +461,32 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["tab", "session", "previous", "prev", "switch"],
       shortcut: "Ctrl+[",
       run: () => handlers.prevSessionTab(),
+    },
+    {
+      id: "veasel.layout.sidebar.widen",
+      title: "Widen sessions sidebar",
+      description: "Grow the home SESSIONS column (persisted)",
+      group: "setup",
+      keywords: ["sidebar", "resize", "wider", "layout", "pane"],
+      shortcut: "Alt+→",
+      run: () => handlers.widenSidebar(),
+    },
+    {
+      id: "veasel.layout.sidebar.narrow",
+      title: "Narrow sessions sidebar",
+      description: "Shrink the home SESSIONS column (persisted)",
+      group: "setup",
+      keywords: ["sidebar", "resize", "narrower", "layout", "pane"],
+      shortcut: "Alt+←",
+      run: () => handlers.narrowSidebar(),
+    },
+    {
+      id: "veasel.layout.sidebar.reset",
+      title: "Reset sessions sidebar width",
+      description: "Restore the default home sidebar width (double-click grip)",
+      group: "setup",
+      keywords: ["sidebar", "resize", "reset", "default", "layout"],
+      run: () => handlers.resetSidebar(),
     },
     {
       id: "veasel.quit",

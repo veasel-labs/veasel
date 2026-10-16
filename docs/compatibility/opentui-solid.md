@@ -110,6 +110,12 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   `skill-autocomplete`). Mint popup above Compose; Tab/↑↓/Enter/Esc. Skills
   catalog and workspace path listing are injectable props on fixture `App`;
   live path loads sessions/messages via `api-client.ts`.
+- Home pane resize (`solid/ui/pane-layout.ts`, `pane-resize.ts`,
+  `pane-resize-handle.tsx` + `LiveHome`): drag grip + Alt+←/→ + palette widen/
+  narrow/reset; preferred width persisted under XDG state. Drag/double-click
+  controller pattern adapted from OpenCode `ui/pane-resize.ts` /
+  `pane-resize-handle.tsx` at [`eeec76bb620f9bee8cab89c5a3a88e315539645b`](https://github.com/anomalyco/opencode/tree/eeec76bb620f9bee8cab89c5a3a88e315539645b)
+  (MIT; engineering only — Veasel mint grip, clamp constants, and persistence).
 
 ## Startup note (light)
 

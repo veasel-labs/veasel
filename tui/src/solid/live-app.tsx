@@ -33,6 +33,13 @@ import { openDialogPrompt } from "./ui/dialog-prompt"
 import { moveSessionTabIndex, sessionTabsFromEntries } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import {
+  HOME_SIDEBAR_DEFAULT,
+  clampHomeSidebarWidth,
+  loadHomeSidebarWidth,
+  saveHomeSidebarWidth,
+  stepHomeSidebarWidth,
+} from "./ui/pane-layout"
+import {
   loadDraftStash,
   pushDraftStash,
   removeDraftStash,
@@ -100,9 +107,19 @@ function LiveAppShell(props: LiveAppProps) {
   const [composerDraft, setComposerDraft] = createSignal("")
   const [restoreToken, setRestoreToken] = createSignal<{ id: string; text: string } | undefined>()
   const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(loadDraftStash())
+  const terminalColumns = () => process.stdout.columns ?? 80
+  const [sidebarWidth, setSidebarWidth] = createSignal(
+    loadHomeSidebarWidth({}, terminalColumns()),
+  )
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   let turnController: AbortController | undefined
   const handledCompletions = new Set<string>()
+
+  const commitSidebarWidth = (width: number) => {
+    const next = clampHomeSidebarWidth(width, terminalColumns())
+    setSidebarWidth(next)
+    saveHomeSidebarWidth(next, {}, terminalColumns())
+  }
 
   const persistStash = (entries: SolidStashEntry[]) => {
     setStashEntries(entries)
@@ -587,6 +604,20 @@ function LiveAppShell(props: LiveAppProps) {
         },
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
+        widenSidebar: () => {
+          const next = stepHomeSidebarWidth(sidebarWidth(), 2, terminalColumns())
+          commitSidebarWidth(next)
+          toast.success(`Sidebar · ${next} cols`, "Layout")
+        },
+        narrowSidebar: () => {
+          const next = stepHomeSidebarWidth(sidebarWidth(), -2, terminalColumns())
+          commitSidebarWidth(next)
+          toast.success(`Sidebar · ${next} cols`, "Layout")
+        },
+        resetSidebar: () => {
+          commitSidebarWidth(HOME_SIDEBAR_DEFAULT)
+          toast.success(`Sidebar · ${HOME_SIDEBAR_DEFAULT} cols (default)`, "Layout")
+        },
         quit: () => props.onQuit?.(),
       }),
     )
@@ -625,6 +656,13 @@ function LiveAppShell(props: LiveAppProps) {
       return
     }
     if (!inSession()) {
+      if (key.meta && (key.name === "left" || key.name === "right") && !key.ctrl) {
+        key.preventDefault()
+        commitSidebarWidth(
+          stepHomeSidebarWidth(sidebarWidth(), key.name === "right" ? 2 : -2, terminalColumns()),
+        )
+        return
+      }
       if (key.name === "s" && !key.ctrl && !key.meta) {
         key.preventDefault()
         void openSettings()
@@ -705,6 +743,9 @@ function LiveAppShell(props: LiveAppProps) {
             selectedIndex={selectedIndex()}
             directory={directory()}
             theme={themes[themeId()] ?? themes.mint}
+            sidebarWidth={sidebarWidth()}
+            terminalColumns={terminalColumns()}
+            onSidebarWidthChange={commitSidebarWidth}
           />
         }
       >

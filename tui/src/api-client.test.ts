@@ -26,6 +26,29 @@ describe("resolveLoopbackApiBase", () => {
   })
 })
 
+describe("VeaselApiClient health", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("getHealth GETs /v1/health", async () => {
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      url = String(input)
+      return new Response(JSON.stringify({ healthy: true, version: "0.42.0-dev" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const health = await client.getHealth()
+    expect(url).toContain("/v1/health")
+    expect(health.version).toBe("0.42.0-dev")
+  })
+})
+
 describe("VeaselApiClient model settings", () => {
   const originalFetch = globalThis.fetch
 

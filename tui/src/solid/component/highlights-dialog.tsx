@@ -40,7 +40,7 @@ export function HighlightsDialog(props: { entries: HighlightEntry[] }) {
   return (
     <DialogLayout
       header={<DialogHeader title="What's new" hint="Enter · Esc" />}
-      footer={<text fg={solidMint.muted}>Release highlights stub · wire to shipped notes</text>}
+      footer={<text fg={solidMint.muted}>Tip LiveApp highlights · Enter closes</text>}
     >
       <For each={props.entries}>
         {(entry) => (

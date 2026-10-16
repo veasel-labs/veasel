@@ -340,6 +340,10 @@ export type LivePaletteHandlers = {
   showModelPicker: () => void
   showVariant: () => void
   showAgent: () => void
+  showSessions: () => void
+  showUpdate: () => void
+  showHighlights: () => void
+  showPair: () => void
   createSession: () => void
   openRecent: () => void
   openWorkspaces: () => void
@@ -430,6 +434,30 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       run: () => handlers.showThemeList(),
     },
     {
+      id: "veasel.update.dialog",
+      title: "Check for updates",
+      description: "Show the running backend version from GET /v1/health",
+      group: "guide",
+      keywords: ["update", "version", "changelog", "release"],
+      run: () => handlers.showUpdate(),
+    },
+    {
+      id: "veasel.highlights.dialog",
+      title: "What's new",
+      description: "LiveApp release highlights for tip Solid features",
+      group: "guide",
+      keywords: ["highlights", "release", "notes", "new", "whats"],
+      run: () => handlers.showHighlights(),
+    },
+    {
+      id: "veasel.pair.dialog",
+      title: "Device pairing",
+      description: "Explain Veasel loopback-only pairing stance",
+      group: "guide",
+      keywords: ["pair", "device", "mobile", "qr"],
+      run: () => handlers.showPair(),
+    },
+    {
       id: "veasel.session.new",
       title: "New session",
       description: "Create a session in the current workspace",
@@ -437,6 +465,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["new", "session", "create"],
       shortcut: "n",
       run: () => handlers.createSession(),
+    },
+    {
+      id: "veasel.session.list",
+      title: "Session list",
+      description: "Browse, filter, rename, or open sessions",
+      group: "session",
+      keywords: ["sessions", "home", "list", "rename", "filter"],
+      shortcut: "Ctrl+L",
+      run: () => handlers.showSessions(),
     },
     {
       id: "veasel.session.rename",

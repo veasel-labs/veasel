@@ -246,6 +246,12 @@ export class VeaselApiClient {
     return await response.json() as ChatTurn[]
   }
 
+  async getHealth(): Promise<{ healthy: boolean; version: string }> {
+    const response = await fetch(`${this.base}/v1/health`, { signal: this.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { healthy: boolean; version: string }
+  }
+
   async getModelSettings(): Promise<ModelSettingsView> {
     const response = await fetch(`${this.base}/v1/config/model`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)

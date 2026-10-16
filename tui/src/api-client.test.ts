@@ -51,6 +51,35 @@ describe("VeaselApiClient model settings", () => {
     expect(catalog.models[0]?.id).toBe("muse-wonder")
   })
 
+  test("discoverProviderModels POSTs credentials for catalog discovery", async () => {
+    let method = ""
+    let body = ""
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      method = String(init?.method ?? "GET")
+      body = String(init?.body ?? "")
+      return new Response(
+        JSON.stringify({
+          provider: "meta",
+          models: [{ id: "muse-wonder", name: "Muse Wonder" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const catalog = await client.discoverProviderModels({
+      provider: "meta",
+      base_url: "https://api.meta.ai/v1",
+      api_key: "test-key",
+    })
+    expect(method).toBe("POST")
+    expect(JSON.parse(body)).toEqual({
+      provider: "meta",
+      base_url: "https://api.meta.ai/v1",
+      api_key: "test-key",
+    })
+    expect(catalog.models[0]?.id).toBe("muse-wonder")
+  })
+
   test("updateModelSettings POSTs the active model profile", async () => {
     let method = ""
     let body = ""

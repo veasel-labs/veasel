@@ -51,7 +51,7 @@ import {
 import { openVariantDialog } from "./component/variant-dialog"
 import { SessionRenameDialog } from "./component/session-rename-dialog"
 import { formatActiveModelLabel } from "../session-model"
-import { safeModelCatalogText } from "../model-providers"
+import { safeModelCatalogText, type ModelProvider } from "../model-providers"
 import {
   modelVariantIds,
   outputBudgetForVariant,
@@ -709,6 +709,89 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const finishProviderConnect = (
+    provider: ModelProvider,
+    apiKey: string,
+    profileModel: string | undefined,
+    profileMaxOut: number | undefined,
+  ) => {
+    void (async () => {
+      try {
+        toast.info(`Discovering models · ${provider.name}…`, "MODEL SETTINGS")
+        const catalog = await props.api.discoverProviderModels({
+          provider: provider.id,
+          base_url: provider.base_url,
+          api_key: apiKey,
+        })
+        const models = catalog.models.map((model) =>
+          catalogEntryToSolidModel(provider.id, provider.name, {
+            ...model,
+            id: safeModelCatalogText(model.id) || model.id,
+            name: safeModelCatalogText(model.name) || model.name,
+          }),
+        )
+        if (models.length === 0) {
+          if (profileModel) {
+            await props.api.updateModelSettings({
+              provider: provider.id,
+              model: profileModel,
+              base_url: provider.base_url,
+              api_key: apiKey || undefined,
+              max_output_tokens: profileMaxOut,
+            })
+            toast.success(`Connected · ${provider.name} (kept ${profileModel})`, "MODEL SETTINGS")
+          } else {
+            toast.info("No models returned — paste a key and pick a model with F2", "MODEL SETTINGS")
+          }
+          setComposerFocused(true)
+          return
+        }
+        const current = profileModel
+          ? {
+              providerID: provider.id,
+              modelID: profileModel,
+              name: profileModel,
+              providerName: provider.name,
+            }
+          : undefined
+        openModelDialog(dialog, {
+          models,
+          current,
+          onSelect: (model) => {
+            void (async () => {
+              try {
+                const saved = await props.api.updateModelSettings({
+                  provider: model.providerID,
+                  model: model.modelID,
+                  base_url: provider.base_url,
+                  api_key: apiKey || undefined,
+                  max_output_tokens: profileMaxOut,
+                })
+                const label =
+                  formatActiveModelLabel(saved) ?? `${model.providerID}/${model.modelID}`
+                toast.success(`Connected · ${label}`, "MODEL SETTINGS")
+              } catch (error) {
+                toast.info(
+                  error instanceof Error ? error.message : "could not save provider",
+                  "MODEL SETTINGS",
+                )
+              } finally {
+                setComposerFocused(true)
+              }
+            })()
+          },
+          onCancel: () => setComposerFocused(true),
+        })
+      } catch (error) {
+        toast.info(
+          error instanceof Error ? error.message : "model discovery failed",
+          "MODEL SETTINGS",
+        )
+        setComposerFocused(true)
+      }
+    })()
+  }
+
   const openSettings = async () => {
     setComposerFocused(false)
     try {
@@ -719,9 +802,28 @@ function LiveAppShell(props: LiveAppProps) {
         activeProvider: view.active_provider,
         onStatus: (line) => setStatus(line),
         onSelect: (provider) => {
-          toast.info(`Selected · ${provider.name} (connect wire next)`, "MODEL SETTINGS")
-          setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
-          setComposerFocused(true)
+          const profile = view.profiles[provider.id]
+          const keySaved = Boolean(profile?.api_key_saved)
+          openDialogPrompt(dialog, {
+            title: `API key · ${provider.name}`,
+            description: keySaved
+              ? `Key already saved for ${provider.id}. Leave blank to keep it, or paste a new key.`
+              : `Paste the ${provider.environment_key || "API"} key for ${provider.name}.`,
+            placeholder: keySaved ? "(keep saved key)" : "sk-…",
+            confirmLabel: "Continue",
+            onConfirm: (value) => {
+              finishProviderConnect(
+                provider,
+                value.trim(),
+                profile?.model,
+                profile?.max_output_tokens,
+              )
+            },
+            onCancel: () => {
+              setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
+              setComposerFocused(true)
+            },
+          })
         },
         onCancel: () => {
           setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))

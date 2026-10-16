@@ -333,3 +333,72 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
 export function paletteHelpText(compact = true): string {
   return renderHelp(compact)
 }
+
+export type LivePaletteHandlers = {
+  showHelp: () => void
+  openSettings: () => void
+  createSession: () => void
+  openRecent: () => void
+  openWorkspaces: () => void
+  quit: () => void
+}
+
+/** Live HTTP shell palette — subset wired to real session/settings actions. */
+export function buildLivePaletteCommands(handlers: LivePaletteHandlers): PaletteCommand[] {
+  return [
+    {
+      id: "veasel.help",
+      title: "Show quick help",
+      description: "Open the compact /help guide",
+      group: "guide",
+      keywords: ["help", "?", "guide"],
+      shortcut: "?",
+      run: () => handlers.showHelp(),
+    },
+    {
+      id: "veasel.settings",
+      title: "Provider settings",
+      description: "Connect Meta / models · paste API key · pick muse-wonder",
+      group: "setup",
+      keywords: ["connect", "models", "provider", "meta", "settings"],
+      shortcut: "s",
+      run: () => handlers.openSettings(),
+    },
+    {
+      id: "veasel.session.new",
+      title: "New session",
+      description: "Create a session in the current workspace",
+      group: "session",
+      keywords: ["new", "session", "create"],
+      shortcut: "n",
+      run: () => handlers.createSession(),
+    },
+    {
+      id: "veasel.open",
+      title: "Open recent / projects",
+      description: "Browse sessions and git worktrees (Ctrl+O)",
+      group: "session",
+      keywords: ["open", "recent", "projects", "worktrees"],
+      shortcut: "Ctrl+O",
+      run: () => handlers.openRecent(),
+    },
+    {
+      id: "veasel.workspaces",
+      title: "Workspaces",
+      description: "List or add linked git worktrees (Ctrl+W)",
+      group: "session",
+      keywords: ["workspaces", "worktree", "git"],
+      shortcut: "Ctrl+W",
+      run: () => handlers.openWorkspaces(),
+    },
+    {
+      id: "veasel.quit",
+      title: "Quit",
+      description: "Exit the Solid TUI",
+      group: "session",
+      keywords: ["quit", "exit"],
+      shortcut: "q",
+      run: () => handlers.quit(),
+    },
+  ]
+}

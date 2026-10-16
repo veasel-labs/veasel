@@ -10,16 +10,19 @@ import {
 } from "../api-client"
 import { formatHomeSessionStatus, formatBusyStatus, formatErrorStatus } from "../status-a11y"
 import { homeFooterHint } from "../footer-hints"
-
-/** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
-const liveFooterHint = `${homeFooterHint} · Ctrl+O open · Ctrl+W worktrees`
 import { themes, defaultThemeId, type BuiltinThemeId } from "../themes"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
+import { openDialogHelp } from "./ui/dialog-help"
 import { SolidComposer } from "./composer"
 import { SolidTranscript, transcriptMessagesFromChatTurns, type ToolAwareMessage } from "./transcript"
 import { LiveHome } from "./component/live-home"
 import { openProviderSettingsDialog } from "./component/provider-settings-dialog"
+import { openCommandPalette } from "./component/command-palette"
+import { buildLivePaletteCommands, paletteShortcut } from "./commands"
+
+/** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
+const liveFooterHint = `${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
 import {
   demoOpenProjects,
   groupWorktreesByProject,
@@ -394,8 +397,36 @@ function LiveAppShell(props: LiveAppProps) {
     if (!dialog.open()) setComposerFocused(true)
   })
 
+  const openPalette = () => {
+    setComposerFocused(false)
+    openCommandPalette(
+      dialog,
+      buildLivePaletteCommands({
+        showHelp: () => openDialogHelp(dialog, { compact: true }),
+        openSettings: () => {
+          void openSettings()
+        },
+        createSession: () => {
+          void createSession()
+        },
+        openRecent: () => {
+          void openLiveOpenDialog()
+        },
+        openWorkspaces: () => {
+          void openLiveWorkspacesDialog()
+        },
+        quit: () => props.onQuit?.(),
+      }),
+    )
+  }
+
   useKeyboard((key: KeyEvent) => {
     if (dialog.open()) return
+    if (key.ctrl && key.name === paletteShortcut.name && !key.meta) {
+      key.preventDefault()
+      openPalette()
+      return
+    }
     if (key.ctrl && key.name === "o" && !key.meta) {
       key.preventDefault()
       void openLiveOpenDialog()

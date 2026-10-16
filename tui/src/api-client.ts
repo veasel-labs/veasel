@@ -194,6 +194,39 @@ export class VeaselApiClient {
     return await response.json() as ModelSettingsView
   }
 
+  async updateModelSettings(input: {
+    provider: string
+    model: string
+    base_url?: string
+    api_key?: string
+    clear_api_key?: boolean
+    max_output_tokens?: number
+  }): Promise<ModelSettingsView> {
+    const response = await fetch(`${this.base}/v1/config/model`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ModelSettingsView
+  }
+
+  async listProviderModels(provider: string): Promise<{
+    provider: string
+    models: import("./model-providers").ModelCatalogEntry[]
+  }> {
+    const query = new URLSearchParams({ provider })
+    const response = await fetch(`${this.base}/v1/config/models?${query}`, {
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as {
+      provider: string
+      models: import("./model-providers").ModelCatalogEntry[]
+    }
+  }
+
   async getSessionUsage(sessionId: string): Promise<ApiSessionUsageSummary> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/usage`,

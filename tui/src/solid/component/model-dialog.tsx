@@ -21,6 +21,7 @@ export type ModelDialogProps = {
   recents?: SolidModelRef[]
   current?: SolidModelRef
   onSelect: (model: SolidModelRef) => void
+  onCancel?: () => void
 }
 
 export function modelPreferenceKey(model: Pick<SolidModelRef, "providerID" | "modelID">): string {
@@ -138,6 +139,7 @@ export function openModelDialog(
       const model = byKey.get(option.value)
       if (model) props.onSelect(model)
     },
+    onCancel: props.onCancel,
     footer: "Enter selects · Favorites / Recent when present",
   })
 }

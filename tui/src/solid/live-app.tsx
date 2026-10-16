@@ -33,7 +33,14 @@ import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openDialogThemeList } from "./component/dialog-theme-list"
+import {
+  catalogEntryToSolidModel,
+  openModelDialog,
+  type SolidModelRef,
+} from "./component/model-dialog"
 import { SessionRenameDialog } from "./component/session-rename-dialog"
+import { formatActiveModelLabel } from "../session-model"
+import { safeModelCatalogText } from "../model-providers"
 import { skillCatalogFromPlugins } from "./skills-inventory"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
@@ -655,6 +662,91 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const openLiveModelPicker = async () => {
+    setComposerFocused(false)
+    try {
+      const settings = await props.api.getModelSettings()
+      const provider = settings.active_provider
+      const providerInfo = settings.providers.find((item) => item.id === provider)
+      const providerName = providerInfo?.name ?? provider
+      const profile = settings.profiles[provider]
+      let catalogModels: SolidModelRef[] = []
+      try {
+        const catalog = await props.api.listProviderModels(provider)
+        catalogModels = catalog.models.map((model) =>
+          catalogEntryToSolidModel(provider, providerName, {
+            ...model,
+            id: safeModelCatalogText(model.id) || model.id,
+            name: safeModelCatalogText(model.name) || model.name,
+          }),
+        )
+      } catch (error) {
+        toast.info(
+          error instanceof Error
+            ? error.message
+            : "Model catalog unavailable — configure credentials first",
+          "Models",
+        )
+      }
+      if (catalogModels.length === 0 && profile?.model) {
+        catalogModels = [
+          {
+            providerID: provider,
+            modelID: profile.model,
+            name: profile.model,
+            providerName,
+          },
+        ]
+      }
+      if (catalogModels.length === 0) {
+        toast.info("No models for the active provider — open Provider settings", "Models")
+        setComposerFocused(true)
+        return
+      }
+      const current: SolidModelRef | undefined = profile?.model
+        ? {
+            providerID: provider,
+            modelID: profile.model,
+            name: profile.model,
+            providerName,
+          }
+        : undefined
+      openModelDialog(dialog, {
+        models: catalogModels,
+        current,
+        onSelect: (model) => {
+          void (async () => {
+            try {
+              const saved = await props.api.updateModelSettings({
+                provider: model.providerID,
+                model: model.modelID,
+                base_url: profile?.base_url || providerInfo?.base_url || "",
+                max_output_tokens: profile?.max_output_tokens,
+              })
+              const label =
+                formatActiveModelLabel(saved) ?? `${model.providerID}/${model.modelID}`
+              toast.success(`Model · ${label}`, "Models")
+            } catch (error) {
+              toast.info(
+                error instanceof Error ? error.message : "could not save model",
+                "Models",
+              )
+            } finally {
+              setComposerFocused(true)
+            }
+          })()
+        },
+        onCancel: () => setComposerFocused(true),
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not load model settings",
+        "Models",
+      )
+      setComposerFocused(true)
+    }
+  }
+
   const sessionIdForWorktrees = () =>
     activeSessionId() ?? sessions()[selectedIndex()]?.id ?? sessions()[0]?.id
 
@@ -841,6 +933,9 @@ function LiveAppShell(props: LiveAppProps) {
         openSettings: () => {
           void openSettings()
         },
+        showModelPicker: () => {
+          void openLiveModelPicker()
+        },
         createSession: () => {
           void createSession()
         },
@@ -936,6 +1031,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "m" && !key.meta) {
       key.preventDefault()
       void openLiveMcp()
+      return
+    }
+    if (key.name === "f2" && !key.ctrl && !key.meta) {
+      key.preventDefault()
+      void openLiveModelPicker()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {

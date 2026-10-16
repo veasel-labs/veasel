@@ -13,6 +13,7 @@ import {
   paletteShortcut,
 } from "./commands"
 import { DialogProvider, useDialog } from "./ui/dialog"
+import { ToastProvider, useToast } from "./ui/toast"
 import { openCommandPalette } from "./component/command-palette"
 import { openReviewPanel } from "./component/review-panel"
 import {
@@ -76,6 +77,7 @@ const demoFixture: ToolAwareMessage[] = [
 
 function AppShell(props: SolidAppProps) {
   const dialog = useDialog()
+  const toast = useToast()
   const sessionTitle = () => props.sessionTitle ?? "Solid transcript"
   const directory = () => props.directory ?? "~/veasel"
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>(
@@ -103,7 +105,10 @@ function AppShell(props: SolidAppProps) {
         props.onReviewDecide?.(decision, targets)
         setReviews((prev) => settleReviews(prev, targets))
         const verb = decision === "approve" ? "Approved" : "Rejected"
-        setNotice(`${verb} ${targets.length} review${targets.length === 1 ? "" : "s"} (Solid stub)`)
+        toast.success(
+          `${verb} ${targets.length} review${targets.length === 1 ? "" : "s"} (Solid stub)`,
+          "Reviews",
+        )
       },
     })
   }
@@ -119,7 +124,7 @@ function AppShell(props: SolidAppProps) {
       cycleTheme: () => {
         const next = nextBuiltinThemeId(themeId())
         setThemeId(next)
-        setNotice(`Theme · ${next} (cycle stub · /theme persists on legacy path)`)
+        toast.info(`Theme · ${next} (cycle stub · /theme persists on legacy path)`, "Theme")
         return next
       },
       showSessions: () => {
@@ -127,10 +132,18 @@ function AppShell(props: SolidAppProps) {
       },
       toggleActivity: () => {
         setActivityToggleTick((tick) => tick + 1)
-        setNotice(`Activity · toggled latest group (${activityToggleShortcut.label})`)
+        toast.info(`Toggled latest group (${activityToggleShortcut.label})`, "Activity")
       },
       openReviews: () => {
         openReviews()
+      },
+      showToast: () => {
+        toast.show({
+          variant: "info",
+          title: "Toast",
+          message: "Solid mint notice · hover pauses · click dismisses",
+          duration: 8_000,
+        })
       },
     }),
   )
@@ -230,12 +243,15 @@ function AppShell(props: SolidAppProps) {
 }
 
 // Veasel-branded Solid shell: header + session chrome + transcript + composer
-// + dialog host / command palette / review panel. HTTP session wiring stays optional.
+// + toast host / dialog host / command palette / review panel.
+// HTTP session wiring stays optional.
 export function App(props: SolidAppProps = {}) {
   return (
-    <DialogProvider>
-      <AppShell {...props} />
-    </DialogProvider>
+    <ToastProvider>
+      <DialogProvider>
+        <AppShell {...props} />
+      </DialogProvider>
+    </ToastProvider>
   )
 }
 

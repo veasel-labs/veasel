@@ -33,6 +33,8 @@ export type PaletteActionHandlers = {
   toggleActivity: () => void
   /** Open the Solid pending-review panel (Ctrl+R owns the real shortcut). */
   openReviews: () => void
+  /** Demo / cue the non-modal toast host. */
+  showToast: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -123,6 +125,14 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       keywords: ["review", "approve", "reject", "patch", "shell", "mcp", "diff"],
       shortcut: reviewShortcut.label,
       run: () => handlers.openReviews(),
+    },
+    {
+      id: "veasel.toast.demo",
+      title: "Show demo toast",
+      description: "Non-modal mint toast (queue, hover-pause, click dismiss)",
+      group: "guide",
+      keywords: ["toast", "notice", "notification"],
+      run: () => handlers.showToast(),
     },
   ]
 

@@ -24,12 +24,13 @@ migration is in progress under `tui/src/solid/` (`bun run start:solid`): shell +
 composer, session transcript on OpenTUI `scrollbox` (follow-tail), collapsible
 tool/activity grouping (**Ctrl+G** toggles the latest group; click header also
 works), a thin dialog host with **Ctrl+P** command palette (Veasel command ids;
-Ctrl+K stays readline kill-line), and a pending **reviews** overlay (**Ctrl+R**)
+Ctrl+K stays readline kill-line), a pending **reviews** overlay (**Ctrl+R**)
 for file/shell/MCP approvals with `formatReviewDiff` segments or OpenTUI `<diff>`
-split view. Pins and adapted patterns are recorded in
+split view, and a non-modal **toast** host (queue, hover-pause, click dismiss).
+Pins and adapted patterns are recorded in
 [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
-the default entry and feature parity (settings, toast, HTTP session wiring) are
-later slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
+the default entry and feature parity (session/model dialogs, HTTP session wiring)
+are later slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
 interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
 validation still needs a ConPTY harness (see
@@ -69,6 +70,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `formatReviewDiff` / shell / MCP formatters, OpenTUI `<diff>` split when
   toggled; **Ctrl+R** + palette `veasel.reviews.open`; fixture demos +
   `testRender`; legacy `main.ts` remains default.
+- [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
+  queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
+  wired for theme/activity/review cues; `testRender` coverage.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.
 
@@ -391,9 +395,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 - [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
   shell → composer → session/transcript → dialogs/palette → reviews →
-  settings). Shell+composer+transcript+dialog/palette+activity-grouping+
-  reviews dual-path shipped; next slices are settings/toast or HTTP session
-  wiring / mount-budget. Default entry remains legacy until parity. See
+  toast → settings). Shell through toast dual-path shipped; next slices are
+  session/model dialogs, pane-resize, or HTTP session wiring / mount-budget.
+  Default entry remains legacy until parity. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.

@@ -74,6 +74,7 @@ describe("Solid dialog host + command palette", () => {
         showSessions: () => ran.push("sessions"),
         toggleActivity: () => ran.push("activity"),
         openReviews: () => ran.push("reviews"),
+        showToast: () => ran.push("toast"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -115,6 +116,7 @@ describe("Solid dialog host + command palette", () => {
         showSessions: () => {},
         toggleActivity: () => {},
         openReviews: () => {},
+        showToast: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

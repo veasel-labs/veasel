@@ -49,7 +49,12 @@ import {
   type SolidModelRef,
 } from "./component/model-dialog"
 import { openVariantDialog } from "./component/variant-dialog"
+import { openSessionListDialog } from "./component/session-list-dialog"
 import { SessionRenameDialog } from "./component/session-rename-dialog"
+import { openUpdateDialog } from "./component/update-dialog"
+import { openHighlightsDialog } from "./component/highlights-dialog"
+import { openPairDialog } from "./component/pair-dialog"
+import { liveReleaseHighlights } from "./release-highlights"
 import { formatActiveModelLabel } from "../session-model"
 import { safeModelCatalogText, type ModelProvider } from "../model-providers"
 import {
@@ -346,6 +351,78 @@ function LiveAppShell(props: LiveAppProps) {
       },
       onCancel: () => setComposerFocused(true),
     })
+  }
+
+  const openLiveSessionList = () => {
+    setComposerFocused(false)
+    void (async () => {
+      try {
+        await refreshSessions()
+        openSessionListDialog(dialog, {
+          sessions: sessions(),
+          activeId: activeSessionId(),
+          onSelect: (session) => {
+            void openSession(session)
+          },
+          onRename: (session, title) => {
+            void (async () => {
+              try {
+                const updated = await props.api.renameSession(session.id, title)
+                await refreshSessions()
+                toast.success(`Renamed · ${updated.title}`, "Sessions")
+              } catch (error) {
+                toast.info(
+                  error instanceof Error ? error.message : "could not rename session",
+                  "Sessions",
+                )
+              }
+            })()
+          },
+          onCreate: () => {
+            void createSession()
+          },
+        })
+      } catch (error) {
+        toast.info(
+          error instanceof Error ? error.message : "could not list sessions",
+          "Sessions",
+        )
+        setComposerFocused(true)
+      }
+    })()
+  }
+
+  const openLiveUpdate = async () => {
+    setComposerFocused(false)
+    openUpdateDialog(dialog, { state: { type: "checking" } })
+    try {
+      const health = await props.api.getHealth()
+      openUpdateDialog(dialog, {
+        state: {
+          type: "current",
+          version: health.version || "unknown",
+        },
+        onSkip: () => setComposerFocused(true),
+      })
+    } catch (error) {
+      openUpdateDialog(dialog, {
+        state: {
+          type: "current",
+          version: error instanceof Error ? `unavailable · ${error.message}` : "unavailable",
+        },
+        onSkip: () => setComposerFocused(true),
+      })
+    }
+  }
+
+  const openLiveHighlights = () => {
+    setComposerFocused(false)
+    openHighlightsDialog(dialog, liveReleaseHighlights())
+  }
+
+  const openLivePair = () => {
+    setComposerFocused(false)
+    openPairDialog(dialog)
   }
 
   const openLiveReviews = async () => {
@@ -1167,6 +1244,12 @@ function LiveAppShell(props: LiveAppProps) {
           void openLiveVariantPicker()
         },
         showAgent: () => openLiveAgentPicker(),
+        showSessions: () => openLiveSessionList(),
+        showUpdate: () => {
+          void openLiveUpdate()
+        },
+        showHighlights: () => openLiveHighlights(),
+        showPair: () => openLivePair(),
         createSession: () => {
           void createSession()
         },
@@ -1290,6 +1373,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.name === "f4" && !key.ctrl && !key.meta) {
       key.preventDefault()
       openLiveAgentPicker()
+      return
+    }
+    if (key.ctrl && key.name === "l" && !key.meta) {
+      key.preventDefault()
+      openLiveSessionList()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {

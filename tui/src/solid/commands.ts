@@ -343,6 +343,7 @@ export type LivePaletteHandlers = {
   stashDraft: () => void
   showStash: () => void
   cycleTheme: () => void
+  showThemeList: () => void
   attachFile: () => void
   showSessionDiffs: () => void
   showSessionTimeline: () => void
@@ -387,6 +388,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["theme", "colors", "mint", "ember"],
       shortcut: "t",
       run: () => handlers.cycleTheme(),
+    },
+    {
+      id: "veasel.theme.list",
+      title: "Theme list",
+      description: "Pick a builtin theme with live preview",
+      group: "setup",
+      keywords: ["theme", "colors", "list", "picker", "mint", "ember"],
+      run: () => handlers.showThemeList(),
     },
     {
       id: "veasel.session.new",

@@ -32,6 +32,7 @@ import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
+import { openDialogThemeList } from "./component/dialog-theme-list"
 import { skillCatalogFromPlugins } from "./skills-inventory"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
@@ -177,6 +178,20 @@ function LiveAppShell(props: LiveAppProps) {
     setThemeId(next)
     saveThemeId(next)
     toast.success(`Theme · ${next}`, "Theme")
+  }
+
+  const openThemeList = () => {
+    setComposerFocused(false)
+    const previous = themeId()
+    openDialogThemeList(dialog, {
+      current: previous,
+      onPreview: (id) => setThemeId(id),
+      onSelect: (id) => {
+        setThemeId(id)
+        saveThemeId(id)
+        toast.success(`Theme · ${id}`, "Theme")
+      },
+    })
   }
 
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
@@ -802,6 +817,7 @@ function LiveAppShell(props: LiveAppProps) {
         stashDraft: () => stashComposerDraft(),
         showStash: () => openLiveStash(),
         cycleTheme: () => cycleTheme(),
+        showThemeList: () => openThemeList(),
         attachFile: () => openAttachPrompt(),
         showSessionDiffs: () => {
           void openSessionDiffs()

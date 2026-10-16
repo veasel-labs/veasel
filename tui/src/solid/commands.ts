@@ -340,6 +340,9 @@ export type LivePaletteHandlers = {
   createSession: () => void
   openRecent: () => void
   openWorkspaces: () => void
+  stashDraft: () => void
+  showStash: () => void
+  cycleTheme: () => void
   quit: () => void
 }
 
@@ -363,6 +366,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["connect", "models", "provider", "meta", "settings"],
       shortcut: "s",
       run: () => handlers.openSettings(),
+    },
+    {
+      id: "veasel.theme.cycle",
+      title: "Cycle theme",
+      description: "Advance builtin theme and persist to config",
+      group: "setup",
+      keywords: ["theme", "colors", "mint", "ember"],
+      shortcut: "t",
+      run: () => handlers.cycleTheme(),
     },
     {
       id: "veasel.session.new",
@@ -390,6 +402,23 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["workspaces", "worktree", "git"],
       shortcut: "Ctrl+W",
       run: () => handlers.openWorkspaces(),
+    },
+    {
+      id: "veasel.stash.push",
+      title: "Stash composer draft",
+      description: "Save the current compose text to the prompt stash",
+      group: "session",
+      keywords: ["stash", "draft", "save", "prompt"],
+      shortcut: "Ctrl+S",
+      run: () => handlers.stashDraft(),
+    },
+    {
+      id: "veasel.stash.list",
+      title: "Prompt stash",
+      description: "Restore a stashed composer draft",
+      group: "session",
+      keywords: ["stash", "draft", "prompt", "history", "restore"],
+      run: () => handlers.showStash(),
     },
     {
       id: "veasel.quit",

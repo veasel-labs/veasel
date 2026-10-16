@@ -17,18 +17,18 @@ clients use an HTTP API and event stream. This is a direction reference rather
 than a promise of full route compatibility. The pinned comparison and
 route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode.md).
 
-The TUI is TypeScript with OpenTUI + SolidJS, kept as a separate API client; the
-agent runtime, tools and persistence remain in V. **Solid is the default entry**
-(`bun run start` → `src/solid/main.tsx` / `LiveApp`): loopback HTTP session home,
-SSE assistant deltas, and MODEL SETTINGS via `api-client.ts`. Pure shared modules
-(`stream-events`, `chat-history`, autocomplete matchers, review formatters,
-themes) stay framework-agnostic. The retired imperative shell lives at
-`src/classic-main.ts` (`bun run start:classic` / `--classic` standalone) for
-emergency comparison only. Solid also ships shell + composer, session transcript
-on OpenTUI `scrollbox` (follow-tail), collapsible tool/activity grouping
-(**Ctrl+G**), **Ctrl+P** command palette, pending **reviews** (**Ctrl+R**),
-toast host, session list / rename, dialog primitives, and product dialogs.
-Pins and adapted patterns are recorded in
+The TUI is TypeScript with OpenTUI + SolidJS (`@opentui/solid` **0.6.2**), kept
+as a separate API client; the agent runtime, tools and persistence remain in V.
+**Solid is the default entry** (`bun run start` → `src/solid/main.tsx` /
+`LiveApp`): loopback HTTP session home, SSE assistant deltas, and MODEL SETTINGS
+via `api-client.ts`. Pure shared modules (`stream-events`, `chat-history`,
+autocomplete matchers, review formatters, themes) stay framework-agnostic. The
+retired imperative shell lives at `src/classic-main.ts` (`bun run start:classic`
+/ `--classic` standalone) for emergency comparison only. Solid also ships shell
++ composer, session transcript on OpenTUI `scrollbox` (follow-tail), collapsible
+tool/activity grouping (**Ctrl+G**), **Ctrl+P** command palette, pending
+**reviews** (**Ctrl+R**), toast host, session list / rename, dialog primitives,
+and product dialogs. Pins and adapted patterns are recorded in
 [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Remaining
 parity (full review HTTP approve path, pane-resize, deeper settings connect) is
 follow-up. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
@@ -406,7 +406,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
-- [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
+- [ ] Progressive SolidJS + `@opentui/solid` 0.6.2 migration (ordered:
   shell → … → toast → session dialogs → dialog primitives → product dialogs →
   settings). Shell through model/theme/stash/error/shell dual-path shipped;
   next slices are pane-resize/sidebar, fade/spinner, HTTP session wiring /

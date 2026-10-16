@@ -103,9 +103,9 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
     {
       id: "veasel.session.list",
       title: "Session list",
-      description: "Home session list (stub on Solid path)",
+      description: "Browse, filter, rename, or create sessions",
       group: "session",
-      keywords: ["sessions", "home", "list"],
+      keywords: ["sessions", "home", "list", "rename"],
       run: () => handlers.showSessions(),
     },
     {

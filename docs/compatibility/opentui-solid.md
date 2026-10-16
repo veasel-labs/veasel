@@ -63,6 +63,13 @@ compatibility and does not authorize copying branding or product chrome.
   click dismiss/activate. Pattern from OpenCode `ui/toast.tsx` (engineering
   only; Veasel tokens and copy). Palette `veasel.toast.demo`. Does not steal Esc
   from the dialog stack.
+- Session list + rename (`solid/component/session-list-dialog.tsx`,
+  `session-rename-dialog.tsx`): large dialog reusing `filterSessionList` /
+  `moveSessionSelection` / digit jump. **Ctrl+E** pushes a rename prompt
+  (dialog stack `push`/`pop`); **Ctrl+N** create stub; Enter selects.
+  Pattern from OpenCode `dialog-session-list.tsx` / `dialog-session-rename.tsx`
+  (engineering only). HTTP list/update still on the legacy path; Solid uses
+  fixture sessions until session wiring lands. Palette `veasel.session.list`.
 
 ## Startup note (light)
 

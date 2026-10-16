@@ -22,7 +22,7 @@ describe("activity grouping helpers", () => {
     expect(activityToggleShortcut.ctrl).toBe(true)
   })
 
-  test("groups consecutive tool roles and leaves chat turns alone", () => {
+  test("groups consecutive tool roles and keeps one block per chat turn", () => {
     const messages: ToolAwareMessage[] = [
       { role: "user", content: "inspect main" },
       { role: "tool", content: "read: src/main.v", toolName: "read", toolStatus: "done" },
@@ -32,6 +32,7 @@ describe("activity grouping helpers", () => {
     ]
     const blocks = projectTranscriptBlocks(messages)
     expect(blocks.map((block) => block.type)).toEqual(["messages", "activity", "messages", "activity"])
+    expect(blocks[0]).toMatchObject({ type: "messages", messages: [{ role: "user" }] })
     expect(blocks[1]).toMatchObject({
       type: "activity",
       items: [

@@ -26,6 +26,15 @@ import {
   type ToolCallItem,
   type TranscriptBlock,
 } from "./activity-group"
+import {
+  blockMountWeight,
+  blocksAfter,
+  blocksBefore,
+  mountCueAbove,
+  transcriptBackfillChunk,
+  transcriptTailBudget,
+  windowBlocks,
+} from "./mount-budget"
 import { solidMint, solidToneBold, solidToneFg } from "./theme"
 
 /** Map durable chat-history turns into transcript message shape. */
@@ -54,6 +63,10 @@ export type SolidTranscriptProps = {
    * activity group the same way Ctrl+G does.
    */
   activityToggleTick?: number | Accessor<number>
+  /** Rendered-entry budget for the initial sticky-tail window. */
+  mountBudget?: number
+  /** Extra weight to mount when the viewport approaches the top. */
+  backfillChunk?: number
 }
 
 function resolveMessages(
@@ -134,13 +147,58 @@ function ActivityGroupView(props: {
 
 // Session transcript on OpenTUI scrollbox. Tone tags and role copy come from
 // transcript.ts; consecutive tool roles collapse into mint activity groups.
+// Long sessions mount a sticky-tail budget first, then backfill near the top.
 export function SolidTranscript(props: SolidTranscriptProps) {
   const followTail = () => props.followTail !== false
   const keysEnabled = () => props.enableActivityKeys !== false
+  const tailBudget = () => props.mountBudget ?? transcriptTailBudget
+  const backfill = () => props.backfillChunk ?? transcriptBackfillChunk
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
+  const [hiddenStart, setHiddenStart] = createSignal<number | undefined>(undefined)
+  const [visibleEnd, setVisibleEnd] = createSignal<number | undefined>(undefined)
+  let scrollBox: ScrollBoxRenderable | undefined
+  let revealingOlder = false
 
   const resolved = createMemo(() => resolveMessages(props.messages))
   const blocks = createMemo(() => projectTranscriptBlocks(resolved()))
+
+  const weights = createMemo(() =>
+    blocks().map((block) =>
+      blockMountWeight(block, (groupId) =>
+        block.type === "activity"
+          ? isGroupExpanded(expanded(), groupId, block.items)
+          : false,
+      ),
+    ),
+  )
+
+  const mountStart = createMemo(() => {
+    const all = blocks().length
+    const fallback = blocksBefore(weights(), all, tailBudget())
+    return Math.min(hiddenStart() ?? fallback, fallback)
+  })
+
+  const mountEnd = createMemo(() => {
+    const all = blocks().length
+    const start = mountStart()
+    const end = visibleEnd() ?? all
+    return Math.max(start, Math.min(end, all))
+  })
+
+  const mounted = createMemo(() => windowBlocks(blocks(), mountStart(), mountEnd()))
+
+  // Follow appends while sticky-tail is active: keep the hidden span at the budgeted start.
+  createEffect(
+    on(
+      () => [blocks().length, weights().join(","), followTail()] as const,
+      () => {
+        if (!followTail()) return
+        if (hiddenStart() !== undefined && hiddenStart()! > 0) return
+        setHiddenStart(undefined)
+        setVisibleEnd(undefined)
+      },
+    ),
+  )
 
   const chromeSegments = createMemo(() => {
     if (!props.session && !props.notice) return [] as TranscriptSegment[]
@@ -181,11 +239,61 @@ export function SolidTranscript(props: SolidTranscriptProps) {
     return true
   }
 
+  const revealOlder = () => {
+    const current = mountStart()
+    if (revealingOlder || current <= 0 || !scrollBox || scrollBox.isDestroyed) return false
+    if (scrollBox.scrollTop > Math.max(1, scrollBox.height)) return false
+    revealingOlder = true
+    const before = scrollBox.scrollHeight
+    const wasSticky = scrollBox.stickyScroll
+    scrollBox.stickyScroll = false
+    setHiddenStart(blocksBefore(weights(), current, backfill()))
+    queueMicrotask(() => {
+      if (scrollBox && !scrollBox.isDestroyed) {
+        const delta = scrollBox.scrollHeight - before
+        if (delta !== 0) scrollBox.scrollBy(delta)
+        scrollBox.stickyScroll = wasSticky && followTail()
+      }
+      revealingOlder = false
+    })
+    return true
+  }
+
+  const revealNewer = () => {
+    const current = mountEnd()
+    const all = blocks().length
+    if (current >= all || !scrollBox || scrollBox.isDestroyed) return false
+    const next = blocksAfter(weights(), current, backfill())
+    setVisibleEnd(next >= all ? undefined : next)
+    return true
+  }
+
   useKeyboard((key: KeyEvent) => {
     if (!keysEnabled()) return
-    if (!(key.ctrl && key.name === activityToggleShortcut.name && !key.meta)) return
-    if (!toggleLatest()) return
-    key.preventDefault()
+    if (key.ctrl && key.name === activityToggleShortcut.name && !key.meta) {
+      if (!toggleLatest()) return
+      key.preventDefault()
+      return
+    }
+    if (key.name === "pageup" || key.name === "ppage") {
+      if (revealOlder()) key.preventDefault()
+      return
+    }
+    if (key.name === "pagedown" || key.name === "npage") {
+      if (revealNewer()) key.preventDefault()
+      return
+    }
+    if (key.name === "home") {
+      if (mountStart() > 0) {
+        setHiddenStart(0)
+        key.preventDefault()
+      }
+      return
+    }
+    if (key.name === "end") {
+      setHiddenStart(undefined)
+      setVisibleEnd(undefined)
+    }
   })
 
   createEffect(
@@ -202,68 +310,80 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   )
 
   return (
-    <scrollbox
-      ref={(box: ScrollBoxRenderable) => {
-        props.scrollRef?.(box)
-      }}
-      width="100%"
-      flexGrow={1}
-      backgroundColor={solidMint.shellBg}
-      stickyScroll={followTail()}
-      stickyStart="bottom"
-      scrollX={false}
-      scrollY={true}
-      viewportOptions={{
-        backgroundColor: solidMint.shellBg,
-      }}
-      contentOptions={{
-        backgroundColor: solidMint.shellBg,
-      }}
-    >
-      <box
+    <box width="100%" flexGrow={1} flexDirection="column" backgroundColor={solidMint.shellBg}>
+      <Show when={mounted().window.truncatedAbove}>
+        <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
+          <text wrapMode="none">
+            <span style={{ fg: solidMint.muted }}>
+              {mountCueAbove(mounted().window.hiddenAbove)}
+            </span>
+          </text>
+        </box>
+      </Show>
+      <scrollbox
+        ref={(box: ScrollBoxRenderable) => {
+          scrollBox = box
+          props.scrollRef?.(box)
+        }}
         width="100%"
-        flexDirection="column"
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={1}
-        paddingBottom={1}
-        gap={0}
+        flexGrow={1}
+        backgroundColor={solidMint.shellBg}
+        stickyScroll={followTail()}
+        stickyStart="bottom"
+        scrollX={false}
+        scrollY={true}
+        viewportOptions={{
+          backgroundColor: solidMint.shellBg,
+        }}
+        contentOptions={{
+          backgroundColor: solidMint.shellBg,
+        }}
       >
-        <Show when={chromeSegments().length > 0}>
-          <SegmentLines segments={chromeSegments()} />
-        </Show>
-        <For each={blocks()}>
-          {(block) => (
-            <Show
-              when={block.type === "activity"}
-              fallback={
-                <SegmentLines
-                  segments={transcriptSegments({
-                    messages: (block as Extract<TranscriptBlock, { type: "messages" }>).messages,
-                    cols: props.cols,
-                  })}
-                />
-              }
-            >
-              <ActivityGroupView
-                block={block as Extract<TranscriptBlock, { type: "activity" }>}
-                expanded={isGroupExpanded(
-                  expanded(),
-                  (block as Extract<TranscriptBlock, { type: "activity" }>).id,
-                  (block as Extract<TranscriptBlock, { type: "activity" }>).items,
-                )}
-                onToggle={() =>
-                  toggleGroup((block as Extract<TranscriptBlock, { type: "activity" }>).id)
+        <box
+          width="100%"
+          flexDirection="column"
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+          gap={0}
+        >
+          <Show when={chromeSegments().length > 0}>
+            <SegmentLines segments={chromeSegments()} />
+          </Show>
+          <For each={mounted().visible}>
+            {(block) => (
+              <Show
+                when={block.type === "activity"}
+                fallback={
+                  <SegmentLines
+                    segments={transcriptSegments({
+                      messages: (block as Extract<TranscriptBlock, { type: "messages" }>).messages,
+                      cols: props.cols,
+                    })}
+                  />
                 }
-              />
-            </Show>
-          )}
-        </For>
-        <Show when={trailSegments().length > 0}>
-          <SegmentLines segments={trailSegments()} />
-        </Show>
-      </box>
-    </scrollbox>
+              >
+                <ActivityGroupView
+                  block={block as Extract<TranscriptBlock, { type: "activity" }>}
+                  expanded={isGroupExpanded(
+                    expanded(),
+                    (block as Extract<TranscriptBlock, { type: "activity" }>).id,
+                    (block as Extract<TranscriptBlock, { type: "activity" }>).items,
+                  )}
+                  onToggle={() =>
+                    toggleGroup((block as Extract<TranscriptBlock, { type: "activity" }>).id)
+                  }
+                />
+              </Show>
+            )}
+          </For>
+          <Show when={trailSegments().length > 0}>
+            <SegmentLines segments={trailSegments()} />
+          </Show>
+        </box>
+      </scrollbox>
+    </box>
   )
 }
 

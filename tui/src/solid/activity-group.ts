@@ -166,7 +166,8 @@ export function activityItemLine(item: ToolCallItem): string {
 
 /**
  * Project transcript messages into render blocks: consecutive tool roles become
- * one activity group; other roles stay as message runs.
+ * one activity group; each non-tool message is its own block so mount-budget
+ * can window long sessions by rendered entry (OpenCode-style).
  */
 export function projectTranscriptBlocks(messages: readonly ToolAwareMessage[]): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = []
@@ -187,18 +188,13 @@ export function projectTranscriptBlocks(messages: readonly ToolAwareMessage[]): 
       })
       continue
     }
-    const startIndex = index
-    const run: TranscriptMessage[] = []
-    while (index < messages.length && !isToolRole(messages[index]!.role)) {
-      run.push(messages[index]!)
-      index++
-    }
     blocks.push({
       type: "messages",
-      id: `messages-${startIndex}`,
-      messages: run,
-      startIndex,
+      id: `messages-${index}`,
+      messages: [message],
+      startIndex: index,
     })
+    index += 1
   }
   return blocks
 }

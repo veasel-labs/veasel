@@ -343,6 +343,7 @@ export type LivePaletteHandlers = {
   stashDraft: () => void
   showStash: () => void
   cycleTheme: () => void
+  attachFile: () => void
   quit: () => void
 }
 
@@ -419,6 +420,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       group: "session",
       keywords: ["stash", "draft", "prompt", "history", "restore"],
       run: () => handlers.showStash(),
+    },
+    {
+      id: "veasel.attach.file",
+      title: "Attach file / image",
+      description: "Stage a local path for the next message (@mention on submit)",
+      group: "session",
+      keywords: ["attach", "file", "image", "screenshot", "upload", "paste"],
+      run: () => handlers.attachFile(),
     },
     {
       id: "veasel.quit",

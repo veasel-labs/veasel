@@ -26,6 +26,8 @@ import { LiveHome } from "./component/live-home"
 import { openProviderSettingsDialog } from "./component/provider-settings-dialog"
 import { openCommandPalette } from "./component/command-palette"
 import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
+import { openImagePreviewDialog } from "./component/image-preview-dialog"
+import { openDialogPrompt } from "./ui/dialog-prompt"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import {
   loadDraftStash,
@@ -33,6 +35,14 @@ import {
   removeDraftStash,
   saveDraftStash,
 } from "./draft-stash"
+import {
+  addComposerAttachment,
+  asciiImagePreview,
+  createComposerAttachment,
+  removeComposerAttachment,
+  resolveAttachmentPath,
+  type ComposerAttachment,
+} from "./composer-attachments"
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
 const liveFooterHint = `${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
@@ -132,6 +142,50 @@ function LiveAppShell(props: LiveAppProps) {
     setThemeId(next)
     saveThemeId(next)
     toast.success(`Theme · ${next}`, "Theme")
+  }
+
+  const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
+
+  const stageAttachmentPath = (raw: string) => {
+    const resolved = resolveAttachmentPath(raw)
+    if (!resolved) {
+      toast.info("Path not found · enter an absolute or ~/ path", "Attach")
+      return
+    }
+    const next = createComposerAttachment(resolved)
+    setAttachments((current) => {
+      const merged = addComposerAttachment(current, next)
+      if (merged.length === current.length) toast.info("Already attached", "Attach")
+      else toast.success(`Attached · ${next.name}`, "Attach")
+      return merged
+    })
+  }
+
+  const openAttachPrompt = () => {
+    setComposerFocused(false)
+    openDialogPrompt(dialog, {
+      title: "Attach file / image",
+      description: "Local path staged for the next message (sent as @path).",
+      placeholder: "/path/to/file.png",
+      confirmLabel: "Attach",
+      onConfirm: (value) => {
+        stageAttachmentPath(value)
+        setComposerFocused(true)
+      },
+      onCancel: () => setComposerFocused(true),
+    })
+  }
+
+  const previewAttachment = (attachment: ComposerAttachment) => {
+    setComposerFocused(false)
+    openImagePreviewDialog(dialog, {
+      path: attachment.path,
+      alt: attachment.name,
+      preview:
+        attachment.kind === "image"
+          ? asciiImagePreview(attachment)
+          : `file · ${attachment.name}\n${attachment.path}`,
+    })
   }
 
   const inSession = createMemo(() => Boolean(activeSessionId()))
@@ -480,6 +534,7 @@ function LiveAppShell(props: LiveAppProps) {
         stashDraft: () => stashComposerDraft(),
         showStash: () => openLiveStash(),
         cycleTheme: () => cycleTheme(),
+        attachFile: () => openAttachPrompt(),
         quit: () => props.onQuit?.(),
       }),
     )
@@ -616,15 +671,20 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <SolidComposer
           onSubmit={(text) => {
+            setAttachments([])
             void sendMessage(text)
           }}
           focused={composerFocused()}
           restoreToken={restoreToken()}
           onDraftChange={setComposerDraft}
+          attachments={attachments()}
+          onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
+          onPreviewAttachment={previewAttachment}
+          workspaceRoot={directory()}
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+S stash · theme {themeId()}
+            {liveFooterHint} · Ctrl+S stash · attach via palette · theme {themeId()}
           </text>
         </box>
       </Show>

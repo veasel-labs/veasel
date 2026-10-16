@@ -31,6 +31,13 @@ import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openReviewPanel } from "./component/review-panel"
 import { decideSolidReviews, loadPendingSolidReviews } from "./reviews-inventory"
 import { reviewShortcut } from "./reviews"
+import { openAgentDialog } from "./component/agent-dialog"
+import {
+  EXECUTION_POLICY_AGENTS,
+  agentPolicyLabel,
+  executionPolicyForAgent,
+  type ExecutionPolicyId,
+} from "./agent-policy"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
@@ -147,6 +154,7 @@ function LiveAppShell(props: LiveAppProps) {
     loadHomeSidebarWidth({}, terminalColumns()),
   )
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
+  const [executionPolicy, setExecutionPolicy] = createSignal<ExecutionPolicyId>("ask")
   let turnController: AbortController | undefined
   const handledCompletions = new Set<string>()
 
@@ -323,6 +331,21 @@ function LiveAppShell(props: LiveAppProps) {
       )
       setComposerFocused(true)
     }
+  }
+
+  const openLiveAgentPicker = () => {
+    setComposerFocused(false)
+    openAgentDialog(dialog, {
+      agents: EXECUTION_POLICY_AGENTS,
+      current: executionPolicy(),
+      onSelect: (agent) => {
+        const policy = executionPolicyForAgent(agent.id)
+        setExecutionPolicy(policy)
+        toast.success(`Agent · ${agentPolicyLabel(policy)}`, "Agents")
+        setComposerFocused(true)
+      },
+      onCancel: () => setComposerFocused(true),
+    })
   }
 
   const openLiveReviews = async () => {
@@ -657,6 +680,7 @@ function LiveAppShell(props: LiveAppProps) {
         content,
         operationId,
         turnController.signal,
+        executionPolicyForAgent(executionPolicy()),
       )
       if (result.kind === "async") return
       setMessages(transcriptMessagesFromChatTurns(result.messages))
@@ -1040,6 +1064,7 @@ function LiveAppShell(props: LiveAppProps) {
         showVariant: () => {
           void openLiveVariantPicker()
         },
+        showAgent: () => openLiveAgentPicker(),
         createSession: () => {
           void createSession()
         },
@@ -1158,6 +1183,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.name === "f3" && !key.ctrl && !key.meta) {
       key.preventDefault()
       void openLiveVariantPicker()
+      return
+    }
+    if (key.name === "f4" && !key.ctrl && !key.meta) {
+      key.preventDefault()
+      openLiveAgentPicker()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {

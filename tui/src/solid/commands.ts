@@ -262,9 +262,9 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
     {
       id: "veasel.agent.picker",
       title: "Select agent",
-      description: "Switch the active Solid agent profile",
+      description: "Execution policy or demo agent profile",
       group: "setup",
-      keywords: ["agent", "build", "plan", "review"],
+      keywords: ["agent", "build", "plan", "review", "policy", "ask"],
       run: () => handlers.showAgent(),
     },
     {
@@ -339,6 +339,7 @@ export type LivePaletteHandlers = {
   openSettings: () => void
   showModelPicker: () => void
   showVariant: () => void
+  showAgent: () => void
   createSession: () => void
   openRecent: () => void
   openWorkspaces: () => void
@@ -401,6 +402,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["variant", "effort", "fast", "max", "budget", "tokens"],
       shortcut: "F3",
       run: () => handlers.showVariant(),
+    },
+    {
+      id: "veasel.agent.picker",
+      title: "Select agent",
+      description: "Per-turn execution policy (ask / auto-edit / sandbox-auto)",
+      group: "setup",
+      keywords: ["agent", "policy", "ask", "auto-edit", "sandbox", "yolo"],
+      shortcut: "F4",
+      run: () => handlers.showAgent(),
     },
     {
       id: "veasel.theme.cycle",

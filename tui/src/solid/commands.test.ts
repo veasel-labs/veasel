@@ -123,6 +123,7 @@ describe("Solid palette commands", () => {
       openSettings: () => ran.push("settings"),
       showModelPicker: () => ran.push("model"),
       showVariant: () => ran.push("variant"),
+      showAgent: () => ran.push("agent"),
       createSession: () => ran.push("new"),
       openRecent: () => ran.push("open"),
       openWorkspaces: () => ran.push("workspaces"),
@@ -151,6 +152,7 @@ describe("Solid palette commands", () => {
       "veasel.settings",
       "veasel.model.picker",
       "veasel.variant.picker",
+      "veasel.agent.picker",
       "veasel.theme.cycle",
       "veasel.theme.list",
       "veasel.session.new",
@@ -185,8 +187,9 @@ describe("Solid palette commands", () => {
     commands.find((command) => command.id === "veasel.settings")!.run()
     commands.find((command) => command.id === "veasel.model.picker")!.run()
     commands.find((command) => command.id === "veasel.variant.picker")!.run()
+    commands.find((command) => command.id === "veasel.agent.picker")!.run()
     commands.find((command) => command.id === "veasel.open")!.run()
     commands.find((command) => command.id === "veasel.theme.cycle")!.run()
-    expect(ran).toEqual(["settings", "model", "variant", "open", "theme"])
+    expect(ran).toEqual(["settings", "model", "variant", "agent", "open", "theme"])
   })
 })

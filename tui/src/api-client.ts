@@ -483,10 +483,15 @@ export class VeaselApiClient {
     content: string,
     operationId: string,
     turnSignal?: AbortSignal,
+    executionPolicy?: string,
   ): Promise<SendMessageResult> {
     const signal = turnSignal
       ? AbortSignal.any([this.signal, turnSignal])
       : this.signal
+    const body: { content: string; execution_policy?: string } = { content }
+    if (executionPolicy && executionPolicy !== "ask") {
+      body.execution_policy = executionPolicy
+    }
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
       {
@@ -496,7 +501,7 @@ export class VeaselApiClient {
           "x-veasel-operation-id": operationId,
           prefer: "respond-async",
         },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify(body),
         signal,
       },
     )

@@ -40,6 +40,13 @@ compatibility and does not authorize copying branding or product chrome.
   `renderHelp`, builtin theme cycle, and a session-list stub under `veasel.*`
   ids — engineering pattern from OpenCode dialog/palette modules, not product
   keys or branding.
+- Tool/activity grouping (`solid/activity-group.ts` + `solid/transcript.tsx`):
+  consecutive `tool` / `tool_result` roles project into collapsible activity
+  groups with spoken running/done/error status (reuses `status-a11y` glyphs).
+  **Ctrl+G** toggles the latest group; click the header or palette
+  `veasel.activity.toggle` does the same. Pattern informed by OpenCode
+  `grouping/session.ts` / `group-view.tsx` / `activity-summary.ts` (engineering
+  only; Veasel-owned labels and mint chrome).
 
 ## Startup note (light)
 

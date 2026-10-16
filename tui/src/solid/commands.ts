@@ -1,6 +1,7 @@
 import { renderHelp } from "../help"
 import { slashCommands } from "../slash-commands"
 import { themes, type BuiltinThemeId } from "../themes"
+import { activityToggleShortcut } from "./activity-group"
 
 /** Discoverable palette binding. Ctrl+K stays readline kill-line in the composer. */
 export const paletteShortcut = {
@@ -27,6 +28,8 @@ export type PaletteActionHandlers = {
   cycleTheme: () => string
   /** Session list stub until home route lands on Solid. */
   showSessions: () => void
+  /** Document / cue activity-group toggle (Ctrl+G owns the real toggle). */
+  toggleActivity: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -99,6 +102,15 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       group: "session",
       keywords: ["sessions", "home", "list"],
       run: () => handlers.showSessions(),
+    },
+    {
+      id: "veasel.activity.toggle",
+      title: "Toggle activity group",
+      description: `Expand or collapse the latest tool/activity group (${activityToggleShortcut.label})`,
+      group: "session",
+      keywords: ["activity", "tools", "group", "collapse", "expand"],
+      shortcut: activityToggleShortcut.label,
+      run: () => handlers.toggleActivity(),
     },
   ]
 

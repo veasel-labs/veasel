@@ -70,6 +70,7 @@ describe("Solid dialog host + command palette", () => {
           return "ember"
         },
         showSessions: () => ran.push("sessions"),
+        toggleActivity: () => ran.push("activity"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -109,6 +110,7 @@ describe("Solid dialog host + command palette", () => {
         runSlash: () => {},
         cycleTheme: () => "mint",
         showSessions: () => {},
+        toggleActivity: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

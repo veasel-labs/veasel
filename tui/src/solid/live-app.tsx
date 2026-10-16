@@ -31,7 +31,16 @@ import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { SessionTabs } from "./component/session-tabs"
+import { openDialogExportOptions } from "./ui/dialog-export-options"
+import { openDialogExportResult } from "./ui/dialog-export-result"
 import { openDialogPrompt } from "./ui/dialog-prompt"
+import {
+  formatSessionExport,
+  formatUsageLine,
+  sessionExportPath,
+  writeSessionExport,
+} from "./session-export"
+import type { SolidMcpServer } from "./component/mcp-dialog"
 import { moveSessionTabIndex, sessionTabsFromEntries } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import {
@@ -269,6 +278,7 @@ function LiveAppShell(props: LiveAppProps) {
     let provider: string | undefined
     let model: string | undefined
     let usageLine: string | undefined
+    let mcpServers: SolidMcpServer[] = []
     try {
       const settings = await props.api.getModelSettings()
       provider = settings.active_provider
@@ -280,6 +290,27 @@ function LiveAppShell(props: LiveAppProps) {
     } catch {
       // Status still useful without model settings.
     }
+    const sessionId = activeSessionId()
+    if (sessionId) {
+      try {
+        const usage = await props.api.getSessionUsage(sessionId)
+        const fromUsage = formatUsageLine(usage)
+        if (fromUsage) usageLine = fromUsage
+      } catch {
+        // Keep model settings fallback line.
+      }
+      try {
+        const trusted = await props.api.listSessionMcpServers(sessionId)
+        mcpServers = trusted.map((server) => ({
+          name: `${server.plugin_name}/${server.server_name}`,
+          transport: "plugin",
+          status: "connected" as const,
+          scope: "session",
+        }))
+      } catch {
+        mcpServers = []
+      }
+    }
     openStatusDialog(dialog, {
       sessionTitle: inSession() ? sessionTitle() : "Home",
       directory: directory(),
@@ -287,7 +318,61 @@ function LiveAppShell(props: LiveAppProps) {
       model,
       usageLine,
       connection: "LOCAL · loopback",
-      mcpServers: [],
+      mcpServers,
+    })
+  }
+
+  const openLiveExport = () => {
+    if (!inSession()) {
+      toast.info("Open a session to export", "Export")
+      return
+    }
+    setComposerFocused(false)
+    openDialogExportOptions(dialog, {
+      defaultThinking: true,
+      onConfirm: async (options) => {
+        const body = formatSessionExport(
+          messages(),
+          {
+            title: sessionTitle(),
+            directory: directory(),
+            sessionId: activeSessionId(),
+          },
+          {
+            format: options.format,
+            tools: options.tools,
+            thinking: options.thinking,
+            sanitize: options.sanitize,
+          },
+        )
+        if (options.action === "copy") {
+          const clipboard = globalThis.navigator?.clipboard
+          if (clipboard?.writeText) {
+            try {
+              await clipboard.writeText(body)
+              dialog.clear()
+              toast.success(`Copied · ${options.format} (${body.length} chars)`, "Export")
+              return
+            } catch {
+              // Fall through to file export hint.
+            }
+          }
+          dialog.clear()
+          toast.info("Clipboard unavailable — use Export to file", "Export")
+          return
+        }
+        const path = sessionExportPath(options.format)
+        try {
+          writeSessionExport(path, body)
+          openDialogExportResult(dialog, { path })
+        } catch (error) {
+          dialog.clear()
+          toast.info(
+            error instanceof Error ? error.message : "could not write export",
+            "Export",
+          )
+        }
+      },
     })
   }
 
@@ -650,6 +735,7 @@ function LiveAppShell(props: LiveAppProps) {
         showStatus: () => {
           void openLiveStatus()
         },
+        showExport: () => openLiveExport(),
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -706,6 +792,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "i" && !key.meta) {
       key.preventDefault()
       void openLiveStatus()
+      return
+    }
+    if (key.ctrl && key.name === "e" && !key.meta) {
+      key.preventDefault()
+      openLiveExport()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {
@@ -848,7 +939,7 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+E export · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

@@ -347,6 +347,7 @@ export type LivePaletteHandlers = {
   showSessionDiffs: () => void
   showSessionTimeline: () => void
   showStatus: () => void
+  showExport: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -463,6 +464,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["status", "info", "usage", "connection", "mcp"],
       shortcut: "Ctrl+I",
       run: () => handlers.showStatus(),
+    },
+    {
+      id: "veasel.session.export",
+      title: "Export session",
+      description: "Copy or write Markdown/JSON of the current session",
+      group: "session",
+      keywords: ["export", "copy", "markdown", "json", "download"],
+      shortcut: "Ctrl+E",
+      run: () => handlers.showExport(),
     },
     {
       id: "veasel.session.tab.next",

@@ -75,6 +75,26 @@ export type ApiWorkspaceEditStatus =
   | "conflict"
   | "interrupted"
 
+export type ApiSessionUsageSummary = {
+  session_id: string
+  completed_turns: number
+  reported_turns: number
+  input_tokens: number
+  output_tokens: number
+  usage_reported: boolean
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  cache_reported: boolean
+  reasoning_tokens: number
+  reasoning_reported: boolean
+  cost: string
+}
+
+export type ApiSessionPluginMcpServer = {
+  plugin_name: string
+  server_name: string
+}
+
 export type ApiWorkspaceEditSummary = {
   id: string
   path: string
@@ -158,6 +178,24 @@ export class VeaselApiClient {
     const response = await fetch(`${this.base}/v1/config/model`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return await response.json() as ModelSettingsView
+  }
+
+  async getSessionUsage(sessionId: string): Promise<ApiSessionUsageSummary> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/usage`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSessionUsageSummary
+  }
+
+  async listSessionMcpServers(sessionId: string): Promise<ApiSessionPluginMcpServer[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSessionPluginMcpServer[]
   }
 
   async listGitWorktrees(sessionId: string): Promise<ApiGitWorktreeCatalog> {

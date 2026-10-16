@@ -1,9 +1,20 @@
 /** @jsxImportSource @opentui/solid */
-import { createSignal } from "solid-js"
-import type { ScrollBoxRenderable } from "@opentui/core"
+import { createEffect, createMemo, createSignal } from "solid-js"
+import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
+import { useKeyboard } from "@opentui/solid"
 import { SolidComposer } from "./composer"
 import { SolidTranscript, type TranscriptMessage } from "./transcript"
 import { solidMint } from "./theme"
+import {
+  buildPaletteCommands,
+  nextBuiltinThemeId,
+  paletteHelpText,
+  paletteShortcut,
+} from "./commands"
+import { DialogProvider, useDialog } from "./ui/dialog"
+import { openCommandPalette } from "./component/command-palette"
+import type { BuiltinThemeId } from "../themes"
+import { defaultThemeId } from "../themes"
 
 export type SolidAppProps = {
   status?: string
@@ -28,24 +39,63 @@ const demoFixture: TranscriptMessage[] = [
   {
     role: "assistant",
     content:
-      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.",
+      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.\nPress Ctrl+P for the command palette.",
   },
 ]
 
-// Veasel-branded Solid shell: header + session chrome + transcript + composer.
-// HTTP session wiring stays optional; fixtures prove the conversation pane.
-export function App(props: SolidAppProps = {}) {
+function AppShell(props: SolidAppProps) {
+  const dialog = useDialog()
   const status = () => props.status ?? "LOCAL · Solid shell"
   const sessionTitle = () => props.sessionTitle ?? "Solid transcript"
   const directory = () => props.directory ?? "~/veasel"
   const [messages, setMessages] = createSignal<TranscriptMessage[]>(
     props.initialMessages ?? demoFixture,
   )
+  const [notice, setNotice] = createSignal(props.notice ?? "")
+  const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
+  const [composerFocused, setComposerFocused] = createSignal(true)
+
+  const commands = createMemo(() =>
+    buildPaletteCommands({
+      showHelp: (compact) => {
+        setNotice(paletteHelpText(compact ?? true))
+      },
+      runSlash: (command) => {
+        setNotice(`Slash · ${command} (Solid stub — wire to session handler next)`)
+      },
+      cycleTheme: () => {
+        const next = nextBuiltinThemeId(themeId())
+        setThemeId(next)
+        setNotice(`Theme · ${next} (cycle stub · /theme persists on legacy path)`)
+        return next
+      },
+      showSessions: () => {
+        setNotice("Sessions · home list stub (Solid route next)")
+      },
+    }),
+  )
 
   const onSubmit = (text: string) => {
     props.onSubmit?.(text)
     setMessages((prev) => [...prev, { role: "user", content: text }])
   }
+
+  const openPalette = () => {
+    setComposerFocused(false)
+    openCommandPalette(dialog, commands())
+  }
+
+  useKeyboard((key: KeyEvent) => {
+    if (dialog.open()) return
+    if (key.ctrl && key.name === paletteShortcut.name && !key.meta) {
+      key.preventDefault()
+      openPalette()
+    }
+  })
+
+  createEffect(() => {
+    if (!dialog.open()) setComposerFocused(true)
+  })
 
   return (
     <box
@@ -88,12 +138,13 @@ export function App(props: SolidAppProps = {}) {
       >
         <text fg={solidMint.muted}>SESSION </text>
         <text fg={solidMint.body}>{sessionTitle()}</text>
+        <text fg={solidMint.muted}> · {paletteShortcut.label} commands</text>
       </box>
 
       <SolidTranscript
         messages={messages}
         session={{ title: sessionTitle(), directory: directory() }}
-        notice={props.notice}
+        notice={notice() || props.notice}
         streaming={props.streaming}
         streamingText={props.streamingText}
         streamingCursor={props.streamingCursor}
@@ -102,8 +153,18 @@ export function App(props: SolidAppProps = {}) {
         cols={80}
       />
 
-      <SolidComposer onSubmit={onSubmit} focused={true} />
+      <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
     </box>
+  )
+}
+
+// Veasel-branded Solid shell: header + session chrome + transcript + composer
+// + dialog host / command palette. HTTP session wiring stays optional.
+export function App(props: SolidAppProps = {}) {
+  return (
+    <DialogProvider>
+      <AppShell {...props} />
+    </DialogProvider>
   )
 }
 

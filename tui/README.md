@@ -8,8 +8,9 @@ versioned Veasel HTTP API; persistence and execution remain in the V backend.
 From this directory, install the locked dependencies with `bun install`, then:
 
 - `bun run start` — legacy imperative OpenTUI client (`src/main.ts`, default)
-- `bun run start:solid` — SolidJS shell stub (`src/solid/main.tsx`; P0 chrome +
-  composer only; not yet feature-complete)
+- `bun run start:solid` — SolidJS dual-path (`src/solid/main.tsx`; shell,
+  composer, transcript scrollbox, Ctrl+P command palette; not yet
+  feature-complete vs legacy)
 
 From the repository root, `v run . tui` starts the legacy development client
 through Bun. Standalone packaging defaults to the legacy entry; pass `--solid`

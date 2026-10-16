@@ -124,3 +124,50 @@ describe("VeaselApiClient workspace edits", () => {
     expect(proposal.diff).toContain("+hi")
   })
 })
+
+describe("VeaselApiClient usage and MCP", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("getSessionUsage and listSessionMcpServers hit session routes", async () => {
+    const calls: string[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes("/usage")) {
+        return new Response(
+          JSON.stringify({
+            session_id: "sess-1",
+            completed_turns: 2,
+            reported_turns: 1,
+            input_tokens: 10,
+            output_tokens: 4,
+            usage_reported: true,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_reported: false,
+            reasoning_tokens: 0,
+            reasoning_reported: false,
+            cost: "unavailable",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        )
+      }
+      return new Response(
+        JSON.stringify([{ plugin_name: "local-tools", server_name: "workspace" }]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const usage = await client.getSessionUsage("sess-1")
+    expect(calls[0]).toContain("/v1/sessions/sess-1/usage")
+    expect(usage.input_tokens).toBe(10)
+    const servers = await client.listSessionMcpServers("sess-1")
+    expect(calls[1]).toContain("/v1/sessions/sess-1/mcp-servers")
+    expect(servers[0]?.server_name).toBe("workspace")
+  })
+})

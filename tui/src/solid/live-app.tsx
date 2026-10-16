@@ -47,6 +47,12 @@ import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
+import { openErrorDetailsDialog } from "./component/error-details-dialog"
+import {
+  recordLiveLastError,
+  resolveLiveErrorDetails,
+  type LiveLastError,
+} from "./last-error"
 import { openDialogThemeList } from "./component/dialog-theme-list"
 import {
   catalogEntryToSolidModel,
@@ -157,7 +163,24 @@ function LiveAppShell(props: LiveAppProps) {
   /** Session ids with background turn completions while another tab is focused. */
   const [unreadSessionIds, setUnreadSessionIds] = createSignal<Record<string, true>>({})
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>([])
+  const [lastError, setLastError] = createSignal<LiveLastError | undefined>()
   const [status, setStatus] = createSignal(formatBusyStatus("connecting"))
+  const noteError = (
+    source: string,
+    message: string,
+    context?: string,
+    title = "Request failed",
+  ) => {
+    setLastError((previous) =>
+      recordLiveLastError(previous, {
+        title,
+        source,
+        context,
+        error: message,
+      }),
+    )
+    setStatus(formatErrorStatus(message))
+  }
   const [streaming, setStreaming] = createSignal(false)
   const [streamingText, setStreamingText] = createSignal("")
   const [sending, setSending] = createSignal(false)
@@ -762,10 +785,11 @@ function LiveAppShell(props: LiveAppProps) {
         setStatus(formatHomeSessionStatus(selectedIndex(), listed.length))
       }
     } catch (error) {
-      setStatus(
-        formatErrorStatus(
-          `server unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`,
-        ),
+      noteError(
+        "sessions.list",
+        `server unavailable  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        directory(),
+        "Session list failed",
       )
     }
   }
@@ -781,10 +805,11 @@ function LiveAppShell(props: LiveAppProps) {
       setMessages(transcriptMessagesFromChatTurns(turns))
       setStatus("● connected  ·  listening for activity")
     } catch (error) {
-      setStatus(
-        formatErrorStatus(
-          `could not open session  ·  ${error instanceof Error ? error.message : "request failed"}`,
-        ),
+      noteError(
+        "sessions.open",
+        `could not open session  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        session.id,
+        "Open session failed",
       )
     }
   }
@@ -796,10 +821,11 @@ function LiveAppShell(props: LiveAppProps) {
       await openSession(sessionEntry(created))
       toast.success(`Created · ${created.title}`, "Session")
     } catch (error) {
-      setStatus(
-        formatErrorStatus(
-          `could not create session  ·  ${error instanceof Error ? error.message : "request failed"}`,
-        ),
+      noteError(
+        "sessions.create",
+        `could not create session  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        directory(),
+        "Create session failed",
       )
     }
   }
@@ -869,10 +895,11 @@ function LiveAppShell(props: LiveAppProps) {
       if (turnController?.signal.aborted) {
         setStatus("▲ response cancelled")
       } else {
-        setStatus(
-          formatErrorStatus(
-            `message failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
-          ),
+        noteError(
+          "messages.send",
+          `message failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
+          sessionId,
+          "Send failed",
         )
       }
       setSending(false)
@@ -1381,6 +1408,15 @@ function LiveAppShell(props: LiveAppProps) {
         },
         showSkills: () => {
           void openLiveSkills()
+        },
+        showErrorDetails: () => {
+          setComposerFocused(false)
+          const details = resolveLiveErrorDetails(lastError())
+          openErrorDetailsDialog(dialog, {
+            ...details,
+            onCopy: () => toast.success("Error details copied", "Error"),
+            onClose: () => setComposerFocused(true),
+          })
         },
         previousUserMessage: () => requestMessageNav({ direction: "prev", userOnly: true }),
         nextUserMessage: () => requestMessageNav({ direction: "next", userOnly: true }),

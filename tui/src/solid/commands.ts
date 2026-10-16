@@ -420,6 +420,7 @@ export type LivePaletteHandlers = {
   showExport: () => void
   showMcp: () => void
   showSkills: () => void
+  showErrorDetails: () => void
   previousUserMessage: () => void
   nextUserMessage: () => void
   lastUserMessage: () => void
@@ -681,6 +682,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["status", "info", "usage", "connection", "mcp"],
       shortcut: "Ctrl+I",
       run: () => handlers.showStatus(),
+    },
+    {
+      id: "veasel.error.details",
+      title: "Error details",
+      description: "Inspect the latest LiveApp failure (copyable)",
+      group: "guide",
+      keywords: ["error", "details", "failure", "stack", "copy"],
+      run: () => handlers.showErrorDetails(),
     },
     {
       id: "veasel.session.export",

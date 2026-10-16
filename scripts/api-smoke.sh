@@ -587,7 +587,8 @@ assert trajectory["agent"]["name"] == "Veasel Code", trajectory
 assert trajectory["agent"]["model_name"] == "smoke-model", trajectory
 assert [step["source"] for step in trajectory["steps"]] == ["system", "user", "agent", "agent"], trajectory
 assert "You are Veasel Code" in trajectory["steps"][0]["message"], trajectory
-assert trajectory["steps"][1]["message"] == "Inspect workspace", trajectory
+user_prompt = trajectory["steps"][1]["message"].split("\n\n<veasel-repository-map-focus", 1)[0]
+assert user_prompt == "Inspect workspace", trajectory
 tool_step = trajectory["steps"][2]
 assert tool_step["tool_calls"][0]["function_name"] == "workspace_search", tool_step
 assert tool_step["observation"]["results"][0]["source_call_id"] == tool_step["tool_calls"][0]["tool_call_id"], tool_step

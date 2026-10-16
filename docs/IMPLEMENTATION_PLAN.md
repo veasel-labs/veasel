@@ -17,15 +17,19 @@ clients use an HTTP API and event stream. This is a direction reference rather
 than a promise of full route compatibility. The pinned comparison and
 route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode.md).
 
-The TUI is TypeScript with OpenTUI Core renderables, kept as a separate API
-client; the agent runtime, tools and persistence remain in V. Core was chosen
-for the first small view because its direct event and renderer APIs work with
-the pinned package and installed Bun 1.4.2. Solid remains an option as the
-view's composition needs grow. The package is pinned and typechecked, and the
-Linux x64 flow was exercised interactively. CI builds and packages the backend
-and TUI bundle for x64 Linux, macOS, and Windows and publishes verified main
-builds automatically. Standalone interactive TUI PTY smoke runs on Linux and
-macOS in CI; Windows interactive validation still needs a ConPTY harness (see
+The TUI is TypeScript with OpenTUI, kept as a separate API client; the agent
+runtime, tools and persistence remain in V. Core renderables ship as the
+default (`bun run start` → `src/main.ts`). A SolidJS + `@opentui/solid` **0.5.17**
+migration is in progress: P0 adds a parallel shell + reactive composer under
+`tui/src/solid/` (`bun run start:solid`), bunfig preload, JSX tsconfig, dual
+standalone entry (`--solid`), and `testRender` coverage. Pins and adapted
+patterns are recorded in
+[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
+the default entry and feature parity (sessions, reviews, settings) are later
+slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
+and Windows and publishes verified main builds automatically. Standalone
+interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
+validation still needs a ConPTY harness (see
 [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md)).
 Linux TUI CLI + PTY-connected baselines are recorded there; macOS/Windows
 baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
@@ -44,6 +48,8 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] SQLite migration ledger and transactional session create/list/get behavior.
 - [x] Durable, replayable SSE event stream with cursor validation.
 - [x] OpenTUI terminal client connected to the server; Solid remains evaluated.
+- [x] Solid P0 shell + composer dual-path (`tui/src/solid/`, `start:solid`,
+  `testRender`); legacy `main.ts` remains default until later cutover.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.
 
@@ -364,6 +370,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
+- [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
+  shell → composer → session/transcript → dialogs/palette → reviews →
+  settings). P0 shell+composer dual-path shipped; default entry remains
+  legacy until parity. See
+  [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
 - [x] OpenCode-style `/connect` credential UX: paste a key, save it locally,

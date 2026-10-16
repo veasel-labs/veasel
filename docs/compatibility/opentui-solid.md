@@ -15,7 +15,9 @@ compatibility and does not authorize copying branding or product chrome.
 
 - `@opentui/core` **0.5.17** (already in tree)
 - `@opentui/solid` **0.5.17**
-- `solid-js` **1.9.15** (OpenCode catalog; peer warning vs solid's declared `1.9.12` is accepted to stay aligned with OpenCode)
+- `solid-js` **1.9.17** (1.9.x line matching OpenCode's catalog intent; bumped from
+  1.9.15 so transitive `seroval` lands on the CVE-fixed ≥1.6.2 line. Peer of
+  `@opentui/solid` remains `1.9.12`.)
 
 ## Adapted patterns (Veasel-owned code)
 

@@ -1707,6 +1707,19 @@ function LiveAppShell(props: LiveAppProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (dialog.open()) return
+    // Classic parity: empty composer + `?` opens quick help (same as /help).
+    if (
+      inSession()
+      && composerDraft().trim() === ""
+      && !key.ctrl
+      && !key.meta
+      && (key.name === "?" || key.sequence === "?")
+    ) {
+      key.preventDefault()
+      setComposerFocused(false)
+      openDialogHelp(dialog, { compact: true })
+      return
+    }
     if (key.ctrl && key.name === paletteShortcut.name && !key.meta) {
       key.preventDefault()
       openPalette()

@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent, TextareaRenderable } from "@opentui/core"
 import {
@@ -7,7 +7,10 @@ import {
   composerKeyBindings,
   composerMaxHeight,
 } from "../composer-input"
+import { pathMentionAt } from "../path-autocomplete"
+import { skillMentionAt } from "../skill-autocomplete"
 import type { SkillCatalogEntry } from "../skill-autocomplete"
+import { completeSlashCommand } from "../slash-commands"
 import type { SlashCompletionContext } from "../slash-commands"
 import { solidMint } from "./theme"
 import {
@@ -66,8 +69,32 @@ export function SolidComposer(props: SolidComposerProps) {
     return active ? windowedComposerItems(active) : []
   })
 
-  const applyEdit = (value: string, cursor: number) => {
+  // When the menu is open, suspend textarea navigation bindings and claim Esc /
+  // Tab / Enter so classic autocomplete chords win (OpenCode prompt traits pattern).
+  createEffect(() => {
     if (!area) return
+    if (menu()) {
+      area.traits = {
+        ...area.traits,
+        capture: ["escape", "navigate", "submit", "tab"],
+        suspend: true,
+      }
+      return
+    }
+    area.traits = {
+      ...area.traits,
+      capture: ["tab"],
+      suspend: false,
+    }
+  })
+
+  const applyEdit = (value: string, cursor: number) => {
+    if (!area) {
+      setDraft(value)
+      setDismissed(undefined)
+      setSelected(0)
+      return
+    }
     area.setText(value)
     area.cursorOffset = cursor
     setDraft(value)
@@ -76,11 +103,7 @@ export function SolidComposer(props: SolidComposerProps) {
     setSelected(0)
   }
 
-  const submit = () => {
-    if (menu()) return
-    const text = (area?.plainText ?? draft()).trimEnd()
-    if (text.length === 0) return
-    props.onSubmit?.(text)
+  const clearComposer = () => {
     area?.setText("")
     setDraft("")
     setSelected(0)
@@ -88,7 +111,13 @@ export function SolidComposer(props: SolidComposerProps) {
     if (area) area.height = composerHeightForText("")
   }
 
-  const accept = (mode: "tab" | "enter") => {
+  const send = (text: string) => {
+    if (text.length === 0) return
+    props.onSubmit?.(text)
+    clearComposer()
+  }
+
+  const accept = (mode: "tab" | "enter"): boolean => {
     const value = area?.plainText ?? draft()
     const cursor = area?.cursorOffset ?? value.length
     const active = menu()
@@ -105,31 +134,27 @@ export function SolidComposer(props: SolidComposerProps) {
     if (!result) {
       // Already-complete runnable slash: Enter submits the draft.
       if (mode === "enter" && active.kind === "slash") {
-        setDismissed(undefined)
-        const text = value.trimEnd()
-        if (text.length === 0) return true
-        props.onSubmit?.(text)
-        area?.setText("")
-        setDraft("")
-        setSelected(0)
-        if (area) area.height = composerHeightForText("")
+        send(value.trimEnd())
         return true
       }
       return false
     }
     if (result.submit && mode === "enter") {
       applyEdit(result.value, result.cursor)
-      const text = result.value.trimEnd()
-      if (text.length === 0) return true
-      props.onSubmit?.(text)
-      area?.setText("")
-      setDraft("")
-      setSelected(0)
-      if (area) area.height = composerHeightForText("")
+      send(result.value.trimEnd())
       return true
     }
     applyEdit(result.value, result.cursor)
     return true
+  }
+
+  const submit = () => {
+    // Textarea Enter binding; when the menu is open, accept instead of send.
+    if (menu()) {
+      accept("enter")
+      return
+    }
+    send((area?.plainText ?? draft()).trimEnd())
   }
 
   useKeyboard((key: KeyEvent) => {
@@ -154,18 +179,8 @@ export function SolidComposer(props: SolidComposerProps) {
     }
     if (key.name === "tab" && !key.shift) {
       consume()
-      const value = area?.plainText ?? draft()
-      const cursor = area?.cursorOffset ?? value.length
-      const tabbed = acceptComposerAutocomplete({
-        value,
-        cursor,
-        skills: skills(),
-        slashContext: props.slashContext,
-        workspaceRoot: props.workspaceRoot,
-        listPaths: props.listPaths,
-        selected: active.selected,
-      })
-      if (tabbed && tabbed.value.trim() === value.trim() && active.items.length > 1) {
+      // Tab completes; once completed, further Tabs cycle (classic parity).
+      if (isAlreadyCompleted(active, area?.plainText ?? draft(), area?.cursorOffset ?? draft().length) && active.items.length > 1) {
         setSelected((current) => moveComposerAutocomplete(current, 1, active.items.length))
         return
       }
@@ -198,6 +213,7 @@ export function SolidComposer(props: SolidComposerProps) {
       return
     }
     if (key.name === "return" || key.name === "kpenter") {
+      // Prefer keyboard path so textarea submit does not double-fire.
       consume()
       accept("enter")
     }
@@ -287,4 +303,26 @@ export function SolidComposer(props: SolidComposerProps) {
       </box>
     </box>
   )
+}
+
+function isAlreadyCompleted(
+  menu: ComposerAutocompleteMenu,
+  value: string,
+  cursor: number,
+): boolean {
+  const item = menu.items[menu.selected]
+  if (!item) return false
+  if (menu.kind === "slash") {
+    return value.trim() === completeSlashCommand({
+      name: item.name,
+      insert: item.insert,
+      usage: item.usage,
+    }).trim()
+  }
+  if (menu.kind === "path") {
+    const mention = pathMentionAt(value, cursor)
+    return Boolean(mention && mention.query === item.name.replace(/^@/, ""))
+  }
+  const mention = skillMentionAt(value, cursor)
+  return Boolean(mention && mention.query === item.name.replace(/^\$/, ""))
 }

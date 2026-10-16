@@ -33,6 +33,8 @@ export type ComposerAutocompleteItem = {
   description: string
   category?: string
   usage?: string
+  /** Slash insert text when it differs from `name` (argument completions). */
+  insert?: string
 }
 
 export type ComposerAutocompleteMenu = {
@@ -130,6 +132,7 @@ function slashItem(item: SlashSuggestion): ComposerAutocompleteItem {
     description: item.description,
     category: slashCategoryLabel(item),
     usage: item.usage,
+    insert: item.insert,
   }
 }
 

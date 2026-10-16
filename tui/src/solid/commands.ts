@@ -344,6 +344,7 @@ export type LivePaletteHandlers = {
   showStash: () => void
   cycleTheme: () => void
   attachFile: () => void
+  showSessionDiffs: () => void
   quit: () => void
 }
 
@@ -428,6 +429,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       group: "session",
       keywords: ["attach", "file", "image", "screenshot", "upload", "paste"],
       run: () => handlers.attachFile(),
+    },
+    {
+      id: "veasel.session.diff",
+      title: "Session diffs",
+      description: "Browse workspace edit proposals with split DiffRenderable",
+      group: "session",
+      keywords: ["diff", "patch", "edits", "files", "review"],
+      shortcut: "Ctrl+D",
+      run: () => handlers.showSessionDiffs(),
     },
     {
       id: "veasel.quit",

@@ -67,6 +67,27 @@ export type AddGitWorktreeInput = {
   new_branch?: string
 }
 
+export type ApiWorkspaceEditStatus =
+  | "pending"
+  | "applying"
+  | "applied"
+  | "rejected"
+  | "conflict"
+  | "interrupted"
+
+export type ApiWorkspaceEditSummary = {
+  id: string
+  path: string
+  status: ApiWorkspaceEditStatus
+  created_at?: string
+  updated_at?: string
+}
+
+export type ApiWorkspaceEditProposal = ApiWorkspaceEditSummary & {
+  session_id?: string
+  diff: string
+}
+
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
   onTurnCompleted?: (sessionId: string, completion: SessionTurnCompletion) => void
@@ -163,6 +184,24 @@ export class VeaselApiClient {
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as ApiGitWorktree
+  }
+
+  async listWorkspaceEdits(sessionId: string): Promise<ApiWorkspaceEditSummary[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/edits`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiWorkspaceEditSummary[]
+  }
+
+  async getWorkspaceEdit(sessionId: string, editId: string): Promise<ApiWorkspaceEditProposal> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/edits/${encodeURIComponent(editId)}`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiWorkspaceEditProposal
   }
 
   async sendMessage(

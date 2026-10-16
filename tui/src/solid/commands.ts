@@ -345,6 +345,8 @@ export type LivePaletteHandlers = {
   cycleTheme: () => void
   attachFile: () => void
   showSessionDiffs: () => void
+  nextSessionTab: () => void
+  prevSessionTab: () => void
   quit: () => void
 }
 
@@ -438,6 +440,24 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["diff", "patch", "edits", "files", "review"],
       shortcut: "Ctrl+D",
       run: () => handlers.showSessionDiffs(),
+    },
+    {
+      id: "veasel.session.tab.next",
+      title: "Next session tab",
+      description: "Switch to the next open session in the tab rail",
+      group: "session",
+      keywords: ["tab", "session", "next", "switch"],
+      shortcut: "Ctrl+]",
+      run: () => handlers.nextSessionTab(),
+    },
+    {
+      id: "veasel.session.tab.prev",
+      title: "Previous session tab",
+      description: "Switch to the previous open session in the tab rail",
+      group: "session",
+      keywords: ["tab", "session", "previous", "prev", "switch"],
+      shortcut: "Ctrl+[",
+      run: () => handlers.prevSessionTab(),
     },
     {
       id: "veasel.quit",

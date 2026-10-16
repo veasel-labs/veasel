@@ -1,4 +1,4 @@
-import { SyntaxStyle, type StyleDefinitionInput } from "@opentui/core"
+import { SyntaxStyle, type NativeResourceOwner, type StyleDefinitionInput } from "@opentui/core"
 import { diffSyntaxStyles } from "./diff-view"
 import type { Theme } from "./themes"
 
@@ -30,8 +30,8 @@ export function markdownSyntaxStyles(theme: Theme): Record<string, StyleDefiniti
   }
 }
 
-export function createMarkdownSyntaxStyle(theme: Theme): SyntaxStyle {
-  return SyntaxStyle.fromStyles(markdownSyntaxStyles(theme))
+export function createMarkdownSyntaxStyle(theme: Theme, owner: NativeResourceOwner): SyntaxStyle {
+  return SyntaxStyle.fromStyles(markdownSyntaxStyles(theme), owner)
 }
 
 // Stick-to-bottom can own the latest assistant body via MarkdownRenderable

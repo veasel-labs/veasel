@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { ResourceContext } from "@opentui/core"
 import {
   createMarkdownSyntaxStyle,
   latestAssistantMarkdown,
@@ -17,10 +18,12 @@ describe("markdown stream surface", () => {
     expect(styles["markup.raw.inline"]?.fg).toBe(themes.mint.diffAdd)
     expect(styles["markup.link"]?.fg).toBe(themes.mint.diffMeta)
     expect(styles.keyword?.fg).toBe(themes.mint.brand)
-    const syntax = createMarkdownSyntaxStyle(themes.mint)
+    const owner = new ResourceContext({ objectCapacity: 64, renderCellsMax: 256 })
+    const syntax = createMarkdownSyntaxStyle(themes.mint, owner)
     expect(syntax.getRegisteredNames()).toContain("markup.heading")
     expect(syntax.getRegisteredNames()).toContain("markup.raw")
     syntax.destroy()
+    owner.destroy()
   })
 
   test("uses MarkdownRenderable while following live or completed assistant bodies", () => {

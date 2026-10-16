@@ -1,4 +1,4 @@
-import { SyntaxStyle, type StyleDefinitionInput } from "@opentui/core"
+import { SyntaxStyle, type NativeResourceOwner, type StyleDefinitionInput } from "@opentui/core"
 import type { Theme } from "./themes"
 
 // Review surfaces for workspace diffs. "segments" keeps the existing TextRenderable
@@ -108,8 +108,8 @@ export function diffSyntaxStyles(theme: Theme): Record<string, StyleDefinitionIn
   }
 }
 
-export function createDiffSyntaxStyle(theme: Theme): SyntaxStyle {
-  return SyntaxStyle.fromStyles(diffSyntaxStyles(theme))
+export function createDiffSyntaxStyle(theme: Theme, owner: NativeResourceOwner): SyntaxStyle {
+  return SyntaxStyle.fromStyles(diffSyntaxStyles(theme), owner)
 }
 
 export function filetypeFromReviewPath(path: string): string | undefined {

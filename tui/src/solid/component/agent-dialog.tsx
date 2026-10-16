@@ -11,6 +11,7 @@ export type AgentDialogProps = {
   agents: SolidAgent[]
   current?: string
   onSelect: (agent: SolidAgent) => void
+  onCancel?: () => void
 }
 
 /** Demo agents for Solid shell / tests (Veasel-owned labels). */
@@ -40,5 +41,6 @@ export function openAgentDialog(
       const agent = props.agents.find((item) => item.id === option.value)
       if (agent) props.onSelect(agent)
     },
+    onCancel: props.onCancel,
   })
 }

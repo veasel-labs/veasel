@@ -92,6 +92,30 @@ describe("VeaselApiClient model settings", () => {
   })
 })
 
+describe("VeaselApiClient sendMessage", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("includes execution_policy when not ask", async () => {
+    let body = ""
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      body = String(init?.body ?? "")
+      return new Response(JSON.stringify({ operation_id: "op-1", status: "running" }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    await client.sendMessage("sess-1", "hi", "op-1", undefined, "auto-edit")
+    expect(JSON.parse(body)).toEqual({ content: "hi", execution_policy: "auto-edit" })
+    await client.sendMessage("sess-1", "hi", "op-1", undefined, "ask")
+    expect(JSON.parse(body)).toEqual({ content: "hi" })
+  })
+})
+
 describe("VeaselApiClient renameSession", () => {
   const originalFetch = globalThis.fetch
 

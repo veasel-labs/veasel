@@ -610,7 +610,8 @@ import sys
 
 result = json.load(open(sys.argv[1], encoding="utf-8"))
 assert result["status"] == "failed", result
-assert "Autonomous tool execution is disabled" in result["error"], result
+assert "Sandbox-auto / autonomous tool execution is disabled" in result["error"], result
+assert "VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1" in result["error"], result
 PY
 		printf 'Smoke: applying a patch and running a shell command in the explicitly opted-in fixture server\n'
 		autonomous_port="$(free_port)"

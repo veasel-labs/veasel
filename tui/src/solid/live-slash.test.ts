@@ -34,14 +34,37 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/sessions")).toEqual({ kind: "session-list" })
   })
 
+  test("routes mcp calls, patch, and command into reviews", () => {
+    expect(resolveLiveSlash("/mcp calls")).toEqual({ kind: "reviews" })
+    expect(resolveLiveSlash("/mcp call show deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
+      kind: "reviews",
+    })
+    expect(resolveLiveSlash("/patch approve deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
+      kind: "reviews",
+    })
+    expect(resolveLiveSlash("/command show deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
+      kind: "reviews",
+    })
+  })
+
+  test("routes plugins, map, and history", () => {
+    expect(resolveLiveSlash("/plugins")).toEqual({ kind: "plugins", filter: "" })
+    expect(resolveLiveSlash("/plugins auth")).toEqual({ kind: "plugins", filter: "auth" })
+    expect(resolveLiveSlash("/plugin")).toEqual({ kind: "plugins", filter: "" })
+    expect(resolveLiveSlash("/map")).toEqual({ kind: "map", hint: "" })
+    expect(resolveLiveSlash("/map boot")).toEqual({ kind: "map", hint: "boot" })
+    expect(resolveLiveSlash("/history older")).toEqual({ kind: "history-older" })
+    expect(resolveLiveSlash("/history")).toEqual({ kind: "history-hint" })
+  })
+
   test("marks unsupported known slashes and unknown typos", () => {
     expect(resolveLiveSlash("/mcp add user stdio demo echo hi")).toEqual({
       kind: "unsupported",
       command: "/mcp add user stdio demo echo hi",
     })
-    expect(resolveLiveSlash("/plugins")).toEqual({
+    expect(resolveLiveSlash("/theme reload")).toEqual({
       kind: "unsupported",
-      command: "/plugins",
+      command: "/theme reload",
     })
     expect(resolveLiveSlash("/not-a-real-command")).toEqual({
       kind: "unknown",

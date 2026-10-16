@@ -18,8 +18,15 @@ export type LiveSlashAction =
   | { kind: "reviews" }
   | { kind: "export" }
   | { kind: "session-list" }
+  | { kind: "plugins"; filter: string }
+  | { kind: "map"; hint: string }
+  | { kind: "history-older" }
+  | { kind: "history-hint" }
   | { kind: "unsupported"; command: string }
   | { kind: "unknown"; command: string }
+
+const mcpManageRest =
+  /^(add|remove|enable|disable|credential|credentials|oauth|trust|untrust)\b/i
 
 function knownSlashName(name: string): boolean {
   return slashCommands.some(
@@ -41,6 +48,14 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
   if (isConnectCommand(content)) return { kind: "connect" }
   if (isModelSettingsCommand(content)) return { kind: "models" }
 
+  if (content === "/history older") return { kind: "history-older" }
+  if (/^\/history(?:\s|$)/.test(content)) return { kind: "history-hint" }
+
+  if (content === "/map" || content.startsWith("/map ")) {
+    const hint = content === "/map" ? "" : content.slice("/map ".length).trim()
+    return { kind: "map", hint }
+  }
+
   if (content === "/skills" || content.startsWith("/skills ")) {
     const filter = content === "/skills" ? "" : content.slice("/skills ".length).trim()
     return { kind: "skills", filter }
@@ -50,10 +65,32 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
     return { kind: "skills", filter: "" }
   }
 
+  if (content === "/plugins" || content.startsWith("/plugins ")) {
+    const filter = content === "/plugins" ? "" : content.slice("/plugins ".length).trim()
+    return { kind: "plugins", filter }
+  }
+  if (content === "/plugin" || content.startsWith("/plugin ")) {
+    // add/remove stay headless for now; bare /plugin opens the links dialog with a hint.
+    return { kind: "plugins", filter: "" }
+  }
+
+  // Approvals: MCP tool calls, patches, shell commands → unified review panel.
+  if (
+    content === "/mcp calls"
+    || /^\/mcp call\b/i.test(content)
+    || content === "/patches"
+    || content.startsWith("/patches ")
+    || content.startsWith("/patch ")
+    || content === "/commands"
+    || content.startsWith("/commands ")
+    || content.startsWith("/command ")
+  ) {
+    return { kind: "reviews" }
+  }
+
   if (content === "/mcp" || content.startsWith("/mcp ")) {
-    // Subcommands like /mcp add stay unsupported until headless parity; bare list opens dialog.
     const rest = content === "/mcp" ? "" : content.slice("/mcp ".length).trim()
-    if (!rest || !/^(add|remove|enable|disable|credential|credentials|oauth|call|calls|trust|untrust)\b/i.test(rest)) {
+    if (!rest || !mcpManageRest.test(rest)) {
       return { kind: "mcp", filter: rest }
     }
     return { kind: "unsupported", command: content }
@@ -70,9 +107,6 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
   }
 
   if (content === "/usage" || content === "/status") return { kind: "status" }
-  if (content === "/patches" || content.startsWith("/patches ") || content === "/commands" || content.startsWith("/commands ")) {
-    return { kind: "reviews" }
-  }
   if (content === "/export" || content.startsWith("/export ")) return { kind: "export" }
   if (content === "/sessions" || content === "/session") return { kind: "session-list" }
 

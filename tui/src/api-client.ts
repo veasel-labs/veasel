@@ -8,6 +8,7 @@ import {
   parseSseBlock,
 } from "./stream-events"
 import { mergeChatTurns, type ChatTurn } from "./chat-history"
+import type { WorkspaceRepositoryMap } from "./repository-map"
 
 export type ApiSession = {
   id: string
@@ -237,9 +238,16 @@ export class VeaselApiClient {
     return await response.json() as ApiSession
   }
 
-  async listMessages(sessionId: string): Promise<ChatTurn[]> {
+  async listMessages(
+    sessionId: string,
+    options?: { before?: number | string; limit?: number },
+  ): Promise<ChatTurn[]> {
+    const params = new URLSearchParams()
+    if (options?.before !== undefined) params.set("before", String(options.before))
+    if (options?.limit !== undefined) params.set("limit", String(options.limit))
+    const query = params.size > 0 ? `?${params}` : ""
     const response = await fetch(
-      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/messages${query}`,
       { signal: this.signal },
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -374,6 +382,38 @@ export class VeaselApiClient {
         skills: Array<{ name: string; description: string; source?: string; scope?: string }>
       }>
     }
+  }
+
+  async listPluginLinks(): Promise<{
+    links: Array<{
+      name: string
+      path: string
+      display_name?: string
+      description?: string
+    }>
+    diagnostics?: Array<{ component: string; message: string }>
+  }> {
+    const response = await fetch(`${this.base}/v1/plugins/links`, { signal: this.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as {
+      links: Array<{
+        name: string
+        path: string
+        display_name?: string
+        description?: string
+      }>
+      diagnostics?: Array<{ component: string; message: string }>
+    }
+  }
+
+  async getWorkspaceMap(sessionId: string, hint = ""): Promise<WorkspaceRepositoryMap> {
+    const query = hint.trim().length > 0 ? `?hint=${encodeURIComponent(hint.trim())}` : ""
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/map${query}`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as WorkspaceRepositoryMap
   }
 
   async listSessionSkills(sessionId: string): Promise<Array<{ plugin_name: string; skill_name: string }>> {

@@ -17,12 +17,18 @@ export type DialogSize = "medium" | "large"
 export type DialogEntry = {
   element: () => JSX.Element
   onClose?: () => void
+  size?: DialogSize
+}
+
+export type DialogReplaceOptions = {
+  onClose?: () => void
+  size?: DialogSize
 }
 
 export type DialogHost = {
   readonly open: () => boolean
   readonly stack: () => DialogEntry[]
-  replace: (element: () => JSX.Element, onClose?: () => void) => void
+  replace: (element: () => JSX.Element, options?: DialogReplaceOptions | (() => void)) => void
   clear: () => void
   pop: () => void
 }
@@ -50,13 +56,15 @@ export function DialogProvider(props: ParentProps) {
   const host: DialogHost = {
     open: () => stack().length > 0,
     stack,
-    replace(element, onClose) {
+    replace(element, options) {
+      const normalized: DialogReplaceOptions =
+        typeof options === "function" ? { onClose: options } : (options ?? {})
       if (stack().length === 0) {
         previousFocus = renderer.currentFocusedRenderable
         previousFocus?.blur()
       }
       for (const entry of stack()) entry.onClose?.()
-      setStack([{ element, onClose }])
+      setStack([{ element, onClose: normalized.onClose, size: normalized.size }])
     },
     clear() {
       for (const entry of stack()) entry.onClose?.()
@@ -85,7 +93,10 @@ export function DialogProvider(props: ParentProps) {
     <DialogContext.Provider value={host}>
       {props.children}
       <Show when={stack().length > 0}>
-        <DialogBackdrop onDismiss={() => host.clear()}>
+        <DialogBackdrop
+          size={stack().at(-1)?.size ?? "medium"}
+          onDismiss={() => host.clear()}
+        >
           <Show when={stack().at(-1)} keyed>
             {(entry) => entry.element()}
           </Show>
@@ -101,8 +112,11 @@ export function useDialog(): DialogHost {
   return value
 }
 
-function DialogBackdrop(props: ParentProps<{ onDismiss: () => void }>) {
+function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: DialogSize }>) {
   const dimensions = useTerminalDimensions()
+  const size = () => props.size ?? "medium"
+  const width = () =>
+    Math.min(dialogWidth(size()), Math.max(40, dimensions().width - 4))
   return (
     <box
       position="absolute"
@@ -118,7 +132,7 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void }>) {
     >
       <box
         onMouseUp={(event: { stopPropagation(): void }) => event.stopPropagation()}
-        width={Math.min(dialogWidth("medium"), Math.max(40, dimensions().width - 4))}
+        width={width()}
         maxHeight={Math.max(12, dimensions().height - 4)}
         flexDirection="column"
         backgroundColor={solidMint.panelBg}

@@ -48,13 +48,15 @@ describe("Solid dialog host + command palette", () => {
 
     setup.mockInput.pressKey("p", { ctrl: true })
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toContain("/connect")
+    // Chrome actions stay on the first screen; slash commands are filter-reachable.
+    expect(setup.captureCharFrame()).toContain("Open pending reviews")
 
     await setup.mockInput.typeText("theme")
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
     expect(frame).toContain("/theme")
     expect(frame).toContain("Cycle theme")
+    expect(frame).not.toContain("Open pending reviews")
     expect(frame).not.toContain("/connect")
   })
 
@@ -71,6 +73,7 @@ describe("Solid dialog host + command palette", () => {
         },
         showSessions: () => ran.push("sessions"),
         toggleActivity: () => ran.push("activity"),
+        openReviews: () => ran.push("reviews"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -111,6 +114,7 @@ describe("Solid dialog host + command palette", () => {
         cycleTheme: () => "mint",
         showSessions: () => {},
         toggleActivity: () => {},
+        openReviews: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

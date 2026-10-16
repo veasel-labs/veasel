@@ -2,6 +2,7 @@ import { renderHelp } from "../help"
 import { slashCommands } from "../slash-commands"
 import { themes, type BuiltinThemeId } from "../themes"
 import { activityToggleShortcut } from "./activity-group"
+import { reviewShortcut } from "./reviews"
 
 /** Discoverable palette binding. Ctrl+K stays readline kill-line in the composer. */
 export const paletteShortcut = {
@@ -30,6 +31,8 @@ export type PaletteActionHandlers = {
   showSessions: () => void
   /** Document / cue activity-group toggle (Ctrl+G owns the real toggle). */
   toggleActivity: () => void
+  /** Open the Solid pending-review panel (Ctrl+R owns the real shortcut). */
+  openReviews: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -111,6 +114,15 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       keywords: ["activity", "tools", "group", "collapse", "expand"],
       shortcut: activityToggleShortcut.label,
       run: () => handlers.toggleActivity(),
+    },
+    {
+      id: "veasel.reviews.open",
+      title: "Open pending reviews",
+      description: `Review file edits, shell commands, and MCP calls (${reviewShortcut.label})`,
+      group: "session",
+      keywords: ["review", "approve", "reject", "patch", "shell", "mcp", "diff"],
+      shortcut: reviewShortcut.label,
+      run: () => handlers.openReviews(),
     },
   ]
 

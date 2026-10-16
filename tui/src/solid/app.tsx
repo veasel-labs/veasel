@@ -14,8 +14,18 @@ import {
 } from "./commands"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { openCommandPalette } from "./component/command-palette"
+import { openReviewPanel } from "./component/review-panel"
+import {
+  demoPendingReviews,
+  pendingStatusForReviews,
+  reviewShortcut,
+  settleReviews,
+  type ReviewDecision,
+  type SolidReviewItem,
+} from "./reviews"
 import type { BuiltinThemeId } from "../themes"
 import { defaultThemeId } from "../themes"
+import type { ActiveReview } from "../active-review"
 
 export type SolidAppProps = {
   status?: string
@@ -23,6 +33,8 @@ export type SolidAppProps = {
   directory?: string
   /** Seed messages for the conversation pane (fixture / tests / demo). */
   initialMessages?: ToolAwareMessage[]
+  /** Seed pending reviews for demos / tests (defaults to demo fixture). */
+  initialReviews?: SolidReviewItem[]
   streaming?: boolean
   streamingText?: string
   streamingCursor?: string
@@ -30,6 +42,8 @@ export type SolidAppProps = {
   followTail?: boolean
   scrollRef?: (box: ScrollBoxRenderable | undefined) => void
   onSubmit?: (text: string) => void
+  /** Optional hook when a Solid review decision is made (fixture settle still runs). */
+  onReviewDecide?: (decision: ReviewDecision, targets: ActiveReview[]) => void
 }
 
 const demoFixture: ToolAwareMessage[] = [
@@ -40,7 +54,7 @@ const demoFixture: ToolAwareMessage[] = [
   {
     role: "assistant",
     content:
-      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.\nPress Ctrl+P for commands · Ctrl+G toggles the latest activity group.",
+      "Conversation turns render through transcriptSegments on an OpenTUI scrollbox.\nSticky follow-tail keeps the live reply in view while streaming.\nPress Ctrl+P for commands · Ctrl+G toggles activity · Ctrl+R opens pending reviews.",
   },
   {
     role: "tool",
@@ -62,16 +76,37 @@ const demoFixture: ToolAwareMessage[] = [
 
 function AppShell(props: SolidAppProps) {
   const dialog = useDialog()
-  const status = () => props.status ?? "LOCAL · Solid shell"
   const sessionTitle = () => props.sessionTitle ?? "Solid transcript"
   const directory = () => props.directory ?? "~/veasel"
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>(
     props.initialMessages ?? demoFixture,
   )
+  const [reviews, setReviews] = createSignal<SolidReviewItem[]>(
+    props.initialReviews ?? demoPendingReviews(),
+  )
   const [notice, setNotice] = createSignal(props.notice ?? "")
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
+
+  const status = createMemo(() => {
+    const pending = pendingStatusForReviews(reviews())
+    if (pending) return pending
+    return props.status ?? "LOCAL · Solid shell"
+  })
+
+  const openReviews = () => {
+    setComposerFocused(false)
+    openReviewPanel(dialog, {
+      reviews: reviews(),
+      onDecide: (decision, targets) => {
+        props.onReviewDecide?.(decision, targets)
+        setReviews((prev) => settleReviews(prev, targets))
+        const verb = decision === "approve" ? "Approved" : "Rejected"
+        setNotice(`${verb} ${targets.length} review${targets.length === 1 ? "" : "s"} (Solid stub)`)
+      },
+    })
+  }
 
   const commands = createMemo(() =>
     buildPaletteCommands({
@@ -94,6 +129,9 @@ function AppShell(props: SolidAppProps) {
         setActivityToggleTick((tick) => tick + 1)
         setNotice(`Activity · toggled latest group (${activityToggleShortcut.label})`)
       },
+      openReviews: () => {
+        openReviews()
+      },
     }),
   )
 
@@ -112,6 +150,11 @@ function AppShell(props: SolidAppProps) {
     if (key.ctrl && key.name === paletteShortcut.name && !key.meta) {
       key.preventDefault()
       openPalette()
+      return
+    }
+    if (key.ctrl && key.name === reviewShortcut.name && !key.meta) {
+      key.preventDefault()
+      openReviews()
     }
   })
 
@@ -162,7 +205,8 @@ function AppShell(props: SolidAppProps) {
         <text fg={solidMint.body}>{sessionTitle()}</text>
         <text fg={solidMint.muted}>
           {" "}
-          · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity
+          · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity ·{" "}
+          {reviewShortcut.label} reviews
         </text>
       </box>
 
@@ -186,7 +230,7 @@ function AppShell(props: SolidAppProps) {
 }
 
 // Veasel-branded Solid shell: header + session chrome + transcript + composer
-// + dialog host / command palette. HTTP session wiring stays optional.
+// + dialog host / command palette / review panel. HTTP session wiring stays optional.
 export function App(props: SolidAppProps = {}) {
   return (
     <DialogProvider>

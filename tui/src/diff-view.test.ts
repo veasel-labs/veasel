@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { ResourceContext } from "@opentui/core"
 import {
   createDiffSyntaxStyle,
   cycleReviewDiffSurface,
@@ -57,10 +58,12 @@ describe("review diff surface", () => {
     expect(styles.comment?.fg).toBe(themes.ember.meta)
     expect(styles.string?.fg).toBe(themes.ember.diffAdd)
     expect(styles.function?.fg).toBe(themes.ember.diffMeta)
-    const syntax = createDiffSyntaxStyle(themes.ember)
+    const owner = new ResourceContext({ objectCapacity: 64, renderCellsMax: 256 })
+    const syntax = createDiffSyntaxStyle(themes.ember, owner)
     expect(syntax.getRegisteredNames()).toContain("keyword")
     expect(syntax.getRegisteredNames()).toContain("comment")
     syntax.destroy()
+    owner.destroy()
   })
 
   test("derives a filetype hint from the review path", () => {

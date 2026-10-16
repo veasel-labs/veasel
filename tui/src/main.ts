@@ -559,7 +559,7 @@ detail.add(sessionDetail)
 // OpenTUI DiffRenderable split view for patch reviews (toggled with v). Mounted
 // only while split surface is active so it never steals flex height from chat.
 // Theme-mapped SyntaxStyle + shared TreeSitterClient drive filetype highlighting.
-let reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme)
+let reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme, renderer.nativeScene)
 const reviewDiffTreeSitter = getTreeSitterClient()
 const reviewDiffRenderable = new DiffRenderable(renderer, {
   id: "review-diff",
@@ -576,7 +576,7 @@ let reviewDiffMounted = false
 // Follow-mode latest assistant via MarkdownRenderable (live stream + completed
 // history). Scrolled windows fall back to TextChunk markdown tones so Home/PgUp
 // still page earlier deltas.
-let streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme)
+let streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme, renderer.nativeScene)
 const streamMarkdownRenderable = new MarkdownRenderable(renderer, {
   id: "stream-markdown",
   content: "",
@@ -798,10 +798,10 @@ function applyTheme(next: Theme) {
   reviewDiffRenderable.selectionBg = diffColors.selectionBg
   reviewDiffRenderable.selectionFg = diffColors.selectionFg
   reviewDiffSyntaxStyle.destroy()
-  reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme)
+  reviewDiffSyntaxStyle = createDiffSyntaxStyle(theme, renderer.nativeScene)
   reviewDiffRenderable.syntaxStyle = reviewDiffSyntaxStyle
   streamMarkdownSyntaxStyle.destroy()
-  streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme)
+  streamMarkdownSyntaxStyle = createMarkdownSyntaxStyle(theme, renderer.nativeScene)
   streamMarkdownRenderable.syntaxStyle = streamMarkdownSyntaxStyle
   streamMarkdownRenderable.fg = theme.assistantText
   footer.backgroundColor = theme.headerBg

@@ -18,7 +18,7 @@ export function demoHighlights(): HighlightEntry[] {
     },
     {
       title: "Open recent sessions & worktrees",
-      body: "Ctrl+O opens sessions and project worktrees (HTTP catalog wire next).",
+      body: "Ctrl+O opens sessions and live git worktrees (GET workspace/git/worktrees).",
     },
     {
       title: "Reviews stay first-class",

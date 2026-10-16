@@ -368,7 +368,7 @@ function AppShell(props: SolidAppProps) {
             toast.info(`Opened · ${session.title}`, "Open")
           },
           onOpenWorktree: (worktree) => {
-            setNotice(`Worktree · ${worktree.path} (Solid stub — session.move wire next)`)
+            setNotice(`Worktree · ${worktree.path} (fixture stub — LiveApp uses session HTTP)`)
             toast.success(`Opened worktree · ${worktree.name}`, "Open")
           },
         })

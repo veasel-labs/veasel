@@ -47,6 +47,26 @@ export type SendMessageResult =
   | { kind: "async"; operationId: string }
   | { kind: "sync"; messages: ChatTurn[] }
 
+/** Git worktree row from GET /v1/sessions/{id}/workspace/git/worktrees. */
+export type ApiGitWorktree = {
+  path: string
+  head?: string
+  branch?: string
+  locked: boolean
+  missing: boolean
+  is_main: boolean
+}
+
+export type ApiGitWorktreeCatalog = {
+  worktrees: ApiGitWorktree[]
+}
+
+export type AddGitWorktreeInput = {
+  path: string
+  branch?: string
+  new_branch?: string
+}
+
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
   onTurnCompleted?: (sessionId: string, completion: SessionTurnCompletion) => void
@@ -117,6 +137,32 @@ export class VeaselApiClient {
     const response = await fetch(`${this.base}/v1/config/model`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return await response.json() as ModelSettingsView
+  }
+
+  async listGitWorktrees(sessionId: string): Promise<ApiGitWorktreeCatalog> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/git/worktrees`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiGitWorktreeCatalog
+  }
+
+  async addGitWorktree(
+    sessionId: string,
+    input: AddGitWorktreeInput,
+  ): Promise<ApiGitWorktree> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/git/worktrees`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+        signal: this.signal,
+      },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiGitWorktree
   }
 
   async sendMessage(

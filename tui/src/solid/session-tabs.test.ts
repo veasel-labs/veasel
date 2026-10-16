@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
+  clearSessionUnread,
+  formatSessionTabLabel,
+  markSessionUnread,
   moveSessionTabIndex,
+  sessionTabUnreadMarker,
   sessionTabsFromEntries,
   truncateTabTitle,
   visibleSessionTabs,
@@ -33,5 +37,26 @@ describe("session tabs helpers", () => {
 
     const all = visibleSessionTabs(tabs.slice(0, 3), "s1", 6)
     expect(all.overflowLeft + all.overflowRight).toBe(0)
+  })
+
+  test("marks unread for background sessions only", () => {
+    const marked = markSessionUnread({}, "bg", "fg")
+    expect(marked).toEqual({ bg: true })
+    expect(markSessionUnread(marked, "fg", "fg")).toEqual({ bg: true })
+    expect(clearSessionUnread(marked, "bg")).toEqual({})
+  })
+
+  test("projects unread onto tab entries and formats labels", () => {
+    const tabs = sessionTabsFromEntries(
+      [
+        { id: "a", title: "Alpha" },
+        { id: "b", title: "Beta session with a long title" },
+      ],
+      { b: true },
+    )
+    expect(tabs[0]?.unread).toBe(false)
+    expect(tabs[1]?.unread).toBe(true)
+    expect(formatSessionTabLabel(tabs[0]!)).toBe("Alpha")
+    expect(formatSessionTabLabel(tabs[1]!, 12)).toBe(`${sessionTabUnreadMarker} Beta sess…`)
   })
 })

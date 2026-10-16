@@ -80,7 +80,12 @@ import {
   writeSessionExport,
 } from "./session-export"
 import type { SolidMcpServer } from "./component/mcp-dialog"
-import { moveSessionTabIndex, sessionTabsFromEntries } from "./session-tabs"
+import {
+  clearSessionUnread,
+  markSessionUnread,
+  moveSessionTabIndex,
+  sessionTabsFromEntries,
+} from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import {
   HOME_SIDEBAR_DEFAULT,
@@ -144,6 +149,8 @@ function LiveAppShell(props: LiveAppProps) {
   const [sessions, setSessions] = createSignal<SolidSessionEntry[]>([])
   const [selectedIndex, setSelectedIndex] = createSignal(0)
   const [activeSessionId, setActiveSessionId] = createSignal<string | undefined>()
+  /** Session ids with background turn completions while another tab is focused. */
+  const [unreadSessionIds, setUnreadSessionIds] = createSignal<Record<string, true>>({})
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>([])
   const [status, setStatus] = createSignal(formatBusyStatus("connecting"))
   const [streaming, setStreaming] = createSignal(false)
@@ -758,6 +765,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   const openSession = async (session: SolidSessionEntry) => {
     setActiveSessionId(session.id)
+    setUnreadSessionIds((current) => clearSessionUnread(current, session.id))
     setMessages([])
     setStreamingText("")
     setStreaming(false)
@@ -797,7 +805,11 @@ function LiveAppShell(props: LiveAppProps) {
       const oldest = handledCompletions.values().next().value
       if (oldest) handledCompletions.delete(oldest)
     }
-    if (activeTurnId() !== operationId && activeSessionId() !== sessionId) return
+    const focused = activeSessionId() === sessionId
+    if (!focused) {
+      setUnreadSessionIds((current) => markSessionUnread(current, sessionId, activeSessionId()))
+      if (activeTurnId() !== operationId) return
+    }
     try {
       const latest = await props.api.listMessages(sessionId)
       if (activeSessionId() === sessionId) {
@@ -1569,7 +1581,7 @@ function LiveAppShell(props: LiveAppProps) {
         }
       >
         <SessionTabs
-          tabs={sessionTabsFromEntries(sessions())}
+          tabs={sessionTabsFromEntries(sessions(), unreadSessionIds())}
           activeId={activeSessionId()}
           onSelect={(id) => {
             const session = sessions().find((item) => item.id === id)

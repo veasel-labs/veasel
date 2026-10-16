@@ -1,13 +1,45 @@
 export type SessionTab = {
   id: string
   title: string
+  /** Background activity while another session is focused (OpenCode unread idea). */
+  unread?: boolean
 }
+
+/** Spoken unread glyph — works without color (reduced-motion / a11y). */
+export const sessionTabUnreadMarker = "●"
 
 export function truncateTabTitle(title: string, max = 18): string {
   const trimmed = title.trim() || "Session"
   if (trimmed.length <= max) return trimmed
   const head = trimmed.slice(0, Math.max(1, max - 1)).trimEnd()
   return `${head || trimmed.slice(0, 1)}…`
+}
+
+/** Tab label with optional unread marker; reserve marker width inside the truncate budget. */
+export function formatSessionTabLabel(tab: SessionTab, max = 18): string {
+  if (!tab.unread) return truncateTabTitle(tab.title, max)
+  const budget = Math.max(1, max - 2)
+  return `${sessionTabUnreadMarker} ${truncateTabTitle(tab.title, budget)}`
+}
+
+/** Mark a session unread unless it is the focused tab. */
+export function markSessionUnread(
+  unread: Readonly<Record<string, true>>,
+  sessionId: string,
+  activeId: string | undefined,
+): Record<string, true> {
+  if (!sessionId || sessionId === activeId) return { ...unread }
+  return { ...unread, [sessionId]: true }
+}
+
+export function clearSessionUnread(
+  unread: Readonly<Record<string, true>>,
+  sessionId: string,
+): Record<string, true> {
+  if (!Object.prototype.hasOwnProperty.call(unread, sessionId)) return { ...unread }
+  const next = { ...unread }
+  delete next[sessionId]
+  return next
 }
 
 export function moveSessionTabIndex(index: number, delta: number, length: number): number {
@@ -55,9 +87,11 @@ export function visibleSessionTabs(
 
 export function sessionTabsFromEntries(
   entries: readonly { id: string; title: string }[],
+  unread: Readonly<Record<string, true>> = {},
 ): SessionTab[] {
   return entries.map((entry) => ({
     id: entry.id,
     title: entry.title.trim() || "Session",
+    unread: Boolean(unread[entry.id]),
   }))
 }

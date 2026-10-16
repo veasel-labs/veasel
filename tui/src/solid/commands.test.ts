@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  buildLivePaletteCommands,
   buildPaletteCommands,
   filterPaletteCommands,
   nextBuiltinThemeId,
@@ -113,5 +114,29 @@ describe("Solid palette commands", () => {
   test("palette help text comes from renderHelp", () => {
     expect(paletteHelpText(true)).toContain("VEASEL CODE / QUICK HELP")
     expect(paletteHelpText(false)).toContain("/connect")
+  })
+
+  test("live palette exposes settings, open, workspaces, quit", () => {
+    const ran: string[] = []
+    const commands = buildLivePaletteCommands({
+      showHelp: () => ran.push("help"),
+      openSettings: () => ran.push("settings"),
+      createSession: () => ran.push("new"),
+      openRecent: () => ran.push("open"),
+      openWorkspaces: () => ran.push("workspaces"),
+      quit: () => ran.push("quit"),
+    })
+    expect(commands.map((command) => command.id)).toEqual([
+      "veasel.help",
+      "veasel.settings",
+      "veasel.session.new",
+      "veasel.open",
+      "veasel.workspaces",
+      "veasel.quit",
+    ])
+    expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual(["veasel.settings"])
+    commands.find((command) => command.id === "veasel.settings")!.run()
+    commands.find((command) => command.id === "veasel.open")!.run()
+    expect(ran).toEqual(["settings", "open"])
   })
 })

@@ -153,7 +153,8 @@ fn (mut p WindowsMcpStdioProcess) read_pipe(which int) string {
 	}
 	mut buf := []u8{len: 65536}
 	mut out_len := 0
-	if C.veasel_win_mcp_stdio_read(&p.raw, which, &buf[0], buf.len, &out_len) == 0 || out_len <= 0 {
+	ok := unsafe { C.veasel_win_mcp_stdio_read(&p.raw, which, &buf[0], buf.len, &out_len) }
+	if ok == 0 || out_len <= 0 {
 		return ''
 	}
 	return buf[..out_len].bytestr()

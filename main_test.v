@@ -1544,7 +1544,7 @@ fn test_resume_rejects_autonomous_when_policy_disabled() {
 	app.resume_durable_queued_operations()
 	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
 	assert operation.status == 'cancelled'
-	assert operation.error == 'Queued autonomous turn cannot start because the isolated benchmark policy is disabled.'
+	assert operation.error == 'Queued turn cannot start because its execution policy is disabled on this server.'
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 

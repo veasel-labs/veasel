@@ -22,6 +22,11 @@ import { ToastProvider, useToast } from "./ui/toast"
 import { openDialogHelp } from "./ui/dialog-help"
 import { SolidComposer } from "./composer"
 import { SolidTranscript, transcriptMessagesFromChatTurns, type ToolAwareMessage } from "./transcript"
+import {
+  cycleTranscriptVerbosity,
+  transcriptVerbosityLabel,
+  type TranscriptVerbosity,
+} from "./transcript-verbosity"
 import { LiveHome } from "./component/live-home"
 import { openProviderSettingsDialog } from "./component/provider-settings-dialog"
 import { openCommandPalette } from "./component/command-palette"
@@ -186,6 +191,7 @@ function LiveAppShell(props: LiveAppProps) {
       userOnly: request.userOnly,
     })
   }
+  const [verbosity, setVerbosity] = createSignal<TranscriptVerbosity>("default")
   const terminalColumns = () => process.stdout.columns ?? 80
   const [sidebarWidth, setSidebarWidth] = createSignal(
     loadHomeSidebarWidth({}, terminalColumns()),
@@ -1378,6 +1384,12 @@ function LiveAppShell(props: LiveAppProps) {
         previousUserMessage: () => requestMessageNav({ direction: "prev", userOnly: true }),
         nextUserMessage: () => requestMessageNav({ direction: "next", userOnly: true }),
         lastUserMessage: () => requestMessageNav({ action: "last-user" }),
+        cycleVerbosity: () => {
+          const next = cycleTranscriptVerbosity(verbosity())
+          setVerbosity(next)
+          toast.info(`Verbosity · ${transcriptVerbosityLabel(next)}`, "Transcript")
+          return next
+        },
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -1605,6 +1617,7 @@ function LiveAppShell(props: LiveAppProps) {
           followTail={true}
           enableActivityKeys={!dialog.open()}
           messageNavRequest={messageNavRequest}
+          verbosity={verbosity}
           onMessageNavigated={(info) => {
             toast.info(`Jumped to ${info.role} message`, "Transcript")
           }}

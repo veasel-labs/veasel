@@ -31,6 +31,10 @@ describe("Solid palette commands", () => {
       previousUserMessage: () => ran.push("prev-user"),
       nextUserMessage: () => ran.push("next-user"),
       lastUserMessage: () => ran.push("last-user"),
+      cycleVerbosity: () => {
+        ran.push("verbosity")
+        return "quiet" as const
+      },
       openReviews: () => ran.push("reviews"),
       showToast: () => ran.push("toast"),
       showConfirm: () => ran.push("confirm"),
@@ -61,6 +65,7 @@ describe("Solid palette commands", () => {
     expect(commands.some((command) => command.id === "veasel.message.user.previous")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.message.user.next")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.message.user.last")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.transcript.verbosity")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.reviews.open")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.toast.demo")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.confirm.demo")).toBe(true)
@@ -154,6 +159,10 @@ describe("Solid palette commands", () => {
       previousUserMessage: () => ran.push("prev-user"),
       nextUserMessage: () => ran.push("next-user"),
       lastUserMessage: () => ran.push("last-user"),
+      cycleVerbosity: () => {
+        ran.push("verbosity")
+        return "default" as const
+      },
       nextSessionTab: () => ran.push("tab-next"),
       prevSessionTab: () => ran.push("tab-prev"),
       widenSidebar: () => ran.push("widen"),
@@ -187,6 +196,7 @@ describe("Solid palette commands", () => {
       "veasel.message.user.previous",
       "veasel.message.user.next",
       "veasel.message.user.last",
+      "veasel.transcript.verbosity",
       "veasel.status",
       "veasel.session.export",
       "veasel.mcp.list",

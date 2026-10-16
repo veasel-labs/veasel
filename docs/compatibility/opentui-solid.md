@@ -69,6 +69,10 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   last user message. Palette ids `veasel.message.user.previous|next|last`.
   Pattern informed by OpenCode `message-navigation.ts` / `anchors.ts`
   (engineering only; Veasel-owned shortcuts and `veasel.*` command ids).
+- Transcript verbosity (`solid/transcript-verbosity.ts`): palette
+  `veasel.transcript.verbosity` cycles Quiet (hide tools + thinking) →
+  Default (current activity groups) → Everything (force-expand groups).
+  Pattern informed by OpenCode `mini/verbosity.ts` (engineering only).
 - Reviews / approvals (`solid/reviews.ts` + `solid/component/review-panel.tsx`):
   large dialog overlay for pending file edits, shell commands, and MCP calls.
   Reuses `reviewHotkey` / `formatReviewDiff` / `formatShellReview` /

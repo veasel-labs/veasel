@@ -44,6 +44,11 @@ import {
   messageNavShortcut,
   type TranscriptNavDirection,
 } from "./transcript-nav"
+import {
+  applyTranscriptVerbosity,
+  verbosityExpandsActivity,
+  type TranscriptVerbosity,
+} from "./transcript-verbosity"
 
 /** Map durable chat-history turns into transcript message shape. */
 export function transcriptMessagesFromChatTurns(turns: ChatTurn[]): TranscriptMessage[] {
@@ -82,6 +87,8 @@ export type SolidTranscriptProps = {
   >
   /** Fired after a successful jump (status / toast). */
   onMessageNavigated?: (info: { index: number; role: string }) => void
+  /** Transcript verbosity (quiet / default / everything). */
+  verbosity?: TranscriptVerbosity | Accessor<TranscriptVerbosity>
   /** Rendered-entry budget for the initial sticky-tail window. */
   mountBudget?: number
   /** Extra weight to mount when the viewport approaches the top. */
@@ -181,7 +188,13 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const anchors = new Map<number, Pick<Renderable, "y" | "height" | "isDestroyed">>()
 
   const resolved = createMemo(() => resolveMessages(props.messages))
-  const blocks = createMemo(() => projectTranscriptBlocks(resolved()))
+  const verbosity = (): TranscriptVerbosity => {
+    const value = props.verbosity
+    if (typeof value === "function") return value()
+    return value ?? "default"
+  }
+  const displayMessages = createMemo(() => applyTranscriptVerbosity(resolved(), verbosity()))
+  const blocks = createMemo(() => projectTranscriptBlocks(displayMessages()))
 
   const registerAnchor = (index: number, node: Pick<Renderable, "y" | "height" | "isDestroyed">) => {
     anchors.set(index, node)
@@ -208,7 +221,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const jumpToMessageIndex = (messageIndex: number) => {
     ensureMessageMounted(messageIndex)
     setNavIndex(messageIndex)
-    const role = resolved()[messageIndex]?.role ?? "user"
+    const role = displayMessages()[messageIndex]?.role ?? "user"
     queueMicrotask(() => {
       if (!scrollBox || scrollBox.isDestroyed) return
       scrollBox.stickyScroll = false
@@ -223,7 +236,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   }
 
   const navigateMessages = (direction: TranscriptNavDirection, userOnly = true) => {
-    const targets = listMessageNavTargets(resolved(), { userOnly })
+    const targets = listMessageNavTargets(displayMessages(), { userOnly })
     if (targets.length === 0) return false
     const positions = anchorPositions().filter((child) =>
       targets.some((target) => target.index === child.index),
@@ -247,17 +260,20 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   }
 
   const jumpLastUser = () => {
-    const target = findLastUserMessageTarget(resolved())
+    const target = findLastUserMessageTarget(displayMessages())
     if (!target) return false
     return jumpToMessageIndex(target.index)
+  }
+
+  const groupIsExpanded = (groupId: string, items: ToolCallItem[]) => {
+    if (verbosityExpandsActivity(verbosity())) return true
+    return isGroupExpanded(expanded(), groupId, items)
   }
 
   const weights = createMemo(() =>
     blocks().map((block) =>
       blockMountWeight(block, (groupId) =>
-        block.type === "activity"
-          ? isGroupExpanded(expanded(), groupId, block.items)
-          : false,
+        block.type === "activity" ? groupIsExpanded(groupId, block.items) : false,
       ),
     ),
   )
@@ -302,7 +318,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   })
 
   const trailSegments = createMemo(() => {
-    const empty = resolved().length === 0
+    const empty = displayMessages().length === 0 && resolved().length === 0
     const hasTrail = Boolean(
       props.pendingUserMessage || props.streaming || props.streamingText || props.hasOlder || empty,
     )
@@ -317,6 +333,16 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       cols: props.cols,
     })
   })
+
+  // Reset message cursor when verbosity changes so geometry matches the new list.
+  createEffect(
+    on(
+      () => verbosity(),
+      () => {
+        setNavIndex(undefined)
+      },
+    ),
+  )
 
   const toggleGroup = (groupId: string) => {
     setExpanded((prev) => toggleGroupExpanded(prev, groupId))
@@ -495,8 +521,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
               >
                 <ActivityGroupView
                   block={block as Extract<TranscriptBlock, { type: "activity" }>}
-                  expanded={isGroupExpanded(
-                    expanded(),
+                  expanded={groupIsExpanded(
                     (block as Extract<TranscriptBlock, { type: "activity" }>).id,
                     (block as Extract<TranscriptBlock, { type: "activity" }>).items,
                   )}

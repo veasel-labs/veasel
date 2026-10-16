@@ -303,6 +303,37 @@ describe("Solid transcript scrollbox", () => {
     expect(frame).toContain("busy")
   })
 
+  test("quiet verbosity hides tools and thinking fences", async () => {
+    const turns: ToolAwareMessage[] = [
+      { role: "user", content: "inspect" },
+      {
+        role: "assistant",
+        content: "```thinking\nhidden\n```\nquiet-visible-answer",
+      },
+      {
+        role: "tool",
+        content: "read: quiet-hidden-tool.ts",
+        toolName: "read",
+        toolStatus: "done",
+      },
+    ]
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript messages={turns} followTail={true} verbosity="quiet" />
+        </box>
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("quiet-visible-answer")
+    expect(frame).not.toContain("quiet-hidden-tool")
+    expect(frame).not.toContain("hidden")
+    expect(frame).not.toContain("activity")
+  })
+
   test("messageNavRequest jumps last then previous user message", async () => {
     const turns: ToolAwareMessage[] = [
       { role: "user", content: "alpha-user-marker unique" },

@@ -270,9 +270,9 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
     {
       id: "veasel.variant.picker",
       title: "Select variant",
-      description: "Model variant / effort preset (maps to output budget later)",
+      description: "Output-budget preset (fast / default / max → max_output_tokens)",
       group: "setup",
-      keywords: ["variant", "effort", "fast", "max", "budget"],
+      keywords: ["variant", "effort", "fast", "max", "budget", "tokens"],
       run: () => handlers.showVariant(),
     },
     {
@@ -338,6 +338,7 @@ export type LivePaletteHandlers = {
   showHelp: () => void
   openSettings: () => void
   showModelPicker: () => void
+  showVariant: () => void
   createSession: () => void
   openRecent: () => void
   openWorkspaces: () => void
@@ -390,6 +391,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["model", "models", "llm", "provider", "catalog"],
       shortcut: "F2",
       run: () => handlers.showModelPicker(),
+    },
+    {
+      id: "veasel.variant.picker",
+      title: "Select variant",
+      description: "Output-budget preset (fast / default / max → max_output_tokens)",
+      group: "setup",
+      keywords: ["variant", "effort", "fast", "max", "budget", "tokens"],
+      shortcut: "F3",
+      run: () => handlers.showVariant(),
     },
     {
       id: "veasel.theme.cycle",

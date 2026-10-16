@@ -38,9 +38,17 @@ import {
   openModelDialog,
   type SolidModelRef,
 } from "./component/model-dialog"
+import { openVariantDialog } from "./component/variant-dialog"
 import { SessionRenameDialog } from "./component/session-rename-dialog"
 import { formatActiveModelLabel } from "../session-model"
 import { safeModelCatalogText } from "../model-providers"
+import {
+  modelVariantIds,
+  outputBudgetForVariant,
+  variantBudgetLabel,
+  variantForOutputBudget,
+  type ModelVariantId,
+} from "./variant-budget"
 import { skillCatalogFromPlugins } from "./skills-inventory"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
@@ -747,6 +755,55 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const openLiveVariantPicker = async () => {
+    setComposerFocused(false)
+    try {
+      const settings = await props.api.getModelSettings()
+      const provider = settings.active_provider
+      const providerInfo = settings.providers.find((item) => item.id === provider)
+      const profile = settings.profiles[provider]
+      if (!profile?.model) {
+        toast.info("Configure a model first (F2 or Provider settings)", "Variant")
+        setComposerFocused(true)
+        return
+      }
+      const current = variantForOutputBudget(profile.max_output_tokens)
+      openVariantDialog(dialog, {
+        variants: [...modelVariantIds],
+        current,
+        onSelect: (variant) => {
+          const id = (variant ?? "default") as ModelVariantId
+          const budget = outputBudgetForVariant(id)
+          void (async () => {
+            try {
+              await props.api.updateModelSettings({
+                provider,
+                model: profile.model,
+                base_url: profile.base_url || providerInfo?.base_url || "",
+                max_output_tokens: budget,
+              })
+              toast.success(`Variant · ${variantBudgetLabel(id)}`, "Variant")
+            } catch (error) {
+              toast.info(
+                error instanceof Error ? error.message : "could not save variant",
+                "Variant",
+              )
+            } finally {
+              setComposerFocused(true)
+            }
+          })()
+        },
+        onCancel: () => setComposerFocused(true),
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not load model settings",
+        "Variant",
+      )
+      setComposerFocused(true)
+    }
+  }
+
   const sessionIdForWorktrees = () =>
     activeSessionId() ?? sessions()[selectedIndex()]?.id ?? sessions()[0]?.id
 
@@ -936,6 +993,9 @@ function LiveAppShell(props: LiveAppProps) {
         showModelPicker: () => {
           void openLiveModelPicker()
         },
+        showVariant: () => {
+          void openLiveVariantPicker()
+        },
         createSession: () => {
           void createSession()
         },
@@ -1036,6 +1096,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.name === "f2" && !key.ctrl && !key.meta) {
       key.preventDefault()
       void openLiveModelPicker()
+      return
+    }
+    if (key.name === "f3" && !key.ctrl && !key.meta) {
+      key.preventDefault()
+      void openLiveVariantPicker()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {

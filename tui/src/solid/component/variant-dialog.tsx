@@ -6,9 +6,10 @@ export type VariantDialogProps = {
   variants: string[]
   current?: string
   onSelect: (variant: string | undefined) => void
+  onCancel?: () => void
 }
 
-/** Demo model variants (OpenCode-style; Veasel maps to output-budget later). */
+/** Named output-budget presets (OpenCode-style variants → max_output_tokens). */
 export function demoVariants(): string[] {
   return ["default", "fast", "max"]
 }
@@ -31,5 +32,6 @@ export function openVariantDialog(
     onSelect: (option) => {
       props.onSelect(option.value === "default" ? undefined : option.value)
     },
+    onCancel: props.onCancel,
   })
 }

@@ -33,14 +33,21 @@ compatibility and does not authorize copying branding or product chrome.
   turns. Mint tone colors mirror `main.ts` `buildTranscriptStyles`.
   MarkdownRenderable follow-mode (`markdown-view.ts`) remains on the imperative
   path until a later dual-surface slice.
+- Dialog host (`solid/ui/dialog.tsx`): overlay stack with Esc dismiss, restore
+  previous focus, mint panel chrome. Command palette
+  (`solid/component/command-palette.tsx` + `solid/commands.ts`) opens on
+  **Ctrl+P** (Ctrl+K remains composer kill-line). Actions reuse `slashCommands`,
+  `renderHelp`, builtin theme cycle, and a session-list stub under `veasel.*`
+  ids — engineering pattern from OpenCode dialog/palette modules, not product
+  keys or branding.
 
 ## Startup note (light)
 
 Solid entry (`bun run start:solid`) loads `@opentui/solid` + the transcript
-scrollbox in addition to core. A local import smoke (~2026-10-16) showed
-`solid/transcript.tsx` ~280 ms vs a thin legacy helper ~160 ms cold; keep
-measuring with `benchmarks/tui-startup*` before default cutover. No V backend
-changes in the transcript slice.
+scrollbox and dialog/palette modules in addition to core. A local import smoke
+(~2026-10-16) showed `solid/transcript.tsx` ~280 ms vs a thin legacy helper
+~160 ms cold; keep measuring with `benchmarks/tui-startup*` before default
+cutover. No V backend changes in the transcript or palette slices.
 
 Do not copy OpenCode logos, splash art, or product strings. Prefer Veasel mint
 tokens and HTTP-API client boundaries.

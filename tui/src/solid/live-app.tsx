@@ -570,8 +570,11 @@ function LiveAppShell(props: LiveAppProps) {
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
       if (reviews.length === 0) {
-        toast.info("No pending edits, shell commands, or MCP calls", "Reviews")
-        setComposerFocused(true)
+        openDialogAlert(dialog, {
+          title: "Reviews",
+          message: "No pending edits, shell commands, or MCP calls.",
+          onConfirm: () => setComposerFocused(true),
+        })
         return
       }
       openReviewPanel(dialog, {

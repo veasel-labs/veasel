@@ -17,6 +17,11 @@ import { ToastProvider, useToast } from "./ui/toast"
 import { openCommandPalette } from "./component/command-palette"
 import { openReviewPanel } from "./component/review-panel"
 import {
+  demoSessions,
+  SessionListDialog,
+  type SolidSessionEntry,
+} from "./component/session-list-dialog"
+import {
   demoPendingReviews,
   pendingStatusForReviews,
   reviewShortcut,
@@ -36,6 +41,8 @@ export type SolidAppProps = {
   initialMessages?: ToolAwareMessage[]
   /** Seed pending reviews for demos / tests (defaults to demo fixture). */
   initialReviews?: SolidReviewItem[]
+  /** Seed session list for demos / tests (defaults to demo fixture). */
+  initialSessions?: SolidSessionEntry[]
   streaming?: boolean
   streamingText?: string
   streamingCursor?: string
@@ -78,13 +85,24 @@ const demoFixture: ToolAwareMessage[] = [
 function AppShell(props: SolidAppProps) {
   const dialog = useDialog()
   const toast = useToast()
-  const sessionTitle = () => props.sessionTitle ?? "Solid transcript"
   const directory = () => props.directory ?? "~/veasel"
+  const sessionTitle = () => {
+    // Explicit prop wins (tests / host); otherwise follow the active list entry.
+    if (props.sessionTitle) return props.sessionTitle
+    const active = sessions().find((item) => item.id === activeSessionId())
+    return active?.title ?? "Solid transcript"
+  }
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>(
     props.initialMessages ?? demoFixture,
   )
   const [reviews, setReviews] = createSignal<SolidReviewItem[]>(
     props.initialReviews ?? demoPendingReviews(),
+  )
+  const [sessions, setSessions] = createSignal<SolidSessionEntry[]>(
+    props.initialSessions ?? demoSessions(),
+  )
+  const [activeSessionId, setActiveSessionId] = createSignal(
+    (props.initialSessions ?? demoSessions())[0]?.id ?? "",
   )
   const [notice, setNotice] = createSignal(props.notice ?? "")
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
@@ -113,6 +131,42 @@ function AppShell(props: SolidAppProps) {
     })
   }
 
+  const openSessions = () => {
+    setComposerFocused(false)
+    // Re-read signals inside the element factory: push/pop remounts the list
+    // when rename stacks above it, so a frozen sessions snapshot would lose renames.
+    dialog.replace(
+      () => (
+        <SessionListDialog
+          sessions={sessions()}
+          activeId={activeSessionId()}
+          onSelect={(session) => {
+            setActiveSessionId(session.id)
+            toast.info(`Opened · ${session.title}`, "Session")
+          }}
+          onRename={(session, title) => {
+            setSessions((prev) =>
+              prev.map((item) => (item.id === session.id ? { ...item, title } : item)),
+            )
+            toast.success(`Renamed · ${title}`, "Session")
+          }}
+          onCreate={() => {
+            const id = `sess-${Date.now().toString(36)}`
+            const created: SolidSessionEntry = {
+              id,
+              title: "New session",
+              directory: directory(),
+            }
+            setSessions((prev) => [created, ...prev])
+            setActiveSessionId(id)
+            toast.success("Created new session (Solid stub)", "Session")
+          }}
+        />
+      ),
+      { size: "large" },
+    )
+  }
+
   const commands = createMemo(() =>
     buildPaletteCommands({
       showHelp: (compact) => {
@@ -128,7 +182,7 @@ function AppShell(props: SolidAppProps) {
         return next
       },
       showSessions: () => {
-        setNotice("Sessions · home list stub (Solid route next)")
+        openSessions()
       },
       toggleActivity: () => {
         setActivityToggleTick((tick) => tick + 1)

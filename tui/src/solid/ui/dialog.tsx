@@ -29,6 +29,8 @@ export type DialogHost = {
   readonly open: () => boolean
   readonly stack: () => DialogEntry[]
   replace: (element: () => JSX.Element, options?: DialogReplaceOptions | (() => void)) => void
+  /** Stack a dialog above the current one (Esc / pop returns to the previous). */
+  push: (element: () => JSX.Element, options?: DialogReplaceOptions) => void
   clear: () => void
   pop: () => void
 }
@@ -65,6 +67,16 @@ export function DialogProvider(props: ParentProps) {
       }
       for (const entry of stack()) entry.onClose?.()
       setStack([{ element, onClose: normalized.onClose, size: normalized.size }])
+    },
+    push(element, options = {}) {
+      if (stack().length === 0) {
+        previousFocus = renderer.currentFocusedRenderable
+        previousFocus?.blur()
+      }
+      setStack((current) => [
+        ...current,
+        { element, onClose: options.onClose, size: options.size },
+      ])
     },
     clear() {
       for (const entry of stack()) entry.onClose?.()

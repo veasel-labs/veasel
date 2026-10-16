@@ -30,6 +30,12 @@ import {
   resolveAttachmentPath,
   type ComposerAttachment,
 } from "./composer-attachments"
+import {
+  applyComposerReadlineKey,
+  emptyComposerReadlineState,
+  rememberReadlineSubmit,
+  type ComposerReadlineState,
+} from "./composer-readline"
 
 export type SolidComposerProps = {
   placeholder?: string
@@ -62,6 +68,7 @@ export function SolidComposer(props: SolidComposerProps) {
   const [draft, setDraft] = createSignal("")
   const [selected, setSelected] = createSignal(0)
   const [dismissed, setDismissed] = createSignal<ComposerAutocompleteDismissed | undefined>(undefined)
+  const [readline, setReadline] = createSignal<ComposerReadlineState>(emptyComposerReadlineState())
   let area: TextareaRenderable | undefined
   let lastRestoreId: string | undefined
 
@@ -148,6 +155,7 @@ export function SolidComposer(props: SolidComposerProps) {
   const send = (text: string) => {
     const payload = formatMessageWithAttachments(text, attachments())
     if (!payload.trim()) return
+    setReadline((current) => rememberReadlineSubmit(current, payload))
     props.onSubmit?.(payload)
     clearComposer()
   }
@@ -207,63 +215,84 @@ export function SolidComposer(props: SolidComposerProps) {
   useKeyboard((key: KeyEvent) => {
     if (!(props.focused ?? true)) return
     const active = menu()
-    if (!active) return
 
     const consume = () => {
       key.preventDefault()
       key.stopPropagation()
     }
 
-    if (key.name === "down") {
-      consume()
-      setSelected((current) => moveComposerAutocomplete(current, 1, active.items.length))
-      return
-    }
-    if (key.name === "up" || (key.name === "tab" && key.shift)) {
-      consume()
-      setSelected((current) => moveComposerAutocomplete(current, -1, active.items.length))
-      return
-    }
-    if (key.name === "tab" && !key.shift) {
-      consume()
-      // Tab completes; once completed, further Tabs cycle (classic parity).
-      if (isAlreadyCompleted(active, area?.plainText ?? draft(), area?.cursorOffset ?? draft().length) && active.items.length > 1) {
+    if (active) {
+      if (key.name === "down") {
+        consume()
         setSelected((current) => moveComposerAutocomplete(current, 1, active.items.length))
         return
       }
-      accept("tab")
+      if (key.name === "up" || (key.name === "tab" && key.shift)) {
+        consume()
+        setSelected((current) => moveComposerAutocomplete(current, -1, active.items.length))
+        return
+      }
+      if (key.name === "tab" && !key.shift) {
+        consume()
+        // Tab completes; once completed, further Tabs cycle (classic parity).
+        if (isAlreadyCompleted(active, area?.plainText ?? draft(), area?.cursorOffset ?? draft().length) && active.items.length > 1) {
+          setSelected((current) => moveComposerAutocomplete(current, 1, active.items.length))
+          return
+        }
+        accept("tab")
+        return
+      }
+      if (key.name === "home") {
+        consume()
+        setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "home"))
+        return
+      }
+      if (key.name === "end") {
+        consume()
+        setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "end"))
+        return
+      }
+      if (key.name === "pageup") {
+        consume()
+        setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "pageup"))
+        return
+      }
+      if (key.name === "pagedown") {
+        consume()
+        setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "pagedown"))
+        return
+      }
+      if (key.name === "escape") {
+        consume()
+        setDismissed({ kind: active.kind, value: area?.plainText ?? draft() })
+        return
+      }
+      if (key.name === "return" || key.name === "kpenter") {
+        // Prefer keyboard path so textarea submit does not double-fire.
+        consume()
+        accept("enter")
+      }
       return
     }
-    if (key.name === "home") {
-      consume()
-      setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "home"))
-      return
-    }
-    if (key.name === "end") {
-      consume()
-      setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "end"))
-      return
-    }
-    if (key.name === "pageup") {
-      consume()
-      setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "pageup"))
-      return
-    }
-    if (key.name === "pagedown") {
-      consume()
-      setSelected((current) => jumpComposerAutocomplete(current, active.items.length, "pagedown"))
-      return
-    }
-    if (key.name === "escape") {
-      consume()
-      setDismissed({ kind: active.kind, value: area?.plainText ?? draft() })
-      return
-    }
-    if (key.name === "return" || key.name === "kpenter") {
-      // Prefer keyboard path so textarea submit does not double-fire.
-      consume()
-      accept("enter")
-    }
+
+    // Autocomplete closed → classic readline / ↑↓ prompt history.
+    const value = area?.plainText ?? draft()
+    const cursor = area?.cursorOffset ?? value.length
+    const result = applyComposerReadlineKey(
+      { ...readline(), value, cursor },
+      {
+        name: key.name,
+        ctrl: key.ctrl,
+        meta: key.meta,
+        shift: key.shift,
+        sequence: key.sequence,
+      },
+    )
+    if (result.kind === "ignore") return
+    consume()
+    setReadline(result.state)
+    applyEdit(result.state.value, result.state.cursor)
+    props.onDraftChange?.(result.state.value)
   })
 
   return (

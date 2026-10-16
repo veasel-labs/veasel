@@ -54,7 +54,10 @@ import { SessionRenameDialog } from "./component/session-rename-dialog"
 import { openUpdateDialog } from "./component/update-dialog"
 import { openHighlightsDialog } from "./component/highlights-dialog"
 import { openPairDialog } from "./component/pair-dialog"
+import { openShellOutputDialog } from "./component/shell-output-dialog"
+import { openDialogSelect } from "./ui/dialog-select"
 import { liveReleaseHighlights } from "./release-highlights"
+import { shellCommandsWithOutput } from "./shell-output-live"
 import { formatActiveModelLabel } from "../session-model"
 import { safeModelCatalogText, type ModelProvider } from "../model-providers"
 import {
@@ -423,6 +426,59 @@ function LiveAppShell(props: LiveAppProps) {
   const openLivePair = () => {
     setComposerFocused(false)
     openPairDialog(dialog)
+  }
+
+  const openLiveShellOutput = async () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      toast.info("Open a session to browse shell output", "Shell")
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const commands = await props.api.listWorkspaceCommands(sessionId)
+      const withOutput = shellCommandsWithOutput(commands)
+      if (withOutput.length === 0) {
+        toast.info("No completed shell command output yet", "Shell")
+        setComposerFocused(true)
+        return
+      }
+      const openOne = (item: (typeof withOutput)[number]) => {
+        openShellOutputDialog(dialog, {
+          command: item.command,
+          output: item.output ?? "",
+          status: item.status,
+          exitCode: item.exit_code,
+          onClose: () => setComposerFocused(true),
+        })
+      }
+      if (withOutput.length === 1) {
+        openOne(withOutput[0]!)
+        return
+      }
+      openDialogSelect(dialog, {
+        title: "Shell output",
+        placeholder: "Filter commands…",
+        options: withOutput.map((item) => ({
+          title: item.command.split("\n")[0] ?? item.command,
+          value: item.id,
+          description: `${item.status}${item.exit_code !== undefined ? ` · ${item.exit_code}` : ""}`,
+          searchText: `${item.command} ${item.status} ${item.id}`,
+        })),
+        onSelect: (option) => {
+          const item = withOutput.find((entry) => entry.id === option.value)
+          if (item) openOne(item)
+          else setComposerFocused(true)
+        },
+        onCancel: () => setComposerFocused(true),
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not list shell commands",
+        "Shell",
+      )
+      setComposerFocused(true)
+    }
   }
 
   const openLiveReviews = async () => {
@@ -1270,6 +1326,9 @@ function LiveAppShell(props: LiveAppProps) {
         },
         showReviews: () => {
           void openLiveReviews()
+        },
+        showShellOutput: () => {
+          void openLiveShellOutput()
         },
         showSessionTimeline: () => openSessionTimeline(),
         showStatus: () => {

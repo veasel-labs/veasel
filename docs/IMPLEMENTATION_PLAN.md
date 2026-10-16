@@ -19,7 +19,7 @@ route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode
 
 The TUI is TypeScript with OpenTUI, kept as a separate API client; the agent
 runtime, tools and persistence remain in V. Core renderables ship as the
-default (`bun run start` → `src/main.ts`). A SolidJS + `@opentui/solid` **0.5.17**
+default (`bun run start` → `src/main.ts`). A SolidJS + `@opentui/solid` **0.6.2**
 migration is in progress under `tui/src/solid/` (`bun run start:solid`): shell +
 composer, session transcript on OpenTUI `scrollbox` (follow-tail), collapsible
 tool/activity grouping (**Ctrl+G** toggles the latest group; click header also
@@ -407,7 +407,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
-- [ ] Progressive SolidJS + `@opentui/solid` 0.5.17 migration (ordered:
+- [ ] Progressive SolidJS + `@opentui/solid` 0.6.2 migration (ordered:
   shell → … → toast → session dialogs → dialog primitives → product dialogs →
   settings). Shell through model/theme/stash/error/shell dual-path shipped;
   next slices are pane-resize/sidebar, fade/spinner, HTTP session wiring /

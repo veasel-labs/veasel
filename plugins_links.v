@@ -290,8 +290,15 @@ fn add_plugin_link(plugin_directory string, registry_path string, package_path s
 }
 
 // remove_plugin_symlink unlinks a package symlink/junction. On Windows, directory
-// junctions often reject os.rm with "Permission denied"; fall back to os.rmdir.
+// junctions reject os.rm with "Permission denied"; prefer os.rmdir there, then
+// fall back to os.rm for file symlinks on other platforms.
 fn remove_plugin_symlink(link_path string) ! {
+	$if windows {
+		os.rmdir(link_path) or {
+			os.rm(link_path) or { return error(err.msg()) }
+		}
+		return
+	}
 	os.rm(link_path) or {
 		os.rmdir(link_path) or { return error(err.msg()) }
 	}

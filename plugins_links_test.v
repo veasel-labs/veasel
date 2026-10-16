@@ -114,7 +114,8 @@ fn test_plugin_links_replace_and_restore_from_durable_registry() {
 		assert replaced.path == os.real_path(second)
 		assert load_persisted_plugin_links(registry).links['review-tools'] == os.real_path(second)
 
-		os.rm(os.join_path(plugin_dir, 'review-tools')) or { panic(err) }
+		// Windows directory junctions reject os.rm; use the shared unlink helper.
+		remove_plugin_symlink(os.join_path(plugin_dir, 'review-tools')) or { panic(err) }
 		assert !os.exists(os.join_path(plugin_dir, 'review-tools'))
 		restored := list_plugin_links(plugin_dir, registry) or { panic(err) }
 		assert restored.links.len == 1

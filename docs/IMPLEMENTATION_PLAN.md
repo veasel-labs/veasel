@@ -27,8 +27,8 @@ works), a thin dialog host with **Ctrl+P** command palette (Veasel command ids;
 Ctrl+K stays readline kill-line), a pending **reviews** overlay (**Ctrl+R**)
 for file/shell/MCP approvals with `formatReviewDiff` segments or OpenTUI `<diff>`
 split view, a non-modal **toast** host (queue, hover-pause, click dismiss), and Solid
-**session list / rename** dialogs (filter, Ctrl+E rename stack, Ctrl+N create
-stub). Pins and adapted patterns are recorded in
+**session list / rename** dialogs (filter, `r` rename / `n` create when the
+filter is empty). Pins and adapted patterns are recorded in
 [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
 the default entry and feature parity (model favorites, pane-resize, HTTP session
 wiring) are later slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
@@ -76,7 +76,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   wired for theme/activity/review cues; `testRender` coverage.
 - [x] Solid session list + rename dialogs (`session-list-dialog.tsx`,
   `session-rename-dialog.tsx`): filter via `session-list.ts`, digit jump,
-  Ctrl+E rename (dialog `push`/`pop`), Ctrl+N create stub; palette
+  `r` rename (dialog `push`/`pop`), `n` create stub when filter empty; palette
   `veasel.session.list`; fixture demos + `testRender`.
 - [x] Focused V test, TUI typecheck, interactive Linux smoke and reproducible API smoke.
 - [x] Initial OpenAPI contract and documentation.

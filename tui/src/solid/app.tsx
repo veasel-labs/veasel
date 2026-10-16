@@ -1,11 +1,13 @@
 /** @jsxImportSource @opentui/solid */
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal, Show } from "solid-js"
 import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
 import { SolidComposer } from "./composer"
 import { SolidTranscript, type ToolAwareMessage } from "./transcript"
 import { activityToggleShortcut } from "./activity-group"
+import { HomeSplash } from "./component/home-splash"
 import { solidMint } from "./theme"
+import { themes } from "../themes"
 import {
   buildPaletteCommands,
   nextBuiltinThemeId,
@@ -25,6 +27,13 @@ import { demoErrorDetails, openErrorDetailsDialog } from "./component/error-deta
 import { demoShellOutput, openShellOutputDialog } from "./component/shell-output-dialog"
 import { demoMcpServers, openMcpDialog } from "./component/mcp-dialog"
 import { demoSkills, openSkillDialog } from "./component/skill-dialog"
+import { demoAgents, openAgentDialog } from "./component/agent-dialog"
+import { demoVariants, openVariantDialog } from "./component/variant-dialog"
+import {
+  demoWorkspaces,
+  openWorkspacesDialog,
+  type SolidWorkspace,
+} from "./component/workspaces-dialog"
 import { openDialogConfirm } from "./ui/dialog-confirm"
 import { openDialogHelp } from "./ui/dialog-help"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
@@ -124,6 +133,10 @@ function AppShell(props: SolidAppProps) {
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
   const [activeModel, setActiveModel] = createSignal<SolidModelRef>(demoModels()[0]!)
   const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(demoStashEntries())
+  const [activeAgent, setActiveAgent] = createSignal(demoAgents()[0]!.id)
+  const [activeVariant, setActiveVariant] = createSignal<string | undefined>()
+  const [workspaces, setWorkspaces] = createSignal(demoWorkspaces())
+  const [activeWorkspaceId, setActiveWorkspaceId] = createSignal(demoWorkspaces()[0]!.id)
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
 
@@ -314,6 +327,50 @@ function AppShell(props: SolidAppProps) {
           },
         })
       },
+      showAgent: () => {
+        setComposerFocused(false)
+        openAgentDialog(dialog, {
+          agents: demoAgents(),
+          current: activeAgent(),
+          onSelect: (agent) => {
+            setActiveAgent(agent.id)
+            toast.success(`Agent · ${agent.id}`, "Agents")
+          },
+        })
+      },
+      showVariant: () => {
+        setComposerFocused(false)
+        openVariantDialog(dialog, {
+          variants: demoVariants(),
+          current: activeVariant() ?? "default",
+          onSelect: (variant) => {
+            setActiveVariant(variant)
+            toast.info(`Variant · ${variant ?? "default"}`, "Models")
+          },
+        })
+      },
+      showWorkspaces: () => {
+        setComposerFocused(false)
+        openWorkspacesDialog(dialog, {
+          workspaces: workspaces(),
+          current: activeWorkspaceId(),
+          onSelect: (workspace) => {
+            setActiveWorkspaceId(workspace.id)
+            toast.info(`Workspace · ${workspace.name}`, "Workspaces")
+          },
+          onCreateWorktree: (name) => {
+            const created: SolidWorkspace = {
+              id: `wt-${Date.now().toString(36)}`,
+              name,
+              path: `~/.ai-workspace/worktrees/${name}`,
+              kind: "worktree",
+            }
+            setWorkspaces((prev) => [...prev, created])
+            setActiveWorkspaceId(created.id)
+            toast.success(`Worktree · ${name} (Solid stub)`, "Workspaces")
+          },
+        })
+      },
     }),
   )
 
@@ -366,47 +423,61 @@ function AppShell(props: SolidAppProps) {
       >
         <text fg={solidMint.headerTitle}>
           <strong>VEASEL</strong>
-          <span style={{ fg: solidMint.headerMeta }}> code</span>
+          <span style={{ fg: solidMint.brand }}> / </span>
+          <span style={{ fg: solidMint.headerMeta }}>CODE</span>
         </text>
-        <text fg={solidMint.localStatus}>{status()}</text>
+        <text fg={solidMint.localStatus}>● {status()}</text>
       </box>
 
-      <box
-        width="100%"
-        height={2}
-        flexShrink={0}
-        flexDirection="row"
-        alignItems="center"
-        backgroundColor={solidMint.panelBg}
-        border
-        borderColor={solidMint.panelBorder}
-        paddingLeft={1}
-        paddingRight={1}
+      <Show
+        when={messages().length > 0 || props.streaming}
+        fallback={
+          <box width="100%" flexGrow={1} flexDirection="column">
+            <HomeSplash
+              theme={themes[themeId()] ?? themes.mint}
+              directory={directory()}
+            />
+            <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+          </box>
+        }
       >
-        <text fg={solidMint.muted}>SESSION </text>
-        <text fg={solidMint.body}>{sessionTitle()}</text>
-        <text fg={solidMint.muted}>
-          {" "}
-          · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity ·{" "}
-          {reviewShortcut.label} reviews
-        </text>
-      </box>
+        <box
+          width="100%"
+          height={2}
+          flexShrink={0}
+          flexDirection="row"
+          alignItems="center"
+          backgroundColor={solidMint.panelBg}
+          border
+          borderColor={solidMint.panelBorder}
+          paddingLeft={1}
+          paddingRight={1}
+        >
+          <text fg={solidMint.muted}>SESSION </text>
+          <text fg={solidMint.body}>{sessionTitle()}</text>
+          <text fg={solidMint.muted}>
+            {" "}
+            · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity ·{" "}
+            {reviewShortcut.label} reviews
+          </text>
+        </box>
 
-      <SolidTranscript
-        messages={messages}
-        session={{ title: sessionTitle(), directory: directory() }}
-        notice={notice() || props.notice}
-        streaming={props.streaming}
-        streamingText={props.streamingText}
-        streamingCursor={props.streamingCursor}
-        followTail={props.followTail}
-        scrollRef={props.scrollRef}
-        enableActivityKeys={!dialog.open()}
-        activityToggleTick={activityToggleTick()}
-        cols={80}
-      />
+        <SolidTranscript
+          messages={messages}
+          session={{ title: sessionTitle(), directory: directory() }}
+          notice={notice() || props.notice}
+          streaming={props.streaming}
+          streamingText={props.streamingText}
+          streamingCursor={props.streamingCursor}
+          followTail={props.followTail}
+          scrollRef={props.scrollRef}
+          enableActivityKeys={!dialog.open()}
+          activityToggleTick={activityToggleTick()}
+          cols={80}
+        />
 
-      <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+        <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+      </Show>
     </box>
   )
 }

@@ -161,6 +161,7 @@ import {
   isMcpManageRest,
   matchesCatalogFilter,
 } from "./catalog-filter"
+import { VEASEL_PORTRAIT_ROWS } from "./veasel-portrait"
 
 import {
   formatReportedCacheUsage,
@@ -480,24 +481,7 @@ const renderer = await createCliRenderer({ exitOnCtrlC: true })
 const controller = new AbortController()
 const chatHistoryPageSize = 100
 
-const portrait = [
-  "    DDDDD     DDDDD    ",
-  "   DLLLLD     DLLLLD   ",
-  "  DLLLLLDDDDDDDLLLLLD  ",
-  "  DLLLDDDDDDDDDDDLLLDD ",
-  " DDDDDDDDBBBBBBDDDDDDD ",
-  "DDDDDDBBBBBBBBBBBBBBDDDD",
-  "DDDDBBBBBBBBBBBBBBBBBBDDD",
-  "DDBBBBBBBBBBBBBBBBBBBBBBDD",
-  "DBBBBKBBBBBBBBBBBBKBBBBBBBD",
-  "DBBBBHKBBBBBBBBBBHKBBBBBBBD",
-  "DBBBBBBBBBBNNBBBBBBBBBBBBBD",
-  " DDBBWWWWWNNNNNWWWWWWBBBBDD ",
-  "  DDBBWWWWWWWWWWWWBBBBDD  ",
-  "   DDDBBWWWWWWWWBBBDDD   ",
-  "     DDDBBBBBBBDDD     ",
-  "       DDDDDD       ",
-]
+const portrait = VEASEL_PORTRAIT_ROWS
 
 const shell = new BoxRenderable(renderer, {
   width: "100%",

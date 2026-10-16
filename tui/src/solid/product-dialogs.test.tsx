@@ -122,4 +122,37 @@ describe("Solid product dialogs", () => {
     expect(frame).toContain("Skills")
     expect(frame).toContain("code-review")
   })
+
+  test("palette opens agent picker", async () => {
+    const setup = await testRender(() => <App initialMessages={[]} initialReviews={[]} />, demoSize)
+    setups.push(setup)
+    await setup.renderOnce()
+    await openPaletteCommand(setup, "select agent")
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Select agent")
+    expect(frame).toContain("build")
+    expect(frame).toContain("plan")
+  })
+
+  test("palette opens variant picker", async () => {
+    const setup = await testRender(() => <App initialMessages={[]} initialReviews={[]} />, demoSize)
+    setups.push(setup)
+    await setup.renderOnce()
+    await openPaletteCommand(setup, "select variant")
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Select variant")
+    expect(frame).toContain("Default")
+    expect(frame).toContain("fast")
+  })
+
+  test("palette opens workspaces dialog", async () => {
+    const setup = await testRender(() => <App initialMessages={[]} initialReviews={[]} />, demoSize)
+    setups.push(setup)
+    await setup.renderOnce()
+    await openPaletteCommand(setup, "workspaces")
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Workspaces")
+    expect(frame).toContain("Worktrees")
+    expect(frame).toContain("tui-solid")
+  })
 })

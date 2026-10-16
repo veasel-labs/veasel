@@ -26,7 +26,7 @@ describe("Solid shell P0", () => {
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("VEASEL")
-    expect(frame).toContain("code")
+    expect(frame).toContain("CODE")
     expect(frame).toContain("LOCAL")
     expect(frame).toContain("SESSION")
     expect(frame).toContain("Compose")

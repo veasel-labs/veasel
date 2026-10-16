@@ -5,6 +5,11 @@ import { useKeyboard } from "@opentui/solid"
 import { SolidComposer } from "./composer"
 import { SolidTranscript, type ToolAwareMessage } from "./transcript"
 import { activityToggleShortcut } from "./activity-group"
+import {
+  cycleTranscriptVerbosity,
+  transcriptVerbosityLabel,
+  type TranscriptVerbosity,
+} from "./transcript-verbosity"
 import { HomeSplash } from "./component/home-splash"
 import { solidMint } from "./theme"
 import { themes } from "../themes"
@@ -169,6 +174,7 @@ function AppShell(props: SolidAppProps) {
   const [activeWorkspaceId, setActiveWorkspaceId] = createSignal(demoWorkspaces()[0]!.id)
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
+  const [verbosity, setVerbosity] = createSignal<TranscriptVerbosity>("default")
   const [messageNavRequest, setMessageNavRequest] = createSignal<
     | { tick: number; direction: "next" | "prev"; userOnly?: boolean }
     | { tick: number; action: "last-user" }
@@ -266,6 +272,12 @@ function AppShell(props: SolidAppProps) {
       lastUserMessage: () => {
         messageNavTick += 1
         setMessageNavRequest({ tick: messageNavTick, action: "last-user" })
+      },
+      cycleVerbosity: () => {
+        const next = cycleTranscriptVerbosity(verbosity())
+        setVerbosity(next)
+        toast.info(`Verbosity · ${transcriptVerbosityLabel(next)}`, "Transcript")
+        return next
       },
       openReviews: () => {
         openReviews()
@@ -579,6 +591,7 @@ function AppShell(props: SolidAppProps) {
           enableActivityKeys={!dialog.open()}
           activityToggleTick={activityToggleTick()}
           messageNavRequest={messageNavRequest}
+          verbosity={verbosity}
           onMessageNavigated={(info) => {
             toast.info(`Jumped to ${info.role} message`, "Transcript")
           }}

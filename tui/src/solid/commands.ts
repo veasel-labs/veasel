@@ -4,6 +4,7 @@ import { themes, type BuiltinThemeId } from "../themes"
 import { activityToggleShortcut } from "./activity-group"
 import { reviewShortcut } from "./reviews"
 import { messageNavShortcut } from "./transcript-nav"
+import type { TranscriptVerbosity } from "./transcript-verbosity"
 
 /** Discoverable palette binding. Ctrl+K stays readline kill-line in the composer. */
 export const paletteShortcut = {
@@ -38,6 +39,8 @@ export type PaletteActionHandlers = {
   nextUserMessage: () => void
   /** Jump to the last user message in the transcript. */
   lastUserMessage: () => void
+  /** Cycle transcript verbosity (quiet → default → everything). */
+  cycleVerbosity: () => TranscriptVerbosity
   /** Open the Solid pending-review panel (Ctrl+R owns the real shortcut). */
   openReviews: () => void
   /** Demo / cue the non-modal toast host. */
@@ -194,6 +197,16 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       keywords: ["message", "user", "last", "end", "jump", "anchor", "navigate"],
       shortcut: messageNavShortcut.lastUser.label,
       run: () => handlers.lastUserMessage(),
+    },
+    {
+      id: "veasel.transcript.verbosity",
+      title: "Cycle transcript verbosity",
+      description: "Quiet (hide tools/thinking) → Default → Everything (expand tools)",
+      group: "session",
+      keywords: ["verbosity", "quiet", "tools", "thinking", "transcript", "density"],
+      run: () => {
+        handlers.cycleVerbosity()
+      },
     },
     {
       id: "veasel.reviews.open",
@@ -398,6 +411,7 @@ export type LivePaletteHandlers = {
   previousUserMessage: () => void
   nextUserMessage: () => void
   lastUserMessage: () => void
+  cycleVerbosity: () => TranscriptVerbosity
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -626,6 +640,16 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["message", "user", "last", "end", "jump", "anchor", "navigate"],
       shortcut: messageNavShortcut.lastUser.label,
       run: () => handlers.lastUserMessage(),
+    },
+    {
+      id: "veasel.transcript.verbosity",
+      title: "Cycle transcript verbosity",
+      description: "Quiet (hide tools/thinking) → Default → Everything (expand tools)",
+      group: "session",
+      keywords: ["verbosity", "quiet", "tools", "thinking", "transcript", "density"],
+      run: () => {
+        handlers.cycleVerbosity()
+      },
     },
     {
       id: "veasel.status",

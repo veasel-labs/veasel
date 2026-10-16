@@ -2,7 +2,7 @@
 import { For, Show, createMemo } from "solid-js"
 import { solidMint } from "../theme"
 import {
-  truncateTabTitle,
+  formatSessionTabLabel,
   visibleSessionTabs,
   type SessionTab,
 } from "../session-tabs"
@@ -43,17 +43,20 @@ export function SessionTabs(props: SessionTabsProps) {
       <For each={windowed().tabs}>
         {(tab) => {
           const active = () => tab.id === props.activeId
+          const label = () => formatSessionTabLabel(tab)
           return (
             <box onMouseUp={() => props.onSelect(tab.id)}>
               <text wrapMode="none">
                 <Show
                   when={active()}
                   fallback={
-                    <span style={{ fg: solidMint.muted }}>{truncateTabTitle(tab.title)}</span>
+                    <span style={{ fg: tab.unread ? solidMint.brand : solidMint.muted }}>
+                      {label()}
+                    </span>
                   }
                 >
                   <span style={{ fg: solidMint.brand }}>
-                    <strong>{truncateTabTitle(tab.title)}</strong>
+                    <strong>{label()}</strong>
                   </span>
                 </Show>
               </text>

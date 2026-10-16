@@ -3,6 +3,7 @@ import {
   jumpTranscriptScroll,
   liveStreamStatusMessage,
   moveTranscriptScroll,
+  scrollOffsetFromBottom,
   transcriptBelowCue,
   transcriptPageSize,
   transcriptScrollStatus,
@@ -39,6 +40,13 @@ describe("transcript page scroll", () => {
     expect(upper.truncatedAbove).toBe(false)
     expect(upper.truncatedBelow).toBe(true)
     expect(upper.segments.map((segment) => segment.text).join("")).toBe("one\ntwo\n")
+  })
+
+  test("measures scrollbox distance from the sticky bottom", () => {
+    expect(scrollOffsetFromBottom({ scrollTop: 80, scrollHeight: 100, viewportHeight: 20 })).toBe(0)
+    expect(scrollOffsetFromBottom({ scrollTop: 40, scrollHeight: 100, viewportHeight: 20 })).toBe(40)
+    expect(scrollOffsetFromBottom({ scrollTop: 0, scrollHeight: 100, viewportHeight: 20 })).toBe(80)
+    expect(scrollOffsetFromBottom({ scrollTop: 0, scrollHeight: 10, viewportHeight: 20 })).toBe(0)
   })
 
   test("names End as the follow key while streaming above the live reply", () => {

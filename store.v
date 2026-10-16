@@ -1295,6 +1295,43 @@ fn (mut store Store) get_session(id string) !Session {
 	}
 }
 
+fn (mut store Store) rename_session(id string, title string) !Session {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	existing := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', id)!
+	if existing.len == 0 {
+		return error('session not found')
+	}
+	store.db.begin()!
+	_ = store.db.exec_param_many('UPDATE sessions SET title = ? WHERE id = ?', [title, id]) or {
+		store.db.rollback() or {}
+		return error('unable to rename session')
+	}
+	_ = store.db.exec_param2('INSERT INTO events (type, session_id) VALUES (?, ?)', 'session.renamed',
+		id) or {
+		store.db.rollback() or {}
+		return error('unable to write session rename event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session rename')
+	}
+	rows := store.db.exec_param('SELECT id, title, directory, created_at FROM sessions WHERE id = ?',
+		id)!
+	if rows.len != 1 {
+		return error('renamed session could not be read')
+	}
+	row := rows[0]
+	return Session{
+		id:         row.val(0)
+		title:      row.val(1)
+		directory:  row.val(2)
+		created_at: row.val(3)
+	}
+}
+
 fn (mut store Store) create_session_operation(session_id string, operation_id string) !SessionOperation {
 	// Test and recovery helpers create an already-claimed running row. Prefer
 	// enqueue_session_operation for durable Prefer: respond-async turns.

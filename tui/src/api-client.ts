@@ -165,6 +165,20 @@ export class VeaselApiClient {
     return await response.json() as ApiSession
   }
 
+  async renameSession(sessionId: string, title: string): Promise<ApiSession> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title }),
+        signal: this.signal,
+      },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSession
+  }
+
   async listMessages(sessionId: string): Promise<ChatTurn[]> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/messages`,

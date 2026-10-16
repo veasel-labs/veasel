@@ -1878,6 +1878,37 @@ pub fn (app &App) get_session(mut ctx Context, id string) veb.Result {
 	return ctx.json(session)
 }
 
+struct SessionRenameInput {
+pub:
+	title string
+}
+
+@['/v1/sessions/:id'; patch]
+pub fn (app &App) rename_session(mut ctx Context, id string) veb.Result {
+	if ctx.req.data.len > 4_096 {
+		return json_request_error(mut ctx, 'Session rename exceeds the size limit')
+	}
+	input := json2.decode[SessionRenameInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected JSON with title')
+	}
+	title := input.title.trim_space()
+	if !valid_session_title(title) {
+		return json_request_error(mut ctx, 'Title must contain 1 to 200 printable characters without control bytes')
+	}
+	mut store := app.store
+	session := store.rename_session(id, title) or {
+		if err.msg() == 'session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'session not found'
+			})
+		}
+		eprintln('veasel: rename session failed: ${err}')
+		return json_server_error(mut ctx, 'Unable to rename session')
+	}
+	return ctx.json(session)
+}
+
 @['/v1/sessions/:id/usage'; get]
 pub fn (app &App) get_session_usage(mut ctx Context, id string) veb.Result {
 	mut store := app.store

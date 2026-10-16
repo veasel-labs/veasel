@@ -33,6 +33,7 @@ import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openDialogThemeList } from "./component/dialog-theme-list"
+import { SessionRenameDialog } from "./component/session-rename-dialog"
 import { skillCatalogFromPlugins } from "./skills-inventory"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
@@ -192,6 +193,41 @@ function LiveAppShell(props: LiveAppProps) {
         toast.success(`Theme · ${id}`, "Theme")
       },
     })
+  }
+
+  const openRenameSession = (session?: SolidSessionEntry) => {
+    const target =
+      session
+      ?? (inSession()
+        ? sessions().find((item) => item.id === activeSessionId())
+        : sessions()[selectedIndex()])
+    if (!target) {
+      toast.info("Select a session to rename", "Rename")
+      return
+    }
+    setComposerFocused(false)
+    dialog.replace(
+      () => (
+        <SessionRenameDialog
+          session={target}
+          onConfirm={(title) => {
+            void (async () => {
+              try {
+                const updated = await props.api.renameSession(target.id, title)
+                await refreshSessions()
+                toast.success(`Renamed · ${updated.title}`, "Rename")
+              } catch (error) {
+                toast.info(
+                  error instanceof Error ? error.message : "could not rename session",
+                  "Rename",
+                )
+              }
+            })()
+          }}
+        />
+      ),
+      { size: "medium" },
+    )
   }
 
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
@@ -818,6 +854,7 @@ function LiveAppShell(props: LiveAppProps) {
         showStash: () => openLiveStash(),
         cycleTheme: () => cycleTheme(),
         showThemeList: () => openThemeList(),
+        renameSession: () => openRenameSession(),
         attachFile: () => openAttachPrompt(),
         showSessionDiffs: () => {
           void openSessionDiffs()
@@ -927,6 +964,11 @@ function LiveAppShell(props: LiveAppProps) {
       if (key.name === "n" && !key.ctrl && !key.meta) {
         key.preventDefault()
         void createSession()
+        return
+      }
+      if (key.name === "r" && !key.ctrl && !key.meta) {
+        key.preventDefault()
+        openRenameSession()
         return
       }
       if (key.name === "j" || key.name === "down") {

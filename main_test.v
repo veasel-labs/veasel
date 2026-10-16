@@ -582,6 +582,37 @@ fn test_session_store_persists_session_and_creation_event() {
 	assert events[0].id > 0
 }
 
+fn test_session_store_renames_title_and_emits_event() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer {
+		store.close() or {}
+	}
+	created := store.create_session(SessionInput{
+		title:     'Old title'
+		directory: '/tmp/fixture'
+	}) or {
+		panic(err)
+	}
+	renamed := store.rename_session(created.id, 'New title') or {
+		panic(err)
+	}
+	assert renamed.id == created.id
+	assert renamed.title == 'New title'
+	assert renamed.directory == created.directory
+	assert (store.get_session(created.id) or { panic(err) }).title == 'New title'
+	events := store.events_after(0) or {
+		panic(err)
+	}
+	assert events.len == 2
+	assert events[1].type == 'session.renamed'
+	assert events[1].session_id == created.id
+	_ := store.rename_session('missing-session-id', 'Nope') or {
+		assert err.msg() == 'session not found'
+		return
+	}
+	assert false
+}
+
 fn test_session_store_event_cursor_replays_only_newer_events() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

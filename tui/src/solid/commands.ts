@@ -344,6 +344,7 @@ export type LivePaletteHandlers = {
   showStash: () => void
   cycleTheme: () => void
   showThemeList: () => void
+  renameSession: () => void
   attachFile: () => void
   showSessionDiffs: () => void
   showSessionTimeline: () => void
@@ -405,6 +406,15 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["new", "session", "create"],
       shortcut: "n",
       run: () => handlers.createSession(),
+    },
+    {
+      id: "veasel.session.rename",
+      title: "Rename session",
+      description: "Edit the selected or active session title",
+      group: "session",
+      keywords: ["rename", "title", "session", "edit"],
+      shortcut: "r",
+      run: () => handlers.renameSession(),
     },
     {
       id: "veasel.open",

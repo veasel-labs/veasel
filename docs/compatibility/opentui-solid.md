@@ -87,10 +87,12 @@ compatibility and does not authorize copying branding or product chrome.
   inventories with status categories / descriptions; failed MCP rows open
   error-details. Palette `veasel.mcp.list`, `veasel.skills.list`. Fixture demos
   until HTTP `/mcp*` and skills discovery wiring lands on Solid.
-- Agent / variant / workspaces (`agent-dialog.tsx`, `variant-dialog.tsx`,
-  `workspaces-dialog.tsx`): DialogSelect pickers with demo catalogs; workspaces
-  can prompt for a new worktree name. Palette `veasel.agent.picker`,
-  `veasel.variant.picker`, `veasel.workspaces.list`.
+- Composer autocomplete (`solid/composer-autocomplete.ts` + `SolidComposer`):
+  `/` slash, `@` workspace paths, `$` skills using the same pure matchers as
+  the imperative shell (`slash-commands`, `path-autocomplete`,
+  `skill-autocomplete`). Mint popup above Compose; Tab/↑↓/Enter/Esc. Skills
+  catalog and workspace path listing are injectable props until Solid HTTP
+  session wiring lands.
 
 ## Startup note (light)
 

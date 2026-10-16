@@ -23,6 +23,11 @@ import {
   type ComposerAutocompleteDismissed,
   type ComposerAutocompleteMenu,
 } from "./composer-autocomplete"
+import {
+  attachmentChipLabel,
+  formatMessageWithAttachments,
+  type ComposerAttachment,
+} from "./composer-attachments"
 
 export type SolidComposerProps = {
   placeholder?: string
@@ -36,6 +41,10 @@ export type SolidComposerProps = {
   restoreToken?: { id: string; text: string }
   /** Latest draft text for stash / external observers. */
   onDraftChange?: (text: string) => void
+  /** Staged local files / images (paths; text API mentions on submit). */
+  attachments?: ComposerAttachment[]
+  onRemoveAttachment?: (id: string) => void
+  onPreviewAttachment?: (attachment: ComposerAttachment) => void
 }
 
 function kindTitle(kind: ComposerAutocompleteMenu["kind"]): string {
@@ -130,9 +139,12 @@ export function SolidComposer(props: SolidComposerProps) {
     if (area) area.height = composerHeightForText("")
   }
 
+  const attachments = () => props.attachments ?? []
+
   const send = (text: string) => {
-    if (text.length === 0) return
-    props.onSubmit?.(text)
+    const payload = formatMessageWithAttachments(text, attachments())
+    if (!payload.trim()) return
+    props.onSubmit?.(payload)
     clearComposer()
   }
 
@@ -275,6 +287,43 @@ export function SolidComposer(props: SolidComposerProps) {
             <text fg={solidMint.muted}>{active().footer}</text>
           </box>
         )}
+      </Show>
+      <Show when={attachments().length > 0}>
+        <box
+          width="100%"
+          flexShrink={0}
+          flexDirection="column"
+          backgroundColor={solidMint.panelBg}
+          border
+          borderColor={solidMint.panelBorder}
+          paddingLeft={1}
+          paddingRight={1}
+          title=" Attachments "
+          titleColor={solidMint.brand}
+        >
+          <For each={attachments()}>
+            {(item) => (
+              <box flexDirection="row" width="100%" gap={1}>
+                <box
+                  onMouseUp={() => props.onPreviewAttachment?.(item)}
+                  flexGrow={1}
+                >
+                  <text wrapMode="none">
+                    <span style={{ fg: solidMint.body }}>{attachmentChipLabel(item)}</span>
+                  </text>
+                </box>
+                <box onMouseUp={() => props.onRemoveAttachment?.(item.id)}>
+                  <text wrapMode="none">
+                    <span style={{ fg: solidMint.muted }}>✕</span>
+                  </text>
+                </box>
+              </box>
+            )}
+          </For>
+          <text wrapMode="none">
+            <span style={{ fg: solidMint.muted }}>click preview · ✕ remove · submit sends @paths</span>
+          </text>
+        </box>
       </Show>
       <box
         width="100%"

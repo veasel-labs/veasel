@@ -17,24 +17,21 @@ clients use an HTTP API and event stream. This is a direction reference rather
 than a promise of full route compatibility. The pinned comparison and
 route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode.md).
 
-The TUI is TypeScript with OpenTUI, kept as a separate API client; the agent
-runtime, tools and persistence remain in V. Core renderables ship as the
-default (`bun run start` → `src/main.ts`). A SolidJS + `@opentui/solid` **0.5.17**
-migration is in progress under `tui/src/solid/` (`bun run start:solid`): shell +
-composer, session transcript on OpenTUI `scrollbox` (follow-tail), collapsible
-tool/activity grouping (**Ctrl+G** toggles the latest group; click header also
-works), a thin dialog host with **Ctrl+P** command palette (Veasel command ids;
-Ctrl+K stays readline kill-line), a pending **reviews** overlay (**Ctrl+R**)
-for file/shell/MCP approvals with `formatReviewDiff` segments or OpenTUI `<diff>`
-split view, a non-modal **toast** host (queue, hover-pause, click dismiss), and Solid
-**session list / rename** dialogs (filter, `r` rename / `n` create when the
-filter is empty), Solid **dialog primitives** (select / alert / confirm / prompt
-/ help / layout), and product dialogs for **theme list**, **model
-favorites/recents**, **stash**, **error details**, and **shell output** (fixture
-demos + palette). Pins and adapted patterns are recorded in
-[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Cutover of
-the default entry and remaining parity (pane-resize, HTTP session wiring) are
-later slices. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
+The TUI is TypeScript with OpenTUI + SolidJS, kept as a separate API client; the
+agent runtime, tools and persistence remain in V. **Solid is the default entry**
+(`bun run start` → `src/solid/main.tsx` / `LiveApp`): loopback HTTP session home,
+SSE assistant deltas, and MODEL SETTINGS via `api-client.ts`. Pure shared modules
+(`stream-events`, `chat-history`, autocomplete matchers, review formatters,
+themes) stay framework-agnostic. The retired imperative shell lives at
+`src/classic-main.ts` (`bun run start:classic` / `--classic` standalone) for
+emergency comparison only. Solid also ships shell + composer, session transcript
+on OpenTUI `scrollbox` (follow-tail), collapsible tool/activity grouping
+(**Ctrl+G**), **Ctrl+P** command palette, pending **reviews** (**Ctrl+R**),
+toast host, session list / rename, dialog primitives, and product dialogs.
+Pins and adapted patterns are recorded in
+[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Remaining
+parity (full review HTTP approve path, pane-resize, deeper settings connect) is
+follow-up. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
 interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
 validation still needs a ConPTY harness (see
@@ -56,8 +53,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] SQLite migration ledger and transactional session create/list/get behavior.
 - [x] Durable, replayable SSE event stream with cursor validation.
 - [x] OpenTUI terminal client connected to the server; Solid remains evaluated.
-- [x] Solid P0 shell + composer dual-path (`tui/src/solid/`, `start:solid`,
-  `testRender`); legacy `main.ts` remains default until later cutover.
+- [x] Solid P0 shell + composer (`tui/src/solid/`, `testRender`).
+- [x] Solid default cutover: `bun run start` + standalone `build:standalone`
+  use `solid/main.tsx` / `LiveApp` (loopback HTTP session loop + SSE); classic
+  shell retired to `classic-main.ts` / `start:classic`.
 - [x] Solid composer `/` `@` `$` autocomplete dropdown (classic matchers,
   Tab/Enter/Esc/arrows); fixture skills/paths until HTTP session wiring.
 - [x] Solid session transcript on `scrollbox` with sticky follow-tail,
@@ -75,7 +74,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   legacy `reviewHotkey` bindings (a/x/A/X/Space/]/[/n/p/{/}/v),
   `formatReviewDiff` / shell / MCP formatters, OpenTUI `<diff>` split when
   toggled; **Ctrl+R** + palette `veasel.reviews.open`; fixture demos +
-  `testRender`; legacy `main.ts` remains default.
+  `testRender`; Solid is the default entry (`classic-main.ts` retired).
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.

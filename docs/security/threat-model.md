@@ -5,7 +5,7 @@ providers, and the proposed repository-tool boundary
 **Date:** 2026-10-13
 **Modeler:** Codex
 **Architecture source:** `docs/IMPLEMENTATION_PLAN.md`, `api.v`, `provider.v`,
-`store.v`, `workspace_edits.v`, `main.v`, `tui/src/main.ts`
+`store.v`, `workspace_edits.v`, `main.v`, `tui/src/solid/main.tsx`, `tui/src/api-client.ts`
 **Version:** unreleased branch
 **Previous model:** Initial
 

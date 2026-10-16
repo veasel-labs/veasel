@@ -617,7 +617,7 @@ def launch(port: int, rows: int, cols: int) -> tuple[subprocess.Popen, int]:
         "LINES": str(rows),
     })
     process = subprocess.Popen(
-        ["bun", "run", "src/main.ts"],
+        ["bun", "run", "src/classic-main.ts"],
         cwd=ROOT,
         env=env,
         stdin=slave,

@@ -35,6 +35,10 @@ export type PaletteActionHandlers = {
   openReviews: () => void
   /** Demo / cue the non-modal toast host. */
   showToast: () => void
+  /** Open a confirm dialog smoke (approve / cancel). */
+  showConfirm: () => void
+  /** Open the builtin theme list dialog (DialogSelect). */
+  showThemeList: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -93,12 +97,20 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
     {
       id: "veasel.theme.cycle",
       title: "Cycle theme",
-      description: "Rotate through builtin TUI themes (stub until theme dialog)",
+      description: "Rotate through builtin TUI themes",
       group: "setup",
-      keywords: ["theme", "mint", "colors"],
+      keywords: ["theme", "mint", "colors", "cycle"],
       run: () => {
         handlers.cycleTheme()
       },
+    },
+    {
+      id: "veasel.theme.list",
+      title: "Theme list",
+      description: "Pick a builtin TUI theme (DialogSelect)",
+      group: "setup",
+      keywords: ["theme", "mint", "colors", "list", "dialog"],
+      run: () => handlers.showThemeList(),
     },
     {
       id: "veasel.session.list",
@@ -133,6 +145,14 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       group: "guide",
       keywords: ["toast", "notice", "notification"],
       run: () => handlers.showToast(),
+    },
+    {
+      id: "veasel.confirm.demo",
+      title: "Show confirm dialog",
+      description: "Modal confirm / cancel (DialogConfirm smoke)",
+      group: "guide",
+      keywords: ["confirm", "dialog", "modal", "yes", "no"],
+      run: () => handlers.showConfirm(),
     },
   ]
 

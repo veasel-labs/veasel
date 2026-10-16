@@ -9,10 +9,12 @@ import { solidMint } from "./theme"
 import {
   buildPaletteCommands,
   nextBuiltinThemeId,
-  paletteHelpText,
   paletteShortcut,
 } from "./commands"
 import { DialogProvider, useDialog } from "./ui/dialog"
+import { openDialogThemeList } from "./component/dialog-theme-list"
+import { openDialogConfirm } from "./ui/dialog-confirm"
+import { openDialogHelp } from "./ui/dialog-help"
 import { ToastProvider, useToast } from "./ui/toast"
 import { openCommandPalette } from "./component/command-palette"
 import { openReviewPanel } from "./component/review-panel"
@@ -170,7 +172,7 @@ function AppShell(props: SolidAppProps) {
   const commands = createMemo(() =>
     buildPaletteCommands({
       showHelp: (compact) => {
-        setNotice(paletteHelpText(compact ?? true))
+        openDialogHelp(dialog, { compact: compact ?? true })
       },
       runSlash: (command) => {
         setNotice(`Slash · ${command} (Solid stub — wire to session handler next)`)
@@ -197,6 +199,27 @@ function AppShell(props: SolidAppProps) {
           title: "Toast",
           message: "Solid mint notice · hover pauses · click dismisses",
           duration: 8_000,
+        })
+      },
+      showConfirm: () => {
+        openDialogConfirm(dialog, {
+          title: "Confirm",
+          message: "Apply this Solid shell action?",
+          onConfirm: () => {
+            toast.success("Confirmed (Solid DialogConfirm)", "Confirm")
+          },
+          onCancel: () => {
+            toast.info("Cancelled", "Confirm")
+          },
+        })
+      },
+      showThemeList: () => {
+        openDialogThemeList(dialog, {
+          current: themeId(),
+          onSelect: (id) => {
+            setThemeId(id)
+            toast.info(`Theme · ${id} (Solid list · /theme persists on legacy path)`, "Theme")
+          },
         })
       },
     }),

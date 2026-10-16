@@ -177,3 +177,21 @@ export function DialogHeader(props: { title: string; hint?: string }) {
     </box>
   )
 }
+
+/** Shared header / body / footer chrome used by alert, confirm, prompt, and help. */
+export function DialogLayout(
+  props: ParentProps<{
+    header: JSX.Element
+    footer?: JSX.Element
+  }>,
+) {
+  return (
+    <box width="100%" flexDirection="column" gap={1} paddingBottom={1}>
+      {props.header}
+      <box width="100%" flexGrow={1} flexShrink={1}>
+        {props.children}
+      </box>
+      {props.footer}
+    </box>
+  )
+}

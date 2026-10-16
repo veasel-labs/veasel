@@ -29,14 +29,18 @@ describe("Solid palette commands", () => {
       toggleActivity: () => ran.push("activity"),
       openReviews: () => ran.push("reviews"),
       showToast: () => ran.push("toast"),
+      showConfirm: () => ran.push("confirm"),
+      showThemeList: () => ran.push("themes"),
     })
 
     expect(commands.some((command) => command.id === "veasel.help")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.theme.cycle")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.theme.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.session.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.activity.toggle")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.reviews.open")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.toast.demo")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.confirm.demo")).toBe(true)
     expect(commands.filter((command) => command.id.startsWith("veasel.slash.")).length).toBe(
       slashCommands.length,
     )
@@ -46,7 +50,8 @@ describe("Solid palette commands", () => {
     commands.find((command) => command.id === "veasel.activity.toggle")!.run()
     commands.find((command) => command.id === "veasel.reviews.open")!.run()
     commands.find((command) => command.id === "veasel.toast.demo")!.run()
-    expect(ran).toEqual(["help", "/map", "activity", "reviews", "toast"])
+    commands.find((command) => command.id === "veasel.confirm.demo")!.run()
+    expect(ran).toEqual(["help", "/map", "activity", "reviews", "toast", "confirm"])
   })
 
   test("filters by title, group, and keywords", () => {

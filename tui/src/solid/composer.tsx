@@ -32,6 +32,10 @@ export type SolidComposerProps = {
   skills?: SkillCatalogEntry[]
   slashContext?: SlashCompletionContext
   listPaths?: (root: string) => string[]
+  /** When this token changes, replace the composer draft (stash restore). */
+  restoreToken?: { id: string; text: string }
+  /** Latest draft text for stash / external observers. */
+  onDraftChange?: (text: string) => void
 }
 
 function kindTitle(kind: ComposerAutocompleteMenu["kind"]): string {
@@ -46,8 +50,23 @@ export function SolidComposer(props: SolidComposerProps) {
   const [selected, setSelected] = createSignal(0)
   const [dismissed, setDismissed] = createSignal<ComposerAutocompleteDismissed | undefined>(undefined)
   let area: TextareaRenderable | undefined
+  let lastRestoreId: string | undefined
 
   const skills = () => props.skills ?? demoComposerSkills()
+
+  createEffect(() => {
+    const token = props.restoreToken
+    if (!token || token.id === lastRestoreId) return
+    lastRestoreId = token.id
+    setDraft(token.text)
+    setDismissed(undefined)
+    setSelected(0)
+    if (area) {
+      area.setText(token.text)
+      area.height = composerHeightForText(token.text)
+    }
+    props.onDraftChange?.(token.text)
+  })
 
   const menu = createMemo(() => {
     const value = draft()
@@ -293,6 +312,7 @@ export function SolidComposer(props: SolidComposerProps) {
           onContentChange={() => {
             const next = area?.plainText ?? ""
             setDraft(next)
+            props.onDraftChange?.(next)
             if (area) area.height = composerHeightForText(next)
             const prior = dismissed()
             if (prior && prior.value !== next) setDismissed(undefined)

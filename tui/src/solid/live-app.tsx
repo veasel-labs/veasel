@@ -10,7 +10,13 @@ import {
 } from "../api-client"
 import { formatHomeSessionStatus, formatBusyStatus, formatErrorStatus } from "../status-a11y"
 import { homeFooterHint } from "../footer-hints"
-import { themes, defaultThemeId, type BuiltinThemeId } from "../themes"
+import {
+  isBuiltinThemeId,
+  loadThemeId,
+  saveThemeId,
+  themes,
+  type BuiltinThemeId,
+} from "../themes"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
 import { openDialogHelp } from "./ui/dialog-help"
@@ -19,7 +25,14 @@ import { SolidTranscript, transcriptMessagesFromChatTurns, type ToolAwareMessage
 import { LiveHome } from "./component/live-home"
 import { openProviderSettingsDialog } from "./component/provider-settings-dialog"
 import { openCommandPalette } from "./component/command-palette"
-import { buildLivePaletteCommands, paletteShortcut } from "./commands"
+import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
+import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
+import {
+  loadDraftStash,
+  pushDraftStash,
+  removeDraftStash,
+  saveDraftStash,
+} from "./draft-stash"
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
 const liveFooterHint = `${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
@@ -66,11 +79,60 @@ function LiveAppShell(props: LiveAppProps) {
   const [streaming, setStreaming] = createSignal(false)
   const [streamingText, setStreamingText] = createSignal("")
   const [sending, setSending] = createSignal(false)
-  const [themeId] = createSignal<BuiltinThemeId>(defaultThemeId)
+  const initialTheme = loadThemeId()
+  const [themeId, setThemeId] = createSignal<BuiltinThemeId>(
+    isBuiltinThemeId(initialTheme) ? initialTheme : "mint",
+  )
   const [composerFocused, setComposerFocused] = createSignal(true)
+  const [composerDraft, setComposerDraft] = createSignal("")
+  const [restoreToken, setRestoreToken] = createSignal<{ id: string; text: string } | undefined>()
+  const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(loadDraftStash())
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   let turnController: AbortController | undefined
   const handledCompletions = new Set<string>()
+
+  const persistStash = (entries: SolidStashEntry[]) => {
+    setStashEntries(entries)
+    saveDraftStash(entries)
+  }
+
+  const stashComposerDraft = () => {
+    const next = pushDraftStash(stashEntries(), composerDraft())
+    if (next.length === stashEntries().length) {
+      toast.info("Composer is empty — nothing to stash", "Stash")
+      return
+    }
+    persistStash(next)
+    toast.success(`Stashed draft · ${next.length} saved`, "Stash")
+  }
+
+  const openLiveStash = () => {
+    const entries = stashEntries()
+    if (entries.length === 0) {
+      toast.info("No stashed drafts yet · Ctrl+S or palette → Stash composer draft", "Stash")
+      return
+    }
+    setComposerFocused(false)
+    openStashDialog(dialog, {
+      entries,
+      onSelect: (entry) => {
+        setRestoreToken({ id: entry.id, text: entry.text })
+        setComposerDraft(entry.text)
+        setComposerFocused(true)
+        toast.success("Restored stash into composer", "Stash")
+      },
+      onDelete: (entry) => {
+        persistStash(removeDraftStash(stashEntries(), entry.id))
+      },
+    })
+  }
+
+  const cycleTheme = () => {
+    const next = nextBuiltinThemeId(themeId())
+    setThemeId(next)
+    saveThemeId(next)
+    toast.success(`Theme · ${next}`, "Theme")
+  }
 
   const inSession = createMemo(() => Boolean(activeSessionId()))
   const sessionTitle = createMemo(() => {
@@ -415,6 +477,9 @@ function LiveAppShell(props: LiveAppProps) {
         openWorkspaces: () => {
           void openLiveWorkspacesDialog()
         },
+        stashDraft: () => stashComposerDraft(),
+        showStash: () => openLiveStash(),
+        cycleTheme: () => cycleTheme(),
         quit: () => props.onQuit?.(),
       }),
     )
@@ -435,6 +500,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "w" && !key.meta) {
       key.preventDefault()
       void openLiveWorkspacesDialog()
+      return
+    }
+    if (key.ctrl && key.name === "s" && !key.meta) {
+      key.preventDefault()
+      stashComposerDraft()
       return
     }
     if (!inSession()) {
@@ -549,9 +619,13 @@ function LiveAppShell(props: LiveAppProps) {
             void sendMessage(text)
           }}
           focused={composerFocused()}
+          restoreToken={restoreToken()}
+          onDraftChange={setComposerDraft}
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
-          <text fg={solidMint.muted}>{liveFooterHint}</text>
+          <text fg={solidMint.muted}>
+            {liveFooterHint} · Ctrl+S stash · theme {themeId()}
+          </text>
         </box>
       </Show>
     </box>

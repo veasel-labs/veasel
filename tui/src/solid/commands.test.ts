@@ -116,7 +116,7 @@ describe("Solid palette commands", () => {
     expect(paletteHelpText(false)).toContain("/connect")
   })
 
-  test("live palette exposes settings, open, workspaces, quit", () => {
+  test("live palette exposes settings, theme, stash, open, workspaces, quit", () => {
     const ran: string[] = []
     const commands = buildLivePaletteCommands({
       showHelp: () => ran.push("help"),
@@ -124,19 +124,30 @@ describe("Solid palette commands", () => {
       createSession: () => ran.push("new"),
       openRecent: () => ran.push("open"),
       openWorkspaces: () => ran.push("workspaces"),
+      stashDraft: () => ran.push("stash"),
+      showStash: () => ran.push("stash-list"),
+      cycleTheme: () => ran.push("theme"),
       quit: () => ran.push("quit"),
     })
     expect(commands.map((command) => command.id)).toEqual([
       "veasel.help",
       "veasel.settings",
+      "veasel.theme.cycle",
       "veasel.session.new",
       "veasel.open",
       "veasel.workspaces",
+      "veasel.stash.push",
+      "veasel.stash.list",
       "veasel.quit",
     ])
     expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual(["veasel.settings"])
+    expect(filterPaletteCommands(commands, "stash").map((c) => c.id)).toEqual([
+      "veasel.stash.push",
+      "veasel.stash.list",
+    ])
     commands.find((command) => command.id === "veasel.settings")!.run()
     commands.find((command) => command.id === "veasel.open")!.run()
-    expect(ran).toEqual(["settings", "open"])
+    commands.find((command) => command.id === "veasel.theme.cycle")!.run()
+    expect(ran).toEqual(["settings", "open", "theme"])
   })
 })

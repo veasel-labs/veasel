@@ -5,13 +5,22 @@ versioned Veasel HTTP API; persistence and execution remain in the V backend.
 
 ## Run
 
-From this directory, install the locked dependencies with `bun install`, then
-run `bun run start`. From the repository root, `v run . tui` starts the
-development client through Bun. Release archives compile the client into a
-standalone `veasel-tui` executable beside the V backend; installed `veasel`
-commands do not need a separately installed Bun runtime. Start the V server
-separately with `v run . serve`. Set `VEASEL_API_URL` when the backend listens
-on another loopback port.
+From this directory, install the locked dependencies with `bun install`, then:
+
+- `bun run start` — legacy imperative OpenTUI client (`src/main.ts`, default)
+- `bun run start:solid` — SolidJS shell stub (`src/solid/main.tsx`; P0 chrome +
+  composer only; not yet feature-complete)
+
+From the repository root, `v run . tui` starts the legacy development client
+through Bun. Standalone packaging defaults to the legacy entry; pass `--solid`
+to `scripts/build-standalone.ts` for the Solid entry. Release archives compile
+the client into a standalone `veasel-tui` executable beside the V backend;
+installed `veasel` commands do not need a separately installed Bun runtime.
+Start the V server separately with `v run . serve`. Set `VEASEL_API_URL` when
+the backend listens on another loopback port.
+
+Solid migration pins and upstream study commits:
+[`docs/compatibility/opentui-solid.md`](../docs/compatibility/opentui-solid.md).
 
 The client can list and refresh sessions, create one for the current working
 directory, inspect its metadata, and reconnect to the replayable event stream.

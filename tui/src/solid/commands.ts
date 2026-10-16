@@ -39,6 +39,14 @@ export type PaletteActionHandlers = {
   showConfirm: () => void
   /** Open the builtin theme list dialog (DialogSelect). */
   showThemeList: () => void
+  /** Open model favorites / recents / catalog dialog. */
+  showModelPicker: () => void
+  /** Open composer stash list. */
+  showStash: () => void
+  /** Open structured error details dialog. */
+  showErrorDetails: () => void
+  /** Open shell output viewer dialog. */
+  showShellOutput: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -153,6 +161,38 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       group: "guide",
       keywords: ["confirm", "dialog", "modal", "yes", "no"],
       run: () => handlers.showConfirm(),
+    },
+    {
+      id: "veasel.model.picker",
+      title: "Select model",
+      description: "Favorites, recents, and catalog (DialogSelect)",
+      group: "setup",
+      keywords: ["model", "favorites", "recents", "provider", "llm"],
+      run: () => handlers.showModelPicker(),
+    },
+    {
+      id: "veasel.stash.list",
+      title: "Prompt stash",
+      description: "Restore a stashed composer draft",
+      group: "session",
+      keywords: ["stash", "draft", "prompt", "history"],
+      run: () => handlers.showStash(),
+    },
+    {
+      id: "veasel.error.details",
+      title: "Error details",
+      description: "Structured error modal with copy (demo)",
+      group: "guide",
+      keywords: ["error", "details", "copy", "diagnostic"],
+      run: () => handlers.showErrorDetails(),
+    },
+    {
+      id: "veasel.shell.output",
+      title: "Shell output",
+      description: "Scrollable shell command output (demo)",
+      group: "session",
+      keywords: ["shell", "output", "terminal", "stdout"],
+      run: () => handlers.showShellOutput(),
     },
   ]
 

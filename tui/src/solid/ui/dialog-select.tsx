@@ -195,7 +195,8 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
 export function openDialogSelect<T>(
   dialog: ReturnType<typeof useDialog>,
-  props: DialogSelectProps<T>,
+  props: DialogSelectProps<T> & { size?: "medium" | "large" },
 ) {
-  dialog.replace(() => <DialogSelect {...props} />)
+  const { size, ...selectProps } = props
+  dialog.replace(() => <DialogSelect {...selectProps} />, { size })
 }

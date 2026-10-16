@@ -13,6 +13,16 @@ import {
 } from "./commands"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { openDialogThemeList } from "./component/dialog-theme-list"
+import {
+  demoFavoriteModels,
+  demoModels,
+  demoRecentModels,
+  openModelDialog,
+  type SolidModelRef,
+} from "./component/model-dialog"
+import { demoStashEntries, openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
+import { demoErrorDetails, openErrorDetailsDialog } from "./component/error-details-dialog"
+import { demoShellOutput, openShellOutputDialog } from "./component/shell-output-dialog"
 import { openDialogConfirm } from "./ui/dialog-confirm"
 import { openDialogHelp } from "./ui/dialog-help"
 import { ToastProvider, useToast } from "./ui/toast"
@@ -108,6 +118,8 @@ function AppShell(props: SolidAppProps) {
   )
   const [notice, setNotice] = createSignal(props.notice ?? "")
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
+  const [activeModel, setActiveModel] = createSignal<SolidModelRef>(demoModels()[0]!)
+  const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(demoStashEntries())
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
 
@@ -216,11 +228,47 @@ function AppShell(props: SolidAppProps) {
       showThemeList: () => {
         openDialogThemeList(dialog, {
           current: themeId(),
+          onPreview: (id) => setThemeId(id),
           onSelect: (id) => {
             setThemeId(id)
             toast.info(`Theme · ${id} (Solid list · /theme persists on legacy path)`, "Theme")
           },
         })
+      },
+      showModelPicker: () => {
+        setComposerFocused(false)
+        openModelDialog(dialog, {
+          models: demoModels(),
+          favorites: demoFavoriteModels(),
+          recents: demoRecentModels(),
+          current: activeModel(),
+          onSelect: (model) => {
+            setActiveModel(model)
+            toast.success(`Model · ${model.name}`, "Models")
+          },
+        })
+      },
+      showStash: () => {
+        setComposerFocused(false)
+        openStashDialog(dialog, {
+          entries: stashEntries(),
+          onSelect: (entry) => {
+            setStashEntries((prev) => prev.filter((item) => item.id !== entry.id))
+            setNotice(`Stash restored · ${entry.text.slice(0, 60)}`)
+            toast.success("Stash restored into notice (composer wire next)", "Stash")
+          },
+        })
+      },
+      showErrorDetails: () => {
+        setComposerFocused(false)
+        openErrorDetailsDialog(dialog, {
+          ...demoErrorDetails(),
+          onCopy: () => toast.info("Error details copied (stub)", "Error"),
+        })
+      },
+      showShellOutput: () => {
+        setComposerFocused(false)
+        openShellOutputDialog(dialog, demoShellOutput())
       },
     }),
   )

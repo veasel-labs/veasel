@@ -77,6 +77,10 @@ describe("Solid dialog host + command palette", () => {
         showToast: () => ran.push("toast"),
         showConfirm: () => ran.push("confirm"),
         showThemeList: () => ran.push("themes"),
+        showModelPicker: () => ran.push("model"),
+        showStash: () => ran.push("stash"),
+        showErrorDetails: () => ran.push("error"),
+        showShellOutput: () => ran.push("shell"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -121,6 +125,10 @@ describe("Solid dialog host + command palette", () => {
         showToast: () => {},
         showConfirm: () => {},
         showThemeList: () => {},
+        showModelPicker: () => {},
+        showStash: () => {},
+        showErrorDetails: () => {},
+        showShellOutput: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

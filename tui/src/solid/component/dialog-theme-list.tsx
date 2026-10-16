@@ -6,6 +6,8 @@ import { useDialog } from "../ui/dialog"
 export type DialogThemeListProps = {
   current: BuiltinThemeId
   onSelect?: (id: BuiltinThemeId) => void
+  /** Live preview while moving the highlight (OpenCode-style). */
+  onPreview?: (id: BuiltinThemeId) => void
 }
 
 const builtinIds = Object.keys(themes) as BuiltinThemeId[]
@@ -31,6 +33,8 @@ export function openDialogThemeList(
   dialog: ReturnType<typeof useDialog>,
   props: DialogThemeListProps,
 ) {
+  const initial = props.current
+  let confirmed = false
   openDialogSelect(dialog, {
     title: "Themes",
     current: props.current,
@@ -41,6 +45,14 @@ export function openDialogThemeList(
       category: "Builtin",
       searchText: id === "mint" ? "default veasel" : id,
     })),
-    onSelect: (option) => props.onSelect?.(option.value),
+    onMove: (option) => props.onPreview?.(option.value),
+    onSelect: (option) => {
+      confirmed = true
+      props.onSelect?.(option.value)
+    },
+    onCancel: () => {
+      if (!confirmed) props.onPreview?.(initial)
+    },
+    footer: "Enter applies · Esc restores previous",
   })
 }

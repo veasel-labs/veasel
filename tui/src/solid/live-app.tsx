@@ -98,6 +98,7 @@ import {
   sessionTabsFromEntries,
 } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
+import { resolveLiveSlash } from "./live-slash"
 import {
   HOME_SIDEBAR_DEFAULT,
   clampHomeSidebarWidth,
@@ -859,6 +860,69 @@ function LiveAppShell(props: LiveAppProps) {
       setStreamingText("")
       setStatus("● connected  ·  listening for activity")
       setComposerFocused(true)
+    }
+  }
+
+  const handleComposerSubmit = (text: string) => {
+    const action = resolveLiveSlash(text)
+    switch (action.kind) {
+      case "passthrough":
+        void sendMessage(text)
+        return
+      case "connect":
+      case "models":
+        void openSettings()
+        return
+      case "skills":
+        if (action.filter) {
+          toast.info(`Skills filter · ${action.filter}`, "Skills")
+        }
+        void openLiveSkills()
+        return
+      case "mcp":
+        if (action.filter) {
+          toast.info(`MCP filter · ${action.filter}`, "MCP")
+        }
+        void openLiveMcp()
+        return
+      case "help":
+        setComposerFocused(false)
+        openDialogHelp(dialog, { compact: !action.advanced })
+        return
+      case "theme":
+        if (action.mode === "list") {
+          openThemeList()
+          return
+        }
+        if (action.mode === "id" && action.id && isBuiltinThemeId(action.id)) {
+          setThemeId(action.id)
+          saveThemeId(action.id)
+          toast.success(`Theme · ${action.id}`, "Theme")
+          return
+        }
+        toast.info(`Unknown theme · ${action.id ?? "?"}`, "Theme")
+        return
+      case "status":
+        void openLiveStatus()
+        return
+      case "reviews":
+        void openLiveReviews()
+        return
+      case "export":
+        openLiveExport()
+        return
+      case "session-list":
+        openLiveSessionList()
+        return
+      case "unsupported":
+        toast.info(
+          `${action.command} is not wired in LiveApp yet · try Ctrl+P or the matching dialog`,
+          "Slash",
+        )
+        return
+      case "unknown":
+        toast.info(`Unknown command · ${action.command}`, "Slash")
+        return
     }
   }
 
@@ -1668,7 +1732,7 @@ function LiveAppShell(props: LiveAppProps) {
         <SolidComposer
           onSubmit={(text) => {
             setAttachments([])
-            void sendMessage(text)
+            handleComposerSubmit(text)
           }}
           focused={composerFocused()}
           restoreToken={restoreToken()}

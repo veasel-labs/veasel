@@ -18,18 +18,21 @@ afterEach(() => {
 // kittyKeyboard so Esc is unambiguous (bare ESC waits on a timeout otherwise).
 const demoSize = { width: 80, height: 30, kittyKeyboard: true } as const
 
+const noopPaletteHandlers = {
+  showOpen: () => {},
+  showStatus: () => {},
+  showAgent: () => {},
+  showVariant: () => {},
+  showWorkspaces: () => {},
+  showUpdate: () => {},
+  showPair: () => {},
+  showHighlights: () => {},
+  showImagePreview: () => {},
+} as const
+
 describe("Solid dialog host + command palette", () => {
   test("Ctrl+P opens the palette and Esc dismisses it", async () => {
-    // Seed a turn so the session chrome (with Ctrl+P hint) is shown, not home splash.
-    const setup = await testRender(
-      () => (
-        <App
-          initialMessages={[{ role: "user", content: "palette smoke" }]}
-          initialReviews={[]}
-        />
-      ),
-      demoSize,
-    )
+    const setup = await testRender(() => <App initialMessages={[]} />, demoSize)
     setups.push(setup)
     await setup.renderOnce()
 
@@ -51,15 +54,7 @@ describe("Solid dialog host + command palette", () => {
   })
 
   test("filter narrows the command list", async () => {
-    const setup = await testRender(
-      () => (
-        <App
-          initialMessages={[{ role: "user", content: "filter smoke" }]}
-          initialReviews={[]}
-        />
-      ),
-      demoSize,
-    )
+    const setup = await testRender(() => <App initialMessages={[]} />, demoSize)
     setups.push(setup)
     await setup.renderOnce()
 
@@ -101,9 +96,7 @@ describe("Solid dialog host + command palette", () => {
         showMcp: () => ran.push("mcp"),
         showSkills: () => ran.push("skills"),
         showExport: () => ran.push("export"),
-        showAgent: () => ran.push("agent"),
-        showVariant: () => ran.push("variant"),
-        showWorkspaces: () => ran.push("workspaces"),
+        ...noopPaletteHandlers,
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -155,9 +148,7 @@ describe("Solid dialog host + command palette", () => {
         showMcp: () => {},
         showSkills: () => {},
         showExport: () => {},
-        showAgent: () => {},
-        showVariant: () => {},
-        showWorkspaces: () => {},
+        ...noopPaletteHandlers,
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

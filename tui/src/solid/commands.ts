@@ -53,12 +53,24 @@ export type PaletteActionHandlers = {
   showSkills: () => void
   /** Open session export options dialog. */
   showExport: () => void
+  /** Open recent sessions / projects (Ctrl+O). */
+  showOpen: () => void
+  /** Rich status dialog (MCP, model, usage). */
+  showStatus: () => void
   /** Open agent picker dialog. */
   showAgent: () => void
   /** Open model variant picker dialog. */
   showVariant: () => void
   /** Open workspaces / worktree move dialog. */
   showWorkspaces: () => void
+  /** Changelog / update stub dialog. */
+  showUpdate: () => void
+  /** Device pairing N/A dialog. */
+  showPair: () => void
+  /** Release highlights dialog. */
+  showHighlights: () => void
+  /** Image preview stub dialog. */
+  showImagePreview: () => void
 }
 
 const builtinThemeIds = Object.keys(themes) as BuiltinThemeId[]
@@ -231,6 +243,23 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       run: () => handlers.showExport(),
     },
     {
+      id: "veasel.open.dialog",
+      title: "Open…",
+      description: "Recent sessions and project worktrees (Ctrl+O)",
+      group: "session",
+      keywords: ["open", "recent", "projects", "worktree", "ctrl+o"],
+      shortcut: "Ctrl+O",
+      run: () => handlers.showOpen(),
+    },
+    {
+      id: "veasel.status.dialog",
+      title: "Status",
+      description: "Session, model, MCP, and usage summary",
+      group: "guide",
+      keywords: ["status", "mcp", "usage", "connection"],
+      run: () => handlers.showStatus(),
+    },
+    {
       id: "veasel.agent.picker",
       title: "Select agent",
       description: "Switch the active Solid agent profile",
@@ -241,9 +270,9 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
     {
       id: "veasel.variant.picker",
       title: "Select variant",
-      description: "Model variant / effort preset (stub)",
+      description: "Model variant / effort preset (maps to output budget later)",
       group: "setup",
-      keywords: ["variant", "effort", "fast", "max"],
+      keywords: ["variant", "effort", "fast", "max", "budget"],
       run: () => handlers.showVariant(),
     },
     {
@@ -253,6 +282,38 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       group: "session",
       keywords: ["workspace", "worktree", "move", "git"],
       run: () => handlers.showWorkspaces(),
+    },
+    {
+      id: "veasel.update.dialog",
+      title: "Check for updates",
+      description: "Changelog stub until release channel is wired",
+      group: "guide",
+      keywords: ["update", "changelog", "version", "release"],
+      run: () => handlers.showUpdate(),
+    },
+    {
+      id: "veasel.pair.dialog",
+      title: "Device pairing",
+      description: "Not available — see compatibility doc",
+      group: "guide",
+      keywords: ["pair", "device", "mobile", "qr"],
+      run: () => handlers.showPair(),
+    },
+    {
+      id: "veasel.highlights.dialog",
+      title: "What's new",
+      description: "Release highlights (stub)",
+      group: "guide",
+      keywords: ["highlights", "release", "notes", "new"],
+      run: () => handlers.showHighlights(),
+    },
+    {
+      id: "veasel.image.preview",
+      title: "Image preview",
+      description: "Attachment preview stub (ASCII fallback)",
+      group: "session",
+      keywords: ["image", "preview", "attachment", "screenshot"],
+      run: () => handlers.showImagePreview(),
     },
   ]
 

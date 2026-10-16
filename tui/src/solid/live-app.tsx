@@ -29,6 +29,7 @@ import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
+import { openStatusDialog } from "./component/status-dialog"
 import { SessionTabs } from "./component/session-tabs"
 import { openDialogPrompt } from "./ui/dialog-prompt"
 import { moveSessionTabIndex, sessionTabsFromEntries } from "./session-tabs"
@@ -260,6 +261,33 @@ function LiveAppShell(props: LiveAppProps) {
         setRestoreToken({ id: `timeline-${entry.id}-${Date.now()}`, text: entry.content })
         toast.success(`Restored turn ${entry.turn}`, "Timeline")
       },
+    })
+  }
+
+  const openLiveStatus = async () => {
+    setComposerFocused(false)
+    let provider: string | undefined
+    let model: string | undefined
+    let usageLine: string | undefined
+    try {
+      const settings = await props.api.getModelSettings()
+      provider = settings.active_provider
+      const profile = settings.profiles[settings.active_provider]
+      model = profile?.model
+      if (profile) {
+        usageLine = `max out ${profile.max_output_tokens} · key ${profile.api_key_saved ? "saved" : "missing"}`
+      }
+    } catch {
+      // Status still useful without model settings.
+    }
+    openStatusDialog(dialog, {
+      sessionTitle: inSession() ? sessionTitle() : "Home",
+      directory: directory(),
+      provider,
+      model,
+      usageLine,
+      connection: "LOCAL · loopback",
+      mcpServers: [],
     })
   }
 
@@ -619,6 +647,9 @@ function LiveAppShell(props: LiveAppProps) {
           void openSessionDiffs()
         },
         showSessionTimeline: () => openSessionTimeline(),
+        showStatus: () => {
+          void openLiveStatus()
+        },
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),
         widenSidebar: () => {
@@ -670,6 +701,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "t" && !key.meta) {
       key.preventDefault()
       openSessionTimeline()
+      return
+    }
+    if (key.ctrl && key.name === "i" && !key.meta) {
+      key.preventDefault()
+      void openLiveStatus()
       return
     }
     if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {
@@ -812,7 +848,7 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+T timeline · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

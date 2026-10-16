@@ -20,6 +20,7 @@ import {
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
 import { openDialogHelp } from "./ui/dialog-help"
+import { openDialogAlert } from "./ui/dialog-alert"
 import { SolidComposer } from "./composer"
 import { SolidTranscript, transcriptMessagesFromChatTurns, type ToolAwareMessage } from "./transcript"
 import {
@@ -98,6 +99,9 @@ import {
   sessionTabsFromEntries,
 } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
+import { resolveLiveSlash } from "./live-slash"
+import { pageMayHaveOlder, type ChatTurn } from "../chat-history"
+import { formatRepositoryMapSummary } from "../repository-map"
 import {
   HOME_SIDEBAR_DEFAULT,
   clampHomeSidebarWidth,
@@ -122,6 +126,7 @@ import {
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
 const liveFooterHint = `${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
+const historyPageSize = 100
 import {
   demoOpenProjects,
   groupWorktreesByProject,
@@ -164,6 +169,8 @@ function LiveAppShell(props: LiveAppProps) {
   const [unreadSessionIds, setUnreadSessionIds] = createSignal<Record<string, true>>({})
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>([])
   const [lastError, setLastError] = createSignal<LiveLastError | undefined>()
+  const [oldestTurnId, setOldestTurnId] = createSignal<number | undefined>()
+  const [historyHasOlder, setHistoryHasOlder] = createSignal(false)
   const [status, setStatus] = createSignal(formatBusyStatus("connecting"))
   const noteError = (
     source: string,
@@ -188,7 +195,24 @@ function LiveAppShell(props: LiveAppProps) {
   const [themeId, setThemeId] = createSignal<BuiltinThemeId>(
     isBuiltinThemeId(initialTheme) ? initialTheme : "mint",
   )
-  const [composerFocused, setComposerFocused] = createSignal(true)
+  /**
+   * Home keeps session-nav hotkeys (s/n/q/j/k) until `/` opens the slash bar.
+   * Always-on home composer stole `s` from the standalone smoke / classic bindings.
+   */
+  const [composerFocused, setComposerFocused] = createSignal(false)
+  const [homeComposerOpen, setHomeComposerOpen] = createSignal(false)
+
+  const applyHistoryPage = (turns: ChatTurn[], mode: "replace" | "prepend") => {
+    const mapped = transcriptMessagesFromChatTurns(turns)
+    if (mode === "replace") {
+      setMessages(mapped)
+      setOldestTurnId(turns[0]?.id)
+    } else if (turns.length > 0) {
+      setMessages((prev) => [...mapped, ...prev])
+      setOldestTurnId(turns[0]!.id)
+    }
+    setHistoryHasOlder(pageMayHaveOlder(turns, historyPageSize))
+  }
   const [composerDraft, setComposerDraft] = createSignal("")
   const [restoreToken, setRestoreToken] = createSignal<{ id: string; text: string } | undefined>()
   const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(loadDraftStash())
@@ -550,8 +574,11 @@ function LiveAppShell(props: LiveAppProps) {
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
       if (reviews.length === 0) {
-        toast.info("No pending edits, shell commands, or MCP calls", "Reviews")
-        setComposerFocused(true)
+        openDialogAlert(dialog, {
+          title: "Reviews",
+          message: "No pending edits, shell commands, or MCP calls.",
+          onConfirm: () => setComposerFocused(true),
+        })
         return
       }
       openReviewPanel(dialog, {
@@ -582,6 +609,7 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const inSession = createMemo(() => Boolean(activeSessionId()))
+  const composerVisible = createMemo(() => inSession() || homeComposerOpen())
   const sessionTitle = createMemo(() => {
     const id = activeSessionId()
     return sessions().find((item) => item.id === id)?.title ?? "Session"
@@ -651,7 +679,7 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
-  const openLiveSkills = async () => {
+  const openLiveSkills = async (filter = "") => {
     setComposerFocused(false)
     const sessionId = activeSessionId()
     try {
@@ -661,10 +689,20 @@ function LiveAppShell(props: LiveAppProps) {
           ? props.api.listSessionSkills(sessionId)
           : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionSkills>>),
       ])
-      const skills = skillCatalogFromPlugins(catalog, enabled)
+      const needle = filter.trim().toLowerCase()
+      const skills = skillCatalogFromPlugins(catalog, enabled).filter((skill) => {
+        if (!needle) return true
+        const haystack = `${skill.key} ${skill.description}`.toLowerCase()
+        return needle.split(/\s+/).every((token) => haystack.includes(token))
+      })
       if (skills.length === 0) {
-        toast.info("No skills discovered for this workspace", "Skills")
-        setComposerFocused(true)
+        openDialogAlert(dialog, {
+          title: "Skills",
+          message: needle
+            ? `No skills match “${filter.trim()}”. Link a plugin with /plugins, then retry.`
+            : "No skills discovered for this workspace. Link an Agent Plugin package (/plugins) or open a session with skills enabled.",
+          onConfirm: () => setComposerFocused(true),
+        })
         return
       }
       openSkillDialog(dialog, {
@@ -674,19 +712,20 @@ function LiveAppShell(props: LiveAppProps) {
           const current = composerDraft().trimEnd()
           const next = current ? `${current} ${token}` : token
           setRestoreToken({ id: `skill-${skill.key}-${Date.now()}`, text: next })
+          setComposerFocused(true)
           toast.success(`Inserted ${token}`, "Skills")
         },
       })
     } catch (error) {
-      toast.info(
-        error instanceof Error ? error.message : "could not list skills",
-        "Skills",
-      )
-      setComposerFocused(true)
+      openDialogAlert(dialog, {
+        title: "Skills",
+        message: error instanceof Error ? error.message : "could not list skills",
+        onConfirm: () => setComposerFocused(true),
+      })
     }
   }
 
-  const openLiveMcp = async () => {
+  const openLiveMcp = async (filter = "") => {
     setComposerFocused(false)
     const sessionId = activeSessionId()
     try {
@@ -696,10 +735,20 @@ function LiveAppShell(props: LiveAppProps) {
           ? props.api.listSessionMcpServers(sessionId)
           : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionMcpServers>>),
       ])
-      const servers = solidMcpServersFromCatalog(configured, trusted)
+      const needle = filter.trim().toLowerCase()
+      const servers = solidMcpServersFromCatalog(configured, trusted).filter((server) => {
+        if (!needle) return true
+        const haystack = `${server.name} ${server.transport} ${server.status} ${server.scope ?? ""}`.toLowerCase()
+        return needle.split(/\s+/).every((token) => haystack.includes(token))
+      })
       if (servers.length === 0) {
-        toast.info("No configured or trusted MCP servers yet", "MCP")
-        setComposerFocused(true)
+        openDialogAlert(dialog, {
+          title: "MCP",
+          message: needle
+            ? `No MCP servers match “${filter.trim()}”.`
+            : "No configured or trusted MCP servers yet. Add with /mcp add (headless) or configure ~/.config/veasel, then /mcp trust.",
+          onConfirm: () => setComposerFocused(true),
+        })
         return
       }
       openMcpDialog(dialog, {
@@ -711,14 +760,128 @@ function LiveAppShell(props: LiveAppProps) {
               : `${server.status} · ${server.name}`,
             "MCP",
           )
+          setComposerFocused(true)
         },
       })
     } catch (error) {
-      toast.info(
-        error instanceof Error ? error.message : "could not list MCP servers",
-        "MCP",
+      openDialogAlert(dialog, {
+        title: "MCP",
+        message: error instanceof Error ? error.message : "could not list MCP servers",
+        onConfirm: () => setComposerFocused(true),
+      })
+    }
+  }
+
+  const openLivePlugins = async (filter = "") => {
+    setComposerFocused(false)
+    try {
+      const catalog = await props.api.listPluginLinks()
+      const needle = filter.trim().toLowerCase()
+      const links = catalog.links.filter((link) => {
+        if (!needle) return true
+        const haystack = `${link.name} ${link.path} ${link.display_name ?? ""} ${link.description ?? ""}`.toLowerCase()
+        return needle.split(/\s+/).every((token) => haystack.includes(token))
+      })
+      if (links.length === 0) {
+        openDialogAlert(dialog, {
+          title: "Plugins",
+          message: needle
+            ? `No plugin links match “${filter.trim()}”.`
+            : "No managed plugin links. Use /plugin add [--replace] <absolute-path> (headless) to link a local Agent Plugin package.",
+          onConfirm: () => setComposerFocused(true),
+        })
+        return
+      }
+      openDialogSelect(dialog, {
+        title: "Plugin links",
+        placeholder: "Filter plugins…",
+        options: links.map((link) => ({
+          title: link.display_name?.trim() || link.name,
+          value: link.name,
+          description: link.path,
+          searchText: `${link.name} ${link.path} ${link.display_name ?? ""} ${link.description ?? ""}`,
+        })),
+        onSelect: (option) => {
+          toast.info(`Linked · ${option.value}`, "Plugins")
+          setComposerFocused(true)
+        },
+        onCancel: () => setComposerFocused(true),
+        footer: "Enter selects · /plugin add|remove stays headless for now",
+      })
+    } catch (error) {
+      openDialogAlert(dialog, {
+        title: "Plugins",
+        message: error instanceof Error ? error.message : "could not list plugin links",
+        onConfirm: () => setComposerFocused(true),
+      })
+    }
+  }
+
+  const openLiveMap = async (hint = "") => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Repository map",
+        message: "Open a session first, then run /map [hint].",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const map = await props.api.getWorkspaceMap(sessionId, hint)
+      openDialogAlert(dialog, {
+        title: "Repository map",
+        message: formatRepositoryMapSummary(map, hint),
+        onConfirm: () => setComposerFocused(true),
+      })
+      setStatus(
+        `● repository map  ·  ${map.bytes} B · ${map.file_count} files · ${map.symbol_count} symbols${map.truncated ? " · truncated" : ""}`,
       )
-      setComposerFocused(true)
+    } catch (error) {
+      openDialogAlert(dialog, {
+        title: "Repository map",
+        message: error instanceof Error ? error.message : "repository map unavailable",
+        onConfirm: () => setComposerFocused(true),
+      })
+    }
+  }
+
+  const loadOlderHistory = async () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "History",
+        message: "Open a session first, then run /history older.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const before = oldestTurnId()
+    if (!historyHasOlder() || before === undefined) {
+      toast.info("No earlier chat messages", "History")
+      return
+    }
+    setStatus(formatBusyStatus("loading earlier messages…"))
+    try {
+      const older = await props.api.listMessages(sessionId, {
+        before,
+        limit: historyPageSize,
+      })
+      applyHistoryPage(older, "prepend")
+      toast.success(
+        older.length > 0
+          ? `Loaded ${older.length} earlier message${older.length === 1 ? "" : "s"}`
+          : "No earlier chat messages",
+        "History",
+      )
+      setStatus("● connected  ·  listening for activity")
+    } catch (error) {
+      setStatus(
+        formatErrorStatus(
+          `history load failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        ),
+      )
     }
   }
 
@@ -798,11 +961,15 @@ function LiveAppShell(props: LiveAppProps) {
     setActiveSessionId(session.id)
     setUnreadSessionIds((current) => clearSessionUnread(current, session.id))
     setMessages([])
+    setOldestTurnId(undefined)
+    setHistoryHasOlder(false)
     setStreamingText("")
     setStreaming(false)
+    setHomeComposerOpen(false)
+    setComposerFocused(true)
     try {
-      const turns = await props.api.listMessages(session.id)
-      setMessages(transcriptMessagesFromChatTurns(turns))
+      const turns = await props.api.listMessages(session.id, { limit: historyPageSize })
+      applyHistoryPage(turns, "replace")
       setStatus("● connected  ·  listening for activity")
     } catch (error) {
       noteError(
@@ -844,9 +1011,9 @@ function LiveAppShell(props: LiveAppProps) {
       if (activeTurnId() !== operationId) return
     }
     try {
-      const latest = await props.api.listMessages(sessionId)
+      const latest = await props.api.listMessages(sessionId, { limit: historyPageSize })
       if (activeSessionId() === sessionId) {
-        setMessages(transcriptMessagesFromChatTurns(latest))
+        applyHistoryPage(latest, "replace")
       }
     } catch {
       // History reload is best-effort; reopen still works.
@@ -859,6 +1026,92 @@ function LiveAppShell(props: LiveAppProps) {
       setStreamingText("")
       setStatus("● connected  ·  listening for activity")
       setComposerFocused(true)
+    }
+  }
+
+  const handleComposerSubmit = (text: string) => {
+    const action = resolveLiveSlash(text)
+    switch (action.kind) {
+      case "passthrough":
+        if (!activeSessionId()) {
+          openDialogAlert(dialog, {
+            title: "Session required",
+            message: "Open a session (n or Enter) before chatting. Slash commands like /connect and /skills work from home.",
+            onConfirm: () => setComposerFocused(true),
+          })
+          return
+        }
+        void sendMessage(text)
+        return
+      case "connect":
+      case "models":
+        void openSettings()
+        return
+      case "skills":
+        void openLiveSkills(action.filter)
+        return
+      case "mcp":
+        void openLiveMcp(action.filter)
+        return
+      case "plugins":
+        void openLivePlugins(action.filter)
+        return
+      case "map":
+        void openLiveMap(action.hint)
+        return
+      case "history-older":
+        void loadOlderHistory()
+        return
+      case "history-hint":
+        openDialogAlert(dialog, {
+          title: "History",
+          message: "Use /history older to load the preceding page of this session's chat history.",
+          onConfirm: () => setComposerFocused(true),
+        })
+        return
+      case "help":
+        setComposerFocused(false)
+        openDialogHelp(dialog, { compact: !action.advanced })
+        return
+      case "theme":
+        if (action.mode === "list") {
+          openThemeList()
+          return
+        }
+        if (action.mode === "id" && action.id && isBuiltinThemeId(action.id)) {
+          setThemeId(action.id)
+          saveThemeId(action.id)
+          toast.success(`Theme · ${action.id}`, "Theme")
+          return
+        }
+        toast.info(`Unknown theme · ${action.id ?? "?"}`, "Theme")
+        return
+      case "status":
+        void openLiveStatus()
+        return
+      case "reviews":
+        void openLiveReviews()
+        return
+      case "export":
+        openLiveExport()
+        return
+      case "session-list":
+        openLiveSessionList()
+        return
+      case "unsupported":
+        openDialogAlert(dialog, {
+          title: "Slash",
+          message: `${action.command} is not wired in LiveApp yet. Try Ctrl+P for the matching dialog, or the headless CLI for manage subcommands.`,
+          onConfirm: () => setComposerFocused(true),
+        })
+        return
+      case "unknown":
+        openDialogAlert(dialog, {
+          title: "Slash",
+          message: `Unknown command · ${action.command}\n\nType /help to see available commands.`,
+          onConfirm: () => setComposerFocused(true),
+        })
+        return
     }
   }
 
@@ -883,7 +1136,7 @@ function LiveAppShell(props: LiveAppProps) {
         executionPolicyForAgent(executionPolicy()),
       )
       if (result.kind === "async") return
-      setMessages(transcriptMessagesFromChatTurns(result.messages))
+      applyHistoryPage(result.messages, "replace")
       setStreaming(false)
       setStreamingText("")
       setSending(false)
@@ -1542,6 +1795,21 @@ function LiveAppShell(props: LiveAppProps) {
         )
         return
       }
+      // Slash composer on home: `/` mounts it; Esc dismisses back to session nav.
+      if (key.name === "/" && !key.ctrl && !key.meta && !homeComposerOpen()) {
+        key.preventDefault()
+        setHomeComposerOpen(true)
+        setRestoreToken({ id: `home-slash-${Date.now()}`, text: "/" })
+        setComposerFocused(true)
+        return
+      }
+      if (key.name === "escape" && homeComposerOpen()) {
+        key.preventDefault()
+        setHomeComposerOpen(false)
+        setComposerFocused(false)
+        return
+      }
+      if (homeComposerOpen()) return
       if (key.name === "s" && !key.ctrl && !key.meta) {
         key.preventDefault()
         void openSettings()
@@ -1630,6 +1898,7 @@ function LiveAppShell(props: LiveAppProps) {
             sidebarWidth={sidebarWidth()}
             terminalColumns={terminalColumns()}
             onSidebarWidthChange={commitSidebarWidth}
+            showFooter={!homeComposerOpen()}
           />
         }
       >
@@ -1646,7 +1915,11 @@ function LiveAppShell(props: LiveAppProps) {
           onCloseActive={() => {
             setActiveSessionId(undefined)
             setMessages([])
+            setOldestTurnId(undefined)
+            setHistoryHasOlder(false)
             setAttachments([])
+            setHomeComposerOpen(false)
+            setComposerFocused(false)
             setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
           }}
         />
@@ -1664,24 +1937,39 @@ function LiveAppShell(props: LiveAppProps) {
             toast.info(`Jumped to ${info.role} message`, "Transcript")
           }}
           cols={80}
+          hasOlder={historyHasOlder()}
         />
+      </Show>
+      <Show when={composerVisible()}>
         <SolidComposer
+          placeholder={
+            inSession()
+              ? undefined
+              : "Type /connect · /skills · /help  (Esc dismisses)"
+          }
           onSubmit={(text) => {
             setAttachments([])
-            void sendMessage(text)
+            handleComposerSubmit(text)
           }}
           focused={composerFocused()}
           restoreToken={restoreToken()}
           onDraftChange={setComposerDraft}
-          attachments={attachments()}
+          attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
           onPreviewAttachment={previewAttachment}
           onPathPaste={(path) => stageAttachmentPath(path)}
           workspaceRoot={directory()}
         />
+      </Show>
+      <Show when={inSession() || homeComposerOpen()}>
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            <Show
+              when={inSession()}
+              fallback={`${homeFooterHint} · Esc dismiss slash · drag │ · Alt+←/→ resize`}
+            >
+              {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            </Show>
           </text>
         </box>
       </Show>

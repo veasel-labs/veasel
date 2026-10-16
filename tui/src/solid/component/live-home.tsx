@@ -23,6 +23,8 @@ export type LiveHomeProps = {
   sidebarWidth?: number
   terminalColumns?: number
   onSidebarWidthChange?: (width: number) => void
+  /** When false, omit the bottom hint row (LiveApp draws a shared footer). */
+  showFooter?: boolean
 }
 
 /** Classic-compatible home: SESSIONS sidebar + splash + q quit footer. */
@@ -104,18 +106,20 @@ export function LiveHome(props: LiveHomeProps) {
         </box>
       </box>
 
-      <box
-        width="100%"
-        height={1}
-        flexShrink={0}
-        paddingLeft={1}
-        paddingRight={1}
-        backgroundColor={solidMint.shellBg}
-      >
-        <text fg={solidMint.muted}>
-          {homeFooterHint} · drag │ · Alt+←/→ resize sidebar
-        </text>
-      </box>
+      <Show when={props.showFooter !== false}>
+        <box
+          width="100%"
+          height={1}
+          flexShrink={0}
+          paddingLeft={1}
+          paddingRight={1}
+          backgroundColor={solidMint.shellBg}
+        >
+          <text fg={solidMint.muted}>
+            {homeFooterHint} · drag │ · Alt+←/→ resize sidebar
+          </text>
+        </box>
+      </Show>
     </box>
   )
 }

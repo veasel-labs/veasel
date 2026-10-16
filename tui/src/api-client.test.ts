@@ -85,3 +85,42 @@ describe("VeaselApiClient git worktrees", () => {
     expect(tree.path).toBe("/tmp/feature")
   })
 })
+
+describe("VeaselApiClient workspace edits", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("listWorkspaceEdits and getWorkspaceEdit hit session edit routes", async () => {
+    const calls: string[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes("/workspace/edits/") && !url.endsWith("/workspace/edits")) {
+        return new Response(
+          JSON.stringify({
+            id: "edit-1",
+            path: "src/main.v",
+            status: "pending",
+            diff: "--- a\n+++ b\n+hi\n",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        )
+      }
+      return new Response(
+        JSON.stringify([{ id: "edit-1", path: "src/main.v", status: "pending" }]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const listed = await client.listWorkspaceEdits("sess-1")
+    expect(calls[0]).toContain("/v1/sessions/sess-1/workspace/edits")
+    expect(listed[0]?.path).toBe("src/main.v")
+    const proposal = await client.getWorkspaceEdit("sess-1", "edit-1")
+    expect(calls[1]).toContain("/workspace/edits/edit-1")
+    expect(proposal.diff).toContain("+hi")
+  })
+})

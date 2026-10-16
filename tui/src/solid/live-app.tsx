@@ -27,6 +27,7 @@ import { openProviderSettingsDialog } from "./component/provider-settings-dialog
 import { openCommandPalette } from "./component/command-palette"
 import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
+import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openDialogPrompt } from "./ui/dialog-prompt"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import {
@@ -186,6 +187,34 @@ function LiveAppShell(props: LiveAppProps) {
           ? asciiImagePreview(attachment)
           : `file · ${attachment.name}\n${attachment.path}`,
     })
+  }
+
+  const openSessionDiffs = async () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      toast.info("Open a session first", "Diffs")
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const edits = await props.api.listWorkspaceEdits(sessionId)
+      if (edits.length === 0) {
+        toast.info("No workspace edit proposals yet", "Diffs")
+        setComposerFocused(true)
+        return
+      }
+      openSessionDiffDialog(dialog, {
+        edits,
+        loadDiff: (editId) => props.api.getWorkspaceEdit(sessionId, editId),
+        onError: (message) => toast.info(message, "Diffs"),
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not list workspace edits",
+        "Diffs",
+      )
+      setComposerFocused(true)
+    }
   }
 
   const inSession = createMemo(() => Boolean(activeSessionId()))
@@ -535,6 +564,9 @@ function LiveAppShell(props: LiveAppProps) {
         showStash: () => openLiveStash(),
         cycleTheme: () => cycleTheme(),
         attachFile: () => openAttachPrompt(),
+        showSessionDiffs: () => {
+          void openSessionDiffs()
+        },
         quit: () => props.onQuit?.(),
       }),
     )
@@ -560,6 +592,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "s" && !key.meta) {
       key.preventDefault()
       stashComposerDraft()
+      return
+    }
+    if (key.ctrl && key.name === "d" && !key.meta) {
+      key.preventDefault()
+      void openSessionDiffs()
       return
     }
     if (!inSession()) {
@@ -684,7 +721,7 @@ function LiveAppShell(props: LiveAppProps) {
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+S stash · attach via palette · theme {themeId()}
+            {liveFooterHint} · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

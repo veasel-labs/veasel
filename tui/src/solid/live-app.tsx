@@ -28,7 +28,9 @@ import { openCommandPalette } from "./component/command-palette"
 import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
+import { SessionTabs } from "./component/session-tabs"
 import { openDialogPrompt } from "./ui/dialog-prompt"
+import { moveSessionTabIndex, sessionTabsFromEntries } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import {
   loadDraftStash,
@@ -151,15 +153,20 @@ function LiveAppShell(props: LiveAppProps) {
     const resolved = resolveAttachmentPath(raw)
     if (!resolved) {
       toast.info("Path not found · enter an absolute or ~/ path", "Attach")
-      return
+      return false
     }
     const next = createComposerAttachment(resolved)
+    let staged = false
     setAttachments((current) => {
       const merged = addComposerAttachment(current, next)
       if (merged.length === current.length) toast.info("Already attached", "Attach")
-      else toast.success(`Attached · ${next.name}`, "Attach")
+      else {
+        staged = true
+        toast.success(`Attached · ${next.name}`, "Attach")
+      }
       return merged
     })
+    return staged
   }
 
   const openAttachPrompt = () => {
@@ -542,6 +549,17 @@ function LiveAppShell(props: LiveAppProps) {
     if (!dialog.open()) setComposerFocused(true)
   })
 
+  const switchSessionTab = (delta: number) => {
+    const list = sessions()
+    if (list.length === 0) return
+    const current = Math.max(
+      0,
+      list.findIndex((item) => item.id === activeSessionId()),
+    )
+    const session = list[moveSessionTabIndex(current, delta, list.length)]
+    if (session) void openSession(session)
+  }
+
   const openPalette = () => {
     setComposerFocused(false)
     openCommandPalette(
@@ -567,6 +585,8 @@ function LiveAppShell(props: LiveAppProps) {
         showSessionDiffs: () => {
           void openSessionDiffs()
         },
+        nextSessionTab: () => switchSessionTab(1),
+        prevSessionTab: () => switchSessionTab(-1),
         quit: () => props.onQuit?.(),
       }),
     )
@@ -597,6 +617,11 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "d" && !key.meta) {
       key.preventDefault()
       void openSessionDiffs()
+      return
+    }
+    if (inSession() && key.ctrl && (key.name === "]" || key.name === "[")) {
+      key.preventDefault()
+      switchSessionTab(key.name === "]" ? 1 : -1)
       return
     }
     if (!inSession()) {
@@ -683,21 +708,23 @@ function LiveAppShell(props: LiveAppProps) {
           />
         }
       >
-        <box
-          width="100%"
-          height={2}
-          flexShrink={0}
-          flexDirection="row"
-          alignItems="center"
-          backgroundColor={solidMint.panelBg}
-          border
-          borderColor={solidMint.panelBorder}
-          paddingLeft={1}
-          paddingRight={1}
-        >
-          <text fg={solidMint.muted}>SESSION </text>
-          <text fg={solidMint.body}>{sessionTitle()}</text>
-        </box>
+        <SessionTabs
+          tabs={sessionTabsFromEntries(sessions())}
+          activeId={activeSessionId()}
+          onSelect={(id) => {
+            const session = sessions().find((item) => item.id === id)
+            if (session) void openSession(session)
+          }}
+          onNew={() => {
+            void createSession()
+          }}
+          onCloseActive={() => {
+            setActiveSessionId(undefined)
+            setMessages([])
+            setAttachments([])
+            setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
+          }}
+        />
         <SolidTranscript
           messages={messages}
           session={{ title: sessionTitle(), directory: directory() }}
@@ -717,11 +744,12 @@ function LiveAppShell(props: LiveAppProps) {
           attachments={attachments()}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
           onPreviewAttachment={previewAttachment}
+          onPathPaste={(path) => stageAttachmentPath(path)}
           workspaceRoot={directory()}
         />
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text fg={solidMint.muted}>
-            {liveFooterHint} · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+            {liveFooterHint} · Ctrl+[ / ] tabs · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
           </text>
         </box>
       </Show>

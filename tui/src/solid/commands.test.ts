@@ -129,6 +129,8 @@ describe("Solid palette commands", () => {
       cycleTheme: () => ran.push("theme"),
       attachFile: () => ran.push("attach"),
       showSessionDiffs: () => ran.push("diff"),
+      nextSessionTab: () => ran.push("tab-next"),
+      prevSessionTab: () => ran.push("tab-prev"),
       quit: () => ran.push("quit"),
     })
     expect(commands.map((command) => command.id)).toEqual([
@@ -142,6 +144,8 @@ describe("Solid palette commands", () => {
       "veasel.stash.list",
       "veasel.attach.file",
       "veasel.session.diff",
+      "veasel.session.tab.next",
+      "veasel.session.tab.prev",
       "veasel.quit",
     ])
     expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual(["veasel.settings"])

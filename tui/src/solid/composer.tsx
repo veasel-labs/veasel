@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
-import type { KeyEvent, TextareaRenderable } from "@opentui/core"
+import type { KeyEvent, PasteEvent, TextareaRenderable } from "@opentui/core"
 import {
   composerHeightForText,
   composerKeyBindings,
@@ -26,6 +26,8 @@ import {
 import {
   attachmentChipLabel,
   formatMessageWithAttachments,
+  normalizeAttachmentPath,
+  resolveAttachmentPath,
   type ComposerAttachment,
 } from "./composer-attachments"
 
@@ -45,6 +47,8 @@ export type SolidComposerProps = {
   attachments?: ComposerAttachment[]
   onRemoveAttachment?: (id: string) => void
   onPreviewAttachment?: (attachment: ComposerAttachment) => void
+  /** When paste is a local filepath, stage it instead of inserting text. */
+  onPathPaste?: (path: string) => boolean | void
 }
 
 function kindTitle(kind: ComposerAutocompleteMenu["kind"]): string {
@@ -186,6 +190,18 @@ export function SolidComposer(props: SolidComposerProps) {
       return
     }
     send((area?.plainText ?? draft()).trimEnd())
+  }
+
+  const handlePaste = (event: PasteEvent) => {
+    if (!props.onPathPaste) return
+    const text = new TextDecoder().decode(event.bytes).replace(/[\x00-\x1f\x7f-\x9f]/g, "")
+    // Only intercept paste when the clipboard looks like a single local path.
+    if (!normalizeAttachmentPath(text)) return
+    const resolved = resolveAttachmentPath(text)
+    if (!resolved) return
+    props.onPathPaste(resolved)
+    event.preventDefault()
+    event.stopPropagation()
   }
 
   useKeyboard((key: KeyEvent) => {
@@ -358,6 +374,7 @@ export function SolidComposer(props: SolidComposerProps) {
           focusedBackgroundColor={solidMint.inputFocusBg}
           cursorColor={solidMint.cursor}
           keyBindings={composerKeyBindings}
+          onPaste={handlePaste}
           onContentChange={() => {
             const next = area?.plainText ?? ""
             setDraft(next)

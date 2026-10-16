@@ -554,3 +554,4 @@ honoring its license and attribution.
   shared library. CI checks these platform-specific linkage guarantees.
 - SSE and SQLite behavior must be tested under concurrent clients before the
   server claims durable or restart-resilient background execution.
+- Solid MCP/Skills dialogs + session export options/result (OpenCode parity rows 7–8, 11–12).

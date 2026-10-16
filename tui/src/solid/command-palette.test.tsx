@@ -83,6 +83,7 @@ describe("Solid dialog host + command palette", () => {
         showShellOutput: () => ran.push("shell"),
         showMcp: () => ran.push("mcp"),
         showSkills: () => ran.push("skills"),
+        showExport: () => ran.push("export"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -133,6 +134,7 @@ describe("Solid dialog host + command palette", () => {
         showShellOutput: () => {},
         showMcp: () => {},
         showSkills: () => {},
+        showExport: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

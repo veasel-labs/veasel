@@ -299,6 +299,7 @@ function AppShell(props: SolidAppProps) {
           defaultThinking: true,
           onConfirm: (options) => {
             if (options.action === "copy") {
+              dialog.clear()
               toast.success(
                 `Copied · ${options.format}${options.thinking ? " · thinking" : ""}${options.tools ? " · tools" : ""}`,
                 "Export",

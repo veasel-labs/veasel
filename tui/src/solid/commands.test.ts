@@ -37,6 +37,7 @@ describe("Solid palette commands", () => {
       showShellOutput: () => ran.push("shell"),
       showMcp: () => ran.push("mcp"),
       showSkills: () => ran.push("skills"),
+      showExport: () => ran.push("export"),
     })
 
     expect(commands.some((command) => command.id === "veasel.help")).toBe(true)
@@ -53,6 +54,7 @@ describe("Solid palette commands", () => {
     expect(commands.some((command) => command.id === "veasel.shell.output")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.mcp.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.skills.list")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.session.export")).toBe(true)
     expect(commands.filter((command) => command.id.startsWith("veasel.slash.")).length).toBe(
       slashCommands.length,
     )

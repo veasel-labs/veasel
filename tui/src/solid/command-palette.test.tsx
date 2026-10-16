@@ -23,6 +23,7 @@ const noopPaletteHandlers = {
   nextUserMessage: () => {},
   lastUserMessage: () => {},
   cycleVerbosity: () => "default" as const,
+  toggleThinking: () => {},
   showOpen: () => {},
   showStatus: () => {},
   showAgent: () => {},

@@ -49,6 +49,15 @@ import {
   verbosityExpandsActivity,
   type TranscriptVerbosity,
 } from "./transcript-verbosity"
+import {
+  contentHasThinking,
+  isThinkingExpanded,
+  latestThinkingId,
+  splitThinkingParts,
+  thinkingHeader,
+  thinkingToggleShortcut,
+  toggleThinkingExpanded,
+} from "./thinking-blocks"
 
 /** Map durable chat-history turns into transcript message shape. */
 export function transcriptMessagesFromChatTurns(turns: ChatTurn[]): TranscriptMessage[] {
@@ -89,6 +98,11 @@ export type SolidTranscriptProps = {
   onMessageNavigated?: (info: { index: number; role: string }) => void
   /** Transcript verbosity (quiet / default / everything). */
   verbosity?: TranscriptVerbosity | Accessor<TranscriptVerbosity>
+  /**
+   * Incrementing tick from the parent (palette / tests) toggles the latest
+   * thinking block the same way Ctrl+H does.
+   */
+  thinkingToggleTick?: number | Accessor<number>
   /** Rendered-entry budget for the initial sticky-tail window. */
   mountBudget?: number
   /** Extra weight to mount when the viewport approaches the top. */
@@ -171,6 +185,125 @@ function ActivityGroupView(props: {
   )
 }
 
+function ThinkingBlockView(props: {
+  id: string
+  text: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <box flexDirection="column" width="100%" marginTop={0} marginBottom={0}>
+      <box flexDirection="row" width="100%" onMouseUp={() => props.onToggle()}>
+        <text wrapMode="none">
+          <span style={{ fg: solidMint.muted }}>
+            <strong>{thinkingHeader(props.expanded, props.text)}</strong>
+          </span>
+        </text>
+      </box>
+      <text wrapMode="none">
+        <span style={{ fg: solidMint.muted }}>
+          {"  "}
+          {thinkingToggleShortcut.label} toggle
+        </span>
+      </text>
+      <Show when={props.expanded}>
+        <text wrapMode="word">
+          <span style={{ fg: solidMint.muted }}>
+            {"  "}
+            {props.text}
+          </span>
+        </text>
+      </Show>
+    </box>
+  )
+}
+
+function bodySegmentsWithoutLabel(message: ToolAwareMessage, cols?: number): TranscriptSegment[] {
+  const segments = transcriptSegments({
+    messages: [{ role: message.role, content: message.content }],
+    cols,
+  })
+  // First segment is the spoken role label; keep indented body only.
+  return segments.slice(1)
+}
+
+function MessageBlockView(props: {
+  messages: ToolAwareMessage[]
+  startIndex: number
+  cols?: number
+  thinkingExpanded: Record<string, boolean>
+  onToggleThinking: (id: string) => void
+}) {
+  const message = () => props.messages[0]
+  const hasThinking = createMemo(() => {
+    const msg = message()
+    return Boolean(msg && contentHasThinking(msg.content))
+  })
+  const parts = createMemo(() => {
+    const msg = message()
+    if (!msg) return []
+    return splitThinkingParts(msg.content, `m${props.startIndex}`)
+  })
+
+  return (
+    <Show
+      when={hasThinking() ? message() : undefined}
+      fallback={
+        <SegmentLines
+          segments={transcriptSegments({
+            messages: props.messages,
+            cols: props.cols,
+          })}
+        />
+      }
+    >
+      {(msg) => (
+        <box flexDirection="column" width="100%">
+          <SegmentLines
+            segments={transcriptSegments({
+              messages: [{ role: msg().role, content: "" }],
+              cols: props.cols,
+            })}
+          />
+          <For each={parts()}>
+            {(part) => (
+              <Show
+                when={part.type === "thinking"}
+                fallback={
+                  <Show when={part.type === "text" && part.text.trim()}>
+                    <SegmentLines
+                      segments={bodySegmentsWithoutLabel(
+                        {
+                          role: msg().role,
+                          content: part.type === "text" ? part.text.replace(/^\n+/, "") : "",
+                        },
+                        props.cols,
+                      )}
+                    />
+                  </Show>
+                }
+              >
+                <ThinkingBlockView
+                  id={part.type === "thinking" ? part.id : ""}
+                  text={part.type === "thinking" ? part.text : ""}
+                  expanded={
+                    part.type === "thinking"
+                      ? isThinkingExpanded(props.thinkingExpanded, part.id)
+                      : false
+                  }
+                  onToggle={() => {
+                    if (part.type === "thinking") props.onToggleThinking(part.id)
+                  }}
+                />
+              </Show>
+            )}
+          </For>
+        </box>
+      )}
+    </Show>
+  )
+}
+
 // Session transcript on OpenTUI scrollbox. Tone tags and role copy come from
 // transcript.ts; consecutive tool roles collapse into mint activity groups.
 // Long sessions mount a sticky-tail budget first, then backfill near the top.
@@ -180,6 +313,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const tailBudget = () => props.mountBudget ?? transcriptTailBudget
   const backfill = () => props.backfillChunk ?? transcriptBackfillChunk
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
+  const [thinkingExpanded, setThinkingExpanded] = createSignal<Record<string, boolean>>({})
   const [hiddenStart, setHiddenStart] = createSignal<number | undefined>(undefined)
   const [visibleEnd, setVisibleEnd] = createSignal<number | undefined>(undefined)
   const [navIndex, setNavIndex] = createSignal<number | undefined>(undefined)
@@ -355,6 +489,17 @@ export function SolidTranscript(props: SolidTranscriptProps) {
     return true
   }
 
+  const toggleThinking = (id: string) => {
+    setThinkingExpanded((prev) => toggleThinkingExpanded(prev, id))
+  }
+
+  const toggleLatestThinking = () => {
+    const id = latestThinkingId(resolved())
+    if (!id) return false
+    toggleThinking(id)
+    return true
+  }
+
   const revealOlder = () => {
     const current = mountStart()
     if (revealingOlder || current <= 0 || !scrollBox || scrollBox.isDestroyed) return false
@@ -388,6 +533,11 @@ export function SolidTranscript(props: SolidTranscriptProps) {
     if (!keysEnabled()) return
     if (key.ctrl && key.name === activityToggleShortcut.name && !key.meta) {
       if (!toggleLatest()) return
+      key.preventDefault()
+      return
+    }
+    if (key.ctrl && key.name === thinkingToggleShortcut.name && !key.meta) {
+      if (!toggleLatestThinking()) return
       key.preventDefault()
       return
     }
@@ -434,6 +584,19 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       (tick, prev) => {
         if (prev === undefined || tick === prev || tick <= 0) return
         toggleLatest()
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () =>
+        typeof props.thinkingToggleTick === "function"
+          ? props.thinkingToggleTick()
+          : (props.thinkingToggleTick ?? 0),
+      (tick, prev) => {
+        if (prev === undefined || tick === prev || tick <= 0) return
+        toggleLatestThinking()
       },
     ),
   )
@@ -510,11 +673,12 @@ export function SolidTranscript(props: SolidTranscriptProps) {
                       registerAnchor(messageBlock.startIndex, node)
                     }}
                   >
-                    <SegmentLines
-                      segments={transcriptSegments({
-                        messages: (block as Extract<TranscriptBlock, { type: "messages" }>).messages,
-                        cols: props.cols,
-                      })}
+                    <MessageBlockView
+                      messages={(block as Extract<TranscriptBlock, { type: "messages" }>).messages}
+                      startIndex={(block as Extract<TranscriptBlock, { type: "messages" }>).startIndex}
+                      cols={props.cols}
+                      thinkingExpanded={thinkingExpanded()}
+                      onToggleThinking={toggleThinking}
                     />
                   </box>
                 }
@@ -541,5 +705,5 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   )
 }
 
-export { userLabel, assistantLabel, activityToggleShortcut, messageNavShortcut }
+export { userLabel, assistantLabel, activityToggleShortcut, messageNavShortcut, thinkingToggleShortcut }
 export type { TranscriptMessage, TranscriptTone, ToolAwareMessage, ToolCallItem }

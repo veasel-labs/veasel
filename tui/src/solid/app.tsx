@@ -175,6 +175,7 @@ function AppShell(props: SolidAppProps) {
   const [composerFocused, setComposerFocused] = createSignal(true)
   const [activityToggleTick, setActivityToggleTick] = createSignal(0)
   const [verbosity, setVerbosity] = createSignal<TranscriptVerbosity>("default")
+  const [thinkingToggleTick, setThinkingToggleTick] = createSignal(0)
   const [messageNavRequest, setMessageNavRequest] = createSignal<
     | { tick: number; direction: "next" | "prev"; userOnly?: boolean }
     | { tick: number; action: "last-user" }
@@ -278,6 +279,10 @@ function AppShell(props: SolidAppProps) {
         setVerbosity(next)
         toast.info(`Verbosity · ${transcriptVerbosityLabel(next)}`, "Transcript")
         return next
+      },
+      toggleThinking: () => {
+        setThinkingToggleTick((tick) => tick + 1)
+        toast.info("Toggled latest thinking block", "Transcript")
       },
       openReviews: () => {
         openReviews()
@@ -590,6 +595,7 @@ function AppShell(props: SolidAppProps) {
           scrollRef={props.scrollRef}
           enableActivityKeys={!dialog.open()}
           activityToggleTick={activityToggleTick()}
+          thinkingToggleTick={thinkingToggleTick()}
           messageNavRequest={messageNavRequest}
           verbosity={verbosity}
           onMessageNavigated={(info) => {

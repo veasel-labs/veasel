@@ -83,6 +83,10 @@ compatibility and does not authorize copying branding or product chrome.
   output (`shell-output-dialog.tsx`). Fixture catalogs until HTTP wiring.
   Palette: `veasel.theme.list`, `veasel.model.picker`, `veasel.stash.list`,
   `veasel.error.details`, `veasel.shell.output`.
+- MCP servers + skills (`mcp-dialog.tsx`, `skill-dialog.tsx`): DialogSelect
+  inventories with status categories / descriptions; failed MCP rows open
+  error-details. Palette `veasel.mcp.list`, `veasel.skills.list`. Fixture demos
+  until HTTP `/mcp*` and skills discovery wiring lands on Solid.
 
 ## Startup note (light)
 

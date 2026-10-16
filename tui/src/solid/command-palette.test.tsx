@@ -81,6 +81,8 @@ describe("Solid dialog host + command palette", () => {
         showStash: () => ran.push("stash"),
         showErrorDetails: () => ran.push("error"),
         showShellOutput: () => ran.push("shell"),
+        showMcp: () => ran.push("mcp"),
+        showSkills: () => ran.push("skills"),
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} />)
@@ -129,6 +131,8 @@ describe("Solid dialog host + command palette", () => {
         showStash: () => {},
         showErrorDetails: () => {},
         showShellOutput: () => {},
+        showMcp: () => {},
+        showSkills: () => {},
       })
       onMount(() => {
         dialog.replace(() => <CommandPalette commands={commands} maxVisible={10} />)

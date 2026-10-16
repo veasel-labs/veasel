@@ -28,6 +28,9 @@ import { openCommandPalette } from "./component/command-palette"
 import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
+import { openReviewPanel } from "./component/review-panel"
+import { decideSolidReviews, loadPendingSolidReviews } from "./reviews-inventory"
+import { reviewShortcut } from "./reviews"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
@@ -317,6 +320,47 @@ function LiveAppShell(props: LiveAppProps) {
       toast.info(
         error instanceof Error ? error.message : "could not list workspace edits",
         "Diffs",
+      )
+      setComposerFocused(true)
+    }
+  }
+
+  const openLiveReviews = async () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      toast.info("Open a session to review pending proposals", "Reviews")
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const reviews = await loadPendingSolidReviews(props.api, sessionId)
+      if (reviews.length === 0) {
+        toast.info("No pending edits, shell commands, or MCP calls", "Reviews")
+        setComposerFocused(true)
+        return
+      }
+      openReviewPanel(dialog, {
+        reviews,
+        onDecide: (decision, targets) => {
+          void (async () => {
+            const result = await decideSolidReviews(props.api, sessionId, decision, targets)
+            const verb = decision === "approve" ? "Approved" : "Rejected"
+            if (result.ok > 0) {
+              toast.success(
+                `${verb} ${result.ok} review${result.ok === 1 ? "" : "s"}`,
+                "Reviews",
+              )
+            }
+            if (result.failed.length > 0) {
+              toast.info(result.failed[0]!, "Reviews")
+            }
+          })()
+        },
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not load pending reviews",
+        "Reviews",
       )
       setComposerFocused(true)
     }
@@ -1014,6 +1058,9 @@ function LiveAppShell(props: LiveAppProps) {
         showSessionDiffs: () => {
           void openSessionDiffs()
         },
+        showReviews: () => {
+          void openLiveReviews()
+        },
         showSessionTimeline: () => openSessionTimeline(),
         showStatus: () => {
           void openLiveStatus()
@@ -1071,6 +1118,16 @@ function LiveAppShell(props: LiveAppProps) {
     if (key.ctrl && key.name === "d" && !key.meta) {
       key.preventDefault()
       void openSessionDiffs()
+      return
+    }
+    if (
+      key.ctrl
+      && key.name === reviewShortcut.name
+      && !key.meta
+      && Boolean(reviewShortcut.ctrl)
+    ) {
+      key.preventDefault()
+      void openLiveReviews()
       return
     }
     if (key.ctrl && key.name === "t" && !key.meta) {

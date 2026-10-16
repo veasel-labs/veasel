@@ -223,6 +223,69 @@ describe("VeaselApiClient workspace edits", () => {
     expect(calls[1]).toContain("/workspace/edits/edit-1")
     expect(proposal.diff).toContain("+hi")
   })
+
+  test("decideWorkspaceEdit POSTs approve/reject", async () => {
+    let method = ""
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      url = String(input)
+      method = String(init?.method ?? "GET")
+      return new Response(JSON.stringify({ id: "edit-1", status: "applied" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const result = await client.decideWorkspaceEdit("sess-1", "edit-1", "approve")
+    expect(method).toBe("POST")
+    expect(url).toContain("/workspace/edits/edit-1/approve")
+    expect(result.status).toBe("applied")
+  })
+
+  test("listWorkspaceCommands and decideWorkspaceCommand hit command routes", async () => {
+    const calls: Array<{ url: string; method: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, method: String(init?.method ?? "GET") })
+      if (url.includes("/approve") || url.includes("/reject")) {
+        return new Response(JSON.stringify({ id: "cmd-1", status: "rejected" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      if (url.includes("/workspace/commands/")) {
+        return new Response(
+          JSON.stringify({
+            id: "cmd-1",
+            command: "echo hi",
+            cwd: "/tmp",
+            timeout_seconds: 30,
+            status: "pending",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        )
+      }
+      return new Response(
+        JSON.stringify([
+          {
+            id: "cmd-1",
+            command: "echo hi",
+            cwd: "/tmp",
+            timeout_seconds: 30,
+            status: "pending",
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const listed = await client.listWorkspaceCommands("sess-1")
+    expect(listed[0]?.command).toBe("echo hi")
+    await client.getWorkspaceCommand("sess-1", "cmd-1")
+    await client.decideWorkspaceCommand("sess-1", "cmd-1", "reject")
+    expect(calls.map((call) => call.method)).toEqual(["GET", "GET", "POST"])
+    expect(calls[2]?.url).toContain("/workspace/commands/cmd-1/reject")
+  })
 })
 
 describe("VeaselApiClient usage and MCP", () => {

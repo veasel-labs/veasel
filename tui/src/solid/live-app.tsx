@@ -30,7 +30,9 @@ import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openMcpDialog } from "./component/mcp-dialog"
+import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
+import { skillCatalogFromPlugins } from "./skills-inventory"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
@@ -322,6 +324,41 @@ function LiveAppShell(props: LiveAppProps) {
       connection: "LOCAL · loopback",
       mcpServers,
     })
+  }
+
+  const openLiveSkills = async () => {
+    setComposerFocused(false)
+    const sessionId = activeSessionId()
+    try {
+      const [catalog, enabled] = await Promise.all([
+        props.api.listPlugins(directory()),
+        sessionId
+          ? props.api.listSessionSkills(sessionId)
+          : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionSkills>>),
+      ])
+      const skills = skillCatalogFromPlugins(catalog, enabled)
+      if (skills.length === 0) {
+        toast.info("No skills discovered for this workspace", "Skills")
+        setComposerFocused(true)
+        return
+      }
+      openSkillDialog(dialog, {
+        skills,
+        onSelect: (skill) => {
+          const token = `$${skill.key}`
+          const current = composerDraft().trimEnd()
+          const next = current ? `${current} ${token}` : token
+          setRestoreToken({ id: `skill-${skill.key}-${Date.now()}`, text: next })
+          toast.success(`Inserted ${token}`, "Skills")
+        },
+      })
+    } catch (error) {
+      toast.info(
+        error instanceof Error ? error.message : "could not list skills",
+        "Skills",
+      )
+      setComposerFocused(true)
+    }
   }
 
   const openLiveMcp = async () => {
@@ -776,6 +813,9 @@ function LiveAppShell(props: LiveAppProps) {
         showExport: () => openLiveExport(),
         showMcp: () => {
           void openLiveMcp()
+        },
+        showSkills: () => {
+          void openLiveSkills()
         },
         nextSessionTab: () => switchSessionTab(1),
         prevSessionTab: () => switchSessionTab(-1),

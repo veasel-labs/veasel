@@ -349,6 +349,7 @@ export type LivePaletteHandlers = {
   showStatus: () => void
   showExport: () => void
   showMcp: () => void
+  showSkills: () => void
   nextSessionTab: () => void
   prevSessionTab: () => void
   widenSidebar: () => void
@@ -483,6 +484,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["mcp", "servers", "tools", "plugins", "trust"],
       shortcut: "Ctrl+M",
       run: () => handlers.showMcp(),
+    },
+    {
+      id: "veasel.skills.list",
+      title: "Skills",
+      description: "Browse discovered skills and insert $source/skill into Compose",
+      group: "setup",
+      keywords: ["skills", "agents", "plugins", "invoke", "$"],
+      run: () => handlers.showSkills(),
     },
     {
       id: "veasel.session.tab.next",

@@ -27,12 +27,14 @@ describe("Solid palette commands", () => {
       },
       showSessions: () => ran.push("sessions"),
       toggleActivity: () => ran.push("activity"),
+      openReviews: () => ran.push("reviews"),
     })
 
     expect(commands.some((command) => command.id === "veasel.help")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.theme.cycle")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.session.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.activity.toggle")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.reviews.open")).toBe(true)
     expect(commands.filter((command) => command.id.startsWith("veasel.slash.")).length).toBe(
       slashCommands.length,
     )
@@ -40,7 +42,8 @@ describe("Solid palette commands", () => {
     commands.find((command) => command.id === "veasel.help")!.run()
     commands.find((command) => command.title === "/map")!.run()
     commands.find((command) => command.id === "veasel.activity.toggle")!.run()
-    expect(ran).toEqual(["help", "/map", "activity"])
+    commands.find((command) => command.id === "veasel.reviews.open")!.run()
+    expect(ran).toEqual(["help", "/map", "activity", "reviews"])
   })
 
   test("filters by title, group, and keywords", () => {

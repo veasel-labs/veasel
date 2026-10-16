@@ -47,14 +47,26 @@ compatibility and does not authorize copying branding or product chrome.
   `veasel.activity.toggle` does the same. Pattern informed by OpenCode
   `grouping/session.ts` / `group-view.tsx` / `activity-summary.ts` (engineering
   only; Veasel-owned labels and mint chrome).
+- Reviews / approvals (`solid/reviews.ts` + `solid/component/review-panel.tsx`):
+  large dialog overlay for pending file edits, shell commands, and MCP calls.
+  Reuses `reviewHotkey` / `formatReviewDiff` / `formatShellReview` /
+  `formatMcpReview` / `diff-view` helpers. Default body is tone-tagged text
+  (DiffRenderable segment patterns via `noticeSegments`); **v** toggles OpenTUI
+  Solid `<diff view="split">` (available on pinned **0.5.17** catalogue).
+  **Ctrl+R** opens the panel (same chord as legacy pending jump); a/x/A/X/
+  Space/]/[/n/p/{/} match `active-review` docs. Palette
+  `veasel.reviews.open`. Demo fixture queue for `start:solid` / tests. Engineering
+  reference only: OpenCode `permission.tsx` / diff-viewer — Veasel mint chrome,
+  not OpenCode branding. HTTP approve/reject wiring remains on the legacy path.
 
 ## Startup note (light)
 
 Solid entry (`bun run start:solid`) loads `@opentui/solid` + the transcript
-scrollbox and dialog/palette modules in addition to core. A local import smoke
-(~2026-10-16) showed `solid/transcript.tsx` ~280 ms vs a thin legacy helper
-~160 ms cold; keep measuring with `benchmarks/tui-startup*` before default
-cutover. No V backend changes in the transcript or palette slices.
+scrollbox, dialog/palette, and review-panel modules in addition to core. A local
+import smoke (~2026-10-16) showed `solid/transcript.tsx` ~280 ms vs a thin
+legacy helper ~160 ms cold; keep measuring with `benchmarks/tui-startup*` before
+default cutover. No V backend changes in the transcript, palette, or reviews
+slices.
 
 Do not copy OpenCode logos, splash art, or product strings. Prefer Veasel mint
 tokens and HTTP-API client boundaries.

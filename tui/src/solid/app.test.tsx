@@ -17,7 +17,10 @@ const demoSize = { width: 80, height: 30 } as const
 
 describe("Solid shell P0", () => {
   test("mounts Veasel identity chrome at demo size", async () => {
-    const setup = await testRender(() => <App status="LOCAL · Solid shell" />, demoSize)
+    const setup = await testRender(
+      () => <App status="LOCAL · Solid shell" initialReviews={[]} />,
+      demoSize,
+    )
     setups.push(setup)
     await setup.renderOnce()
 

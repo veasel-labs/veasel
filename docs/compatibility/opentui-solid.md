@@ -64,6 +64,11 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   `veasel.activity.toggle` does the same. Pattern informed by OpenCode
   `grouping/session.ts` / `group-view.tsx` / `activity-summary.ts` (engineering
   only; Veasel-owned labels and mint chrome).
+- Transcript message navigation (`solid/transcript-nav.ts` + `transcript.tsx`):
+  **Alt+[** / **Alt+]** jump previous/next user turn; **Alt+End** jumps to the
+  last user message. Palette ids `veasel.message.user.previous|next|last`.
+  Pattern informed by OpenCode `message-navigation.ts` / `anchors.ts`
+  (engineering only; Veasel-owned shortcuts and `veasel.*` command ids).
 - Reviews / approvals (`solid/reviews.ts` + `solid/component/review-panel.tsx`):
   large dialog overlay for pending file edits, shell commands, and MCP calls.
   Reuses `reviewHotkey` / `formatReviewDiff` / `formatShellReview` /

@@ -302,4 +302,52 @@ describe("Solid transcript scrollbox", () => {
     expect(frame).toContain("live-file.v")
     expect(frame).toContain("busy")
   })
+
+  test("messageNavRequest jumps last then previous user message", async () => {
+    const turns: ToolAwareMessage[] = [
+      { role: "user", content: "alpha-user-marker unique" },
+      { role: "assistant", content: "alpha reply pad ".repeat(8) },
+      { role: "user", content: "beta-user-marker unique" },
+      { role: "assistant", content: "beta reply pad ".repeat(8) },
+      { role: "user", content: "gamma-user-marker unique" },
+      { role: "assistant", content: "gamma reply pad ".repeat(8) },
+    ]
+    const jumped: number[] = []
+    const [nav, setNav] = createSignal<
+      | { tick: number; direction: "next" | "prev"; userOnly?: boolean }
+      | { tick: number; action: "last-user" }
+      | undefined
+    >(undefined)
+    const setup = await testRender(
+      () => (
+        <box width="100%" height="100%" flexDirection="column">
+          <SolidTranscript
+            messages={turns}
+            followTail={true}
+            messageNavRequest={nav}
+            onMessageNavigated={(info) => jumped.push(info.index)}
+          />
+        </box>
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    setNav({ tick: 1, action: "last-user" })
+    await setup.renderOnce()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await setup.renderOnce()
+    expect(jumped.at(-1)).toBe(4)
+
+    setNav({ tick: 2, direction: "prev", userOnly: true })
+    await setup.renderOnce()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await setup.renderOnce()
+    expect(jumped.at(-1)).toBe(2)
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("beta-user-marker")
+  })
 })

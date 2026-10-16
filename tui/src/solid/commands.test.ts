@@ -28,6 +28,9 @@ describe("Solid palette commands", () => {
       },
       showSessions: () => ran.push("sessions"),
       toggleActivity: () => ran.push("activity"),
+      previousUserMessage: () => ran.push("prev-user"),
+      nextUserMessage: () => ran.push("next-user"),
+      lastUserMessage: () => ran.push("last-user"),
       openReviews: () => ran.push("reviews"),
       showToast: () => ran.push("toast"),
       showConfirm: () => ran.push("confirm"),
@@ -55,6 +58,9 @@ describe("Solid palette commands", () => {
     expect(commands.some((command) => command.id === "veasel.theme.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.session.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.activity.toggle")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.message.user.previous")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.message.user.next")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.message.user.last")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.reviews.open")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.toast.demo")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.confirm.demo")).toBe(true)
@@ -145,6 +151,9 @@ describe("Solid palette commands", () => {
       showExport: () => ran.push("export"),
       showMcp: () => ran.push("mcp"),
       showSkills: () => ran.push("skills"),
+      previousUserMessage: () => ran.push("prev-user"),
+      nextUserMessage: () => ran.push("next-user"),
+      lastUserMessage: () => ran.push("last-user"),
       nextSessionTab: () => ran.push("tab-next"),
       prevSessionTab: () => ran.push("tab-prev"),
       widenSidebar: () => ran.push("widen"),
@@ -175,6 +184,9 @@ describe("Solid palette commands", () => {
       "veasel.reviews.open",
       "veasel.shell.output",
       "veasel.session.timeline",
+      "veasel.message.user.previous",
+      "veasel.message.user.next",
+      "veasel.message.user.last",
       "veasel.status",
       "veasel.session.export",
       "veasel.mcp.list",

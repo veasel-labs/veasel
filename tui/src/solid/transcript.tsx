@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
-import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
+import type { KeyEvent, Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
 import type { ChatTurn } from "../chat-history"
 import {
@@ -36,6 +36,14 @@ import {
   windowBlocks,
 } from "./mount-budget"
 import { solidMint, solidToneBold, solidToneFg } from "./theme"
+import {
+  findAdjacentMessageTarget,
+  findLastUserMessageTarget,
+  findMessageBoundaryByScroll,
+  listMessageNavTargets,
+  messageNavShortcut,
+  type TranscriptNavDirection,
+} from "./transcript-nav"
 
 /** Map durable chat-history turns into transcript message shape. */
 export function transcriptMessagesFromChatTurns(turns: ChatTurn[]): TranscriptMessage[] {
@@ -63,6 +71,17 @@ export type SolidTranscriptProps = {
    * activity group the same way Ctrl+G does.
    */
   activityToggleTick?: number | Accessor<number>
+  /**
+   * Palette / parent-driven message jump. Each increment with a direction
+   * runs the same navigation path as Alt+[ / Alt+] / Alt+End.
+   */
+  messageNavRequest?: Accessor<
+    | { tick: number; direction: TranscriptNavDirection; userOnly?: boolean }
+    | { tick: number; action: "last-user" }
+    | undefined
+  >
+  /** Fired after a successful jump (status / toast). */
+  onMessageNavigated?: (info: { index: number; role: string }) => void
   /** Rendered-entry budget for the initial sticky-tail window. */
   mountBudget?: number
   /** Extra weight to mount when the viewport approaches the top. */
@@ -156,11 +175,82 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({})
   const [hiddenStart, setHiddenStart] = createSignal<number | undefined>(undefined)
   const [visibleEnd, setVisibleEnd] = createSignal<number | undefined>(undefined)
+  const [navIndex, setNavIndex] = createSignal<number | undefined>(undefined)
   let scrollBox: ScrollBoxRenderable | undefined
   let revealingOlder = false
+  const anchors = new Map<number, Pick<Renderable, "y" | "height" | "isDestroyed">>()
 
   const resolved = createMemo(() => resolveMessages(props.messages))
   const blocks = createMemo(() => projectTranscriptBlocks(resolved()))
+
+  const registerAnchor = (index: number, node: Pick<Renderable, "y" | "height" | "isDestroyed">) => {
+    anchors.set(index, node)
+  }
+
+  const anchorPositions = () =>
+    [...anchors.entries()]
+      .filter(([, node]) => !node.isDestroyed && node.height > 0)
+      .map(([index, node]) => ({ index, y: node.y }))
+      .sort((a, b) => a.y - b.y)
+
+  const ensureMessageMounted = (messageIndex: number) => {
+    const all = blocks()
+    const blockIndex = all.findIndex(
+      (block) => block.type === "messages" && block.startIndex === messageIndex,
+    )
+    if (blockIndex < 0) return
+    const start = mountStart()
+    const end = mountEnd()
+    if (blockIndex < start) setHiddenStart(blockIndex)
+    if (blockIndex >= end) setVisibleEnd(blockIndex + 1)
+  }
+
+  const jumpToMessageIndex = (messageIndex: number) => {
+    ensureMessageMounted(messageIndex)
+    setNavIndex(messageIndex)
+    const role = resolved()[messageIndex]?.role ?? "user"
+    queueMicrotask(() => {
+      if (!scrollBox || scrollBox.isDestroyed) return
+      scrollBox.stickyScroll = false
+      const node = anchors.get(messageIndex)
+      if (node && !node.isDestroyed && node.height > 0) {
+        const top = Math.max(0, scrollBox.scrollTop + node.y - (scrollBox.viewport?.y ?? 0))
+        scrollBox.scrollTo(top)
+      }
+      props.onMessageNavigated?.({ index: messageIndex, role })
+    })
+    return true
+  }
+
+  const navigateMessages = (direction: TranscriptNavDirection, userOnly = true) => {
+    const targets = listMessageNavTargets(resolved(), { userOnly })
+    if (targets.length === 0) return false
+    const positions = anchorPositions().filter((child) =>
+      targets.some((target) => target.index === child.index),
+    )
+    if (positions.length > 0 && scrollBox && !scrollBox.isDestroyed) {
+      const boundary = findMessageBoundaryByScroll({
+        direction,
+        children: positions,
+        scrollTop: scrollBox.scrollTop,
+        currentIndex: navIndex(),
+      })
+      if (boundary) return jumpToMessageIndex(boundary.index)
+    }
+    const next = findAdjacentMessageTarget({
+      targets,
+      currentIndex: navIndex(),
+      direction,
+    })
+    if (!next) return false
+    return jumpToMessageIndex(next.index)
+  }
+
+  const jumpLastUser = () => {
+    const target = findLastUserMessageTarget(resolved())
+    if (!target) return false
+    return jumpToMessageIndex(target.index)
+  }
 
   const weights = createMemo(() =>
     blocks().map((block) =>
@@ -275,6 +365,18 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       key.preventDefault()
       return
     }
+    if (key.meta && key.name === messageNavShortcut.previousUser.name && !key.ctrl) {
+      if (navigateMessages("prev", true)) key.preventDefault()
+      return
+    }
+    if (key.meta && key.name === messageNavShortcut.nextUser.name && !key.ctrl) {
+      if (navigateMessages("next", true)) key.preventDefault()
+      return
+    }
+    if (key.meta && key.name === messageNavShortcut.lastUser.name && !key.ctrl) {
+      if (jumpLastUser()) key.preventDefault()
+      return
+    }
     if (key.name === "pageup" || key.name === "ppage") {
       if (revealOlder()) key.preventDefault()
       return
@@ -290,7 +392,8 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       }
       return
     }
-    if (key.name === "end") {
+    if (key.name === "end" && !key.meta) {
+      setNavIndex(undefined)
       setHiddenStart(undefined)
       setVisibleEnd(undefined)
     }
@@ -305,6 +408,23 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       (tick, prev) => {
         if (prev === undefined || tick === prev || tick <= 0) return
         toggleLatest()
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => props.messageNavRequest?.(),
+      (request, prev) => {
+        if (!request || request.tick <= 0) return
+        if (prev && prev.tick === request.tick) return
+        if ("action" in request && request.action === "last-user") {
+          jumpLastUser()
+          return
+        }
+        if ("direction" in request) {
+          navigateMessages(request.direction, request.userOnly !== false)
+        }
       },
     ),
   )
@@ -356,12 +476,21 @@ export function SolidTranscript(props: SolidTranscriptProps) {
               <Show
                 when={block.type === "activity"}
                 fallback={
-                  <SegmentLines
-                    segments={transcriptSegments({
-                      messages: (block as Extract<TranscriptBlock, { type: "messages" }>).messages,
-                      cols: props.cols,
-                    })}
-                  />
+                  <box
+                    width="100%"
+                    flexDirection="column"
+                    ref={(node: Renderable) => {
+                      const messageBlock = block as Extract<TranscriptBlock, { type: "messages" }>
+                      registerAnchor(messageBlock.startIndex, node)
+                    }}
+                  >
+                    <SegmentLines
+                      segments={transcriptSegments({
+                        messages: (block as Extract<TranscriptBlock, { type: "messages" }>).messages,
+                        cols: props.cols,
+                      })}
+                    />
+                  </box>
                 }
               >
                 <ActivityGroupView
@@ -387,5 +516,5 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   )
 }
 
-export { userLabel, assistantLabel, activityToggleShortcut }
+export { userLabel, assistantLabel, activityToggleShortcut, messageNavShortcut }
 export type { TranscriptMessage, TranscriptTone, ToolAwareMessage, ToolCallItem }

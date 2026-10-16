@@ -81,6 +81,16 @@ export type SolidAppProps = {
   directory?: string
   /** Seed messages for the conversation pane (fixture / tests / demo). */
   initialMessages?: ToolAwareMessage[]
+  /**
+   * Controlled transcript turns. When set (including `[]`), App syncs from this
+   * prop instead of the demo fixture.
+   */
+  messages?: ToolAwareMessage[]
+  /**
+   * Parent owns send + history (live HTTP host). Skip local optimistic append;
+   * keep `messages` in sync from the parent.
+   */
+  managed?: boolean
   /** Seed pending reviews for demos / tests (defaults to demo fixture). */
   initialReviews?: SolidReviewItem[]
   /** Seed session list for demos / tests (defaults to demo fixture). */
@@ -135,8 +145,11 @@ function AppShell(props: SolidAppProps) {
     return active?.title ?? "Solid transcript"
   }
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>(
-    props.initialMessages ?? demoFixture,
+    props.messages ?? props.initialMessages ?? (props.managed ? [] : demoFixture),
   )
+  createEffect(() => {
+    if (props.messages !== undefined) setMessages(props.messages)
+  })
   const [reviews, setReviews] = createSignal<SolidReviewItem[]>(
     props.initialReviews ?? demoPendingReviews(),
   )
@@ -443,7 +456,9 @@ function AppShell(props: SolidAppProps) {
 
   const onSubmit = (text: string) => {
     props.onSubmit?.(text)
-    setMessages((prev) => [...prev, { role: "user", content: text }])
+    if (!props.managed) {
+      setMessages((prev) => [...prev, { role: "user", content: text }])
+    }
   }
 
   const openPalette = () => {
@@ -556,7 +571,7 @@ function AppShell(props: SolidAppProps) {
 
 // Veasel-branded Solid shell: header + session chrome + transcript + composer
 // + toast host / dialog host / command palette / review panel.
-// HTTP session wiring stays optional.
+// Live HTTP session loop mounts via LiveApp (default `bun run start`).
 export function App(props: SolidAppProps = {}) {
   return (
     <ToastProvider>

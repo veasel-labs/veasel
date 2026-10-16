@@ -24,9 +24,11 @@ export const solidMint = {
   statusError: themes.mint.statusError,
   statusWarn: themes.mint.statusWarn,
   toolLabel: themes.mint.toolLabel,
+  sidebarLabel: themes.mint.sidebarLabel,
+  sidebarFg: themes.mint.sidebarFg,
 } as const
 
-// Map transcript tones to mint colors — same pairing as main.ts
+// Map transcript tones to mint colors — same pairing as classic-main.ts
 // buildTranscriptStyles, so Solid and imperative paths stay visually aligned.
 export function solidToneFg(tone: TranscriptTone, theme: Theme = themes.mint): string {
   switch (tone) {

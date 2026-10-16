@@ -786,7 +786,12 @@ assert trajectory["schema_version"] == "ATIF-v1.8", trajectory
 assert trajectory["extra"]["outcome"] == "cancelled", trajectory
 assert trajectory["extra"]["token_usage"] == "unavailable", trajectory
 messages = [step["message"] for step in trajectory["steps"]]
-assert sys.argv[2] in messages, messages
+prompt = sys.argv[2]
+assert any(
+	message == prompt
+	or message.startswith(prompt + "\n\n<veasel-repository-map-focus")
+	for message in messages
+), messages
 PY
 	fi
 	printf 'Smoke: testing provider workspace tools (%s)\n' "$provider"

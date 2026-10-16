@@ -285,6 +285,29 @@ export class VeaselApiClient {
     }
   }
 
+  /** Discover models with optional in-body credentials (not persisted by this call). */
+  async discoverProviderModels(input: {
+    provider: string
+    base_url?: string
+    api_key?: string
+    clear_api_key?: boolean
+  }): Promise<{
+    provider: string
+    models: import("./model-providers").ModelCatalogEntry[]
+  }> {
+    const response = await fetch(`${this.base}/v1/config/models`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as {
+      provider: string
+      models: import("./model-providers").ModelCatalogEntry[]
+    }
+  }
+
   async getSessionUsage(sessionId: string): Promise<ApiSessionUsageSummary> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/usage`,

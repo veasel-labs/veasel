@@ -355,6 +355,7 @@ export type LivePaletteHandlers = {
   attachFile: () => void
   showSessionDiffs: () => void
   showReviews: () => void
+  showShellOutput: () => void
   showSessionTimeline: () => void
   showStatus: () => void
   showExport: () => void
@@ -544,6 +545,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["review", "approve", "reject", "patch", "shell", "mcp"],
       shortcut: reviewShortcut.label,
       run: () => handlers.showReviews(),
+    },
+    {
+      id: "veasel.shell.output",
+      title: "Shell output",
+      description: "Browse completed shell command output for this session",
+      group: "session",
+      keywords: ["shell", "output", "terminal", "stdout", "command"],
+      run: () => handlers.showShellOutput(),
     },
     {
       id: "veasel.session.timeline",

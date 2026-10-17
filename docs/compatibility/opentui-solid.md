@@ -48,8 +48,11 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   lines come from existing `transcriptSegments` + `transcriptSegmentLines` (no
   forked role rules). `transcriptMessagesFromChatTurns` bridges `chat-history`
   turns. Mint tone colors mirror classic `buildTranscriptStyles`.
-  MarkdownRenderable follow-mode (`markdown-view.ts`) remains on the classic
-  path until a later dual-surface slice.
+  Assistant bodies and the streaming trail now render through OpenTUI's
+  MarkdownRenderable (`markdown-view.ts` syntax styles, top-level blocks,
+  concealed markup, shared tree-sitter client for code fences) while spoken
+  role labels and status stay in the tone-tagged text path, so roles remain
+  readable without color. User, system, and tool text stay plain.
 - Dialog host (`solid/ui/dialog.tsx`): overlay stack with Esc dismiss, restore
   previous focus, mint panel chrome. Command palette
   (`solid/component/command-palette.tsx` + `solid/commands.ts`) opens on

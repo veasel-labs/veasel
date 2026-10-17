@@ -3,6 +3,7 @@ import { Show, createSignal, onMount } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
+import { SecretInput } from "./secret-input"
 import { solidMint } from "../theme"
 
 export type DialogPromptProps = {
@@ -11,6 +12,7 @@ export type DialogPromptProps = {
   placeholder?: string
   value?: string
   confirmLabel?: string
+  secret?: boolean
   onConfirm?: (value: string) => void
   onCancel?: () => void
 }
@@ -67,6 +69,7 @@ export function DialogPrompt(props: DialogPromptProps) {
         <Show when={props.description}>
           <text fg={solidMint.muted}>{props.description}</text>
         </Show>
+        <Show when={!props.secret} fallback={<SecretInput value={draft()} placeholder={props.placeholder} onInput={setDraft} />}>
         <input
           ref={(next: InputRenderable) => {
             input = next
@@ -83,6 +86,7 @@ export function DialogPrompt(props: DialogPromptProps) {
           cursorColor={solidMint.cursor}
           onInput={(value: string) => setDraft(value)}
         />
+        </Show>
       </box>
     </DialogLayout>
   )

@@ -82,7 +82,7 @@ describe("TUI quick help", () => {
     expect(help).toContain("j/k move, g/G for first/last, or press 1-9 to jump when the filter is empty")
     expect(help).toContain("same j/k · g/G · 1-9 · Home/End · Pg · Ctrl+L filter keys")
     expect(help).toContain("Home/End and PgUp/PgDn jump the list")
-    expect(help).toContain("selected N of M in plain text")
+    expect(help).toContain("focus N of M in plain text")
     expect(help).toContain("Quick connect")
     expect(help).toContain("Full provider settings cockpit")
     expect(help).toContain("Files go to your provider.")

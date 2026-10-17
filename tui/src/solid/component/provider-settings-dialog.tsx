@@ -9,26 +9,50 @@ import {
   type ModelProvider,
   type ProviderPickerScope,
 } from "../../model-providers"
-import { formatSettingsListStatus } from "../../settings-flow"
+import {
+  formatSettingsListStatus,
+  moveSettingsListIndex,
+  settingsModeIntro,
+  settingsProviderStepPrompt,
+  type SettingsWizardMode,
+} from "../../settings-flow"
+import { sessionDigitIndex } from "../../session-list"
 import { DialogHeader, useDialog, type DialogHost } from "../ui/dialog"
 import { solidMint } from "../theme"
+
+const LIST_PAGE = 12
+
+/** Visible slice start so the focused row stays on-screen. */
+export function providerListWindowStart(
+  selected: number,
+  count: number,
+  pageSize = LIST_PAGE,
+): number {
+  if (count <= pageSize) return 0
+  const half = Math.floor(pageSize / 2)
+  const maxStart = count - pageSize
+  return Math.min(Math.max(0, selected - half), maxStart)
+}
 
 export type ProviderSettingsDialogProps = {
   providers: ModelProvider[]
   configuredProviders?: string[]
   activeProvider?: string
+  /** Quick connect vs full provider cockpit — title and intro copy. */
+  mode?: SettingsWizardMode
   onSelect?: (provider: ModelProvider) => void
   onStatus?: (status: string) => void
   onCancel?: () => void
 }
 
 /**
- * Live provider picker for the Solid home path (`s` / MODEL SETTINGS).
+ * Live provider picker for the Solid home path (`/connect`, `s` / MODEL SETTINGS).
  * Reuses classic filterModelProviders so typo-tolerant search (e.g. anthorpic)
  * matches Anthropic the same way CI smoke expects.
  */
 export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   const dialog = useDialog()
+  const mode = () => props.mode ?? "models"
   const [query, setQuery] = createSignal("")
   const [scope, setScope] = createSignal<ProviderPickerScope>("all")
   const [selected, setSelected] = createSignal(0)
@@ -45,6 +69,15 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   const statusLine = createMemo(() =>
     formatSettingsListStatus(selected(), matches().length, countLabel()),
   )
+  const windowStart = createMemo(() =>
+    providerListWindowStart(selected(), matches().length, LIST_PAGE),
+  )
+  const visible = createMemo(() =>
+    matches().slice(windowStart(), windowStart() + LIST_PAGE),
+  )
+
+  const title = () => (mode() === "connect" ? "CONNECT" : "MODEL SETTINGS")
+  const hint = () => "Tab · j/k · g/G · 1-9 · Ctrl+L · Esc"
 
   const publishStatus = () => {
     props.onStatus?.(statusLine())
@@ -60,13 +93,20 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
     queueMicrotask(() => filterInput?.focus())
   })
 
-  const move = (delta: number) => {
+  const jump = (
+    where: "up" | "down" | "home" | "end" | "pageup" | "pagedown",
+  ) => {
     const count = matches().length
     if (count === 0) return
-    setSelected((current) => {
-      const next = (current + delta + count) % count
-      return next
-    })
+    setSelected((current) => moveSettingsListIndex(current, count, where, LIST_PAGE))
+    queueMicrotask(publishStatus)
+  }
+
+  const clearFilter = () => {
+    if (query().length === 0) return
+    setQuery("")
+    setSelected(0)
+    filterInput?.setText("")
     queueMicrotask(publishStatus)
   }
 
@@ -82,6 +122,12 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
     dialog.clear()
   }
 
+  const selectAt = (absoluteIndex: number) => {
+    setSelected(absoluteIndex)
+    queueMicrotask(publishStatus)
+    submit()
+  }
+
   useKeyboard((key: KeyEvent) => {
     if (key.name === "tab") {
       key.preventDefault()
@@ -90,14 +136,56 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
       queueMicrotask(publishStatus)
       return
     }
+    if (key.ctrl && key.name === "l" && !key.meta) {
+      key.preventDefault()
+      clearFilter()
+      return
+    }
     if (key.name === "up") {
       key.preventDefault()
-      move(-1)
+      jump("up")
       return
     }
     if (key.name === "down") {
       key.preventDefault()
-      move(1)
+      jump("down")
+      return
+    }
+    // j/k · g/G · 1-9 only when the filter is empty (classic muscle memory).
+    if (query().length === 0 && !key.ctrl && !key.meta) {
+      if (key.name === "j") {
+        key.preventDefault()
+        jump("down")
+        return
+      }
+      if (key.name === "k") {
+        key.preventDefault()
+        jump("up")
+        return
+      }
+      if (key.name === "g") {
+        key.preventDefault()
+        jump(key.shift ? "end" : "home")
+        return
+      }
+      if (/^[1-9]$/.test(key.sequence)) {
+        const index = sessionDigitIndex(key.sequence, matches().length)
+        if (index !== undefined) {
+          key.preventDefault()
+          setSelected(index)
+          queueMicrotask(publishStatus)
+          return
+        }
+      }
+    }
+    if (
+      key.name === "home"
+      || key.name === "end"
+      || key.name === "pageup"
+      || key.name === "pagedown"
+    ) {
+      key.preventDefault()
+      jump(key.name)
       return
     }
     if (key.name === "return" || key.name === "kpenter") {
@@ -114,8 +202,10 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
 
   return (
     <box width="100%" flexDirection="column" gap={1}>
-      <DialogHeader title="MODEL SETTINGS" hint="Tab scope · type · Esc" />
+      <DialogHeader title={title()} hint={hint()} />
       <text fg={solidMint.localStatus}>{statusLine()}</text>
+      <text fg={solidMint.muted}>{settingsProviderStepPrompt(mode())}</text>
+      <text fg={solidMint.muted}>{settingsModeIntro(mode())}</text>
       <text fg={solidMint.muted}>
         {countLabel()} · type to filter · Tab cycles All / Configured / Local
       </text>
@@ -125,6 +215,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         }}
         width="100%"
         focused={true}
+        value={query()}
         placeholder="Filter providers…"
         placeholderColor={solidMint.muted}
         textColor={solidMint.inputText}
@@ -133,6 +224,14 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         focusedBackgroundColor={solidMint.inputFocusBg}
         cursorColor={solidMint.cursor}
         onInput={(value: string) => {
+          // Swallow nav digits/letters that raced into the input while empty.
+          if (
+            query().length === 0
+            && (value === "j" || value === "k" || value === "g" || value === "G" || /^[1-9]$/.test(value))
+          ) {
+            filterInput?.setText("")
+            return
+          }
           setQuery(value)
           setSelected(0)
           queueMicrotask(publishStatus)
@@ -143,9 +242,10 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         fallback={<text fg={solidMint.muted}>No providers match</text>}
       >
         <box width="100%" flexDirection="column">
-          <For each={matches().slice(0, 12)}>
+          <For each={visible()}>
             {(provider, index) => {
-              const active = () => index() === selected()
+              const absolute = () => windowStart() + index()
+              const active = () => absolute() === selected()
               return (
                 <box
                   width="100%"
@@ -153,13 +253,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
                   backgroundColor={active() ? solidMint.inputFocusBg : solidMint.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
-                  onMouseUp={() => {
-                    if (props.onSelect) {
-                      props.onSelect(provider)
-                      return
-                    }
-                    dialog.clear()
-                  }}
+                  onMouseUp={() => selectAt(absolute())}
                 >
                   <text fg={active() ? solidMint.brand : solidMint.body}>
                     {active() ? "▸ " : "  "}
@@ -170,6 +264,12 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
               )
             }}
           </For>
+          <Show when={matches().length > LIST_PAGE}>
+            <text fg={solidMint.muted}>
+              Showing {windowStart() + 1}–{Math.min(windowStart() + LIST_PAGE, matches().length)} of{" "}
+              {matches().length}
+            </text>
+          </Show>
         </box>
       </Show>
     </box>

@@ -1036,6 +1036,10 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const dismissHomeComposer = () => {
+    if (homeComposerOpen()) setHomeComposerOpen(false)
+  }
+
   const handleComposerSubmit = (text: string) => {
     const action = resolveLiveSlash(text)
     switch (action.kind) {
@@ -1043,7 +1047,7 @@ function LiveAppShell(props: LiveAppProps) {
         if (!activeSessionId()) {
           openDialogAlert(dialog, {
             title: "Session required",
-            message: "Open a session (n or Enter) before chatting. Slash commands like /connect and /skills work from home.",
+            message: "Open a session (n or Enter) before chatting. Slash commands like /connect and /skills work from home — press / first, then type the command.",
             onConfirm: () => setComposerFocused(true),
           })
           return
@@ -1051,19 +1055,27 @@ function LiveAppShell(props: LiveAppProps) {
         void sendMessage(text)
         return
       case "connect":
+        dismissHomeComposer()
+        void openSettings("connect")
+        return
       case "models":
-        void openSettings()
+        dismissHomeComposer()
+        void openSettings("models")
         return
       case "skills":
+        dismissHomeComposer()
         void openLiveSkills(action.filter)
         return
       case "mcp":
+        dismissHomeComposer()
         void openLiveMcp(action.filter)
         return
       case "plugins":
+        dismissHomeComposer()
         void openLivePlugins(action.filter)
         return
       case "map":
+        dismissHomeComposer()
         void openLiveMap(action.hint)
         return
       case "history-older":
@@ -1077,10 +1089,12 @@ function LiveAppShell(props: LiveAppProps) {
         })
         return
       case "help":
+        dismissHomeComposer()
         setComposerFocused(false)
         openDialogHelp(dialog, { compact: !action.advanced })
         return
       case "theme":
+        dismissHomeComposer()
         if (action.mode === "list") {
           openThemeList()
           return
@@ -1094,15 +1108,19 @@ function LiveAppShell(props: LiveAppProps) {
         toast.info(`Unknown theme · ${action.id ?? "?"}`, "Theme")
         return
       case "status":
+        dismissHomeComposer()
         void openLiveStatus()
         return
       case "reviews":
+        dismissHomeComposer()
         void openLiveReviews()
         return
       case "export":
+        dismissHomeComposer()
         openLiveExport()
         return
       case "session-list":
+        dismissHomeComposer()
         openLiveSessionList()
         return
       case "unsupported":
@@ -1253,11 +1271,13 @@ function LiveAppShell(props: LiveAppProps) {
     })()
   }
 
-  const openSettings = async () => {
+  const openSettings = async (mode: "connect" | "models" = "models") => {
+    dismissHomeComposer()
     setComposerFocused(false)
     try {
       const view = await props.api.getModelSettings()
       openProviderSettingsDialog(dialog, {
+        mode,
         providers: view.providers,
         configuredProviders: view.configured_providers,
         activeProvider: view.active_provider,
@@ -1832,7 +1852,7 @@ function LiveAppShell(props: LiveAppProps) {
       if (homeComposerOpen()) return
       if (key.name === "s" && !key.ctrl && !key.meta) {
         key.preventDefault()
-        void openSettings()
+        void openSettings("models")
         return
       }
       if (key.name === "q" && !key.ctrl && !key.meta) {

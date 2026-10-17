@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
-import type { KeyEvent, Renderable, ScrollBoxRenderable } from "@opentui/core"
-import { useKeyboard } from "@opentui/solid"
+import { getTreeSitterClient, type KeyEvent, type Renderable, type ScrollBoxRenderable } from "@opentui/core"
+import { useKeyboard, useRenderer } from "@opentui/solid"
 import type { Theme } from "../themes"
 import type { ChatTurn } from "../chat-history"
 import {
@@ -37,6 +37,7 @@ import {
   windowBlocks,
 } from "./mount-budget"
 import { useSolidTheme, solidToneBold, solidToneFg } from "./theme"
+import { createMarkdownSyntaxStyle } from "../markdown-view"
 import {
   findAdjacentMessageTarget,
   findLastUserMessageTarget,
@@ -147,6 +148,26 @@ function SegmentLines(props: { segments: TranscriptSegment[] }) {
   )
 }
 
+function AssistantMarkdown(props: { content: string }) {
+  const colors = useSolidTheme()
+  const renderer = useRenderer()
+  const syntaxStyle = createMemo(() => createMarkdownSyntaxStyle(colors, renderer.nativeScene))
+  onCleanup(() => syntaxStyle().destroy())
+  return (
+    <markdown
+      content={props.content}
+      syntaxStyle={syntaxStyle()}
+      fg={colors.assistantText}
+      streaming={true}
+      internalBlockMode="top-level"
+      conceal={true}
+      treeSitterClient={getTreeSitterClient()}
+      bg={colors.shellBg}
+      width="100%"
+    />
+  )
+}
+
 function statusFg(status: ToolCallItem["status"], colors: Theme): string {
   // Preserve semantic status colors across themes.
   if (status === "error") return colors.statusError
@@ -251,16 +272,40 @@ function MessageBlockView(props: {
     return splitThinkingParts(msg.content, `m${props.startIndex}`)
   })
 
+  const allAssistant = createMemo(
+    () => props.messages.length > 0 && props.messages.every((item) => item.role === "assistant"),
+  )
   return (
     <Show
       when={hasThinking() ? message() : undefined}
       fallback={
-        <SegmentLines
-          segments={transcriptSegments({
-            messages: props.messages,
-            cols: props.cols,
-          })}
-        />
+        <Show
+          when={allAssistant()}
+          fallback={
+            <SegmentLines
+              segments={transcriptSegments({
+                messages: props.messages,
+                cols: props.cols,
+              })}
+            />
+          }
+        >
+          <box flexDirection="column" width="100%">
+            <For each={props.messages}>
+              {(item) => (
+                <box flexDirection="column" width="100%">
+                  <SegmentLines
+                    segments={transcriptSegments({
+                      messages: [{ role: item.role, content: "" }],
+                      cols: props.cols,
+                    })}
+                  />
+                  <AssistantMarkdown content={item.content} />
+                </box>
+              )}
+            </For>
+          </box>
+        </Show>
       }
     >
       {(msg) => (
@@ -277,15 +322,24 @@ function MessageBlockView(props: {
                 when={part.type === "thinking"}
                 fallback={
                   <Show when={part.type === "text" && part.text.trim()}>
-                    <SegmentLines
-                      segments={bodySegmentsWithoutLabel(
-                        {
-                          role: msg().role,
-                          content: part.type === "text" ? part.text.replace(/^\n+/, "") : "",
-                        },
-                        props.cols,
-                      )}
-                    />
+                    <Show
+                      when={msg().role === "assistant"}
+                      fallback={
+                        <SegmentLines
+                          segments={bodySegmentsWithoutLabel(
+                            {
+                              role: msg().role,
+                              content: part.type === "text" ? part.text.replace(/^\n+/, "") : "",
+                            },
+                            props.cols,
+                          )}
+                        />
+                      }
+                    >
+                      <AssistantMarkdown
+                        content={part.type === "text" ? part.text.replace(/^\n+/, "") : ""}
+                      />
+                    </Show>
                   </Show>
                 }
               >
@@ -493,12 +547,15 @@ export function SolidTranscript(props: SolidTranscriptProps) {
     return transcriptSegments({
       messages: [],
       pendingUserMessage: props.pendingUserMessage,
-      streaming: props.streaming,
-      streamingText: props.streamingText,
-      streamingCursor: props.streamingCursor,
       hasOlder: props.hasOlder,
       cols: props.cols,
     })
+  })
+
+  const streamingMarkdown = createMemo(() => {
+    if (!props.streamingText) return undefined
+    const cursor = props.streaming ? (props.streamingCursor ?? "█") : ""
+    return `${props.streamingText}${cursor}`
   })
 
   // Reset message cursor when verbosity changes so geometry matches the new list.
@@ -760,6 +817,22 @@ export function SolidTranscript(props: SolidTranscriptProps) {
           </For>
           <Show when={trailSegments().length > 0}>
             <SegmentLines segments={trailSegments()} />
+          </Show>
+          <Show when={streamingMarkdown()}>
+            {(content) => (
+              <box flexDirection="column" width="100%">
+                <SegmentLines
+                  segments={transcriptSegments({
+                    messages: [],
+                    streaming: props.streaming,
+                    streamingText: "",
+                    streamingBodyMode: "external",
+                    cols: props.cols,
+                  })}
+                />
+                <AssistantMarkdown content={content()} />
+              </box>
+            )}
           </Show>
         </box>
       </scrollbox>

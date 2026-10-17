@@ -44,11 +44,21 @@ tool the agent advertises. Two integration facts worth knowing:
   and the run fails with `Model unavailable`.
 - OpenCode may query `GET /v1/models`; the scripted provider implements it.
 
-First local comparison (2026-10-17, scripted replies, cold CLI runs):
-Veasel 264 ms vs OpenCode 4,588 ms wall for the edit fixture, both passing
-the identical external check. This measures harness/startup orchestration
-only — scripted replies say nothing about model quality, and no superiority
-claim is supported until real same-model runs with an authorized budget
-record model, provider, versions, limits and raw outcomes per
-`docs/benchmarking.md`. Codex, Pi and mini-SWE-agent adapters remain
-follow-ups (Codex needs a Responses-API scripted endpoint).
+The Pi adapter (`--agent pi`) uses the same provider and check, configured
+through an isolated `PI_CODING_AGENT_DIR` so user Pi state is never touched.
+
+First local comparison (2026-10-17, scripted replies, cold CLI runs, same
+external check — all passing):
+
+| Agent | Wall time |
+| --- | --- |
+| Veasel | 264 ms |
+| Pi 0.85.1 | 492 ms |
+| OpenCode 2.0.27 | 4,588 ms |
+
+This measures harness/startup orchestration only — scripted replies say
+nothing about model quality, and no superiority claim is supported until
+real same-model runs with an authorized budget record model, provider,
+versions, limits and raw outcomes per `docs/benchmarking.md`. Codex and
+mini-SWE-agent adapters remain follow-ups (Codex needs a Responses-API
+scripted endpoint).

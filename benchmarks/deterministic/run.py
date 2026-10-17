@@ -245,11 +245,74 @@ def run_opencode_task(opencode: str, provider_port: int, provider_log: Path, tas
     return entry
 
 
+def provider_stats(provider_log: Path, offset: int) -> tuple[int, int]:
+    requests = 0
+    tool_results = 0
+    if provider_log.exists():
+        with provider_log.open("rb") as handle:
+            handle.seek(offset)
+            for line in handle:
+                requests += 1
+                payload = json.loads(line).get("payload", {})
+                if (payload.get("messages") or [{}])[-1].get("role") == "tool":
+                    tool_results += 1
+    return requests, tool_results
+
+
+def run_pi_task(pi: str, provider_port: int, provider_log: Path, task: dict, work: Path) -> dict:
+    """Run one fixture through Pi (pi-mono) against the scripted provider.
+
+    Pi is configured through an isolated PI_CODING_AGENT_DIR so the user's
+    real Pi configuration is never touched. Same external check as Veasel.
+    """
+    workspace = work / "workspace"
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    agent_dir = work / "pi-agent"
+    agent_dir.mkdir()
+    models = {
+        "providers": {
+            "mock": {
+                "baseUrl": f"http://127.0.0.1:{provider_port}/v1",
+                "api": "openai-completions",
+                "apiKey": "fixture-key",
+                "models": [{"id": "smoke-model", "name": "Smoke Model"}],
+            }
+        }
+    }
+    (agent_dir / "models.json").write_text(json.dumps(models, indent=2), encoding="utf-8")
+    log_offset = provider_log.stat().st_size if provider_log.exists() else 0
+    env = dict(os.environ, PWD=str(workspace), PI_CODING_AGENT_DIR=str(agent_dir))
+    started = time.monotonic()
+    completed = subprocess.run(
+        [pi, "-p", "--no-session", "--provider", "mock", "--model", "smoke-model", task["prompt"]],
+        cwd=workspace, env=env, capture_output=True, timeout=180,
+    )
+    wall_ms = round((time.monotonic() - started) * 1000, 1)
+    requests, tool_results = provider_stats(provider_log, log_offset)
+    passed = completed.returncode == 0 and bool(task["check"](workspace))
+    entry = {
+        "id": task["id"],
+        "prompt": task["prompt"],
+        "check": task["check_description"],
+        "passed": passed,
+        "wall_ms": wall_ms,
+        "status": "completed" if completed.returncode == 0 else "failed",
+        "provider_requests": requests,
+        "tool_results": tool_results,
+    }
+    if not passed:
+        tail = (completed.stderr or completed.stdout or b"").decode(errors="replace")[-500:]
+        entry["error"] = tail.strip() or f"exit {completed.returncode}, check failed"
+    return entry
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--veasel", help="path to the veasel binary under test")
-    parser.add_argument("--agent", choices=("veasel", "opencode"), default="veasel")
+    parser.add_argument("--agent", choices=("veasel", "opencode", "pi"), default="veasel")
     parser.add_argument("--opencode", default="opencode", help="opencode executable (agent=opencode)")
+    parser.add_argument("--pi", default="pi", help="pi executable (agent=pi)")
     parser.add_argument("--report", help="write the JSON report to this path")
     parser.add_argument("--keep", action="store_true", help="keep the temporary workspace")
     args = parser.parse_args()
@@ -276,6 +339,8 @@ def main() -> int:
             task_work.mkdir()
             if args.agent == "veasel":
                 results.append(run_task(veasel, provider_port, task, task_work))
+            elif args.agent == "pi":
+                results.append(run_pi_task(args.pi, provider_port, provider_log, task, task_work))
             else:
                 results.append(run_opencode_task(args.opencode, provider_port, provider_log, task, task_work))
             print(f"{task['id']}: {'PASS' if results[-1]['passed'] else 'FAIL'} "

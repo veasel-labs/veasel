@@ -1696,6 +1696,9 @@ function LiveAppShell(props: LiveAppProps) {
         showMcp: () => {
           void openLiveMcp()
         },
+        showPlugins: () => {
+          void openLivePlugins()
+        },
         showSkills: () => {
           void openLiveSkills()
         },

@@ -45,6 +45,7 @@ describe("Solid palette commands", () => {
       showErrorDetails: () => ran.push("error"),
       showShellOutput: () => ran.push("shell"),
       showMcp: () => ran.push("mcp"),
+      showPlugins: () => ran.push("plugins"),
       showSkills: () => ran.push("skills"),
       showExport: () => ran.push("export"),
       showOpen: () => ran.push("open"),
@@ -76,6 +77,7 @@ describe("Solid palette commands", () => {
     expect(commands.some((command) => command.id === "veasel.error.details")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.shell.output")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.mcp.list")).toBe(true)
+    expect(commands.some((command) => command.id === "veasel.plugins.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.skills.list")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.session.export")).toBe(true)
     expect(commands.some((command) => command.id === "veasel.open.dialog")).toBe(true)
@@ -157,6 +159,7 @@ describe("Solid palette commands", () => {
       showStatus: () => ran.push("status"),
       showExport: () => ran.push("export"),
       showMcp: () => ran.push("mcp"),
+      showPlugins: () => ran.push("plugins"),
       showSkills: () => ran.push("skills"),
       showErrorDetails: () => ran.push("error"),
       previousUserMessage: () => ran.push("prev-user"),
@@ -206,6 +209,7 @@ describe("Solid palette commands", () => {
       "veasel.error.details",
       "veasel.session.export",
       "veasel.mcp.list",
+      "veasel.plugins.list",
       "veasel.skills.list",
       "veasel.session.tab.next",
       "veasel.session.tab.prev",
@@ -213,6 +217,9 @@ describe("Solid palette commands", () => {
       "veasel.layout.sidebar.narrow",
       "veasel.layout.sidebar.reset",
       "veasel.quit",
+    ])
+    expect(filterPaletteCommands(commands, "plugin").map((c) => c.id)).toEqual([
+      "veasel.plugins.list",
     ])
     expect(filterPaletteCommands(commands, "provider").map((c) => c.id)).toEqual([
       "veasel.settings",

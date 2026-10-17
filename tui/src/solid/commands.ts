@@ -62,6 +62,8 @@ export type PaletteActionHandlers = {
   showShellOutput: () => void
   /** Open MCP servers dialog. */
   showMcp: () => void
+  /** Open Agent Plugin links dialog. */
+  showPlugins: () => void
   /** Open skill selector dialog. */
   showSkills: () => void
   /** Open session export options dialog. */
@@ -286,6 +288,14 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       run: () => handlers.showMcp(),
     },
     {
+      id: "veasel.plugins.list",
+      title: "Plugins",
+      description: "Browse linked Agent Plugin packages (/plugins)",
+      group: "setup",
+      keywords: ["plugin", "plugins", "agent plugin", "package", "link"],
+      run: () => handlers.showPlugins(),
+    },
+    {
       id: "veasel.skills.list",
       title: "Skills",
       description: "Pick a skill from the discovered catalog",
@@ -419,6 +429,7 @@ export type LivePaletteHandlers = {
   showStatus: () => void
   showExport: () => void
   showMcp: () => void
+  showPlugins: () => void
   showSkills: () => void
   showErrorDetails: () => void
   previousUserMessage: () => void
@@ -705,16 +716,24 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       title: "MCP servers",
       description: "Browse configured and session-trusted MCP servers",
       group: "setup",
-      keywords: ["mcp", "servers", "tools", "plugins", "trust"],
+      keywords: ["mcp", "servers", "tools", "trust"],
       shortcut: "Ctrl+M",
       run: () => handlers.showMcp(),
+    },
+    {
+      id: "veasel.plugins.list",
+      title: "Plugins",
+      description: "Browse linked Agent Plugin packages (/plugins)",
+      group: "setup",
+      keywords: ["plugin", "plugins", "agent plugin", "package", "link"],
+      run: () => handlers.showPlugins(),
     },
     {
       id: "veasel.skills.list",
       title: "Skills",
       description: "Browse discovered skills and insert $source/skill into Compose",
       group: "setup",
-      keywords: ["skills", "agents", "plugins", "invoke", "$"],
+      keywords: ["skills", "agents", "invoke", "$"],
       run: () => handlers.showSkills(),
     },
     {

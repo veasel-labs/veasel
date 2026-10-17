@@ -19,6 +19,7 @@ import {
   paletteShortcut,
 } from "./commands"
 import { DialogProvider, useDialog } from "./ui/dialog"
+import { openDialogAlert } from "./ui/dialog-alert"
 import { openDialogThemeList } from "./component/dialog-theme-list"
 import {
   demoFavoriteModels,
@@ -359,6 +360,15 @@ function AppShell(props: SolidAppProps) {
           onSelect: (server) => {
             toast.info(`MCP · ${server.name} · ${server.status}`, "MCP")
           },
+        })
+      },
+      showPlugins: () => {
+        setComposerFocused(false)
+        openDialogAlert(dialog, {
+          title: "Plugins",
+          message:
+            "Demo shell · LiveApp lists managed plugin links via /plugins. Use /plugin add <path> (headless) to link a local Agent Plugin package.",
+          onConfirm: () => setComposerFocused(true),
         })
       },
       showSkills: () => {

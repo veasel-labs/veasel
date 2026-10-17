@@ -78,6 +78,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.
+- [x] LiveApp history responses are scoped to the current session visit.
+  Late success/error responses cannot replace a newer session view, including
+  A → B → A navigation. Older-page responses are discarded after navigation or
+  another history update. Loopback HTTP tests exercise actual LiveApp keyboard
+  navigation with delayed responses; cross-platform manual checks remain open.
 - [x] Solid session list + rename dialogs (`session-list-dialog.tsx`,
   `session-rename-dialog.tsx`): filter via `session-list.ts`, digit jump,
   `r` rename (dialog `push`/`pop`), `n` create stub when filter empty; palette

@@ -1413,6 +1413,7 @@ function LiveAppShell(props: LiveAppProps) {
           const keySaved = Boolean(profile?.api_key_saved)
           openDialogPrompt(dialog, {
             title: `API key · ${provider.name}`,
+            secret: true,
             description: keySaved
               ? `Key already saved for ${provider.id}. Leave blank to keep it, or paste a new key.`
               : `Paste the ${provider.environment_key || "API"} key for ${provider.name}.`,

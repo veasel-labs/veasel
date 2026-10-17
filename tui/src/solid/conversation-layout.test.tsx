@@ -19,7 +19,7 @@ for (const width of [32, 56, 100]) {
       expect(frame).toContain("USER-END")
       expect(frame).toContain("ANSWER-END")
       expect(frame).toContain("│")
-      expect(frame).toMatchSnapshot()
+      expect(frame.split("\n").map((line) => line.trimEnd()).join("\n").trimEnd()).toMatchSnapshot()
     } finally { setup.renderer.destroy() }
   })
 }

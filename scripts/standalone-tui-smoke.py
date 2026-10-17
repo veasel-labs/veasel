@@ -89,12 +89,9 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
         os.write(terminal, b"anthorpic")
         wait_for_markers((b"1/210", b"Anthropic"), 5, "typo-tolerant provider search")
 
-        # Clear the provider filter, leave model settings, then quit from home.
-        # One Escape often only clears search; a second returns to the session list
-        # where bare "q" is bound to quit (not while an input is focused).
-        for _ in range(2):
-            os.write(terminal, b"\x1b")
-            time.sleep(0.15)
+        # Wait for a new home frame after Escape, never a marker from an older screen.
+        output.clear()
+        os.write(terminal, b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
         os.write(terminal, b"q")
 
@@ -104,7 +101,12 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
                 finished, status = os.waitpid(child, os.WNOHANG)
                 if finished:
                     return status
-                time.sleep(0.01)
+                readable, _, _ = select.select([terminal], [], [], 0.01)
+                if readable:
+                    try:
+                        output.extend(os.read(terminal, 65_536))
+                    except OSError:
+                        pass
             return None
 
         status = wait_exit(3)
@@ -112,23 +114,8 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
             if os.waitstatus_to_exitcode(status) != 0:
                 raise RuntimeError(f"standalone TUI exited unsuccessfully (status={status})")
             return
-        # Bare q can still be swallowed if an input kept focus; escalate to signals.
-        os.write(terminal, b"\x03")
-        if wait_exit(2) is not None:
-            return
-        try:
-            os.kill(child, signal.SIGINT)
-        except ProcessLookupError:
-            return
-        if wait_exit(2) is not None:
-            return
-        try:
-            os.kill(child, signal.SIGTERM)
-        except ProcessLookupError:
-            return
-        if wait_exit(2) is not None:
-            return
-        raise TimeoutError("standalone TUI did not exit after the quit key")
+        snippet = visible_output()[-2_500:].decode(errors="replace")
+        raise TimeoutError(f"standalone TUI did not exit after the quit key: {snippet}")
     finally:
         try:
             os.close(terminal)

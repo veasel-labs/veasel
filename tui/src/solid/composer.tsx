@@ -329,7 +329,7 @@ export function SolidComposer(props: SolidComposerProps) {
   return (
     <box width="100%" flexShrink={0} flexDirection="column" gap={0}>
       <Show when={(props.focused ?? true) && props.skillCatalogStatus && skillMentionAt(draft(), area?.cursorOffset ?? draft().length)}>
-        <text fg={solidMint.muted}>{props.skillCatalogStatus}</text>
+        <text fg={colors.muted}>{props.skillCatalogStatus}</text>
       </Show>
       <Show when={menu()}>
         {(active) => (

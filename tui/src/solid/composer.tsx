@@ -71,21 +71,31 @@ export function SolidComposer(props: SolidComposerProps) {
   const [readline, setReadline] = createSignal<ComposerReadlineState>(emptyComposerReadlineState())
   let area: TextareaRenderable | undefined
   let lastRestoreId: string | undefined
+  /** Token waiting for the textarea mount (home `/` race). */
+  let pendingRestore: { id: string; text: string } | undefined
 
   const skills = () => props.skills ?? demoComposerSkills()
 
-  createEffect(() => {
-    const token = props.restoreToken
-    if (!token || token.id === lastRestoreId) return
+  const applyRestore = (token: { id: string; text: string }) => {
     lastRestoreId = token.id
+    pendingRestore = undefined
     setDraft(token.text)
     setDismissed(undefined)
     setSelected(0)
     if (area) {
       area.setText(token.text)
       area.height = composerHeightForText(token.text)
+      area.cursorOffset = token.text.length
+    } else {
+      pendingRestore = token
     }
     props.onDraftChange?.(token.text)
+  }
+
+  createEffect(() => {
+    const token = props.restoreToken
+    if (!token || token.id === lastRestoreId) return
+    applyRestore(token)
   })
 
   const menu = createMemo(() => {
@@ -386,6 +396,17 @@ export function SolidComposer(props: SolidComposerProps) {
         <textarea
           ref={(next: TextareaRenderable) => {
             area = next
+            // Home `/` opens the composer and sets restoreToken before the
+            // textarea exists; flush so `/connect` is not submitted as `connect`.
+            if (next && pendingRestore) {
+              const token = pendingRestore
+              pendingRestore = undefined
+              next.setText(token.text)
+              next.height = composerHeightForText(token.text)
+              next.cursorOffset = token.text.length
+              setDraft(token.text)
+              props.onDraftChange?.(token.text)
+            }
           }}
           width="100%"
           minHeight={1}

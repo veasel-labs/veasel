@@ -1045,6 +1045,16 @@ function LiveAppShell(props: LiveAppProps) {
     switch (action.kind) {
       case "passthrough":
         if (!activeSessionId()) {
+          // Home `/` can race the textarea mount so the leading slash is lost
+          // (`connect` instead of `/connect`). Recover known slash names.
+          const trimmed = text.trim()
+          if (trimmed && !trimmed.startsWith("/")) {
+            const recovered = resolveLiveSlash(`/${trimmed}`)
+            if (recovered.kind !== "passthrough" && recovered.kind !== "unknown") {
+              handleComposerSubmit(`/${trimmed}`)
+              return
+            }
+          }
           openDialogAlert(dialog, {
             title: "Session required",
             message: "Open a session (n or Enter) before chatting. Slash commands like /connect and /skills work from home — press / first, then type the command.",

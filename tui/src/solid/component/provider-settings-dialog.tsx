@@ -163,9 +163,10 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         jump("up")
         return
       }
-      if (key.name === "g") {
+      // kitty/`send-key G` may report name "g"+shift or sequence "G" without shift.
+      if (key.name === "g" || key.sequence === "g" || key.sequence === "G") {
         key.preventDefault()
-        jump(key.shift ? "end" : "home")
+        jump(key.shift || key.sequence === "G" ? "end" : "home")
         return
       }
       if (/^[1-9]$/.test(key.sequence)) {

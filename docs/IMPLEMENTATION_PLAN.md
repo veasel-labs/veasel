@@ -560,3 +560,9 @@ honoring its license and attribution.
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
+
+### Conversation surfaces and wrapping
+
+- User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.
+- Message lines wrap to the actual available width, including narrow terminals. Rendered snapshots at 32, 56, and 100 columns protect long-text visibility and role boundaries.
+- Production streaming, thinking sections, and activity groups retain their existing data flow. Full rich-Markdown migration and the complete design-system audit remain open.

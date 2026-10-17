@@ -137,7 +137,7 @@ function SegmentLines(props: { segments: TranscriptSegment[] }) {
   return (
     <For each={lines()}>
       {(line) => (
-        <text wrapMode="none">
+        <text width="100%" wrapMode="word">
           <For each={line}>{(segment) => <SegmentSpan segment={segment} />}</For>
         </text>
       )}
@@ -248,6 +248,17 @@ function MessageBlockView(props: {
   })
 
   return (
+    <box
+      id={`message-${message()?.role ?? "unknown"}-${props.startIndex}`}
+      width="100%"
+      flexDirection="column"
+      flexShrink={0}
+      border={message()?.role === "user" ? ["left"] : []}
+      borderColor={solidMint.brand}
+      backgroundColor={message()?.role === "user" ? solidMint.panelBg : solidMint.shellBg}
+      paddingLeft={message()?.role === "user" ? 1 : 0}
+      marginBottom={message()?.role === "user" ? 1 : 0}
+    >
     <Show
       when={hasThinking() ? message() : undefined}
       fallback={
@@ -303,6 +314,7 @@ function MessageBlockView(props: {
         </box>
       )}
     </Show>
+    </box>
   )
 }
 

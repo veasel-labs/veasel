@@ -138,3 +138,9 @@ No V backend changes required for the Solid default cutover.
 
 Do not copy OpenCode logos, splash art, or product strings. Prefer Veasel mint
 tokens and HTTP-API client boundaries.
+
+### Conversation readability reference
+
+Inspected OpenCode `ed772f5009755b5262805a7ba07e66e1417f140a`, `packages/tui/src/routes/session/index.tsx`, `UserMessage` (MIT). It uses a raised background and a left border to distinguish user contributions. Veasel retains its own spoken role labels, semantic colors, and message projection, using a user surface and open assistant text. No upstream code copied.
+
+The Solid segment renderer now wraps at the actual available terminal width instead of clipping long lines. Rendered tests cover narrow terminals and role surfaces. This is a conversation-readability change, not evidence that the complete design overhaul is finished.

@@ -15,7 +15,6 @@ import type { SlashCompletionContext } from "../slash-commands"
 import { solidMint } from "./theme"
 import {
   acceptComposerAutocomplete,
-  demoComposerSkills,
   jumpComposerAutocomplete,
   moveComposerAutocomplete,
   resolveComposerAutocomplete,
@@ -45,6 +44,7 @@ export type SolidComposerProps = {
   onSubmit?: (text: string) => void
   workspaceRoot?: string
   skills?: SkillCatalogEntry[]
+  skillCatalogStatus?: string
   slashContext?: SlashCompletionContext
   listPaths?: (root: string) => string[]
   /** When this token changes, replace the composer draft (stash restore). */
@@ -76,7 +76,7 @@ export function SolidComposer(props: SolidComposerProps) {
   /** Token waiting for the textarea mount (home `/` race). */
   let pendingRestore: { id: string; text: string } | undefined
 
-  const skills = () => props.skills ?? demoComposerSkills()
+  const skills = () => props.skills ?? []
   const pathFrecency = sharedPathFrecencyStore()
 
   const applyRestore = (token: { id: string; text: string }) => {
@@ -326,6 +326,9 @@ export function SolidComposer(props: SolidComposerProps) {
 
   return (
     <box width="100%" flexShrink={0} flexDirection="column" gap={0}>
+      <Show when={(props.focused ?? true) && props.skillCatalogStatus && skillMentionAt(draft(), area?.cursorOffset ?? draft().length)}>
+        <text fg={solidMint.muted}>{props.skillCatalogStatus}</text>
+      </Show>
       <Show when={menu()}>
         {(active) => (
           <box

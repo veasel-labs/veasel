@@ -3,7 +3,7 @@ import { For } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type HighlightEntry = {
   title: string
@@ -28,6 +28,7 @@ export function demoHighlights(): HighlightEntry[] {
 }
 
 export function HighlightsDialog(props: { entries: HighlightEntry[] }) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
 
   useKeyboard((key: KeyEvent) => {
@@ -40,13 +41,13 @@ export function HighlightsDialog(props: { entries: HighlightEntry[] }) {
   return (
     <DialogLayout
       header={<DialogHeader title="What's new" hint="Enter · Esc" />}
-      footer={<text fg={solidMint.muted}>Tip LiveApp highlights · Enter closes</text>}
+      footer={<text fg={colors.muted}>Tip LiveApp highlights · Enter closes</text>}
     >
       <For each={props.entries}>
         {(entry) => (
           <box flexDirection="column" marginBottom={1}>
-            <text fg={solidMint.headerTitle}>{entry.title}</text>
-            <text fg={solidMint.muted} wrapMode="word">
+            <text fg={colors.headerTitle}>{entry.title}</text>
+            <text fg={colors.muted} wrapMode="word">
               {entry.body}
             </text>
           </box>

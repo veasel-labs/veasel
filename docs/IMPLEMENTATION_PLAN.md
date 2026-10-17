@@ -75,6 +75,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `formatReviewDiff` / shell / MCP formatters, OpenTUI `<diff>` split when
   toggled; **Ctrl+R** + palette `veasel.reviews.open`; fixture demos +
   `testRender`; Solid is the default entry (`classic-main.ts` retired).
+- [x] Reactive builtin theme ownership for Solid components and overlays.
+  Theme changes recolor the transcript, composer, dialogs, notifications, and
+  diff views without remounting local interaction state. Rendered-color tests
+  verify draft retention and isolation between application roots.
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.

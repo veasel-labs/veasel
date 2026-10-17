@@ -3,7 +3,7 @@ import { createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type ErrorDetailsDialogProps = {
   title?: string
@@ -26,6 +26,7 @@ export function formatErrorDetailsText(props: ErrorDetailsDialogProps): string {
 }
 
 export function ErrorDetailsDialog(props: ErrorDetailsDialogProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [copied, setCopied] = createSignal(false)
   let scroll: ScrollBoxRenderable | undefined
@@ -77,7 +78,7 @@ export function ErrorDetailsDialog(props: ErrorDetailsDialogProps) {
     <DialogLayout
       header={<DialogHeader title={props.title ?? "Error details"} hint="c copy · Enter · Esc" />}
       footer={
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           {copied() ? "Copied · " : ""}
           c copies details · Enter / Esc closes
         </text>
@@ -92,9 +93,9 @@ export function ErrorDetailsDialog(props: ErrorDetailsDialogProps) {
         stickyScroll={false}
       >
         <box width="100%" flexDirection="column" gap={1}>
-          {props.source ? <text fg={solidMint.muted}>Source · {props.source}</text> : null}
-          {props.context ? <text fg={solidMint.muted}>Context · {props.context}</text> : null}
-          <text fg={solidMint.statusError}>{props.error}</text>
+          {props.source ? <text fg={colors.muted}>Source · {props.source}</text> : null}
+          {props.context ? <text fg={colors.muted}>Context · {props.context}</text> : null}
+          <text fg={colors.statusError}>{props.error}</text>
         </box>
       </scrollbox>
     </DialogLayout>

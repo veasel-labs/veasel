@@ -19,10 +19,8 @@ import { liveStreamStatusMessage } from "../transcript-scroll"
 import { homeFooterHint } from "../footer-hints"
 import {
   isBuiltinThemeId,
-  loadThemeId,
   saveThemeId,
   themes,
-  type BuiltinThemeId,
 } from "../themes"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
@@ -140,7 +138,7 @@ import {
   openOpenDialog,
 } from "./component/open-dialog"
 import { openWorkspacesDialog } from "./component/workspaces-dialog"
-import { solidMint } from "./theme"
+import { useSolidTheme, useSolidThemeState, SolidThemeProvider } from "./theme"
 import type { SolidSessionEntry } from "./component/session-list-dialog"
 import {
   findSessionForDirectory,
@@ -165,6 +163,7 @@ function sessionEntry(session: ApiSession): SolidSessionEntry {
 }
 
 function LiveAppShell(props: LiveAppProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const toast = useToast()
   const directory = () => props.directory ?? process.env.VEASEL_PROJECT_DIR ?? process.cwd()
@@ -198,10 +197,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [streaming, setStreaming] = createSignal(false)
   const [streamingText, setStreamingText] = createSignal("")
   const [sending, setSending] = createSignal(false)
-  const initialTheme = loadThemeId()
-  const [themeId, setThemeId] = createSignal<BuiltinThemeId>(
-    isBuiltinThemeId(initialTheme) ? initialTheme : "mint",
-  )
+  const { themeId, setThemeId } = useSolidThemeState()
   /**
    * Home keeps session-nav hotkeys (s/n/q/j/k) until `/` opens the slash bar.
    * Always-on home composer stole `s` from the standalone smoke / classic bindings.
@@ -1917,7 +1913,7 @@ function LiveAppShell(props: LiveAppProps) {
       width="100%"
       height="100%"
       flexDirection="column"
-      backgroundColor={solidMint.shellBg}
+      backgroundColor={colors.shellBg}
     >
       <box
         width="100%"
@@ -1926,18 +1922,18 @@ function LiveAppShell(props: LiveAppProps) {
         flexDirection="row"
         justifyContent="space-between"
         alignItems="center"
-        backgroundColor={solidMint.headerBg}
+        backgroundColor={colors.headerBg}
         border
-        borderColor={solidMint.headerBorder}
+        borderColor={colors.headerBorder}
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={solidMint.headerTitle}>
+        <text fg={colors.headerTitle}>
           <strong>VEASEL</strong>
-          <span style={{ fg: solidMint.brand }}> / </span>
-          <span style={{ fg: solidMint.headerMeta }}>CODE</span>
+          <span style={{ fg: colors.brand }}> / </span>
+          <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
-        <text fg={solidMint.localStatus}>{status()}</text>
+        <text fg={colors.localStatus}>{status()}</text>
       </box>
 
       <Show
@@ -2031,7 +2027,7 @@ function LiveAppShell(props: LiveAppProps) {
       </Show>
       <Show when={inSession() || homeComposerOpen()}>
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
-          <text fg={solidMint.muted}>
+          <text fg={colors.muted}>
             <Show
               when={inSession()}
               fallback={`${homeFooterHint} · Esc dismiss slash · drag │ · Alt+←/→ resize`}
@@ -2048,10 +2044,12 @@ function LiveAppShell(props: LiveAppProps) {
 /** Production Solid entry: loopback HTTP sessions + SSE + MODEL SETTINGS. */
 export function LiveApp(props: LiveAppProps) {
   return (
-    <ToastProvider>
-      <DialogProvider>
-        <LiveAppShell {...props} />
-      </DialogProvider>
-    </ToastProvider>
+    <SolidThemeProvider>
+      <ToastProvider>
+        <DialogProvider>
+          <LiveAppShell {...props} />
+        </DialogProvider>
+      </ToastProvider>
+    </SolidThemeProvider>
   )
 }

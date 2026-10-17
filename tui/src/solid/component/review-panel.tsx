@@ -19,9 +19,8 @@ import {
 } from "../../diff-view"
 import { moveReviewHunkIndex } from "../../review-diff"
 import { noticeSegments, type TranscriptSegment } from "../../transcript"
-import { themes } from "../../themes"
 import { DialogHeader, useDialog } from "../ui/dialog"
-import { solidMint, solidToneBold, solidToneFg } from "../theme"
+import { useSolidTheme, solidToneBold, solidToneFg } from "../theme"
 import {
   formatSolidReviewBody,
   hunkCountForReview,
@@ -46,7 +45,8 @@ export type ReviewPanelProps = {
 }
 
 function SegmentSpan(props: { segment: TranscriptSegment }) {
-  const fg = () => solidToneFg(props.segment.tone)
+  const colors = useSolidTheme()
+  const fg = () => solidToneFg(props.segment.tone, colors)
   const bold = () => solidToneBold(props.segment.tone)
   return (
     <Show
@@ -61,6 +61,7 @@ function SegmentSpan(props: { segment: TranscriptSegment }) {
 }
 
 export function ReviewPanel(props: ReviewPanelProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
   // Local queue so approve/reject stays responsive without reopening the dialog.
@@ -119,7 +120,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
   const bodySegments = createMemo(() => noticeSegments(bodyText(), { cols: dimensions().width }))
 
-  const diffTheme = () => diffRenderableTheme(themes.mint)
+  const diffTheme = () => diffRenderableTheme(colors)
 
   const applyDecision = (decision: ReviewDecision, targets: ActiveReview[]) => {
     settledOnce = true
@@ -183,22 +184,22 @@ export function ReviewPanel(props: ReviewPanelProps) {
       />
       <Show
         when={current()}
-        fallback={<text fg={solidMint.muted}>Queue empty — nothing to approve.</text>}
+        fallback={<text fg={colors.muted}>Queue empty — nothing to approve.</text>}
       >
         {(item) => (
           <>
             <box width="100%" flexDirection="row" gap={1}>
-              <text fg={solidMint.statusWarn}>
+              <text fg={colors.statusWarn}>
                 <strong>{reviewKindLabel(item().kind).toUpperCase()}</strong>
               </text>
-              <text fg={solidMint.body}>{reviewSummaryLine(item())}</text>
-              <text fg={solidMint.muted}>
+              <text fg={colors.body}>{reviewSummaryLine(item())}</text>
+              <text fg={colors.muted}>
                 {" "}
                 · {moveActiveReviewIndex(index(), 0, pending().length) + 1}/{pending().length} pending
               </text>
             </box>
             <Show when={hotkeyHint()}>
-              {(hint) => <text fg={solidMint.muted}>{hint()}</text>}
+              {(hint) => <text fg={colors.muted}>{hint()}</text>}
             </Show>
             <Show
               when={item().kind === "patch" && diffSurface() === "split"}

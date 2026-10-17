@@ -3,7 +3,7 @@ import { For, Show, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type ExportFormat = "markdown" | "json"
 
@@ -30,6 +30,7 @@ function orderFor(format: ExportFormat): Active[] {
 }
 
 export function DialogExportOptions(props: DialogExportOptionsProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [format, setFormat] = createSignal<ExportFormat>("markdown")
   const [thinking, setThinking] = createSignal(props.defaultThinking ?? true)
@@ -96,15 +97,15 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
   })
 
   const optionBg = (id: Active, selected: boolean) => {
-    if (active() === id) return solidMint.inputFocusBg
-    if (selected) return solidMint.panelBg
+    if (active() === id) return colors.inputFocusBg
+    if (selected) return colors.panelBg
     return undefined
   }
 
   const optionFg = (id: Active, selected: boolean) => {
-    if (active() === id) return solidMint.brand
-    if (selected) return solidMint.body
-    return solidMint.muted
+    if (active() === id) return colors.brand
+    if (selected) return colors.body
+    return colors.muted
   }
 
   return (
@@ -124,18 +125,18 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
             paddingLeft={2}
             paddingRight={2}
             backgroundColor={
-              active() === "export" ? solidMint.inputFocusBg : solidMint.brand
+              active() === "export" ? colors.inputFocusBg : colors.brand
             }
             onMouseUp={() => confirm("export")}
           >
-            <text fg={active() === "export" ? solidMint.brand : solidMint.shellBg}>Export</text>
+            <text fg={active() === "export" ? colors.brand : colors.shellBg}>Export</text>
           </box>
         </box>
       }
     >
       <box flexDirection="column" gap={1}>
         <box flexDirection="row" gap={1}>
-          <text fg={solidMint.body}>Export as:</text>
+          <text fg={colors.body}>Export as:</text>
           <For each={["markdown", "json"] as const}>
             {(item) => (
               <box

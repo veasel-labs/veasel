@@ -601,6 +601,10 @@ honoring its license and attribution.
 - Solid transcript navigation respects the focused editor: plain Home/End and page keys remain available for text editing and autocomplete. Ctrl+Home/End and Ctrl+PageUp/PageDown navigate the transcript from the composer.
 - Page navigation moves the viewport explicitly, with one line of overlap. Follow-tail cues advertise Ctrl+End.
 - Rendered component regression tests exercise the real composer, cursor positions, scroll geometry, and ANSI page-key sequences. These tests do not establish cross-terminal compatibility or a completed UI redesign.
+### First-run project picker
+
+- The production Open dialog no longer falls back to demo projects when no session exists. It offers a real new-session action for the current project.
+- A rendered LiveApp test exercises Ctrl+O, selection, and the resulting HTTP session creation request. No model call is needed.
 ### Conversation surfaces and wrapping
 
 - User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.

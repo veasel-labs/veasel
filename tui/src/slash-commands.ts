@@ -91,6 +91,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/command", category: "approvals", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", category: "session", description: "Load earlier messages in this session" },
   { name: "/usage", category: "session", description: "Show provider-reported token totals for this session" },
+  { name: "/status", category: "session", description: "Session, model, and connection snapshot (same as /usage)" },
   { name: "/map", category: "session", description: "Show the extractive workspace repository map; add text to hint ranking" },
 ]
 

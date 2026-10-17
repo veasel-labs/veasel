@@ -30,6 +30,7 @@ import {
   resolveAttachmentPath,
   type ComposerAttachment,
 } from "./composer-attachments"
+import { resolveLiveSlash } from "./live-slash"
 import {
   applyComposerReadlineKey,
   emptyComposerReadlineState,
@@ -72,22 +73,32 @@ export function SolidComposer(props: SolidComposerProps) {
   const [readline, setReadline] = createSignal<ComposerReadlineState>(emptyComposerReadlineState())
   let area: TextareaRenderable | undefined
   let lastRestoreId: string | undefined
+  /** Token waiting for the textarea mount (home `/` race). */
+  let pendingRestore: { id: string; text: string } | undefined
 
   const skills = () => props.skills ?? demoComposerSkills()
   const pathFrecency = sharedPathFrecencyStore()
 
-  createEffect(() => {
-    const token = props.restoreToken
-    if (!token || token.id === lastRestoreId) return
+  const applyRestore = (token: { id: string; text: string }) => {
     lastRestoreId = token.id
+    pendingRestore = undefined
     setDraft(token.text)
     setDismissed(undefined)
     setSelected(0)
     if (area) {
       area.setText(token.text)
       area.height = composerHeightForText(token.text)
+      area.cursorOffset = token.text.length
+    } else {
+      pendingRestore = token
     }
     props.onDraftChange?.(token.text)
+  }
+
+  createEffect(() => {
+    const token = props.restoreToken
+    if (!token || token.id === lastRestoreId) return
+    applyRestore(token)
   })
 
   const menu = createMemo(() => {
@@ -168,6 +179,20 @@ export function SolidComposer(props: SolidComposerProps) {
     const cursor = area?.cursorOffset ?? value.length
     const active = menu()
     if (!active) return false
+    // Prefer an already-typed runnable LiveApp slash over a fuzzy description
+    // hit (e.g. `/status` must not become `/patches` via "filter by … status").
+    if (mode === "enter" && active.kind === "slash") {
+      const trimmed = value.trimEnd()
+      const action = resolveLiveSlash(trimmed)
+      if (
+        action.kind !== "passthrough"
+        && action.kind !== "unknown"
+        && action.kind !== "unsupported"
+      ) {
+        send(trimmed)
+        return true
+      }
+    }
     const result = acceptComposerAutocomplete({
       value,
       cursor,
@@ -390,6 +415,17 @@ export function SolidComposer(props: SolidComposerProps) {
         <textarea
           ref={(next: TextareaRenderable) => {
             area = next
+            // Home `/` opens the composer and sets restoreToken before the
+            // textarea exists; flush so `/connect` is not submitted as `connect`.
+            if (next && pendingRestore) {
+              const token = pendingRestore
+              pendingRestore = undefined
+              next.setText(token.text)
+              next.height = composerHeightForText(token.text)
+              next.cursorOffset = token.text.length
+              setDraft(token.text)
+              props.onDraftChange?.(token.text)
+            }
           }}
           width="100%"
           minHeight={1}

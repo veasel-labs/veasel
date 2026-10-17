@@ -162,7 +162,8 @@ export function formatSettingsListStatus(
 ): string {
   if (count <= 0) return `● ${label}  ·  none`
   const index = Math.min(Math.max(0, selected), count - 1)
-  return `● ${label}  ·  selected ${index + 1} of ${count}`
+  // "focus" — single-select highlight index (not multi-select "selected").
+  return `● ${label}  ·  focus ${index + 1} of ${count}`
 }
 
 export function homeWorkspaceBlurb(options: {

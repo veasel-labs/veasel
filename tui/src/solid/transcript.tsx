@@ -240,6 +240,7 @@ function MessageBlockView(props: {
   thinkingExpanded: Record<string, boolean>
   onToggleThinking: (id: string) => void
 }) {
+  const colors = useSolidTheme()
   const message = () => props.messages[0]
   const hasThinking = createMemo(() => {
     const msg = message()
@@ -258,8 +259,8 @@ function MessageBlockView(props: {
       flexDirection="column"
       flexShrink={0}
       border={message()?.role === "user" ? ["left"] : []}
-      borderColor={solidMint.brand}
-      backgroundColor={message()?.role === "user" ? solidMint.panelBg : solidMint.shellBg}
+      borderColor={colors.brand}
+      backgroundColor={message()?.role === "user" ? colors.panelBg : colors.shellBg}
       paddingLeft={message()?.role === "user" ? 1 : 0}
       marginBottom={message()?.role === "user" ? 1 : 0}
     >

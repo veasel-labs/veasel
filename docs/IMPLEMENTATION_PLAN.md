@@ -596,6 +596,11 @@ honoring its license and attribution.
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
 
+### Cursor-aware composer completion
+
+- Path and Skill menus now track native editor cursor changes, including movement back into a mention without editing the draft.
+- Left/right navigation remains usable while a completion menu is open; Ctrl/Alt word movement and Shift selection use OpenTUI editor methods. Completing a mention preserves the text after it.
+- Rendered keyboard regressions cover both path and Skill mentions, entering/leaving menus, and suffix preservation.
 ### First-run project picker
 
 - The production Open dialog no longer falls back to demo projects when no session exists. It offers a real new-session action for the current project.

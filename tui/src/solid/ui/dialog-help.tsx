@@ -3,7 +3,7 @@ import { createMemo } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import { paletteHelpText, paletteShortcut } from "../commands"
 
 export type DialogHelpProps = {
@@ -13,6 +13,7 @@ export type DialogHelpProps = {
 }
 
 export function DialogHelp(props: DialogHelpProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const body = createMemo(() => paletteHelpText(props.compact ?? true))
 
@@ -36,19 +37,19 @@ export function DialogHelp(props: DialogHelpProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={solidMint.inputFocusBg}
+            backgroundColor={colors.inputFocusBg}
             onMouseUp={close}
           >
-            <text fg={solidMint.brand}>ok</text>
+            <text fg={colors.brand}>ok</text>
           </box>
         </box>
       }
     >
       <box width="100%" flexDirection="column" gap={1}>
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           Press {paletteShortcut.label} for commands in any context.
         </text>
-        <text fg={solidMint.body}>{body()}</text>
+        <text fg={colors.body}>{body()}</text>
       </box>
     </DialogLayout>
   )

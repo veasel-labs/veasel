@@ -52,7 +52,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] V HTTP server with health and capability endpoints.
 - [x] SQLite migration ledger and transactional session create/list/get behavior.
 - [x] Durable, replayable SSE event stream with cursor validation.
-- [x] OpenTUI terminal client connected to the server; Solid remains evaluated.
+- [x] OpenTUI terminal client connected to the server; Solid is the default.
 - [x] Solid P0 shell + composer (`tui/src/solid/`, `testRender`).
 - [x] Solid default cutover: `bun run start` + standalone `build:standalone`
   use `solid/main.tsx` / `LiveApp` (loopback HTTP session loop + SSE); classic
@@ -73,11 +73,30 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `solid/component/review-panel.tsx`): pending file/shell/MCP queue with
   legacy `reviewHotkey` bindings (a/x/A/X/Space/]/[/n/p/{/}/v),
   `formatReviewDiff` / shell / MCP formatters, OpenTUI `<diff>` split when
-  toggled; **Ctrl+R** + palette `veasel.reviews.open`; fixture demos +
-  `testRender`; Solid is the default entry (`classic-main.ts` retired).
+  toggled; **Ctrl+R** + palette `veasel.reviews.open`. LiveApp loads and
+  decides reviews through the HTTP API. The panel waits for confirmation,
+  retains failed items with inline errors, blocks duplicate submissions while
+  waiting, and restores composer focus on close. Loopback HTTP and rendered
+  keyboard tests cover failures, partial batches, and late completion after
+  dismissal; these tests do not replace cross-platform interactive validation.
+- [x] Reactive builtin theme ownership for Solid components and overlays.
+  Theme changes recolor the transcript, composer, dialogs, notifications, and
+  diff views without remounting local interaction state. Rendered-color tests
+  verify draft retention and isolation between application roots.
+
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.
+- [x] LiveApp isolates pending composer text and attachments by session during
+  the current TUI process. Session switching updates project context for file
+  completion and relative attachments; submitted text is cleared consistently.
+  Real LiveApp keyboard/HTTP tests verify that session B does not submit A's
+  pending attachment. Automatic draft recovery after process restart remains open.
+- [x] LiveApp history responses are scoped to the current session visit.
+  Late success/error responses cannot replace a newer session view, including
+  A → B → A navigation. Older-page responses are discarded after navigation or
+  another history update. Loopback HTTP tests exercise actual LiveApp keyboard
+  navigation with delayed responses; cross-platform manual checks remain open.
 - [x] Solid session list + rename dialogs (`session-list-dialog.tsx`,
   `session-rename-dialog.tsx`): filter via `session-list.ts`, digit jump,
   `r` rename (dialog `push`/`pop`), `n` create stub when filter empty; palette
@@ -411,7 +430,8 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   settings). Shell through model/theme/stash/error/shell dual-path shipped;
   next slices are pane-resize/sidebar, fade/spinner, HTTP session wiring /
   mount-budget, or remaining OpenCode dialogs (MCP/skill/agent/workspaces).
-  Default entry remains legacy until parity. See
+  Solid LiveApp is already the default; audit remaining journeys against the
+  classic client rather than treating the default cutover as pending. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
@@ -565,3 +585,8 @@ honoring its license and attribution.
 
 - The production Open dialog no longer falls back to demo projects when no session exists. It offers a real new-session action for the current project.
 - A rendered LiveApp test exercises Ctrl+O, selection, and the resulting HTTP session creation request. No model call is needed.
+### Real Skill completions
+
+- Production composer defaults to an empty Skill catalog instead of demo entries. LiveApp discovers Skills through the versioned plugin API when a draft first contains a Skill token.
+- Discovery uses the active session project, clears old entries on context changes, and discards superseded responses. Loading, empty, and failure states are visible; retry by re-entering the token or opening `/skills`.
+- Loopback HTTP/component tests cover real catalog insertion, project query parameters, discovery failure, and retry. Live provider calls are not required.

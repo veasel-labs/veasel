@@ -40,7 +40,7 @@ import { openStashDialog, type SolidStashEntry } from "./component/stash-dialog"
 import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openReviewPanel } from "./component/review-panel"
-import { decideSolidReviews, loadPendingSolidReviews } from "./reviews-inventory"
+import { decideSolidReviews, loadPendingSolidReviews, inspectSolidReview } from "./reviews-inventory"
 import { reviewShortcut } from "./reviews"
 import { openAgentDialog } from "./component/agent-dialog"
 import {
@@ -628,6 +628,7 @@ function LiveAppShell(props: LiveAppProps) {
       openReviewPanel(dialog, {
         reviews,
         onClose: () => setComposerFocused(true),
+        onInspect: (target) => inspectSolidReview(props.api, sessionId, target),
         onDecide: async (decision, targets) => {
           const result = await decideSolidReviews(props.api, sessionId, decision, targets)
           const verb = decision === "approve" ? "Approved" : "Rejected"

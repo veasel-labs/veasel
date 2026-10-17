@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import {
@@ -44,6 +44,7 @@ export type ReviewPanelProps = {
     decision: ReviewDecision,
     targets: ActiveReview[],
   ) => ReviewDecisionResult | Promise<ReviewDecisionResult>
+  onInspect?: (target: ActiveReview) => Promise<SolidReviewItem>
   onClose?: () => void
   /** Initial queue index (clamped). */
   initialIndex?: number
@@ -102,6 +103,29 @@ export function ReviewPanel(props: ReviewPanelProps) {
     setIndex((currentIndex) => moveActiveReviewIndex(currentIndex, 0, items.length))
   })
 
+  const [inspecting, setInspecting] = createSignal(false)
+  const [inspectionError, setInspectionError] = createSignal<string>()
+  const [inspectionRetry, setInspectionRetry] = createSignal(0)
+  createEffect(on(() => `${current() ? reviewSelectionKey(current()!) : ""}:${inspectionRetry()}`, () => {
+    const item = current()
+    setInspectionError(undefined)
+    setInspecting(false)
+    if (!item || !props.onInspect || item.inspected === true) return
+    let active = true
+    onCleanup(() => { active = false })
+    setInspecting(true)
+    const inspect = props.onInspect
+    void (async () => await inspect(item))().then((detail) => {
+      if (!active || disposed) return
+      if (detail.id !== item.id || detail.kind !== item.kind) throw new Error("Review details did not match the requested item")
+      setQueue((items) => items.map((entry) => reviewSelectionKey(entry) === reviewSelectionKey(item) ? { ...detail, inspected: true } : entry))
+    }).catch((error) => {
+      if (active && !disposed) setInspectionError(error instanceof Error ? error.message : "Could not load review details")
+    }).finally(() => {
+      if (active && !disposed) setInspecting(false)
+    })
+  }))
+
   const hotkeyHint = createMemo(() => {
     const item = current()
     if (!item) return undefined
@@ -135,6 +159,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
   const applyDecision = async (decision: ReviewDecision, targets: ActiveReview[]) => {
     if (busy()) return
+    if (decision === "approve" && props.onInspect && targets.some((target) =>
+      queue().find((item) => reviewSelectionKey(item) === reviewSelectionKey(target))?.inspected !== true,
+    )) {
+      setFailures(["Open and inspect every selected item before approving."])
+      return
+    }
     setBusy(true)
     setFailures([])
     try {
@@ -160,6 +190,11 @@ export function ReviewPanel(props: ReviewPanelProps) {
       return
     }
 
+    if (key.name === "r" && !key.ctrl && !key.meta && inspectionError()) {
+      key.preventDefault()
+      setInspectionRetry((value) => value + 1)
+      return
+    }
     const item = current()
     const hotkey = reviewHotkey(
       { name: key.name, ctrl: key.ctrl, meta: key.meta, shift: key.shift },
@@ -229,6 +264,9 @@ export function ReviewPanel(props: ReviewPanelProps) {
             <Show when={!busy() && hotkeyHint()}>
               {(hint) => <text fg={colors.muted}>{hint()}</text>}
             </Show>
+            <Show when={inspecting()}><text fg={colors.muted}>Loading review details…</text></Show>
+            <Show when={inspectionError()}>{(error) => <text fg={colors.statusWarn}>{error()} · r retry</text>}</Show>
+            <Show when={!inspecting() && !inspectionError()}>
             <Show
               when={item().kind === "patch" && diffSurface() === "split"}
               fallback={
@@ -273,6 +311,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   wrapMode={diffTheme().wrapMode}
                 />
               </box>
+            </Show>
             </Show>
           </>
         )}

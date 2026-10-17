@@ -63,7 +63,10 @@ export type SolidMcpReview = {
   stdioSandbox?: ReviewSandboxPreview
 }
 
-export type SolidReviewItem = SolidPatchReview | SolidCommandReview | SolidMcpReview
+export type SolidReviewItem = (SolidPatchReview | SolidCommandReview | SolidMcpReview) & {
+  /** False until details have been loaded for the visible review. */
+  inspected?: boolean
+}
 
 export type ReviewDecision = "approve" | "reject"
 

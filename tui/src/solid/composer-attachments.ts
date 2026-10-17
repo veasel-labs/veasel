@@ -1,4 +1,4 @@
-import { basename, extname } from "node:path"
+import { basename, extname, resolve } from "node:path"
 import { existsSync, statSync } from "node:fs"
 
 export const composerAttachmentLimit = 16
@@ -42,12 +42,14 @@ export function normalizeAttachmentPath(raw: string): string | undefined {
 
 export function resolveAttachmentPath(
   raw: string,
-  options: { exists?: (path: string) => boolean; home?: string } = {},
+  options: { exists?: (path: string) => boolean; home?: string; cwd?: string } = {},
 ): string | undefined {
   const normalized = normalizeAttachmentPath(raw)
   if (!normalized) return undefined
   const home = options.home ?? process.env.HOME ?? ""
-  const expanded = normalized.startsWith("~/") ? `${home}/${normalized.slice(2)}` : normalized
+  const expanded = normalized.startsWith("~/")
+    ? `${home}/${normalized.slice(2)}`
+    : resolve(options.cwd ?? process.cwd(), normalized)
   const exists = options.exists ?? ((path) => existsSync(path))
   if (!exists(expanded)) return undefined
   return expanded

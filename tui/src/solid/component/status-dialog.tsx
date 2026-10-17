@@ -3,7 +3,8 @@ import { For, Show } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
+import type { Theme } from "../../themes"
 import type { SolidMcpServer } from "./mcp-dialog"
 
 export type StatusDialogSnapshot = {
@@ -18,16 +19,16 @@ export type StatusDialogSnapshot = {
   mcpServers: SolidMcpServer[]
 }
 
-function mcpStatusColor(status: SolidMcpServer["status"]): string {
+function mcpStatusColor(status: SolidMcpServer["status"], colors: Theme): string {
   switch (status) {
     case "connected":
-      return solidMint.statusOk
+      return colors.statusOk
     case "failed":
-      return solidMint.statusError
+      return colors.statusError
     case "needs_auth":
-      return solidMint.statusWarn
+      return colors.statusWarn
     default:
-      return solidMint.muted
+      return colors.muted
   }
 }
 
@@ -64,6 +65,7 @@ export function demoStatusSnapshot(): StatusDialogSnapshot {
 }
 
 export function StatusDialog(props: StatusDialogSnapshot) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
 
   useKeyboard((key: KeyEvent) => {
@@ -76,23 +78,23 @@ export function StatusDialog(props: StatusDialogSnapshot) {
   return (
     <DialogLayout
       header={<DialogHeader title="Status" hint="Enter · Esc" />}
-      footer={<text fg={solidMint.muted}>Rich status · wire to /usage and live MCP list</text>}
+      footer={<text fg={colors.muted}>Rich status · wire to /usage and live MCP list</text>}
     >
       <box flexDirection="column" gap={1}>
-        <text fg={solidMint.body}>
-          <span style={{ fg: solidMint.muted }}>Session </span>
+        <text fg={colors.body}>
+          <span style={{ fg: colors.muted }}>Session </span>
           {props.sessionTitle}
         </text>
-        <text fg={solidMint.muted}>Directory · {props.directory}</text>
+        <text fg={colors.muted}>Directory · {props.directory}</text>
         <Show when={props.connection}>
-          {(line) => <text fg={solidMint.localStatus}>{line()}</text>}
+          {(line) => <text fg={colors.localStatus}>{line()}</text>}
         </Show>
         <Show when={props.provider && props.model}>
-          <text fg={solidMint.body}>
+          <text fg={colors.body}>
             Model · {props.provider}/{props.model}
             <Show when={props.agent}>
               {(agent) => (
-                <span style={{ fg: solidMint.muted }}>
+                <span style={{ fg: colors.muted }}>
                   {" "}
                   · agent {agent()}
                 </span>
@@ -100,7 +102,7 @@ export function StatusDialog(props: StatusDialogSnapshot) {
             </Show>
             <Show when={props.variant}>
               {(variant) => (
-                <span style={{ fg: solidMint.muted }}>
+                <span style={{ fg: colors.muted }}>
                   {" "}
                   · variant {variant()}
                 </span>
@@ -109,25 +111,25 @@ export function StatusDialog(props: StatusDialogSnapshot) {
           </text>
         </Show>
         <Show when={props.usageLine}>
-          {(line) => <text fg={solidMint.muted}>Usage · {line()}</text>}
+          {(line) => <text fg={colors.muted}>Usage · {line()}</text>}
         </Show>
         <box marginTop={1} flexDirection="column" gap={0}>
-          <text fg={solidMint.headerTitle}>
+          <text fg={colors.headerTitle}>
             MCP ({props.mcpServers.length})
           </text>
           <Show
             when={props.mcpServers.length > 0}
-            fallback={<text fg={solidMint.muted}>No MCP servers configured</text>}
+            fallback={<text fg={colors.muted}>No MCP servers configured</text>}
           >
             <For each={props.mcpServers}>
               {(server) => (
                 <box flexDirection="row" gap={1}>
-                  <text flexShrink={0} fg={mcpStatusColor(server.status)}>
+                  <text flexShrink={0} fg={mcpStatusColor(server.status, colors)}>
                     •
                   </text>
-                  <text fg={solidMint.body} wrapMode="word">
+                  <text fg={colors.body} wrapMode="word">
                     <strong>{server.name}</strong>{" "}
-                    <span style={{ fg: solidMint.muted }}>{mcpStatusLabel(server)}</span>
+                    <span style={{ fg: colors.muted }}>{mcpStatusLabel(server)}</span>
                   </text>
                 </box>
               )}

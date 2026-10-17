@@ -2,7 +2,7 @@
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type DialogExportResultProps = {
   path: string
@@ -10,6 +10,7 @@ export type DialogExportResultProps = {
 }
 
 export function DialogExportResult(props: DialogExportResultProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
 
   const close = () => {
@@ -32,16 +33,16 @@ export function DialogExportResult(props: DialogExportResultProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={solidMint.inputFocusBg}
+            backgroundColor={colors.inputFocusBg}
             onMouseUp={close}
           >
-            <text fg={solidMint.brand}>Close</text>
+            <text fg={colors.brand}>Close</text>
           </box>
         </box>
       }
     >
-      <text fg={solidMint.body}>{props.path}</text>
-      <text fg={solidMint.muted}>Enter or Esc to dismiss</text>
+      <text fg={colors.body}>{props.path}</text>
+      <text fg={colors.muted}>Enter or Esc to dismiss</text>
     </DialogLayout>
   )
 }

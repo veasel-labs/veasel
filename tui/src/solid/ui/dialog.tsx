@@ -11,7 +11,7 @@ import {
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent, Renderable } from "@opentui/core"
 import { dialogGeometry } from "./dialog-layout"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type DialogSize = "medium" | "large"
 
@@ -126,6 +126,7 @@ export function useDialog(): DialogHost {
 }
 
 function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: DialogSize }>) {
+  const colors = useSolidTheme()
   const dimensions = useTerminalDimensions()
   const size = () => props.size ?? "medium"
   const geometry = () => dialogGeometry(dimensions().width, dimensions().height, dialogWidth(size()))
@@ -139,7 +140,7 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: Dialo
       height={dimensions().height}
       alignItems="center"
       justifyContent="center"
-      backgroundColor={solidMint.shellBg}
+      backgroundColor={colors.shellBg}
       onMouseUp={() => props.onDismiss()}
     >
       <box
@@ -147,9 +148,9 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: Dialo
         width={geometry().width}
         maxHeight={geometry().height}
         flexDirection="column"
-        backgroundColor={solidMint.panelBg}
+        backgroundColor={colors.panelBg}
         border
-        borderColor={solidMint.headerBorder}
+        borderColor={colors.headerBorder}
         paddingTop={geometry().paddingY}
         paddingBottom={geometry().paddingY}
         paddingLeft={geometry().paddingX}
@@ -163,6 +164,7 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: Dialo
 
 export function DialogHeader(props: { title: string; hint?: string }) {
   const dimensions = useTerminalDimensions()
+  const colors = useSolidTheme()
   return (
     <box
       width="100%"
@@ -171,10 +173,10 @@ export function DialogHeader(props: { title: string; hint?: string }) {
       flexShrink={0}
       marginBottom={1}
     >
-      <text fg={solidMint.headerTitle} flexGrow={1} flexShrink={1} wrapMode="none">
+      <text fg={colors.headerTitle} flexGrow={1} flexShrink={1} wrapMode="none">
         <strong>{props.title}</strong>
       </text>
-      <text fg={solidMint.muted} flexShrink={0}>{dimensions().width < 44 ? "Esc" : (props.hint ?? "Esc")}</text>
+      <text fg={colors.muted} flexShrink={0}>{dimensions().width < 44 ? "Esc" : (props.hint ?? "Esc")}</text>
     </box>
   )
 }

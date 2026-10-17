@@ -4,7 +4,7 @@ import { For, Show, createMemo, createSignal, onMount, type JSX } from "solid-js
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import { DialogHeader, useDialog } from "./dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import {
   filterSelectOptions,
   groupSelectOptions,
@@ -38,6 +38,7 @@ export type DialogSelectProps<T = string> = {
 const visibleDefault = 10
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
   const compact = () => dialogGeometry(dimensions().width, dimensions().height).compact
@@ -124,12 +125,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         width="100%"
         focused={true}
         placeholder={props.placeholder ?? "Search…"}
-        placeholderColor={solidMint.muted}
-        textColor={solidMint.inputText}
-        focusedTextColor={solidMint.inputText}
-        backgroundColor={solidMint.inputBg}
-        focusedBackgroundColor={solidMint.inputFocusBg}
-        cursorColor={solidMint.cursor}
+        placeholderColor={colors.muted}
+        textColor={colors.inputText}
+        focusedTextColor={colors.inputText}
+        backgroundColor={colors.inputBg}
+        focusedBackgroundColor={colors.inputFocusBg}
+        cursorColor={colors.cursor}
         onInput={(value: string) => {
           setQuery(value)
           setSelected(0)
@@ -138,7 +139,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       <Show
         when={flat().length > 0}
         fallback={
-          <text fg={solidMint.muted}>
+          <text fg={colors.muted}>
             {query().trim() ? "No results found" : "No items available"}
           </text>
         }
@@ -148,7 +149,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             {([category, options]) => (
               <>
                 <Show when={category}>
-                  <text fg={solidMint.brand}>
+                  <text fg={colors.brand}>
                     <strong>{category}</strong>
                   </text>
                 </Show>
@@ -162,7 +163,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                       <box
                         width="100%"
                         flexDirection="row"
-                        backgroundColor={active() ? solidMint.inputFocusBg : solidMint.panelBg}
+                        backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                         paddingLeft={1}
                         paddingRight={1}
                         onMouseUp={() => {
@@ -170,12 +171,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           if (props.dismissOnSelect !== false) dialog.clear()
                         }}
                       >
-                        <text fg={active() ? solidMint.brand : solidMint.body} flexGrow={1} flexShrink={1} wrapMode="none">
+                        <text fg={active() ? colors.brand : colors.body} flexGrow={1} flexShrink={1} wrapMode="none">
                           {isCurrent() ? "● " : active() ? "▸ " : "  "}
                           {option.title}
                         </text>
                         <Show when={!compact() && (option.description || option.footer || (flatMode() && option.category))}>
-                          <text fg={solidMint.muted}>
+                          <text fg={colors.muted}>
                             {"  "}
                             {flatMode()
                               ? (option.footer ?? option.category ?? option.description ?? "")
@@ -190,12 +191,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
             )}
           </For>
         </box>
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           {flat().length} match{flat().length === 1 ? "" : "es"} · ↑/↓ · Enter
         </text>
       </Show>
       <Show when={props.footer}>
-        <text fg={solidMint.muted}>{props.footer}</text>
+        <text fg={colors.muted}>{props.footer}</text>
       </Show>
     </box>
   )

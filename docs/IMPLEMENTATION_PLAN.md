@@ -601,6 +601,12 @@ honoring its license and attribution.
 - Solid transcript navigation respects the focused editor: plain Home/End and page keys remain available for text editing and autocomplete. Ctrl+Home/End and Ctrl+PageUp/PageDown navigate the transcript from the composer.
 - Page navigation moves the viewport explicitly, with one line of overlap. Follow-tail cues advertise Ctrl+End.
 - Rendered component regression tests exercise the real composer, cursor positions, scroll geometry, and ANSI page-key sequences. These tests do not establish cross-terminal compatibility or a completed UI redesign.
+### Lazy review inspection
+
+- Pending-review inventory only fetches summaries. Detail endpoints (which record backend inspection) are called for the currently opened review, not the entire queue.
+- Production approval requires every target to have successfully loaded its details in this panel. Batch approval remains available after inspection; unseen targets block the batch. Rejection remains available without inspection.
+- Detail failures remain visible with `r` retry; superseded or disposed detail responses cannot replace the current view.
+- Loopback HTTP and rendered keyboard tests cover inventory requests, unseen-item gating, batch approval after navigation, and detail retry. This is a client workflow guarantee, not proof a human read every line or an OS sandbox guarantee.
 ### Cursor-aware composer completion
 
 - Path and Skill menus now track native editor cursor changes, including movement back into a mention without editing the draft.

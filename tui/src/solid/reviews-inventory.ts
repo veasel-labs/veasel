@@ -8,7 +8,7 @@ import type { ActiveReview } from "../active-review"
 import type { ReviewSandboxPreview } from "../shell-review"
 import type { ReviewDecision, ReviewDecisionResult, SolidReviewItem } from "./reviews"
 
-/** Load pending edits / shell / MCP calls with detail GETs (records inspect-before-approve). */
+/** Inventory only: detail GETs record inspection and must wait until an item is opened. */
 export async function loadPendingSolidReviews(
   api: VeaselApiClient,
   sessionId: string,
@@ -22,21 +22,24 @@ export async function loadPendingSolidReviews(
   const pendingCommands = commands.filter((item) => item.status === "pending")
   const pendingCalls = calls.filter((item) => item.status === "pending")
 
-  const editDetails = await Promise.all(
-    pendingEdits.map((item) => api.getWorkspaceEdit(sessionId, item.id)),
-  )
-  const commandDetails = await Promise.all(
-    pendingCommands.map((item) => api.getWorkspaceCommand(sessionId, item.id)),
-  )
-  const callDetails = await Promise.all(
-    pendingCalls.map((item) => api.getMcpToolCall(sessionId, item.id)),
-  )
-
   return [
-    ...editDetails.map(solidPatchFromEdit),
-    ...commandDetails.map(solidCommandFromSummary),
-    ...callDetails.map(solidMcpFromApproval),
+    ...pendingEdits.map((item) => ({ ...solidPatchFromEdit({ ...item, diff: "" }), inspected: false })),
+    ...pendingCommands.map((item) => ({ ...solidCommandFromSummary(item), inspected: false })),
+    ...pendingCalls.map((item) => ({ ...solidMcpFromApproval({ ...item, arguments_json: "" }), inspected: false })),
   ]
+}
+
+export async function inspectSolidReview(
+  api: VeaselApiClient,
+  sessionId: string,
+  target: ActiveReview,
+): Promise<SolidReviewItem> {
+  const item = target.kind === "patch"
+    ? solidPatchFromEdit(await api.getWorkspaceEdit(sessionId, target.id))
+    : target.kind === "command"
+      ? solidCommandFromSummary(await api.getWorkspaceCommand(sessionId, target.id))
+      : solidMcpFromApproval(await api.getMcpToolCall(sessionId, target.id))
+  return { ...item, inspected: true }
 }
 
 export function solidPatchFromEdit(edit: ApiWorkspaceEditProposal): SolidReviewItem {

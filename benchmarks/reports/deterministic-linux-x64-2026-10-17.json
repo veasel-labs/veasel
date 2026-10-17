@@ -1,0 +1,42 @@
+{
+  "schema": "veasel-deterministic-fixtures/1",
+  "agent": "veasel",
+  "binary": "veasel-main-backend",
+  "binary_sha256": "c22abebab856a0b3b27fd9d8b3653819d57d3c0211669e78457307fb847cb312",
+  "provider": "scripts/mock-provider.py (deterministic, OpenAI-compatible)",
+  "model": "smoke-model (scripted replies; no real model)",
+  "tasks": [
+    {
+      "id": "autonomous-workspace-edit",
+      "prompt": "Autonomous workspace edit",
+      "check": "src/main.v contains the applied greet function",
+      "passed": true,
+      "wall_ms": 264.0,
+      "status": "completed",
+      "trace_present": true,
+      "outcome": "completed",
+      "token_usage": "reported",
+      "steps": 4,
+      "tool_calls": 1,
+      "prompt_tokens": 24,
+      "completion_tokens": 12
+    },
+    {
+      "id": "greeting-reply",
+      "prompt": "Say hello",
+      "check": "headless run completes with the fixture reply",
+      "passed": true,
+      "wall_ms": 263.9,
+      "status": "completed",
+      "trace_present": true,
+      "outcome": "completed",
+      "token_usage": "reported",
+      "steps": 3,
+      "tool_calls": 0,
+      "prompt_tokens": 12,
+      "completion_tokens": 6
+    }
+  ],
+  "passed": 2,
+  "total": 2
+}

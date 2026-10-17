@@ -78,6 +78,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.
+- [x] LiveApp turn cancellation through Ctrl+X or the command palette uses
+  the originating session and operation ID, waits for server confirmation, and
+  reports cancellation errors without pretending the operation stopped.
+  Cancelled, failed, and uncertain completions retain their distinct status.
+  Loopback HTTP/SSE tests exercise keyboard cancellation across session tabs.
 - [x] Solid session list + rename dialogs (`session-list-dialog.tsx`,
   `session-rename-dialog.tsx`): filter via `session-list.ts`, digit jump,
   `r` rename (dialog `push`/`pop`), `n` create stub when filter empty; palette

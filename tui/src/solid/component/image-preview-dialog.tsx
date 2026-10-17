@@ -3,7 +3,7 @@ import { Show } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type ImagePreviewProps = {
   path: string
@@ -27,6 +27,7 @@ export function demoImagePreview(): ImagePreviewProps {
 }
 
 export function ImagePreviewDialog(props: ImagePreviewProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
 
   useKeyboard((key: KeyEvent) => {
@@ -40,16 +41,16 @@ export function ImagePreviewDialog(props: ImagePreviewProps) {
     <DialogLayout
       header={<DialogHeader title="Image preview" hint="Enter · Esc" />}
       footer={
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           Kitty/iTerm image protocols not wired · ASCII fallback only
         </text>
       }
     >
-      <text fg={solidMint.muted}>Path · {props.path}</text>
+      <text fg={colors.muted}>Path · {props.path}</text>
       <Show when={props.alt}>
-        {(alt) => <text fg={solidMint.body}>{alt()}</text>}
+        {(alt) => <text fg={colors.body}>{alt()}</text>}
       </Show>
-      <text fg={solidMint.brand} wrapMode="word">
+      <text fg={colors.brand} wrapMode="word">
         {props.preview ?? "(no preview bytes)"}
       </text>
     </DialogLayout>

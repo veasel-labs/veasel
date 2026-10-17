@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import type { createPaneResize } from "./pane-resize"
 
 export type PaneResizeHandleProps = {
@@ -8,13 +8,14 @@ export type PaneResizeHandleProps = {
 
 /** One-column drag grip between home sidebar and splash. */
 export function PaneResizeHandle(props: PaneResizeHandleProps) {
+  const colors = useSolidTheme()
   const active = () => props.resize.hovered() || props.resize.resizing()
   return (
     <box
       width={1}
       height="100%"
       flexShrink={0}
-      backgroundColor={active() ? solidMint.brand : solidMint.panelBorder}
+      backgroundColor={active() ? colors.brand : colors.panelBorder}
       onMouseOver={props.resize.onMouseOver}
       onMouseOut={props.resize.onMouseOut}
       onMouseDown={props.resize.onMouseDown}

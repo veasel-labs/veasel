@@ -11,7 +11,7 @@ import {
   type TranscriptVerbosity,
 } from "./transcript-verbosity"
 import { HomeSplash } from "./component/home-splash"
-import { solidMint } from "./theme"
+import { useSolidTheme, useSolidThemeState, SolidThemeProvider } from "./theme"
 import { themes } from "../themes"
 import {
   buildPaletteCommands,
@@ -77,7 +77,6 @@ import {
   type ReviewDecision,
   type SolidReviewItem,
 } from "./reviews"
-import type { BuiltinThemeId } from "../themes"
 import { defaultThemeId } from "../themes"
 import type { ActiveReview } from "../active-review"
 
@@ -141,6 +140,7 @@ const demoFixture: ToolAwareMessage[] = [
 ]
 
 function AppShell(props: SolidAppProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const toast = useToast()
   const directory = () => props.directory ?? "~/veasel"
@@ -166,7 +166,7 @@ function AppShell(props: SolidAppProps) {
     (props.initialSessions ?? demoSessions())[0]?.id ?? "",
   )
   const [notice, setNotice] = createSignal(props.notice ?? "")
-  const [themeId, setThemeId] = createSignal<BuiltinThemeId>(defaultThemeId)
+  const { themeId, setThemeId } = useSolidThemeState()
   const [activeModel, setActiveModel] = createSignal<SolidModelRef>(demoModels()[0]!)
   const [stashEntries, setStashEntries] = createSignal<SolidStashEntry[]>(demoStashEntries())
   const [activeAgent, setActiveAgent] = createSignal(demoAgents()[0]!.id)
@@ -540,7 +540,7 @@ function AppShell(props: SolidAppProps) {
       width="100%"
       height="100%"
       flexDirection="column"
-      backgroundColor={solidMint.shellBg}
+      backgroundColor={colors.shellBg}
     >
       <box
         width="100%"
@@ -549,18 +549,18 @@ function AppShell(props: SolidAppProps) {
         flexDirection="row"
         justifyContent="space-between"
         alignItems="center"
-        backgroundColor={solidMint.headerBg}
+        backgroundColor={colors.headerBg}
         border
-        borderColor={solidMint.headerBorder}
+        borderColor={colors.headerBorder}
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={solidMint.headerTitle}>
+        <text fg={colors.headerTitle}>
           <strong>VEASEL</strong>
-          <span style={{ fg: solidMint.brand }}> / </span>
-          <span style={{ fg: solidMint.headerMeta }}>CODE</span>
+          <span style={{ fg: colors.brand }}> / </span>
+          <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
-        <text fg={solidMint.localStatus}>● {status()}</text>
+        <text fg={colors.localStatus}>● {status()}</text>
       </box>
 
       <Show
@@ -581,15 +581,15 @@ function AppShell(props: SolidAppProps) {
           flexShrink={0}
           flexDirection="row"
           alignItems="center"
-          backgroundColor={solidMint.panelBg}
+          backgroundColor={colors.panelBg}
           border
-          borderColor={solidMint.panelBorder}
+          borderColor={colors.panelBorder}
           paddingLeft={1}
           paddingRight={1}
         >
-          <text fg={solidMint.muted}>SESSION </text>
-          <text fg={solidMint.body}>{sessionTitle()}</text>
-          <text fg={solidMint.muted}>
+          <text fg={colors.muted}>SESSION </text>
+          <text fg={colors.body}>{sessionTitle()}</text>
+          <text fg={colors.muted}>
             {" "}
             · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity ·{" "}
             {reviewShortcut.label} reviews
@@ -627,11 +627,13 @@ function AppShell(props: SolidAppProps) {
 // Live HTTP session loop mounts via LiveApp (default `bun run start`).
 export function App(props: SolidAppProps = {}) {
   return (
-    <ToastProvider>
-      <DialogProvider>
-        <AppShell {...props} />
-      </DialogProvider>
-    </ToastProvider>
+    <SolidThemeProvider initialTheme={defaultThemeId}>
+      <ToastProvider>
+        <DialogProvider>
+          <AppShell {...props} />
+        </DialogProvider>
+      </ToastProvider>
+    </SolidThemeProvider>
   )
 }
 

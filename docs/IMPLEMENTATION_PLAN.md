@@ -79,6 +79,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   waiting, and restores composer focus on close. Loopback HTTP and rendered
   keyboard tests cover failures, partial batches, and late completion after
   dismissal; these tests do not replace cross-platform interactive validation.
+- [x] Reactive builtin theme ownership for Solid components and overlays.
+  Theme changes recolor the transcript, composer, dialogs, notifications, and
+  diff views without remounting local interaction state. Rendered-color tests
+  verify draft retention and isolation between application roots.
+
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.

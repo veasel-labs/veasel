@@ -3,7 +3,7 @@ import { createSignal, onMount } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import { DialogHeader, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import type { SolidSessionEntry } from "./session-list-dialog"
 
 export type SessionRenameDialogProps = {
@@ -12,6 +12,7 @@ export type SessionRenameDialogProps = {
 }
 
 export function SessionRenameDialog(props: SessionRenameDialogProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [title, setTitle] = createSignal(props.session.title)
   let titleInput: InputRenderable | undefined
@@ -38,7 +39,7 @@ export function SessionRenameDialog(props: SessionRenameDialogProps) {
   return (
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title="Rename session" hint="Enter · Esc" />
-      <text fg={solidMint.muted}>{props.session.directory}</text>
+      <text fg={colors.muted}>{props.session.directory}</text>
       <input
         ref={(next: InputRenderable) => {
           titleInput = next
@@ -47,15 +48,15 @@ export function SessionRenameDialog(props: SessionRenameDialogProps) {
         focused={true}
         value={title()}
         placeholder="Session title"
-        placeholderColor={solidMint.muted}
-        textColor={solidMint.inputText}
-        focusedTextColor={solidMint.inputText}
-        backgroundColor={solidMint.inputBg}
-        focusedBackgroundColor={solidMint.inputFocusBg}
-        cursorColor={solidMint.cursor}
+        placeholderColor={colors.muted}
+        textColor={colors.inputText}
+        focusedTextColor={colors.inputText}
+        backgroundColor={colors.inputBg}
+        focusedBackgroundColor={colors.inputFocusBg}
+        cursorColor={colors.cursor}
         onInput={(value: string) => setTitle(value)}
       />
-      <text fg={solidMint.muted}>Enter saves · Esc returns to the list</text>
+      <text fg={colors.muted}>Enter saves · Esc returns to the list</text>
     </box>
   )
 }

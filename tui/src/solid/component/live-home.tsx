@@ -2,7 +2,7 @@
 import { For, Show } from "solid-js"
 import type { MouseEvent } from "@opentui/core"
 import { homeFooterHint } from "../../footer-hints"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import { HomeSplash } from "./home-splash"
 import type { SolidSessionEntry } from "./session-list-dialog"
 import type { Theme } from "../../themes"
@@ -29,6 +29,7 @@ export type LiveHomeProps = {
 
 /** Classic-compatible home: SESSIONS sidebar + splash + q quit footer. */
 export function LiveHome(props: LiveHomeProps) {
+  const colors = useSolidTheme()
   const filter = () => props.filter?.trim() ?? ""
   const cols = () => props.terminalColumns ?? process.stdout.columns ?? 80
   const preferred = () =>
@@ -63,11 +64,11 @@ export function LiveHome(props: LiveHomeProps) {
           flexDirection="column"
           padding={1}
           gap={1}
-          backgroundColor={solidMint.panelBg}
+          backgroundColor={colors.panelBg}
           border
-          borderColor={solidMint.panelBorder}
+          borderColor={colors.panelBorder}
         >
-          <text fg={solidMint.sidebarLabel}>
+          <text fg={colors.sidebarLabel}>
             SESSIONS
             <Show when={props.sessions.length > 0}>
               {"  "}
@@ -76,13 +77,13 @@ export function LiveHome(props: LiveHomeProps) {
           </text>
           <Show
             when={visible().length > 0}
-            fallback={<text fg={solidMint.muted}>No sessions yet · press n</text>}
+            fallback={<text fg={colors.muted}>No sessions yet · press n</text>}
           >
             <For each={visible()}>
               {(session, index) => {
                 const active = () => index() === props.selectedIndex
                 return (
-                  <text fg={active() ? solidMint.brand : solidMint.sidebarFg}>
+                  <text fg={active() ? colors.brand : colors.sidebarFg}>
                     {active() ? "▸ " : "  "}
                     {session.title}
                   </text>
@@ -90,7 +91,7 @@ export function LiveHome(props: LiveHomeProps) {
               }}
             </For>
           </Show>
-          <text fg={solidMint.muted}>VEASEL CODE{"\n"}your local workspace</text>
+          <text fg={colors.muted}>VEASEL CODE{"\n"}your local workspace</text>
         </box>
 
         <PaneResizeHandle resize={resize} />
@@ -98,9 +99,9 @@ export function LiveHome(props: LiveHomeProps) {
         <box
           flexGrow={1}
           flexDirection="column"
-          backgroundColor={solidMint.panelBg}
+          backgroundColor={colors.panelBg}
           border
-          borderColor={solidMint.panelBorder}
+          borderColor={colors.panelBorder}
         >
           <HomeSplash theme={props.theme} directory={props.directory} />
         </box>
@@ -113,9 +114,9 @@ export function LiveHome(props: LiveHomeProps) {
           flexShrink={0}
           paddingLeft={1}
           paddingRight={1}
-          backgroundColor={solidMint.shellBg}
+          backgroundColor={colors.shellBg}
         >
-          <text fg={solidMint.muted}>
+          <text fg={colors.muted}>
             {homeFooterHint} · drag │ · Alt+←/→ resize sidebar
           </text>
         </box>

@@ -29,11 +29,26 @@ binary under test.
 
 ## Same-model comparisons
 
-These fixtures are the deterministic foundation, not a competitive claim.
-Extending the same fixtures, scoring and report schema to Codex, OpenCode,
-Pi or mini-SWE-agent requires a per-agent adapter that points that agent at
-the same scripted provider (or an equivalent scripted endpoint for its
-protocol) and runs it in the same fixture workspace. Paid or real-model runs
-require an authorized budget and must record model, provider, versions,
-limits and raw outcomes per `docs/benchmarking.md`. No superiority claim is
-supported by this harness until such a comparison has actually run.
+```sh
+python3 benchmarks/deterministic/run.py --agent opencode \
+    --report benchmarks/reports/deterministic-opencode-linux-x64-YYYY-MM-DD.json
+```
+
+The OpenCode adapter runs the same externally-checked edit fixture through
+OpenCode's own `write` tool against `scripted_provider.py`, a generic
+scripted OpenAI-compatible endpoint that answers with whichever write/edit
+tool the agent advertises. Two integration facts worth knowing:
+
+- OpenCode resolves its project root from `$PWD`, not `getcwd(3)`; the
+  adapter sets `PWD` explicitly or the fixture `opencode.json` is ignored
+  and the run fails with `Model unavailable`.
+- OpenCode may query `GET /v1/models`; the scripted provider implements it.
+
+First local comparison (2026-10-17, scripted replies, cold CLI runs):
+Veasel 264 ms vs OpenCode 4,588 ms wall for the edit fixture, both passing
+the identical external check. This measures harness/startup orchestration
+only — scripted replies say nothing about model quality, and no superiority
+claim is supported until real same-model runs with an authorized budget
+record model, provider, versions, limits and raw outcomes per
+`docs/benchmarking.md`. Codex, Pi and mini-SWE-agent adapters remain
+follow-ups (Codex needs a Responses-API scripted endpoint).

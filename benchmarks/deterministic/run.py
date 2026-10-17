@@ -165,40 +165,121 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
     return entry
 
 
+SCRIPTED_PROVIDER = Path(__file__).resolve().parent / "scripted_provider.py"
+
+
+def start_provider(script: Path, work: Path) -> tuple[subprocess.Popen, int, Path]:
+    port_file = work / "provider.port"
+    log_file = work / "provider.log"
+    process = subprocess.Popen(
+        [sys.executable, str(script), str(port_file), str(log_file)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    deadline = time.monotonic() + 10
+    while not port_file.exists() or not port_file.read_text().strip():
+        if time.monotonic() > deadline:
+            process.terminate()
+            raise TimeoutError(f"provider {script.name} did not become ready")
+        time.sleep(0.05)
+    return process, int(port_file.read_text().strip()), log_file
+
+
+def run_opencode_task(opencode: str, provider_port: int, provider_log: Path, task: dict, work: Path) -> dict:
+    """Run one fixture through OpenCode against the generic scripted provider.
+
+    The provider answers with the agent's own write tool, so the external
+    workspace check is identical to Veasel's. This measures harness
+    orchestration only; scripted replies say nothing about model quality.
+    """
+    workspace = work / "workspace"
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    config = {
+        "$schema": "https://opencode.ai/config.json",
+        "permission": {"edit": "allow", "bash": "allow"},
+        "provider": {
+            "mock": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "Mock",
+                "options": {"baseURL": f"http://127.0.0.1:{provider_port}/v1", "apiKey": "fixture-key"},
+                "models": {"smoke-model": {"name": "Smoke Model"}},
+            }
+        },
+    }
+    (workspace / "opencode.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    log_offset = provider_log.stat().st_size if provider_log.exists() else 0
+    # OpenCode resolves its project root from $PWD, not getcwd: subprocess
+    # cwd= alone leaves $PWD pointing at the caller's directory and the
+    # fixture opencode.json is never loaded ("Model unavailable").
+    env = dict(os.environ, PWD=str(workspace))
+    started = time.monotonic()
+    completed = subprocess.run(
+        [opencode, "run", "--standalone", "--auto", "-m", "mock/smoke-model", task["prompt"]],
+        cwd=workspace, env=env, capture_output=True, timeout=180,
+    )
+    wall_ms = round((time.monotonic() - started) * 1000, 1)
+    requests = 0
+    tool_calls = 0
+    if provider_log.exists():
+        with provider_log.open("rb") as handle:
+            handle.seek(log_offset)
+            for line in handle:
+                requests += 1
+                payload = json.loads(line).get("payload", {})
+                if (payload.get("messages") or [{}])[-1].get("role") == "tool":
+                    tool_calls += 1
+    passed = completed.returncode == 0 and bool(task["check"](workspace))
+    entry = {
+        "id": task["id"],
+        "prompt": task["prompt"],
+        "check": task["check_description"],
+        "passed": passed,
+        "wall_ms": wall_ms,
+        "status": "completed" if completed.returncode == 0 else "failed",
+        "provider_requests": requests,
+        "tool_results": tool_calls,
+    }
+    if not passed:
+        tail = (completed.stderr or completed.stdout or b"").decode(errors="replace")[-500:]
+        entry["error"] = tail.strip() or f"exit {completed.returncode}, check failed"
+    return entry
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--veasel", required=True, help="path to the veasel binary under test")
+    parser.add_argument("--veasel", help="path to the veasel binary under test")
+    parser.add_argument("--agent", choices=("veasel", "opencode"), default="veasel")
+    parser.add_argument("--opencode", default="opencode", help="opencode executable (agent=opencode)")
     parser.add_argument("--report", help="write the JSON report to this path")
     parser.add_argument("--keep", action="store_true", help="keep the temporary workspace")
     args = parser.parse_args()
 
-    veasel = Path(args.veasel).resolve()
-    if not veasel.exists():
+    if args.agent == "veasel" and not args.veasel:
+        parser.error("--veasel is required for --agent veasel")
+    veasel = Path(args.veasel).resolve() if args.veasel else None
+    if veasel is not None and not veasel.exists():
         print(f"veasel binary not found: {veasel}", file=sys.stderr)
         return 2
 
     work_root = Path(tempfile.mkdtemp(prefix="veasel-deterministic-"))
-    provider_out = work_root / "provider.port"
-    provider = subprocess.Popen(
-        [sys.executable, str(MOCK_PROVIDER), str(provider_out)],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    script = MOCK_PROVIDER if args.agent == "veasel" else SCRIPTED_PROVIDER
     try:
-        deadline = time.monotonic() + 10
-        while not provider_out.exists() or not provider_out.read_text().strip():
-            if time.monotonic() > deadline:
-                print("mock provider did not become ready", file=sys.stderr)
-                return 2
-            time.sleep(0.05)
-        provider_port = int(provider_out.read_text().strip())
-
+        provider, provider_port, provider_log = start_provider(script, work_root)
+    except TimeoutError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    try:
         results = []
-        for index, task in enumerate(TASKS):
+        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if "expect_response" not in t]
+        for index, task in enumerate(tasks):
             task_work = work_root / f"task-{index}"
             task_work.mkdir()
-            results.append(run_task(veasel, provider_port, task, task_work))
+            if args.agent == "veasel":
+                results.append(run_task(veasel, provider_port, task, task_work))
+            else:
+                results.append(run_opencode_task(args.opencode, provider_port, provider_log, task, task_work))
             print(f"{task['id']}: {'PASS' if results[-1]['passed'] else 'FAIL'} "
-                  f"({results[-1]['wall_ms']} ms, {results[-1].get('tool_calls')} tool calls)")
+                  f"({results[-1]['wall_ms']} ms, {results[-1].get('tool_calls', results[-1].get('tool_results'))} tool calls)")
     finally:
         provider.terminate()
         if not args.keep:
@@ -208,15 +289,16 @@ def main() -> int:
 
     report = {
         "schema": "veasel-deterministic-fixtures/1",
-        "agent": "veasel",
-        "binary": veasel.name,
-        "binary_sha256": hashlib.sha256(veasel.read_bytes()).hexdigest(),
-        "provider": "scripts/mock-provider.py (deterministic, OpenAI-compatible)",
+        "agent": args.agent,
+        "provider": f"{script.name} (deterministic, OpenAI-compatible)",
         "model": "smoke-model (scripted replies; no real model)",
         "tasks": results,
         "passed": sum(1 for r in results if r["passed"]),
         "total": len(results),
     }
+    if veasel is not None:
+        report["binary"] = veasel.name
+        report["binary_sha256"] = hashlib.sha256(veasel.read_bytes()).hexdigest()
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"report: {args.report}")

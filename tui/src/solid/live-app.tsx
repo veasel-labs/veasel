@@ -87,6 +87,7 @@ import {
   type ModelVariantId,
 } from "./variant-budget"
 import { skillCatalogFromPlugins } from "./skills-inventory"
+import { type SkillCatalogEntry } from "../skill-autocomplete"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
@@ -686,18 +687,49 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
+  const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
+  const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
+  const wantsSkillSuggestions = createMemo(() => {
+    const draft = composerDraft()
+    return /(^|\s)\$/.test(draft)
+  })
+  const skillDirectory = createMemo(() =>
+    sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
+  )
+  createEffect(() => {
+    const root = skillDirectory()
+    const sessionId = activeSessionId()
+    const wanted = wantsSkillSuggestions()
+    setComposerSkills([])
+    setSkillCatalogStatus(undefined)
+    if (!wanted) return
+    let current = true
+    onCleanup(() => { current = false })
+    setSkillCatalogStatus("Loading workspace Skills…")
+    void props.api.listPlugins(root).then((catalog) => {
+      if (!current || sessionId !== activeSessionId()) return
+      const entries = skillCatalogFromPlugins(catalog)
+      setComposerSkills(entries)
+      setSkillCatalogStatus(entries.length ? undefined : "No workspace Skills · /plugins to add one")
+    }).catch(() => {
+      if (!current) return
+      setSkillCatalogStatus("Skills unavailable · use /skills to retry")
+    })
+  })
+
   const openLiveSkills = async (filter = "") => {
     setComposerFocused(false)
     const sessionId = activeSessionId()
     try {
       const [catalog, enabled] = await Promise.all([
-        props.api.listPlugins(directory()),
+        props.api.listPlugins(skillDirectory()),
         sessionId
           ? props.api.listSessionSkills(sessionId)
           : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionSkills>>),
       ])
+      const entries = skillCatalogFromPlugins(catalog, enabled)
       const needle = filter.trim().toLowerCase()
-      const skills = skillCatalogFromPlugins(catalog, enabled).filter((skill) => {
+      const skills = entries.filter((skill) => {
         if (!needle) return true
         const haystack = `${skill.key} ${skill.description}`.toLowerCase()
         return needle.split(/\s+/).every((token) => haystack.includes(token))
@@ -2022,6 +2054,8 @@ function LiveAppShell(props: LiveAppProps) {
           focused={composerFocused()}
           restoreToken={restoreToken()}
           onDraftChange={setComposerDraft}
+          skills={composerSkills()}
+          skillCatalogStatus={skillCatalogStatus()}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
           onPreviewAttachment={previewAttachment}

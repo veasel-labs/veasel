@@ -560,3 +560,9 @@ honoring its license and attribution.
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
+
+### Real Skill completions
+
+- Production composer defaults to an empty Skill catalog instead of demo entries. LiveApp discovers Skills through the versioned plugin API when a draft first contains a Skill token.
+- Discovery uses the active session project, clears old entries on context changes, and discards superseded responses. Loading, empty, and failure states are visible; retry by re-entering the token or opening `/skills`.
+- Loopback HTTP/component tests cover real catalog insertion, project query parameters, discovery failure, and retry. Live provider calls are not required.

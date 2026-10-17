@@ -11,7 +11,7 @@ exports[`conversation preserves long message text at 32 columns 1`] = `
 
  ◆ assistant
 
-   I will examine the
+ I will examine the
  implementation, follow the
  execution path, and explain
  any correctness concerns.
@@ -27,7 +27,7 @@ exports[`conversation preserves long message text at 56 columns 1`] = `
 
  ◆ assistant
 
-   I will examine the implementation, follow the
+ I will examine the implementation, follow the
  execution path, and explain any correctness concerns.
  ANSWER-END"
 `;
@@ -40,6 +40,6 @@ exports[`conversation preserves long message text at 100 columns 1`] = `
 
  ◆ assistant
 
-   I will examine the implementation, follow the execution path, and explain any correctness
+ I will examine the implementation, follow the execution path, and explain any correctness
  concerns. ANSWER-END"
 `;

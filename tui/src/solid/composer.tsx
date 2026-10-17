@@ -159,6 +159,7 @@ export function SolidComposer(props: SolidComposerProps) {
   const clearComposer = () => {
     area?.setText("")
     setDraft("")
+    props.onDraftChange?.("")
     setSelected(0)
     setDismissed(undefined)
     if (area) area.height = composerHeightForText("")
@@ -234,7 +235,7 @@ export function SolidComposer(props: SolidComposerProps) {
     const text = new TextDecoder().decode(event.bytes).replace(/[\x00-\x1f\x7f-\x9f]/g, "")
     // Only intercept paste when the clipboard looks like a single local path.
     if (!normalizeAttachmentPath(text)) return
-    const resolved = resolveAttachmentPath(text)
+    const resolved = resolveAttachmentPath(text, { cwd: props.workspaceRoot })
     if (!resolved) return
     props.onPathPaste(resolved)
     event.preventDefault()

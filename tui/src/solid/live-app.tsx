@@ -168,7 +168,9 @@ function sessionEntry(session: ApiSession): SolidSessionEntry {
 function LiveAppShell(props: LiveAppProps) {
   const dialog = useDialog()
   const toast = useToast()
-  const directory = () => props.directory ?? process.env.VEASEL_PROJECT_DIR ?? process.cwd()
+  const launchDirectory = () => props.directory ?? process.env.VEASEL_PROJECT_DIR ?? process.cwd()
+  const [sessionDirectory, setSessionDirectory] = createSignal<string | undefined>()
+  const directory = () => sessionDirectory() ?? launchDirectory()
 
   const [sessions, setSessions] = createSignal<SolidSessionEntry[]>([])
   const [selectedIndex, setSelectedIndex] = createSignal(0)
@@ -361,11 +363,31 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
+  const sessionDrafts = new Map<string, { text: string; attachments: ComposerAttachment[] }>()
+  let draftRevision = 0
+
+  const rememberSessionDraft = () => {
+    const id = activeSessionId()
+    if (!id) return
+    if (!composerDraft() && attachments().length === 0) {
+      sessionDrafts.delete(id)
+      return
+    }
+    sessionDrafts.set(id, { text: composerDraft(), attachments: [...attachments()] })
+  }
+
+  const restoreSessionDraft = (id: string) => {
+    const draft = sessionDrafts.get(id)
+    const text = draft?.text ?? ""
+    setComposerDraft(text)
+    setAttachments(draft?.attachments ?? [])
+    setRestoreToken({ id: `session-draft-${++draftRevision}`, text })
+  }
 
   const stageAttachmentPath = (raw: string) => {
-    const resolved = resolveAttachmentPath(raw)
+    const resolved = resolveAttachmentPath(raw, { cwd: directory() })
     if (!resolved) {
-      toast.info("Path not found · enter an absolute or ~/ path", "Attach")
+      toast.info("Path not found · use ./project-path, an absolute path, or ~/", "Attach")
       return false
     }
     const next = createComposerAttachment(resolved)
@@ -1009,8 +1031,11 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const openSession = async (session: SolidSessionEntry) => {
+    rememberSessionDraft()
+    setSessionDirectory(session.directory)
     const viewRevision = ++sessionViewRevision
     setActiveSessionId(session.id)
+    restoreSessionDraft(session.id)
     setUnreadSessionIds((current) => clearSessionUnread(current, session.id))
     setMessages([])
     setOldestTurnId(undefined)
@@ -2018,8 +2043,12 @@ function LiveAppShell(props: LiveAppProps) {
             void createSession()
           }}
           onCloseActive={() => {
+            rememberSessionDraft()
             sessionViewRevision++
             setActiveSessionId(undefined)
+            setSessionDirectory(undefined)
+            setComposerDraft("")
+            setRestoreToken({ id: `home-draft-${++draftRevision}`, text: "" })
             setMessages([])
             setOldestTurnId(undefined)
             setHistoryHasOlder(false)

@@ -82,6 +82,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.
+- [x] LiveApp isolates pending composer text and attachments by session during
+  the current TUI process. Session switching updates project context for file
+  completion and relative attachments; submitted text is cleared consistently.
+  Real LiveApp keyboard/HTTP tests verify that session B does not submit A's
+  pending attachment. Automatic draft recovery after process restart remains open.
 - [x] LiveApp history responses are scoped to the current session visit.
   Late success/error responses cannot replace a newer session view, including
   A → B → A navigation. Older-page responses are discarded after navigation or

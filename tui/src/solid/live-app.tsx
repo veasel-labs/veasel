@@ -8,7 +8,14 @@ import {
   type SessionTurnCompletion,
   type VeaselApiClient,
 } from "../api-client"
-import { formatHomeSessionStatus, formatBusyStatus, formatErrorStatus } from "../status-a11y"
+import {
+  formatHomeSessionStatus,
+  formatBusyStatus,
+  formatErrorStatus,
+  formatStreamingBusyStatus,
+  formatWarnStatus,
+} from "../status-a11y"
+import { liveStreamStatusMessage } from "../transcript-scroll"
 import { homeFooterHint } from "../footer-hints"
 import {
   isBuiltinThemeId,
@@ -1948,6 +1955,21 @@ function LiveAppShell(props: LiveAppProps) {
           thinkingToggleTick={thinkingToggleTick()}
           onMessageNavigated={(info) => {
             toast.info(`Jumped to ${info.role} message`, "Transcript")
+          }}
+          onScrollViewport={({ offsetFromBottom }) => {
+            const live = liveStreamStatusMessage({
+              offsetFromBottom,
+              streaming: streaming() || Boolean(activeTurnId()),
+              streamingChars: streamingText().length,
+              formatStreaming: (chars) => formatStreamingBusyStatus(chars),
+            })
+            if (!live) {
+              if (!streaming() && !activeTurnId()) {
+                setStatus("● connected  ·  listening for activity")
+              }
+              return
+            }
+            setStatus(offsetFromBottom > 0 ? formatWarnStatus(live) : live)
           }}
           cols={80}
           hasOlder={historyHasOlder()}

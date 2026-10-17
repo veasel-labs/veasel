@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type { KeyEvent, Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
 import type { ChatTurn } from "../chat-history"
@@ -12,7 +12,7 @@ import {
   type TranscriptSegment,
   type TranscriptTone,
 } from "../transcript"
-import { transcriptSegmentLines } from "../transcript-scroll"
+import { scrollOffsetFromBottom, transcriptBelowCue, transcriptSegmentLines } from "../transcript-scroll"
 import {
   activityGroupHeader,
   activityItemLine,
@@ -107,6 +107,8 @@ export type SolidTranscriptProps = {
   mountBudget?: number
   /** Extra weight to mount when the viewport approaches the top. */
   backfillChunk?: number
+  /** Fired when the operator pages away from / back to the sticky bottom. */
+  onScrollViewport?: (info: { offsetFromBottom: number }) => void
 }
 
 function resolveMessages(
@@ -317,9 +319,32 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const [hiddenStart, setHiddenStart] = createSignal<number | undefined>(undefined)
   const [visibleEnd, setVisibleEnd] = createSignal<number | undefined>(undefined)
   const [navIndex, setNavIndex] = createSignal<number | undefined>(undefined)
+  const [offsetFromBottom, setOffsetFromBottom] = createSignal(0)
+  /** Operator left the sticky bottom (Home/PgUp/jump); End re-engages follow. */
+  const [followDetached, setFollowDetached] = createSignal(false)
   let scrollBox: ScrollBoxRenderable | undefined
   let revealingOlder = false
+  let lastReportedOffset = -1
   const anchors = new Map<number, Pick<Renderable, "y" | "height" | "isDestroyed">>()
+  const stickyFollow = () => followTail() && !followDetached()
+
+  const sampleViewport = () => {
+    if (!scrollBox || scrollBox.isDestroyed) return
+    const viewportHeight = scrollBox.viewport?.height ?? scrollBox.height
+    const geometric = scrollOffsetFromBottom({
+      scrollTop: scrollBox.scrollTop,
+      scrollHeight: scrollBox.scrollHeight,
+      viewportHeight,
+    })
+    // While detached, keep a non-zero report so status/cues stay honest even if
+    // sticky geometry has not finished catching up after Home/PgUp.
+    const next = followDetached() ? Math.max(geometric, 1) : geometric
+    setOffsetFromBottom(geometric)
+    if (next !== lastReportedOffset) {
+      lastReportedOffset = next
+      props.onScrollViewport?.({ offsetFromBottom: next })
+    }
+  }
 
   const resolved = createMemo(() => resolveMessages(props.messages))
   const verbosity = (): TranscriptVerbosity => {
@@ -355,6 +380,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const jumpToMessageIndex = (messageIndex: number) => {
     ensureMessageMounted(messageIndex)
     setNavIndex(messageIndex)
+    setFollowDetached(true)
     const role = displayMessages()[messageIndex]?.role ?? "user"
     queueMicrotask(() => {
       if (!scrollBox || scrollBox.isDestroyed) return
@@ -364,6 +390,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
         const top = Math.max(0, scrollBox.scrollTop + node.y - (scrollBox.viewport?.y ?? 0))
         scrollBox.scrollTo(top)
       }
+      sampleViewport()
       props.onMessageNavigated?.({ index: messageIndex, role })
     })
     return true
@@ -428,12 +455,13 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   const mounted = createMemo(() => windowBlocks(blocks(), mountStart(), mountEnd()))
 
   // Follow appends while sticky-tail is active: keep the hidden span at the budgeted start.
+  // Any explicit mount window (including Home → start at 0) is preserved until End.
   createEffect(
     on(
-      () => [blocks().length, weights().join(","), followTail()] as const,
+      () => [blocks().length, weights().join(","), followTail(), followDetached()] as const,
       () => {
-        if (!followTail()) return
-        if (hiddenStart() !== undefined && hiddenStart()! > 0) return
+        if (!stickyFollow()) return
+        if (hiddenStart() !== undefined) return
         setHiddenStart(undefined)
         setVisibleEnd(undefined)
       },
@@ -513,7 +541,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       if (scrollBox && !scrollBox.isDestroyed) {
         const delta = scrollBox.scrollHeight - before
         if (delta !== 0) scrollBox.scrollBy(delta)
-        scrollBox.stickyScroll = wasSticky && followTail()
+        scrollBox.stickyScroll = wasSticky && stickyFollow()
       }
       revealingOlder = false
     })
@@ -554,25 +582,54 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       return
     }
     if (key.name === "pageup" || key.name === "ppage") {
+      setFollowDetached(true)
+      if (scrollBox && !scrollBox.isDestroyed) scrollBox.stickyScroll = false
       if (revealOlder()) key.preventDefault()
+      else key.preventDefault()
+      queueMicrotask(sampleViewport)
       return
     }
     if (key.name === "pagedown" || key.name === "npage") {
       if (revealNewer()) key.preventDefault()
+      queueMicrotask(sampleViewport)
       return
     }
     if (key.name === "home") {
-      if (mountStart() > 0) {
-        setHiddenStart(0)
-        key.preventDefault()
+      setFollowDetached(true)
+      setHiddenStart(0)
+      key.preventDefault()
+      if (scrollBox && !scrollBox.isDestroyed) {
+        scrollBox.stickyScroll = false
+        scrollBox.scrollTo(0)
       }
+      queueMicrotask(sampleViewport)
       return
     }
     if (key.name === "end" && !key.meta) {
       setNavIndex(undefined)
       setHiddenStart(undefined)
       setVisibleEnd(undefined)
+      setFollowDetached(false)
+      if (scrollBox && !scrollBox.isDestroyed) {
+        scrollBox.stickyScroll = followTail()
+        const maxTop = Math.max(
+          0,
+          scrollBox.scrollHeight - (scrollBox.viewport?.height ?? scrollBox.height),
+        )
+        scrollBox.scrollTo(maxTop)
+      }
+      queueMicrotask(sampleViewport)
     }
+  })
+
+  // Sample while streaming / after content growth so mouse-wheel scroll still updates cues.
+  createEffect(() => {
+    void props.streaming
+    void props.streamingText
+    void blocks().length
+    const id = setInterval(sampleViewport, 200)
+    onCleanup(() => clearInterval(id))
+    queueMicrotask(sampleViewport)
   })
 
   createEffect(
@@ -637,7 +694,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
         width="100%"
         flexGrow={1}
         backgroundColor={solidMint.shellBg}
-        stickyScroll={followTail()}
+        stickyScroll={stickyFollow()}
         stickyStart="bottom"
         scrollX={false}
         scrollY={true}
@@ -701,6 +758,18 @@ export function SolidTranscript(props: SolidTranscriptProps) {
           </Show>
         </box>
       </scrollbox>
+      <Show when={followDetached() || offsetFromBottom() > 0}>
+        <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
+          <text wrapMode="none">
+            <span style={{ fg: solidMint.statusWarn }}>
+              {transcriptBelowCue({
+                truncatedBelow: true,
+                streaming: Boolean(props.streaming),
+              }).trimStart()}
+            </span>
+          </text>
+        </box>
+      </Show>
     </box>
   )
 }

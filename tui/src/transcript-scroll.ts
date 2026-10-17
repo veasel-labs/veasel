@@ -86,6 +86,16 @@ export function transcriptBelowCue(options: {
   return "\n▼ PgDn · later transcript"
 }
 
+/** Distance from the sticky bottom of an OpenTUI scrollbox (0 = following). */
+export function scrollOffsetFromBottom(options: {
+  scrollTop: number
+  scrollHeight: number
+  viewportHeight: number
+}): number {
+  const maxTop = Math.max(0, options.scrollHeight - Math.max(1, options.viewportHeight))
+  return Math.max(0, maxTop - Math.max(0, options.scrollTop))
+}
+
 // Status-line copy when the operator has paged away from the latest reply.
 // Returns undefined when stuck to the bottom so callers keep their idle cue.
 export function transcriptScrollStatus(options: {

@@ -586,17 +586,20 @@ export class VeaselApiClient {
     return { kind: "sync", messages }
   }
 
-  async cancelOperation(sessionId: string, operationId: string): Promise<void> {
-    await fetch(
+  async cancelOperation(sessionId: string, operationId: string): Promise<SessionTurnCompletion> {
+    const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationId)}/cancel`,
-      { method: "POST" },
-    ).catch(() => undefined)
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    const result = await response.json() as SessionTurnCompletion
+    if (result.operation_id !== operationId
+      || !["cancelling", "completed", "failed", "cancelled", "uncertain"].includes(result.status ?? "")) {
+      throw new Error("Invalid cancellation response")
+    }
+    return result
   }
 
-  /**
-   * Long-lived SSE loop. Resolves only when signal aborts.
-   * Callers supply active session/turn ids via getters so deltas stay race-safe.
-   */
   async consumeEvents(
     handlers: EventHandlers,
     context: {

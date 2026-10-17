@@ -139,7 +139,7 @@ function SegmentLines(props: { segments: TranscriptSegment[] }) {
   return (
     <For each={lines()}>
       {(line) => (
-        <text wrapMode="none">
+        <text width="100%" wrapMode="word">
           <For each={line}>{(segment) => <SegmentSpan segment={segment} />}</For>
         </text>
       )}
@@ -240,6 +240,7 @@ function MessageBlockView(props: {
   thinkingExpanded: Record<string, boolean>
   onToggleThinking: (id: string) => void
 }) {
+  const colors = useSolidTheme()
   const message = () => props.messages[0]
   const hasThinking = createMemo(() => {
     const msg = message()
@@ -252,6 +253,17 @@ function MessageBlockView(props: {
   })
 
   return (
+    <box
+      id={`message-${message()?.role ?? "unknown"}-${props.startIndex}`}
+      width="100%"
+      flexDirection="column"
+      flexShrink={0}
+      border={message()?.role === "user" ? ["left"] : []}
+      borderColor={colors.brand}
+      backgroundColor={message()?.role === "user" ? colors.panelBg : colors.shellBg}
+      paddingLeft={message()?.role === "user" ? 1 : 0}
+      marginBottom={message()?.role === "user" ? 1 : 0}
+    >
     <Show
       when={hasThinking() ? message() : undefined}
       fallback={
@@ -307,6 +319,7 @@ function MessageBlockView(props: {
         </box>
       )}
     </Show>
+    </box>
   )
 }
 

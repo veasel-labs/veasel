@@ -264,8 +264,8 @@ export function ReviewPanel(props: ReviewPanelProps) {
             <Show when={!busy() && hotkeyHint()}>
               {(hint) => <text fg={colors.muted}>{hint()}</text>}
             </Show>
-            <Show when={inspecting()}><text fg={solidMint.muted}>Loading review details…</text></Show>
-            <Show when={inspectionError()}>{(error) => <text fg={solidMint.statusWarn}>{error()} · r retry</text>}</Show>
+            <Show when={inspecting()}><text fg={colors.muted}>Loading review details…</text></Show>
+            <Show when={inspectionError()}>{(error) => <text fg={colors.statusWarn}>{error()} · r retry</text>}</Show>
             <Show when={!inspecting() && !inspectionError()}>
             <Show
               when={item().kind === "patch" && diffSurface() === "split"}

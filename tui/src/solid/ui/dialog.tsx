@@ -10,7 +10,7 @@ import {
 } from "solid-js"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent, Renderable } from "@opentui/core"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type DialogSize = "medium" | "large"
 
@@ -125,6 +125,7 @@ export function useDialog(): DialogHost {
 }
 
 function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: DialogSize }>) {
+  const colors = useSolidTheme()
   const dimensions = useTerminalDimensions()
   const size = () => props.size ?? "medium"
   const width = () =>
@@ -139,7 +140,7 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: Dialo
       height={dimensions().height}
       alignItems="center"
       justifyContent="center"
-      backgroundColor={solidMint.shellBg}
+      backgroundColor={colors.shellBg}
       onMouseUp={() => props.onDismiss()}
     >
       <box
@@ -147,9 +148,9 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: Dialo
         width={width()}
         maxHeight={Math.max(12, dimensions().height - 4)}
         flexDirection="column"
-        backgroundColor={solidMint.panelBg}
+        backgroundColor={colors.panelBg}
         border
-        borderColor={solidMint.headerBorder}
+        borderColor={colors.headerBorder}
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
@@ -162,6 +163,7 @@ function DialogBackdrop(props: ParentProps<{ onDismiss: () => void; size?: Dialo
 }
 
 export function DialogHeader(props: { title: string; hint?: string }) {
+  const colors = useSolidTheme()
   return (
     <box
       width="100%"
@@ -170,10 +172,10 @@ export function DialogHeader(props: { title: string; hint?: string }) {
       flexShrink={0}
       marginBottom={1}
     >
-      <text fg={solidMint.headerTitle}>
+      <text fg={colors.headerTitle}>
         <strong>{props.title}</strong>
       </text>
-      <text fg={solidMint.muted}>{props.hint ?? "Esc"}</text>
+      <text fg={colors.muted}>{props.hint ?? "Esc"}</text>
     </box>
   )
 }

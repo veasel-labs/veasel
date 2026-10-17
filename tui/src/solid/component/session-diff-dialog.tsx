@@ -3,10 +3,9 @@ import { Show, createMemo, createSignal, onMount } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { filetypeFromReviewPath, diffRenderableTheme } from "../../diff-view"
-import { themes } from "../../themes"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
 import { openDialogSelect } from "../ui/dialog-select"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import {
   sessionDiffFileRows,
   sessionDiffStatusLabel,
@@ -22,10 +21,11 @@ export type SessionDiffDialogProps = {
 }
 
 function SessionDiffView(props: { proposal: WorkspaceEditProposal }) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
   const stats = createMemo(() => summarizeUnifiedDiff(props.proposal.diff))
-  const diffTheme = () => diffRenderableTheme(themes.mint)
+  const diffTheme = () => diffRenderableTheme(colors)
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === "return" || key.name === "kpenter") {
@@ -38,18 +38,18 @@ function SessionDiffView(props: { proposal: WorkspaceEditProposal }) {
     <DialogLayout
       header={<DialogHeader title="Session diff" hint="Enter · Esc" />}
       footer={
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           {sessionDiffStatusLabel(props.proposal.status)} · +{stats().added} −{stats().removed} · OpenTUI
           split
         </text>
       }
     >
-      <text fg={solidMint.body}>
+      <text fg={colors.body}>
         <strong>{props.proposal.path}</strong>
       </text>
       <Show
         when={props.proposal.diff.trim().length > 0}
-        fallback={<text fg={solidMint.muted}>Empty diff</text>}
+        fallback={<text fg={colors.muted}>Empty diff</text>}
       >
         <diff
           width="100%"
@@ -84,6 +84,7 @@ function SessionDiffLoader(props: {
   loadDiff: (editId: string) => Promise<WorkspaceEditProposal>
   onError?: (message: string) => void
 }) {
+  const colors = useSolidTheme()
   const [proposal, setProposal] = createSignal<WorkspaceEditProposal | undefined>()
   const [failed, setFailed] = createSignal<string | undefined>()
 
@@ -106,13 +107,13 @@ function SessionDiffLoader(props: {
           when={failed()}
           fallback={
             <DialogLayout header={<DialogHeader title="Session diff" hint="Esc" />}>
-              <text fg={solidMint.muted}>Loading · {props.path}</text>
+              <text fg={colors.muted}>Loading · {props.path}</text>
             </DialogLayout>
           }
         >
           {(message) => (
             <DialogLayout header={<DialogHeader title="Session diff" hint="Esc" />}>
-              <text fg={solidMint.statusError}>{message()}</text>
+              <text fg={colors.statusError}>{message()}</text>
             </DialogLayout>
           )}
         </Show>

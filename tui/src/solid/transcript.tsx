@@ -2,6 +2,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type { KeyEvent, Renderable, ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
+import type { Theme } from "../themes"
 import type { ChatTurn } from "../chat-history"
 import {
   assistantLabel,
@@ -35,7 +36,7 @@ import {
   transcriptTailBudget,
   windowBlocks,
 } from "./mount-budget"
-import { solidMint, solidToneBold, solidToneFg } from "./theme"
+import { useSolidTheme, solidToneBold, solidToneFg } from "./theme"
 import {
   findAdjacentMessageTarget,
   findLastUserMessageTarget,
@@ -118,7 +119,8 @@ function resolveMessages(
 }
 
 function SegmentSpan(props: { segment: TranscriptSegment }) {
-  const fg = () => solidToneFg(props.segment.tone)
+  const colors = useSolidTheme()
+  const fg = () => solidToneFg(props.segment.tone, colors)
   const bold = () => solidToneBold(props.segment.tone)
   return (
     <Show
@@ -145,11 +147,11 @@ function SegmentLines(props: { segments: TranscriptSegment[] }) {
   )
 }
 
-function statusFg(status: ToolCallItem["status"]): string {
-  // Mint status tokens — same family as themes.ts statusOk / statusError / localStatus.
-  if (status === "error") return solidMint.statusError
-  if (status === "running") return solidMint.localStatus
-  return solidMint.statusOk
+function statusFg(status: ToolCallItem["status"], colors: Theme): string {
+  // Preserve semantic status colors across themes.
+  if (status === "error") return colors.statusError
+  if (status === "running") return colors.localStatus
+  return colors.statusOk
 }
 
 function ActivityGroupView(props: {
@@ -157,18 +159,19 @@ function ActivityGroupView(props: {
   expanded: boolean
   onToggle: () => void
 }) {
+  const colors = useSolidTheme()
   const summary = createMemo(() => summarizeActivityGroup(props.block.items))
   return (
     <box flexDirection="column" width="100%" marginTop={1} marginBottom={1}>
       <box flexDirection="row" width="100%" onMouseUp={() => props.onToggle()}>
         <text wrapMode="none">
-          <span style={{ fg: solidMint.brand }}>
+          <span style={{ fg: colors.brand }}>
             <strong>{activityGroupHeader(props.block.items, props.expanded)}</strong>
           </span>
         </text>
       </box>
       <text wrapMode="none">
-        <span style={{ fg: statusFg(summary().status) }}>
+        <span style={{ fg: statusFg(summary().status, colors) }}>
           {"  "}status  ·  {summary().statusWord}
           {"  ·  "}
           {activityToggleShortcut.label} toggle
@@ -178,7 +181,7 @@ function ActivityGroupView(props: {
         <For each={props.block.items}>
           {(item) => (
             <text wrapMode="none">
-              <span style={{ fg: statusFg(item.status) }}>{activityItemLine(item)}</span>
+              <span style={{ fg: statusFg(item.status, colors) }}>{activityItemLine(item)}</span>
             </text>
           )}
         </For>
@@ -193,24 +196,25 @@ function ThinkingBlockView(props: {
   expanded: boolean
   onToggle: () => void
 }) {
+  const colors = useSolidTheme()
   return (
     <box flexDirection="column" width="100%" marginTop={0} marginBottom={0}>
       <box flexDirection="row" width="100%" onMouseUp={() => props.onToggle()}>
         <text wrapMode="none">
-          <span style={{ fg: solidMint.muted }}>
+          <span style={{ fg: colors.muted }}>
             <strong>{thinkingHeader(props.expanded, props.text)}</strong>
           </span>
         </text>
       </box>
       <text wrapMode="none">
-        <span style={{ fg: solidMint.muted }}>
+        <span style={{ fg: colors.muted }}>
           {"  "}
           {thinkingToggleShortcut.label} toggle
         </span>
       </text>
       <Show when={props.expanded}>
         <text wrapMode="word">
-          <span style={{ fg: solidMint.muted }}>
+          <span style={{ fg: colors.muted }}>
             {"  "}
             {props.text}
           </span>
@@ -322,6 +326,7 @@ function MessageBlockView(props: {
 // transcript.ts; consecutive tool roles collapse into mint activity groups.
 // Long sessions mount a sticky-tail budget first, then backfill near the top.
 export function SolidTranscript(props: SolidTranscriptProps) {
+  const colors = useSolidTheme()
   const followTail = () => props.followTail !== false
   const keysEnabled = () => props.enableActivityKeys !== false
   const tailBudget = () => props.mountBudget ?? transcriptTailBudget
@@ -688,11 +693,11 @@ export function SolidTranscript(props: SolidTranscriptProps) {
   )
 
   return (
-    <box width="100%" flexGrow={1} flexDirection="column" backgroundColor={solidMint.shellBg}>
+    <box width="100%" flexGrow={1} flexDirection="column" backgroundColor={colors.shellBg}>
       <Show when={mounted().window.truncatedAbove}>
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text wrapMode="none">
-            <span style={{ fg: solidMint.muted }}>
+            <span style={{ fg: colors.muted }}>
               {mountCueAbove(mounted().window.hiddenAbove)}
             </span>
           </text>
@@ -705,16 +710,16 @@ export function SolidTranscript(props: SolidTranscriptProps) {
         }}
         width="100%"
         flexGrow={1}
-        backgroundColor={solidMint.shellBg}
+        backgroundColor={colors.shellBg}
         stickyScroll={stickyFollow()}
         stickyStart="bottom"
         scrollX={false}
         scrollY={true}
         viewportOptions={{
-          backgroundColor: solidMint.shellBg,
+          backgroundColor: colors.shellBg,
         }}
         contentOptions={{
-          backgroundColor: solidMint.shellBg,
+          backgroundColor: colors.shellBg,
         }}
       >
         <box
@@ -773,7 +778,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       <Show when={followDetached() || offsetFromBottom() > 0}>
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
           <text wrapMode="none">
-            <span style={{ fg: solidMint.statusWarn }}>
+            <span style={{ fg: colors.statusWarn }}>
               {transcriptBelowCue({
                 truncatedBelow: true,
                 streaming: Boolean(props.streaming),

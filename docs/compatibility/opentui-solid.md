@@ -144,3 +144,23 @@ tokens and HTTP-API client boundaries.
 Inspected OpenCode `ed772f5009755b5262805a7ba07e66e1417f140a`, `packages/tui/src/routes/session/index.tsx`, `UserMessage` (MIT). It uses a raised background and a left border to distinguish user contributions. Veasel retains its own spoken role labels, semantic colors, and message projection, using a user surface and open assistant text. No upstream code copied.
 
 The Solid segment renderer now wraps at the actual available terminal width instead of clipping long lines. Rendered tests cover narrow terminals and role surfaces. This is a conversation-readability change, not evidence that the complete design overhaul is finished.
+## Reactive theme ownership
+
+Inspected OpenCode's theme context and prompt consumer at
+`ed772f5009755b5262805a7ba07e66e1417f140a`, specifically
+`packages/tui/src/context/theme.tsx` and
+`packages/tui/src/component/prompt/index.tsx`. The relevant principle is a
+reactive theme owned by an application provider, consumed by components and
+overlays without remounting their state. This implementation uses Veasel's
+existing semantic theme schema; no upstream implementation or branding was copied.
+
+Veasel's `SolidThemeProvider` now owns the selected builtin theme. Components,
+transcript tones, composer controls, diff views, dialogs, and toasts consume its
+reactive colors instead of fixed Mint constants. LiveApp still loads and saves
+selection through the existing theme settings. Standalone component fixtures
+default to Mint; independent roots do not share mutable theme state.
+
+`theme-reactivity.test.tsx` checks rendered foreground colors across a theme
+change, retained composer drafts, open dialogs, and root isolation. These checks
+do not establish accessibility contrast compliance, terminal light/dark detection,
+or complete visual redesign; those remain separate validation work.

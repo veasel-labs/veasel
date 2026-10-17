@@ -8,7 +8,8 @@ import {
   type ParentProps,
 } from "solid-js"
 import { useRenderer, useTerminalDimensions } from "@opentui/solid"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
+import { themes, type Theme } from "../../themes"
 
 export type ToastVariant = "info" | "success" | "warning" | "error"
 
@@ -29,18 +30,18 @@ export type ToastInput = Omit<ToastOptions, "duration"> & { duration?: number }
 
 export const defaultToastDurationMs = 5000
 
-/** Mint border color per variant — aligns with status tokens in themes.ts. */
-export function toastBorderColor(variant: ToastVariant): string {
+/** Semantic border color per variant — aligns with status tokens in themes.ts. */
+export function toastBorderColor(variant: ToastVariant, colors: Theme = themes.mint): string {
   switch (variant) {
     case "success":
-      return solidMint.statusOk
+      return colors.statusOk
     case "warning":
-      return solidMint.statusWarn
+      return colors.statusWarn
     case "error":
-      return solidMint.statusError
+      return colors.statusError
     case "info":
     default:
-      return solidMint.brand
+      return colors.brand
   }
 }
 
@@ -171,6 +172,7 @@ export function useToast(): ToastHost {
 }
 
 function ToastOverlay() {
+  const colors = useSolidTheme()
   const toast = useToast()
   const dimensions = useTerminalDimensions()
   const renderer = useRenderer()
@@ -187,8 +189,8 @@ function ToastOverlay() {
           maxWidth={Math.min(56, Math.max(24, dimensions().width - 6))}
           flexDirection="column"
           border
-          borderColor={toastBorderColor(current().variant)}
-          backgroundColor={solidMint.panelBg}
+          borderColor={toastBorderColor(current().variant, colors)}
+          backgroundColor={colors.panelBg}
           paddingTop={1}
           paddingBottom={1}
           paddingLeft={2}
@@ -210,25 +212,25 @@ function ToastOverlay() {
             <Show
               when={current().title}
               fallback={
-                <text fg={solidMint.muted} flexShrink={0}>
+                <text fg={colors.muted} flexShrink={0}>
                   {toastVariantLabel(current().variant)} ·{" "}
                 </text>
               }
             >
-              <text fg={solidMint.headerTitle} flexGrow={1}>
+              <text fg={colors.headerTitle} flexGrow={1}>
                 <strong>{current().title}</strong>
               </text>
             </Show>
             <box flexGrow={1} />
-            <text fg={hovered() ? solidMint.brand : solidMint.muted} flexShrink={0}>
+            <text fg={hovered() ? colors.brand : colors.muted} flexShrink={0}>
               {current().action ? `› ${current().action!.label}` : "dismiss"}
             </text>
           </box>
-          <text fg={solidMint.body} wrapMode="word">
+          <text fg={colors.body} wrapMode="word">
             {current().message}
           </text>
           <Show when={toast.pending() > 0}>
-            <text fg={solidMint.muted} marginTop={1}>
+            <text fg={colors.muted} marginTop={1}>
               +{toast.pending()} more
             </text>
           </Show>

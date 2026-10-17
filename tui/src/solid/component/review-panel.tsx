@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import {
@@ -19,9 +19,8 @@ import {
 } from "../../diff-view"
 import { moveReviewHunkIndex } from "../../review-diff"
 import { noticeSegments, type TranscriptSegment } from "../../transcript"
-import { themes } from "../../themes"
 import { DialogHeader, useDialog } from "../ui/dialog"
-import { solidMint, solidToneBold, solidToneFg } from "../theme"
+import { useSolidTheme, solidToneBold, solidToneFg } from "../theme"
 import {
   formatSolidReviewBody,
   hunkCountForReview,
@@ -34,19 +33,25 @@ import {
   reviewSummaryLine,
   settleReviews,
   type ReviewDecision,
+  type ReviewDecisionResult,
   type SolidReviewItem,
 } from "../reviews"
 
 export type ReviewPanelProps = {
   reviews: SolidReviewItem[]
   /** Called when the operator approves or rejects one or more pending items. */
-  onDecide?: (decision: ReviewDecision, targets: ActiveReview[]) => void
+  onDecide: (
+    decision: ReviewDecision,
+    targets: ActiveReview[],
+  ) => ReviewDecisionResult | Promise<ReviewDecisionResult>
+  onClose?: () => void
   /** Initial queue index (clamped). */
   initialIndex?: number
 }
 
 function SegmentSpan(props: { segment: TranscriptSegment }) {
-  const fg = () => solidToneFg(props.segment.tone)
+  const colors = useSolidTheme()
+  const fg = () => solidToneFg(props.segment.tone, colors)
   const bold = () => solidToneBold(props.segment.tone)
   return (
     <Show
@@ -61,6 +66,7 @@ function SegmentSpan(props: { segment: TranscriptSegment }) {
 }
 
 export function ReviewPanel(props: ReviewPanelProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
   // Local queue so approve/reject stays responsive without reopening the dialog.
@@ -73,6 +79,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
   const [selectedKeys, setSelectedKeys] = createSignal<Set<string>>(new Set())
   const [diffSurface, setDiffSurface] = createSignal<ReviewDiffSurface>("segments")
   let settledOnce = false
+  let disposed = false
+  onCleanup(() => {
+    disposed = true
+  })
+  const [busy, setBusy] = createSignal(false)
+  const [failures, setFailures] = createSignal<string[]>([])
 
   const current = createMemo(() => {
     const items = pending()
@@ -119,14 +131,25 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
   const bodySegments = createMemo(() => noticeSegments(bodyText(), { cols: dimensions().width }))
 
-  const diffTheme = () => diffRenderableTheme(themes.mint)
+  const diffTheme = () => diffRenderableTheme(colors)
 
-  const applyDecision = (decision: ReviewDecision, targets: ActiveReview[]) => {
-    settledOnce = true
-    props.onDecide?.(decision, targets)
-    setQueue((prev) => settleReviews(prev, targets))
-    setSelectedKeys(new Set<string>())
-    setHunkIndex(0)
+  const applyDecision = async (decision: ReviewDecision, targets: ActiveReview[]) => {
+    if (busy()) return
+    setBusy(true)
+    setFailures([])
+    try {
+      const result = await props.onDecide(decision, targets)
+      if (disposed) return
+      settledOnce = result.settled.length > 0
+      setFailures(result.failed)
+      setQueue((prev) => settleReviews(prev, result.settled))
+      setSelectedKeys(new Set<string>())
+      setHunkIndex(0)
+    } catch (error) {
+      if (!disposed) setFailures([error instanceof Error ? error.message : "Decision request failed"])
+    } finally {
+      if (!disposed) setBusy(false)
+    }
   }
 
   useKeyboard((key: KeyEvent) => {
@@ -171,7 +194,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
       return
     }
     if (result.type === "decide") {
-      applyDecision(result.decision, result.targets)
+      void applyDecision(result.decision, result.targets)
     }
   })
 
@@ -183,22 +206,28 @@ export function ReviewPanel(props: ReviewPanelProps) {
       />
       <Show
         when={current()}
-        fallback={<text fg={solidMint.muted}>Queue empty — nothing to approve.</text>}
+        fallback={<text fg={colors.muted}>Queue empty — nothing to approve.</text>}
       >
         {(item) => (
           <>
             <box width="100%" flexDirection="row" gap={1}>
-              <text fg={solidMint.statusWarn}>
+              <text fg={colors.statusWarn}>
                 <strong>{reviewKindLabel(item().kind).toUpperCase()}</strong>
               </text>
-              <text fg={solidMint.body}>{reviewSummaryLine(item())}</text>
-              <text fg={solidMint.muted}>
+              <text fg={colors.body}>{reviewSummaryLine(item())}</text>
+              <text fg={colors.muted}>
                 {" "}
                 · {moveActiveReviewIndex(index(), 0, pending().length) + 1}/{pending().length} pending
               </text>
             </box>
-            <Show when={hotkeyHint()}>
-              {(hint) => <text fg={solidMint.muted}>{hint()}</text>}
+            <Show when={busy()}>
+              <text fg={colors.statusWarn}>Waiting for server confirmation…</text>
+            </Show>
+            <For each={failures()}>
+              {(failure) => <text fg={colors.statusWarn}>{failure}</text>}
+            </For>
+            <Show when={!busy() && hotkeyHint()}>
+              {(hint) => <text fg={colors.muted}>{hint()}</text>}
             </Show>
             <Show
               when={item().kind === "patch" && diffSurface() === "split"}
@@ -257,5 +286,5 @@ export function openReviewPanel(
   dialog: ReturnType<typeof useDialog>,
   props: ReviewPanelProps,
 ) {
-  dialog.replace(() => <ReviewPanel {...props} />, { size: "large" })
+  dialog.replace(() => <ReviewPanel {...props} />, { size: "large", onClose: props.onClose })
 }

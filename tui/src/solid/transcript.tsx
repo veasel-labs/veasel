@@ -14,6 +14,7 @@ import {
   type TranscriptTone,
 } from "../transcript"
 import { scrollOffsetFromBottom, transcriptBelowCue, transcriptSegmentLines } from "../transcript-scroll"
+import { prefersReducedMotion, streamingCursorForMotion } from "../reduced-motion"
 import {
   activityGroupHeader,
   activityItemLine,
@@ -140,7 +141,7 @@ function SegmentLines(props: { segments: TranscriptSegment[] }) {
   return (
     <For each={lines()}>
       {(line) => (
-        <text wrapMode="none">
+        <text width="100%" wrapMode="word">
           <For each={line}>{(segment) => <SegmentSpan segment={segment} />}</For>
         </text>
       )}
@@ -261,6 +262,7 @@ function MessageBlockView(props: {
   thinkingExpanded: Record<string, boolean>
   onToggleThinking: (id: string) => void
 }) {
+  const colors = useSolidTheme()
   const message = () => props.messages[0]
   const hasThinking = createMemo(() => {
     const msg = message()
@@ -276,6 +278,17 @@ function MessageBlockView(props: {
     () => props.messages.length > 0 && props.messages.every((item) => item.role === "assistant"),
   )
   return (
+    <box
+      id={`message-${message()?.role ?? "unknown"}-${props.startIndex}`}
+      width="100%"
+      flexDirection="column"
+      flexShrink={0}
+      border={message()?.role === "user" ? ["left"] : []}
+      borderColor={colors.brand}
+      backgroundColor={message()?.role === "user" ? colors.panelBg : colors.shellBg}
+      paddingLeft={message()?.role === "user" ? 1 : 0}
+      marginBottom={message()?.role === "user" ? 1 : 0}
+    >
     <Show
       when={hasThinking() ? message() : undefined}
       fallback={
@@ -361,6 +374,7 @@ function MessageBlockView(props: {
         </box>
       )}
     </Show>
+    </box>
   )
 }
 
@@ -554,7 +568,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
 
   const streamingMarkdown = createMemo(() => {
     if (!props.streamingText) return undefined
-    const cursor = props.streaming ? (props.streamingCursor ?? "█") : ""
+    const cursor = props.streaming ? (props.streamingCursor ?? streamingCursorForMotion(prefersReducedMotion())) : ""
     return `${props.streamingText}${cursor}`
   })
 

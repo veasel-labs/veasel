@@ -121,6 +121,7 @@ import {
   removeDraftStash,
   saveDraftStash,
 } from "./draft-stash"
+import { loadSessionDrafts, saveSessionDrafts, upsertSessionDraft } from "./session-drafts"
 import {
   addComposerAttachment,
   asciiImagePreview,
@@ -131,7 +132,7 @@ import {
 } from "./composer-attachments"
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
-const liveFooterHint = `${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
+const liveFooterHint = `Ctrl+X stop turn · ${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
 const historyPageSize = 100
 import {
   demoOpenProjects,
@@ -255,6 +256,8 @@ function LiveAppShell(props: LiveAppProps) {
   const [sidebarWidth, setSidebarWidth] = createSignal(
     loadHomeSidebarWidth({}, terminalColumns()),
   )
+  const [cancelling, setCancelling] = createSignal(false)
+  let activeTurnSessionId: string | undefined
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   const [executionPolicy, setExecutionPolicy] = createSignal<ExecutionPolicyId>("ask")
   let turnController: AbortController | undefined
@@ -359,21 +362,31 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
-  const sessionDrafts = new Map<string, { text: string; attachments: ComposerAttachment[] }>()
+  let sessionDrafts = loadSessionDrafts()
   let draftRevision = 0
+
+  // Drafts are scoped to the session's workspace so reused session ids on
+  // other servers or directories never restore each other's text.
+  const draftKey = (id: string) => `${directory()}\n${id}`
 
   const rememberSessionDraft = () => {
     const id = activeSessionId()
     if (!id) return
-    if (!composerDraft() && attachments().length === 0) {
-      sessionDrafts.delete(id)
-      return
-    }
-    sessionDrafts.set(id, { text: composerDraft(), attachments: [...attachments()] })
+    sessionDrafts = upsertSessionDraft(sessionDrafts, draftKey(id), { text: composerDraft(), attachments: [...attachments()] })
+    saveSessionDrafts(sessionDrafts)
   }
 
+  // Persist while typing (debounced) so a crash or restart keeps the draft.
+  createEffect(() => {
+    composerDraft()
+    attachments()
+    activeSessionId()
+    const timer = setTimeout(rememberSessionDraft, 250)
+    onCleanup(() => clearTimeout(timer))
+  })
+
   const restoreSessionDraft = (id: string) => {
-    const draft = sessionDrafts.get(id)
+    const draft = sessionDrafts.get(draftKey(id))
     const text = draft?.text ?? ""
     setComposerDraft(text)
     setAttachments(draft?.attachments ?? [])
@@ -1096,12 +1109,49 @@ function LiveAppShell(props: LiveAppProps) {
     }
     if (activeTurnId() === operationId) {
       setActiveTurnId(undefined)
+      activeTurnSessionId = undefined
+      setCancelling(false)
       turnController = undefined
       setSending(false)
       setStreaming(false)
       setStreamingText("")
-      setStatus("● connected  ·  listening for activity")
-      setComposerFocused(true)
+      if (activeSessionId() === sessionId) {
+        if (completion.status === "completed") {
+          setStatus("● connected  ·  listening for activity")
+        } else if (completion.status === "cancelled") {
+          setStatus(formatWarnStatus("Turn cancelled"))
+        } else if (completion.status === "uncertain") {
+          setStatus(formatWarnStatus("Outcome uncertain; inspect the workspace before retrying"))
+        } else {
+          noteError("turns.complete", completion.error ?? "Assistant turn failed", sessionId)
+        }
+        setComposerFocused(true)
+      }
+    }
+  }
+
+  const cancelActiveTurn = async () => {
+    const operationId = activeTurnId()
+    const sessionId = activeTurnSessionId
+    if (!operationId || !sessionId) {
+      toast.info("No active turn to stop", "Turn")
+      return
+    }
+    if (cancelling()) return
+    setCancelling(true)
+    setStatus(formatBusyStatus("Requesting cancellation…"))
+    try {
+      const result = await props.api.cancelOperation(sessionId, operationId)
+      if (activeTurnId() !== operationId) return
+      if (["completed", "failed", "cancelled", "uncertain"].includes(result.status ?? "")) {
+        await finishTurn(sessionId, result)
+      } else {
+        setStatus(formatBusyStatus("Cancellation requested; waiting for the server…"))
+      }
+    } catch (error) {
+      if (activeTurnId() !== operationId) return
+      setCancelling(false)
+      noteError("turns.cancel", error instanceof Error ? error.message : "Cancellation failed", sessionId)
     }
   }
 
@@ -1226,6 +1276,8 @@ function LiveAppShell(props: LiveAppProps) {
     const operationId = crypto.randomUUID()
     setSending(true)
     setActiveTurnId(operationId)
+    activeTurnSessionId = sessionId
+    setCancelling(false)
     turnController = new AbortController()
     setStreamingText("")
     setStreaming(true)
@@ -1247,6 +1299,8 @@ function LiveAppShell(props: LiveAppProps) {
       setStreamingText("")
       setSending(false)
       setActiveTurnId(undefined)
+      activeTurnSessionId = undefined
+      setCancelling(false)
       turnController = undefined
       setStatus("● connected  ·  listening for activity")
       setComposerFocused(true)
@@ -1264,6 +1318,8 @@ function LiveAppShell(props: LiveAppProps) {
       setSending(false)
       setStreaming(false)
       setActiveTurnId(undefined)
+      activeTurnSessionId = undefined
+      setCancelling(false)
       turnController = undefined
       setComposerFocused(true)
     }
@@ -1368,6 +1424,7 @@ function LiveAppShell(props: LiveAppProps) {
           const keySaved = Boolean(profile?.api_key_saved)
           openDialogPrompt(dialog, {
             title: `API key · ${provider.name}`,
+            secret: true,
             description: keySaved
               ? `Key already saved for ${provider.id}. Leave blank to keep it, or paste a new key.`
               : `Paste the ${provider.environment_key || "API"} key for ${provider.name}.`,
@@ -1718,6 +1775,7 @@ function LiveAppShell(props: LiveAppProps) {
     openCommandPalette(
       dialog,
       buildLivePaletteCommands({
+        cancelTurn: () => { void cancelActiveTurn() },
         showHelp: () => openDialogHelp(dialog, { compact: true }),
         openSettings: () => {
           void openSettings()
@@ -1818,6 +1876,11 @@ function LiveAppShell(props: LiveAppProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (dialog.open()) return
+    if (key.ctrl && key.name === "x" && !key.meta) {
+      key.preventDefault()
+      void cancelActiveTurn()
+      return
+    }
     // Classic parity: empty composer + `?` opens quick help (same as /help).
     if (
       inSession()
@@ -2074,12 +2137,8 @@ function LiveAppShell(props: LiveAppProps) {
               streamingChars: streamingText().length,
               formatStreaming: (chars) => formatStreamingBusyStatus(chars),
             })
-            if (!live) {
-              if (!streaming() && !activeTurnId()) {
-                setStatus("● connected  ·  listening for activity")
-              }
-              return
-            }
+            if (!live) return
+            if (cancelling()) return
             setStatus(offsetFromBottom > 0 ? formatWarnStatus(live) : live)
           }}
           cols={80}

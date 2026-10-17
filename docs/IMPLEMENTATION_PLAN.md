@@ -73,6 +73,13 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `solid/component/review-panel.tsx`): pending file/shell/MCP queue with
   legacy `reviewHotkey` bindings (a/x/A/X/Space/]/[/n/p/{/}/v),
   `formatReviewDiff` / shell / MCP formatters, OpenTUI `<diff>` split when
+  toggled; **Ctrl+R** + palette `veasel.reviews.open`; fixture demos +
+  `testRender`; Solid is the default entry (`classic-main.ts` retired).
+- [x] Shared dialog geometry and result budgets adapt selectors and the
+  command palette to terminal size. Compact layouts retain search, selection,
+  and match counts, and command rows support mouse activation. Rendered tests
+  cover 32×12, 40×16, 80×24, 120×40, resizing, keyboard, and mouse input.
+  This does not establish responsive coverage for every product dialog.
   toggled; **Ctrl+R** + palette `veasel.reviews.open`. LiveApp loads and
   decides reviews through the HTTP API. The panel waits for confirmation,
   retains failed items with inline errors, blocks duplicate submissions while
@@ -87,11 +94,19 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Solid toast host (`solid/ui/toast.tsx`): non-modal mint notices with
   queue, hover-pause, click dismiss/activate; palette `veasel.toast.demo`;
   wired for theme/activity/review cues; `testRender` coverage.
+- [x] LiveApp turn cancellation through Ctrl+X or the command palette uses
+  the originating session and operation ID, waits for server confirmation, and
+  reports cancellation errors without pretending the operation stopped.
+  Cancelled, failed, and uncertain completions retain their distinct status.
+  Loopback HTTP/SSE tests exercise keyboard cancellation across session tabs.
 - [x] LiveApp isolates pending composer text and attachments by session during
   the current TUI process. Session switching updates project context for file
   completion and relative attachments; submitted text is cleared consistently.
   Real LiveApp keyboard/HTTP tests verify that session B does not submit A's
-  pending attachment. Automatic draft recovery after process restart remains open.
+  pending attachment. Drafts now also persist across TUI restarts in
+  `~/.local/state/veasel/session-drafts.json` (0600, workspace-scoped keys,
+  50-session cap, debounced saves while typing), so reopening a session
+  restores its pending text and attachments.
 - [x] LiveApp history responses are scoped to the current session visit.
   Late success/error responses cannot replace a newer session view, including
   A → B → A navigation. Older-page responses are discarded after navigation or
@@ -581,6 +596,11 @@ honoring its license and attribution.
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
 
+### Conversation surfaces and wrapping
+
+- User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.
+- Message lines wrap to the actual available width, including narrow terminals. Rendered snapshots at 32, 56, and 100 columns protect long-text visibility and role boundaries.
+- Production streaming, thinking sections, and activity groups retain their existing data flow. Full rich-Markdown migration and the complete design-system audit remain open.
 ### Real Skill completions
 
 - Production composer defaults to an empty Skill catalog instead of demo entries. LiveApp discovers Skills through the versioned plugin API when a draft first contains a Skill token.

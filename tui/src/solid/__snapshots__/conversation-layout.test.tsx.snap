@@ -1,0 +1,45 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`conversation preserves long message text at 32 columns 1`] = `
+"
+ │ ● you
+ │
+ │   Please review the current
+ │ implementation carefully and
+ │ explain each important
+ │ change. USER-END
+
+ ◆ assistant
+
+   I will examine the
+ implementation, follow the
+ execution path, and explain
+ any correctness concerns.
+ ANSWER-END"
+`;
+
+exports[`conversation preserves long message text at 56 columns 1`] = `
+"
+ │ ● you
+ │
+ │   Please review the current implementation carefully
+ │ and explain each important change. USER-END
+
+ ◆ assistant
+
+   I will examine the implementation, follow the
+ execution path, and explain any correctness concerns.
+ ANSWER-END"
+`;
+
+exports[`conversation preserves long message text at 100 columns 1`] = `
+"
+ │ ● you
+ │
+ │   Please review the current implementation carefully and explain each important change. USER-END
+
+ ◆ assistant
+
+   I will examine the implementation, follow the execution path, and explain any correctness
+ concerns. ANSWER-END"
+`;

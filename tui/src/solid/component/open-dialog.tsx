@@ -17,6 +17,8 @@ export type SolidOpenWorktree = {
 }
 
 export type OpenDialogProps = {
+  currentDirectory?: string
+  onCreateSession?: () => void
   recentSessions: SolidSessionEntry[]
   projects: SolidOpenProject[]
   worktreesByProject: Record<string, SolidOpenWorktree[]>
@@ -67,7 +69,7 @@ export function groupWorktreesByProject(
 }
 
 export function buildOpenRootOptions(
-  props: Pick<OpenDialogProps, "recentSessions" | "projects">,
+  props: Pick<OpenDialogProps, "recentSessions" | "projects" | "currentDirectory" | "onCreateSession">,
 ): Array<{
   title: string
   value: string
@@ -89,7 +91,14 @@ export function buildOpenRootOptions(
     description: project.path,
     searchText: `${project.name} ${project.path}`,
   }))
-  return [...sessionOptions, ...projectOptions]
+  const createOptions = props.onCreateSession ? [{
+    title: "New session in this project",
+    value: "create-session",
+    category: "Start",
+    description: props.currentDirectory ?? "",
+    searchText: `new session create ${props.currentDirectory ?? ""}`,
+  }] : []
+  return [...sessionOptions, ...projectOptions, ...createOptions]
 }
 
 function OpenWorktreesPane(props: {
@@ -129,8 +138,13 @@ export function openOpenDialog(
         placeholder="Filter sessions or projects…"
         dismissOnSelect={false}
         options={buildOpenRootOptions(props)}
-        footer="Recent sessions · Projects drill into worktrees · Ctrl+O"
+        footer="Enter opens · type to filter · Esc closes"
         onSelect={(option) => {
+          if (option.value === "create-session") {
+            dialog.clear()
+            props.onCreateSession?.()
+            return
+          }
           if (option.value.startsWith("session:")) {
             const id = option.value.slice("session:".length)
             const session = props.recentSessions.find((item) => item.id === id)

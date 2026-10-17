@@ -135,7 +135,7 @@ import {
 const liveFooterHint = `${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
 const historyPageSize = 100
 import {
-  demoOpenProjects,
+  type SolidOpenProject,
   groupWorktreesByProject,
   openOpenDialog,
 } from "./component/open-dialog"
@@ -1474,7 +1474,7 @@ function LiveAppShell(props: LiveAppProps) {
     try {
       const listed = await props.api.listSessions()
       setSessions(listed.map(sessionEntry))
-      let projects = demoOpenProjects()
+      let projects: SolidOpenProject[] = []
       let worktreesByProject = groupWorktreesByProject([])
       if (sessionId) {
         const catalog = await props.api.listGitWorktrees(sessionId)
@@ -1483,6 +1483,8 @@ function LiveAppShell(props: LiveAppProps) {
         worktreesByProject = groupWorktreesByProject(mapped.worktrees)
       }
       openOpenDialog(dialog, {
+        currentDirectory: directory(),
+        onCreateSession: () => { void createSession() },
         recentSessions: listed.map(sessionEntry),
         projects,
         worktreesByProject,

@@ -6,7 +6,7 @@ import type {
 } from "../api-client"
 import type { ActiveReview } from "../active-review"
 import type { ReviewSandboxPreview } from "../shell-review"
-import type { ReviewDecision, SolidReviewItem } from "./reviews"
+import type { ReviewDecision, ReviewDecisionResult, SolidReviewItem } from "./reviews"
 
 /** Load pending edits / shell / MCP calls with detail GETs (records inspect-before-approve). */
 export async function loadPendingSolidReviews(
@@ -83,8 +83,8 @@ export async function decideSolidReviews(
   sessionId: string,
   decision: ReviewDecision,
   targets: ActiveReview[],
-): Promise<{ ok: number; failed: string[] }> {
-  let ok = 0
+): Promise<ReviewDecisionResult> {
+  const settled: ActiveReview[] = []
   const failed: string[] = []
   for (const target of targets) {
     try {
@@ -95,7 +95,7 @@ export async function decideSolidReviews(
       } else {
         await api.decideMcpToolCall(sessionId, target.id, decision)
       }
-      ok += 1
+      settled.push(target)
     } catch (error) {
       failed.push(
         `${target.kind}:${target.id.slice(0, 8)} · ${
@@ -104,5 +104,5 @@ export async function decideSolidReviews(
       )
     }
   }
-  return { ok, failed }
+  return { settled, failed }
 }

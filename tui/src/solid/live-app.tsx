@@ -595,20 +595,20 @@ function LiveAppShell(props: LiveAppProps) {
       }
       openReviewPanel(dialog, {
         reviews,
-        onDecide: (decision, targets) => {
-          void (async () => {
-            const result = await decideSolidReviews(props.api, sessionId, decision, targets)
-            const verb = decision === "approve" ? "Approved" : "Rejected"
-            if (result.ok > 0) {
-              toast.success(
-                `${verb} ${result.ok} review${result.ok === 1 ? "" : "s"}`,
-                "Reviews",
-              )
-            }
-            if (result.failed.length > 0) {
-              toast.info(result.failed[0]!, "Reviews")
-            }
-          })()
+        onClose: () => setComposerFocused(true),
+        onDecide: async (decision, targets) => {
+          const result = await decideSolidReviews(props.api, sessionId, decision, targets)
+          const verb = decision === "approve" ? "Approved" : "Rejected"
+          if (result.settled.length > 0) {
+            toast.success(
+              `${verb} ${result.settled.length} review${result.settled.length === 1 ? "" : "s"}`,
+              "Reviews",
+            )
+          }
+          if (result.failed.length > 0) {
+            toast.info(result.failed[0]!, "Reviews")
+          }
+          return result
         },
       })
     } catch (error) {

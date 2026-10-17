@@ -138,3 +138,24 @@ No V backend changes required for the Solid default cutover.
 
 Do not copy OpenCode logos, splash art, or product strings. Prefer Veasel mint
 tokens and HTTP-API client boundaries.
+
+## Reactive theme ownership
+
+Inspected OpenCode's theme context and prompt consumer at
+`ed772f5009755b5262805a7ba07e66e1417f140a`, specifically
+`packages/tui/src/context/theme.tsx` and
+`packages/tui/src/component/prompt/index.tsx`. The relevant principle is a
+reactive theme owned by an application provider, consumed by components and
+overlays without remounting their state. This implementation uses Veasel's
+existing semantic theme schema; no upstream implementation or branding was copied.
+
+Veasel's `SolidThemeProvider` now owns the selected builtin theme. Components,
+transcript tones, composer controls, diff views, dialogs, and toasts consume its
+reactive colors instead of fixed Mint constants. LiveApp still loads and saves
+selection through the existing theme settings. Standalone component fixtures
+default to Mint; independent roots do not share mutable theme state.
+
+`theme-reactivity.test.tsx` checks rendered foreground colors across a theme
+change, retained composer drafts, open dialogs, and root isolation. These checks
+do not establish accessibility contrast compliance, terminal light/dark detection,
+or complete visual redesign; those remain separate validation work.

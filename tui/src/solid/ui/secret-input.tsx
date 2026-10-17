@@ -2,10 +2,11 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { useKeyboard, usePaste, useTerminalDimensions } from "@opentui/solid"
 import type { BoxRenderable } from "@opentui/core"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import { deleteSecret, moveSecretCursor, replaceSecretSelection, secretSelection, type SecretState } from "./secret-editor"
 
 export function SecretInput(props: { value: string; placeholder?: string; onInput: (value: string) => void }) {
+  const colors = useSolidTheme()
   const initialLength = Array.from(props.value).length
   const [state, setState] = createSignal<SecretState>({ value: props.value, cursor: initialLength, anchor: initialLength })
   const [error, setError] = createSignal<string>()
@@ -77,16 +78,16 @@ export function SecretInput(props: { value: string; placeholder?: string; onInpu
   })
   return <box flexDirection="column" width="100%">
     <box ref={(node: BoxRenderable) => { field = node }} focusable={true} height={1} width="100%"
-      backgroundColor={solidMint.inputBg} onMouseDown={() => field?.focus()}>
+      backgroundColor={colors.inputBg} onMouseDown={() => field?.focus()}>
       <text wrapMode="none">
         <For each={view()}>{(cell) => <>
-          <Show when={cell.cursor}><span style={{ fg: solidMint.brand }}>▏</span></Show>
-          <Show when={cell.bullet}><span style={{ fg: cell.selected ? solidMint.brand : solidMint.body }}>•</span></Show>
+          <Show when={cell.cursor}><span style={{ fg: colors.brand }}>▏</span></Show>
+          <Show when={cell.bullet}><span style={{ fg: cell.selected ? colors.brand : colors.body }}>•</span></Show>
         </>}</For>
-        <Show when={!state().value}><span style={{ fg: solidMint.muted }}>{props.placeholder ?? "Paste or type credential"}</span></Show>
+        <Show when={!state().value}><span style={{ fg: colors.muted }}>{props.placeholder ?? "Paste or type credential"}</span></Show>
       </text>
     </box>
-    <text fg={solidMint.muted}>Hidden · Ctrl+A select all · Ctrl+U clear</text>
-    <Show when={error()}>{(message) => <text fg={solidMint.statusWarn}>{message()}</text>}</Show>
+    <text fg={colors.muted}>Hidden · Ctrl+A select all · Ctrl+U clear</text>
+    <Show when={error()}>{(message) => <text fg={colors.statusWarn}>{message()}</text>}</Show>
   </box>
 }

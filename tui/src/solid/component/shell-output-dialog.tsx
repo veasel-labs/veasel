@@ -3,7 +3,7 @@ import { createMemo } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type ShellOutputDialogProps = {
   command: string
@@ -14,6 +14,7 @@ export type ShellOutputDialogProps = {
 }
 
 export function ShellOutputDialog(props: ShellOutputDialogProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   let scroll: ScrollBoxRenderable | undefined
 
@@ -68,10 +69,10 @@ export function ShellOutputDialog(props: ShellOutputDialogProps) {
   return (
     <DialogLayout
       header={<DialogHeader title="Shell output" hint="↑/↓ · Enter · Esc" />}
-      footer={<text fg={solidMint.muted}>{statusLine()} · Enter closes</text>}
+      footer={<text fg={colors.muted}>{statusLine()} · Enter closes</text>}
     >
       <box width="100%" flexDirection="column" gap={1}>
-        <text fg={solidMint.brand}>$ {props.command}</text>
+        <text fg={colors.brand}>$ {props.command}</text>
         <scrollbox
           ref={(next: ScrollBoxRenderable) => {
             scroll = next
@@ -81,7 +82,7 @@ export function ShellOutputDialog(props: ShellOutputDialogProps) {
           stickyScroll={true}
           stickyStart="bottom"
         >
-          <text fg={solidMint.body}>{props.output}</text>
+          <text fg={colors.body}>{props.output}</text>
         </scrollbox>
       </box>
     </DialogLayout>

@@ -4,7 +4,7 @@ import { useKeyboard } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
 import { SecretInput } from "./secret-input"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type DialogPromptProps = {
   title: string
@@ -18,6 +18,7 @@ export type DialogPromptProps = {
 }
 
 export function DialogPrompt(props: DialogPromptProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [draft, setDraft] = createSignal(props.value ?? "")
   let input: InputRenderable | undefined
@@ -57,17 +58,17 @@ export function DialogPrompt(props: DialogPromptProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={solidMint.inputFocusBg}
+            backgroundColor={colors.inputFocusBg}
             onMouseUp={submit}
           >
-            <text fg={solidMint.brand}>{props.confirmLabel ?? "submit"}</text>
+            <text fg={colors.brand}>{props.confirmLabel ?? "submit"}</text>
           </box>
         </box>
       }
     >
       <box width="100%" flexDirection="column" gap={1}>
         <Show when={props.description}>
-          <text fg={solidMint.muted}>{props.description}</text>
+          <text fg={colors.muted}>{props.description}</text>
         </Show>
         <Show when={!props.secret} fallback={<SecretInput value={draft()} placeholder={props.placeholder} onInput={setDraft} />}>
         <input
@@ -78,12 +79,12 @@ export function DialogPrompt(props: DialogPromptProps) {
           focused={true}
           value={draft()}
           placeholder={props.placeholder ?? "Enter text"}
-          placeholderColor={solidMint.muted}
-          textColor={solidMint.inputText}
-          focusedTextColor={solidMint.inputText}
-          backgroundColor={solidMint.inputBg}
-          focusedBackgroundColor={solidMint.inputFocusBg}
-          cursorColor={solidMint.cursor}
+          placeholderColor={colors.muted}
+          textColor={colors.inputText}
+          focusedTextColor={colors.inputText}
+          backgroundColor={colors.inputBg}
+          focusedBackgroundColor={colors.inputFocusBg}
+          cursorColor={colors.cursor}
           onInput={(value: string) => setDraft(value)}
         />
         </Show>

@@ -1,11 +1,11 @@
 /** @jsxImportSource @opentui/solid */
 import { For } from "solid-js"
-import { themes, type Theme } from "../../themes"
+import { type Theme } from "../../themes"
 import {
   VEASEL_PORTRAIT_ROWS,
   portraitRowCells,
 } from "../../veasel-portrait"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import { paletteShortcut } from "../commands"
 import { activityToggleShortcut } from "../activity-group"
 import { reviewShortcut } from "../reviews"
@@ -29,7 +29,8 @@ function portraitRows(compact: boolean): string[] {
  * Portrait adaptation remains CC BY-NC 4.0 (THIRD_PARTY_NOTICES.md).
  */
 export function HomeSplash(props: HomeSplashProps) {
-  const theme = () => props.theme ?? themes.mint
+  const colors = useSolidTheme()
+  const theme = () => props.theme ?? colors
   const directory = () => props.directory ?? "~/your-project"
   const compact = () => props.compact ?? true
   const connectLine = `/connect · ${paletteShortcut.label} commands · /theme`
@@ -42,15 +43,15 @@ export function HomeSplash(props: HomeSplashProps) {
       flexDirection="column"
       alignItems="center"
       justifyContent="flex-start"
-      backgroundColor={solidMint.panelBg}
+      backgroundColor={colors.panelBg}
       gap={1}
       paddingTop={1}
       paddingBottom={1}
     >
       <box width="100%" flexDirection="column" alignItems="center" flexShrink={0}>
-        <text fg={solidMint.brand}>VEASEL CODE</text>
-        <text fg={solidMint.muted}>your local V-powered workspace</text>
-        <text fg={solidMint.headerMeta}>{directory()}</text>
+        <text fg={colors.brand}>VEASEL CODE</text>
+        <text fg={colors.muted}>your local V-powered workspace</text>
+        <text fg={colors.headerMeta}>{directory()}</text>
       </box>
 
       <box flexDirection="column" alignItems="center" flexShrink={0}>
@@ -72,15 +73,15 @@ export function HomeSplash(props: HomeSplashProps) {
         paddingLeft={2}
         paddingRight={2}
         border
-        borderColor={solidMint.headerBorder}
-        backgroundColor={solidMint.shellBg}
+        borderColor={colors.headerBorder}
+        backgroundColor={colors.shellBg}
       >
-        <text fg={solidMint.body}>Ask anything to begin — or set up once</text>
-        <text fg={solidMint.muted}>{connectLine}</text>
-        <text fg={solidMint.muted}>{reviewLine}</text>
+        <text fg={colors.body}>Ask anything to begin — or set up once</text>
+        <text fg={colors.muted}>{connectLine}</text>
+        <text fg={colors.muted}>{reviewLine}</text>
       </box>
 
-      <text fg={solidMint.headerMeta}>OPENTUI · REVIEW-GATED · LOCAL · PIXEL VEASEL</text>
+      <text fg={colors.headerMeta}>OPENTUI · REVIEW-GATED · LOCAL · PIXEL VEASEL</text>
     </box>
   )
 }

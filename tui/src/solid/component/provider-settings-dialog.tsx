@@ -18,7 +18,7 @@ import {
 } from "../../settings-flow"
 import { sessionDigitIndex } from "../../session-list"
 import { DialogHeader, useDialog, type DialogHost } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 const LIST_PAGE = 12
 
@@ -51,6 +51,7 @@ export type ProviderSettingsDialogProps = {
  * matches Anthropic the same way CI smoke expects.
  */
 export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const mode = () => props.mode ?? "models"
   const [query, setQuery] = createSignal("")
@@ -204,10 +205,10 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   return (
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title={title()} hint={hint()} />
-      <text fg={solidMint.localStatus}>{statusLine()}</text>
-      <text fg={solidMint.muted}>{settingsProviderStepPrompt(mode())}</text>
-      <text fg={solidMint.muted}>{settingsModeIntro(mode())}</text>
-      <text fg={solidMint.muted}>
+      <text fg={colors.localStatus}>{statusLine()}</text>
+      <text fg={colors.muted}>{settingsProviderStepPrompt(mode())}</text>
+      <text fg={colors.muted}>{settingsModeIntro(mode())}</text>
+      <text fg={colors.muted}>
         {countLabel()} · type to filter · Tab cycles All / Configured / Local
       </text>
       <input
@@ -218,12 +219,12 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         focused={true}
         value={query()}
         placeholder="Filter providers…"
-        placeholderColor={solidMint.muted}
-        textColor={solidMint.inputText}
-        focusedTextColor={solidMint.inputText}
-        backgroundColor={solidMint.inputBg}
-        focusedBackgroundColor={solidMint.inputFocusBg}
-        cursorColor={solidMint.cursor}
+        placeholderColor={colors.muted}
+        textColor={colors.inputText}
+        focusedTextColor={colors.inputText}
+        backgroundColor={colors.inputBg}
+        focusedBackgroundColor={colors.inputFocusBg}
+        cursorColor={colors.cursor}
         onInput={(value: string) => {
           // Swallow nav digits/letters that raced into the input while empty.
           if (
@@ -240,7 +241,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
       />
       <Show
         when={matches().length > 0}
-        fallback={<text fg={solidMint.muted}>No providers match</text>}
+        fallback={<text fg={colors.muted}>No providers match</text>}
       >
         <box width="100%" flexDirection="column">
           <For each={visible()}>
@@ -251,22 +252,22 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
                 <box
                   width="100%"
                   flexDirection="row"
-                  backgroundColor={active() ? solidMint.inputFocusBg : solidMint.panelBg}
+                  backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
                   onMouseUp={() => selectAt(absolute())}
                 >
-                  <text fg={active() ? solidMint.brand : solidMint.body}>
+                  <text fg={active() ? colors.brand : colors.body}>
                     {active() ? "▸ " : "  "}
                     {provider.name}
                   </text>
-                  <text fg={solidMint.muted}>  {provider.id}</text>
+                  <text fg={colors.muted}>  {provider.id}</text>
                 </box>
               )
             }}
           </For>
           <Show when={matches().length > LIST_PAGE}>
-            <text fg={solidMint.muted}>
+            <text fg={colors.muted}>
               Showing {windowStart() + 1}–{Math.min(windowStart() + LIST_PAGE, matches().length)} of{" "}
               {matches().length}
             </text>

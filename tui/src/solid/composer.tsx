@@ -12,10 +12,9 @@ import { skillMentionAt } from "../skill-autocomplete"
 import type { SkillCatalogEntry } from "../skill-autocomplete"
 import { completeSlashCommand } from "../slash-commands"
 import type { SlashCompletionContext } from "../slash-commands"
-import { solidMint } from "./theme"
+import { useSolidTheme } from "./theme"
 import {
   acceptComposerAutocomplete,
-  demoComposerSkills,
   jumpComposerAutocomplete,
   moveComposerAutocomplete,
   resolveComposerAutocomplete,
@@ -45,6 +44,7 @@ export type SolidComposerProps = {
   onSubmit?: (text: string) => void
   workspaceRoot?: string
   skills?: SkillCatalogEntry[]
+  skillCatalogStatus?: string
   slashContext?: SlashCompletionContext
   listPaths?: (root: string) => string[]
   /** When this token changes, replace the composer draft (stash restore). */
@@ -67,6 +67,7 @@ function kindTitle(kind: ComposerAutocompleteMenu["kind"]): string {
 
 // Reactive multiline composer with `/` `@` `$` autocomplete (classic matchers).
 export function SolidComposer(props: SolidComposerProps) {
+  const colors = useSolidTheme()
   const [draft, setDraft] = createSignal("")
   const [caret, setCaret] = createSignal(0)
   const [selected, setSelected] = createSignal(0)
@@ -77,7 +78,7 @@ export function SolidComposer(props: SolidComposerProps) {
   /** Token waiting for the textarea mount (home `/` race). */
   let pendingRestore: { id: string; text: string } | undefined
 
-  const skills = () => props.skills ?? demoComposerSkills()
+  const skills = () => props.skills ?? []
   const pathFrecency = sharedPathFrecencyStore()
 
   const applyRestore = (token: { id: string; text: string }) => {
@@ -163,6 +164,7 @@ export function SolidComposer(props: SolidComposerProps) {
     setCaret(0)
     area?.setText("")
     setDraft("")
+    props.onDraftChange?.("")
     setSelected(0)
     setDismissed(undefined)
     if (area) area.height = composerHeightForText("")
@@ -238,7 +240,7 @@ export function SolidComposer(props: SolidComposerProps) {
     const text = new TextDecoder().decode(event.bytes).replace(/[\x00-\x1f\x7f-\x9f]/g, "")
     // Only intercept paste when the clipboard looks like a single local path.
     if (!normalizeAttachmentPath(text)) return
-    const resolved = resolveAttachmentPath(text)
+    const resolved = resolveAttachmentPath(text, { cwd: props.workspaceRoot })
     if (!resolved) return
     props.onPathPaste(resolved)
     event.preventDefault()
@@ -342,19 +344,22 @@ export function SolidComposer(props: SolidComposerProps) {
 
   return (
     <box width="100%" flexShrink={0} flexDirection="column" gap={0}>
+      <Show when={(props.focused ?? true) && props.skillCatalogStatus && skillMentionAt(draft(), area?.cursorOffset ?? draft().length)}>
+        <text fg={colors.muted}>{props.skillCatalogStatus}</text>
+      </Show>
       <Show when={menu()}>
         {(active) => (
           <box
             width="100%"
             border
-            borderColor={solidMint.panelBorder}
-            backgroundColor={solidMint.panelBg}
+            borderColor={colors.panelBorder}
+            backgroundColor={colors.panelBg}
             paddingLeft={1}
             paddingRight={1}
             paddingTop={0}
             paddingBottom={0}
             title={` ${kindTitle(active().kind)} `}
-            titleColor={solidMint.brand}
+            titleColor={colors.brand}
             flexDirection="column"
           >
             <For each={visibleItems()}>
@@ -364,17 +369,17 @@ export function SolidComposer(props: SolidComposerProps) {
                 return (
                   <box
                     width="100%"
-                    backgroundColor={isSelected() ? solidMint.inputFocusBg : solidMint.panelBg}
+                    backgroundColor={isSelected() ? colors.inputFocusBg : colors.panelBg}
                     paddingLeft={1}
                   >
-                    <text fg={isSelected() ? solidMint.brand : solidMint.body}>
+                    <text fg={isSelected() ? colors.brand : colors.body}>
                       {`${isSelected() ? "▸" : " "} ${item.name}  ${item.description}`}
                     </text>
                   </box>
                 )
               }}
             </For>
-            <text fg={solidMint.muted}>{active().footer}</text>
+            <text fg={colors.muted}>{active().footer}</text>
           </box>
         )}
       </Show>
@@ -383,13 +388,13 @@ export function SolidComposer(props: SolidComposerProps) {
           width="100%"
           flexShrink={0}
           flexDirection="column"
-          backgroundColor={solidMint.panelBg}
+          backgroundColor={colors.panelBg}
           border
-          borderColor={solidMint.panelBorder}
+          borderColor={colors.panelBorder}
           paddingLeft={1}
           paddingRight={1}
           title=" Attachments "
-          titleColor={solidMint.brand}
+          titleColor={colors.brand}
         >
           <For each={attachments()}>
             {(item) => (
@@ -399,19 +404,19 @@ export function SolidComposer(props: SolidComposerProps) {
                   flexGrow={1}
                 >
                   <text wrapMode="none">
-                    <span style={{ fg: solidMint.body }}>{attachmentChipLabel(item)}</span>
+                    <span style={{ fg: colors.body }}>{attachmentChipLabel(item)}</span>
                   </text>
                 </box>
                 <box onMouseUp={() => props.onRemoveAttachment?.(item.id)}>
                   <text wrapMode="none">
-                    <span style={{ fg: solidMint.muted }}>✕</span>
+                    <span style={{ fg: colors.muted }}>✕</span>
                   </text>
                 </box>
               </box>
             )}
           </For>
           <text wrapMode="none">
-            <span style={{ fg: solidMint.muted }}>click preview · ✕ remove · submit sends @paths</span>
+            <span style={{ fg: colors.muted }}>click preview · ✕ remove · submit sends @paths</span>
           </text>
         </box>
       </Show>
@@ -419,14 +424,14 @@ export function SolidComposer(props: SolidComposerProps) {
         width="100%"
         flexShrink={0}
         border
-        borderColor={solidMint.panelBorder}
-        backgroundColor={solidMint.panelBg}
+        borderColor={colors.panelBorder}
+        backgroundColor={colors.panelBg}
         paddingLeft={1}
         paddingRight={1}
         paddingTop={0}
         paddingBottom={0}
         title=" Compose "
-        titleColor={solidMint.brand}
+        titleColor={colors.brand}
       >
         <textarea
           ref={(next: TextareaRenderable) => {
@@ -452,12 +457,12 @@ export function SolidComposer(props: SolidComposerProps) {
           placeholder={
             props.placeholder ?? "Message Veasel…  ·  / commands  ·  @ paths  ·  $ skills"
           }
-          placeholderColor={solidMint.muted}
-          textColor={solidMint.inputText}
-          focusedTextColor={solidMint.inputText}
-          backgroundColor={solidMint.inputBg}
-          focusedBackgroundColor={solidMint.inputFocusBg}
-          cursorColor={solidMint.cursor}
+          placeholderColor={colors.muted}
+          textColor={colors.inputText}
+          focusedTextColor={colors.inputText}
+          backgroundColor={colors.inputBg}
+          focusedBackgroundColor={colors.inputFocusBg}
+          cursorColor={colors.cursor}
           keyBindings={composerKeyBindings}
           onPaste={handlePaste}
           onCursorChange={() => {

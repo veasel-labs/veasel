@@ -8,7 +8,7 @@ import {
   type PaletteCommand,
 } from "../commands"
 import { DialogHeader, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type CommandPaletteProps = {
   commands: PaletteCommand[]
@@ -19,6 +19,7 @@ export type CommandPaletteProps = {
 const visibleDefault = 8
 
 export function CommandPalette(props: CommandPaletteProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal(0)
@@ -93,12 +94,12 @@ export function CommandPalette(props: CommandPaletteProps) {
         width="100%"
         focused={true}
         placeholder="Filter commands…"
-        placeholderColor={solidMint.muted}
-        textColor={solidMint.inputText}
-        focusedTextColor={solidMint.inputText}
-        backgroundColor={solidMint.inputBg}
-        focusedBackgroundColor={solidMint.inputFocusBg}
-        cursorColor={solidMint.cursor}
+        placeholderColor={colors.muted}
+        textColor={colors.inputText}
+        focusedTextColor={colors.inputText}
+        backgroundColor={colors.inputBg}
+        focusedBackgroundColor={colors.inputFocusBg}
+        cursorColor={colors.cursor}
         onInput={(value: string) => {
           setQuery(value)
           setSelected(0)
@@ -106,7 +107,7 @@ export function CommandPalette(props: CommandPaletteProps) {
       />
       <Show
         when={filtered().length > 0}
-        fallback={<text fg={solidMint.muted}>No matching commands</text>}
+        fallback={<text fg={colors.muted}>No matching commands</text>}
       >
         <box width="100%" flexDirection="column">
           <For each={windowed()}>
@@ -118,15 +119,15 @@ export function CommandPalette(props: CommandPaletteProps) {
                 <box
                   width="100%"
                   flexDirection="row"
-                  backgroundColor={active() ? solidMint.inputFocusBg : solidMint.panelBg}
+                  backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
                 >
-                  <text fg={active() ? solidMint.brand : solidMint.body}>
+                  <text fg={active() ? colors.brand : colors.body}>
                     {active() ? "▸ " : "  "}
                     {command.title}
                   </text>
-                  <text fg={solidMint.muted}>
+                  <text fg={colors.muted}>
                     {"  "}
                     {command.group}
                     {command.shortcut ? ` · ${command.shortcut}` : ""}
@@ -136,7 +137,7 @@ export function CommandPalette(props: CommandPaletteProps) {
             }}
           </For>
         </box>
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           {filtered().length} match{filtered().length === 1 ? "" : "es"} · ↑/↓ · Enter
         </text>
       </Show>

@@ -10,7 +10,7 @@ import {
   type SessionListEntry,
 } from "../../session-list"
 import { DialogHeader, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import { openSessionRenameDialog } from "./session-rename-dialog"
 
 export type SolidSessionEntry = SessionListEntry & {
@@ -38,6 +38,7 @@ export function demoSessions(): SolidSessionEntry[] {
 }
 
 export function SessionListDialog(props: SessionListDialogProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [sessions, setSessions] = createSignal<SolidSessionEntry[]>([...props.sessions])
   const [query, setQuery] = createSignal("")
@@ -176,7 +177,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title="Sessions" hint="Enter · r rename · n new · Esc" />
       <Show when={filterHeader()}>
-        {(header) => <text fg={solidMint.muted}>{header()}</text>}
+        {(header) => <text fg={colors.muted}>{header()}</text>}
       </Show>
       <input
         ref={(next: InputRenderable) => {
@@ -185,12 +186,12 @@ export function SessionListDialog(props: SessionListDialogProps) {
         width="100%"
         focused={true}
         placeholder="Filter sessions…"
-        placeholderColor={solidMint.muted}
-        textColor={solidMint.inputText}
-        focusedTextColor={solidMint.inputText}
-        backgroundColor={solidMint.inputBg}
-        focusedBackgroundColor={solidMint.inputFocusBg}
-        cursorColor={solidMint.cursor}
+        placeholderColor={colors.muted}
+        textColor={colors.inputText}
+        focusedTextColor={colors.inputText}
+        backgroundColor={colors.inputBg}
+        focusedBackgroundColor={colors.inputFocusBg}
+        cursorColor={colors.cursor}
         onInput={(value: string) => {
           setQuery(value)
           setSelected(0)
@@ -199,7 +200,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
       <Show
         when={filtered().length > 0}
         fallback={
-          <text fg={solidMint.muted}>
+          <text fg={colors.muted}>
             {query().trim()
               ? "No sessions match this filter."
               : "No sessions yet. Press n to start one."}
@@ -217,15 +218,15 @@ export function SessionListDialog(props: SessionListDialogProps) {
                 <box
                   width="100%"
                   flexDirection="column"
-                  backgroundColor={active() ? solidMint.inputFocusBg : solidMint.panelBg}
+                  backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
                 >
-                  <text fg={active() ? solidMint.brand : solidMint.body}>
+                  <text fg={active() ? colors.brand : colors.body}>
                     {active() ? "▸ " : currentSession() ? "● " : "  "}
                     {session.title}
                   </text>
-                  <text fg={solidMint.muted}>
+                  <text fg={colors.muted}>
                     {"    "}
                     {session.directory}
                   </text>
@@ -234,7 +235,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
             }}
           </For>
         </box>
-        <text fg={solidMint.muted}>
+        <text fg={colors.muted}>
           {filtered().length} session{filtered().length === 1 ? "" : "s"} · ↑/↓ · 1-9 jump
         </text>
       </Show>

@@ -30,6 +30,7 @@ import {
   resolveAttachmentPath,
   type ComposerAttachment,
 } from "./composer-attachments"
+import { resolveLiveSlash } from "./live-slash"
 import {
   applyComposerReadlineKey,
   emptyComposerReadlineState,
@@ -175,6 +176,20 @@ export function SolidComposer(props: SolidComposerProps) {
     const cursor = area?.cursorOffset ?? value.length
     const active = menu()
     if (!active) return false
+    // Prefer an already-typed runnable LiveApp slash over a fuzzy description
+    // hit (e.g. `/status` must not become `/patches` via "filter by … status").
+    if (mode === "enter" && active.kind === "slash") {
+      const trimmed = value.trimEnd()
+      const action = resolveLiveSlash(trimmed)
+      if (
+        action.kind !== "passthrough"
+        && action.kind !== "unknown"
+        && action.kind !== "unsupported"
+      ) {
+        send(trimmed)
+        return true
+      }
+    }
     const result = acceptComposerAutocomplete({
       value,
       cursor,

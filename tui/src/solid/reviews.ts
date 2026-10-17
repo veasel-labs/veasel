@@ -67,6 +67,11 @@ export type SolidReviewItem = SolidPatchReview | SolidCommandReview | SolidMcpRe
 
 export type ReviewDecision = "approve" | "reject"
 
+export type ReviewDecisionResult = {
+  settled: ActiveReview[]
+  failed: string[]
+}
+
 export function toActiveReview(item: Pick<SolidReviewItem, "kind" | "id" | "pending">): ActiveReview {
   return { kind: item.kind, id: item.id, pending: item.pending }
 }

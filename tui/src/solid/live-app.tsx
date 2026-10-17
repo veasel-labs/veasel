@@ -173,6 +173,10 @@ function LiveAppShell(props: LiveAppProps) {
   const [activeSessionId, setActiveSessionId] = createSignal<string | undefined>()
   /** Session ids with background turn completions while another tab is focused. */
   const [unreadSessionIds, setUnreadSessionIds] = createSignal<Record<string, true>>({})
+  // Invalidates history reads when navigating, including A -> B -> A.
+  let sessionViewRevision = 0
+  let historyRevision = 0
+  let disposed = false
   const [messages, setMessages] = createSignal<ToolAwareMessage[]>([])
   const [lastError, setLastError] = createSignal<LiveLastError | undefined>()
   const [oldestTurnId, setOldestTurnId] = createSignal<number | undefined>()
@@ -206,6 +210,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [homeComposerOpen, setHomeComposerOpen] = createSignal(false)
 
   const applyHistoryPage = (turns: ChatTurn[], mode: "replace" | "prepend") => {
+    historyRevision++
     const mapped = transcriptMessagesFromChatTurns(turns)
     if (mode === "replace") {
       setMessages(mapped)
@@ -586,20 +591,20 @@ function LiveAppShell(props: LiveAppProps) {
       }
       openReviewPanel(dialog, {
         reviews,
-        onDecide: (decision, targets) => {
-          void (async () => {
-            const result = await decideSolidReviews(props.api, sessionId, decision, targets)
-            const verb = decision === "approve" ? "Approved" : "Rejected"
-            if (result.ok > 0) {
-              toast.success(
-                `${verb} ${result.ok} review${result.ok === 1 ? "" : "s"}`,
-                "Reviews",
-              )
-            }
-            if (result.failed.length > 0) {
-              toast.info(result.failed[0]!, "Reviews")
-            }
-          })()
+        onClose: () => setComposerFocused(true),
+        onDecide: async (decision, targets) => {
+          const result = await decideSolidReviews(props.api, sessionId, decision, targets)
+          const verb = decision === "approve" ? "Approved" : "Rejected"
+          if (result.settled.length > 0) {
+            toast.success(
+              `${verb} ${result.settled.length} review${result.settled.length === 1 ? "" : "s"}`,
+              "Reviews",
+            )
+          }
+          if (result.failed.length > 0) {
+            toast.info(result.failed[0]!, "Reviews")
+          }
+          return result
         },
       })
     } catch (error) {
@@ -865,12 +870,18 @@ function LiveAppShell(props: LiveAppProps) {
       toast.info("No earlier chat messages", "History")
       return
     }
+    const viewRevision = sessionViewRevision
+    const pageRevision = historyRevision
+    const isCurrent = () => !disposed
+      && viewRevision === sessionViewRevision
+      && pageRevision === historyRevision
     setStatus(formatBusyStatus("loading earlier messages…"))
     try {
       const older = await props.api.listMessages(sessionId, {
         before,
         limit: historyPageSize,
       })
+      if (!isCurrent()) return
       applyHistoryPage(older, "prepend")
       toast.success(
         older.length > 0
@@ -880,6 +891,7 @@ function LiveAppShell(props: LiveAppProps) {
       )
       setStatus("● connected  ·  listening for activity")
     } catch (error) {
+      if (!isCurrent()) return
       setStatus(
         formatErrorStatus(
           `history load failed  ·  ${error instanceof Error ? error.message : "request failed"}`,
@@ -961,6 +973,7 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const openSession = async (session: SolidSessionEntry) => {
+    const viewRevision = ++sessionViewRevision
     setActiveSessionId(session.id)
     setUnreadSessionIds((current) => clearSessionUnread(current, session.id))
     setMessages([])
@@ -972,9 +985,11 @@ function LiveAppShell(props: LiveAppProps) {
     setComposerFocused(true)
     try {
       const turns = await props.api.listMessages(session.id, { limit: historyPageSize })
+      if (disposed || viewRevision !== sessionViewRevision) return
       applyHistoryPage(turns, "replace")
       setStatus("● connected  ·  listening for activity")
     } catch (error) {
+      if (disposed || viewRevision !== sessionViewRevision) return
       noteError(
         "sessions.open",
         `could not open session  ·  ${error instanceof Error ? error.message : "request failed"}`,
@@ -1008,6 +1023,7 @@ function LiveAppShell(props: LiveAppProps) {
       const oldest = handledCompletions.values().next().value
       if (oldest) handledCompletions.delete(oldest)
     }
+    const viewRevision = sessionViewRevision
     const focused = activeSessionId() === sessionId
     if (!focused) {
       setUnreadSessionIds((current) => markSessionUnread(current, sessionId, activeSessionId()))
@@ -1015,7 +1031,7 @@ function LiveAppShell(props: LiveAppProps) {
     }
     try {
       const latest = await props.api.listMessages(sessionId, { limit: historyPageSize })
-      if (activeSessionId() === sessionId) {
+      if (!disposed && viewRevision === sessionViewRevision && activeSessionId() === sessionId) {
         applyHistoryPage(latest, "replace")
       }
     } catch {
@@ -1167,7 +1183,9 @@ function LiveAppShell(props: LiveAppProps) {
         executionPolicyForAgent(executionPolicy()),
       )
       if (result.kind === "async") return
-      applyHistoryPage(result.messages, "replace")
+      if (!disposed && activeSessionId() === sessionId) {
+        applyHistoryPage(result.messages, "replace")
+      }
       setStreaming(false)
       setStreamingText("")
       setSending(false)
@@ -1905,6 +1923,8 @@ function LiveAppShell(props: LiveAppProps) {
   })
 
   onCleanup(() => {
+    disposed = true
+    sessionViewRevision++
     turnController?.abort()
   })
 
@@ -1962,6 +1982,7 @@ function LiveAppShell(props: LiveAppProps) {
             void createSession()
           }}
           onCloseActive={() => {
+            sessionViewRevision++
             setActiveSessionId(undefined)
             setMessages([])
             setOldestTurnId(undefined)

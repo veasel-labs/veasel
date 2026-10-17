@@ -194,6 +194,7 @@ function AppShell(props: SolidAppProps) {
     setComposerFocused(false)
     openReviewPanel(dialog, {
       reviews: reviews(),
+      onClose: () => setComposerFocused(true),
       onDecide: (decision, targets) => {
         props.onReviewDecide?.(decision, targets)
         setReviews((prev) => settleReviews(prev, targets))
@@ -202,6 +203,7 @@ function AppShell(props: SolidAppProps) {
           `${verb} ${targets.length} review${targets.length === 1 ? "" : "s"} (Solid stub)`,
           "Reviews",
         )
+        return { settled: targets, failed: [] }
       },
     })
   }

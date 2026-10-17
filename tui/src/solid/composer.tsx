@@ -69,6 +69,7 @@ function kindTitle(kind: ComposerAutocompleteMenu["kind"]): string {
 export function SolidComposer(props: SolidComposerProps) {
   const colors = useSolidTheme()
   const [draft, setDraft] = createSignal("")
+  const [caret, setCaret] = createSignal(0)
   const [selected, setSelected] = createSignal(0)
   const [dismissed, setDismissed] = createSignal<ComposerAutocompleteDismissed | undefined>(undefined)
   const [readline, setReadline] = createSignal<ComposerReadlineState>(emptyComposerReadlineState())
@@ -83,6 +84,7 @@ export function SolidComposer(props: SolidComposerProps) {
   const applyRestore = (token: { id: string; text: string }) => {
     lastRestoreId = token.id
     pendingRestore = undefined
+    setCaret(token.text.length)
     setDraft(token.text)
     setDismissed(undefined)
     setSelected(0)
@@ -104,7 +106,7 @@ export function SolidComposer(props: SolidComposerProps) {
 
   const menu = createMemo(() => {
     const value = draft()
-    const cursor = area?.cursorOffset ?? value.length
+    const cursor = caret()
     return resolveComposerAutocomplete({
       value,
       cursor,
@@ -143,6 +145,7 @@ export function SolidComposer(props: SolidComposerProps) {
   })
 
   const applyEdit = (value: string, cursor: number) => {
+    setCaret(cursor)
     if (!area) {
       setDraft(value)
       setDismissed(undefined)
@@ -158,6 +161,7 @@ export function SolidComposer(props: SolidComposerProps) {
   }
 
   const clearComposer = () => {
+    setCaret(0)
     area?.setText("")
     setDraft("")
     props.onDraftChange?.("")
@@ -253,6 +257,18 @@ export function SolidComposer(props: SolidComposerProps) {
     }
 
     if (active) {
+      if (key.name === "left" || key.name === "right") {
+        consume()
+        const options = { select: key.shift }
+        if (key.ctrl || key.meta) {
+          if (key.name === "left") area?.moveWordBackward(options)
+          else area?.moveWordForward(options)
+        } else {
+          if (key.name === "left") area?.moveCursorLeft(options)
+          else area?.moveCursorRight(options)
+        }
+        return
+      }
       if (key.name === "down") {
         consume()
         setSelected((current) => moveComposerAutocomplete(current, 1, active.items.length))
@@ -449,6 +465,13 @@ export function SolidComposer(props: SolidComposerProps) {
           cursorColor={colors.cursor}
           keyBindings={composerKeyBindings}
           onPaste={handlePaste}
+          onCursorChange={() => {
+            const next = area?.cursorOffset ?? 0
+            if (next === caret()) return
+            setCaret(next)
+            setSelected(0)
+            setDismissed(undefined)
+          }}
           onContentChange={() => {
             const next = area?.plainText ?? ""
             setDraft(next)

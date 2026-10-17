@@ -47,6 +47,11 @@ tool the agent advertises. Two integration facts worth knowing:
 The Pi adapter (`--agent pi`) uses the same provider and check, configured
 through an isolated `PI_CODING_AGENT_DIR` so user Pi state is never touched.
 
+The Codex adapter (`--agent codex`) uses `responses_provider.py`, a scripted
+OpenAI Responses endpoint, through an isolated `CODEX_HOME`. Its scripted
+tool is `exec_command` (shell), not Codex's freeform apply_patch tool, so it
+measures shell-tool orchestration only.
+
 First local comparison (2026-10-17, scripted replies, cold CLI runs, same
 external check — all passing):
 
@@ -54,11 +59,11 @@ external check — all passing):
 | --- | --- |
 | Veasel | 264 ms |
 | Pi 0.85.1 | 492 ms |
+| Codex 0.163.0 | 4,132 ms |
 | OpenCode 2.0.27 | 4,588 ms |
 
 This measures harness/startup orchestration only — scripted replies say
 nothing about model quality, and no superiority claim is supported until
 real same-model runs with an authorized budget record model, provider,
-versions, limits and raw outcomes per `docs/benchmarking.md`. Codex and
-mini-SWE-agent adapters remain follow-ups (Codex needs a Responses-API
-scripted endpoint).
+versions, limits and raw outcomes per `docs/benchmarking.md`. A
+mini-SWE-agent adapter remains a follow-up.

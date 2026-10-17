@@ -76,6 +76,36 @@ describe("acceptComposerAutocomplete", () => {
     expect(result).toEqual({ value: "see @src/main.ts ", cursor: 17 })
   })
 
+  test("bumps path frecency when accepting an @ mention", () => {
+    const bumped: string[] = []
+    const result = acceptComposerAutocomplete({
+      value: "see @src/ma",
+      cursor: 11,
+      selected: 0,
+      listPaths: () => ["src/main.ts", "src/main.test.ts"],
+      pathFrecency: {
+        get: () => 0,
+        bump: (path) => bumped.push(path),
+      },
+    })
+    expect(result?.value).toBe("see @src/main.ts ")
+    expect(bumped).toEqual(["src/main.ts"])
+  })
+
+  test("ranks empty @ menu by path frecency", () => {
+    const menu = resolveComposerAutocomplete({
+      value: "see @",
+      cursor: 5,
+      listPaths: () => ["zzz/rare.ts", "src/main.ts", "aaa/other.ts"],
+      pathFrecency: {
+        get: (path) => (path === "src/main.ts" ? 8 : 0),
+      },
+    })
+    expect(menu?.kind).toBe("path")
+    expect(menu?.items[0]?.name).toBe("@src/main.ts")
+    expect(menu?.items[0]?.description).toBe("recent path")
+  })
+
   test("inserts a skill mention with a trailing space", () => {
     const result = acceptComposerAutocomplete({
       value: "$demo/code",

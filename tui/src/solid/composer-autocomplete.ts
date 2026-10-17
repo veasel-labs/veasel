@@ -16,6 +16,7 @@ import {
   completePathMention,
   pathMentionAt,
   suggestWorkspacePaths,
+  type PathFrecencyLookup,
   type PathSuggestion,
 } from "../path-autocomplete"
 import {
@@ -58,6 +59,7 @@ export type ResolveComposerAutocompleteOptions = {
   slashContext?: SlashCompletionContext
   workspaceRoot?: string
   listPaths?: (root: string) => string[]
+  pathFrecency?: PathFrecencyLookup & { bump?: (path: string) => void }
   dismissed?: ComposerAutocompleteDismissed
   selected?: number
 }
@@ -83,7 +85,13 @@ export function resolveComposerAutocomplete(
   const pathMention = pathMentionAt(value, cursor)
   if (pathMention && !value.trimStart().startsWith("/")) {
     if (dismissed?.kind === "path" && dismissed.value === value) return undefined
-    const items = suggestWorkspacePaths(pathMention.query, root, options.listPaths)
+    const items = suggestWorkspacePaths(
+      pathMention.query,
+      root,
+      options.listPaths,
+      undefined,
+      options.pathFrecency,
+    )
     return menuFromItems("path", items.map(pathItem), options.selected, pathFooter)
   }
 
@@ -176,7 +184,9 @@ export function acceptComposerAutocomplete(
       description: menu.items[index]!.description,
       path,
     }
-    return completePathMention(value, cursor, suggestion)
+    const completed = completePathMention(value, cursor, suggestion)
+    if (completed) options.pathFrecency?.bump?.(path)
+    return completed
   }
 
   if (menu.kind === "skill") {

@@ -38,6 +38,22 @@ describe("filterWorkspacePaths", () => {
     expect(filterWorkspacePaths(paths, "main").map((item) => item.path)[0]).toBe("src/main.ts")
     expect(filterWorkspacePaths(paths, "main")[0]?.description).toBe("name match")
   })
+
+  test("boosts frecency hits when ranking empty and matching queries", () => {
+    const paths = ["zzz/rare.ts", "src/main.ts", "aaa/other.ts"]
+    const pathFrecency = {
+      get: (path: string) => (path === "src/main.ts" ? 10 : 0),
+    }
+    expect(filterWorkspacePaths(paths, "", 3, pathFrecency).map((item) => item.path)).toEqual([
+      "src/main.ts",
+      "aaa/other.ts",
+      "zzz/rare.ts",
+    ])
+    expect(filterWorkspacePaths(paths, "", 3, pathFrecency)[0]?.description).toBe("recent path")
+    expect(filterWorkspacePaths(paths, "ts", 2, pathFrecency).map((item) => item.path)[0]).toBe(
+      "src/main.ts",
+    )
+  })
 })
 
 describe("listWorkspacePaths", () => {

@@ -36,6 +36,7 @@ import {
   rememberReadlineSubmit,
   type ComposerReadlineState,
 } from "./composer-readline"
+import { sharedPathFrecencyStore } from "../path-frecency"
 
 export type SolidComposerProps = {
   placeholder?: string
@@ -73,6 +74,7 @@ export function SolidComposer(props: SolidComposerProps) {
   let lastRestoreId: string | undefined
 
   const skills = () => props.skills ?? demoComposerSkills()
+  const pathFrecency = sharedPathFrecencyStore()
 
   createEffect(() => {
     const token = props.restoreToken
@@ -98,6 +100,7 @@ export function SolidComposer(props: SolidComposerProps) {
       slashContext: props.slashContext,
       workspaceRoot: props.workspaceRoot,
       listPaths: props.listPaths,
+      pathFrecency,
       dismissed: dismissed(),
       selected: selected(),
     })
@@ -172,6 +175,7 @@ export function SolidComposer(props: SolidComposerProps) {
       slashContext: props.slashContext,
       workspaceRoot: props.workspaceRoot,
       listPaths: props.listPaths,
+      pathFrecency,
       selected: active.selected,
     })
     if (!result) {

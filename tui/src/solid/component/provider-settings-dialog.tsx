@@ -73,7 +73,12 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   const submit = () => {
     const provider = matches()[selected()]
     if (!provider) return
-    props.onSelect?.(provider)
+    // onSelect typically dialog.replace()s the API-key / follow-up prompt.
+    // Clearing after that would wipe the next dialog (broken /connect paste flow).
+    if (props.onSelect) {
+      props.onSelect(provider)
+      return
+    }
     dialog.clear()
   }
 
@@ -149,7 +154,10 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
                   paddingLeft={1}
                   paddingRight={1}
                   onMouseUp={() => {
-                    props.onSelect?.(provider)
+                    if (props.onSelect) {
+                      props.onSelect(provider)
+                      return
+                    }
                     dialog.clear()
                   }}
                 >

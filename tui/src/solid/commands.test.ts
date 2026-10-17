@@ -134,6 +134,7 @@ describe("Solid palette commands", () => {
   test("live palette exposes settings, theme, stash, open, workspaces, quit", () => {
     const ran: string[] = []
     const commands = buildLivePaletteCommands({
+      cancelTurn: () => ran.push("cancel"),
       showHelp: () => ran.push("help"),
       openSettings: () => ran.push("settings"),
       showModelPicker: () => ran.push("model"),
@@ -178,6 +179,7 @@ describe("Solid palette commands", () => {
       quit: () => ran.push("quit"),
     })
     expect(commands.map((command) => command.id)).toEqual([
+      "veasel.turn.cancel",
       "veasel.help",
       "veasel.settings",
       "veasel.model.picker",

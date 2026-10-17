@@ -404,6 +404,7 @@ export function paletteHelpText(compact = true): string {
 }
 
 export type LivePaletteHandlers = {
+  cancelTurn: () => void
   showHelp: () => void
   openSettings: () => void
   showModelPicker: () => void
@@ -448,6 +449,15 @@ export type LivePaletteHandlers = {
 /** Live HTTP shell palette — subset wired to real session/settings actions. */
 export function buildLivePaletteCommands(handlers: LivePaletteHandlers): PaletteCommand[] {
   return [
+    {
+      id: "veasel.turn.cancel",
+      title: "Stop active turn",
+      description: "Request server cancellation of the active operation",
+      group: "session",
+      keywords: ["stop", "cancel", "interrupt"],
+      shortcut: "Ctrl+X",
+      run: () => handlers.cancelTurn(),
+    },
     {
       id: "veasel.help",
       title: "Show quick help",

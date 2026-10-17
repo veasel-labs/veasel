@@ -70,3 +70,44 @@ for (const failFirst of [false, true]) {
     } finally { setup?.renderer.destroy(); server.stop(true) }
   })
 }
+
+test("late detail response cannot mark a review inspected after navigating away", async () => {
+  const reviews = ["first", "second"].map((id) => ({
+    kind: "patch" as const, id, path: `${id}.v`, diff: "", pending: true, inspected: false,
+  }))
+  let resolveFirst!: (item: typeof reviews[number]) => void
+  const firstDetail = new Promise<typeof reviews[number]>((resolve) => { resolveFirst = resolve })
+  let firstRequests = 0
+  let decisions = 0
+  const setup = await testRender(() => <DialogProvider><Harness
+    reviews={reviews}
+    onInspect={async (target) => {
+      if (target.id === "first" && ++firstRequests === 1) return await firstDetail
+      return { ...reviews.find((item) => item.id === target.id)!, diff: `+visible-${target.id}` }
+    }}
+    onDecide={(_decision, targets) => { decisions++; return { settled: targets, failed: [] } }}
+  /></DialogProvider>, { width: 100, height: 35, kittyKeyboard: true })
+  try {
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Loading review details")
+    setup.mockInput.pressKey("n")
+    await setup.renderOnce()
+    await setup.renderOnce()
+    resolveFirst({ ...reviews[0]!, diff: "+late-first" })
+    await Bun.sleep(5)
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("visible-second")
+    expect(setup.captureCharFrame()).not.toContain("late-first")
+    setup.mockInput.pressKey("a", { shift: true })
+    await setup.renderOnce()
+    expect(decisions).toBe(0)
+    setup.mockInput.pressKey("p")
+    await Bun.sleep(5)
+    await setup.renderOnce()
+    expect(firstRequests).toBe(2)
+    expect(setup.captureCharFrame()).toContain("visible-first")
+  } finally {
+    resolveFirst(reviews[0]!)
+    setup.renderer.destroy()
+  }
+})

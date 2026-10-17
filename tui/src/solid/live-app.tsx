@@ -121,6 +121,7 @@ import {
   removeDraftStash,
   saveDraftStash,
 } from "./draft-stash"
+import { loadSessionDrafts, saveSessionDrafts, upsertSessionDraft } from "./session-drafts"
 import {
   addComposerAttachment,
   asciiImagePreview,
@@ -361,21 +362,31 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
-  const sessionDrafts = new Map<string, { text: string; attachments: ComposerAttachment[] }>()
+  let sessionDrafts = loadSessionDrafts()
   let draftRevision = 0
+
+  // Drafts are scoped to the session's workspace so reused session ids on
+  // other servers or directories never restore each other's text.
+  const draftKey = (id: string) => `${directory()}\n${id}`
 
   const rememberSessionDraft = () => {
     const id = activeSessionId()
     if (!id) return
-    if (!composerDraft() && attachments().length === 0) {
-      sessionDrafts.delete(id)
-      return
-    }
-    sessionDrafts.set(id, { text: composerDraft(), attachments: [...attachments()] })
+    sessionDrafts = upsertSessionDraft(sessionDrafts, draftKey(id), { text: composerDraft(), attachments: [...attachments()] })
+    saveSessionDrafts(sessionDrafts)
   }
 
+  // Persist while typing (debounced) so a crash or restart keeps the draft.
+  createEffect(() => {
+    composerDraft()
+    attachments()
+    activeSessionId()
+    const timer = setTimeout(rememberSessionDraft, 250)
+    onCleanup(() => clearTimeout(timer))
+  })
+
   const restoreSessionDraft = (id: string) => {
-    const draft = sessionDrafts.get(id)
+    const draft = sessionDrafts.get(draftKey(id))
     const text = draft?.text ?? ""
     setComposerDraft(text)
     setAttachments(draft?.attachments ?? [])

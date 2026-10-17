@@ -570,3 +570,9 @@ honoring its license and attribution.
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
+
+### Cursor-aware composer completion
+
+- Path and Skill menus now track native editor cursor changes, including movement back into a mention without editing the draft.
+- Left/right navigation remains usable while a completion menu is open; Ctrl/Alt word movement and Shift selection use OpenTUI editor methods. Completing a mention preserves the text after it.
+- Rendered keyboard regressions cover both path and Skill mentions, entering/leaving menus, and suffix preservation.

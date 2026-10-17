@@ -596,6 +596,10 @@ honoring its license and attribution.
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
 
+### First-run project picker
+
+- The production Open dialog no longer falls back to demo projects when no session exists. It offers a real new-session action for the current project.
+- A rendered LiveApp test exercises Ctrl+O, selection, and the resulting HTTP session creation request. No model call is needed.
 ### Conversation surfaces and wrapping
 
 - User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.

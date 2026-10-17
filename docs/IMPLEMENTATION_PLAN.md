@@ -602,6 +602,10 @@ honoring its license and attribution.
 - Production approval requires every target to have successfully loaded its details in this panel. Batch approval remains available after inspection; unseen targets block the batch. Rejection remains available without inspection.
 - Detail failures remain visible with `r` retry; superseded or disposed detail responses cannot replace the current view.
 - Loopback HTTP and rendered keyboard tests cover inventory requests, unseen-item gating, batch approval after navigation, and detail retry. This is a client workflow guarantee, not proof a human read every line or an OS sandbox guarantee.
+### First-run project picker
+
+- The production Open dialog no longer falls back to demo projects when no session exists. It offers a real new-session action for the current project.
+- A rendered LiveApp test exercises Ctrl+O, selection, and the resulting HTTP session creation request. No model call is needed.
 ### Conversation surfaces and wrapping
 
 - User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.

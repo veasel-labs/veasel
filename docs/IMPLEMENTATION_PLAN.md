@@ -103,7 +103,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the current TUI process. Session switching updates project context for file
   completion and relative attachments; submitted text is cleared consistently.
   Real LiveApp keyboard/HTTP tests verify that session B does not submit A's
-  pending attachment. Automatic draft recovery after process restart remains open.
+  pending attachment. Drafts now also persist across TUI restarts in
+  `~/.local/state/veasel/session-drafts.json` (0600, workspace-scoped keys,
+  50-session cap, debounced saves while typing), so reopening a session
+  restores its pending text and attachments.
 - [x] LiveApp history responses are scoped to the current session visit.
   Late success/error responses cannot replace a newer session view, including
   A → B → A navigation. Older-page responses are discarded after navigation or

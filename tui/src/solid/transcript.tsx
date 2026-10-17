@@ -14,6 +14,7 @@ import {
   type TranscriptTone,
 } from "../transcript"
 import { scrollOffsetFromBottom, transcriptBelowCue, transcriptSegmentLines } from "../transcript-scroll"
+import { prefersReducedMotion, streamingCursorForMotion } from "../reduced-motion"
 import {
   activityGroupHeader,
   activityItemLine,
@@ -508,7 +509,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       pendingUserMessage: props.pendingUserMessage,
       streaming: props.streaming,
       streamingText: props.streamingText,
-      streamingCursor: props.streamingCursor,
+      streamingCursor: props.streamingCursor ?? streamingCursorForMotion(prefersReducedMotion()),
       hasOlder: props.hasOlder,
       cols: props.cols,
     })

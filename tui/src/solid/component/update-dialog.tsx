@@ -3,7 +3,7 @@ import { For, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type UpdateDialogState =
   | { type: "current"; version: string }
@@ -36,6 +36,7 @@ export function demoUpdateAvailable(): UpdateDialogState {
 type UpdateChoice = "skip" | "install"
 
 export function UpdateDialog(props: UpdateDialogProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [active, setActive] = createSignal<UpdateChoice>("install")
 
@@ -84,29 +85,29 @@ export function UpdateDialog(props: UpdateDialogProps) {
                 <box
                   paddingLeft={2}
                   paddingRight={2}
-                  backgroundColor={selected() ? solidMint.inputFocusBg : undefined}
+                  backgroundColor={selected() ? colors.inputFocusBg : undefined}
                   onMouseUp={() => finish(key)}
                 >
-                  <text fg={selected() ? solidMint.brand : solidMint.muted}>{label}</text>
+                  <text fg={selected() ? colors.brand : colors.muted}>{label}</text>
                 </box>
               )
             })}
           </box>
         ) : (
-          <text fg={solidMint.muted}>Release channel stub · no live download in TUI yet</text>
+          <text fg={colors.muted}>Release channel stub · no live download in TUI yet</text>
         )
       }
     >
       {props.state.type === "checking" ? (
-        <text fg={solidMint.muted}>Contacting release metadata…</text>
+        <text fg={colors.muted}>Contacting release metadata…</text>
       ) : props.state.type === "current" ? (
-        <text fg={solidMint.body}>Running {props.state.version}</text>
+        <text fg={colors.body}>Running {props.state.version}</text>
       ) : (
         <box flexDirection="column" gap={1}>
-          <text fg={solidMint.body}>Veasel {props.state.version}</text>
+          <text fg={colors.body}>Veasel {props.state.version}</text>
           <For each={props.state.notes}>
             {(line) => (
-              <text fg={solidMint.muted} wrapMode="word">
+              <text fg={colors.muted} wrapMode="word">
                 • {line}
               </text>
             )}

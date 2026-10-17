@@ -2,7 +2,7 @@
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type DialogAlertProps = {
   title: string
@@ -12,6 +12,7 @@ export type DialogAlertProps = {
 }
 
 export function DialogAlert(props: DialogAlertProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const label = () => props.confirmLabel ?? "ok"
 
@@ -35,15 +36,15 @@ export function DialogAlert(props: DialogAlertProps) {
           <box
             paddingLeft={2}
             paddingRight={2}
-            backgroundColor={solidMint.inputFocusBg}
+            backgroundColor={colors.inputFocusBg}
             onMouseUp={confirm}
           >
-            <text fg={solidMint.brand}>{label()}</text>
+            <text fg={colors.brand}>{label()}</text>
           </box>
         </box>
       }
     >
-      <text fg={solidMint.muted}>{props.message}</text>
+      <text fg={colors.muted}>{props.message}</text>
     </DialogLayout>
   )
 }

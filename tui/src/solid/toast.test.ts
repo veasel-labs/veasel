@@ -4,14 +4,14 @@ import {
   toastBorderColor,
   toastVariantLabel,
 } from "./ui/toast"
-import { solidMint } from "./theme"
+import { themes } from "../themes"
 
 describe("Solid toast helpers", () => {
   test("maps variants to mint status / brand borders", () => {
-    expect(toastBorderColor("info")).toBe(solidMint.brand)
-    expect(toastBorderColor("success")).toBe(solidMint.statusOk)
-    expect(toastBorderColor("warning")).toBe(solidMint.statusWarn)
-    expect(toastBorderColor("error")).toBe(solidMint.statusError)
+    expect(toastBorderColor("info")).toBe(themes.mint.brand)
+    expect(toastBorderColor("success")).toBe(themes.mint.statusOk)
+    expect(toastBorderColor("warning")).toBe(themes.mint.statusWarn)
+    expect(toastBorderColor("error")).toBe(themes.mint.statusError)
   })
 
   test("labels variants for screen-reader-friendly chrome", () => {

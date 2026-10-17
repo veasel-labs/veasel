@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createMemo } from "solid-js"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 import {
   formatSessionTabLabel,
   visibleSessionTabs,
@@ -18,6 +18,7 @@ export type SessionTabsProps = {
 
 /** Compact mint session tab rail — switch without leaving the session chrome. */
 export function SessionTabs(props: SessionTabsProps) {
+  const colors = useSolidTheme()
   const windowed = createMemo(() =>
     visibleSessionTabs(props.tabs, props.activeId, props.maxVisible ?? 6),
   )
@@ -29,16 +30,16 @@ export function SessionTabs(props: SessionTabsProps) {
       flexShrink={0}
       flexDirection="row"
       alignItems="center"
-      backgroundColor={solidMint.panelBg}
+      backgroundColor={colors.panelBg}
       border
-      borderColor={solidMint.panelBorder}
+      borderColor={colors.panelBorder}
       paddingLeft={1}
       paddingRight={1}
       gap={1}
     >
-      <text fg={solidMint.muted}>TABS </text>
+      <text fg={colors.muted}>TABS </text>
       <Show when={windowed().overflowLeft > 0}>
-        <text fg={solidMint.muted}>‹{windowed().overflowLeft}</text>
+        <text fg={colors.muted}>‹{windowed().overflowLeft}</text>
       </Show>
       <For each={windowed().tabs}>
         {(tab) => {
@@ -50,12 +51,12 @@ export function SessionTabs(props: SessionTabsProps) {
                 <Show
                   when={active()}
                   fallback={
-                    <span style={{ fg: tab.unread ? solidMint.brand : solidMint.muted }}>
+                    <span style={{ fg: tab.unread ? colors.brand : colors.muted }}>
                       {label()}
                     </span>
                   }
                 >
-                  <span style={{ fg: solidMint.brand }}>
+                  <span style={{ fg: colors.brand }}>
                     <strong>{label()}</strong>
                   </span>
                 </Show>
@@ -65,16 +66,16 @@ export function SessionTabs(props: SessionTabsProps) {
         }}
       </For>
       <Show when={windowed().overflowRight > 0}>
-        <text fg={solidMint.muted}>{windowed().overflowRight}›</text>
+        <text fg={colors.muted}>{windowed().overflowRight}›</text>
       </Show>
       <Show when={props.onNew}>
         <box onMouseUp={() => props.onNew?.()}>
-          <text fg={solidMint.muted}>+</text>
+          <text fg={colors.muted}>+</text>
         </box>
       </Show>
       <Show when={props.onCloseActive && props.activeId}>
         <box onMouseUp={() => props.onCloseActive?.()}>
-          <text fg={solidMint.muted}>✕</text>
+          <text fg={colors.muted}>✕</text>
         </box>
       </Show>
     </box>

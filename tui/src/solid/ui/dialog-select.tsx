@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
+import { dialogGeometry, dialogResultCount } from "./dialog-layout"
 import { For, Show, createMemo, createSignal, onMount, type JSX } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import { DialogHeader, useDialog } from "./dialog"
 import { solidMint } from "../theme"
@@ -38,17 +39,19 @@ const visibleDefault = 10
 
 export function DialogSelect<T>(props: DialogSelectProps<T>) {
   const dialog = useDialog()
+  const dimensions = useTerminalDimensions()
+  const compact = () => dialogGeometry(dimensions().width, dimensions().height).compact
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal(0)
   let filterInput: InputRenderable | undefined
 
   const filtered = createMemo(() => filterSelectOptions(props.options, query()))
   const flatMode = createMemo(
-    () => (props.flatOnFilter !== false && query().trim().length > 0) || false,
+    () => compact() || (props.flatOnFilter !== false && query().trim().length > 0) || false,
   )
   const grouped = createMemo(() => groupSelectOptions(filtered(), flatMode()))
   const flat = createMemo(() => grouped().flatMap(([, options]) => options))
-  const visible = () => Math.max(1, props.maxVisible ?? visibleDefault)
+  const visible = () => dialogResultCount(dimensions().width, dimensions().height, props.maxVisible ?? visibleDefault, !flatMode(), Boolean(props.footer))
 
   const windowedGroups = createMemo(() => {
     const items = flat()
@@ -167,11 +170,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           if (props.dismissOnSelect !== false) dialog.clear()
                         }}
                       >
-                        <text fg={active() ? solidMint.brand : solidMint.body}>
+                        <text fg={active() ? solidMint.brand : solidMint.body} flexGrow={1} flexShrink={1} wrapMode="none">
                           {isCurrent() ? "● " : active() ? "▸ " : "  "}
                           {option.title}
                         </text>
-                        <Show when={option.description || option.footer || (flatMode() && option.category)}>
+                        <Show when={!compact() && (option.description || option.footer || (flatMode() && option.category))}>
                           <text fg={solidMint.muted}>
                             {"  "}
                             {flatMode()

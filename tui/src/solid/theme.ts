@@ -1,34 +1,44 @@
 import { themes, type Theme } from "../themes"
 import type { TranscriptTone } from "../transcript"
 
-// Mint product tokens for the Solid shell. Keep chrome aligned with themes.ts
-// "mint" until the Solid path consumes the full theme loader.
+import { createComponent, createContext, createSignal, useContext, type ParentProps } from "solid-js"
+import { isBuiltinThemeId, loadThemeId, type BuiltinThemeId } from "../themes"
 
-export const solidMint = {
-  shellBg: themes.mint.shellBg,
-  panelBg: themes.mint.panelBg,
-  panelBorder: themes.mint.panelBorder,
-  headerBg: themes.mint.headerBg,
-  headerBorder: themes.mint.headerBorder,
-  headerTitle: themes.mint.headerTitle,
-  headerMeta: themes.mint.headerMeta,
-  localStatus: themes.mint.localStatus,
-  brand: themes.mint.brand,
-  body: themes.mint.body,
-  muted: themes.mint.muted,
-  inputBg: themes.mint.inputBg,
-  inputFocusBg: themes.mint.inputFocusBg,
-  inputText: themes.mint.inputText,
-  cursor: themes.mint.cursor,
-  statusOk: themes.mint.statusOk,
-  statusError: themes.mint.statusError,
-  statusWarn: themes.mint.statusWarn,
-  toolLabel: themes.mint.toolLabel,
-  sidebarLabel: themes.mint.sidebarLabel,
-  sidebarFg: themes.mint.sidebarFg,
-} as const
+type SolidThemeState = {
+  colors: Theme
+  themeId: () => BuiltinThemeId
+  setThemeId: (id: BuiltinThemeId) => void
+}
 
-// Map transcript tones to mint colors — same pairing as classic-main.ts
+const ThemeContext = createContext<SolidThemeState>()
+
+/** One reactive theme per application root, including overlays and notifications. */
+export function SolidThemeProvider(props: ParentProps<{ initialTheme?: BuiltinThemeId }>) {
+  const saved = props.initialTheme ?? loadThemeId()
+  const [themeId, setThemeId] = createSignal<BuiltinThemeId>(isBuiltinThemeId(saved) ? saved : "mint")
+  const colors = new Proxy(themes.mint, {
+    get(_target, key: keyof Theme) {
+      return themes[themeId()][key]
+    },
+  })
+  return createComponent(ThemeContext.Provider, {
+    value: { colors, themeId, setThemeId },
+    get children() { return props.children },
+  })
+}
+
+export function useSolidThemeState(): SolidThemeState {
+  const state = useContext(ThemeContext)
+  if (!state) throw new Error("SolidThemeProvider is required")
+  return state
+}
+
+/** Standalone component fixtures retain the default theme without shared global state. */
+export function useSolidTheme(): Theme {
+  return useContext(ThemeContext)?.colors ?? themes.mint
+}
+
+// Map transcript tones to semantic theme colors — same pairing as classic-main.ts
 // buildTranscriptStyles, so Solid and imperative paths stay visually aligned.
 export function solidToneFg(tone: TranscriptTone, theme: Theme = themes.mint): string {
   switch (tone) {

@@ -3,7 +3,7 @@ import { For, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "./dialog"
-import { solidMint } from "../theme"
+import { useSolidTheme } from "../theme"
 
 export type DialogConfirmProps = {
   title: string
@@ -24,6 +24,7 @@ function titlecase(value: string): string {
 }
 
 export function DialogConfirm(props: DialogConfirmProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const [active, setActive] = createSignal<ConfirmChoice>("confirm")
 
@@ -61,10 +62,10 @@ export function DialogConfirm(props: DialogConfirmProps) {
                 <box
                   paddingLeft={2}
                   paddingRight={2}
-                  backgroundColor={selected() ? solidMint.inputFocusBg : undefined}
+                  backgroundColor={selected() ? colors.inputFocusBg : undefined}
                   onMouseUp={() => finish(key)}
                 >
-                  <text fg={selected() ? solidMint.brand : solidMint.muted}>
+                  <text fg={selected() ? colors.brand : colors.muted}>
                     {caption()}
                   </text>
                 </box>
@@ -74,7 +75,7 @@ export function DialogConfirm(props: DialogConfirmProps) {
         </box>
       }
     >
-      <text fg={solidMint.muted}>{props.message}</text>
+      <text fg={colors.muted}>{props.message}</text>
     </DialogLayout>
   )
 }

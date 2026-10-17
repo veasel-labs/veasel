@@ -19,10 +19,8 @@ import { liveStreamStatusMessage } from "../transcript-scroll"
 import { homeFooterHint } from "../footer-hints"
 import {
   isBuiltinThemeId,
-  loadThemeId,
   saveThemeId,
   themes,
-  type BuiltinThemeId,
 } from "../themes"
 import { DialogProvider, useDialog } from "./ui/dialog"
 import { ToastProvider, useToast } from "./ui/toast"
@@ -87,6 +85,7 @@ import {
   type ModelVariantId,
 } from "./variant-budget"
 import { skillCatalogFromPlugins } from "./skills-inventory"
+import { type SkillCatalogEntry } from "../skill-autocomplete"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
@@ -140,7 +139,7 @@ import {
   openOpenDialog,
 } from "./component/open-dialog"
 import { openWorkspacesDialog } from "./component/workspaces-dialog"
-import { solidMint } from "./theme"
+import { useSolidTheme, useSolidThemeState, SolidThemeProvider } from "./theme"
 import type { SolidSessionEntry } from "./component/session-list-dialog"
 import {
   findSessionForDirectory,
@@ -165,9 +164,12 @@ function sessionEntry(session: ApiSession): SolidSessionEntry {
 }
 
 function LiveAppShell(props: LiveAppProps) {
+  const colors = useSolidTheme()
   const dialog = useDialog()
   const toast = useToast()
-  const directory = () => props.directory ?? process.env.VEASEL_PROJECT_DIR ?? process.cwd()
+  const launchDirectory = () => props.directory ?? process.env.VEASEL_PROJECT_DIR ?? process.cwd()
+  const [sessionDirectory, setSessionDirectory] = createSignal<string | undefined>()
+  const directory = () => sessionDirectory() ?? launchDirectory()
 
   const [sessions, setSessions] = createSignal<SolidSessionEntry[]>([])
   const [selectedIndex, setSelectedIndex] = createSignal(0)
@@ -202,10 +204,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [streaming, setStreaming] = createSignal(false)
   const [streamingText, setStreamingText] = createSignal("")
   const [sending, setSending] = createSignal(false)
-  const initialTheme = loadThemeId()
-  const [themeId, setThemeId] = createSignal<BuiltinThemeId>(
-    isBuiltinThemeId(initialTheme) ? initialTheme : "mint",
-  )
+  const { themeId, setThemeId } = useSolidThemeState()
   /**
    * Home keeps session-nav hotkeys (s/n/q/j/k) until `/` opens the slash bar.
    * Always-on home composer stole `s` from the standalone smoke / classic bindings.
@@ -362,11 +361,31 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const [attachments, setAttachments] = createSignal<ComposerAttachment[]>([])
+  const sessionDrafts = new Map<string, { text: string; attachments: ComposerAttachment[] }>()
+  let draftRevision = 0
+
+  const rememberSessionDraft = () => {
+    const id = activeSessionId()
+    if (!id) return
+    if (!composerDraft() && attachments().length === 0) {
+      sessionDrafts.delete(id)
+      return
+    }
+    sessionDrafts.set(id, { text: composerDraft(), attachments: [...attachments()] })
+  }
+
+  const restoreSessionDraft = (id: string) => {
+    const draft = sessionDrafts.get(id)
+    const text = draft?.text ?? ""
+    setComposerDraft(text)
+    setAttachments(draft?.attachments ?? [])
+    setRestoreToken({ id: `session-draft-${++draftRevision}`, text })
+  }
 
   const stageAttachmentPath = (raw: string) => {
-    const resolved = resolveAttachmentPath(raw)
+    const resolved = resolveAttachmentPath(raw, { cwd: directory() })
     if (!resolved) {
-      toast.info("Path not found · enter an absolute or ~/ path", "Attach")
+      toast.info("Path not found · use ./project-path, an absolute path, or ~/", "Attach")
       return false
     }
     const next = createComposerAttachment(resolved)
@@ -693,18 +712,49 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
+  const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
+  const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
+  const wantsSkillSuggestions = createMemo(() => {
+    const draft = composerDraft()
+    return /(^|\s)\$/.test(draft)
+  })
+  const skillDirectory = createMemo(() =>
+    sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
+  )
+  createEffect(() => {
+    const root = skillDirectory()
+    const sessionId = activeSessionId()
+    const wanted = wantsSkillSuggestions()
+    setComposerSkills([])
+    setSkillCatalogStatus(undefined)
+    if (!wanted) return
+    let current = true
+    onCleanup(() => { current = false })
+    setSkillCatalogStatus("Loading workspace Skills…")
+    void props.api.listPlugins(root).then((catalog) => {
+      if (!current || sessionId !== activeSessionId()) return
+      const entries = skillCatalogFromPlugins(catalog)
+      setComposerSkills(entries)
+      setSkillCatalogStatus(entries.length ? undefined : "No workspace Skills · /plugins to add one")
+    }).catch(() => {
+      if (!current) return
+      setSkillCatalogStatus("Skills unavailable · use /skills to retry")
+    })
+  })
+
   const openLiveSkills = async (filter = "") => {
     setComposerFocused(false)
     const sessionId = activeSessionId()
     try {
       const [catalog, enabled] = await Promise.all([
-        props.api.listPlugins(directory()),
+        props.api.listPlugins(skillDirectory()),
         sessionId
           ? props.api.listSessionSkills(sessionId)
           : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionSkills>>),
       ])
+      const entries = skillCatalogFromPlugins(catalog, enabled)
       const needle = filter.trim().toLowerCase()
-      const skills = skillCatalogFromPlugins(catalog, enabled).filter((skill) => {
+      const skills = entries.filter((skill) => {
         if (!needle) return true
         const haystack = `${skill.key} ${skill.description}`.toLowerCase()
         return needle.split(/\s+/).every((token) => haystack.includes(token))
@@ -979,8 +1029,11 @@ function LiveAppShell(props: LiveAppProps) {
   }
 
   const openSession = async (session: SolidSessionEntry) => {
+    rememberSessionDraft()
+    setSessionDirectory(session.directory)
     const viewRevision = ++sessionViewRevision
     setActiveSessionId(session.id)
+    restoreSessionDraft(session.id)
     setUnreadSessionIds((current) => clearSessionUnread(current, session.id))
     setMessages([])
     setOldestTurnId(undefined)
@@ -1988,7 +2041,7 @@ function LiveAppShell(props: LiveAppProps) {
       width="100%"
       height="100%"
       flexDirection="column"
-      backgroundColor={solidMint.shellBg}
+      backgroundColor={colors.shellBg}
     >
       <box
         width="100%"
@@ -1997,18 +2050,18 @@ function LiveAppShell(props: LiveAppProps) {
         flexDirection="row"
         justifyContent="space-between"
         alignItems="center"
-        backgroundColor={solidMint.headerBg}
+        backgroundColor={colors.headerBg}
         border
-        borderColor={solidMint.headerBorder}
+        borderColor={colors.headerBorder}
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={solidMint.headerTitle}>
+        <text fg={colors.headerTitle}>
           <strong>VEASEL</strong>
-          <span style={{ fg: solidMint.brand }}> / </span>
-          <span style={{ fg: solidMint.headerMeta }}>CODE</span>
+          <span style={{ fg: colors.brand }}> / </span>
+          <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
-        <text fg={solidMint.localStatus}>{status()}</text>
+        <text fg={colors.localStatus}>{status()}</text>
       </box>
 
       <Show
@@ -2037,8 +2090,12 @@ function LiveAppShell(props: LiveAppProps) {
             void createSession()
           }}
           onCloseActive={() => {
+            rememberSessionDraft()
             sessionViewRevision++
             setActiveSessionId(undefined)
+            setSessionDirectory(undefined)
+            setComposerDraft("")
+            setRestoreToken({ id: `home-draft-${++draftRevision}`, text: "" })
             setMessages([])
             setOldestTurnId(undefined)
             setHistoryHasOlder(false)
@@ -2090,6 +2147,8 @@ function LiveAppShell(props: LiveAppProps) {
           focused={composerFocused()}
           restoreToken={restoreToken()}
           onDraftChange={setComposerDraft}
+          skills={composerSkills()}
+          skillCatalogStatus={skillCatalogStatus()}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
           onPreviewAttachment={previewAttachment}
@@ -2099,7 +2158,7 @@ function LiveAppShell(props: LiveAppProps) {
       </Show>
       <Show when={inSession() || homeComposerOpen()}>
         <box width="100%" height={1} flexShrink={0} paddingLeft={1}>
-          <text fg={solidMint.muted}>
+          <text fg={colors.muted}>
             <Show
               when={inSession()}
               fallback={`${homeFooterHint} · Esc dismiss slash · drag │ · Alt+←/→ resize`}
@@ -2116,10 +2175,12 @@ function LiveAppShell(props: LiveAppProps) {
 /** Production Solid entry: loopback HTTP sessions + SSE + MODEL SETTINGS. */
 export function LiveApp(props: LiveAppProps) {
   return (
-    <ToastProvider>
-      <DialogProvider>
-        <LiveAppShell {...props} />
-      </DialogProvider>
-    </ToastProvider>
+    <SolidThemeProvider>
+      <ToastProvider>
+        <DialogProvider>
+          <LiveAppShell {...props} />
+        </DialogProvider>
+      </ToastProvider>
+    </SolidThemeProvider>
   )
 }

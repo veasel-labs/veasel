@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
+import { dialogGeometry, dialogResultCount } from "../ui/dialog-layout"
 import { For, Show, createMemo, createSignal, onMount } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import {
   filterPaletteCommands,
@@ -21,12 +22,14 @@ const visibleDefault = 8
 export function CommandPalette(props: CommandPaletteProps) {
   const colors = useSolidTheme()
   const dialog = useDialog()
+  const dimensions = useTerminalDimensions()
+  const compact = () => dialogGeometry(dimensions().width, dimensions().height).compact
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal(0)
   let filterInput: InputRenderable | undefined
 
   const filtered = createMemo(() => filterPaletteCommands(props.commands, query()))
-  const visible = () => Math.max(1, props.maxVisible ?? visibleDefault)
+  const visible = () => dialogResultCount(dimensions().width, dimensions().height, props.maxVisible ?? visibleDefault)
 
   const windowed = createMemo(() => {
     const items = filtered()
@@ -122,16 +125,22 @@ export function CommandPalette(props: CommandPaletteProps) {
                   backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
+                  onMouseUp={() => {
+                    dialog.clear()
+                    command.run()
+                  }}
                 >
-                  <text fg={active() ? colors.brand : colors.body}>
+                  <text fg={active() ? colors.brand : colors.body} flexGrow={1} flexShrink={1} wrapMode="none">
                     {active() ? "▸ " : "  "}
                     {command.title}
                   </text>
-                  <text fg={colors.muted}>
-                    {"  "}
-                    {command.group}
-                    {command.shortcut ? ` · ${command.shortcut}` : ""}
-                  </text>
+                  <Show when={!compact()}>
+                    <text fg={colors.muted} wrapMode="none">
+                      {"  "}
+                      {command.group}
+                      {command.shortcut ? ` · ${command.shortcut}` : ""}
+                    </text>
+                  </Show>
                 </box>
               )
             }}

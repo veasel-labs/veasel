@@ -73,6 +73,13 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `solid/component/review-panel.tsx`): pending file/shell/MCP queue with
   legacy `reviewHotkey` bindings (a/x/A/X/Space/]/[/n/p/{/}/v),
   `formatReviewDiff` / shell / MCP formatters, OpenTUI `<diff>` split when
+  toggled; **Ctrl+R** + palette `veasel.reviews.open`; fixture demos +
+  `testRender`; Solid is the default entry (`classic-main.ts` retired).
+- [x] Shared dialog geometry and result budgets adapt selectors and the
+  command palette to terminal size. Compact layouts retain search, selection,
+  and match counts, and command rows support mouse activation. Rendered tests
+  cover 32×12, 40×16, 80×24, 120×40, resizing, keyboard, and mouse input.
+  This does not establish responsive coverage for every product dialog.
   toggled; **Ctrl+R** + palette `veasel.reviews.open`. LiveApp loads and
   decides reviews through the HTTP API. The panel waits for confirmation,
   retains failed items with inline errors, blocks duplicate submissions while

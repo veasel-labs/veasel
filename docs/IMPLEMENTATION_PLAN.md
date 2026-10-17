@@ -560,3 +560,9 @@ honoring its license and attribution.
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
   argument-context refresh) remain open.
+
+### Transcript keyboard ownership
+
+- Solid transcript navigation respects the focused editor: plain Home/End and page keys remain available for text editing and autocomplete. Ctrl+Home/End and Ctrl+PageUp/PageDown navigate the transcript from the composer.
+- Page navigation moves the viewport explicitly, with one line of overlap. Follow-tail cues advertise Ctrl+End.
+- Rendered component regression tests exercise the real composer, cursor positions, scroll geometry, and ANSI page-key sequences. These tests do not establish cross-terminal compatibility or a completed UI redesign.

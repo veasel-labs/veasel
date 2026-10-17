@@ -80,10 +80,12 @@ export function windowTranscriptSegments(
 export function transcriptBelowCue(options: {
   truncatedBelow: boolean
   streaming: boolean
+  followKey?: string
+  pageDownKey?: string
 }): string {
   if (!options.truncatedBelow) return ""
-  if (options.streaming) return "\n▼ streaming below · End follows"
-  return "\n▼ PgDn · later transcript"
+  if (options.streaming) return `\n▼ streaming below · ${options.followKey ?? "End"} follows`
+  return `\n▼ ${options.pageDownKey ?? "PgDn"} · later transcript`
 }
 
 /** Distance from the sticky bottom of an OpenTUI scrollbox (0 = following). */
@@ -101,10 +103,11 @@ export function scrollOffsetFromBottom(options: {
 export function transcriptScrollStatus(options: {
   offsetFromBottom: number
   streaming: boolean
+  followKey?: string
 }): string | undefined {
   if (options.offsetFromBottom <= 0) return undefined
-  if (options.streaming) return "scrolled  ·  streaming below · End follows"
-  return "scrolled  ·  End sticks to latest"
+  if (options.streaming) return `scrolled  ·  streaming below · ${options.followKey ?? "End"} follows`
+  return `scrolled  ·  ${options.followKey ?? "End"} sticks to latest`
 }
 
 // While a turn streams, PgUp must still advertise End-follow; stick-to-bottom
@@ -114,15 +117,18 @@ export function liveStreamStatusMessage(options: {
   offsetFromBottom: number
   streaming: boolean
   streamingChars: number
+  followKey?: string
   formatStreaming: (chars: number) => string
 }): string | undefined {
   if (!options.streaming) return transcriptScrollStatus({
     offsetFromBottom: options.offsetFromBottom,
     streaming: false,
+    followKey: options.followKey,
   })
   const scrolled = transcriptScrollStatus({
     offsetFromBottom: options.offsetFromBottom,
     streaming: true,
+    followKey: options.followKey,
   })
   if (scrolled) return scrolled
   return options.formatStreaming(options.streamingChars)

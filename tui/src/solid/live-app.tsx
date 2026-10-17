@@ -1991,6 +1991,7 @@ function LiveAppShell(props: LiveAppProps) {
           }}
           onScrollViewport={({ offsetFromBottom }) => {
             const live = liveStreamStatusMessage({
+              followKey: "Ctrl+End",
               offsetFromBottom,
               streaming: streaming() || Boolean(activeTurnId()),
               streamingChars: streamingText().length,

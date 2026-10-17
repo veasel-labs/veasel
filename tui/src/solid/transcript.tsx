@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type { KeyEvent, Renderable, ScrollBoxRenderable } from "@opentui/core"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useRenderer } from "@opentui/solid"
 import type { ChatTurn } from "../chat-history"
 import {
   assistantLabel,
@@ -310,6 +310,7 @@ function MessageBlockView(props: {
 // transcript.ts; consecutive tool roles collapse into mint activity groups.
 // Long sessions mount a sticky-tail budget first, then backfill near the top.
 export function SolidTranscript(props: SolidTranscriptProps) {
+  const renderer = useRenderer()
   const followTail = () => props.followTail !== false
   const keysEnabled = () => props.enableActivityKeys !== false
   const tailBudget = () => props.mountBudget ?? transcriptTailBudget
@@ -581,23 +582,40 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       if (jumpLastUser()) key.preventDefault()
       return
     }
+    // Editing and autocomplete own unmodified navigation keys while an editor
+    // has focus. Modified viewport shortcuts stay available from the composer.
+    if (renderer.currentFocusedEditor && !key.ctrl) return
+    if (key.meta || key.shift) return
+    const consumeViewportKey = () => {
+      key.preventDefault()
+      key.stopPropagation()
+    }
     if (key.name === "pageup" || key.name === "ppage") {
       setFollowDetached(true)
       if (scrollBox && !scrollBox.isDestroyed) scrollBox.stickyScroll = false
-      if (revealOlder()) key.preventDefault()
-      else key.preventDefault()
+      consumeViewportKey()
+      revealOlder()
+      queueMicrotask(() => {
+        if (scrollBox && !scrollBox.isDestroyed) {
+          scrollBox.scrollBy(-Math.max(1, (scrollBox.viewport?.height ?? scrollBox.height) - 1))
+        }
+      })
       queueMicrotask(sampleViewport)
       return
     }
     if (key.name === "pagedown" || key.name === "npage") {
-      if (revealNewer()) key.preventDefault()
+      consumeViewportKey()
+      revealNewer()
+      if (scrollBox && !scrollBox.isDestroyed) {
+        scrollBox.scrollBy(Math.max(1, (scrollBox.viewport?.height ?? scrollBox.height) - 1))
+      }
       queueMicrotask(sampleViewport)
       return
     }
     if (key.name === "home") {
       setFollowDetached(true)
       setHiddenStart(0)
-      key.preventDefault()
+      consumeViewportKey()
       if (scrollBox && !scrollBox.isDestroyed) {
         scrollBox.stickyScroll = false
         scrollBox.scrollTo(0)
@@ -605,7 +623,8 @@ export function SolidTranscript(props: SolidTranscriptProps) {
       queueMicrotask(sampleViewport)
       return
     }
-    if (key.name === "end" && !key.meta) {
+    if (key.name === "end") {
+      consumeViewportKey()
       setNavIndex(undefined)
       setHiddenStart(undefined)
       setVisibleEnd(undefined)
@@ -765,6 +784,8 @@ export function SolidTranscript(props: SolidTranscriptProps) {
               {transcriptBelowCue({
                 truncatedBelow: true,
                 streaming: Boolean(props.streaming),
+                followKey: "Ctrl+End",
+                pageDownKey: "Ctrl+PgDn",
               }).trimStart()}
             </span>
           </text>

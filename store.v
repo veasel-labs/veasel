@@ -1346,7 +1346,7 @@ fn (mut store Store) enqueue_session_operation(session_id string, operation_id s
 	if request_json.contains('\0') {
 		return error('queued session operation request is invalid')
 	}
-	if request_json.len > max_chat_input_bytes + 2048 {
+	if request_json.len > chat_input_byte_limit() + 2048 {
 		return error('queued session operation request exceeds the size limit')
 	}
 	input := json2.decode[ChatMessageInput](request_json) or {
@@ -2078,7 +2078,7 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 	status string, public_error string, user_content string, assistant_content string) ! {
 	if !validate_operation_id(operation_id) || operation_id.len == 0
 		|| status !in ['failed', 'cancelled'] || public_error.len > 1024
-		|| user_content.len > max_chat_input_bytes || assistant_content.len > max_provider_stream_bytes {
+		|| user_content.len > chat_input_byte_limit() || assistant_content.len > max_provider_stream_bytes {
 		return error('invalid session turn completion')
 	}
 	store.mu.lock()

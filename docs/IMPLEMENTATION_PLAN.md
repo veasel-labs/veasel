@@ -487,6 +487,15 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   window. Provider-reported token usage is aggregated into opt-in ATIF
   `final_metrics` (Milestone 3); cost uses the pinned curated schedule when every
   reported turn matches, otherwise `unavailable`.
+- [x] Configurable submitted-input byte budget: `VEASEL_MAX_CHAT_INPUT_BYTES`
+  raises the 1 MiB default (never lowers it) up to 64 MiB for long-context
+  providers; invalid or out-of-range values fall back to the default. The
+  resolved limit drives provider message validation, HTTP body bounds,
+  headless prompt bounds, queued-operation and turn-record bounds, the agent
+  context budget, and compaction pressure, so every layer agrees. This is a
+  byte budget, not a token budget: it does not by itself consume a model's
+  full advertised token window, and compaction still applies above the
+  pressure threshold.
 - [x] Adaptive session compaction for in-flight provider requests when measured
   UTF-8 payload bytes (or conversation message count) cross a local pressure
   threshold: older turns are replaced with an untrusted extractive summary,

@@ -1187,7 +1187,7 @@ pub fn (app &App) set_session_mcp_server(mut ctx Context, id string) veb.Result 
 
 @['/v1/chat/completions'; post]
 pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
-	if ctx.req.data.len > max_chat_input_bytes + 8192 {
+	if ctx.req.data.len > chat_input_byte_limit() + 8192 {
 		return json_request_error(mut ctx, 'Request body exceeds the size limit')
 	}
 	input := json2.decode[CompletionInput](ctx.req.data) or {
@@ -1466,7 +1466,7 @@ fn parse_session_history_query(query map[string]string) !(int, int) {
 
 @['/v1/sessions/:id/messages'; post]
 pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
-	if ctx.req.data.len > max_chat_input_bytes + 1024 {
+	if ctx.req.data.len > chat_input_byte_limit() + 1024 {
 		return json_request_error(mut ctx, 'Request body exceeds the size limit')
 	}
 	input := json2.decode[ChatMessageInput](ctx.req.data) or {

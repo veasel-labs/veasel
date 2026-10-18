@@ -57,7 +57,7 @@ pub:
 type SessionCompactionSummarizerFn = fn (older []ChatMessage, bytes_before int, reason string) !SessionCompactionSummarizerOutput
 
 fn compaction_pressure_bytes() int {
-	return max_chat_input_bytes * compaction_pressure_ratio_numerator / compaction_pressure_ratio_denominator
+	return chat_input_byte_limit() * compaction_pressure_ratio_numerator / compaction_pressure_ratio_denominator
 }
 
 fn estimate_token_bound_from_bytes(bytes int) int {

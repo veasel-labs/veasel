@@ -290,7 +290,7 @@ class MockProvider(BaseHTTPRequestHandler):
             ):
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text == "Try to read outside" else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit") else
                     "workspace_propose_shell_command" if user_text in ("Propose shell command", "Propose slow shell command", "Autonomous shell") else
@@ -379,7 +379,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -387,11 +387,11 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text == "Try to read outside" else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit", "Autonomous multi-file edit", "Try to write outside") else
                     "mcp_review_tools_effect_write" if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
@@ -416,6 +416,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = '{"query":"workspace-search-sentinel"}'
                 elif user_text == "Try to read outside":
                     arguments = '{"path":"../outside/secret.txt"}'
+                elif user_text == "Read then edit workspace":
+                    arguments = '{"path":"src/main.v"}'
                 elif user_text == "Read skill reference":
                     arguments = json.dumps({"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"})
                 elif user_text == "Try to write outside":
@@ -473,7 +475,21 @@ class MockProvider(BaseHTTPRequestHandler):
                     for message in messages
                 )
                 tool_result_count = sum(1 for message in messages if message.get("role") == "tool")
-                if is_multi_file and applied_edit and tool_result_count == 1:
+                is_read_then_edit = any(
+                    message.get("role") == "user"
+                    and fixture_user_prompt(message.get("content", "")) == "Read then edit workspace"
+                    for message in messages
+                )
+                if is_read_then_edit and tool_result_count == 1 and not applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                        }}]
+                    }}]}
+                elif is_multi_file and applied_edit and tool_result_count == 1:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
@@ -483,7 +499,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         }}]
                     }}]}
                 else:
-                    final_text = "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                    final_text = "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                     body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 body = {"choices": [{"message": {"role": "assistant", "content": REPLY}}]}
@@ -507,7 +523,7 @@ class MockProvider(BaseHTTPRequestHandler):
             if user_text in ("Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command"):
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text == "Try to read outside" else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"
@@ -570,7 +586,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 declarations = payload.get("tools", [{}])[0].get("functionDeclarations", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text == "Try to read outside" else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"

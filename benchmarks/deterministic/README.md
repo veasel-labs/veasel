@@ -26,6 +26,7 @@ binary under test.
 | --- | --- | --- |
 | `autonomous-workspace-edit` | `Autonomous workspace edit` | `src/main.v` contains the applied `greet` function |
 | `autonomous-multi-file-edit` | `Autonomous multi-file edit` | Two sequential edits in one run: `greet` applied to `src/main.v`, then `src/helper.v` created |
+| `read-then-edit` | `Read then edit workspace` | Read of `src/main.v` followed by the applied `greet` edit in the same run |
 | `greeting-reply` | `Say hello` | Run completes with the fixture reply |
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |

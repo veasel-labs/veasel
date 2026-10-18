@@ -61,19 +61,21 @@ faster overall.
 
 | Report | Veasel binary | Notes |
 |---|---|---|
+| [`reports/cli-startup-linux-x64-2026-10-18.json`](reports/cli-startup-linux-x64-2026-10-18.json) | `0.58.0-next.0` | Wall time (30 samples) + peak RSS (`ru_maxrss`) for `--version`/`--help` |
 | [`reports/cli-startup-linux-x64-2026-10-15.json`](reports/cli-startup-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Wall time (30 samples) + peak RSS (`ru_maxrss`) for `--version`/`--help` |
 | [`reports/cli-startup-rss-linux-x64-2026-10-15.json`](reports/cli-startup-rss-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Standalone RSS companion used while enriching the 2026-10-15 report |
 | [`reports/cli-startup-linux-x64-2026-10-12.json`](reports/cli-startup-linux-x64-2026-10-12.json) | `0.13.0-next.0` | Historical wall-time-only baseline |
 
-2026-10-15 `--version` medians on one Linux x64 workstation:
+2026-10-18 `--version` medians on one Linux x64 workstation (published
+`0.58.0-next.0` binary; 30 samples, 0 failures for every CLI):
 
 | CLI | p50 wall | p50 RSS |
 |---|---:|---:|
-| Veasel Code 0.41.0-next.0 | 3.035 ms | 14160 kB (~13.8 MiB) |
-| Claude Code 2.1.296 | 10.65 ms | 37704 kB |
-| Codex CLI 0.162.1 | 9.744 ms | 26904 kB |
-| OpenCode 2.0.27 | 134.325 ms | 76468 kB |
-| Pi 0.85.1 | 265.764 ms | 107964 kB |
+| Veasel Code 0.58.0-next.0 | 2.939 ms | 14188 kB (~13.9 MiB) |
+| Codex CLI 0.163.0 | 9.355 ms | 27836 kB |
+| Claude Code 2.1.296 | 9.962 ms | 36188 kB |
+| OpenCode 2.0.27 | 128.711 ms | 78032 kB |
+| Pi 0.85.1 | 257.936 ms | 108036 kB |
 
 
 These are single-workstation CLI-only baselines, not a cross-machine benchmark

@@ -1,0 +1,20 @@
+{
+  "schema": "veasel-deterministic-fixtures/1",
+  "agent": "mini",
+  "provider": "scripted_provider.py (deterministic, OpenAI-compatible)",
+  "model": "smoke-model (scripted replies; no real model)",
+  "tasks": [
+    {
+      "id": "autonomous-workspace-edit",
+      "prompt": "Autonomous workspace edit",
+      "check": "src/main.v contains the applied greet function",
+      "passed": true,
+      "wall_ms": 4281.3,
+      "status": "completed",
+      "provider_requests": 2,
+      "tool_results": 1
+    }
+  ],
+  "passed": 1,
+  "total": 1
+}

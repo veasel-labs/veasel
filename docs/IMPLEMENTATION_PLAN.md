@@ -497,9 +497,12 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   full advertised token window, and compaction still applies above the
   pressure threshold.
 - [x] Model-aware compaction pressure: a curated context-window schedule
-  (`tools/model-context/schedule.json`, `[limit] context` values from the same
-  pinned Models.dev commit as the cost schedule, mirroring its provider/model
-  rows) resolves the active model's window when one is pinned. When the
+  (`tools/model-context/schedule.json`, `[limit] context` values from its own
+  pinned Models.dev commit) resolves the active model's window when one is
+  pinned. Coverage is every anthropic, openai, gemini and meta model whose
+  provider or canonical `models/` TOML declares `tool_call`, text output and
+  a `[limit] context` (134 rows including `openai-responses` mirrors; Muse
+  Wonder 1.0 resolves to its real 1,048,576-token window). When the
   conservative bytes/4 token bound reaches three quarters of a known window,
   compaction fires with reason `token_pressure` even below the byte and
   message-count thresholds. Unknown models keep the existing thresholds;

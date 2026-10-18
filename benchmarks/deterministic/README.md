@@ -25,6 +25,7 @@ binary under test.
 | Fixture | Prompt | External check |
 | --- | --- | --- |
 | `autonomous-workspace-edit` | `Autonomous workspace edit` | `src/main.v` contains the applied `greet` function |
+| `autonomous-multi-file-edit` | `Autonomous multi-file edit` | Two sequential edits in one run: `greet` applied to `src/main.v`, then `src/helper.v` created |
 | `greeting-reply` | `Say hello` | Run completes with the fixture reply |
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
@@ -38,7 +39,10 @@ model API key never reaches a shell command's environment. The
 workspace; the mock provider rejects the follow-up request unless the tool
 result is an error, so a pass proves the workspace boundary held. The
 `outside-write-rejected` fixture does the same for writes and additionally
-verifies no file is created outside the workspace. These are
+verifies no file is created outside the workspace. The
+`autonomous-multi-file-edit` fixture chains two edit tool calls in a single
+run — the provider requests the second edit only after the first tool result
+arrives — and scores both files' final contents. These are
 Veasel-only: competitor adapters keep running the shared
 `autonomous-workspace-edit` fixture, which is the cross-agent comparison.
 

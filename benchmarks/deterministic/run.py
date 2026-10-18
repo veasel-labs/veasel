@@ -101,6 +101,24 @@ TASKS = [
         "check_description": "headless run completes with the fixture reply",
         "expect_response": "Provider fixture reply",
     },
+    {
+        "id": "inspect-workspace",
+        "prompt": "Inspect workspace",
+        "check": lambda ws: True,  # scored from the run result below
+        "check_description": "workspace search finds the sentinel without modifying files",
+        "expect_response": "Found workspace-search-sentinel",
+    },
+    {
+        "id": "autonomous-shell",
+        "prompt": "Autonomous shell",
+        # The fixture command asserts VEASEL_MODEL_API_KEY is absent from the
+        # shell environment and prints a marker; the workspace must stay
+        # byte-identical, so a pass proves shell orchestration happened
+        # without an edit and without leaking the provider key.
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "shell tool runs with no provider key in its env; workspace unchanged",
+        "expect_response": "Autonomous shell completed.",
+    },
 ]
 
 

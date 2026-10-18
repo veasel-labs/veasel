@@ -9,7 +9,11 @@ const max_agent_tool_calls = 12
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
-const max_agent_context_bytes = max_chat_input_bytes + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
+
+fn agent_context_byte_limit() int {
+	return chat_input_byte_limit() + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
+}
+
 const plugin_mcp_approval_poll_interval = 250 * time.millisecond
 
 // Workspace list/read/search have no durable side effects and may run concurrently
@@ -326,7 +330,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error(context_error)
 		}
 		app.apply_session_compaction_if_due(mut turn_ctx, mut messages, session_id, operation_id)!
-		if agent_context_bytes(messages) > max_agent_context_bytes {
+		if agent_context_bytes(messages) > agent_context_byte_limit() {
 			return error('agent context size limit reached')
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools, on_text_delta)!
@@ -505,7 +509,7 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, mes
 	blocked CompletionOutput, on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep,
 	mut trace_usage ProviderUsage, collect_trace bool) !AgentTraceResult {
 	summary_messages := messages_for_tool_budget_summary(messages, blocked.tool_calls)
-	if agent_context_bytes(summary_messages) > max_agent_context_bytes {
+	if agent_context_bytes(summary_messages) > agent_context_byte_limit() {
 		return error('agent tool round limit reached')
 	}
 	boundary := tool_round_text_boundary(blocked.content)

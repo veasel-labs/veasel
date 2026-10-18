@@ -378,3 +378,17 @@ fn test_session_compaction_summarizer_mode_env_parsing() {
 	assert session_compaction_summarizer_mode() == 'extractive'
 	os.unsetenv(compaction_summarizer_env)
 }
+
+fn test_chat_input_byte_limit_env_override() {
+	os.setenv(chat_input_bytes_env, '4194304', true)
+	assert chat_input_byte_limit() == 4_194_304
+	assert compaction_pressure_bytes() == 4_194_304 * compaction_pressure_ratio_numerator / compaction_pressure_ratio_denominator
+	os.setenv(chat_input_bytes_env, '1024', true)
+	assert chat_input_byte_limit() == max_chat_input_bytes
+	os.setenv(chat_input_bytes_env, '999999999', true)
+	assert chat_input_byte_limit() == max_chat_input_bytes
+	os.setenv(chat_input_bytes_env, 'not-a-number', true)
+	assert chat_input_byte_limit() == max_chat_input_bytes
+	os.unsetenv(chat_input_bytes_env)
+	assert chat_input_byte_limit() == max_chat_input_bytes
+}

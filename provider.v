@@ -13,6 +13,23 @@ const max_chat_messages = 64
 // One mebibyte of submitted conversation text. This is not a token budget and
 // does not expose Muse's advertised 1,048,576-token context window.
 const max_chat_input_bytes = 1_048_576
+const max_configured_chat_input_bytes = 67_108_864
+const chat_input_bytes_env = 'VEASEL_MAX_CHAT_INPUT_BYTES'
+
+// chat_input_byte_limit resolves the submitted-conversation byte budget.
+// The 1 MiB default is unchanged; VEASEL_MAX_CHAT_INPUT_BYTES may raise it
+// (never lower it) up to 64 MiB for long-context providers. Invalid or
+// out-of-range values fall back to the default, so a typo cannot shrink or
+// unboundedly grow request memory.
+fn chat_input_byte_limit() int {
+	raw := os.getenv_opt(chat_input_bytes_env) or { return max_chat_input_bytes }
+	parsed := raw.trim_space().int()
+	if parsed < max_chat_input_bytes || parsed > max_configured_chat_input_bytes {
+		return max_chat_input_bytes
+	}
+	return parsed
+}
+
 const max_model_output_tokens = 4096
 const min_configured_output_tokens = 16
 const max_configured_output_tokens = 131_072
@@ -1195,8 +1212,8 @@ fn validate_messages(messages []ChatMessage) ! {
 			return error('message content must not contain NUL bytes')
 		}
 		total_bytes += message.content.len
-		if total_bytes > max_chat_input_bytes {
-			return error('messages exceed the ${max_chat_input_bytes} byte limit')
+		if total_bytes > chat_input_byte_limit() {
+			return error('messages exceed the ${chat_input_byte_limit()} byte limit')
 		}
 	}
 	if messages[messages.len - 1].role != 'user' {

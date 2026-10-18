@@ -9,7 +9,7 @@
       "prompt": "Autonomous workspace edit",
       "check": "src/main.v contains the applied greet function",
       "passed": true,
-      "wall_ms": 264.0,
+      "wall_ms": 263.9,
       "status": "completed",
       "trace_present": true,
       "outcome": "completed",
@@ -20,11 +20,26 @@
       "completion_tokens": 12
     },
     {
+      "id": "autonomous-multi-file-edit",
+      "prompt": "Autonomous multi-file edit",
+      "check": "two sequential edits applied in one run: greet in src/main.v and helper created in src/helper.v",
+      "passed": true,
+      "wall_ms": 263.9,
+      "status": "completed",
+      "trace_present": true,
+      "outcome": "completed",
+      "token_usage": "reported",
+      "steps": 5,
+      "tool_calls": 2,
+      "prompt_tokens": 36,
+      "completion_tokens": 18
+    },
+    {
       "id": "greeting-reply",
       "prompt": "Say hello",
       "check": "headless run completes with the fixture reply",
       "passed": true,
-      "wall_ms": 264.0,
+      "wall_ms": 263.9,
       "status": "completed",
       "trace_present": true,
       "outcome": "completed",
@@ -39,7 +54,7 @@
       "prompt": "Inspect workspace",
       "check": "workspace search finds the sentinel without modifying files",
       "passed": true,
-      "wall_ms": 263.9,
+      "wall_ms": 264.2,
       "status": "completed",
       "trace_present": true,
       "outcome": "completed",
@@ -95,8 +110,8 @@
       "completion_tokens": 12
     }
   ],
-  "passed": 6,
-  "total": 6,
+  "passed": 7,
+  "total": 7,
   "binary": "veasel-main-backend",
   "binary_sha256": "c22abebab856a0b3b27fd9d8b3653819d57d3c0211669e78457307fb847cb312"
 }

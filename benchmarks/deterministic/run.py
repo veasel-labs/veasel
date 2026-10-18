@@ -95,6 +95,17 @@ TASKS = [
         "check_description": "src/main.v contains the applied greet function",
     },
     {
+        "id": "autonomous-multi-file-edit",
+        "prompt": "Autonomous multi-file edit",
+        # The scripted model applies the greet edit to src/main.v first; only
+        # after that tool result does the provider request a second edit
+        # creating src/helper.v. A pass proves sequential multi-file tool
+        # orchestration in one run, scored on external workspace state.
+        "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8") and "multi-file-helper-sentinel" in (ws / "src" / "helper.v").read_text(encoding="utf-8"),
+        "check_description": "two sequential edits applied in one run: greet in src/main.v and helper created in src/helper.v",
+        "expect_response": "Autonomous multi-file edit applied.",
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below

@@ -163,6 +163,7 @@ fn annotate_model_catalog_with_cost_schedule(provider string, models []ModelCata
 				input_per_mtok:  entry.input
 				output_per_mtok: entry.output
 				cost_unit:       schedule.unit
+				context_tokens:  model.context_tokens
 			}
 			continue
 		}

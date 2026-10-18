@@ -17,6 +17,20 @@ export type ModelCatalogEntry = {
   /** Pinned USD per million output tokens when the model is on Veasel's schedule. */
   output_per_mtok?: number
   cost_unit?: string
+  /** Curated context window in tokens when the model is on Veasel's schedule. */
+  context_tokens?: number
+}
+
+/** Compact context-window badge for the model picker. Empty when unknown. */
+export function formatModelCatalogContextBadge(model: ModelCatalogEntry): string {
+  const tokens = model.context_tokens
+  if (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens <= 0) return ""
+  const label = tokens >= 1_000_000
+    ? `${Number.isInteger(tokens / 1_000_000) ? tokens / 1_000_000 : (tokens / 1_000_000).toFixed(2).replace(/0$/, "")}M`
+    : tokens >= 1_000
+      ? `${Math.round(tokens / 1_000)}k`
+      : String(Math.round(tokens))
+  return `${label} ctx (pinned)`
 }
 
 /** Compact schedule badge for the model picker. Empty when rates are absent. */

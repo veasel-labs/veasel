@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, moveProviderPickerScope, prioritizeModelProviders, providerPickerScopeLabel, providerPickerScopes, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, formatModelCatalogContextBadge, moveProviderPickerScope, prioritizeModelProviders, providerPickerScopeLabel, providerPickerScopes, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 const providers: ModelProvider[] = [
   { id: "meta", name: "Meta Model API", description: "Muse Wonder and Muse Spark · OpenAI Responses API", protocol: "openai-responses", base_url: "https://api.meta.ai/v1", environment_key: "MODEL_API_KEY", documentation_url: "https://dev.meta.ai/docs/coding-agents", requires_api_key: true },
@@ -121,5 +121,13 @@ describe("provider model picker", () => {
       output_per_mtok: 5,
       cost_unit: "usd_per_million_tokens",
     })).toBe("1/5 $/MTok in/out (pinned)")
+  })
+
+  test("formats curated context windows as a model picker badge", () => {
+    expect(formatModelCatalogContextBadge({ id: "x", name: "x" })).toBe("")
+    expect(formatModelCatalogContextBadge({ id: "x", name: "x", context_tokens: 0 })).toBe("")
+    expect(formatModelCatalogContextBadge({ id: "x", name: "x", context_tokens: 200_000 })).toBe("200k ctx (pinned)")
+    expect(formatModelCatalogContextBadge({ id: "x", name: "x", context_tokens: 1_000_000 })).toBe("1M ctx (pinned)")
+    expect(formatModelCatalogContextBadge({ id: "x", name: "x", context_tokens: 1_048_576 })).toBe("1.05M ctx (pinned)")
   })
 })

@@ -18,7 +18,7 @@ import {
 import { ComposerRenderable } from "./composer-input"
 import { mergeChatTurns, pageMayHaveOlder, type ChatTurn } from "./chat-history"
 import { isConnectCommand, isModelSettingsCommand, renderHelp, unknownSlashCommand } from "./help"
-import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, formatModelCatalogContextBadge, moveProviderPickerScope, providerPickerScopeLabel, prioritizeModelProviders, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider, type ProviderPickerScope } from "./model-providers"
 import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "./cli"
 import {
   activeReviewIndex,
@@ -3262,7 +3262,7 @@ function showSettingsStep(manualModel = false) {
       )
       const options = matches.map((model) => {
         const base = model.name === model.id ? "Provider model ID" : safeModelCatalogText(model.id)
-        const cost = formatModelCatalogCostBadge(model)
+        const cost = [formatModelCatalogCostBadge(model), formatModelCatalogContextBadge(model)].filter(Boolean).join(" · ")
         return {
           name: safeModelCatalogText(model.name === model.id ? model.id : model.name),
           description: cost ? `${base} · ${cost}` : base,

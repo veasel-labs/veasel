@@ -357,6 +357,9 @@ pub:
 	input_per_mtok  ?f64   @[json: 'input_per_mtok'; omitempty]
 	output_per_mtok ?f64   @[json: 'output_per_mtok'; omitempty]
 	cost_unit       string @[json: 'cost_unit'; omitempty]
+	// Optional curated context window in tokens. Omitted when the model is
+	// not in the embedded model-context schedule — never invented.
+	context_tokens ?int @[json: 'context_tokens'; omitempty]
 }
 
 struct OpenAIModelCatalog {

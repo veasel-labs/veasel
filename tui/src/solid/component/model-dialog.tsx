@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import {
   formatModelCatalogCostBadge,
+  formatModelCatalogContextBadge,
   type ModelCatalogEntry,
 } from "../../model-providers"
 import type { useDialog } from "../ui/dialog"
@@ -78,7 +79,7 @@ export function catalogEntryToSolidModel(
     modelID: model.id,
     name: model.name,
     providerName,
-    costBadge: formatModelCatalogCostBadge(model) || undefined,
+    costBadge: [formatModelCatalogCostBadge(model), formatModelCatalogContextBadge(model)].filter(Boolean).join(" · ") || undefined,
   }
 }
 

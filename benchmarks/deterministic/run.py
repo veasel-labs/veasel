@@ -126,6 +126,18 @@ TASKS = [
         "expect_response": "Edit verified by shell.",
     },
     {
+        "id": "failed-shell-then-edit",
+        "prompt": "Recover after failed check",
+        # The scripted model first greps for the greet function, which is
+        # not there yet, so the shell tool reports a failed exit code. Only
+        # after that failed tool result does the provider request the greet
+        # edit. A pass proves the loop feeds tool failures back to the model
+        # and recovers, scored on the final file contents.
+        "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
+        "check_description": "a failing shell check is followed by the applied greet edit in the same run",
+        "expect_response": "Recovered after failed check.",
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below

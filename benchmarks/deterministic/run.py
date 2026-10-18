@@ -116,6 +116,16 @@ TASKS = [
         "expect_response": "Read then edit applied.",
     },
     {
+        "id": "edit-then-shell-verify",
+        "prompt": "Edit then verify workspace",
+        # The scripted model applies the greet edit, then verifies it with a
+        # shell grep in the same run. A pass proves edit->shell verification
+        # chaining, scored on the final file contents.
+        "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
+        "check_description": "greet edit applied and verified by a shell grep in the same run",
+        "expect_response": "Edit verified by shell.",
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below

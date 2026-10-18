@@ -459,8 +459,11 @@ def run_codex_task(codex: str, provider_port: int, provider_log: Path, task: dic
 def run_mini_task(provider_port: int, provider_log: Path, task: dict, work: Path) -> dict:
     """Run one fixture through mini-SWE-agent 2.x against the scripted provider.
 
-    Driven via `uvx --from mini-swe-agent mini` (uv-managed, nothing installed
-    into the project). MSWEA_CONFIGURED skips its interactive first-run setup
+    Driven via `uvx --with mcp --from mini-swe-agent==2.4.6 mini` (uv-managed,
+    nothing installed into the project; the version is pinned and `mcp` is
+    injected because the unpinned uvx resolution drifted into a litellm build
+    that imports `mcp.types` without declaring the `mcp` package).
+    MSWEA_CONFIGURED skips its interactive first-run setup
     and MSWEA_COST_TRACKING=ignore_errors keeps the unknown fixture model out
     of litellm's pricing registry. Its only tool is bash, so the scripted
     provider answers with a bash tool call. Isolated MSWEA_GLOBAL_CONFIG_DIR.
@@ -483,7 +486,7 @@ def run_mini_task(provider_port: int, provider_log: Path, task: dict, work: Path
     )
     started = time.monotonic()
     completed = subprocess.run(
-        ["uvx", "--from", "mini-swe-agent", "mini", "-y", "--exit-immediately", "-m", "openai/smoke-model", "-t", task["prompt"]],
+        ["uvx", "--with", "mcp", "--from", "mini-swe-agent==2.4.6", "mini", "-y", "--exit-immediately", "-m", "openai/smoke-model", "-t", task["prompt"]],
         cwd=workspace, env=env, capture_output=True, timeout=300,
         stdin=subprocess.DEVNULL,
     )

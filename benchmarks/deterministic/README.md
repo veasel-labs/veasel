@@ -26,6 +26,14 @@ binary under test.
 | --- | --- | --- |
 | `autonomous-workspace-edit` | `Autonomous workspace edit` | `src/main.v` contains the applied `greet` function |
 | `greeting-reply` | `Say hello` | Run completes with the fixture reply |
+| `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
+| `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
+
+The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
+and shell tool paths (not just file edits), including the guarantee that the
+model API key never reaches a shell command's environment. They are
+Veasel-only: competitor adapters keep running the shared
+`autonomous-workspace-edit` fixture, which is the cross-agent comparison.
 
 ## Same-model comparisons
 

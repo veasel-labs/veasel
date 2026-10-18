@@ -932,18 +932,25 @@ fn agent_context_bytes(messages []ChatMessage) int {
 // or LLM summarizers are selected by VEASEL_SESSION_COMPACTION_SUMMARIZER and
 // fall back to extractive compaction when unavailable, empty, or when they grow
 // measured UTF-8 context.
+fn (app &App) active_model_context_tokens() int {
+	config := app.model_config() or { return 0 }
+	return model_context_tokens(config.provider, config.model) or { 0 }
+}
+
 fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut messages []ChatMessage,
 	session_id string, operation_id string) ! {
 	mode := session_compaction_summarizer_mode()
+	context_tokens := app.active_model_context_tokens()
 	result := match mode {
 		'native' {
-			compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer)
+			compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer,
+				context_tokens)
 		}
 		'llm' {
-			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, messages)
+			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, messages, context_tokens)
 		}
 		else {
-			compact_session_messages(messages)
+			compact_session_messages(messages, context_tokens)
 		}
 	}
 	if !result.measurement.triggered {
@@ -955,9 +962,9 @@ fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut
 }
 
 fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext.Context,
-	messages []ChatMessage) SessionCompactionResult {
+	messages []ChatMessage, model_context_tokens int) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
-	due, reason := session_compaction_due(messages)
+	due, reason := session_compaction_due(messages, model_context_tokens)
 	if !due {
 		return compaction_result_unchanged(messages, bytes_before, '')
 	}
@@ -974,7 +981,7 @@ fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext
 		return apply_extractive_compaction(messages, bytes_before, reason, 'llm_fallback_extractive',
 			ProviderUsage{})
 	}
-	return compact_session_messages_preferring(messages, 'llm', preferred)
+	return compact_session_messages_preferring(messages, 'llm', preferred, model_context_tokens)
 }
 
 fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, older []ChatMessage,

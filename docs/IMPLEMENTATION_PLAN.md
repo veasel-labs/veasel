@@ -496,6 +496,15 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   byte budget, not a token budget: it does not by itself consume a model's
   full advertised token window, and compaction still applies above the
   pressure threshold.
+- [x] Model-aware compaction pressure: a curated context-window schedule
+  (`tools/model-context/schedule.json`, `[limit] context` values from the same
+  pinned Models.dev commit as the cost schedule, mirroring its provider/model
+  rows) resolves the active model's window when one is pinned. When the
+  conservative bytes/4 token bound reaches three quarters of a known window,
+  compaction fires with reason `token_pressure` even below the byte and
+  message-count thresholds. Unknown models keep the existing thresholds;
+  Veasel never invents a window. This is compaction pressure only, not a
+  token budget: the submitted-input byte budget above still bounds requests.
 - [x] Adaptive session compaction for in-flight provider requests when measured
   UTF-8 payload bytes (or conversation message count) cross a local pressure
   threshold: older turns are replaced with an untrusted extractive summary,

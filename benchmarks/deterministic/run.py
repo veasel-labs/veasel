@@ -106,6 +106,16 @@ TASKS = [
         "expect_response": "Autonomous multi-file edit applied.",
     },
     {
+        "id": "read-then-edit",
+        "prompt": "Read then edit workspace",
+        # The scripted model first reads src/main.v; only after that read
+        # result (containing the sentinel) does the provider request the
+        # greet edit. A pass proves read->edit chaining in one run.
+        "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
+        "check_description": "read of src/main.v is followed by the applied greet edit in the same run",
+        "expect_response": "Read then edit applied.",
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below

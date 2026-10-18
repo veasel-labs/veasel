@@ -380,7 +380,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -388,7 +388,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
@@ -435,6 +435,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = json.dumps({"command": "grep -q \"fn greet\" src/main.v", "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Recover after failed edit":
                     arguments = json.dumps({"path": "src/main.v", "content": NO_CHANGE_EDIT})
+                elif user_text == "Fix failing test":
+                    arguments = json.dumps({"command": "grep -q \"fn greet\" src/main.v && printf test-pass", "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Autonomous shell":
                     arguments = json.dumps({"command": 'test -z "${VEASEL_MODEL_API_KEY:-}" && printf autonomous-shell-ok', "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Propose shell command":
@@ -458,7 +460,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     or "Applied by graduated execution policy" in tool_result
                 )
                 is_edit_result = "Stored for human review" in tool_result or applied_edit
-                is_shell_result = "No command was executed" in tool_result or "autonomous-shell-ok" in tool_result or "edit-verified" in tool_result
+                is_shell_result = "No command was executed" in tool_result or "autonomous-shell-ok" in tool_result or "edit-verified" in tool_result or "test-pass" in tool_result
                 is_mcp_result = "fixture effect" in tool_result or "fixture tool error" in tool_result or "rejected this MCP tool call" in tool_result
                 is_failed_shell_result = "exit_code" in tool_result and "failed" in tool_result
                 if "workspace-search-sentinel" not in tool_result and "Skill reference smoke sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result and not is_mcp_result and not is_failed_shell_result:
@@ -503,7 +505,30 @@ class MockProvider(BaseHTTPRequestHandler):
                     and fixture_user_prompt(message.get("content", "")) == "Recover after failed edit"
                     for message in messages
                 )
-                if is_failed_edit_recovery and tool_result_count == 1 and "error" in tool_result and not applied_edit:
+                is_fix_failing_test = any(
+                    message.get("role") == "user"
+                    and fixture_user_prompt(message.get("content", "")) == "Fix failing test"
+                    for message in messages
+                )
+                if is_fix_failing_test and tool_result_count == 1 and is_failed_shell_result and not applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                        }}]
+                    }}]}
+                elif is_fix_failing_test and tool_result_count == 2 and applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
+                            "name": "workspace_propose_shell_command",
+                            "arguments": json.dumps({"command": "grep -q \"fn greet\" src/main.v && printf test-pass", "cwd": ".", "timeout_seconds": 10})
+                        }}]
+                    }}]}
+                elif is_failed_edit_recovery and tool_result_count == 1 and "error" in tool_result and not applied_edit:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
@@ -549,7 +574,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         }}]
                     }}]}
                 else:
-                    final_text = "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                    final_text = "Fixed failing test." if is_fix_failing_test and "test-pass" in tool_result else "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                     body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 body = {"choices": [{"message": {"role": "assistant", "content": REPLY}}]}

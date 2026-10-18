@@ -151,6 +151,18 @@ TASKS = [
         "expect_response": "Recovered after failed edit.",
     },
     {
+        "id": "fix-failing-test",
+        "prompt": "Fix failing test",
+        # The scripted model first runs the workspace check, which fails
+        # because the greet function does not exist yet. Only after that
+        # failed result does it apply the greet edit, then it re-runs the
+        # same check and it passes. A pass proves the fail->fix->re-verify
+        # self-correction loop, scored on the final file contents.
+        "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
+        "check_description": "a failing shell check is fixed by the greet edit and the re-run check passes in the same run",
+        "expect_response": "Fixed failing test.",
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below

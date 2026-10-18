@@ -4,10 +4,20 @@
   "source": {
     "kind": "models.dev",
     "repository": "https://github.com/anomalyco/models.dev",
-    "commit": "2dd3beed38c41d2e4b425e4638a66f81e69e73c0",
-    "note": "Curated subset mirroring tools/cost-schedule/schedule.json rows. Values are [limit] context from the pinned Models.dev commit (provider TOMLs, resolving base_model into the canonical models/ tree). Missing models stay unknown; Veasel never invents a context window. Veasel provider id gemini maps google/ Models.dev rows; openai-responses mirrors openai rows."
+    "commit": "327c52f5f843e6c48537534727645cb9639f25f3",
+    "note": "Curated context windows for Veasel native providers (anthropic, openai, gemini, meta; openai-responses mirrors openai) from the pinned Models.dev commit: every model whose provider or canonical models/ TOML declares tool_call, text output, and a [limit] context, resolving base_model into the canonical models/ tree. gemini rows map Models.dev google/ limits. Missing models stay unknown; Veasel never invents a context window."
   },
   "models": [
+    {
+      "provider": "anthropic",
+      "model": "claude-fable-5",
+      "context_tokens": 1000000
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-fable-5-1",
+      "context_tokens": 1000000
+    },
     {
       "provider": "anthropic",
       "model": "claude-haiku-4-5",
@@ -40,7 +50,22 @@
     },
     {
       "provider": "anthropic",
+      "model": "claude-opus-4-7",
+      "context_tokens": 1000000
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-8",
+      "context_tokens": 1000000
+    },
+    {
+      "provider": "anthropic",
       "model": "claude-opus-5",
+      "context_tokens": 1000000
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
       "context_tokens": 1000000
     },
     {
@@ -62,6 +87,26 @@
       "provider": "anthropic",
       "model": "claude-sonnet-5",
       "context_tokens": 1000000
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "context_tokens": 1000000
+    },
+    {
+      "provider": "gemini",
+      "model": "deep-research-max-preview-04-2026",
+      "context_tokens": 131072
+    },
+    {
+      "provider": "gemini",
+      "model": "deep-research-preview-04-2026",
+      "context_tokens": 131072
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-2.5-computer-use-preview-10-2025",
+      "context_tokens": 128000
     },
     {
       "provider": "gemini",
@@ -90,6 +135,61 @@
     },
     {
       "provider": "gemini",
+      "model": "gemini-3.1-flash-lite-image",
+      "context_tokens": 65536
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite-preview",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-live-preview",
+      "context_tokens": 131072
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-pro-preview",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.1-pro-preview-customtools",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.5-flash-lite",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.7-flash",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-3.8-flash",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
+      "model": "gemini-4-argon",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "gemini",
       "model": "gemini-flash-latest",
       "context_tokens": 1048576
     },
@@ -99,14 +199,54 @@
       "context_tokens": 1048576
     },
     {
+      "provider": "gemini",
+      "model": "gemma-4-26b-a4b-it",
+      "context_tokens": 262144
+    },
+    {
+      "provider": "gemini",
+      "model": "gemma-4-31b-it",
+      "context_tokens": 262144
+    },
+    {
+      "provider": "meta",
+      "model": "muse-spark-1.1",
+      "context_tokens": 1048576
+    },
+    {
       "provider": "meta",
       "model": "muse-spark-1.2",
       "context_tokens": 1048576
     },
     {
       "provider": "meta",
+      "model": "muse-spark-1.2-contributor",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "meta",
       "model": "muse-spark-1.3",
       "context_tokens": 1048576
+    },
+    {
+      "provider": "meta",
+      "model": "muse-spark-1.3-contributor",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "meta",
+      "model": "muse-wonder-1.0",
+      "context_tokens": 1048576
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4",
+      "context_tokens": 8192
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4-turbo",
+      "context_tokens": 128000
     },
     {
       "provider": "openai",
@@ -126,6 +266,11 @@
     {
       "provider": "openai",
       "model": "gpt-4o",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-4o-2024-05-13",
       "context_tokens": 128000
     },
     {
@@ -160,6 +305,11 @@
     },
     {
       "provider": "openai",
+      "model": "gpt-5-pro",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai",
       "model": "gpt-5.1",
       "context_tokens": 400000
     },
@@ -167,6 +317,31 @@
       "provider": "openai",
       "model": "gpt-5.2",
       "context_tokens": 400000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.2-chat-latest",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.2-pro",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.3-chat-latest",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.3-codex",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.3-codex-spark",
+      "context_tokens": 128000
     },
     {
       "provider": "openai",
@@ -185,7 +360,82 @@
     },
     {
       "provider": "openai",
+      "model": "gpt-5.4-pro",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.5-pro",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.6",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-luna",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-sol",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6.1-sol",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-daybreak-blue-latest",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-daybreak-red-latest",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-realtime-2.1",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai",
       "model": "o1",
+      "context_tokens": 200000
+    },
+    {
+      "provider": "openai",
+      "model": "o1-pro",
       "context_tokens": 200000
     },
     {
@@ -196,6 +446,11 @@
     {
       "provider": "openai",
       "model": "o3-mini",
+      "context_tokens": 200000
+    },
+    {
+      "provider": "openai",
+      "model": "o3-pro",
       "context_tokens": 200000
     },
     {
@@ -205,6 +460,16 @@
     },
     {
       "provider": "openai-responses",
+      "model": "gpt-4",
+      "context_tokens": 8192
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-4-turbo",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai-responses",
       "model": "gpt-4.1",
       "context_tokens": 1047576
     },
@@ -221,6 +486,11 @@
     {
       "provider": "openai-responses",
       "model": "gpt-4o",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-4o-2024-05-13",
       "context_tokens": 128000
     },
     {
@@ -255,6 +525,11 @@
     },
     {
       "provider": "openai-responses",
+      "model": "gpt-5-pro",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai-responses",
       "model": "gpt-5.1",
       "context_tokens": 400000
     },
@@ -262,6 +537,31 @@
       "provider": "openai-responses",
       "model": "gpt-5.2",
       "context_tokens": 400000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.2-chat-latest",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.2-pro",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.3-chat-latest",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.3-codex",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.3-codex-spark",
+      "context_tokens": 128000
     },
     {
       "provider": "openai-responses",
@@ -280,7 +580,82 @@
     },
     {
       "provider": "openai-responses",
+      "model": "gpt-5.4-pro",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.5",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.5-pro",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.6",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.6-luna",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.6-sol",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-5.6-terra",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-6-astra",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-6-luna",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-6-sol",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-6.1-sol",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-daybreak-blue-latest",
+      "context_tokens": 1050000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-daybreak-red-latest",
+      "context_tokens": 400000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "gpt-realtime-2.1",
+      "context_tokens": 128000
+    },
+    {
+      "provider": "openai-responses",
       "model": "o1",
+      "context_tokens": 200000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "o1-pro",
       "context_tokens": 200000
     },
     {
@@ -291,6 +666,11 @@
     {
       "provider": "openai-responses",
       "model": "o3-mini",
+      "context_tokens": 200000
+    },
+    {
+      "provider": "openai-responses",
+      "model": "o3-pro",
       "context_tokens": 200000
     },
     {

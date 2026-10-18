@@ -138,6 +138,19 @@ TASKS = [
         "expect_response": "Recovered after failed check.",
     },
     {
+        "id": "failed-edit-then-retry",
+        "prompt": "Recover after failed edit",
+        # The scripted model first proposes an edit whose content is
+        # identical to the current file, so the edit tool rejects it with
+        # a "no changes" error. Only after that error tool result does the
+        # provider request the real greet edit. A pass proves the loop
+        # feeds edit failures back to the model and recovers, scored on
+        # the final file contents.
+        "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
+        "check_description": "a rejected no-change edit is followed by the applied greet edit in the same run",
+        "expect_response": "Recovered after failed edit.",
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below

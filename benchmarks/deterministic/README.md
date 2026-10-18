@@ -29,6 +29,7 @@ binary under test.
 | `read-then-edit` | `Read then edit workspace` | Read of `src/main.v` followed by the applied `greet` edit in the same run |
 | `edit-then-shell-verify` | `Edit then verify workspace` | `greet` edit applied, then verified by a shell `grep` in the same run |
 | `failed-shell-then-edit` | `Recover after failed check` | A shell `grep` fails (no `greet` yet), the failure is fed back, and the `greet` edit is applied in the same run |
+| `failed-edit-then-retry` | `Recover after failed edit` | A no-change edit is rejected by the edit tool, the error is fed back, and the real `greet` edit is applied in the same run |
 | `greeting-reply` | `Say hello` | Run completes with the fixture reply |
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
@@ -49,7 +50,10 @@ arrives — and scores both files' final contents. The
 `failed-shell-then-edit` fixture starts with a shell check that fails
 because the target code does not exist yet; the provider requests the edit
 only after seeing the failed tool result, so a pass proves tool failures
-are fed back to the model and the loop recovers instead of stopping. These are
+are fed back to the model and the loop recovers instead of stopping. The
+`failed-edit-then-retry` fixture does the same for the edit tool itself: a
+proposed edit identical to the current file is rejected as a no-change
+error, and only then does the provider request the real edit. These are
 Veasel-only: competitor adapters keep running the shared
 `autonomous-workspace-edit` fixture, which is the cross-agent comparison.
 

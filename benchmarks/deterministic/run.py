@@ -120,6 +120,17 @@ TASKS = [
         "expect_response": "Autonomous shell completed.",
     },
     {
+        "id": "outside-write-rejected",
+        "prompt": "Try to write outside",
+        # Symmetric to outside-read-rejected: the scripted edit targets
+        # ../outside/evil.txt. The mock provider accepts the follow-up only
+        # when the tool result is an error, and the external check verifies
+        # no file appeared outside the workspace.
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V and not (ws.parent / "outside" / "evil.txt").exists(),
+        "check_description": "write outside the workspace is rejected; no outside file created",
+        "expect_response": "The path was rejected.",
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock

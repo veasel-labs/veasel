@@ -932,25 +932,29 @@ fn agent_context_bytes(messages []ChatMessage) int {
 // or LLM summarizers are selected by VEASEL_SESSION_COMPACTION_SUMMARIZER and
 // fall back to extractive compaction when unavailable, empty, or when they grow
 // measured UTF-8 context.
-fn (app &App) active_model_context_tokens() int {
-	config := app.model_config() or { return 0 }
-	return model_context_tokens(config.provider, config.model) or { 0 }
+// active_model_token_budget resolves the curated context window for the
+// active model plus the configured output reserve held back from it. Unknown
+// models return a zero window so no budget is invented for them.
+fn (app &App) active_model_token_budget() (int, int) {
+	config := app.model_config() or { return 0, 0 }
+	return model_context_tokens(config.provider, config.model) or { 0 }, config.max_output_tokens
 }
 
 fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut messages []ChatMessage,
 	session_id string, operation_id string) ! {
 	mode := session_compaction_summarizer_mode()
-	context_tokens := app.active_model_context_tokens()
+	context_tokens, reserved_output_tokens := app.active_model_token_budget()
 	result := match mode {
 		'native' {
 			compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer,
-				context_tokens)
+				context_tokens, reserved_output_tokens)
 		}
 		'llm' {
-			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, messages, context_tokens)
+			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, messages, context_tokens,
+				reserved_output_tokens)
 		}
 		else {
-			compact_session_messages(messages, context_tokens)
+			compact_session_messages(messages, context_tokens, reserved_output_tokens)
 		}
 	}
 	if !result.measurement.triggered {
@@ -962,14 +966,15 @@ fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut
 }
 
 fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext.Context,
-	messages []ChatMessage, model_context_tokens int) SessionCompactionResult {
+	messages []ChatMessage, model_context_tokens int, reserved_output_tokens int) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
-	due, reason := session_compaction_due(messages, model_context_tokens)
+	due, reason := session_compaction_due(messages, model_context_tokens, reserved_output_tokens)
 	if !due {
 		return compaction_result_unchanged(messages, bytes_before, '')
 	}
 	first := first_conversation_index(messages)
-	cut := find_compaction_cut(messages, compaction_keep_recent_bytes, reason)
+	keep_bytes := compaction_keep_bytes_for_window(model_context_tokens, reserved_output_tokens)
+	cut := find_compaction_cut(messages, keep_bytes, reason)
 	if cut <= first || cut >= messages.len {
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}
@@ -979,9 +984,10 @@ fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext
 	}
 	preferred := app.llm_session_compaction_summary(mut turn_ctx, older, bytes_before, reason) or {
 		return apply_extractive_compaction(messages, bytes_before, reason, 'llm_fallback_extractive',
-			ProviderUsage{})
+			ProviderUsage{}, keep_bytes)
 	}
-	return compact_session_messages_preferring(messages, 'llm', preferred, model_context_tokens)
+	return compact_session_messages_preferring(messages, 'llm', preferred, model_context_tokens,
+		reserved_output_tokens)
 }
 
 fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, older []ChatMessage,

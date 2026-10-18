@@ -45,7 +45,7 @@ fn test_session_compaction_skips_when_under_pressure() {
 			content: 'Short question.'
 		},
 	]
-	result := compact_session_messages(messages, 0)
+	result := compact_session_messages(messages, 0, 0)
 	assert !result.measurement.triggered
 	assert result.messages.len == messages.len
 	assert result.measurement.bytes_before == agent_context_bytes(messages)
@@ -58,7 +58,7 @@ fn test_session_compaction_reduces_bytes_under_byte_pressure() {
 	messages := fixture_pressure_messages(20, payload, 'Continue the latest task with the open files.')
 	before := agent_context_bytes(messages)
 	assert before >= compaction_pressure_bytes()
-	result := compact_session_messages(messages, 0)
+	result := compact_session_messages(messages, 0, 0)
 	assert result.measurement.triggered
 	assert result.measurement.reason == 'byte_pressure'
 	assert result.measurement.bytes_before == before
@@ -100,7 +100,7 @@ fn test_session_compaction_preserves_tool_pair_in_recent_tail() {
 		tool_call_id: 'call-1'
 		content:      'fn main() {}\n' + payload
 	}
-	result := compact_session_messages(messages, 0)
+	result := compact_session_messages(messages, 0, 0)
 	assert result.measurement.triggered
 	mut saw_tool_call := false
 	mut saw_tool_result := false
@@ -131,10 +131,10 @@ fn test_session_compaction_message_pressure_without_huge_payload() {
 			content: 'turn-${index}: small'
 		}
 	}
-	due, reason := session_compaction_due(messages, 0)
+	due, reason := session_compaction_due(messages, 0, 0)
 	assert due
 	assert reason == 'message_pressure'
-	result := compact_session_messages(messages, 0)
+	result := compact_session_messages(messages, 0, 0)
 	assert result.measurement.triggered
 	assert result.measurement.reason == 'message_pressure'
 	assert result.messages.len < messages.len
@@ -178,7 +178,7 @@ fn test_session_compaction_event_preserves_durable_chat_history() {
 
 	payload := 'z'.repeat(24_000)
 	messages := fixture_pressure_messages(20, payload, 'Keep going.')
-	result := compact_session_messages(messages, 0)
+	result := compact_session_messages(messages, 0, 0)
 	assert result.measurement.triggered
 	store.record_session_compaction(session.id, operation_id, result.measurement, result.summary) or {
 		panic(err)
@@ -244,7 +244,7 @@ fn test_session_compaction_llm_summarizer_success_records_provider_usage() {
 	payload := 'x'.repeat(24_000)
 	messages := fixture_pressure_messages(20, payload, 'Continue after summarizer.')
 	before := agent_context_bytes(messages)
-	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_success_summarizer, 0)
+	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_success_summarizer, 0, 0)
 	assert result.measurement.triggered
 	assert result.measurement.summarizer_mode == 'llm'
 	assert result.measurement.bytes_after < before
@@ -262,7 +262,7 @@ fn test_session_compaction_llm_summarizer_failure_falls_back_extractive() {
 	payload := 'x'.repeat(24_000)
 	messages := fixture_pressure_messages(20, payload, 'Fallback please.')
 	before := agent_context_bytes(messages)
-	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_failure_summarizer, 0)
+	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_failure_summarizer, 0, 0)
 	assert result.measurement.triggered
 	assert result.measurement.summarizer_mode == 'llm_fallback_extractive'
 	assert result.measurement.bytes_after < before
@@ -275,7 +275,7 @@ fn test_session_compaction_llm_summarizer_refuses_when_context_grows() {
 	payload := 'x'.repeat(24_000)
 	messages := fixture_pressure_messages(20, payload, 'Refuse growth.')
 	before := agent_context_bytes(messages)
-	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_growing_summarizer, 0)
+	result := compact_session_messages_with_summarizer(messages, 'llm', fixture_llm_growing_summarizer, 0, 0)
 	assert result.measurement.triggered
 	assert result.measurement.summarizer_mode == 'llm_fallback_extractive'
 	assert result.measurement.bytes_after < before
@@ -342,7 +342,7 @@ fn test_session_compaction_native_summarizer_and_tool_pair_boundary() {
 		content:      'fn main() {}\n' + payload
 	}
 	assert agent_context_bytes(messages) >= compaction_pressure_bytes()
-	result := compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer, 0)
+	result := compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer, 0, 0)
 	assert result.measurement.triggered
 	assert result.measurement.summarizer_mode == 'native'
 	assert result.measurement.bytes_after < result.measurement.bytes_before
@@ -399,13 +399,13 @@ fn test_session_compaction_token_pressure_with_known_window() {
 	// 3/4 of a 200k curated window, so token pressure must fire.
 	payload := 'x'.repeat(15_000)
 	messages := fixture_pressure_messages(20, payload, 'recent question')
-	unknown_due, unknown_reason := session_compaction_due(messages, 0)
+	unknown_due, unknown_reason := session_compaction_due(messages, 0, 0)
 	assert !unknown_due
 	assert unknown_reason == ''
-	due, reason := session_compaction_due(messages, 200_000)
+	due, reason := session_compaction_due(messages, 200_000, 0)
 	assert due
 	assert reason == 'token_pressure'
-	result := compact_session_messages(messages, 200_000)
+	result := compact_session_messages(messages, 200_000, 0)
 	assert result.measurement.triggered
 	assert result.measurement.reason == 'token_pressure'
 }
@@ -413,7 +413,46 @@ fn test_session_compaction_token_pressure_with_known_window() {
 fn test_session_compaction_token_pressure_respects_large_window() {
 	payload := 'x'.repeat(15_000)
 	messages := fixture_pressure_messages(20, payload, 'recent question')
-	due, reason := session_compaction_due(messages, 1_000_000)
+	due, reason := session_compaction_due(messages, 1_000_000, 0)
 	assert !due
 	assert reason == ''
+}
+
+fn test_compaction_token_input_budget_reserves_output() {
+	assert compaction_token_input_budget(0, 0) == 0
+	assert compaction_token_input_budget(-5, 0) == 0
+	assert compaction_token_input_budget(200_000, 0) == 200_000 - max_model_output_tokens
+	assert compaction_token_input_budget(200_000, 32_768) == 167_232
+	// A reserve larger than the window still leaves a minimal input budget.
+	assert compaction_token_input_budget(8_192, 131_072) == compaction_min_token_input_budget
+}
+
+fn test_compaction_keep_bytes_scales_to_small_windows() {
+	assert compaction_keep_bytes_for_window(0, 0) == compaction_keep_recent_bytes
+	assert compaction_keep_bytes_for_window(1_000_000, 0) == compaction_keep_recent_bytes
+	assert compaction_keep_bytes_for_window(32_768, 4_096) == 28_672
+	assert compaction_keep_bytes_for_window(8_192, 4_096) == compaction_min_keep_bytes
+}
+
+fn test_session_compaction_token_pressure_accounts_for_output_reserve() {
+	// Bound is ~100k tokens: under the 200k window threshold with the default
+	// reserve, but over 3/4 of the budget left by a 128k output reserve.
+	payload := 'x'.repeat(10_000)
+	messages := fixture_pressure_messages(20, payload, 'recent question')
+	due_default, _ := session_compaction_due(messages, 200_000, 0)
+	assert !due_default
+	due, reason := session_compaction_due(messages, 200_000, 131_072)
+	assert due
+	assert reason == 'token_pressure'
+}
+
+fn test_session_compaction_small_window_result_fits_input_budget() {
+	payload := 'x'.repeat(4_000)
+	messages := fixture_pressure_messages(20, payload, 'recent question')
+	result := compact_session_messages(messages, 32_768, 4_096)
+	assert result.measurement.triggered
+	assert result.measurement.reason == 'token_pressure'
+	assert result.measurement.bytes_after < result.measurement.bytes_before
+	assert result.measurement.estimated_token_bound_after <= compaction_token_input_budget(32_768,
+		4_096)
 }

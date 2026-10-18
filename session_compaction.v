@@ -60,6 +60,52 @@ fn compaction_pressure_bytes() int {
 	return chat_input_byte_limit() * compaction_pressure_ratio_numerator / compaction_pressure_ratio_denominator
 }
 
+const compaction_min_keep_bytes = 4_096
+const compaction_min_token_input_budget = 1_024
+
+// compaction_reserved_output_tokens resolves the output reserve held back from
+// a known context window. A non-positive configured value falls back to the
+// default provider output cap so a reserve always exists.
+fn compaction_reserved_output_tokens(reserved_output_tokens int) int {
+	if reserved_output_tokens > 0 {
+		return reserved_output_tokens
+	}
+	return max_model_output_tokens
+}
+
+// compaction_token_input_budget returns the input-token budget for a known
+// curated window after reserving room for the reply, or 0 when the window is
+// unknown. Unknown models stay unknown: no budget is invented for them.
+fn compaction_token_input_budget(model_context_tokens int, reserved_output_tokens int) int {
+	if model_context_tokens <= 0 {
+		return 0
+	}
+	usable := model_context_tokens - compaction_reserved_output_tokens(reserved_output_tokens)
+	if usable < compaction_min_token_input_budget {
+		return compaction_min_token_input_budget
+	}
+	return usable
+}
+
+// compaction_keep_bytes_for_window scales the verbatim recent-history window
+// to a known token budget: roughly a quarter of the input budget (tokens are
+// bounded at 4 bytes each), clamped so small windows cannot keep a recent
+// tail that alone overflows the model window.
+fn compaction_keep_bytes_for_window(model_context_tokens int, reserved_output_tokens int) int {
+	budget := compaction_token_input_budget(model_context_tokens, reserved_output_tokens)
+	if budget <= 0 {
+		return compaction_keep_recent_bytes
+	}
+	keep := budget / 4 * 4
+	if keep < compaction_min_keep_bytes {
+		return compaction_min_keep_bytes
+	}
+	if keep > compaction_keep_recent_bytes {
+		return compaction_keep_recent_bytes
+	}
+	return keep
+}
+
 fn estimate_token_bound_from_bytes(bytes int) int {
 	if bytes <= 0 {
 		return 0
@@ -81,16 +127,18 @@ fn message_context_bytes(message ChatMessage) int {
 	return total
 }
 
-fn session_compaction_due(messages []ChatMessage, model_context_tokens int) (bool, string) {
+fn session_compaction_due(messages []ChatMessage, model_context_tokens int, reserved_output_tokens int) (bool, string) {
 	bytes := agent_context_bytes(messages)
 	if bytes >= compaction_pressure_bytes() {
 		return true, 'byte_pressure'
 	}
-	// Token pressure only applies with a curated context window. The bound is
-	// the conservative bytes/4 estimate already used for measurements; it is
-	// never provider-reported usage.
-	if model_context_tokens > 0
-		&& estimate_token_bound_from_bytes(bytes) >= model_context_tokens * compaction_pressure_ratio_numerator / compaction_pressure_ratio_denominator {
+	// Token pressure only applies with a curated context window, measured
+	// against the input budget left after reserving room for the reply. The
+	// bound is the conservative bytes/4 estimate already used for
+	// measurements; it is never provider-reported usage.
+	token_budget := compaction_token_input_budget(model_context_tokens, reserved_output_tokens)
+	if token_budget > 0
+		&& estimate_token_bound_from_bytes(bytes) >= token_budget * compaction_pressure_ratio_numerator / compaction_pressure_ratio_denominator {
 		return true, 'token_pressure'
 	}
 	mut conversation := 0
@@ -440,27 +488,29 @@ fn finalize_compaction_result(compacted []ChatMessage, summary string, bytes_bef
 
 // compact_session_messages replaces older conversation with one untrusted
 // extractive summary when pressure is due. System messages stay verbatim.
-fn compact_session_messages(messages []ChatMessage, model_context_tokens int) SessionCompactionResult {
+fn compact_session_messages(messages []ChatMessage, model_context_tokens int, reserved_output_tokens int) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
-	due, reason := session_compaction_due(messages, model_context_tokens)
+	due, reason := session_compaction_due(messages, model_context_tokens, reserved_output_tokens)
 	if !due {
 		return compaction_result_unchanged(messages, bytes_before, '')
 	}
-	return apply_extractive_compaction(messages, bytes_before, reason, 'extractive', ProviderUsage{})
+	return apply_extractive_compaction(messages, bytes_before, reason, 'extractive', ProviderUsage{},
+		compaction_keep_bytes_for_window(model_context_tokens, reserved_output_tokens))
 }
 
 // compact_session_messages_with_summarizer tries a native/LLM summarizer first.
 // On summarizer error, empty body, or a candidate that grows measured context,
 // it falls back to the extractive summary. Durable history is never modified.
 fn compact_session_messages_with_summarizer(messages []ChatMessage, intended_mode string,
-	summarizer SessionCompactionSummarizerFn, model_context_tokens int) SessionCompactionResult {
+	summarizer SessionCompactionSummarizerFn, model_context_tokens int, reserved_output_tokens int) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
-	due, reason := session_compaction_due(messages, model_context_tokens)
+	due, reason := session_compaction_due(messages, model_context_tokens, reserved_output_tokens)
 	if !due {
 		return compaction_result_unchanged(messages, bytes_before, '')
 	}
 	first := first_conversation_index(messages)
-	cut := find_compaction_cut(messages, compaction_keep_recent_bytes, reason)
+	cut := find_compaction_cut(messages, compaction_keep_bytes_for_window(model_context_tokens,
+		reserved_output_tokens), reason)
 	if cut <= first || cut >= messages.len {
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}
@@ -470,22 +520,25 @@ fn compact_session_messages_with_summarizer(messages []ChatMessage, intended_mod
 	}
 	fallback_mode := compaction_fallback_mode(intended_mode)
 	attempt := summarizer(older, bytes_before, reason) or {
-		return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, ProviderUsage{})
+		return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, ProviderUsage{},
+			compaction_keep_bytes_for_window(model_context_tokens, reserved_output_tokens))
 	}
-	return compact_session_messages_preferring(messages, intended_mode, attempt, model_context_tokens)
+	return compact_session_messages_preferring(messages, intended_mode, attempt, model_context_tokens,
+		reserved_output_tokens)
 }
 
 // compact_session_messages_preferring applies a precomputed summarizer output or
 // falls back to extractive when the candidate is empty or grows measured context.
 fn compact_session_messages_preferring(messages []ChatMessage, intended_mode string,
-	attempt SessionCompactionSummarizerOutput, model_context_tokens int) SessionCompactionResult {
+	attempt SessionCompactionSummarizerOutput, model_context_tokens int, reserved_output_tokens int) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
-	due, reason := session_compaction_due(messages, model_context_tokens)
+	due, reason := session_compaction_due(messages, model_context_tokens, reserved_output_tokens)
 	if !due {
 		return compaction_result_unchanged(messages, bytes_before, '')
 	}
 	first := first_conversation_index(messages)
-	cut := find_compaction_cut(messages, compaction_keep_recent_bytes, reason)
+	keep_bytes := compaction_keep_bytes_for_window(model_context_tokens, reserved_output_tokens)
+	cut := find_compaction_cut(messages, keep_bytes, reason)
 	if cut <= first || cut >= messages.len {
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}
@@ -496,7 +549,8 @@ fn compact_session_messages_preferring(messages []ChatMessage, intended_mode str
 	fallback_mode := compaction_fallback_mode(intended_mode)
 	summary_body := sanitize_compaction_text(attempt.body)
 	if summary_body.trim_space().len == 0 {
-		return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, attempt.usage)
+		return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, attempt.usage,
+			keep_bytes)
 	}
 	candidate := assemble_compacted_messages(messages, first, cut, summary_body)
 	if compaction_accepts_candidate(reason, bytes_before, messages.len, candidate) {
@@ -504,7 +558,8 @@ fn compact_session_messages_preferring(messages []ChatMessage, intended_mode str
 		return finalize_compaction_result(candidate, summary_body, bytes_before, reason, older.len,
 			mode, attempt.usage)
 	}
-	return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, attempt.usage)
+	return apply_extractive_compaction(messages, bytes_before, reason, fallback_mode, attempt.usage,
+		keep_bytes)
 }
 
 fn compaction_fallback_mode(intended_mode string) string {
@@ -515,9 +570,9 @@ fn compaction_fallback_mode(intended_mode string) string {
 }
 
 fn apply_extractive_compaction(messages []ChatMessage, bytes_before int, reason string, mode string,
-	usage ProviderUsage) SessionCompactionResult {
+	usage ProviderUsage, keep_bytes int) SessionCompactionResult {
 	first := first_conversation_index(messages)
-	cut := find_compaction_cut(messages, compaction_keep_recent_bytes, reason)
+	cut := find_compaction_cut(messages, keep_bytes, reason)
 	if cut <= first || cut >= messages.len {
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}

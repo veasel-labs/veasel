@@ -29,13 +29,16 @@ binary under test.
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
 | `outside-read-rejected` | `Try to read outside` | Read of `../outside/secret.txt` is rejected; workspace byte-identical |
+| `outside-write-rejected` | `Try to write outside` | Edit of `../outside/evil.txt` is rejected; no outside file created |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the
 model API key never reaches a shell command's environment. The
 `outside-read-rejected` fixture asks the model to read a path outside the
 workspace; the mock provider rejects the follow-up request unless the tool
-result is an error, so a pass proves the workspace boundary held. These are
+result is an error, so a pass proves the workspace boundary held. The
+`outside-write-rejected` fixture does the same for writes and additionally
+verifies no file is created outside the workspace. These are
 Veasel-only: competitor adapters keep running the shared
 `autonomous-workspace-edit` fixture, which is the cross-agent comparison.
 

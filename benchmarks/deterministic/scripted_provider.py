@@ -12,7 +12,9 @@ from pathlib import Path
 port_file, log_file = sys.argv[1], sys.argv[2]
 CONTENT = "module fixture\n\n// workspace-search-sentinel\nfn greet(name string) string {\n\treturn 'Hello, ${name}!'\n}\n"
 
+WRITE_CMD = "cat > src/main.v <<'VEASEL_EOF'\n" + CONTENT + "VEASEL_EOF"
 ARGS = {
+    "bash": lambda: {"command": WRITE_CMD},
     "write": lambda: {"path": "src/main.v", "content": CONTENT},
     "edit": lambda: {"path": "src/main.v", "oldString": "// workspace-search-sentinel", "newString": "// workspace-search-sentinel\nfn greet(name string) string {\n\treturn 'Hello, ${name}!'\n}"},
     "create_file": lambda: {"path": "src/main.v", "content": CONTENT},
@@ -41,11 +43,19 @@ class H(BaseHTTPRequestHandler):
         tools = payload.get("tools", [])
         names = [t.get("function", {}).get("name", "") for t in tools]
         if last.get("role") == "tool":
-            reply = {"role": "assistant", "content": "Done. The greet function is in place."}
-            finish = "stop"
-            msg = reply
+            if "bash" in names and not any(n in names for n in ("write", "edit", "create_file")):
+                # mini-SWE-agent requires a tool call in every response and
+                # finishes only on its submission command.
+                msg = {"role": "assistant", "content": None, "tool_calls": [
+                    {"id": "call-2", "type": "function",
+                     "function": {"name": "bash", "arguments": json.dumps({"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"})}}]}
+                finish = "tool_calls"
+            else:
+                reply = {"role": "assistant", "content": "Done. The greet function is in place."}
+                finish = "stop"
+                msg = reply
         else:
-            pick = next((n for n in ("write", "edit", "create_file", "apply_patch") if n in names), None)
+            pick = next((n for n in ("write", "edit", "create_file", "apply_patch", "bash") if n in names), None)
             if pick is None:
                 msg = {"role": "assistant", "content": "No write tool available."}
                 finish = "stop"

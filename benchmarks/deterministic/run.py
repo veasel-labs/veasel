@@ -360,10 +360,72 @@ def run_codex_task(codex: str, provider_port: int, provider_log: Path, task: dic
     return entry
 
 
+def run_mini_task(provider_port: int, provider_log: Path, task: dict, work: Path) -> dict:
+    """Run one fixture through mini-SWE-agent 2.x against the scripted provider.
+
+    Driven via `uvx --from mini-swe-agent mini` (uv-managed, nothing installed
+    into the project). MSWEA_CONFIGURED skips its interactive first-run setup
+    and MSWEA_COST_TRACKING=ignore_errors keeps the unknown fixture model out
+    of litellm's pricing registry. Its only tool is bash, so the scripted
+    provider answers with a bash tool call. Isolated MSWEA_GLOBAL_CONFIG_DIR.
+    """
+    workspace = work / "workspace"
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    global_dir = work / "mini-global"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text("OPENAI_API_KEY=fixture-key\n", encoding="utf-8")
+    log_offset = provider_log.stat().st_size if provider_log.exists() else 0
+    env = dict(
+        os.environ,
+        PWD=str(workspace),
+        MSWEA_CONFIGURED="1",
+        MSWEA_COST_TRACKING="ignore_errors",
+        MSWEA_GLOBAL_CONFIG_DIR=str(global_dir),
+        OPENAI_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
+        OPENAI_API_KEY="fixture-key",
+    )
+    started = time.monotonic()
+    completed = subprocess.run(
+        ["uvx", "--from", "mini-swe-agent", "mini", "-y", "--exit-immediately", "-m", "openai/smoke-model", "-t", task["prompt"]],
+        cwd=workspace, env=env, capture_output=True, timeout=300,
+        stdin=subprocess.DEVNULL,
+    )
+    wall_ms = round((time.monotonic() - started) * 1000, 1)
+    requests, tool_results = provider_stats(provider_log, log_offset)
+    passed = completed.returncode == 0 and bool(task["check"](workspace))
+    entry = {
+        "id": task["id"],
+        "prompt": task["prompt"],
+        "check": task["check_description"],
+        "passed": passed,
+        "wall_ms": wall_ms,
+        "status": "completed" if completed.returncode == 0 else "failed",
+        "provider_requests": requests,
+        "tool_results": tool_results,
+    }
+    if not passed:
+        tail = (completed.stderr or completed.stdout or b"").decode(errors="replace")[-500:]
+        entry["error"] = tail.strip() or f"exit {completed.returncode}, check failed"
+    return entry
+
+
+def dispatch_task(args, veasel, provider_port, provider_log, task, task_work) -> dict:
+    if args.agent == "veasel":
+        return run_task(veasel, provider_port, task, task_work)
+    if args.agent == "pi":
+        return run_pi_task(args.pi, provider_port, provider_log, task, task_work)
+    if args.agent == "codex":
+        return run_codex_task(args.codex, provider_port, provider_log, task, task_work)
+    if args.agent == "mini":
+        return run_mini_task(provider_port, provider_log, task, task_work)
+    return run_opencode_task(args.opencode, provider_port, provider_log, task, task_work)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--veasel", help="path to the veasel binary under test")
-    parser.add_argument("--agent", choices=("veasel", "opencode", "pi", "codex"), default="veasel")
+    parser.add_argument("--agent", choices=("veasel", "opencode", "pi", "codex", "mini"), default="veasel")
     parser.add_argument("--opencode", default="opencode", help="opencode executable (agent=opencode)")
     parser.add_argument("--pi", default="pi", help="pi executable (agent=pi)")
     parser.add_argument("--codex", default="codex", help="codex executable (agent=codex)")
@@ -391,14 +453,15 @@ def main() -> int:
         for index, task in enumerate(tasks):
             task_work = work_root / f"task-{index}"
             task_work.mkdir()
-            if args.agent == "veasel":
-                results.append(run_task(veasel, provider_port, task, task_work))
-            elif args.agent == "pi":
-                results.append(run_pi_task(args.pi, provider_port, provider_log, task, task_work))
-            elif args.agent == "codex":
-                results.append(run_codex_task(args.codex, provider_port, provider_log, task, task_work))
-            else:
-                results.append(run_opencode_task(args.opencode, provider_port, provider_log, task, task_work))
+            try:
+                entry = dispatch_task(args, veasel, provider_port, provider_log, task, task_work)
+            except subprocess.TimeoutExpired:
+                entry = {
+                    "id": task["id"], "prompt": task["prompt"], "check": task["check_description"],
+                    "passed": False, "wall_ms": -1, "status": "timeout",
+                    "error": "agent subprocess timed out",
+                }
+            results.append(entry)
             print(f"{task['id']}: {'PASS' if results[-1]['passed'] else 'FAIL'} "
                   f"({results[-1]['wall_ms']} ms, {results[-1].get('tool_calls', results[-1].get('tool_results'))} tool calls)")
     finally:

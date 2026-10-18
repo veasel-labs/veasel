@@ -60,10 +60,16 @@ external check — all passing):
 | Veasel | 264 ms |
 | Pi 0.85.1 | 492 ms |
 | Codex 0.163.0 | 4,132 ms |
+| mini-SWE-agent 2.4.6 | 4,281 ms |
 | OpenCode 2.0.27 | 4,588 ms |
 
 This measures harness/startup orchestration only — scripted replies say
 nothing about model quality, and no superiority claim is supported until
 real same-model runs with an authorized budget record model, provider,
-versions, limits and raw outcomes per `docs/benchmarking.md`. A
-mini-SWE-agent adapter remains a follow-up.
+versions, limits and raw outcomes per `docs/benchmarking.md`.
+
+The mini-SWE-agent adapter (`--agent mini`, via `uvx`) needed two protocol
+facts: it requires a tool call in every response and finishes only when the
+model issues `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` as a bash command,
+so the scripted provider answers its tool result with that submission call;
+and it prompts interactively at finish unless `--exit-immediately` is set.

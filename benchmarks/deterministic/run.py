@@ -119,6 +119,17 @@ TASKS = [
         "check_description": "shell tool runs with no provider key in its env; workspace unchanged",
         "expect_response": "Autonomous shell completed.",
     },
+    {
+        "id": "outside-read-rejected",
+        "prompt": "Try to read outside",
+        # The scripted tool call asks for ../outside/secret.txt. The mock
+        # provider rejects the follow-up request unless the tool result is
+        # an error, so a pass proves the workspace boundary held and no
+        # outside content reached the model.
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "read outside the workspace is rejected; workspace unchanged",
+        "expect_response": "The path was rejected.",
+    },
 ]
 
 

@@ -368,3 +368,23 @@ fn test_repository_map_cross_references_personalize_hint_referrers() {
 	assert beta_index >= 0
 	assert alpha_index < beta_index
 }
+
+fn test_repository_map_symbol_count_does_not_flood_ranking() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-flood')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	mut big := 'module noise\n'
+	for i in 0 .. 40 {
+		big += '\npub fn zebra_process_${i}() {}\n'
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'big_noise.v'), big)
+	write_map_fixture_file(os.join_path(root, 'src', 'target.v'), 'module target\n\npub fn render_widget() {}\n')
+	result := build_repository_map(root, 'Please fix render_widget', repository_map_default_budget_bytes) or {
+		panic(err)
+	}
+	assert result.ranked_paths.len >= 2
+	assert result.ranked_paths[0] == 'src/target.v', 'mentioned definer must outrank a large unrelated file: ${result.ranked_paths}'
+}

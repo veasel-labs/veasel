@@ -1886,3 +1886,54 @@ fn chat_input_rejected(messages []ChatMessage) bool {
 	validate_messages(messages) or { return true }
 	return false
 }
+
+fn test_global_usage_summary_aggregates_across_sessions() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	empty := store.usage_summary() or { panic(err) }
+	assert empty.sessions == 0
+	assert empty.completed_turns == 0
+	assert !empty.usage_reported
+	first_session := store.create_session(SessionInput{
+		title:     'Usage A'
+		directory: '/tmp/usage-a'
+	}) or { panic(err) }
+	second_session := store.create_session(SessionInput{
+		title:     'Usage B'
+		directory: '/tmp/usage-b'
+	}) or { panic(err) }
+	first := '03b42ec1-8f56-45f8-9146-9a0d93f1d501'
+	second := '13b42ec1-8f56-45f8-9146-9a0d93f1d502'
+	third := '23b42ec1-8f56-45f8-9146-9a0d93f1d503'
+	_ = store.create_session_operation(first_session.id, first) or { panic(err) }
+	_ = store.append_exchange(first_session.id, first, 'one', 'a', 'openai-compatible', 'fixture',
+		'', ProviderUsage{
+			input_tokens:  100
+			output_tokens: 20
+			reported:      true
+		}) or { panic(err) }
+	_ = store.create_session_operation(second_session.id, second) or { panic(err) }
+	_ = store.append_exchange(second_session.id, second, 'two', 'b', 'openai-compatible', 'fixture',
+		'', ProviderUsage{
+			input_tokens:          50
+			output_tokens:         10
+			cache_read_tokens:     30
+			cache_creation_tokens: 5
+			cache_reported:        true
+			reported:              true
+		}) or { panic(err) }
+	_ = store.create_session_operation(second_session.id, third) or { panic(err) }
+	_ = store.append_exchange(second_session.id, third, 'three', 'c', 'openai-compatible',
+		'fixture', '', ProviderUsage{}) or { panic(err) }
+	summary := store.usage_summary() or { panic(err) }
+	assert summary.sessions == 2
+	assert summary.completed_turns == 3
+	assert summary.reported_turns == 2
+	assert summary.usage_reported
+	assert summary.input_tokens == 150
+	assert summary.output_tokens == 30
+	assert summary.cache_reported
+	assert summary.cache_read_tokens == 30
+	assert summary.cache_creation_tokens == 5
+	assert summary.cost == 'unavailable'
+}

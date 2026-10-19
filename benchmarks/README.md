@@ -99,6 +99,7 @@ VEASEL_BENCH_SAMPLES=15 VEASEL_BENCH_WARMUPS=2 VEASEL_TUI_PTY_SAMPLES=5 \
 | Report | Binary | Notes |
 |---|---|---|
 | [`reports/tui-startup-linux-x64-2026-10-15.json`](reports/tui-startup-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples) |
+| [`reports/tui-startup-linux-x64-2026-10-19.json`](reports/tui-startup-linux-x64-2026-10-19.json) | `0.59.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples, per-sample results recorded) |
 
 2026-10-15 medians on one Linux x64 workstation (`7.2.9-arch1-1`):
 
@@ -107,6 +108,22 @@ VEASEL_BENCH_SAMPLES=15 VEASEL_BENCH_WARMUPS=2 VEASEL_TUI_PTY_SAMPLES=5 \
 | `veasel-tui --version` | 41.1 ms (≈50.4 MiB RSS) |
 | `veasel-tui --help` | 41.9 ms (≈50.3 MiB RSS) |
 | PTY → connected home | 70.0 ms |
+
+2026-10-19 medians on the same class of workstation (`7.2.9-arch1-1`,
+published `0.59.0-next.0` tarball):
+
+| Probe | p50 |
+|---|---:|
+| `veasel-tui --version` | 53.0 ms (≈38.0 MiB RSS) |
+| `veasel-tui --help` | 53.3 ms (≈38.2 MiB RSS) |
+| PTY → connected home | 87.4 ms |
+
+The PTY probe now records every sample (elapsed time or the exact error,
+including the visible screen tail on a 12 s timeout) in
+`ptyConnectedMs.samples`; earlier reports only kept a failure count, which
+hid why a sample failed. An intermittent single-sample PTY timeout
+(roughly 1 in 25 samples on this workstation) is under investigation and
+is not hidden by the summary statistics.
 
 Single-workstation evidence only. See
 [`../docs/compatibility/tui-interactive-smoke.md`](../docs/compatibility/tui-interactive-smoke.md).

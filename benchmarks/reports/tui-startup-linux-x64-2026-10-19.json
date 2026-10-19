@@ -1,0 +1,90 @@
+{
+  "kind": "tui-startup",
+  "measuredAt": "2026-10-19T00:30:37.964Z",
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "release": "7.2.9-arch1-1",
+    "cpus": "24"
+  },
+  "binaries": {
+    "tui": "/tmp/veasel-v059/veasel-tui",
+    "server": "/tmp/veasel-v059/veasel",
+    "tuiVersionLine": "Veasel Code Terminal 0.59.0-next.0",
+    "tuiPath": "/tmp/veasel-v059/veasel-tui",
+    "serverPath": "/tmp/veasel-v059/veasel"
+  },
+  "method": {
+    "cli": "2 warmups + 15 samples per --version/--help; wall via performance.now(); Linux RSS via RUSAGE_CHILDREN.ru_maxrss (kB)",
+    "ptyConnected": "5 samples; Python pty.fork against isolated veasel serve; wall until visible markers connected+SESSIONS+VEASEL",
+    "exclusions": "Not interactive render FPS, not model/token latency, not coding-task quality."
+  },
+  "cli": {
+    "version": {
+      "wall": {
+        "count": 15,
+        "minMs": 51.17038500000001,
+        "medianMs": 52.98011299999985,
+        "p95Ms": 55.014176200000065,
+        "maxMs": 55.03809799999999,
+        "meanMs": 52.892749866666705
+      },
+      "rssKb": {
+        "count": 15,
+        "minKb": 38612,
+        "medianKb": 38908,
+        "p95Kb": 39428.8,
+        "maxKb": 39440,
+        "meanKb": 39009.333333333336
+      },
+      "failures": 0
+    },
+    "help": {
+      "wall": {
+        "count": 15,
+        "minMs": 51.86419799999976,
+        "medianMs": 53.31988100000035,
+        "p95Ms": 55.03873970000013,
+        "maxMs": 55.515824000000066,
+        "meanMs": 53.349986333333376
+      },
+      "rssKb": {
+        "count": 15,
+        "minKb": 38588,
+        "medianKb": 39120,
+        "p95Kb": 39350.4,
+        "maxKb": 39412,
+        "meanKb": 39091.46666666667
+      },
+      "failures": 0
+    }
+  },
+  "ptyConnectedMs": {
+    "wall": {
+      "count": 5,
+      "minMs": 86.059,
+      "medianMs": 87.444,
+      "p95Ms": 88.49199999999999,
+      "maxMs": 88.499,
+      "meanMs": 87.45240000000001
+    },
+    "failures": 0,
+    "samples": [
+      {
+        "elapsedMs": 86.059
+      },
+      {
+        "elapsedMs": 88.464
+      },
+      {
+        "elapsedMs": 88.499
+      },
+      {
+        "elapsedMs": 86.796
+      },
+      {
+        "elapsedMs": 87.444
+      }
+    ]
+  }
+}

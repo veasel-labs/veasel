@@ -23,6 +23,7 @@ export type SessionListDialogProps = {
   activeId?: string
   onSelect?: (session: SolidSessionEntry) => void
   onRename?: (session: SolidSessionEntry, title: string) => void
+  onDelete?: (session: SolidSessionEntry) => void
   onCreate?: () => void
 }
 
@@ -64,6 +65,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
   const move = (action: Parameters<typeof moveSessionSelection>[2]) => {
     const items = filtered()
     if (items.length === 0) return
+    setPendingDeleteId(undefined)
     setSelected((current) => moveSessionSelection(current, items.length, action, visible()))
   }
 
@@ -74,6 +76,22 @@ export function SessionListDialog(props: SessionListDialogProps) {
     if (!session) return
     dialog.clear()
     props.onSelect?.(session)
+  }
+
+  const [pendingDeleteId, setPendingDeleteId] = createSignal<string | undefined>()
+
+  const deleteCurrent = () => {
+    const session = current()
+    if (!session || !props.onDelete) return
+    // Two-step confirm: first `d` arms, second `d` on the same row deletes.
+    if (pendingDeleteId() !== session.id) {
+      setPendingDeleteId(session.id)
+      return
+    }
+    setPendingDeleteId(undefined)
+    props.onDelete(session)
+    setSessions((prev) => prev.filter((item) => item.id !== session.id))
+    setSelected((currentSelected) => Math.max(0, Math.min(currentSelected, filtered().length - 2)))
   }
 
   const renameCurrent = () => {
@@ -159,6 +177,11 @@ export function SessionListDialog(props: SessionListDialogProps) {
         renameCurrent()
         return
       }
+      if (key.name === "d") {
+        key.preventDefault()
+        deleteCurrent()
+        return
+      }
       if (key.name === "n") {
         key.preventDefault()
         dialog.clear()
@@ -175,7 +198,12 @@ export function SessionListDialog(props: SessionListDialogProps) {
 
   return (
     <box width="100%" flexDirection="column" gap={1}>
-      <DialogHeader title="Sessions" hint="Enter · r rename · n new · Esc" />
+      <DialogHeader title="Sessions" hint="Enter · r rename · d delete · n new · Esc" />
+      <Show when={pendingDeleteId()}>
+        <text fg={colors.brand}>
+          Press d again to permanently delete this session and its history.
+        </text>
+      </Show>
       <Show when={filterHeader()}>
         {(header) => <text fg={colors.muted}>{header()}</text>}
       </Show>
@@ -194,6 +222,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
         cursorColor={colors.cursor}
         onInput={(value: string) => {
           setQuery(value)
+          setPendingDeleteId(undefined)
           setSelected(0)
         }}
       />
@@ -225,6 +254,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
                   <text fg={active() ? colors.brand : colors.body}>
                     {active() ? "▸ " : currentSession() ? "● " : "  "}
                     {session.title}
+                    {pendingDeleteId() === session.id ? " · delete? press d again" : ""}
                   </text>
                   <text fg={colors.muted}>
                     {"    "}

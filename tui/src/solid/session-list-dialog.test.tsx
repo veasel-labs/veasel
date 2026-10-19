@@ -115,6 +115,40 @@ describe("Solid session list + rename dialogs", () => {
     expect(frame).toContain("Solid transcript v2")
   })
 
+  test("d arms delete and a second d removes the session", async () => {
+    const setup = await testRender(
+      () => (
+        <App
+          initialMessages={[]}
+          initialReviews={[]}
+          initialSessions={demoSessions()}
+        />
+      ),
+      demoSize,
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    setup.mockInput.pressKey("p", { ctrl: true })
+    await setup.renderOnce()
+    await setup.mockInput.typeText("session list")
+    await setup.renderOnce()
+    setup.mockInput.pressEnter()
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Solid transcript")
+
+    setup.mockInput.pressKey("d")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("delete? press d again")
+    expect(setup.captureCharFrame()).toContain("Solid transcript")
+
+    setup.mockInput.pressKey("d")
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).not.toContain("Solid transcript")
+    expect(frame).toContain("Review queue polish")
+  })
+
   test("Esc from rename returns to the session list", async () => {
     const setup = await testRender(
       () => (

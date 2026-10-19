@@ -511,6 +511,24 @@ function LiveAppShell(props: LiveAppProps) {
               }
             })()
           },
+          onDelete: (session) => {
+            void (async () => {
+              try {
+                await props.api.deleteSession(session.id)
+                if (activeSessionId() === session.id) {
+                  setActiveSessionId(undefined)
+                  setMessages([])
+                }
+                await refreshSessions()
+                toast.success(`Deleted · ${session.title}`, "Sessions")
+              } catch (error) {
+                toast.info(
+                  error instanceof Error ? error.message : "could not delete session",
+                  "Sessions",
+                )
+              }
+            })()
+          },
           onCreate: () => {
             void createSession()
           },

@@ -227,6 +227,11 @@ function AppShell(props: SolidAppProps) {
             )
             toast.success(`Renamed · ${title}`, "Session")
           }}
+          onDelete={(session) => {
+            setSessions((prev) => prev.filter((item) => item.id !== session.id))
+            if (activeSessionId() === session.id) setActiveSessionId(undefined)
+            toast.success(`Deleted · ${session.title}`, "Session")
+          }}
           onCreate={() => {
             const id = `sess-${Date.now().toString(36)}`
             const created: SolidSessionEntry = {

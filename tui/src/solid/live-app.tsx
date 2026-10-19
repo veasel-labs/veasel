@@ -92,6 +92,7 @@ import { openDialogExportOptions } from "./ui/dialog-export-options"
 import { openDialogExportResult } from "./ui/dialog-export-result"
 import { openDialogPrompt } from "./ui/dialog-prompt"
 import {
+  formatGlobalUsageLine,
   formatSessionExport,
   formatUsageLine,
   sessionExportPath,
@@ -698,6 +699,14 @@ function LiveAppShell(props: LiveAppProps) {
         const usage = await props.api.getSessionUsage(sessionId)
         const fromUsage = formatUsageLine(usage)
         if (fromUsage) usageLine = fromUsage
+        try {
+          const globalLine = formatGlobalUsageLine(await props.api.getUsage())
+          if (globalLine) {
+            usageLine = usageLine ? `${usageLine} · ${globalLine}` : globalLine
+          }
+        } catch {
+          // Global usage is additive; session usage still stands on its own.
+        }
       } catch {
         // Keep model settings fallback line.
       }

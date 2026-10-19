@@ -75,6 +75,52 @@ export type SessionUsageSummary = {
   cost: string
 }
 
+export type GlobalUsageSummary = {
+  sessions: number
+  completed_turns: number
+  reported_turns: number
+  input_tokens: number
+  output_tokens: number
+  usage_reported: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
+  cost: string
+}
+
+export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
+  const lines = [
+    "ALL SESSIONS TOKEN USAGE",
+    "Only provider-reported counters appear here. Veasel never estimates tokens or invents savings.",
+    `Sessions: ${summary.sessions}`,
+    `Completed turns: ${summary.completed_turns}`,
+    `Turns with provider-reported tokens: ${summary.reported_turns}`,
+  ]
+  if (summary.usage_reported) {
+    const total = summary.input_tokens + summary.output_tokens
+    lines.push(`Tokens: ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`)
+    lines.push(`Total (in+out): ${formatTokenCount(total)}`)
+  } else {
+    lines.push("Tokens: unavailable (no provider reported usage yet)")
+  }
+  if (summary.cache_reported) {
+    lines.push(
+      `Prompt cache (provider-reported): ${formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0)}`,
+    )
+    lines.push("Cache lines are raw counters — not a dollar savings claim.")
+  } else {
+    lines.push("Prompt cache: unavailable (provider omitted cache fields)")
+  }
+  lines.push(
+    `Cost: ${
+      summary.cost === "unavailable"
+        ? "unavailable (no matching pinned schedule rates)"
+        : summary.cost
+    }`,
+  )
+  return lines.join("\n")
+}
+
 export function formatSessionUsageSummary(summary: SessionUsageSummary): string {
   const lines = [
     "SESSION TOKEN USAGE",

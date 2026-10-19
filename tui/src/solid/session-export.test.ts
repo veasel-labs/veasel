@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  formatGlobalUsageLine,
   formatSessionExport,
   formatUsageLine,
   sessionExportPath,
@@ -54,5 +55,20 @@ describe("session export", () => {
       }),
     ).toBe("10 in · 4 out · 2 cache read · cost 0.01")
     expect(formatUsageLine({ input_tokens: 1, output_tokens: 1, usage_reported: false })).toBeUndefined()
+  })
+
+  test("formats global usage line when reported", () => {
+    expect(
+      formatGlobalUsageLine({
+        sessions: 3,
+        input_tokens: 150,
+        output_tokens: 30,
+        usage_reported: true,
+        cost: "unavailable",
+      }),
+    ).toBe("all sessions (3): 150 in · 30 out")
+    expect(
+      formatGlobalUsageLine({ sessions: 1, input_tokens: 1, output_tokens: 1, usage_reported: false }),
+    ).toBeUndefined()
   })
 })

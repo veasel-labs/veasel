@@ -463,6 +463,23 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(forked.title).toBe("Chat (fork)")
   })
 
+  test("deleteSession issues DELETE to the session route", async () => {
+    const calls: Array<{ url: string; method?: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method })
+      return new Response(JSON.stringify({ deleted: "sess-1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const result = await client.deleteSession("sess-1")
+    expect(calls[0]?.url).toContain("/v1/sessions/sess-1")
+    expect(calls[0]?.method).toBe("DELETE")
+    expect(result.deleted).toBe("sess-1")
+  })
+
   test("listConfiguredMcpServers passes directory query", async () => {
     let url = ""
     globalThis.fetch = (async (input: RequestInfo | URL) => {

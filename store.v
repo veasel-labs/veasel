@@ -1367,6 +1367,37 @@ fn (mut store Store) get_session(id string) !Session {
 	}
 }
 
+// delete_session removes a session and its dependent rows. Children with
+// ON DELETE CASCADE follow the session row; messages and events reference
+// sessions without cascade, so they are deleted explicitly first.
+fn (mut store Store) delete_session(id string) ! {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	existing := store.db.exec_param('SELECT id FROM sessions WHERE id = ?', id)!
+	if existing.len == 0 {
+		return error('session not found')
+	}
+	store.db.begin()!
+	_ = store.db.exec_param('DELETE FROM messages WHERE session_id = ?', id) or {
+		store.db.rollback() or {}
+		return error('unable to delete session messages')
+	}
+	_ = store.db.exec_param('DELETE FROM events WHERE session_id = ?', id) or {
+		store.db.rollback() or {}
+		return error('unable to delete session events')
+	}
+	_ = store.db.exec_param('DELETE FROM sessions WHERE id = ?', id) or {
+		store.db.rollback() or {}
+		return error('unable to delete session')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session deletion')
+	}
+}
+
 fn (mut store Store) rename_session(id string, title string) !Session {
 	store.mu.lock()
 	defer {

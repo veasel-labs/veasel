@@ -225,6 +225,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   synchronous ChatExchange responses, the TUI status line, and `veasel run`
   JSON. Counts are omitted unless an adapter set `usage.reported`. Session cost
   is USD only when every reported turn matches the pinned schedule.
+- [x] Delete a session with `DELETE /v1/sessions/{id}`: chat history, events,
+  and cascade-dependent session state are removed; workspace files on disk
+  are never touched. Missing sessions return 404.
 - [x] Aggregate those reported totals per session on `GET /v1/sessions/{id}/usage`
   and surface them through the TUI `/usage` command without inventing rates.
   The same reported-only aggregation is available across all sessions on

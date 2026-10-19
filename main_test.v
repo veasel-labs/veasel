@@ -1922,6 +1922,36 @@ fn test_fork_session_copies_history_only() {
 	}
 }
 
+fn test_delete_session_removes_history_and_keeps_others() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	victim := store.create_session(SessionInput{
+		title:     'Delete me'
+		directory: '/tmp/delete-me'
+	}) or { panic(err) }
+	keeper := store.create_session(SessionInput{
+		title:     'Keep me'
+		directory: '/tmp/keep-me'
+	}) or { panic(err) }
+	operation := '43b42ec1-8f56-45f8-9146-9a0d93f1d505'
+	_ = store.create_session_operation(victim.id, operation) or { panic(err) }
+	_ = store.append_exchange(victim.id, operation, 'hello', 'hi', 'openai-compatible', 'fixture',
+		'', ProviderUsage{}) or { panic(err) }
+	store.delete_session(victim.id) or { panic(err) }
+	if _ := store.get_session(victim.id) {
+		assert false, 'deleted session must not be readable'
+	}
+	history := store.messages_for_session(victim.id, 10) or { panic(err) }
+	assert history.len == 0
+	usage := store.usage_summary() or { panic(err) }
+	assert usage.sessions == 1
+	kept := store.get_session(keeper.id) or { panic(err) }
+	assert kept.title == 'Keep me'
+	if _ := store.delete_session('missing-session') {
+		assert false, 'delete of a missing session must fail'
+	}
+}
+
 fn test_global_usage_summary_aggregates_across_sessions() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

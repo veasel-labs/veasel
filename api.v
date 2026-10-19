@@ -1925,6 +1925,29 @@ pub fn (app &App) rename_session(mut ctx Context, id string) veb.Result {
 	return ctx.json(session)
 }
 
+struct SessionDeletion {
+pub:
+	deleted string
+}
+
+@['/v1/sessions/:id'; delete]
+pub fn (app &App) delete_session(mut ctx Context, id string) veb.Result {
+	mut store := app.store
+	store.delete_session(id) or {
+		if err.msg() == 'session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'session not found'
+			})
+		}
+		eprintln('veasel: delete session failed: ${err}')
+		return json_server_error(mut ctx, 'Unable to delete session')
+	}
+	return ctx.json(SessionDeletion{
+		deleted: id
+	})
+}
+
 @['/v1/usage'; get]
 pub fn (app &App) get_usage(mut ctx Context) veb.Result {
 	mut store := app.store

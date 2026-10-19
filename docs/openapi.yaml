@@ -600,6 +600,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deleteSession
+      description: Deletes the session, its chat history, and dependent session state (operations, workspace edits, shell commands, MCP calls, traces). Workspace files on disk are never touched.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Deleted session id.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: string
+                required: [deleted]
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Unable to delete session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/usage:
     get:
       operationId: getUsage

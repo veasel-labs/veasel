@@ -63,3 +63,46 @@ struct RecallCase {
 	query    string
 	expected string
 }
+
+// Harder labeled cases: cross-reference centrality (the definer is named by
+// nobody in the query), camelCase symbol mentions, and distractor files that
+// repeat the query words without defining anything relevant.
+fn test_repository_map_labeled_recall_hard_cases() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-recall-hard')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_recall_fixture(root, 'src/core/engine.v', 'module core\n\npub fn schedule_loop() {}\n\npub fn engine_tick() {}\n')
+	write_recall_fixture(root, 'src/auth/session.v', 'module auth\n\npub fn open_session() { schedule_loop() }\n')
+	write_recall_fixture(root, 'src/billing/invoice.v', 'module billing\n\npub fn invoice_total() { schedule_loop() }\n')
+	write_recall_fixture(root, 'src/report/render.v', 'module report\n\npub fn render_report() { schedule_loop() }\n\npub fn generate_report() {}\n')
+	write_recall_fixture(root, 'src/report/notes.v', 'module report\n\n// report report report generation notes\npub fn scratch_notes() {}\n')
+	write_recall_fixture(root, 'src/util/log.v', 'module util\n\npub fn log_line() {}\n')
+	write_recall_fixture(root, 'src/util/time.v', 'module util\n\npub fn now_stamp() {}\n')
+
+	cases := [
+		RecallCase{'the scheduling loop is slow under load', 'src/core/engine.v'},
+		RecallCase{'report generation fails for big inputs', 'src/report/render.v'},
+		RecallCase{'generateReport produces empty output', 'src/report/render.v'},
+		RecallCase{'open_session never returns', 'src/auth/session.v'},
+	]
+	mut hits := 0
+	for c in cases {
+		result := build_repository_map(root, c.query, repository_map_default_budget_bytes) or {
+			panic(err)
+		}
+		top := if result.ranked_paths.len > 3 {
+			result.ranked_paths[..3]
+		} else {
+			result.ranked_paths
+		}
+		if top.any(it == c.expected) {
+			hits++
+		} else {
+			eprintln('hard recall miss: query=${c.query} expected=${c.expected} top=${top}')
+		}
+	}
+	assert hits == cases.len, 'hard repo-map recall ${hits}/${cases.len}, expected all labeled files in top 3'
+}

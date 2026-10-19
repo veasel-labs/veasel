@@ -1274,6 +1274,62 @@ fn (mut store Store) create_session(input SessionInput) !Session {
 	}
 }
 
+// fork_session duplicates a session and its chat history under a new id so
+// the user can explore an alternative direction without losing the original
+// conversation. Operations, usage, edits, and tool state stay with the source
+// session: the fork starts with a clean execution ledger.
+fn (mut store Store) fork_session(source_id string) !Session {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	source_rows := store.db.exec_param('SELECT title, directory FROM sessions WHERE id = ?',
+		source_id)!
+	if source_rows.len != 1 {
+		return error('session not found')
+	}
+	source_title := source_rows[0].val(0)
+	source_directory := source_rows[0].val(1)
+	id := uuid.new_v4().str()
+	title := if source_title.ends_with(' (fork)') {
+		source_title
+	} else {
+		'${source_title} (fork)'
+	}
+	store.db.begin()!
+	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)',
+		[id, title, source_directory]) or {
+		store.db.rollback() or {}
+		return error('unable to write forked session')
+	}
+	_ = store.db.exec_param_many('INSERT INTO messages (session_id, role, content) SELECT ?, role, content FROM messages WHERE session_id = ? ORDER BY id',
+		[id, source_id]) or {
+		store.db.rollback() or {}
+		return error('unable to copy session history')
+	}
+	_ = store.db.exec_param2('INSERT INTO events (type, session_id) VALUES (?, ?)', 'session.forked',
+		id) or {
+		store.db.rollback() or {}
+		return error('unable to write session event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit forked session')
+	}
+	rows := store.db.exec_param('SELECT id, title, directory, created_at FROM sessions WHERE id = ?',
+		id)!
+	if rows.len != 1 {
+		return error('forked session could not be read')
+	}
+	row := rows[0]
+	return Session{
+		id:         row.val(0)
+		title:      row.val(1)
+		directory:  row.val(2)
+		created_at: row.val(3)
+	}
+}
+
 fn (mut store Store) list_sessions() ![]Session {
 	store.mu.lock()
 	defer {

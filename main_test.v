@@ -1887,6 +1887,41 @@ fn chat_input_rejected(messages []ChatMessage) bool {
 	return false
 }
 
+fn test_fork_session_copies_history_only() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	source := store.create_session(SessionInput{
+		title:     'Fork source'
+		directory: '/tmp/fork-source'
+	}) or { panic(err) }
+	operation := '33b42ec1-8f56-45f8-9146-9a0d93f1d504'
+	_ = store.create_session_operation(source.id, operation) or { panic(err) }
+	_ = store.append_exchange(source.id, operation, 'hello', 'hi there', 'openai-compatible',
+		'fixture', '', ProviderUsage{
+		input_tokens:  10
+		output_tokens: 5
+		reported:      true
+	}) or { panic(err) }
+	forked := store.fork_session(source.id) or { panic(err) }
+	assert forked.id != source.id
+	assert forked.title == 'Fork source (fork)'
+	assert forked.directory == source.directory
+	history := store.messages_for_session(forked.id, 10) or { panic(err) }
+	assert history.len == 2
+	assert history[0].role == 'user'
+	assert history[0].content == 'hello'
+	assert history[1].role == 'assistant'
+	assert history[1].content == 'hi there'
+	// Usage and operations stay with the source session.
+	fork_usage := store.session_usage_summary(forked.id) or { panic(err) }
+	assert fork_usage.completed_turns == 0
+	second_fork := store.fork_session(forked.id) or { panic(err) }
+	assert second_fork.title == 'Fork source (fork)'
+	if _ := store.fork_session('missing-session') {
+		assert false, 'fork of a missing session must fail'
+	}
+}
+
 fn test_global_usage_summary_aggregates_across_sessions() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

@@ -1095,6 +1095,27 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const forkCurrentSession = async () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      toast.info("Open a session first, then /fork it", "Session")
+      return
+    }
+    try {
+      const forked = await props.api.forkSession(sessionId)
+      await refreshSessions()
+      await openSession(sessionEntry(forked))
+      toast.success(`Forked · ${forked.title}`, "Session")
+    } catch (error) {
+      noteError(
+        "sessions.fork",
+        `could not fork session  ·  ${error instanceof Error ? error.message : "request failed"}`,
+        sessionId,
+        "Fork session failed",
+      )
+    }
+  }
+
   const finishTurn = async (sessionId: string, completion: SessionTurnCompletion) => {
     const operationId = completion.operation_id
     if (!operationId || handledCompletions.has(operationId)) return
@@ -1261,6 +1282,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "session-list":
         dismissHomeComposer()
         openLiveSessionList()
+        return
+      case "fork":
+        dismissHomeComposer()
+        void forkCurrentSession()
         return
       case "unsupported":
         openDialogAlert(dialog, {

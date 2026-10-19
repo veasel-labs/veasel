@@ -93,6 +93,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/usage", category: "session", description: "Show provider-reported token totals for this session" },
   { name: "/status", category: "session", description: "Session, model, and connection snapshot (same as /usage)" },
   { name: "/map", category: "session", description: "Show the extractive workspace repository map; add text to hint ranking" },
+  { name: "/fork", category: "session", description: "Fork this session: copy its history into a new session and switch to it" },
 ]
 
 export const maxSlashSuggestions = 6

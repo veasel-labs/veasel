@@ -18,6 +18,7 @@ export type LiveSlashAction =
   | { kind: "reviews" }
   | { kind: "export" }
   | { kind: "session-list" }
+  | { kind: "fork" }
   | { kind: "plugins"; filter: string }
   | { kind: "map"; hint: string }
   | { kind: "history-older" }
@@ -109,6 +110,7 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
   if (content === "/usage" || content === "/status") return { kind: "status" }
   if (content === "/export" || content.startsWith("/export ")) return { kind: "export" }
   if (content === "/sessions" || content === "/session") return { kind: "session-list" }
+  if (content === "/fork") return { kind: "fork" }
 
   if (knownSlashName(content)) {
     return { kind: "unsupported", command: content }

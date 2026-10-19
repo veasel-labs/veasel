@@ -43,7 +43,7 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
     output = bytearray()
 
     def visible_output() -> bytes:
-        return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)", b"", output)
+        return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[_PXM][^\x1b]*\x1b\\", b"", output)
 
     def wait_for_markers(markers: tuple[bytes, ...], timeout: float, description: str) -> None:
         deadline = time.monotonic() + timeout

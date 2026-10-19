@@ -262,6 +262,15 @@ export class VeaselApiClient {
     return await response.json() as ApiSession
   }
 
+  async deleteSession(sessionId: string): Promise<{ deleted: string }> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE", signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { deleted: string }
+  }
+
   async listMessages(
     sessionId: string,
     options?: { before?: number | string; limit?: number },

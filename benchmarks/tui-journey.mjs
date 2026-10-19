@@ -63,7 +63,7 @@ if child == 0:
 fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 100, 0, 0))
 output = bytearray()
 started = time.monotonic()
-ANSI = rb"\\x1b\\[[0-?]*[ -/]*[@-~]|\\x1b\\][^\\x07]*(?:\\x07|\\x1b\\\\)|\\x1b[()][0-9A-B]|\\x1b."
+ANSI = rb"\\x1b\\[[0-?]*[ -/]*[@-~]|\\x1b\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)|\\x1b[_PXM][^\\x1b]*\\x1b\\\\|\\x1b[()][0-9A-B]|\\x1b."
 
 def visible():
     return re.sub(ANSI, b"", bytes(output))

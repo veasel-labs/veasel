@@ -167,7 +167,7 @@ while time.monotonic() < deadline:
             chunk = b""
         if chunk:
             output.extend(chunk)
-        visible = re.sub(rb"\\x1b\\[[0-?]*[ -/]*[@-~]|\\x1b\\][^\\x07]*(?:\\x07|\\x1b\\\\)", b"", output)
+        visible = re.sub(rb"\\x1b\\[[0-?]*[ -/]*[@-~]|\\x1b\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)|\\x1b[_PXM][^\\x1b]*\\x1b\\\\", b"", output)
         if all(marker in visible for marker in markers):
             print(f"{(time.monotonic() - started) * 1000:.3f}")
             try:

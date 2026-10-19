@@ -657,8 +657,8 @@ fn repository_map_ident_parts(name string) []string {
 	return parts
 }
 
-const repository_map_cross_reference_weight = 6.0
-const repository_map_cross_reference_max_boost = 60.0
+const repository_map_cross_reference_weight = 40.0
+const repository_map_cross_reference_max_boost = 400.0
 const repository_map_cross_reference_max_definers = 8
 const repository_map_cross_reference_min_symbol_len = 3
 
@@ -698,6 +698,12 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		mut seen := map[string]bool{}
 		for symbol in entry.symbols {
 			name := symbol.name
+			// Module declarations (e.g. `module main`) and entrypoints are
+			// not callable references; including them would link every file
+			// in a package to every other file.
+			if symbol.kind == 'module' || name == 'main' {
+				continue
+			}
 			if name.len < repository_map_cross_reference_min_symbol_len || name in seen {
 				continue
 			}

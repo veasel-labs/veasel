@@ -321,3 +321,26 @@ fn test_clamp_repository_map_budget_bounds() {
 	assert clamp_repository_map_budget(1_000_000) == repository_map_max_budget_bytes
 	assert clamp_repository_map_budget(4_096) == 4_096
 }
+
+fn test_repository_map_cross_references_rank_central_files() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-xref')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'central.v'), 'module main\n\npub fn shared_helper() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'user_one.v'), 'module main\n\nfn run_one() { shared_helper() }\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'user_two.v'), 'module main\n\nfn run_two() { shared_helper() }\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'user_three.v'), 'module main\n\nfn run_three() { shared_helper() }\n')
+	mut noisy := 'module main\n\n'
+	for index in 0 .. 10 {
+		noisy += 'fn noisy_${index}() {}\n'
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'noisy.v'), noisy)
+	result := build_repository_map(root, 'Improve the workspace', repository_map_default_budget_bytes) or {
+		panic(err)
+	}
+	assert result.ranked_paths.len > 0
+	assert result.ranked_paths[0] == 'src/central.v'
+}

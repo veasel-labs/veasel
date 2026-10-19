@@ -15,6 +15,12 @@ const repository_map_max_symbol_files = 800
 const repository_map_max_file_read_bytes = 262_144
 const repository_map_max_total_read_bytes = 8_388_608
 const repository_map_max_symbols_per_file = 48
+// Per-file symbol relevance is capped: without a cap, every extracted symbol
+// added score, so the largest files (test suites, generated code) outranked
+// the file a query actually points at. Measured on the Aider checkout:
+// tests/basic/test_main.py ranked #1 for unrelated queries.
+const repository_map_symbol_relevance_cap = 400.0
+const repository_map_symbol_count_bonus_cap = 24.0
 const repository_map_max_symbols_total = 4_000
 const repository_map_preview_chars = 512
 const repository_map_open = '<veasel-repository-map untrusted="true">'
@@ -166,6 +172,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 			bytes_read += content.len
 			symbol_files++
 			symbols := extract_repository_map_symbols(content)
+			mut symbol_relevance := 0.0
 			for symbol in symbols {
 				if entry.symbols.len >= repository_map_max_symbols_per_file {
 					break
@@ -174,10 +181,19 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 					break
 				}
 				entry.symbols << symbol
-				entry.score += score_repository_map_symbol(symbol.name, hints)
+				symbol_relevance += score_repository_map_symbol(symbol.name, hints)
 				symbols_total++
 			}
-			entry.score += f64(entry.symbols.len)
+			if symbol_relevance > repository_map_symbol_relevance_cap {
+				symbol_relevance = repository_map_symbol_relevance_cap
+			}
+			entry.score += symbol_relevance
+			count_bonus := f64(entry.symbols.len)
+			entry.score += if count_bonus > repository_map_symbol_count_bonus_cap {
+				repository_map_symbol_count_bonus_cap
+			} else {
+				count_bonus
+			}
 		}
 		entries << entry
 	}
@@ -343,7 +359,11 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	mut score := 1.0
 	base := os.file_name(path)
 	if base in repository_map_important_basenames || path in repository_map_important_basenames {
-		score += 1000.0
+		// Static importance is a tie-breaker, not a relevance signal: at the
+		// old +1000 every repo root (README, .gitignore, pyproject.toml...)
+		// outranked the file a hint actually pointed at, and tripped the
+		// >=500 hot-directory/stem boosts meant for real path mentions.
+		score += 120.0
 	}
 	for mentioned in hints.paths {
 		if repository_map_path_matches_mention(path, mentioned) {
@@ -430,18 +450,25 @@ fn repository_map_path_has_segment(path string, ident string) bool {
 }
 
 fn score_repository_map_symbol(name string, hints RepositoryMapHintSet) f64 {
-	mut score := 1.0
+	// Only hint-matching symbols carry relevance. A non-matching symbol used
+	// to add 1-9 points each, which let symbol count alone dominate ranking.
+	mut score := 0.0
 	for ident in hints.idents {
 		if repository_map_eq_ci(name, ident) {
 			score += 200.0
 			break
 		}
 	}
-	for ident in hints.idents {
-		if repository_map_symbol_part_match(name, ident) {
-			score += 80.0
-			break
+	if score == 0.0 {
+		for ident in hints.idents {
+			if repository_map_symbol_part_match(name, ident) {
+				score += 80.0
+				break
+			}
 		}
+	}
+	if score == 0.0 {
+		return 0.0
 	}
 	if repository_map_ident_is_interesting(name) {
 		score += 8.0

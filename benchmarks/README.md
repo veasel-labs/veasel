@@ -104,6 +104,26 @@ VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \
   node benchmarks/tui-journey.mjs --output tui-journey.json
 ```
 
+## Real-repo repository-map recall
+
+`repo-map-recall.mjs` measures context quality, not speed: labeled
+natural-language queries against a real checkout, served through the public
+API (`POST /v1/sessions` + `GET /v1/sessions/{id}/workspace/map`), checking
+whether the file a human would open first lands in the top 3 / top 10 ranked
+paths. It needs a local checkout of the target repo; it makes no model
+requests.
+
+```sh
+VEASEL_BIN=veasel node benchmarks/repo-map-recall.mjs \
+  /path/to/aider benchmarks/repo-map-recall-aider-cases.json
+```
+
+Recorded on the Aider checkout (685 files scanned, 12 KiB map budget),
+2026-10-19: before the symbol-flooding fix, recall@3 was 2/6 and recall@10
+3/6 (a large test file ranked #1 for unrelated queries). After capping
+per-file symbol relevance and demoting static important-file bonus below
+hint relevance: recall@3 4/6, recall@10 5/6, with four expected files at #1.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

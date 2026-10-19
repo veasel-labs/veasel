@@ -1,0 +1,8 @@
+[
+ {"query": "repository map PageRank ranking of source files", "expected": "aider/repomap.py"},
+ {"query": "command line argument parsing and options", "expected": "aider/args.py"},
+ {"query": "lint edited files and report errors", "expected": "aider/linter.py"},
+ {"query": "watch files for changes and reload", "expected": "aider/watch.py"},
+ {"query": "undo the last git commit command", "expected": "aider/commands.py"},
+ {"query": "format the chat history for the model", "expected": "aider/history.py"}
+]

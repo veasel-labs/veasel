@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import type { KeyEvent } from "@opentui/core"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useRenderer } from "@opentui/solid"
 import {
   appendStreamingDelta,
   type ApiSession,
@@ -107,6 +107,7 @@ import {
 } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
 import { resolveLiveSlash } from "./live-slash"
+import { createAttentionNotifier } from "./attention"
 import { pageMayHaveOlder, type ChatTurn } from "../chat-history"
 import { formatRepositoryMapSummary } from "../repository-map"
 import {
@@ -166,6 +167,7 @@ function sessionEntry(session: ApiSession): SolidSessionEntry {
 }
 
 function LiveAppShell(props: LiveAppProps) {
+  const attention = createAttentionNotifier(useRenderer())
   const colors = useSolidTheme()
   const dialog = useDialog()
   const toast = useToast()
@@ -1158,6 +1160,10 @@ function LiveAppShell(props: LiveAppProps) {
         }
         setComposerFocused(true)
       }
+      attention.notifyTurnFinished(
+        completion.status ?? "",
+        sessions().find((session) => session.id === sessionId)?.title,
+      )
     }
   }
 
@@ -2081,6 +2087,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   onCleanup(() => {
     disposed = true
+    attention.dispose()
     sessionViewRevision++
     turnController?.abort()
   })

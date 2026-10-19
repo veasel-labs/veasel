@@ -1898,10 +1898,10 @@ fn test_fork_session_copies_history_only() {
 	_ = store.create_session_operation(source.id, operation) or { panic(err) }
 	_ = store.append_exchange(source.id, operation, 'hello', 'hi there', 'openai-compatible',
 		'fixture', '', ProviderUsage{
-		input_tokens:  10
-		output_tokens: 5
-		reported:      true
-	}) or { panic(err) }
+			input_tokens:  10
+			output_tokens: 5
+			reported:      true
+		}) or { panic(err) }
 	forked := store.fork_session(source.id) or { panic(err) }
 	assert forked.id != source.id
 	assert forked.title == 'Fork source (fork)'

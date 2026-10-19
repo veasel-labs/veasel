@@ -1909,6 +1909,15 @@ pub fn (app &App) rename_session(mut ctx Context, id string) veb.Result {
 	return ctx.json(session)
 }
 
+@['/v1/usage'; get]
+pub fn (app &App) get_usage(mut ctx Context) veb.Result {
+	mut store := app.store
+	summary := store.usage_summary() or {
+		return json_server_error(mut ctx, 'Unable to read usage summary')
+	}
+	return ctx.json(summary)
+}
+
 @['/v1/sessions/:id/usage'; get]
 pub fn (app &App) get_session_usage(mut ctx Context, id string) veb.Result {
 	mut store := app.store

@@ -600,6 +600,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/usage:
+    get:
+      operationId: getUsage
+      description: Aggregates provider-reported input and output tokens for completed turns across every session, with the same reported-only rules as the per-session summary. Cost is a USD string when every usage-reported turn matches the pinned schedule; otherwise the literal unavailable.
+      responses:
+        '200':
+          description: Global token usage summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalUsageSummary'
+        '500':
+          description: Unable to read usage summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/sessions/{id}/usage:
     get:
       operationId: getSessionUsage
@@ -2904,6 +2921,22 @@ components:
         created_at:
           type: string
           description: SQLite timestamp formatted as YYYY-MM-DD HH:MM:SS.
+    GlobalUsageSummary:
+      type: object
+      required: [sessions, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, cost]
+      properties:
+        sessions: { type: integer, minimum: 0 }
+        completed_turns: { type: integer, minimum: 0 }
+        reported_turns: { type: integer, minimum: 0 }
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        usage_reported: { type: boolean }
+        cache_read_tokens: { type: integer, minimum: 0 }
+        cache_creation_tokens: { type: integer, minimum: 0 }
+        cache_reported: { type: boolean }
+        reasoning_tokens: { type: integer, minimum: 0 }
+        reasoning_reported: { type: boolean }
+        cost: { type: string }
     SessionUsageSummary:
       type: object
       required: [session_id, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, cost]

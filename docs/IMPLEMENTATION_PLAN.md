@@ -227,6 +227,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   is USD only when every reported turn matches the pinned schedule.
 - [x] Aggregate those reported totals per session on `GET /v1/sessions/{id}/usage`
   and surface them through the TUI `/usage` command without inventing rates.
+  The same reported-only aggregation is available across all sessions on
+  `GET /v1/usage` (`sessions`, turn counts, token/cache/reasoning totals and
+  the pinned-schedule cost label); a durable dashboard UI remains open below.
 - [x] Persist provider-reported prompt-cache counters (`cache_read_tokens`,
   `cache_creation_tokens`) when adapters see provider cache fields; expose them
   on operations, turn completion events, ChatExchange, session usage, TUI

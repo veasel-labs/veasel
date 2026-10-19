@@ -134,6 +134,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	if walker.files.len > repository_map_max_files {
 		walker.files = walker.files[..repository_map_max_files]
 	}
+	mut contents := map[string]string{}
 	mut entries := []RepositoryMapEntry{cap: walker.files.len}
 	mut symbols_total := 0
 	mut bytes_read := 0
@@ -161,6 +162,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 				entries << entry
 				continue
 			}
+			contents[normalized] = content
 			bytes_read += content.len
 			symbol_files++
 			symbols := extract_repository_map_symbols(content)
@@ -187,6 +189,10 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	boost_repository_map_same_stem_siblings(mut entries)
 	// File↔package pairing: lib/session.v helps lib/session/*.v and the reverse.
 	boost_repository_map_stem_packages(mut entries)
+	// Cross-file reference graph (one PageRank-style iteration, still
+	// extractive): files whose symbols are mentioned by many other files are
+	// more central to the workspace than files with many unreferenced symbols.
+	boost_repository_map_cross_references(mut entries, contents)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)
@@ -649,6 +655,84 @@ fn repository_map_ident_parts(name string) []string {
 		parts << current.to_lower()
 	}
 	return parts
+}
+
+const repository_map_cross_reference_weight = 6.0
+const repository_map_cross_reference_max_boost = 60.0
+const repository_map_cross_reference_max_definers = 8
+const repository_map_cross_reference_min_symbol_len = 3
+
+fn repository_map_content_identifiers(content string) map[string]bool {
+	mut identifiers := map[string]bool{}
+	mut start := -1
+	for index, ch in content {
+		if is_repository_map_ident_byte(ch) {
+			if start < 0 {
+				start = index
+			}
+			continue
+		}
+		if start >= 0 {
+			if index - start >= repository_map_cross_reference_min_symbol_len {
+				identifiers[content[start..index]] = true
+			}
+			start = -1
+		}
+	}
+	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+		identifiers[content[start..]] = true
+	}
+	return identifiers
+}
+
+// boost_repository_map_cross_references raises files whose defined symbols
+// are mentioned by other files. One distinct referring file contributes one
+// weight unit regardless of mention count, symbols defined in many files
+// are skipped as too generic, and the total boost per file is capped.
+fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string) {
+	mut definers := map[string][]int{}
+	for index, entry in entries {
+		if entry.path !in contents {
+			continue
+		}
+		mut seen := map[string]bool{}
+		for symbol in entry.symbols {
+			name := symbol.name
+			if name.len < repository_map_cross_reference_min_symbol_len || name in seen {
+				continue
+			}
+			seen[name] = true
+			definers[name] << index
+		}
+	}
+	mut boosts := map[int]f64{}
+	for index, entry in entries {
+		content := contents[entry.path] or { continue }
+		identifiers := repository_map_content_identifiers(content)
+		mut referrers := map[int]bool{}
+		for token, _ in identifiers {
+			defs := definers[token] or { continue }
+			if defs.len > repository_map_cross_reference_max_definers {
+				continue
+			}
+			for definer in defs {
+				if definer != index {
+					referrers[definer] = true
+				}
+			}
+		}
+		for definer, _ in referrers {
+			boosts[definer] = (boosts[definer] or { 0.0 }) + repository_map_cross_reference_weight
+		}
+	}
+	for index, boost in boosts {
+		capped := if boost > repository_map_cross_reference_max_boost {
+			repository_map_cross_reference_max_boost
+		} else {
+			boost
+		}
+		entries[index].score += capped
+	}
 }
 
 fn sort_repository_map_entries(mut entries []RepositoryMapEntry) {

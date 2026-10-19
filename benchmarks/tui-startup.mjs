@@ -179,6 +179,8 @@ while time.monotonic() < deadline:
     finished, _ = os.waitpid(child, os.WNOHANG)
     if finished:
         sys.exit(2)
+visible = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)", b"", output)
+sys.stderr.write("VISIBLE_TAIL:" + visible[-800:].decode("utf-8", "replace"))
 sys.exit(3)
 `
 	try {
@@ -190,7 +192,9 @@ sys.exit(3)
 			timeout: 20_000,
 		})
 		if (result.status !== 0) {
-			return { error: `pty exit ${result.status}: ${(result.stderr ?? "").slice(0, 200)}` }
+			const stderr = result.stderr ?? ""
+			const detail = result.status === 3 ? stderr.slice(-800) : stderr.slice(0, 200)
+			return { error: `pty exit ${result.status}: ${detail}` }
 		}
 		const ms = Number.parseFloat((result.stdout ?? "").trim())
 		if (!Number.isFinite(ms)) return { error: `bad pty timing: ${result.stdout}` }
@@ -284,18 +288,22 @@ report.binaries.tuiPath = tuiPath
 report.binaries.serverPath = serverPath
 
 const ptyWalls = []
+const ptySamplesDetail = []
 let ptyFailures = 0
 for (let i = 0; i < ptySamples; i++) {
 	const sample = await measurePtyConnectedMs(tuiPath, serverPath)
 	if (sample.error) {
 		ptyFailures += 1
+		ptySamplesDetail.push({ error: sample.error })
 		continue
 	}
 	ptyWalls.push(sample.elapsedMs)
+	ptySamplesDetail.push({ elapsedMs: sample.elapsedMs })
 }
 report.ptyConnectedMs = {
 	wall: summarize(ptyWalls),
 	failures: ptyFailures,
+	samples: ptySamplesDetail,
 }
 
 const out = process.argv.includes("--output")

@@ -440,6 +440,29 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(usage.input_tokens).toBe(150)
   })
 
+  test("forkSession posts to the fork route", async () => {
+    const calls: Array<{ url: string; method?: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method })
+      return new Response(
+        JSON.stringify({
+          id: "sess-2",
+          title: "Chat (fork)",
+          directory: "/tmp/work",
+          created_at: "2026-10-19T00:00:00Z",
+        }),
+        { status: 201, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const forked = await client.forkSession("sess-1")
+    expect(calls[0]?.url).toContain("/v1/sessions/sess-1/fork")
+    expect(calls[0]?.method).toBe("POST")
+    expect(forked.id).toBe("sess-2")
+    expect(forked.title).toBe("Chat (fork)")
+  })
+
   test("listConfiguredMcpServers passes directory query", async () => {
     let url = ""
     globalThis.fetch = (async (input: RequestInfo | URL) => {

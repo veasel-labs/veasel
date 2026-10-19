@@ -617,6 +617,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/fork:
+    post:
+      operationId: forkSession
+      description: Duplicates the session and its chat history under a new id (title suffixed with " (fork)") so an alternative direction can be explored without losing the original conversation. Operations, usage, workspace edits, and tool state stay with the source session; the fork starts with a clean execution ledger.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Forked session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Unable to fork session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/sessions/{id}/usage:
     get:
       operationId: getSessionUsage

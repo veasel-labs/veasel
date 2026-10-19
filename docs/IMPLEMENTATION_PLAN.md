@@ -230,6 +230,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The same reported-only aggregation is available across all sessions on
   `GET /v1/usage` (`sessions`, turn counts, token/cache/reasoning totals and
   the pinned-schedule cost label); a durable dashboard UI remains open below.
+- [x] Fork a session with `POST /v1/sessions/{id}/fork`: the chat history is
+  copied under a new id (title suffixed ` (fork)`) so an alternative direction
+  can be explored without losing the original conversation. Operations, usage,
+  workspace edits, and tool state stay with the source session.
 - [x] Persist provider-reported prompt-cache counters (`cache_read_tokens`,
   `cache_creation_tokens`) when adapters see provider cache fields; expose them
   on operations, turn completion events, ChatExchange, session usage, TUI

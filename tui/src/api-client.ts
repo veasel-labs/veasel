@@ -253,6 +253,15 @@ export class VeaselApiClient {
     return await response.json() as ApiSession
   }
 
+  async forkSession(sessionId: string): Promise<ApiSession> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/fork`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSession
+  }
+
   async listMessages(
     sessionId: string,
     options?: { before?: number | string; limit?: number },

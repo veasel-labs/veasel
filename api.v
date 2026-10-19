@@ -1844,6 +1844,22 @@ pub fn (app &App) create_session(mut ctx Context) veb.Result {
 	return ctx.json(session)
 }
 
+@['/v1/sessions/:id/fork'; post]
+pub fn (app &App) fork_session(mut ctx Context, id string) veb.Result {
+	session := app.store.fork_session(id) or {
+		if err.msg() == 'session not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'session not found'
+			})
+		}
+		eprintln('veasel: fork session failed: ${err}')
+		return json_server_error(mut ctx, 'Unable to fork session')
+	}
+	ctx.res.set_status(.created)
+	return ctx.json(session)
+}
+
 fn valid_session_title(title string) bool {
 	if title.len == 0 || title.len > 200 {
 		return false

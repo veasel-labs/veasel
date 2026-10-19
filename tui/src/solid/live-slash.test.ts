@@ -32,6 +32,7 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/commands pending")).toEqual({ kind: "reviews" })
     expect(resolveLiveSlash("/export")).toEqual({ kind: "export" })
     expect(resolveLiveSlash("/sessions")).toEqual({ kind: "session-list" })
+    expect(resolveLiveSlash("/fork")).toEqual({ kind: "fork" })
   })
 
   test("routes mcp calls, patch, and command into reviews", () => {

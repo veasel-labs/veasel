@@ -192,7 +192,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	// Cross-file reference graph (one PageRank-style iteration, still
 	// extractive): files whose symbols are mentioned by many other files are
 	// more central to the workspace than files with many unreferenced symbols.
-	boost_repository_map_cross_references(mut entries, contents)
+	boost_repository_map_cross_references(mut entries, contents, hints)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)
@@ -658,6 +658,8 @@ fn repository_map_ident_parts(name string) []string {
 }
 
 const repository_map_cross_reference_weight = 40.0
+const repository_map_cross_reference_hint_multiplier = 2.0
+const repository_map_cross_reference_hint_min_path_score = 120.0
 const repository_map_cross_reference_max_boost = 400.0
 const repository_map_cross_reference_max_definers = 8
 const repository_map_cross_reference_min_symbol_len = 3
@@ -689,7 +691,7 @@ fn repository_map_content_identifiers(content string) map[string]bool {
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
 // are skipped as too generic, and the total boost per file is capped.
-fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string) {
+fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet) {
 	mut definers := map[string][]int{}
 	for index, entry in entries {
 		if entry.path !in contents {
@@ -727,8 +729,15 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 				}
 			}
 		}
+		// Personalization (Aider-style): a reference coming from a file the
+		// hint already points at counts more than one from an unrelated file.
+		referrer_weight := if score_repository_map_path(entry.path, hints) >= repository_map_cross_reference_hint_min_path_score {
+			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
+		} else {
+			repository_map_cross_reference_weight
+		}
 		for definer, _ in referrers {
-			boosts[definer] = (boosts[definer] or { 0.0 }) + repository_map_cross_reference_weight
+			boosts[definer] = (boosts[definer] or { 0.0 }) + referrer_weight
 		}
 	}
 	for index, boost in boosts {

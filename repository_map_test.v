@@ -344,3 +344,27 @@ fn test_repository_map_cross_references_rank_central_files() {
 	assert result.ranked_paths.len > 0
 	assert result.ranked_paths[0] == 'src/central.v'
 }
+
+fn test_repository_map_cross_references_personalize_hint_referrers() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-xref-hint')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	// Both targets are referenced exactly once. Only alpha_target is
+	// referenced from the hint-mentioned directory, so personalization must
+	// rank it above beta_target.
+	write_map_fixture_file(os.join_path(root, 'src', 'alpha_target.v'), 'module main\n\npub fn alpha_helper() {}\n')
+	write_map_fixture_file(os.join_path(root, 'src', 'beta_target.v'), 'module main\n\npub fn beta_helper() {}\n')
+	write_map_fixture_file(os.join_path(root, 'auth', 'handler.v'), 'module main\n\nfn handle() { alpha_helper() }\n')
+	write_map_fixture_file(os.join_path(root, 'misc', 'other.v'), 'module main\n\nfn other() { beta_helper() }\n')
+	result := build_repository_map(root, 'Fix the auth handler', repository_map_default_budget_bytes) or {
+		panic(err)
+	}
+	alpha_index := result.ranked_paths.index('src/alpha_target.v')
+	beta_index := result.ranked_paths.index('src/beta_target.v')
+	assert alpha_index >= 0
+	assert beta_index >= 0
+	assert alpha_index < beta_index
+}

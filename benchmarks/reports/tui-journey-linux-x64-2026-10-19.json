@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-10-19T05:16:34.741Z",
+  "platform": "linux-x64",
+  "tuiBin": "/tmp/veasel-v061/veasel-tui",
+  "serverBin": "/tmp/veasel-v061/veasel",
+  "journey": "connected -> /help dialog -> Esc -> home",
+  "pass": true,
+  "stepsMs": {
+    "connected": 86.962,
+    "help-dialog": 15.055,
+    "help-dismissed": 21.38
+  }
+}

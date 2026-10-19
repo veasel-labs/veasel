@@ -94,6 +94,16 @@ VEASEL_BENCH_SAMPLES=15 VEASEL_BENCH_WARMUPS=2 VEASEL_TUI_PTY_SAMPLES=5 \
   node benchmarks/tui-startup.mjs --output tui-startup.json
 ```
 
+`tui-journey.mjs` goes one step further: real keystrokes in the PTY —
+connected home → `/help` Help dialog → `Esc` → home again — with per-step
+wall times and the visible screen tail on failure. It proves one keyboard
+journey on the host that runs it, nothing more.
+
+```sh
+VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \
+  node benchmarks/tui-journey.mjs --output tui-journey.json
+```
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

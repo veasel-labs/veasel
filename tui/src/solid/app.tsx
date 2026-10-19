@@ -229,7 +229,6 @@ function AppShell(props: SolidAppProps) {
           }}
           onDelete={(session) => {
             setSessions((prev) => prev.filter((item) => item.id !== session.id))
-            if (activeSessionId() === session.id) setActiveSessionId(undefined)
             toast.success(`Deleted · ${session.title}`, "Session")
           }}
           onCreate={() => {

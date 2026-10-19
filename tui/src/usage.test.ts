@@ -3,6 +3,7 @@ import {
   formatReportedCacheHitRatio,
   formatReportedCacheUsage,
   formatReportedUsage,
+  formatGlobalUsageSummary,
   formatSessionUsageSummary,
   formatTokenCount,
   statusWithUsage,
@@ -141,5 +142,36 @@ describe("formatReportedCacheHitRatio", () => {
     expect(formatReportedCacheHitRatio(100, 80_000, 1200)).toBe(
       "98.4% of reported prompt tokens were cache reads",
     )
+  })
+})
+
+describe("formatGlobalUsageSummary", () => {
+  test("aggregates across sessions without inventing tokens or cost", () => {
+    const text = formatGlobalUsageSummary({
+      sessions: 3,
+      completed_turns: 5,
+      reported_turns: 2,
+      input_tokens: 150,
+      output_tokens: 30,
+      usage_reported: true,
+      cost: "unavailable",
+    })
+    expect(text).toContain("ALL SESSIONS TOKEN USAGE")
+    expect(text).toContain("Sessions: 3")
+    expect(text).toContain("150 in")
+    expect(text).toContain("Cost: unavailable")
+  })
+
+  test("states unavailable when nothing was reported", () => {
+    const text = formatGlobalUsageSummary({
+      sessions: 0,
+      completed_turns: 0,
+      reported_turns: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      usage_reported: false,
+      cost: "unavailable",
+    })
+    expect(text).toContain("Tokens: unavailable")
   })
 })

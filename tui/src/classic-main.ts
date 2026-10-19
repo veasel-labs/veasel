@@ -164,10 +164,12 @@ import {
 import { VEASEL_PORTRAIT_ROWS } from "./veasel-portrait"
 
 import {
+  formatGlobalUsageSummary,
   formatReportedCacheUsage,
   formatReportedUsage,
   formatSessionUsageSummary,
   statusWithUsage,
+  type GlobalUsageSummary,
   type SessionUsageSummary,
 } from "./usage"
 import {
@@ -1625,6 +1627,17 @@ async function showSessionUsage() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const summary = await response.json() as SessionUsageSummary
     skillNotice = formatSessionUsageSummary(summary)
+    try {
+      const globalResponse = await fetch(`${apiBase}/v1/usage`, {
+        signal: controller.signal,
+      })
+      if (globalResponse.ok) {
+        const globalSummary = await globalResponse.json() as GlobalUsageSummary
+        skillNotice += `\n\n${formatGlobalUsageSummary(globalSummary)}`
+      }
+    } catch {
+      // Global usage is additive; session usage still stands on its own.
+    }
     renderChat(chatMessages)
     if (summary.usage_reported) {
       let usageLine = `session usage  ·  ${formatReportedUsage(summary.input_tokens, summary.output_tokens)}`

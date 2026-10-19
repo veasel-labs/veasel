@@ -410,6 +410,36 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(servers[0]?.server_name).toBe("workspace")
   })
 
+  test("getUsage hits the global usage route", async () => {
+    const calls: string[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      calls.push(String(input))
+      return new Response(
+        JSON.stringify({
+          sessions: 2,
+          completed_turns: 3,
+          reported_turns: 2,
+          input_tokens: 150,
+          output_tokens: 30,
+          usage_reported: true,
+          cache_read_tokens: 0,
+          cache_creation_tokens: 0,
+          cache_reported: false,
+          reasoning_tokens: 0,
+          reasoning_reported: false,
+          cost: "unavailable",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    }) as typeof fetch
+
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const usage = await client.getUsage()
+    expect(calls[0]).toContain("/v1/usage")
+    expect(usage.sessions).toBe(2)
+    expect(usage.input_tokens).toBe(150)
+  })
+
   test("listConfiguredMcpServers passes directory query", async () => {
     let url = ""
     globalThis.fetch = (async (input: RequestInfo | URL) => {

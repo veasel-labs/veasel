@@ -110,6 +110,22 @@ export function writeSessionExport(path: string, body: string): void {
   writeFileSync(path, body, { encoding: "utf8", mode: 0o600 })
 }
 
+export function formatGlobalUsageLine(summary: {
+  sessions: number
+  input_tokens: number
+  output_tokens: number
+  usage_reported: boolean
+  cost?: string
+}): string | undefined {
+  if (!summary.usage_reported) return undefined
+  const parts = [
+    `all sessions (${summary.sessions}): ${summary.input_tokens} in`,
+    `${summary.output_tokens} out`,
+  ]
+  if (summary.cost && summary.cost !== "unavailable") parts.push(`cost ${summary.cost}`)
+  return parts.join(" · ")
+}
+
 export function formatUsageLine(summary: {
   input_tokens: number
   output_tokens: number

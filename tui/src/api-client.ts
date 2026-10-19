@@ -76,6 +76,21 @@ export type ApiWorkspaceEditStatus =
   | "conflict"
   | "interrupted"
 
+export type ApiGlobalUsageSummary = {
+  sessions: number
+  completed_turns: number
+  reported_turns: number
+  input_tokens: number
+  output_tokens: number
+  usage_reported: boolean
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  cache_reported: boolean
+  reasoning_tokens: number
+  reasoning_reported: boolean
+  cost: string
+}
+
 export type ApiSessionUsageSummary = {
   session_id: string
   completed_turns: number
@@ -320,6 +335,14 @@ export class VeaselApiClient {
       provider: string
       models: import("./model-providers").ModelCatalogEntry[]
     }
+  }
+
+  async getUsage(): Promise<ApiGlobalUsageSummary> {
+    const response = await fetch(`${this.base}/v1/usage`, {
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiGlobalUsageSummary
   }
 
   async getSessionUsage(sessionId: string): Promise<ApiSessionUsageSummary> {

@@ -1,0 +1,8 @@
+[
+ { "query": "the main agent loop that steps until the issue is resolved", "expected": "sweagent/agent/agents.py" },
+ { "query": "docker environment where shell commands are executed", "expected": "sweagent/environment/swe_env.py" },
+ { "query": "parsing model output into actions and commands", "expected": "sweagent/tools/parsing.py" },
+ { "query": "running many problem instances in batch mode", "expected": "sweagent/run/run_batch.py" },
+ { "query": "the model interface that queries the LLM API", "expected": "sweagent/agent/models.py" },
+ { "query": "repository checkout and git handling for the target repo", "expected": "sweagent/environment/repo.py" }
+]

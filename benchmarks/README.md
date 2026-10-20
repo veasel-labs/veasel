@@ -104,6 +104,18 @@ VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \
   node benchmarks/tui-journey.mjs --output tui-journey.json
 ```
 
+`tui-echo-latency.py` measures composer key echo through a pyte screen
+emulator (OpenTUI renders frame diffs, so raw PTY byte growth is not a
+valid signal): per-keystroke time until the typed text is visible.
+Baseline on v0.64.2-next.0 binaries, 100x24: connect 90-96 ms, echo
+p50 16 ms, p95 17-18 ms, 16/16 keys — one 60 fps frame. Requires
+`pip install pyte`; it spawns its own isolated server.
+
+```sh
+VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \
+  python3 benchmarks/tui-echo-latency.py
+```
+
 ## Real-repo repository-map recall
 
 `repo-map-recall.mjs` measures context quality, not speed: labeled

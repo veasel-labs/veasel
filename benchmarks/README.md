@@ -143,6 +143,11 @@ same binary line scored recall@3 0/4 and recall@10 1/4 — for "the main
 agent loop" query it ranked `.gitignore`, `AGENTS.md`, and `LICENSE.md`
 as the top 3, which is the static-importance swamping in the wild.
 
+Same measurement on the SWE-agent checkout (407 files scanned,
+`repo-map-recall-swe-agent-cases.json`), confirmed against the published
+v0.64.2 binary: recall@3 5/6, recall@10 6/6, with four expected files
+at #1.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

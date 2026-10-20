@@ -1,0 +1,6 @@
+[
+	{ "query": "the main agent loop that runs until the task is done", "expected": "src/minisweagent/agents/default.py" },
+	{ "query": "docker environment for executing commands in a container", "expected": "src/minisweagent/environments/docker.py" },
+	{ "query": "litellm model that calls the LLM API", "expected": "src/minisweagent/models/litellm_model.py" },
+	{ "query": "retry logic with exponential backoff for model calls", "expected": "src/minisweagent/models/utils/retry.py" }
+]

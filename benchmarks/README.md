@@ -124,6 +124,13 @@ Recorded on the Aider checkout (685 files scanned, 12 KiB map budget),
 per-file symbol relevance and demoting static important-file bonus below
 hint relevance: recall@3 4/6, recall@10 5/6, with four expected files at #1.
 
+Same measurement on the mini-swe-agent checkout (221 files scanned,
+`repo-map-recall-mini-swe-agent-cases.json`), confirmed against the
+published v0.64.2 binary: recall@3 2/4, recall@10 4/4. Before the fix the
+same binary line scored recall@3 0/4 and recall@10 1/4 — for "the main
+agent loop" query it ranked `.gitignore`, `AGENTS.md`, and `LICENSE.md`
+as the top 3, which is the static-importance swamping in the wild.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

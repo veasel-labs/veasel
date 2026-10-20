@@ -496,6 +496,56 @@ jobs:
           pattern: veasel-*
           path: release-assets
           merge-multiple: true
+      # The merged download mixes three OS artifacts that each contain a
+      # file named like the standalone TUI (Linux ELF, macOS Mach-O), so the
+      # loose veasel-tui that lands in release-assets is whichever artifact
+      # was merged last — in v0.64.2 it was a binary that segfaulted on
+      # startup and did not match the verified build. Take the standalone
+      # binaries from the checksum-verified archives instead (each archive
+      # carries the exact binary its job verified plus build.json
+      # provenance), and fail the publish if they do not match provenance.
+      - name: Use verified standalone TUI binaries from archives
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          def sha256(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          def extract(archive, member, dest):
+              if archive.endswith('.zip'):
+                  with zipfile.ZipFile(archive) as zf:
+                      data = zf.read(member)
+              else:
+                  with tarfile.open(archive) as tf:
+                      data = tf.extractfile(member).read()
+              Path(dest).write_bytes(data)
+
+          work = Path('/tmp/standalone-verify')
+          work.mkdir(exist_ok=True)
+          cases = [
+              ('release-assets/veasel-Linux.tar.gz', 'veasel-tui',
+               'release-assets/veasel-tui'),
+              ('release-assets/veasel-Windows.zip', 'veasel-tui.exe',
+               'release-assets/veasel-tui.exe'),
+          ]
+          for archive, member, dest in cases:
+              extract(archive, 'build.json', work / 'build.json')
+              provenance = json.loads((work / 'build.json').read_text())
+              extract(archive, member, dest)
+              actual = sha256(dest)
+              expected = provenance['tui_binary_sha256']
+              if actual != expected:
+                  raise SystemExit(
+                      f'{dest} sha256 {actual} != verified provenance {expected}')
+              print(f'{dest}: verified against build provenance ({actual})')
+          PY
+          chmod +x release-assets/veasel-tui
       - name: Build checksums and release manifest
         env:
           RELEASE_TAG: ${{ needs.release-plan.outputs.tag }}

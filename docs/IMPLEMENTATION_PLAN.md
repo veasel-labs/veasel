@@ -34,11 +34,12 @@ journeys are wired to the loopback API where supported; remaining work is
 tracked per journey and must be validated against the production backend. CI
 builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
-interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
-validation still needs a ConPTY harness (see
+interactive TUI PTY smoke runs on Linux and macOS in CI; a native Windows
+ConPTY harness now runs in the same CI workflow, with the exact-head result
+tracked in the compatibility ledger (see
 [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md)).
-Linux TUI CLI + PTY-connected baselines are recorded there; macOS/Windows
-baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
+Linux TUI CLI + PTY-connected baselines are recorded there; timing baselines
+remain open. See [`RESEARCH.md`](RESEARCH.md) and
 [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ## Milestones and backlog
@@ -557,7 +558,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   keeps `main_test` plus repository-map coverage. Save/discovery also reject
   catalog endpoint placeholders such as `YOUR_ACCOUNT_ID` or `<ACCOUNT_ID>`.
   Interactive TUI matrix gaps remain under the separate ConPTY /
-  measured-baseline item.
+  measured-baseline item, including the Windows ConPTY CI result.
 - [ ] Multi-agent isolation and orchestration.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
@@ -584,7 +585,9 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   measured performance baselines. Linux + macOS standalone PTY smoke is in
   CI; one Linux workstation CLI/PTY baseline is recorded in
   [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
-  Windows remains a ConPTY checklist; macOS/Windows timing baselines are open.
+  Windows ConPTY is now exercised by the packaged-client smoke in CI; its
+  exact-head result is pending in the compatibility ledger. macOS/Windows
+  timing baselines remain open.
 
 ## Initial compatibility target
 
@@ -629,7 +632,9 @@ honoring its license and attribution.
   server claims durable or restart-resilient background execution.
 - Solid MCP/Skills dialogs and session export options/results (OpenCode parity
   rows 7–8, 11–12) still need journey-level comparison and validation; the live
-  dialogs already load their catalogs through the loopback API.
+  dialogs already load their catalogs through the loopback API. MCP server
+  configuration now adds stdio/Streamable HTTP servers and enables, disables,
+  or removes configured servers through the same API; removal is confirmed.
 - Solid composer `/` `@` `$` autocomplete (`solid/composer-autocomplete.ts` +
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   live catalog wiring and cursor synchronization are implemented and covered by

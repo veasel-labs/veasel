@@ -129,8 +129,10 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   catalogs over the loopback API and distinguishes available servers from
   session-trusted servers. `/mcp trust|untrust <plugin>/<server>` updates trust
   through the session API; trust only permits connection on a future turn and
-  each MCP tool call still requires review. Adding/removing/configuring MCP
-  servers remains available through the headless `veasel mcp` commands.
+  each MCP tool call still requires review. `/mcp add` configures stdio and
+  Streamable HTTP servers through the loopback API; `/mcp enable|disable`
+  toggles them and `/mcp remove` requires confirmation. The headless `veasel
+  mcp` commands remain available as well.
   Session Skill enable/disable/invoke slash actions use the session Skill
   endpoints (covered by `live-skill-commands.test.tsx`); MCP trust flows are
   covered by `live-mcp-trust-commands.test.tsx`.

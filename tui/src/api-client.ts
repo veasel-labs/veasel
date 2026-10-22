@@ -437,6 +437,60 @@ export class VeaselApiClient {
     }
   }
 
+  async addConfiguredMcpServer(input: {
+    name: string
+    transport: "stdio" | "streamable-http"
+    command?: string
+    args?: string[]
+    url?: string
+    scope: "user" | "project"
+    directory?: string
+  }): Promise<{ name: string; transport: string; scope?: string }> {
+    const response = await fetch(`${this.base}/v1/mcp-servers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, enabled: true }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { name: string; transport: string; scope?: string }
+  }
+
+  async updateConfiguredMcpServer(name: string, input: {
+    enabled: boolean
+    scope: "user" | "project"
+    directory?: string
+  }): Promise<{ name: string; enabled: boolean }> {
+    const query = new URLSearchParams()
+    if (input.scope === "project") {
+      query.set("scope", "project")
+      if (input.directory) query.set("directory", input.directory)
+    }
+    const suffix = query.size ? `?${query}` : ""
+    const response = await fetch(`${this.base}/v1/mcp-servers/${encodeURIComponent(name)}${suffix}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: input.enabled }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { name: string; enabled: boolean }
+  }
+
+  async removeConfiguredMcpServer(name: string, scope: "user" | "project", directory?: string): Promise<void> {
+    const query = new URLSearchParams()
+    if (scope === "project") {
+      query.set("scope", "project")
+      if (directory) query.set("directory", directory)
+    }
+    const suffix = query.size ? `?${query}` : ""
+    const response = await fetch(`${this.base}/v1/mcp-servers/${encodeURIComponent(name)}${suffix}`, {
+      method: "DELETE",
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+  }
+
   async listPlugins(directory: string): Promise<{
     plugins: Array<{
       name: string

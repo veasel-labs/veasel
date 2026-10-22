@@ -15,6 +15,8 @@ export type LiveSlashAction =
   | { kind: "skill-action"; action: "on" | "off" | "run"; key?: string }
   | { kind: "mcp"; filter: string }
   | { kind: "mcp-trust"; trusted: boolean; key?: string }
+  | { kind: "mcp-add"; scope: "user" | "project"; name: string; transport: "stdio" | "streamable-http"; command?: string; args?: string[]; url?: string }
+  | { kind: "mcp-configure"; action: "remove" | "enable" | "disable"; scope: "user" | "project"; name: string }
   | { kind: "help"; advanced: boolean }
   | { kind: "theme"; mode: "list" | "cycle" | "id"; id?: string }
   | { kind: "status" }
@@ -33,6 +35,15 @@ export type LiveSlashAction =
 
 const mcpManageRest =
   /^(add|remove|enable|disable|credential|credentials|oauth|trust|untrust)\b/i
+
+function splitMcpArgs(raw: string): string[] {
+  const args: string[] = []
+  const matcher = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g
+  for (const match of raw.matchAll(matcher)) {
+    args.push((match[1] ?? match[2] ?? match[3] ?? "").replace(/\\(["'\\])/g, "$1"))
+  }
+  return args
+}
 
 function knownSlashName(name: string): boolean {
   return slashCommands.some(
@@ -125,6 +136,21 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
 
   if (content === "/mcp" || content.startsWith("/mcp ")) {
     const rest = content === "/mcp" ? "" : content.slice("/mcp ".length).trim()
+    const addStdio = /^add(?:\s+(user|project))?\s+stdio\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)(?:\s+([\s\S]+))?$/i.exec(rest)
+    if (addStdio) return {
+      kind: "mcp-add", scope: addStdio[1]?.toLowerCase() === "project" ? "project" : "user",
+      transport: "stdio", name: addStdio[2]!, command: addStdio[3]!, args: addStdio[4] ? splitMcpArgs(addStdio[4]) : [],
+    }
+    const addHttp = /^add(?:\s+(user|project))?\s+http\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)$/i.exec(rest)
+    if (addHttp) return {
+      kind: "mcp-add", scope: addHttp[1]?.toLowerCase() === "project" ? "project" : "user",
+      transport: "streamable-http", name: addHttp[2]!, url: addHttp[3]!,
+    }
+    const configure = /^(remove|enable|disable)(?:\s+(user|project))?\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])$/i.exec(rest)
+    if (configure) return {
+      kind: "mcp-configure", action: configure[1]!.toLowerCase() as "remove" | "enable" | "disable",
+      scope: configure[2]?.toLowerCase() === "project" ? "project" : "user", name: configure[3]!,
+    }
     const trustMatch = /^\/(?:mcp)\s+(trust|untrust)(?:\s+(.+))?$/i.exec(content)
     if (trustMatch) {
       return {

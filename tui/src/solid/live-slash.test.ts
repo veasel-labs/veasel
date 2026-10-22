@@ -31,6 +31,18 @@ describe("resolveLiveSlash", () => {
       trusted: false,
       key: "local-kit/calendar",
     })
+    expect(resolveLiveSlash('/mcp add project stdio demo-server npx -y "demo package"')).toEqual({
+      kind: "mcp-add", scope: "project", name: "demo-server", transport: "stdio", command: "npx", args: ["-y", "demo package"],
+    })
+    expect(resolveLiveSlash("/mcp add http docs https://example.test/mcp")).toEqual({
+      kind: "mcp-add", scope: "user", name: "docs", transport: "streamable-http", url: "https://example.test/mcp",
+    })
+    expect(resolveLiveSlash("/mcp disable project docs")).toEqual({
+      kind: "mcp-configure", action: "disable", scope: "project", name: "docs",
+    })
+    expect(resolveLiveSlash("/mcp remove docs")).toEqual({
+      kind: "mcp-configure", action: "remove", scope: "user", name: "docs",
+    })
     expect(resolveLiveSlash("/help")).toEqual({ kind: "help", advanced: false })
     expect(resolveLiveSlash("/help advanced")).toEqual({ kind: "help", advanced: true })
     expect(resolveLiveSlash("/?")).toEqual({ kind: "help", advanced: false })
@@ -90,8 +102,7 @@ describe("resolveLiveSlash", () => {
 
   test("marks unsupported known slashes and unknown typos", () => {
     expect(resolveLiveSlash("/mcp add user stdio demo echo hi")).toEqual({
-      kind: "unsupported",
-      command: "/mcp add user stdio demo echo hi",
+      kind: "mcp-add", scope: "user", name: "demo", transport: "stdio", command: "echo", args: ["hi"],
     })
     expect(resolveLiveSlash("/theme reload")).toEqual({
       kind: "unsupported",

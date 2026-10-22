@@ -303,11 +303,18 @@ At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under
 `internal/ui/model/status.go` and `internal/ui/chat/` keeps mode badges, help
 hints, and message rendering as separate models with golden/bench tests. Its
 pending-queue tests (`internal/ui/model/pending_queue_test.go`) keep in-flight
-prompts visible above a spinner. Veasel keeps OpenTUI Core 0.5.17 renderables,
-surfaces provider-reported token counts in the footer, and now prefers a compact
+prompts visible above a spinner. Veasel uses OpenTUI Core 0.6.2, surfaces
+provider-reported token counts in the footer, and now prefers a compact
 `review needed` footer cue when edits, shell commands, or MCP calls await
-approval. Richer markdown/diff chrome remains open; do not port Crush's Lip Gloss
-stack into the TypeScript client.
+approval. The current client pins OpenTUI Core 0.6.2. At OpenTUI commit
+`a8f27451b09bdd0670ff661525268ae6f97ec0fc` (0.6.7), `packages/core/src/testing/test-renderer.ts`
+provides scheduler-aware `waitForFrame`, `waitForVisualIdle`, and bounded
+`waitFor` helpers with last-frame diagnostics; Veasel's existing rendered tests
+often use hand-written polling loops. The new live MCP configuration journey
+uses the installed 0.6.2 `waitForFrame` and awaited `dispose` APIs; migrating the
+remaining polling tests is a concrete test-reliability opportunity. Richer
+markdown/diff chrome remains open; do not port Crush's Lip Gloss stack into the
+TypeScript client.
 
 ### Pi — session forks without forcing compaction into the core loop
 
@@ -382,7 +389,7 @@ integrations already exist. For current verified feature status, see
 | Failed turns missing from TUI transcript | Fixed: `store.record_session_turn_completion` persists user/assistant text for failed/cancelled turns; covered by `main_test.v`. |
 | `veasel run` concatenating text across tool calls | Fixed: tool-round boundaries keep newlines; tool-budget summary path added. |
 | Artificial 100k input limit | Fixed: `max_chat_input_bytes = 1_048_576` (1 MiB of text, not Muse's token window). |
-| Incomplete real-terminal keyboard testing | Linux + macOS standalone PTY smoke in CI; Linux `keyboard-exercise` local. Windows interactive still open (ConPTY checklist in `compatibility/tui-interactive-smoke.md`). |
+| Incomplete real-terminal keyboard testing | Linux + macOS standalone PTY smoke in CI; Linux `keyboard-exercise` local. Windows now has a native ConPTY packaged-client smoke in CI; exact-head result is pending in `compatibility/tui-interactive-smoke.md`. |
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
 | Agent Plugins conformance gaps | Local host READY (fixtures, durable links + replace, install summaries, component toggles). Remaining: remote marketplace, upstream cross-impl fixtures (none at pin), OAuth DCR (deferred), TUI browser-open UX, GET notification productization. Linux/macOS/Windows MCP stdio sandbox opt-in (`VEASEL_MCP_STDIO_SANDBOX`; default off) shipped. |
 | Durable job recovery across restart | Queued Prefer: respond-async jobs resume after restart; claimed running/cancelling ops become `uncertain` and are never replayed. See `docs/compatibility/durable-queued-session-operations.md`. |

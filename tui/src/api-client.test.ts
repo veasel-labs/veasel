@@ -494,4 +494,24 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(url).toContain("/v1/mcp-servers?")
     expect(url).toContain("directory=%2Ftmp%2Fproj")
   })
+
+  test("configured MCP mutations use the scoped server API", async () => {
+    const calls: Array<{ url: string; method: string; body?: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET", body: typeof init?.body === "string" ? init.body : undefined })
+      return new Response(JSON.stringify({ name: "docs", transport: "stdio", scope: "project", enabled: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    await client.addConfiguredMcpServer({ name: "docs", transport: "stdio", command: "node", args: ["server.js"], scope: "project", directory: "/tmp/proj" })
+    await client.updateConfiguredMcpServer("docs", { enabled: false, scope: "project", directory: "/tmp/proj" })
+    await client.removeConfiguredMcpServer("docs", "project", "/tmp/proj")
+    expect(calls.map(({ method }) => method)).toEqual(["POST", "PATCH", "DELETE"])
+    expect(calls[0]?.url).toBe("http://127.0.0.1:4097/v1/mcp-servers")
+    expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({ scope: "project", directory: "/tmp/proj", enabled: true })
+    expect(calls[1]?.url).toContain("scope=project&directory=%2Ftmp%2Fproj")
+    expect(calls[2]?.url).toContain("/v1/mcp-servers/docs?scope=project&directory=%2Ftmp%2Fproj")
+  })
 })

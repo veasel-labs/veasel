@@ -92,6 +92,7 @@ import { solidMcpServersFromCatalog } from "./mcp-inventory"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
 import { openDialogExportResult } from "./ui/dialog-export-result"
 import { openDialogPrompt } from "./ui/dialog-prompt"
+import { openDialogConfirm } from "./ui/dialog-confirm"
 import {
   formatGlobalUsageLine,
   formatSessionExport,
@@ -769,6 +770,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
   const [mcpArgumentServers, setMcpArgumentServers] = createSignal<SlashArgument[]>([])
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
+  const [pluginLinkArguments, setPluginLinkArguments] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {
     const draft = composerDraft()
     return /(^|\s)\$/.test(draft) || /^\/skill\s+(?:on|off|run)\s+/.test(draft)
@@ -785,6 +787,9 @@ function LiveAppShell(props: LiveAppProps) {
     if (/^\/mcp\s+call\s+(?:show|approve|reject)\s+/i.test(draft)) return "mcp"
     return undefined
   })
+  const wantsPluginRemovalSuggestions = createMemo(() =>
+    /^\/plugin\s+remove\s+/i.test(composerDraft()),
+  )
   const skillDirectory = createMemo(() =>
     sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
   )
@@ -849,6 +854,22 @@ function LiveAppShell(props: LiveAppProps) {
       setReviewArgumentItems(items)
     }).catch(() => {
       if (current) setReviewArgumentItems([])
+    })
+  })
+  createEffect(() => {
+    const wanted = wantsPluginRemovalSuggestions()
+    setPluginLinkArguments([])
+    if (!wanted) return
+    let current = true
+    onCleanup(() => { current = false })
+    void props.api.listPluginLinks().then((catalog) => {
+      if (!current) return
+      setPluginLinkArguments(catalog.links.map((link) => ({
+        value: link.name,
+        description: link.path,
+      })))
+    }).catch(() => {
+      if (current) setPluginLinkArguments([])
     })
   })
 
@@ -988,6 +1009,42 @@ function LiveAppShell(props: LiveAppProps) {
       openDialogAlert(dialog, {
         title: "Plugins",
         message: error instanceof Error ? error.message : "could not list plugin links",
+        onConfirm: () => setComposerFocused(true),
+      })
+    }
+  }
+
+  const requestPluginRemoval = async (name: string) => {
+    setComposerFocused(false)
+    try {
+      const catalog = await props.api.listPluginLinks()
+      const link = catalog.links.find((item) => item.name === name)
+      if (!link) {
+        toast.info(`Plugin link ${name} is no longer managed`, "Plugins")
+        setComposerFocused(true)
+        return
+      }
+      openDialogConfirm(dialog, {
+        title: "Remove plugin link?",
+        message: `Remove ${link.name} from Veasel's managed plugins? This removes only its managed symlink and registry entry; package files remain untouched.\n${link.path}`,
+        label: { confirm: "Remove link", cancel: "Keep link" },
+        onClose: () => setComposerFocused(true),
+        onConfirm: () => {
+          void props.api.removePluginLink(link.name).then(() => {
+            toast.success(`Removed plugin link · ${link.name}`, "Plugins")
+          }).catch((error) => {
+            openDialogAlert(dialog, {
+              title: "Plugin removal failed",
+              message: error instanceof Error ? error.message : "could not remove plugin link",
+              onConfirm: () => setComposerFocused(true),
+            })
+          }).finally(() => setComposerFocused(true))
+        },
+      })
+    } catch (error) {
+      openDialogAlert(dialog, {
+        title: "Plugin removal failed",
+        message: error instanceof Error ? error.message : "could not load plugin link",
         onConfirm: () => setComposerFocused(true),
       })
     }
@@ -1424,6 +1481,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "plugins":
         dismissHomeComposer()
         void openLivePlugins(action.filter)
+        return
+      case "plugin-remove":
+        dismissHomeComposer()
+        void requestPluginRemoval(action.name)
         return
       case "map":
         dismissHomeComposer()
@@ -2406,6 +2467,7 @@ function LiveAppShell(props: LiveAppProps) {
             mcpCalls: reviewArgumentItems()
               .filter((item) => item.kind === "mcp")
               .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
+            pluginLinks: pluginLinkArguments(),
           }}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}

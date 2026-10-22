@@ -466,6 +466,14 @@ export class VeaselApiClient {
     }
   }
 
+  async removePluginLink(name: string): Promise<void> {
+    const response = await fetch(`${this.base}/v1/plugins/links/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+  }
+
   async getWorkspaceMap(sessionId: string, hint = ""): Promise<WorkspaceRepositoryMap> {
     const query = hint.trim().length > 0 ? `?hint=${encodeURIComponent(hint.trim())}` : ""
     const response = await fetch(

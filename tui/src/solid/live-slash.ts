@@ -23,6 +23,7 @@ export type LiveSlashAction =
   | { kind: "session-list" }
   | { kind: "fork" }
   | { kind: "plugins"; filter: string }
+  | { kind: "plugin-remove"; name: string }
   | { kind: "map"; hint: string }
   | { kind: "history-older" }
   | { kind: "history-hint" }
@@ -78,8 +79,10 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
     const filter = content === "/plugins" ? "" : content.slice("/plugins ".length).trim()
     return { kind: "plugins", filter }
   }
+  const pluginRemove = /^\/plugin\s+remove\s+(\S+)$/i.exec(content)
+  if (pluginRemove) return { kind: "plugin-remove", name: pluginRemove[1]! }
   if (content === "/plugin" || content.startsWith("/plugin ")) {
-    // add/remove stay headless for now; bare /plugin opens the links dialog with a hint.
+    // Add stays headless; bare /plugin opens the managed links dialog.
     return { kind: "plugins", filter: "" }
   }
 

@@ -307,11 +307,13 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   loading, manifest and Skill validation, MCP stdio/Streamable HTTP,
   `PLUGIN_DATA`, placeholder expansion, failure isolation, and per-call MCP
   consent are CI-gated with the spec-derived fixture corpus. Operator-managed
-  local package links (`/v1/plugins/links`, TUI `/plugin add [--replace]|remove`,
-  headless `veasel plugins links … [--replace]`, capability `plugins.links`)
-  ship with a durable `$VEASEL_DATA_DIR/plugin-links.json` sidecar (restore
-  missing symlinks on list; optional `replace`) and validated package summary
-  fields for install UX; they do not fetch remote packages. Remaining open:
+  local package links use `/v1/plugins/links` and capability `plugins.links`.
+  Solid TUI removal uses `/plugin remove <name>` with explicit confirmation;
+  adding links remains available through headless `veasel plugins links …
+  [--replace]`. Links ship with a durable `$VEASEL_DATA_DIR/plugin-links.json`
+  sidecar (restore missing symlinks on list; optional `replace`) and validated
+  package summary fields for install UX; they do not fetch remote packages.
+  Remaining open:
   remote marketplace, upstream cross-implementation fixtures (none published at
   the pinned revision), OAuth DCR (deferred), legacy HTTP+SSE.
   Operator-configured MCP servers support user scope, project scope
@@ -636,7 +638,8 @@ honoring its license and attribution.
   available or trusted targets as appropriate. Pending edit, shell, and MCP
   review IDs come from the summary-only inventory; Enter opens the selected
   review and fetches details only for that item, without applying a decision.
-  Plugin-link argument completion and cross-terminal validation remain open.
+  Plugin-link removal completes from the live registry; adding local links
+  remains a headless workflow. Cross-terminal validation remains open.
 
 ### Transcript keyboard ownership
 

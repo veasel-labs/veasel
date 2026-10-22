@@ -67,6 +67,10 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/plugins")).toEqual({ kind: "plugins", filter: "" })
     expect(resolveLiveSlash("/plugins auth")).toEqual({ kind: "plugins", filter: "auth" })
     expect(resolveLiveSlash("/plugin")).toEqual({ kind: "plugins", filter: "" })
+    expect(resolveLiveSlash("/plugin remove review-tools")).toEqual({
+      kind: "plugin-remove",
+      name: "review-tools",
+    })
     expect(resolveLiveSlash("/map")).toEqual({ kind: "map", hint: "" })
     expect(resolveLiveSlash("/map boot")).toEqual({ kind: "map", hint: "boot" })
     expect(resolveLiveSlash("/history older")).toEqual({ kind: "history-older" })

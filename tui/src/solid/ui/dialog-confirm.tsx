@@ -10,6 +10,7 @@ export type DialogConfirmProps = {
   message: string
   onConfirm?: () => void
   onCancel?: () => void
+  onClose?: () => void
   label?: {
     confirm?: string
     cancel?: string
@@ -84,5 +85,5 @@ export function openDialogConfirm(
   dialog: ReturnType<typeof useDialog>,
   props: DialogConfirmProps,
 ) {
-  dialog.replace(() => <DialogConfirm {...props} />)
+  dialog.replace(() => <DialogConfirm {...props} />, { onClose: props.onClose })
 }

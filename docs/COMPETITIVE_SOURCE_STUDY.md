@@ -21,7 +21,7 @@ they drive compatibility claims.
 | [Goose](https://github.com/aaif-goose/goose/tree/dd17bf2021f3fb3b326c471593c352e1b0d62bbd) | `dd17bf2021f3fb3b326c471593c352e1b0d62bbd` | Apache-2.0; agent state machine and effects |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli/tree/06d329873703ddabe8a842d962342ac4ad779e83) | `06d329873703ddabe8a842d962342ac4ad779e83` | Apache-2.0; telemetry, redaction, and checkpointing |
 | [Aider](https://github.com/Aider-AI/aider/tree/5dc9490bb35f9729ef2c95d00a19ccd30c26339c) | `5dc9490bb35f9729ef2c95d00a19ccd30c26339c` | Apache-2.0; syntax-aware repository map and cache |
-| [Cline](https://github.com/cline/cline/tree/789f79e46d3ba579717e8dc8be35fe28af935b06) | `789f79e46d3ba579717e8dc8be35fe28af935b06` | Apache-2.0; shared agent/session and CLI runtime |
+| [Cline](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128) | `590785eff565f167b16d5f750d682c4d9d2b7128` | Apache-2.0; shared agent/session runtime with host-injected tools |
 | [OpenHands](https://github.com/OpenHands/OpenHands/tree/1c75a05d587bcb502cd3f63d7e13eaa98ca84d53) | `1c75a05d587bcb502cd3f63d7e13eaa98ca84d53` | MIT; web client; pair with software-agent-sdk |
 | [software-agent-sdk](https://github.com/OpenHands/software-agent-sdk/tree/8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547) | `8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547` | MIT; Agent Server REST/WebSocket lifecycle |
 | [Continue](https://github.com/continuedev/continue/tree/5522c6f44ca0ac3528b37244818fbfa39b5af470) | `5522c6f44ca0ac3528b37244818fbfa39b5af470` | Apache-2.0; context-provider and repository-map interfaces |
@@ -192,26 +192,33 @@ It is not tree-sitter/PageRank parity and does not claim provider token savings.
 Next: measure coding-task success versus grep-only baselines, then consider a
 parser adapter or cache only when measurements justify it.
 
-### Cline — one runtime for CLI and interactive surfaces
+### Cline — share orchestration, inject host capabilities
 
-Cline's CLI has separate interactive and headless entry points under
-[`apps/cli/src/runtime/`](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1/apps/cli/src/runtime).
-Its SDK runtime orchestrator is under
-[`sdk/packages/core/src/runtime/orchestration/`](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1/sdk/packages/core/src/runtime/orchestration),
-with an agent-runtime provider seam in
-[`sdk/packages/agents/src/`](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1/sdk/packages/agents/src).
-The CLI's `run-agent.ts` consumes that SDK runtime and emits session and usage
-events, rather than implementing an unrelated agent loop.
+Rechecked the refreshed Cline clone on 2026-10-22 at
+[`590785eff565f167b16d5f750d682c4d9d2b7128`](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128).
+The CLI runtime has its own interactive approval/controller layer under
+[`apps/cli/src/runtime/`](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128/apps/cli/src/runtime),
+while the shared SDK owns orchestration in
+[`sdk/packages/core/src/runtime/orchestration/`](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128/sdk/packages/core/src/runtime/orchestration).
+The core's [`createBuiltinToolsList`](https://github.com/cline/cline/blob/590785eff565f167b16d5f750d682c4d9d2b7128/sdk/packages/core/src/extensions/tools/definitions.ts)
+adds a capability only when its executor is supplied. Runtime construction
+also accepts executor overrides; its plan-mode command guard is merged through
+the same extension path for shared and host-provided `run_commands` tools.
+Browser sessions, however, live in the VS Code host at
+[`apps/vscode/src/services/browser/BrowserSession.ts`](https://github.com/cline/cline/blob/590785eff565f167b16d5f750d682c4d9d2b7128/apps/vscode/src/services/browser/BrowserSession.ts).
+Shared orchestration therefore does not imply identical capabilities across
+CLI and desktop hosts.
 
 **Useful principle:** Veasel's `veasel run`, API, and TUI should keep sharing
-the V runtime and persisted operations. The new headless CLI follows this
-boundary. It now supports operation IDs, bounded timeouts, cancellation, optional
-ATIF trajectories, explicit autonomous opt-in, and a Harbor installed-agent
-adapter. Autonomous opt-in is not itself isolation; benchmark runs must use a
-disposable task environment, and runtime execution fails closed when its OS
-sandbox is unavailable. Real-model task evaluation remains unrun without an
-authorized budget. Cline's larger extension surface also has lifecycle
-complexity; adopt only interfaces needed by real clients.
+the V runtime and persisted operations. The headless CLI follows this boundary
+with operation IDs, bounded timeouts, cancellation, optional ATIF trajectories,
+explicit autonomous opt-in, and a Harbor installed-agent adapter.
+Autonomous opt-in is not itself isolation; benchmark runs must use a disposable
+task environment, and runtime execution fails closed when its OS sandbox is
+unavailable. Real-model task evaluation remains unrun without an authorized
+budget. If Veasel adds browser automation, keep the browser host separately
+supervised and expose it through a versioned, capability-gated tool/API contract;
+do not make browser availability depend on which TUI renderer is active.
 
 ### OpenHands — typed remote execution and session identity
 

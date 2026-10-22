@@ -11,6 +11,7 @@ export type LiveSlashAction =
   | { kind: "connect" }
   | { kind: "models" }
   | { kind: "skills"; filter: string }
+  | { kind: "skill-action"; action: "on" | "off" | "run"; key?: string }
   | { kind: "mcp"; filter: string }
   | { kind: "help"; advanced: boolean }
   | { kind: "theme"; mode: "list" | "cycle" | "id"; id?: string }
@@ -61,9 +62,14 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
     const filter = content === "/skills" ? "" : content.slice("/skills ".length).trim()
     return { kind: "skills", filter }
   }
-  // /skill on|off|run … — open the picker; detailed toggles stay HTTP/palette follow-up.
-  if (content === "/skill" || content.startsWith("/skill ")) {
+  if (content === "/skill") {
     return { kind: "skills", filter: "" }
+  }
+  if (content.startsWith("/skill ")) {
+    const match = /^\/skill\s+(on|off|run)(?:\s+(.+))?$/i.exec(content)
+    if (!match) return { kind: "unsupported", command: content }
+    const key = match[2]?.trim()
+    return { kind: "skill-action", action: match[1]!.toLowerCase() as "on" | "off" | "run", key }
   }
 
   if (content === "/plugins" || content.startsWith("/plugins ")) {

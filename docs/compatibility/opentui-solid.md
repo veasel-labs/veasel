@@ -90,7 +90,11 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   Space/]/[/n/p/{/} match `active-review` docs. Palette
   `veasel.reviews.open`. Demo fixture queue for fixture `App` tests. Engineering
   reference only: OpenCode `permission.tsx` / diff-viewer — Veasel mint chrome,
-  not OpenCode branding. Live HTTP approve/reject wiring is follow-up on Solid.
+  not OpenCode branding. LiveApp loads pending review summaries and fetches a
+  review's detail only when opened; approval is gated on successful detail
+  inspection, and approve/reject calls use the versioned session API. Rendered
+  tests cover loading, stale navigation, failure/retry, and batch approval
+  gating. This does not prove a human read every diff or command.
 - Toast host (`solid/ui/toast.tsx`): non-modal top-right mint notices with
   variant borders, optional title/action, queue (`+N more`), hover pause/resume,
   click dismiss/activate. Pattern from OpenCode `ui/toast.tsx` (engineering
@@ -113,19 +117,25 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
 - Product dialogs on DialogSelect / layout: theme list (`dialog-theme-list.tsx`,
   live preview on move), model favorites/recents (`model-dialog.tsx`), stash
   (`stash-dialog.tsx`), error details (`error-details-dialog.tsx`), shell
-  output (`shell-output-dialog.tsx`). Fixture catalogs until HTTP wiring.
+  output (`shell-output-dialog.tsx`). Theme/model data uses live settings and
+  provider catalogs; composer draft stash is local state. Some secondary dialogs
+  remain fixture-driven and need an explicit per-journey backend audit.
   Palette: `veasel.theme.list`, `veasel.model.picker`, `veasel.stash.list`,
   `veasel.error.details`, `veasel.shell.output`.
 - MCP servers + skills (`mcp-dialog.tsx`, `skill-dialog.tsx`): DialogSelect
   inventories with status categories / descriptions; failed MCP rows open
   error-details. Palette `veasel.mcp.list`, `veasel.skills.list`. Fixture demos
-  until HTTP `/mcp*` and skills discovery wiring lands on Solid.
+  remain for isolated component tests; LiveApp loads MCP and plugin/Skill
+  catalogs over the loopback API. Session Skill enable/disable/invoke slash
+  actions use the session Skill endpoints (covered by
+  `live-skill-commands.test.tsx`).
 - Composer autocomplete (`solid/composer-autocomplete.ts` + `SolidComposer`):
   `/` slash, `@` workspace paths, `$` skills using the same pure matchers as
   the imperative shell (`slash-commands`, `path-autocomplete`,
   `skill-autocomplete`). Mint popup above Compose; Tab/↑↓/Enter/Esc. Skills
   catalog and workspace path listing are injectable props on fixture `App`;
-  live path loads sessions/messages via `api-client.ts`.
+  LiveApp loads Skills through the plugin API and workspace paths from the
+  session project.
 - Home pane resize (`solid/ui/pane-layout.ts`, `pane-resize.ts`,
   `pane-resize-handle.tsx` + `LiveHome`): drag grip + Alt+←/→ + palette widen/
   narrow/reset; preferred width persisted under XDG state. Drag/double-click

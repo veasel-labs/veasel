@@ -29,9 +29,10 @@ retired imperative shell lives at `src/classic-main.ts` (`bun run start:classic`
 tool/activity grouping (**Ctrl+G**), **Ctrl+P** command palette, pending
 **reviews** (**Ctrl+R**), toast host, session list / rename, dialog primitives,
 and product dialogs. Pins and adapted patterns are recorded in
-[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Remaining
-parity (full review HTTP approve path, pane-resize, deeper settings connect) is
-follow-up. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
+[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). The default
+journeys are wired to the loopback API where supported; remaining work is
+tracked per journey and must be validated against the production backend. CI
+builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
 interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
 validation still needs a ConPTY harness (see
@@ -58,10 +59,13 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   use `solid/main.tsx` / `LiveApp` (loopback HTTP session loop + SSE); classic
   shell retired to `classic-main.ts` / `start:classic`.
 - [x] Solid composer `/` `@` `$` autocomplete dropdown (classic matchers,
-  Tab/Enter/Esc/arrows); fixture skills/paths until HTTP session wiring.
+  Tab/Enter/Esc/arrows); live workspace Skills and path catalogs load from the
+  loopback API/filesystem, with rendered tests for cursor movement and suffix
+  preservation.
 - [x] Solid session transcript on `scrollbox` with sticky follow-tail,
   `transcriptSegments` tone rendering, and `testRender` coverage (long scroll,
-  streaming append, 80×30); HTTP session wiring still optional.
+  streaming append, 80×30); LiveApp loads and refreshes transcript history via
+  the loopback API.
 - [x] Solid dialog host + Ctrl+P command palette (`solid/ui/dialog.tsx`,
   `solid/component/command-palette.tsx`) wired to slash/help/theme-cycle/
   session-list stubs; `testRender` for open/close, filter, keyboard select, Esc.
@@ -450,13 +454,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
-- [ ] Progressive SolidJS + `@opentui/solid` 0.6.2 migration (ordered:
-  shell → … → toast → session dialogs → dialog primitives → product dialogs →
-  settings). Shell through model/theme/stash/error/shell dual-path shipped;
-  next slices are pane-resize/sidebar, fade/spinner, HTTP session wiring /
-  mount-budget, or remaining OpenCode dialogs (MCP/skill/agent/workspaces).
-  Solid LiveApp is already the default; audit remaining journeys against the
-  classic client rather than treating the default cutover as pending. See
+- [x] Make the SolidJS + `@opentui/solid` 0.6.2 LiveApp the standalone TUI
+  default. The default migration is complete. Remaining Solid work is product
+  behavior and validation, not a pending migration; audit each journey against
+  the production HTTP backend and current OpenCode/OpenTUI sources. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
@@ -621,11 +622,14 @@ honoring its license and attribution.
   shared library. CI checks these platform-specific linkage guarantees.
 - SSE and SQLite behavior must be tested under concurrent clients before the
   server claims durable or restart-resilient background execution.
-- Solid MCP/Skills dialogs + session export options/result (OpenCode parity rows 7–8, 11–12).
+- Solid MCP/Skills dialogs and session export options/results (OpenCode parity
+  rows 7–8, 11–12) still need journey-level comparison and validation; the live
+  dialogs already load their catalogs through the loopback API.
 - Solid composer `/` `@` `$` autocomplete (`solid/composer-autocomplete.ts` +
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
-  `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
-  argument-context refresh) remain open.
+  live catalog wiring and cursor synchronization are implemented and covered by
+  rendered tests. Argument-context refresh and cross-terminal validation remain
+  open.
 
 ### Transcript keyboard ownership
 

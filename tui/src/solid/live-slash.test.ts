@@ -16,7 +16,9 @@ describe("resolveLiveSlash", () => {
       kind: "skills",
       filter: "auth oauth",
     })
-    expect(resolveLiveSlash("/skill on user/demo")).toEqual({ kind: "skills", filter: "" })
+    expect(resolveLiveSlash("/skill on user/demo")).toEqual({ kind: "skill-action", action: "on", key: "user/demo" })
+    expect(resolveLiveSlash("/skill off user/demo")).toEqual({ kind: "skill-action", action: "off", key: "user/demo" })
+    expect(resolveLiveSlash("/skill run user/demo")).toEqual({ kind: "skill-action", action: "run", key: "user/demo" })
     expect(resolveLiveSlash("/mcp")).toEqual({ kind: "mcp", filter: "" })
     expect(resolveLiveSlash("/mcp http")).toEqual({ kind: "mcp", filter: "http" })
     expect(resolveLiveSlash("/help")).toEqual({ kind: "help", advanced: false })
@@ -66,6 +68,10 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/theme reload")).toEqual({
       kind: "unsupported",
       command: "/theme reload",
+    })
+    expect(resolveLiveSlash("/skill whatever user/demo")).toEqual({
+      kind: "unsupported",
+      command: "/skill whatever user/demo",
     })
     expect(resolveLiveSlash("/not-a-real-command")).toEqual({
       kind: "unknown",

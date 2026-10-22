@@ -1214,6 +1214,50 @@ function LiveAppShell(props: LiveAppProps) {
     if (homeComposerOpen()) setHomeComposerOpen(false)
   }
 
+  const runLiveSkillAction = async (action: "on" | "off" | "run", key?: string) => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Session required",
+        message: "Open a session before enabling or invoking a Skill.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    if (!key) {
+      openDialogAlert(dialog, {
+        title: "Skill name required",
+        message: `Use /skill ${action} <source>/<skill>. Open /skills to browse available Skills.`,
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const separator = key.indexOf("/")
+    if (separator <= 0 || separator === key.length - 1) {
+      openDialogAlert(dialog, {
+        title: "Invalid Skill name",
+        message: "Use the source/skill key shown by /skills, for example /skill run local-kit/review.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const pluginName = key.slice(0, separator)
+    const skillName = key.slice(separator + 1)
+    try {
+      if (action === "run") {
+        await props.api.invokeSessionSkill(sessionId, pluginName, skillName)
+        toast.success(`Queued ${pluginName}/${skillName} for the next turn`, "Skill")
+      } else {
+        await props.api.setSessionSkill(sessionId, pluginName, skillName, action === "on")
+        toast.success(`${action === "on" ? "Enabled" : "Disabled"} ${pluginName}/${skillName} for this session`, "Skill")
+      }
+      setComposerFocused(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update Skill", "Skill")
+      setComposerFocused(true)
+    }
+  }
+
   const handleComposerSubmit = (text: string) => {
     const action = resolveLiveSlash(text)
     switch (action.kind) {
@@ -1249,6 +1293,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "skills":
         dismissHomeComposer()
         void openLiveSkills(action.filter)
+        return
+      case "skill-action":
+        dismissHomeComposer()
+        void runLiveSkillAction(action.action, action.key)
         return
       case "mcp":
         dismissHomeComposer()

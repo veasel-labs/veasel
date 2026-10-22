@@ -110,6 +110,7 @@ import { resolveLiveSlash } from "./live-slash"
 import { createAttentionNotifier } from "./attention"
 import { pageMayHaveOlder, type ChatTurn } from "../chat-history"
 import { formatRepositoryMapSummary } from "../repository-map"
+import type { SlashArgument } from "../slash-commands"
 import {
   HOME_SIDEBAR_DEFAULT,
   clampHomeSidebarWidth,
@@ -755,9 +756,15 @@ function LiveAppShell(props: LiveAppProps) {
 
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
   const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
+  const [mcpArgumentServers, setMcpArgumentServers] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {
     const draft = composerDraft()
     return /(^|\s)\$/.test(draft) || /^\/skill\s+(?:on|off|run)\s+/.test(draft)
+  })
+  const mcpTrustCompletionAction = createMemo(() => {
+    const match = /^\/mcp\s+(trust|untrust)\s+/i.exec(composerDraft())
+    const action = match?.[1]?.toLowerCase()
+    return action === "trust" || action === "untrust" ? action : undefined
   })
   const skillDirectory = createMemo(() =>
     sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
@@ -780,6 +787,35 @@ function LiveAppShell(props: LiveAppProps) {
     }).catch(() => {
       if (!current) return
       setSkillCatalogStatus("Skills unavailable · use /skills to retry")
+    })
+  })
+  createEffect(() => {
+    const sessionId = activeSessionId()
+    const root = directory()
+    const action = mcpTrustCompletionAction()
+    setMcpArgumentServers([])
+    if (!action || !sessionId) return
+    let current = true
+    onCleanup(() => { current = false })
+    void Promise.all([
+      props.api.listConfiguredMcpServers(root),
+      props.api.listSessionMcpServers(sessionId),
+    ]).then(([configured, trusted]) => {
+      if (!current || sessionId !== activeSessionId()) return
+      const rows = solidMcpServersFromCatalog(configured, trusted)
+      const eligible = rows.filter((server) =>
+        action === "untrust"
+          ? server.status === "trusted"
+          : server.status === "available",
+      )
+      setMcpArgumentServers(
+        eligible.map((server) => ({
+          value: server.name,
+          description: `${server.transport} · ${server.status}`,
+        })),
+      )
+    }).catch(() => {
+      if (current) setMcpArgumentServers([])
     })
   })
 
@@ -2327,6 +2363,7 @@ function LiveAppShell(props: LiveAppProps) {
               value: skill.key,
               description: skill.description,
             })),
+            mcpServers: mcpArgumentServers(),
           }}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}

@@ -631,9 +631,10 @@ honoring its license and attribution.
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   live catalog wiring and cursor synchronization are implemented and covered by
   rendered tests. `/skill on|off|run <source>/<skill>` now loads the active
-  project's catalog and offers real argument completions. Other live argument
-  catalogs (plugin links, configured MCP servers, and pending review IDs) remain
-  open, as does cross-terminal validation.
+  project's catalog and offers real argument completions. `/mcp trust|untrust`
+  loads configured servers plus session trust state and suggests enabled,
+  available or trusted targets as appropriate. Plugin-link and pending-review
+  argument catalogs remain open, as does cross-terminal validation.
 
 ### Transcript keyboard ownership
 

@@ -28,6 +28,7 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
     if (url.pathname === "/v1/mcp-servers") {
       return Response.json({ servers: [
         { name: "echo-tools", enabled: true, transport: "stdio", scope: "user" },
+        { name: "disabled-tools", enabled: false, transport: "stdio", scope: "user" },
       ] })
     }
     return Response.json({})
@@ -53,10 +54,15 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
     await until("Real project")
     setup.mockInput.pressEnter()
     await setup.renderOnce()
-    await submit(
-      "/mcp trust configured/echo-tools",
-      "Trusted configured/echo-tools",
-    )
+    await setup.mockInput.typeText("/mcp trust ")
+    await until("configured/echo-tools")
+    expect(setup.captureCharFrame()).toContain("available")
+    expect(setup.captureCharFrame()).not.toContain("disabled-tools")
+    setup.mockInput.pressTab()
+    await setup.renderOnce()
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("/mcp trust configured/echo-tools")
+    setup.mockInput.pressEnter()
+    await until("Trusted configured/echo-tools")
     await submit("/mcp", "MCP servers")
     await until("Trusted")
     const inventory = setup.captureCharFrame()
@@ -64,10 +70,14 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
     expect(inventory).not.toContain("Connected")
     setup.mockInput.pressEscape()
     await setup.renderOnce()
-    await submit(
-      "/mcp untrust configured/echo-tools",
-      "Revoked trust for configured/echo-tools",
-    )
+    await setup.mockInput.typeText("/mcp untrust ")
+    await until("stdio · trusted")
+    expect(setup.captureCharFrame()).toContain("trusted")
+    setup.mockInput.pressTab()
+    await setup.renderOnce()
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("/mcp untrust configured/echo-tools")
+    setup.mockInput.pressEnter()
+    await until("Revoked trust for configured/echo-tools")
     expect(calls).toEqual([
       {
         path: "/v1/sessions/a/mcp-servers",

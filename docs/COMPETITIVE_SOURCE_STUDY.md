@@ -252,6 +252,34 @@ bounded, tool-requested repository data; a future retrieval layer should have
 an inspectable budget and source provenance. Avoid porting Continue's IDE
 context catalog into a terminal agent without matching user workflows.
 
+The pinned Continue source also shows where the product owns the operational
+cost of that context. `DocsService.ts` maintains a LanceDB vector table plus
+SQLite metadata, selects the configured embedding model (with a Transformers.js
+fallback where supported), tracks indexing status, and reindexes when the
+embedding provider or crawl URL/depth changes. It serializes work per start URL,
+checks cancellation and provider changes while crawling/embedding, and marks
+failed configs to avoid repeating the same failing attempt. `DocsContextProvider`
+retrieves up to 30 chunks, optionally reranks them to 15, exposes URL provenance,
+and tells the model to answer from retrieved docs and cite URLs. This is a
+meaningful reference for a future Veasel docs-index feature, but it is a larger
+dependency and lifecycle commitment than Veasel's current bounded,
+extractive repository map; it is not a reason by itself to add embeddings.
+
+Continue's `NextEditProvider` is a separate inline-edit product path: it tracks
+accepted/rejected outcomes and edit chains, blocks sensitive paths, uses
+model-specific providers, and retrieves autocomplete context. Its
+`PrefetchQueue` is explicitly limited to three pending outcomes by default, and
+its source comment says the original background-prefetch idea was abandoned
+because location prediction quality, latency, and token cost were not good
+enough. Veasel's repository map instead ranks workspace paths/symbols
+extractively under a 12 KiB default UTF-8 budget (with explicit scan/read
+limits), supports a separate 2 KiB query-focus map, and records measurements in
+the session. These are different features and should not be compared as
+equivalent autocomplete implementations. The actionable lesson is to measure
+retrieval relevance and context cost before adding model-driven prefetch or
+vector indexing; keep any future index cancellable, provider-aware, bounded,
+and inspectable.
+
 ### Roo Code — archived mode personas, not a performance baseline
 
 At archived commit `b867ec9145750d0ae1ff7f02d35406e9bf2a0b16`, Roo Code's

@@ -641,7 +641,9 @@ honoring its license and attribution.
   rendered tests. `/skill on|off|run <source>/<skill>` now loads the active
   project's catalog and offers real argument completions. `/mcp trust|untrust`
   loads configured servers plus session trust state and suggests enabled,
-  available or trusted targets as appropriate. Pending edit, shell, and MCP
+  available or trusted targets as appropriate. `/mcp remove|enable|disable`
+  suggests configured server names from the live catalog, filtered by scope.
+  Pending edit, shell, and MCP
   review IDs come from the summary-only inventory; Enter opens the selected
   review and fetches details only for that item, without applying a decision.
   Plugin-link add and removal complete from the live registry, with explicit

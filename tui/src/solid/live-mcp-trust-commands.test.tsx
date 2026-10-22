@@ -7,6 +7,7 @@ import { LiveApp } from "./live-app"
 test("LiveApp routes MCP trust and revoke commands to the session API", async () => {
   const controller = new AbortController()
   const calls: Array<{ path: string; body?: unknown }> = []
+  let trusted = false
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
     const url = new URL(request.url)
     if (url.pathname === "/v1/events") return new Response(new ReadableStream({ start(stream) {
@@ -16,10 +17,18 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
     if (url.pathname === "/v1/sessions/a/messages") return Response.json([])
     if (url.pathname === "/v1/sessions/a/mcp-servers") {
       const body = request.method === "POST" ? await request.json() : undefined
-      calls.push({ path: url.pathname, body })
-      return Response.json(body?.trusted
+      if (body) {
+        calls.push({ path: url.pathname, body })
+        trusted = body.trusted
+      }
+      return Response.json(trusted
         ? [{ plugin_name: "configured", server_name: "echo-tools" }]
         : [])
+    }
+    if (url.pathname === "/v1/mcp-servers") {
+      return Response.json({ servers: [
+        { name: "echo-tools", enabled: true, transport: "stdio", scope: "user" },
+      ] })
     }
     return Response.json({})
   } })
@@ -33,7 +42,7 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
       if (setup.captureCharFrame().includes(text)) return
       await Bun.sleep(5)
     }
-    throw new Error(`Missing ${text}`)
+    throw new Error(`Missing ${text}\n${setup.captureCharFrame()}`)
   }
   async function submit(text: string, confirmation: string) {
     await setup.mockInput.typeText(text)
@@ -48,6 +57,13 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
       "/mcp trust configured/echo-tools",
       "Trusted configured/echo-tools",
     )
+    await submit("/mcp", "MCP servers")
+    await until("Trusted")
+    const inventory = setup.captureCharFrame()
+    expect(inventory).toContain("configured/echo-tools")
+    expect(inventory).not.toContain("Connected")
+    setup.mockInput.pressEscape()
+    await setup.renderOnce()
     await submit(
       "/mcp untrust configured/echo-tools",
       "Revoked trust for configured/echo-tools",

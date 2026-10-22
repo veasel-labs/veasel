@@ -633,8 +633,10 @@ honoring its license and attribution.
   rendered tests. `/skill on|off|run <source>/<skill>` now loads the active
   project's catalog and offers real argument completions. `/mcp trust|untrust`
   loads configured servers plus session trust state and suggests enabled,
-  available or trusted targets as appropriate. Plugin-link and pending-review
-  argument catalogs remain open, as does cross-terminal validation.
+  available or trusted targets as appropriate. Pending edit, shell, and MCP
+  review IDs come from the summary-only inventory; Enter opens the selected
+  review and fetches details only for that item, without applying a decision.
+  Plugin-link argument completion and cross-terminal validation remain open.
 
 ### Transcript keyboard ownership
 

@@ -41,7 +41,8 @@ import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openReviewPanel } from "./component/review-panel"
 import { decideSolidReviews, loadPendingSolidReviews, inspectSolidReview } from "./reviews-inventory"
-import { reviewShortcut } from "./reviews"
+import { reviewShortcut, reviewSummaryLine, type SolidReviewItem } from "./reviews"
+import type { ActiveReviewKind } from "../active-review"
 import { openAgentDialog } from "./component/agent-dialog"
 import {
   EXECUTION_POLICY_AGENTS,
@@ -630,7 +631,7 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
-  const openLiveReviews = async () => {
+  const openLiveReviews = async (target?: { kind: ActiveReviewKind; id: string }) => {
     const sessionId = activeSessionId()
     if (!sessionId) {
       toast.info("Open a session to review pending proposals", "Reviews")
@@ -639,6 +640,7 @@ function LiveAppShell(props: LiveAppProps) {
     setComposerFocused(false)
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
+      if (sessionId !== activeSessionId()) return
       if (reviews.length === 0) {
         openDialogAlert(dialog, {
           title: "Reviews",
@@ -647,8 +649,17 @@ function LiveAppShell(props: LiveAppProps) {
         })
         return
       }
+      const targetIndex = target
+        ? reviews.findIndex((item) => item.kind === target.kind && item.id === target.id)
+        : 0
+      if (target && targetIndex < 0) {
+        toast.info(`Review ${target.kind}:${target.id.slice(0, 8)} is no longer pending`, "Reviews")
+        setComposerFocused(true)
+        return
+      }
       openReviewPanel(dialog, {
         reviews,
+        initialIndex: Math.max(0, targetIndex),
         onClose: () => setComposerFocused(true),
         onInspect: (target) => inspectSolidReview(props.api, sessionId, target),
         onDecide: async (decision, targets) => {
@@ -757,6 +768,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
   const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
   const [mcpArgumentServers, setMcpArgumentServers] = createSignal<SlashArgument[]>([])
+  const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
   const wantsSkillSuggestions = createMemo(() => {
     const draft = composerDraft()
     return /(^|\s)\$/.test(draft) || /^\/skill\s+(?:on|off|run)\s+/.test(draft)
@@ -765,6 +777,13 @@ function LiveAppShell(props: LiveAppProps) {
     const match = /^\/mcp\s+(trust|untrust)\s+/i.exec(composerDraft())
     const action = match?.[1]?.toLowerCase()
     return action === "trust" || action === "untrust" ? action : undefined
+  })
+  const reviewCompletionKind = createMemo(() => {
+    const draft = composerDraft()
+    if (/^\/patch\s+(?:show|approve|reject)\s+/i.test(draft)) return "patch"
+    if (/^\/command\s+(?:show|approve|reject)\s+/i.test(draft)) return "command"
+    if (/^\/mcp\s+call\s+(?:show|approve|reject)\s+/i.test(draft)) return "mcp"
+    return undefined
   })
   const skillDirectory = createMemo(() =>
     sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
@@ -816,6 +835,20 @@ function LiveAppShell(props: LiveAppProps) {
       )
     }).catch(() => {
       if (current) setMcpArgumentServers([])
+    })
+  })
+  createEffect(() => {
+    const sessionId = activeSessionId()
+    const kind = reviewCompletionKind()
+    setReviewArgumentItems([])
+    if (!kind || !sessionId) return
+    let current = true
+    onCleanup(() => { current = false })
+    void loadPendingSolidReviews(props.api, sessionId).then((items) => {
+      if (!current || sessionId !== activeSessionId()) return
+      setReviewArgumentItems(items)
+    }).catch(() => {
+      if (current) setReviewArgumentItems([])
     })
   })
 
@@ -1431,7 +1464,7 @@ function LiveAppShell(props: LiveAppProps) {
         return
       case "reviews":
         dismissHomeComposer()
-        void openLiveReviews()
+        void openLiveReviews(action.target)
         return
       case "export":
         dismissHomeComposer()
@@ -2364,6 +2397,15 @@ function LiveAppShell(props: LiveAppProps) {
               description: skill.description,
             })),
             mcpServers: mcpArgumentServers(),
+            patches: reviewArgumentItems()
+              .filter((item) => item.kind === "patch")
+              .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
+            commands: reviewArgumentItems()
+              .filter((item) => item.kind === "command")
+              .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
+            mcpCalls: reviewArgumentItems()
+              .filter((item) => item.kind === "mcp")
+              .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
           }}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}

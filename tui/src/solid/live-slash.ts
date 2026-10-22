@@ -1,4 +1,5 @@
 import { isConnectCommand, isModelSettingsCommand } from "../help"
+import type { ActiveReviewKind } from "../active-review"
 import { slashCommands } from "../slash-commands"
 
 /**
@@ -17,7 +18,7 @@ export type LiveSlashAction =
   | { kind: "help"; advanced: boolean }
   | { kind: "theme"; mode: "list" | "cycle" | "id"; id?: string }
   | { kind: "status" }
-  | { kind: "reviews" }
+  | { kind: "reviews"; target?: { kind: ActiveReviewKind; id: string } }
   | { kind: "export" }
   | { kind: "session-list" }
   | { kind: "fork" }
@@ -83,6 +84,18 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
   }
 
   // Approvals: MCP tool calls, patches, shell commands → unified review panel.
+  const patchTarget = /^\/patch\s+(?:show|approve|reject)\s+(\S+)$/i.exec(content)
+  if (patchTarget) {
+    return { kind: "reviews", target: { kind: "patch", id: patchTarget[1]! } }
+  }
+  const commandTarget = /^\/command\s+(?:show|approve|reject)\s+(\S+)$/i.exec(content)
+  if (commandTarget) {
+    return { kind: "reviews", target: { kind: "command", id: commandTarget[1]! } }
+  }
+  const mcpCallTarget = /^\/mcp\s+call\s+(?:show|approve|reject)\s+(\S+)$/i.exec(content)
+  if (mcpCallTarget) {
+    return { kind: "reviews", target: { kind: "mcp", id: mcpCallTarget[1]! } }
+  }
   if (
     content === "/mcp calls"
     || /^\/mcp call\b/i.test(content)

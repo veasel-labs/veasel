@@ -51,12 +51,15 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/mcp calls")).toEqual({ kind: "reviews" })
     expect(resolveLiveSlash("/mcp call show deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
       kind: "reviews",
+      target: { kind: "mcp", id: "deadbeef-dead-4ead-8ead-deadbeefdead" },
     })
     expect(resolveLiveSlash("/patch approve deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
       kind: "reviews",
+      target: { kind: "patch", id: "deadbeef-dead-4ead-8ead-deadbeefdead" },
     })
     expect(resolveLiveSlash("/command show deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
       kind: "reviews",
+      target: { kind: "command", id: "deadbeef-dead-4ead-8ead-deadbeefdead" },
     })
   })
 

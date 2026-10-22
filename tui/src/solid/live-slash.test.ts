@@ -21,6 +21,16 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/skill run user/demo")).toEqual({ kind: "skill-action", action: "run", key: "user/demo" })
     expect(resolveLiveSlash("/mcp")).toEqual({ kind: "mcp", filter: "" })
     expect(resolveLiveSlash("/mcp http")).toEqual({ kind: "mcp", filter: "http" })
+    expect(resolveLiveSlash("/mcp trust configured/echo-tools")).toEqual({
+      kind: "mcp-trust",
+      trusted: true,
+      key: "configured/echo-tools",
+    })
+    expect(resolveLiveSlash("/mcp untrust local-kit/calendar")).toEqual({
+      kind: "mcp-trust",
+      trusted: false,
+      key: "local-kit/calendar",
+    })
     expect(resolveLiveSlash("/help")).toEqual({ kind: "help", advanced: false })
     expect(resolveLiveSlash("/help advanced")).toEqual({ kind: "help", advanced: true })
     expect(resolveLiveSlash("/?")).toEqual({ kind: "help", advanced: false })

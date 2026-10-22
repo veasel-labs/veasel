@@ -126,9 +126,14 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   inventories with status categories / descriptions; failed MCP rows open
   error-details. Palette `veasel.mcp.list`, `veasel.skills.list`. Fixture demos
   remain for isolated component tests; LiveApp loads MCP and plugin/Skill
-  catalogs over the loopback API. Session Skill enable/disable/invoke slash
-  actions use the session Skill endpoints (covered by
-  `live-skill-commands.test.tsx`).
+  catalogs over the loopback API and distinguishes available servers from
+  session-trusted servers. `/mcp trust|untrust <plugin>/<server>` updates trust
+  through the session API; trust only permits connection on a future turn and
+  each MCP tool call still requires review. Adding/removing/configuring MCP
+  servers remains available through the headless `veasel mcp` commands.
+  Session Skill enable/disable/invoke slash actions use the session Skill
+  endpoints (covered by `live-skill-commands.test.tsx`); MCP trust flows are
+  covered by `live-mcp-trust-commands.test.tsx`.
 - Composer autocomplete (`solid/composer-autocomplete.ts` + `SolidComposer`):
   `/` slash, `@` workspace paths, `$` skills using the same pure matchers as
   the imperative shell (`slash-commands`, `path-autocomplete`,

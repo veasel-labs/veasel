@@ -1,11 +1,15 @@
 # Competitive coding-agent source study
 
-**Reviewed:** 2026-10-12; clone inventory and selected rechecks 2026-10-15.
+**Original study:** 2026-10-12; selected source rechecks 2026-10-15.
 This document records implementation observations from the pinned upstream
 commits below. It is an engineering input, not a feature or performance claim
 about Veasel. Recheck upstream before using these references to make
-compatibility decisions. Local read-only clones live under
-`~/.cache/veasel-reference-research` (28/28 present on 2026-10-15).
+compatibility decisions. The 26 mission reference clones were refreshed on
+2026-10-22 under `research/refs/`; exact fetched revisions are recorded in
+[`refs/REVISIONS.md`](../research/refs/REVISIONS.md). That inventory refresh is
+not a claim that every source file was re-read at the refreshed pins: findings
+below retain their individual historical revisions and need re-audit before
+they drive compatibility claims.
 
 ## Source revisions
 
@@ -44,12 +48,13 @@ session permissions, while the tool boundary performs its own authorization;
 discovery filtering is not treated as the security check.
 
 **Useful principle:** keep user-visible event publication, execution lifetime,
-and side-effect authorization explicit. Concurrent read-only calls are a
-possible Veasel optimization, but require profiling and ordering/cancellation
-tests first. Veasel currently executes provider tool calls sequentially and
-does not have equivalent user-facing recovery/permission breadth. Preserve the
-existing approval boundary while improving event lifecycles; don't copy its
-TypeScript/Effect stack into V.
+and side-effect authorization explicit. Veasel now runs a provider round
+concurrently only when every call is a read-only workspace list/read/search
+operation, then records results in provider order; mixed and effectful rounds
+remain sequential. This reduces a known latency source without copying
+OpenCode's TypeScript/Effect stack. Cross-platform cancellation and large
+workspace profiling remain separate evidence gaps. Preserve the existing
+approval boundary while improving event lifecycles.
 
 Rechecked the session runner on 2026-10-15 at
 `37df62f4a1b6d89187a1169187a6cef10557c0ca` (`dev`), in
@@ -143,11 +148,12 @@ and records which step was interrupted. This leaves storage and runtime effects
 replaceable without putting provider execution into a presentation layer.
 
 **Useful principle:** represent lifecycle outcomes and effects explicitly.
-Veasel's API already has durable operation states and separate transport/core
-modules; next improvement is a stable internal event/trace contract shared by
-TUI, headless execution, and benchmark exports. The state-machine abstraction
-is useful only if it reduces branching or enables another runtime; avoid a
-parallel abstraction over the current loop without such evidence.
+Veasel has durable operation states, replayable SSE, and an opt-in ATIF v1.8
+trace shared by headless execution and benchmark adapters. Traces can retain
+partial failed/cancelled turns and provider-reported token totals; source and
+private instructions remain sensitive even after credential redaction. Continue
+to evolve the existing contracts rather than adding a parallel state machine
+unless it reduces branching or enables a real runtime.
 
 ### Gemini CLI — telemetry should be typed, sanitized, and testable
 
@@ -161,9 +167,12 @@ and its utilities have dedicated tests.
 **Useful principle:** telemetry privacy is an implementation property: redact
 before export, bound/rate-limit high-volume events, and test the sanitizer.
 Checkpoints should capture recoverable state, not replay uncertain external
-effects. Veasel currently lacks a versioned trace schema and token/cost
-accounting; introduce those as opt-in machine-readable outputs before adding
-an exporter or dashboard. OTel is not a substitute for durable session state.
+effects. Veasel now has opt-in ATIF v1.8 export, credential redaction, and
+provider-reported token/cache accounting; costs remain unavailable unless every
+turn is covered by the pinned price schedule. Raw source and private
+instructions remain in traces, so they are sensitive artifacts. A general
+telemetry exporter and broader resume/checkpoint UX remain separate gaps. OTel
+is not a substitute for durable session state.
 
 ### Aider — repository structure under an explicit token budget
 
@@ -196,9 +205,13 @@ events, rather than implementing an unrelated agent loop.
 
 **Useful principle:** Veasel's `veasel run`, API, and TUI should keep sharing
 the V runtime and persisted operations. The new headless CLI follows this
-boundary; it still needs completion trajectories, budget controls, and
-benchmark-safe execution policies. Cline's larger extension surface also has
-more lifecycle complexity; adopt only interfaces needed by real clients.
+boundary. It now supports operation IDs, bounded timeouts, cancellation, optional
+ATIF trajectories, explicit autonomous opt-in, and a Harbor installed-agent
+adapter. Autonomous opt-in is not itself isolation; benchmark runs must use a
+disposable task environment, and runtime execution fails closed when its OS
+sandbox is unavailable. Real-model task evaluation remains unrun without an
+authorized budget. Cline's larger extension surface also has lifecycle
+complexity; adopt only interfaces needed by real clients.
 
 ### OpenHands — typed remote execution and session identity
 

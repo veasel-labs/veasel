@@ -316,9 +316,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the pinned revision), OAuth DCR (deferred), legacy HTTP+SSE.
   Operator-configured MCP servers support user scope, project scope
   (`<workspace>/.veasel/mcp-servers.json`), and read-only project-import of
-  portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, TUI
-  `/mcp add|remove|enable|disable` with optional `user|project`, and
-  capability `mcp.servers.configured`; trust and per-call approval reuse
+  portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, headless
+  `veasel mcp add|remove|enable|disable` with optional `user|project`, and
+  capability `mcp.servers.configured`; the default Solid TUI lists these
+  servers with `/mcp` and sets session trust with `/mcp trust|untrust`, while
+  every tool call still uses the per-call review panel. Trust reuses
   `configured/<name>`. Precedence: project > project-import > user. The
   client namespace `com.veasel.code` records an optional `display_name` and
   whether its directory stays inside the package; it does not read that
@@ -427,7 +429,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   portable `.mcp.json` / `.cursor/mcp.json`, `GET/POST /v1/mcp-servers` and
   `PATCH/DELETE /v1/mcp-servers/{name}` with scope, TUI `/mcp` with
   `user|project`, capability `mcp.servers.configured`, synthetic catalog
-  package `configured`, trust as `configured/<name>`. Per-call approval is
+  package `configured`, Solid TUI session trust as `configured/<name>`. Per-call approval is
   unchanged. Headless `veasel mcp list|add|enable|disable|remove` manages the
   same scopes via the local API, including `veasel mcp credentials
   list|set|remove` for named HTTP header sets. Named HTTP credentials via

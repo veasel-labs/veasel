@@ -381,6 +381,25 @@ export class VeaselApiClient {
     return await response.json() as ApiSessionPluginMcpServer[]
   }
 
+  async setSessionMcpServerTrust(
+    sessionId: string,
+    pluginName: string,
+    serverName: string,
+    trusted: boolean,
+  ): Promise<ApiSessionPluginMcpServer[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plugin_name: pluginName, server_name: serverName, trusted }),
+        signal: this.signal,
+      },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSessionPluginMcpServer[]
+  }
+
   async listConfiguredMcpServers(directory: string): Promise<{
     servers: Array<{
       name: string

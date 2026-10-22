@@ -36,6 +36,8 @@ function mcpStatusLabel(server: SolidMcpServer): string {
   switch (server.status) {
     case "connected":
       return "Connected"
+    case "trusted":
+      return "Trusted · review each call"
     case "failed":
       return server.error ?? "Failed"
     case "needs_auth":

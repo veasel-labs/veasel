@@ -13,6 +13,7 @@ export type LiveSlashAction =
   | { kind: "skills"; filter: string }
   | { kind: "skill-action"; action: "on" | "off" | "run"; key?: string }
   | { kind: "mcp"; filter: string }
+  | { kind: "mcp-trust"; trusted: boolean; key?: string }
   | { kind: "help"; advanced: boolean }
   | { kind: "theme"; mode: "list" | "cycle" | "id"; id?: string }
   | { kind: "status" }
@@ -97,6 +98,14 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
 
   if (content === "/mcp" || content.startsWith("/mcp ")) {
     const rest = content === "/mcp" ? "" : content.slice("/mcp ".length).trim()
+    const trustMatch = /^\/(?:mcp)\s+(trust|untrust)(?:\s+(.+))?$/i.exec(content)
+    if (trustMatch) {
+      return {
+        kind: "mcp-trust",
+        trusted: trustMatch[1]!.toLowerCase() === "trust",
+        key: trustMatch[2]?.trim(),
+      }
+    }
     if (!rest || !mcpManageRest.test(rest)) {
       return { kind: "mcp", filter: rest }
     }

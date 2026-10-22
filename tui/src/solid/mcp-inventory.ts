@@ -30,12 +30,12 @@ export function solidMcpServersFromCatalog(
       name: key,
       transport: server.transport,
       scope: server.scope ?? "user",
-      status: !server.enabled ? "disabled" : trustedHit ? "connected" : "pending",
+      status: !server.enabled ? "disabled" : trustedHit ? "trusted" : "available",
       error: !server.enabled
         ? "Disabled in configured MCP settings"
         : trustedHit
           ? undefined
-          : "Available · trust via /mcp trust or session MCP POST",
+          : "Available · trust via /mcp trust",
     })
   }
   for (const item of trusted) {
@@ -45,7 +45,7 @@ export function solidMcpServersFromCatalog(
       name: key,
       transport: "plugin",
       scope: "session",
-      status: "connected",
+      status: "trusted",
     })
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name))

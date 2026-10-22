@@ -3,7 +3,7 @@ import type { useDialog } from "../ui/dialog"
 import { openDialogSelect } from "../ui/dialog-select"
 import { openErrorDetailsDialog } from "./error-details-dialog"
 
-export type SolidMcpStatus = "connected" | "failed" | "needs_auth" | "disabled" | "pending"
+export type SolidMcpStatus = "connected" | "trusted" | "available" | "failed" | "needs_auth" | "disabled" | "pending"
 
 export type SolidMcpServer = {
   name: string
@@ -23,12 +23,16 @@ function statusLabel(status: SolidMcpStatus): string {
   switch (status) {
     case "connected":
       return "Connected"
+    case "trusted":
+      return "Trusted · review each call"
     case "failed":
       return "Failed"
     case "needs_auth":
       return "Sign in required"
     case "pending":
       return "Connecting…"
+    case "available":
+      return "Available · not trusted"
     default:
       return "Disabled"
   }
@@ -38,11 +42,15 @@ function statusCategory(status: SolidMcpStatus): string {
   switch (status) {
     case "connected":
       return "Connected"
+    case "trusted":
+      return "Trusted"
     case "failed":
     case "needs_auth":
       return "Attention"
     case "pending":
       return "Pending"
+    case "available":
+      return "Available"
     default:
       return "Disabled"
   }

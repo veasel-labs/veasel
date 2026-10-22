@@ -735,7 +735,7 @@ function LiveAppShell(props: LiveAppProps) {
         mcpServers = trusted.map((server) => ({
           name: `${server.plugin_name}/${server.server_name}`,
           transport: "plugin",
-          status: "connected" as const,
+          status: "trusted" as const,
           scope: "session",
         }))
       } catch {
@@ -860,9 +860,11 @@ function LiveAppShell(props: LiveAppProps) {
         servers,
         onSelect: (server) => {
           toast.info(
-            server.status === "connected"
-              ? `Trusted · ${server.name}`
-              : `${server.status} · ${server.name}`,
+            server.status === "trusted"
+              ? `Trusted · ${server.name} · each tool call still needs review`
+              : server.status === "available"
+                ? `Available · trust with /mcp trust ${server.name}`
+                : `${server.status} · ${server.name}`,
             "MCP",
           )
           setComposerFocused(true)
@@ -1258,6 +1260,50 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const runLiveMcpTrustAction = async (trusted: boolean, key?: string) => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Session required",
+        message: "Open a session before trusting an MCP server.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    if (!key) {
+      openDialogAlert(dialog, {
+        title: "MCP server name required",
+        message: `Use /mcp ${trusted ? "trust" : "untrust"} <plugin>/<server>. Open /mcp to review available and trusted servers.`,
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const separator = key.indexOf("/")
+    if (separator <= 0 || separator === key.length - 1) {
+      openDialogAlert(dialog, {
+        title: "Invalid MCP server name",
+        message: "Use the plugin/server key shown by /mcp, for example /mcp trust configured/echo-tools.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const pluginName = key.slice(0, separator)
+    const serverName = key.slice(separator + 1)
+    try {
+      await props.api.setSessionMcpServerTrust(sessionId, pluginName, serverName, trusted)
+      toast.success(
+        trusted
+          ? `Trusted ${pluginName}/${serverName}; it connects on the next turn. Each tool call still needs review.`
+          : `Revoked trust for ${pluginName}/${serverName}; it will not connect on future turns.`,
+        "MCP",
+      )
+      setComposerFocused(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update MCP trust", "MCP")
+      setComposerFocused(true)
+    }
+  }
+
   const handleComposerSubmit = (text: string) => {
     const action = resolveLiveSlash(text)
     switch (action.kind) {
@@ -1301,6 +1347,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "mcp":
         dismissHomeComposer()
         void openLiveMcp(action.filter)
+        return
+      case "mcp-trust":
+        dismissHomeComposer()
+        void runLiveMcpTrustAction(action.trusted, action.key)
         return
       case "plugins":
         dismissHomeComposer()

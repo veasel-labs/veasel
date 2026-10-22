@@ -2,19 +2,21 @@ import { describe, expect, test } from "bun:test"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
 
 describe("mcp inventory", () => {
-  test("marks trusted configured servers connected", () => {
+  test("distinguishes trusted, available, and disabled configured servers", () => {
     const rows = solidMcpServersFromCatalog(
       {
         servers: [
           { name: "echo", enabled: true, transport: "stdio", scope: "user" },
           { name: "off", enabled: false, transport: "stdio", scope: "project" },
+          { name: "http", enabled: true, transport: "http", scope: "project" },
         ],
       },
       [{ plugin_name: "configured", server_name: "echo" }],
     )
-    expect(rows.map((row) => row.name)).toEqual(["configured/echo", "configured/off"])
-    expect(rows[0]?.status).toBe("connected")
-    expect(rows[1]?.status).toBe("disabled")
+    expect(rows.map((row) => row.name)).toEqual(["configured/echo", "configured/http", "configured/off"])
+    expect(rows[0]?.status).toBe("trusted")
+    expect(rows[1]?.status).toBe("available")
+    expect(rows[2]?.status).toBe("disabled")
   })
 
   test("includes session-trusted plugin servers not in catalog", () => {
@@ -27,7 +29,7 @@ describe("mcp inventory", () => {
         name: "local-tools/workspace",
         transport: "plugin",
         scope: "session",
-        status: "connected",
+        status: "trusted",
       },
     ])
   })

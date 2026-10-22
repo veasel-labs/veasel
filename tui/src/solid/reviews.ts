@@ -153,7 +153,11 @@ export function formatSolidReviewBody(
   })
 }
 
-export function patchSplitChrome(item: SolidPatchReview, hunkIndex: number): string {
+export function patchSplitChrome(
+  item: SolidPatchReview,
+  hunkIndex: number,
+  terminalColumns = 80,
+): string {
   const starts = reviewHunkStarts(item.diff)
   const review = formatReviewDiff(item.diff, reviewDiffLineBudget(40), { hunkIndex })
   return formatPatchSplitChrome({
@@ -163,6 +167,7 @@ export function patchSplitChrome(item: SolidPatchReview, hunkIndex: number): str
     removals: review.removals,
     hunkCount: starts.length,
     hunkIndex,
+    terminalColumns,
     pendingInstruction: item.pending
       ? `Type /patch approve ${item.id} or /patch reject ${item.id}.`
       : undefined,

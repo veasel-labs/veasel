@@ -190,7 +190,13 @@ export function formatPatchSplitChrome(input: {
   hunkCount: number
   hunkIndex?: number
   pendingInstruction?: string
+  terminalColumns?: number
 }): string {
+  if ((input.terminalColumns ?? 80) < 44) {
+    const hunk = input.hunkCount > 1 ? ` · Hunk ${(input.hunkIndex ?? 0) + 1}/${input.hunkCount}` : ""
+    const path = input.path.split(/[\\/]/).pop() ?? input.path
+    return `EDIT · ${input.status}${hunk}\n+${input.additions}/-${input.removals} · ${path}`
+  }
   const hunkLabel = input.hunkCount > 1
     ? ` · Hunk ${(input.hunkIndex ?? 0) + 1}/${input.hunkCount}`
     : ""

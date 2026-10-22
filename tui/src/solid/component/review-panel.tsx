@@ -168,7 +168,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
     const item = current()
     if (!item) return "No pending file, shell, or MCP reviews."
     if (item.kind === "patch" && diffSurface() === "split") {
-      return patchSplitChrome(item, hunkIndex())
+      return patchSplitChrome(item, hunkIndex(), dimensions().width)
     }
     return formatSolidReviewBody(item, {
       terminalRows: dimensions().height,
@@ -312,7 +312,10 @@ export function ReviewPanel(props: ReviewPanelProps) {
                 <diff
                   ref={(node: DiffRenderable) => { splitDiffRenderable = node }}
                   width="100%"
-                  height={Math.max(8, Math.min(16, dimensions().height - 16))}
+                  height={Math.max(
+                    3,
+                    Math.min(16, dimensions().height - (dimensions().width < 44 ? 14 : 16)),
+                  )}
                   diff={(item() as Extract<SolidReviewItem, { kind: "patch" }>).diff}
                   view="split"
                   filetype={filetypeFromReviewPath(

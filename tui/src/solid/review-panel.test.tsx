@@ -38,6 +38,28 @@ describe("Solid review panel", () => {
     expect(frame).toContain("Ctrl+R")
   })
 
+  test("review controls remain available in a narrow, short terminal", async () => {
+    const setup = await testRender(
+      () => <App initialMessages={[]} initialReviews={demoPendingReviews()} />,
+      { width: 32, height: 12, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Review")
+    expect(frame).toContain("a approve")
+    expect(frame).toContain("pending")
+
+    setup.mockInput.pressKey("v")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Hunk 1/2")
+    setup.mockInput.pressKey("}")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Hunk 2/2")
+  })
+
   test("a approves the current review and advances the queue", async () => {
     const decided: Array<{ decision: ReviewDecision; targets: ActiveReview[] }> = []
     const setup = await testRender(

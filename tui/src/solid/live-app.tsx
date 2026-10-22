@@ -108,7 +108,7 @@ import {
   sessionTabsFromEntries,
 } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
-import { resolveLiveSlash } from "./live-slash"
+import { resolveLiveSlash, splitMcpArgs } from "./live-slash"
 import { createAttentionNotifier } from "./attention"
 import { pageMayHaveOlder, type ChatTurn } from "../chat-history"
 import { formatRepositoryMapSummary } from "../repository-map"
@@ -1559,6 +1559,57 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const openLiveMcpAddWizard = () => {
+    setComposerFocused(false)
+    const choices = [
+      { title: "User · stdio", value: "user stdio", description: "Local process · available to your user" },
+      { title: "User · Streamable HTTP", value: "user http", description: "HTTPS endpoint · available to your user" },
+      ...(activeSessionId() ? [
+        { title: "Project · stdio", value: "project stdio", description: "Local process · saved in this workspace" },
+        { title: "Project · Streamable HTTP", value: "project http", description: "HTTPS endpoint · saved in this workspace" },
+      ] : []),
+    ]
+    openDialogSelect(dialog, {
+      title: "Add MCP server",
+      options: choices,
+      dismissOnSelect: false,
+      onCancel: () => setComposerFocused(true),
+      onSelect: (choice) => {
+        dialog.clear()
+        const [scope, transport] = choice.value.split(" ") as ["user" | "project", "stdio" | "http"]
+        const description = transport === "stdio"
+          ? "Enter a server name, executable, and optional arguments. Nothing is launched until you trust the server."
+          : "Enter a server name and HTTPS endpoint. Nothing connects until you trust the server."
+        openDialogPrompt(dialog, {
+          title: transport === "stdio" ? "Configure stdio MCP" : "Configure Streamable HTTP MCP",
+          description,
+          placeholder: transport === "stdio" ? "name npx -y package-name" : "name https://example.com/mcp",
+          confirmLabel: "Validate and add",
+          onCancel: () => setComposerFocused(true),
+          onConfirm: (value) => queueMicrotask(() => {
+            const parts = splitMcpArgs(value.trim())
+            const minimum = transport === "stdio" ? 2 : 2
+            if (parts.length < minimum) {
+              openDialogAlert(dialog, {
+                title: "MCP server details required",
+                message: transport === "stdio"
+                  ? "Enter a server name and executable, for example: docs npx -y @example/docs-mcp."
+                  : "Enter a server name and an HTTPS MCP endpoint, for example: docs https://example.com/mcp.",
+                onConfirm: () => setComposerFocused(true),
+              })
+              return
+            }
+            if (transport === "stdio") {
+              void runLiveMcpAdd({ kind: "mcp-add", scope, transport, name: parts[0]!, command: parts[1]!, args: parts.slice(2) })
+            } else {
+              void runLiveMcpAdd({ kind: "mcp-add", scope, transport: "streamable-http", name: parts[0]!, url: parts[1]! })
+            }
+          }),
+        })
+      },
+    })
+  }
+
   const runLiveMcpConfigure = async (action: "remove" | "enable" | "disable", scope: "user" | "project", name: string) => {
     const root = directory()
     if (scope === "project" && (!activeSessionId() || !root)) {
@@ -1638,6 +1689,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "mcp-add":
         dismissHomeComposer()
         void runLiveMcpAdd(action)
+        return
+      case "mcp-add-wizard":
+        dismissHomeComposer()
+        openLiveMcpAddWizard()
         return
       case "mcp-configure":
         dismissHomeComposer()

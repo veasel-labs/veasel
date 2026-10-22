@@ -76,7 +76,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory (optional --replace)", usage: "/plugin add [--replace] <absolute-path>", run: true },
   { name: "/plugin remove", category: "plugins", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
   { name: "/mcp", category: "mcp", description: "List MCP servers; add text to filter (stdio, trusted, name…)" },
-  { name: "/mcp add", category: "mcp", description: "Add a configured MCP server (user or project scope)", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>", run: true },
+  { name: "/mcp add", category: "mcp", description: "Open a guided flow or add a configured MCP server directly", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>", run: true },
   { name: "/mcp remove", category: "mcp", description: "Remove a configured MCP server", usage: "/mcp remove [user|project] <name>", run: true },
   { name: "/mcp enable", category: "mcp", description: "Enable a configured MCP server", usage: "/mcp enable [user|project] <name>", run: true },
   { name: "/mcp disable", category: "mcp", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>", run: true },

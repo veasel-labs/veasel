@@ -635,6 +635,8 @@ honoring its license and attribution.
   dialogs already load their catalogs through the loopback API. MCP server
   configuration now adds stdio/Streamable HTTP servers and enables, disables,
   or removes configured servers through the same API; removal is confirmed.
+  Bare `/mcp add` opens a guided stdio/HTTP setup that records configuration but
+  does not launch a server before the operator separately trusts it.
 - Solid composer `/` `@` `$` autocomplete (`solid/composer-autocomplete.ts` +
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   live catalog wiring and cursor synchronization are implemented and covered by

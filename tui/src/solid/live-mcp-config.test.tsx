@@ -20,8 +20,11 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     if (url.pathname === "/v1/mcp-servers" && request.method === "POST") {
       const body = await request.json() as Record<string, unknown>
       calls.push({ method: request.method, url: request.url, body })
-      configured = [{ name: "demo", scope: "project", enabled: true, transport: "stdio", command: "node" }]
-      return Response.json({ name: "demo", transport: "stdio", scope: "project" })
+      configured = [...configured.filter((item) => item.name !== body.name || item.scope !== body.scope), {
+        name: String(body.name), scope: String(body.scope), enabled: true, transport: String(body.transport),
+        ...(typeof body.command === "string" ? { command: body.command } : {}),
+      }]
+      return Response.json({ name: body.name, transport: body.transport, scope: body.scope })
     }
     if (url.pathname === "/v1/mcp-servers/demo" && request.method === "PATCH") {
       const body = await request.json() as Record<string, unknown>
@@ -31,6 +34,7 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     }
     if (url.pathname === "/v1/mcp-servers/demo" && request.method === "DELETE") {
       calls.push({ method: request.method, url: request.url })
+      configured = configured.filter((item) => item.name !== "demo" || item.scope !== "project")
       return new Response(null, { status: 204 })
     }
     return Response.json({ servers: [] })
@@ -104,6 +108,19 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     await until("Removed project-scope MCP server · demo")
     expect(calls[4]?.method).toBe("DELETE")
     expect(calls[4]?.url).toContain("scope=project&directory=%2Fproject%2Falpha")
+
+    await setup.mockInput.typeText("/mcp add")
+    setup.mockInput.pressEnter()
+    await until("Add MCP server")
+    await setup.mockInput.typeText("Streamable HTTP")
+    setup.mockInput.pressEnter()
+    await until("Configure Streamable HTTP MCP")
+    await setup.mockInput.typeText("wiki https://example.test/mcp")
+    setup.mockInput.pressEnter()
+    await until("Added configured/wiki")
+    expect(calls[5]?.body).toEqual({
+      name: "wiki", transport: "streamable-http", url: "https://example.test/mcp", scope: "user", enabled: true,
+    })
   } finally {
     await setup.dispose()
     controller.abort()

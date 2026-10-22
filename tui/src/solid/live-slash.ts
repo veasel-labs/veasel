@@ -15,6 +15,7 @@ export type LiveSlashAction =
   | { kind: "skill-action"; action: "on" | "off" | "run"; key?: string }
   | { kind: "mcp"; filter: string }
   | { kind: "mcp-trust"; trusted: boolean; key?: string }
+  | { kind: "mcp-add-wizard" }
   | { kind: "mcp-add"; scope: "user" | "project"; name: string; transport: "stdio" | "streamable-http"; command?: string; args?: string[]; url?: string }
   | { kind: "mcp-configure"; action: "remove" | "enable" | "disable"; scope: "user" | "project"; name: string }
   | { kind: "help"; advanced: boolean }
@@ -36,7 +37,7 @@ export type LiveSlashAction =
 const mcpManageRest =
   /^(add|remove|enable|disable|credential|credentials|oauth|trust|untrust)\b/i
 
-function splitMcpArgs(raw: string): string[] {
+export function splitMcpArgs(raw: string): string[] {
   const args: string[] = []
   const matcher = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g
   for (const match of raw.matchAll(matcher)) {
@@ -136,6 +137,7 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
 
   if (content === "/mcp" || content.startsWith("/mcp ")) {
     const rest = content === "/mcp" ? "" : content.slice("/mcp ".length).trim()
+    if (rest.toLowerCase() === "add") return { kind: "mcp-add-wizard" }
     const addStdio = /^add(?:\s+(user|project))?\s+stdio\s+([a-z0-9][a-z0-9.-]*[a-z0-9]|[a-z0-9])\s+(\S+)(?:\s+([\s\S]+))?$/i.exec(rest)
     if (addStdio) return {
       kind: "mcp-add", scope: addStdio[1]?.toLowerCase() === "project" ? "project" : "user",

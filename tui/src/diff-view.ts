@@ -180,8 +180,8 @@ export function scrollDiffRenderableToHunk(
   return row
 }
 
-// Chrome-only notice while DiffRenderable owns the diff body. Keep counts on the
-// first line so they stay above the hotkey hint and the DiffRenderable panel.
+// Compact, user-facing status while the split diff owns the patch body. Avoid
+// renderer implementation names and keep the selected hunk visible at 80 cols.
 export function formatPatchSplitChrome(input: {
   status: string
   path: string
@@ -192,12 +192,11 @@ export function formatPatchSplitChrome(input: {
   pendingInstruction?: string
 }): string {
   const hunkLabel = input.hunkCount > 1
-    ? ` · Hunk ${(input.hunkIndex ?? 0) + 1} of ${input.hunkCount}`
+    ? ` · Hunk ${(input.hunkIndex ?? 0) + 1}/${input.hunkCount}`
     : ""
   const body =
-    `REVIEW WORKSPACE EDIT  /  ${input.status}  ·  OpenTUI split  ·  ` +
-    `${input.additions} added, ${input.removals} removed${hunkLabel}\n` +
-    `${input.path}\nPress v for word-diff segments.`
+    `EDIT / ${input.status} · +${input.additions} / -${input.removals}${hunkLabel}\n` +
+    `${input.path}\nv word-diff · {/} navigate hunks`
   if (!input.pendingInstruction) return body
   return `${body}\n${input.pendingInstruction}`
 }

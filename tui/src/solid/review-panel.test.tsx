@@ -103,7 +103,7 @@ describe("Solid review panel", () => {
     setup.mockInput.pressKey("v")
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
-    expect(frame).toContain("OpenTUI split")
+    expect(frame).toContain("EDIT / pending")
     expect(frame).toContain("v word-diff")
   })
 
@@ -128,6 +128,7 @@ describe("Solid review panel", () => {
     const secondHunkFrame = setup.captureCharFrame()
     expect(firstHunkFrame).not.toContain("+   // pending")
     expect(secondHunkFrame).toContain("+   // pending")
+    expect(secondHunkFrame).toContain("Hunk 2/2")
   })
 
   test("Esc dismisses the review panel", async () => {

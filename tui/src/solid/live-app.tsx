@@ -1563,10 +1563,10 @@ function LiveAppShell(props: LiveAppProps) {
     setComposerFocused(false)
     const choices = [
       { title: "User · stdio", value: "user stdio", description: "Local process · available to your user" },
-      { title: "User · Streamable HTTP", value: "user http", description: "HTTPS endpoint · available to your user" },
+      { title: "User · Streamable HTTP", value: "user http", description: "HTTPS remote or loopback HTTP endpoint" },
       ...(activeSessionId() ? [
         { title: "Project · stdio", value: "project stdio", description: "Local process · saved in this workspace" },
-        { title: "Project · Streamable HTTP", value: "project http", description: "HTTPS endpoint · saved in this workspace" },
+        { title: "Project · Streamable HTTP", value: "project http", description: "HTTPS remote or loopback HTTP endpoint · saved in this workspace" },
       ] : []),
     ]
     openDialogSelect(dialog, {
@@ -1579,7 +1579,7 @@ function LiveAppShell(props: LiveAppProps) {
         const [scope, transport] = choice.value.split(" ") as ["user" | "project", "stdio" | "http"]
         const description = transport === "stdio"
           ? "Enter a server name, executable, and optional arguments. Nothing is launched until you trust the server."
-          : "Enter a server name and HTTPS endpoint. Nothing connects until you trust the server."
+          : "Enter a server name and endpoint. Remote servers require HTTPS; HTTP is accepted only for loopback. Nothing connects until trust."
         openDialogPrompt(dialog, {
           title: transport === "stdio" ? "Configure stdio MCP" : "Configure Streamable HTTP MCP",
           description,

@@ -107,6 +107,29 @@ describe("Solid review panel", () => {
     expect(frame).toContain("v word-diff")
   })
 
+  test("} scrolls the split diff to the selected hunk", async () => {
+    const setup = await testRender(
+      () => <App initialMessages={[]} initialReviews={demoPendingReviews()} />,
+      { width: 80, height: 20, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await setup.renderOnce()
+    setup.mockInput.pressKey("v")
+    await setup.renderOnce()
+    await Promise.resolve()
+    const firstHunkFrame = setup.captureCharFrame()
+
+    setup.mockInput.pressKey("}")
+    await setup.renderOnce()
+    await Promise.resolve()
+    const secondHunkFrame = setup.captureCharFrame()
+    expect(firstHunkFrame).not.toContain("+   // pending")
+    expect(secondHunkFrame).toContain("+   // pending")
+  })
+
   test("Esc dismisses the review panel", async () => {
     const setup = await testRender(
       () => <App initialMessages={[]} initialReviews={demoPendingReviews()} />,

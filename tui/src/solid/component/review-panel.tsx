@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
-import type { KeyEvent } from "@opentui/core"
+import type { DiffRenderable, KeyEvent } from "@opentui/core"
 import {
   moveActiveReviewIndex,
   reviewHotkey,
@@ -15,6 +15,7 @@ import {
   diffRenderableTheme,
   filetypeFromReviewPath,
   reviewDiffSurfaceHint,
+  scrollDiffRenderableToHunk,
   type ReviewDiffSurface,
 } from "../../diff-view"
 import { moveReviewHunkIndex } from "../../review-diff"
@@ -81,6 +82,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
   const [diffSurface, setDiffSurface] = createSignal<ReviewDiffSurface>("segments")
   let settledOnce = false
   let disposed = false
+  let splitDiffRenderable: DiffRenderable | undefined
   onCleanup(() => {
     disposed = true
   })
@@ -125,6 +127,27 @@ export function ReviewPanel(props: ReviewPanelProps) {
       if (active && !disposed) setInspecting(false)
     })
   }))
+
+  // DiffRenderable rebuilds its code panes after receiving a new diff. Defer
+  // hunk navigation until that rebuild has populated the row offsets.
+  createEffect(() => {
+    const item = current()
+    const surface = diffSurface()
+    const targetHunk = hunkIndex()
+    if (!item || item.kind !== "patch" || surface !== "split") return
+    const key = reviewSelectionKey(item)
+    queueMicrotask(() => {
+      const activeItem = current()
+      if (disposed || diffSurface() !== "split" || !activeItem || reviewSelectionKey(activeItem) !== key) return
+      const diff = splitDiffRenderable
+      if (!diff) return
+      scrollDiffRenderableToHunk(
+        diff as unknown as Parameters<typeof scrollDiffRenderableToHunk>[0],
+        targetHunk,
+        { accent: colors.brand },
+      )
+    })
+  })
 
   const hotkeyHint = createMemo(() => {
     const item = current()
@@ -287,6 +310,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   <For each={bodySegments()}>{(segment) => <SegmentSpan segment={segment} />}</For>
                 </text>
                 <diff
+                  ref={(node: DiffRenderable) => { splitDiffRenderable = node }}
                   width="100%"
                   height={Math.max(8, Math.min(16, dimensions().height - 16))}
                   diff={(item() as Extract<SolidReviewItem, { kind: "patch" }>).diff}

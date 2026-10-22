@@ -4,20 +4,24 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import os
-import pty
 import re
-import select
-import signal
 import socket
-import struct
 import subprocess
 import tempfile
-import termios
 import time
 from pathlib import Path
 from urllib.request import urlopen
+
+if os.name == "nt":
+    from windows_conpty import run_tui_conpty
+else:
+    import fcntl
+    import pty
+    import select
+    import signal
+    import struct
+    import termios
 
 
 def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
@@ -35,6 +39,10 @@ def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
 
 
 def run_tui(tui_path: Path, env: dict[str, str]) -> None:
+    if os.name == "nt":
+        run_tui_conpty(tui_path, env)
+        return
+
     child, terminal = pty.fork()
     if child == 0:
         os.execve(tui_path, [str(tui_path)], env)
@@ -188,7 +196,10 @@ def main() -> None:
             run_tui(tui_path, env)
         finally:
             if server.poll() is None:
-                server.send_signal(signal.SIGINT)
+                if os.name == "nt":
+                    server.terminate()
+                else:
+                    server.send_signal(signal.SIGINT)
                 try:
                     server.wait(timeout=5)
                 except subprocess.TimeoutExpired:

@@ -364,10 +364,13 @@ jobs:
           mkdir -p benchmark-results
           scripts/api-smoke.sh
       - name: Run standalone TUI integration smoke
-        # Unix PTY harness (pty/termios/fcntl). Linux + macOS only; Windows needs
-        # a ConPTY path — see docs/compatibility/tui-interactive-smoke.md.
-        if: runner.os == 'Linux' || runner.os == 'macOS'
+        # Uses Unix PTY on Linux/macOS and the native ConPTY path on Windows.
+        if: runner.os != 'Windows'
         run: python3 scripts/standalone-tui-smoke.py --server dist/veasel --tui dist/veasel-tui
+      - name: Run standalone TUI ConPTY integration smoke
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python scripts/standalone-tui-smoke.py --server dist/veasel.exe --tui dist/veasel-tui.exe
       - name: Checkout pinned Harbor trajectory validator
         if: runner.os == 'Linux'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

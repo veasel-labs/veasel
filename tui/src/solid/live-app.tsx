@@ -757,7 +757,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
   const wantsSkillSuggestions = createMemo(() => {
     const draft = composerDraft()
-    return /(^|\s)\$/.test(draft)
+    return /(^|\s)\$/.test(draft) || /^\/skill\s+(?:on|off|run)\s+/.test(draft)
   })
   const skillDirectory = createMemo(() =>
     sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
@@ -2322,6 +2322,12 @@ function LiveAppShell(props: LiveAppProps) {
           onDraftChange={setComposerDraft}
           skills={composerSkills()}
           skillCatalogStatus={skillCatalogStatus()}
+          slashContext={{
+            skills: composerSkills().map((skill) => ({
+              value: skill.key,
+              description: skill.description,
+            })),
+          }}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
           onPreviewAttachment={previewAttachment}

@@ -630,8 +630,10 @@ honoring its license and attribution.
 - Solid composer `/` `@` `$` autocomplete (`solid/composer-autocomplete.ts` +
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
   live catalog wiring and cursor synchronization are implemented and covered by
-  rendered tests. Argument-context refresh and cross-terminal validation remain
-  open.
+  rendered tests. `/skill on|off|run <source>/<skill>` now loads the active
+  project's catalog and offers real argument completions. Other live argument
+  catalogs (plugin links, configured MCP servers, and pending review IDs) remain
+  open, as does cross-terminal validation.
 
 ### Transcript keyboard ownership
 

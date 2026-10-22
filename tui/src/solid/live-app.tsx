@@ -1050,6 +1050,47 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const requestPluginAdd = (rawPath?: string, replace = false) => {
+    const path = rawPath?.trim()
+    if (!path) {
+      setComposerFocused(false)
+      openDialogPrompt(dialog, {
+        title: "Add local Agent Plugin",
+        description: "Choose an absolute path to an existing package directory. Veasel links it without copying or downloading files.",
+        placeholder: "/absolute/path/to/plugin",
+        confirmLabel: "Validate and link",
+        onConfirm: (value) => queueMicrotask(() => requestPluginAdd(value, replace)),
+        onCancel: () => setComposerFocused(true),
+      })
+      return
+    }
+
+    const add = () => {
+      void props.api.addPluginLink(path, replace).then((link) => {
+        toast.success(`Linked plugin · ${link.name}`, "Plugins")
+      }).catch((error) => {
+        openDialogAlert(dialog, {
+          title: "Plugin link failed",
+          message: error instanceof Error ? error.message : "could not link plugin package",
+          onConfirm: () => setComposerFocused(true),
+        })
+      }).finally(() => setComposerFocused(true))
+    }
+
+    if (!replace) {
+      add()
+      return
+    }
+    setComposerFocused(false)
+    openDialogConfirm(dialog, {
+      title: "Replace plugin link?",
+      message: `The validated package at this path may replace an existing managed link. Existing package files are not deleted.\n${path}`,
+      label: { confirm: "Replace link", cancel: "Keep current link" },
+      onClose: () => setComposerFocused(true),
+      onConfirm: add,
+    })
+  }
+
   const openLiveMap = async (hint = "") => {
     const sessionId = activeSessionId()
     if (!sessionId) {
@@ -1481,6 +1522,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "plugins":
         dismissHomeComposer()
         void openLivePlugins(action.filter)
+        return
+      case "plugin-add":
+        dismissHomeComposer()
+        requestPluginAdd(action.path, action.replace)
         return
       case "plugin-remove":
         dismissHomeComposer()

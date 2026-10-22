@@ -111,6 +111,16 @@ export type ApiSessionPluginMcpServer = {
   server_name: string
 }
 
+export type ApiPluginLink = {
+  name: string
+  path: string
+  version?: string
+  description?: string
+  display_name?: string
+  skill_count?: number
+  mcp_server_count?: number
+}
+
 export type ApiWorkspaceEditSummary = {
   id: string
   path: string
@@ -445,25 +455,26 @@ export class VeaselApiClient {
   }
 
   async listPluginLinks(): Promise<{
-    links: Array<{
-      name: string
-      path: string
-      display_name?: string
-      description?: string
-    }>
+    links: ApiPluginLink[]
     diagnostics?: Array<{ component: string; message: string }>
   }> {
     const response = await fetch(`${this.base}/v1/plugins/links`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as {
-      links: Array<{
-        name: string
-        path: string
-        display_name?: string
-        description?: string
-      }>
+      links: ApiPluginLink[]
       diagnostics?: Array<{ component: string; message: string }>
     }
+  }
+
+  async addPluginLink(path: string, replace = false): Promise<ApiPluginLink> {
+    const response = await fetch(`${this.base}/v1/plugins/links`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, replace }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiPluginLink
   }
 
   async removePluginLink(name: string): Promise<void> {

@@ -308,10 +308,11 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `PLUGIN_DATA`, placeholder expansion, failure isolation, and per-call MCP
   consent are CI-gated with the spec-derived fixture corpus. Operator-managed
   local package links use `/v1/plugins/links` and capability `plugins.links`.
-  Solid TUI removal uses `/plugin remove <name>` with explicit confirmation;
-  adding links remains available through headless `veasel plugins links …
-  [--replace]`. Links ship with a durable `$VEASEL_DATA_DIR/plugin-links.json`
-  sidecar (restore missing symlinks on list; optional `replace`) and validated
+  Solid TUI supports `/plugin add [--replace] <absolute-path>` with an
+  interactive path prompt and explicit replacement confirmation, plus
+  `/plugin remove <name>` with confirmation. Links ship with a durable
+  `$VEASEL_DATA_DIR/plugin-links.json` sidecar (restore missing symlinks on
+  list; optional `replace`) and validated
   package summary fields for install UX; they do not fetch remote packages.
   Remaining open:
   remote marketplace, upstream cross-implementation fixtures (none published at
@@ -638,8 +639,8 @@ honoring its license and attribution.
   available or trusted targets as appropriate. Pending edit, shell, and MCP
   review IDs come from the summary-only inventory; Enter opens the selected
   review and fetches details only for that item, without applying a decision.
-  Plugin-link removal completes from the live registry; adding local links
-  remains a headless workflow. Cross-terminal validation remains open.
+  Plugin-link add and removal complete from the live registry, with explicit
+  confirmation for replacement/removal. Cross-terminal validation remains open.
 
 ### Transcript keyboard ownership
 

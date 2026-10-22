@@ -67,6 +67,17 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/plugins")).toEqual({ kind: "plugins", filter: "" })
     expect(resolveLiveSlash("/plugins auth")).toEqual({ kind: "plugins", filter: "auth" })
     expect(resolveLiveSlash("/plugin")).toEqual({ kind: "plugins", filter: "" })
+    expect(resolveLiveSlash("/plugin add")).toEqual({ kind: "plugin-add", replace: false })
+    expect(resolveLiveSlash('/plugin add --replace "/tmp/plugin package"')).toEqual({
+      kind: "plugin-add",
+      path: "/tmp/plugin package",
+      replace: true,
+    })
+    expect(resolveLiveSlash("/plugin add /tmp/plugin")).toEqual({
+      kind: "plugin-add",
+      path: "/tmp/plugin",
+      replace: false,
+    })
     expect(resolveLiveSlash("/plugin remove review-tools")).toEqual({
       kind: "plugin-remove",
       name: "review-tools",

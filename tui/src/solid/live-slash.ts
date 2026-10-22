@@ -23,6 +23,7 @@ export type LiveSlashAction =
   | { kind: "session-list" }
   | { kind: "fork" }
   | { kind: "plugins"; filter: string }
+  | { kind: "plugin-add"; path?: string; replace: boolean }
   | { kind: "plugin-remove"; name: string }
   | { kind: "map"; hint: string }
   | { kind: "history-older" }
@@ -79,10 +80,20 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
     const filter = content === "/plugins" ? "" : content.slice("/plugins ".length).trim()
     return { kind: "plugins", filter }
   }
+  const pluginAdd = /^\/plugin\s+add(?:\s+([\s\S]*))?$/i.exec(content)
+  if (pluginAdd) {
+    let rest = pluginAdd[1]?.trim() ?? ""
+    const replace = /^--replace(?:\s|$)/i.test(rest)
+    if (replace) rest = rest.replace(/^--replace\s*/i, "")
+    if ((rest.startsWith('"') && rest.endsWith('"')) || (rest.startsWith("'") && rest.endsWith("'"))) {
+      rest = rest.slice(1, -1)
+    }
+    return { kind: "plugin-add", path: rest || undefined, replace }
+  }
   const pluginRemove = /^\/plugin\s+remove\s+(\S+)$/i.exec(content)
   if (pluginRemove) return { kind: "plugin-remove", name: pluginRemove[1]! }
   if (content === "/plugin" || content.startsWith("/plugin ")) {
-    // Add stays headless; bare /plugin opens the managed links dialog.
+    // Bare /plugin opens the managed links dialog; add and removal are explicit.
     return { kind: "plugins", filter: "" }
   }
 

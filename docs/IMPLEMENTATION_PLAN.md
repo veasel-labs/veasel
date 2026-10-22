@@ -643,6 +643,8 @@ honoring its license and attribution.
   loads configured servers plus session trust state and suggests enabled,
   available or trusted targets as appropriate. `/mcp remove|enable|disable`
   suggests configured server names from the live catalog, filtered by scope.
+  Selecting a server in `/mcp` opens actions for session trust and configured
+  enable/disable/removal; replacement and removal require confirmation.
   Pending edit, shell, and MCP
   review IDs come from the summary-only inventory; Enter opens the selected
   review and fetches details only for that item, without applying a decision.

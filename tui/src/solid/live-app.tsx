@@ -975,15 +975,35 @@ function LiveAppShell(props: LiveAppProps) {
       openMcpDialog(dialog, {
         servers,
         onSelect: (server) => {
-          toast.info(
-            server.status === "trusted"
-              ? `Trusted · ${server.name} · each tool call still needs review`
-              : server.status === "available"
-                ? `Available · trust with /mcp trust ${server.name}`
-                : `${server.status} · ${server.name}`,
-            "MCP",
-          )
-          setComposerFocused(true)
+          const configuredScope = server.scope === "user" || server.scope === "project"
+          const trusted = server.status === "trusted" || server.status === "connected"
+          const options = [
+            ...(server.status === "disabled" ? [] : [{ title: trusted ? "Revoke session trust" : "Trust for this session", value: trusted ? "untrust" : "trust", description: "MCP calls still require per-call review" }]),
+            ...(configuredScope ? [
+              { title: server.status === "disabled" ? "Enable server" : "Disable server", value: server.status === "disabled" ? "enable" : "disable", description: `${server.scope} configuration` },
+              { title: "Remove server…", value: "remove", description: `${server.scope} configuration · confirmation required` },
+            ] : []),
+          ]
+          if (options.length === 0) {
+            toast.info(`${server.status} · ${server.name}`, "MCP")
+            setComposerFocused(true)
+            return
+          }
+          openDialogSelect(dialog, {
+            title: `MCP · ${server.name}`,
+            options,
+            dismissOnSelect: false,
+            onCancel: () => setComposerFocused(true),
+            onSelect: (option) => {
+              dialog.clear()
+              if (option.value === "trust" || option.value === "untrust") {
+                void runLiveMcpTrustAction(option.value === "trust", server.name)
+              } else if (option.value === "enable" || option.value === "disable" || option.value === "remove") {
+                void runLiveMcpConfigure(option.value, server.scope as "user" | "project", server.name.slice("configured/".length))
+              }
+            },
+            footer: "Trust permits connection only · review each tool call",
+          })
         },
       })
     } catch (error) {

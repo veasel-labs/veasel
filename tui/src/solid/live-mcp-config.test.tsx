@@ -15,6 +15,7 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     } }), { headers: { "content-type": "text/event-stream" } })
     if (url.pathname === "/v1/sessions") return Response.json([{ id: "a", title: "Real project", directory: "/project/alpha" }])
     if (url.pathname.endsWith("/messages")) return Response.json([])
+    if (/^\/v1\/sessions\/[^/]+\/mcp-servers$/.test(url.pathname)) return Response.json([])
     if (url.pathname === "/v1/mcp-servers" && request.method === "GET") return Response.json({ servers: configured })
     if (url.pathname === "/v1/mcp-servers" && request.method === "POST") {
       const body = await request.json() as Record<string, unknown>
@@ -25,6 +26,7 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     if (url.pathname === "/v1/mcp-servers/demo" && request.method === "PATCH") {
       const body = await request.json() as Record<string, unknown>
       calls.push({ method: request.method, url: request.url, body })
+      configured = configured.map((server) => ({ ...server, enabled: body.enabled === true }))
       return Response.json({ name: "demo", enabled: body.enabled })
     }
     if (url.pathname === "/v1/mcp-servers/demo" && request.method === "DELETE") {
@@ -66,31 +68,42 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     expect(calls).toHaveLength(2)
     expect(calls[1]?.body).toMatchObject({ command: "bun", args: ["new server.js"] })
 
-    await setup.mockInput.typeText("/mcp disable project ")
-    await until("project · enabled · stdio")
-    setup.mockInput.pressTab()
-    await setup.renderOnce()
-    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("/mcp disable project demo")
+    await setup.mockInput.typeText("/mcp")
+    setup.mockInput.pressEnter()
+    await until("MCP servers")
+    setup.mockInput.pressEnter()
+    await until("MCP · configured/demo")
+    await setup.mockInput.typeText("Disable server")
     setup.mockInput.pressEnter()
     await until("Disabled project-scope MCP server · demo")
     expect(calls[2]?.method).toBe("PATCH")
     expect(calls[2]?.body).toEqual({ enabled: false })
 
+    await setup.mockInput.typeText("/mcp enable project ")
+    await until("project · disabled · stdio")
+    setup.mockInput.pressTab()
+    await setup.renderOnce()
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("/mcp enable project demo")
+    setup.mockInput.pressEnter()
+    await until("Enabled project-scope MCP server · demo")
+    expect(calls[3]?.method).toBe("PATCH")
+    expect(calls[3]?.body).toEqual({ enabled: true })
+
     await setup.mockInput.typeText("/mcp remove project demo")
     setup.mockInput.pressEnter()
     await until("Remove configured MCP server?")
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
     setup.mockInput.pressEscape()
     await setup.renderOnce()
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
 
     await setup.mockInput.typeText("/mcp remove project demo")
     setup.mockInput.pressEnter()
     await until("Remove configured MCP server?")
     setup.mockInput.pressEnter()
     await until("Removed project-scope MCP server · demo")
-    expect(calls[3]?.method).toBe("DELETE")
-    expect(calls[3]?.url).toContain("scope=project&directory=%2Fproject%2Falpha")
+    expect(calls[4]?.method).toBe("DELETE")
+    expect(calls[4]?.url).toContain("scope=project&directory=%2Fproject%2Falpha")
   } finally {
     await setup.dispose()
     controller.abort()

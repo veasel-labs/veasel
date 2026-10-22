@@ -66,7 +66,11 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     expect(calls).toHaveLength(2)
     expect(calls[1]?.body).toMatchObject({ command: "bun", args: ["new server.js"] })
 
-    await setup.mockInput.typeText("/mcp disable project demo")
+    await setup.mockInput.typeText("/mcp disable project ")
+    await until("project · enabled · stdio")
+    setup.mockInput.pressTab()
+    await setup.renderOnce()
+    expect(setup.renderer.currentFocusedEditor?.plainText).toBe("/mcp disable project demo")
     setup.mockInput.pressEnter()
     await until("Disabled project-scope MCP server · demo")
     expect(calls[2]?.method).toBe("PATCH")

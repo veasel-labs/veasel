@@ -769,6 +769,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
   const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
   const [mcpArgumentServers, setMcpArgumentServers] = createSignal<SlashArgument[]>([])
+  const [configuredMcpArguments, setConfiguredMcpArguments] = createSignal<SlashArgument[]>([])
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
   const [pluginLinkArguments, setPluginLinkArguments] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {
@@ -779,6 +780,11 @@ function LiveAppShell(props: LiveAppProps) {
     const match = /^\/mcp\s+(trust|untrust)\s+/i.exec(composerDraft())
     const action = match?.[1]?.toLowerCase()
     return action === "trust" || action === "untrust" ? action : undefined
+  })
+  const configuredMcpCompletionScope = createMemo(() => {
+    const match = /^\/mcp\s+(?:remove|enable|disable)(?:\s+(user|project))?\s+/i.exec(composerDraft())
+    if (!match) return undefined
+    return match[1]?.toLowerCase() === "project" ? "project" : "user"
   })
   const reviewCompletionKind = createMemo(() => {
     const draft = composerDraft()
@@ -811,6 +817,26 @@ function LiveAppShell(props: LiveAppProps) {
     }).catch(() => {
       if (!current) return
       setSkillCatalogStatus("Skills unavailable · use /skills to retry")
+    })
+  })
+  createEffect(() => {
+    const scope = configuredMcpCompletionScope()
+    const root = directory()
+    const sessionId = activeSessionId()
+    setConfiguredMcpArguments([])
+    if (!scope) return
+    let current = true
+    onCleanup(() => { current = false })
+    void props.api.listConfiguredMcpServers(root).then((catalog) => {
+      if (!current || sessionId !== activeSessionId() || root !== directory()) return
+      setConfiguredMcpArguments(catalog.servers
+        .filter((server) => server.scope === scope)
+        .map((server) => ({
+          value: server.name,
+          description: `${server.scope} · ${server.enabled ? "enabled" : "disabled"} · ${server.transport}`,
+        })))
+    }).catch(() => {
+      if (current) setConfiguredMcpArguments([])
     })
   })
   createEffect(() => {
@@ -1473,7 +1499,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   const runLiveMcpAdd = async (input: Extract<ReturnType<typeof resolveLiveSlash>, { kind: "mcp-add" }>) => {
     const root = directory()
-    if (input.scope === "project" && !root) {
+    if (input.scope === "project" && (!activeSessionId() || !root)) {
       openDialogAlert(dialog, { title: "Workspace required", message: "Open a workspace before adding a project-scoped MCP server.", onConfirm: () => setComposerFocused(true) })
       return
     }
@@ -1515,7 +1541,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   const runLiveMcpConfigure = async (action: "remove" | "enable" | "disable", scope: "user" | "project", name: string) => {
     const root = directory()
-    if (scope === "project" && !root) {
+    if (scope === "project" && (!activeSessionId() || !root)) {
       openDialogAlert(dialog, { title: "Workspace required", message: "Open the workspace that owns this project-scoped MCP server.", onConfirm: () => setComposerFocused(true) })
       return
     }
@@ -2581,6 +2607,7 @@ function LiveAppShell(props: LiveAppProps) {
               description: skill.description,
             })),
             mcpServers: mcpArgumentServers(),
+            configuredMcpServers: configuredMcpArguments(),
             patches: reviewArgumentItems()
               .filter((item) => item.kind === "patch")
               .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),

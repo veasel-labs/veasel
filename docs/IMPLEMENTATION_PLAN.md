@@ -579,6 +579,11 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   neighbor boosts, cross-directory same-basename-stem sibling boosts, and
   file↔package stem pairing (`lib/session.v` ↔ `lib/session/`)
   (still not tree-sitter/PageRank).
+  Built-in muted/meta text now has at least 4.5:1 contrast against shell,
+  panel, header, and composer backgrounds. Warning-status text meets the same
+  threshold on shell, panel, and composer backgrounds. The regression lives in
+  `tui/src/themes.test.ts`; this is a targeted color check, not a complete
+  accessibility review.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
 - [ ] Validate interactive TUI behavior on each platform and establish

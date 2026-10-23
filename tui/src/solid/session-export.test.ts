@@ -61,12 +61,19 @@ describe("session export", () => {
     expect(
       formatGlobalUsageLine({
         sessions: 3,
+        completed_turns: 8,
+        reported_turns: 7,
         input_tokens: 150,
         output_tokens: 30,
         usage_reported: true,
+        cache_reported: true,
+        cache_read_tokens: 20,
+        cache_creation_tokens: 4,
+        reasoning_reported: true,
+        reasoning_tokens: 12,
         cost: "unavailable",
       }),
-    ).toBe("all sessions (3): 150 in · 30 out")
+    ).toBe("all sessions (3) · 8 turns · 7 metered · 150 in · 30 out · 20 cache read · 4 cache write · 12 reasoning · cost unavailable")
     expect(
       formatGlobalUsageLine({ sessions: 1, input_tokens: 1, output_tokens: 1, usage_reported: false }),
     ).toBeUndefined()

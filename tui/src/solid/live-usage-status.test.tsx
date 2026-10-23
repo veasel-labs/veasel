@@ -46,7 +46,10 @@ test("Home status shows durable global usage without an active session", async (
     await setup.mockInput.typeText("status")
     await setup.renderOnce()
     setup.mockInput.pressEnter()
-    await until("Usage · all sessions (3): 1200 in · 340 out · cost 0.42")
+    await until("Usage · all sessions (3) · 8 turns")
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("7 metered · 1.2k in · 340 out")
+    expect(frame).toContain("cost 0.42")
     expect(usageRequests).toBe(1)
   } finally {
     setup.renderer.destroy()

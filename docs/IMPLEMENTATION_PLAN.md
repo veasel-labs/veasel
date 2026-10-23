@@ -653,8 +653,11 @@ honoring its license and attribution.
   exact requirements and evidence in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md); do not
   claim conformance until its release gate passes.
-- The initial tool loop caps in-flight provider calls and tool-loop steps;
-  same-session turns are serialized so provider history cannot race. Opt-in
+- The initial tool loop caps in-flight provider calls and tool-loop steps, warns
+  after three identical consecutive tool calls, and skips calls from number five
+  before dispatch; focused coverage checks canonical JSON arguments and confirms
+  a skipped edit has no workspace effect. Same-session turns are serialized so
+  provider history cannot race. Opt-in
   async turns use a durable queued job row; concurrent agents and their
   resource limits remain open.
 - The organization and repository publication are tracked separately from the

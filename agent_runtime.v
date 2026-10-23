@@ -6,6 +6,8 @@ import time
 
 const max_agent_tool_rounds = 6
 const max_agent_tool_calls = 12
+const agent_tool_loop_warning_threshold = 3
+const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
@@ -41,6 +43,87 @@ struct AgentToolNote {
 	note string
 }
 
+enum AgentToolLoopVerdict {
+	ok
+	warning
+	stop
+}
+
+struct AgentToolLoopTracker {
+mut:
+	last_signature string
+	consecutive    int
+}
+
+fn append_canonical_agent_tool_json(value json2.Any, mut output []u8) {
+	match value {
+		map[string]json2.Any {
+			output << `{`
+			mut keys := value.keys()
+			keys.sort()
+			for index, key in keys {
+				if index > 0 {
+					output << `,`
+				}
+				json2.encode_append(key, mut output)
+				output << `:`
+				append_canonical_agent_tool_json(value[key] or { json2.null }, mut output)
+			}
+			output << `}`
+		}
+		[]json2.Any {
+			output << `[`
+			for index, item in value {
+				if index > 0 {
+					output << `,`
+				}
+				append_canonical_agent_tool_json(item, mut output)
+			}
+			output << `]`
+		}
+		else {
+			json2.encode_append(value, mut output)
+		}
+	}
+}
+
+fn agent_tool_call_signature(call ProviderToolCall) string {
+	mut encoded := []u8{cap: call.function.name.len + call.function.arguments.len + 16}
+	json2.encode_append(call.function.name, mut encoded)
+	encoded << `:`
+	decoded_arguments := json2.decode[json2.Any](call.function.arguments) or {
+		encoded << call.function.arguments.bytes()
+		return workspace_content_hash(encoded.bytestr())
+	}
+	append_canonical_agent_tool_json(decoded_arguments, mut encoded)
+	return workspace_content_hash(encoded.bytestr())
+}
+
+fn (mut tracker AgentToolLoopTracker) inspect(call ProviderToolCall) AgentToolLoopVerdict {
+	signature := agent_tool_call_signature(call)
+	if signature == tracker.last_signature {
+		tracker.consecutive++
+	} else {
+		tracker.last_signature = signature
+		tracker.consecutive = 1
+	}
+	if tracker.consecutive >= agent_tool_loop_stop_threshold {
+		return .stop
+	}
+	if tracker.consecutive == agent_tool_loop_warning_threshold {
+		return .warning
+	}
+	return .ok
+}
+
+fn agent_tool_loop_warning(call ProviderToolCall) string {
+	return 'The last ${agent_tool_loop_warning_threshold} tool calls were identical (${call.function.name}). Change the tool or its arguments to make progress.'
+}
+
+fn agent_tool_loop_stop_note(call ProviderToolCall) string {
+	return encode_agent_tool_note('Repeated identical ${call.function.name} call was not run to prevent an execution loop. Change the tool or its arguments to continue.')
+}
+
 // encode_agent_tool_note encodes a short advisory object (not a hard tool failure).
 fn encode_agent_tool_note(message string) string {
 	mut buf := []u8{cap: 96 + message.len}
@@ -71,11 +154,16 @@ fn duplicate_workspace_read_note(path string) string {
 // Duplicate workspace_read_file paths in the same batch or already seen this turn
 // receive a short note instead of re-injecting file bytes.
 fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id string,
-	calls []ProviderToolCall, tool_policy AgentToolPolicy, mut read_paths map[string]bool) []string {
+	calls []ProviderToolCall, tool_policy AgentToolPolicy, mut read_paths map[string]bool,
+	loop_skip_notes map[string]string) []string {
 	mut ordered := []string{len: calls.len}
 	mut run_indexes := []int{cap: calls.len}
 	mut run_calls := []ProviderToolCall{cap: calls.len}
 	for i, call in calls {
+		if note := loop_skip_notes[call.id] {
+			ordered[i] = note
+			continue
+		}
 		if path := workspace_read_path_from_call(call) {
 			if read_paths[path] {
 				ordered[i] = duplicate_workspace_read_note(path)
@@ -127,13 +215,13 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 	session_id string, operation_id string, calls []ProviderToolCall,
 	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
 	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn,
-	mut read_paths map[string]bool) ![]string {
+	mut read_paths map[string]bool, loop_skip_notes map[string]string) ![]string {
 	if calls.len > 1 && agent_tool_readonly_run_end(calls, 0) == calls.len {
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
 		}
 		results := execute_parallel_readonly_workspace_tools(app, root, session_id, calls,
-			skill_context.tool_policy, mut read_paths)
+			skill_context.tool_policy, mut read_paths, loop_skip_notes)
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
 		}
@@ -151,7 +239,8 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 			index = end
 			if index - start > 1 {
 				batch_results := execute_parallel_readonly_workspace_tools(app, root, session_id,
-					calls[start..index], skill_context.tool_policy, mut read_paths)
+					calls[start..index], skill_context.tool_policy, mut read_paths,
+					loop_skip_notes)
 				for offset, result in batch_results {
 					results[start + offset] = result
 				}
@@ -163,6 +252,11 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 			index = start
 		}
 		call := calls[index]
+		if note := loop_skip_notes[call.id] {
+			results[index] = note
+			index++
+			continue
+		}
 		if path := workspace_read_path_from_call(call) {
 			if read_paths[path] {
 				results[index] = duplicate_workspace_read_note(path)
@@ -366,6 +460,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
 	mut read_paths := map[string]bool{}
+	mut loop_tracker := AgentToolLoopTracker{}
 	if collect_trace {
 		for message in messages {
 			source := match message.role {
@@ -454,9 +549,22 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			provider_context: output.provider_context
 		}
 		tool_calls += output.tool_calls.len
+		mut loop_skip_notes := map[string]string{}
+		mut loop_warnings := []string{cap: output.tool_calls.len}
+		for call in output.tool_calls {
+			match loop_tracker.inspect(call) {
+				.warning {
+					loop_warnings << agent_tool_loop_warning(call)
+				}
+				.stop {
+					loop_skip_notes[call.id] = agent_tool_loop_stop_note(call)
+				}
+				.ok {}
+			}
+		}
 		tool_results := execute_agent_tool_batch(app, mut turn_ctx, root, session_id, operation_id,
 			output.tool_calls, mut skill_context, mcp_bindings, mut mcp_connections, policy,
-			mut read_paths)!
+			mut read_paths, loop_skip_notes)!
 		mut trace_observations := []ATIFObservationResult{}
 		for i, call in output.tool_calls {
 			result := tool_results[i]
@@ -481,6 +589,12 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if collect_trace {
 			trace_steps[trace_steps.len - 1].observation = ATIFObservation{
 				results: trace_observations
+			}
+		}
+		for warning in loop_warnings {
+			messages << ChatMessage{
+				role:    'user'
+				content: warning
 			}
 		}
 		// Text from the next model round must not stick to this round's

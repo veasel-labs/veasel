@@ -714,7 +714,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	parallel_results := execute_agent_tool_batch(app, mut parallel_turn, root, session.id,
 		'test-parallel-operation', parallel_calls, mut parallel_skill_context, {},
 		mut parallel_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
-		mut parallel_read_paths) or { panic(err) }
+		mut parallel_read_paths, {}) or { panic(err) }
 	assert parallel_results.len == 3
 	assert parallel_results[0].contains('src/main.v')
 	assert parallel_results[1].contains('workspace-sentinel')
@@ -744,7 +744,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	mut mixed_read_paths := map[string]bool{}
 	mixed_results := execute_agent_tool_batch(app, mut mixed_turn, root, session.id,
 		'test-mixed-operation', mixed_calls, mut mixed_skill_context, {}, mut mixed_connections,
-		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut mixed_read_paths) or {
+		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut mixed_read_paths, {}) or {
 		panic(err)
 	}
 	assert mixed_results.len == mixed_calls.len
@@ -753,6 +753,29 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert mixed_results[2].contains('Stored for human review')
 	assert mixed_results[3].contains('workspace-sentinel')
 	assert mixed_results[4].contains('Already provided this turn')
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
+
+	skipped_edit := ProviderToolCall{
+		id:       'loop-skipped-edit'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"src/main.v","content":"loop must not apply"}'
+		}
+	}
+	mut skip_context := vcontext.background()
+	mut skip_turn, cancel_skip := vcontext.with_timeout(mut skip_context, 2 * time.second)
+	defer { cancel_skip() }
+	mut skip_skill_context := SessionSkillContext{}
+	mut skip_connections := []PluginMCPConnection{}
+	mut skip_read_paths := map[string]bool{}
+	skipped_results := execute_agent_tool_batch(app, mut skip_turn, root, session.id,
+		'test-loop-skipped-operation', [skipped_edit], mut skip_skill_context, {}, mut skip_connections,
+		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut skip_read_paths,
+		{
+			'loop-skipped-edit': agent_tool_loop_stop_note(skipped_edit)
+		}) or { panic(err) }
+	assert skipped_results[0].contains('was not run')
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
 
 	duplicate_batch := [
@@ -773,7 +796,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	]
 	mut batch_paths := map[string]bool{}
 	dup_results := execute_parallel_readonly_workspace_tools(app, root, session.id, duplicate_batch,
-		AgentToolPolicy{}, mut batch_paths)
+		AgentToolPolicy{}, mut batch_paths, {})
 	assert dup_results.len == 2
 	assert dup_results[0].contains('workspace-sentinel')
 	assert dup_results[1].contains('Already provided this turn')
@@ -791,7 +814,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 				arguments: '{"path":"src/main.v"}'
 			}
 		},
-	], AgentToolPolicy{}, mut turn_paths)
+	], AgentToolPolicy{}, mut turn_paths, {})
 	assert skipped.len == 1
 	assert skipped[0].contains('Already provided this turn')
 	assert !skipped[0].contains('workspace-sentinel')
@@ -910,6 +933,38 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 fn message_validation_error_contains(messages []ChatMessage, expected string) bool {
 	validate_messages(messages) or { return err.msg().contains(expected) }
 	return false
+}
+
+fn test_agent_tool_loop_tracker_warns_then_stops_canonical_repeats() {
+	call := ProviderToolCall{
+		id:       'repeat-1'
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"path":"src","filter":{"z":1,"a":2}}'
+		}
+	}
+	reordered_call := ProviderToolCall{
+		id:       'repeat-2'
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{ "filter": {"a":2,"z":1}, "path":"src" }'
+		}
+	}
+	assert agent_tool_call_signature(call) == agent_tool_call_signature(reordered_call)
+	mut tracker := AgentToolLoopTracker{}
+	assert tracker.inspect(call) == .ok
+	assert tracker.inspect(reordered_call) == .ok
+	assert tracker.inspect(call) == .warning
+	assert tracker.inspect(reordered_call) == .ok
+	assert tracker.inspect(call) == .stop
+	assert tracker.inspect(call) == .stop
+	assert tracker.inspect(ProviderToolCall{
+		id:       'different-tool'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{}'
+		}
+	}) == .ok
 }
 
 fn test_provider_tool_transcripts_preserve_native_context() {

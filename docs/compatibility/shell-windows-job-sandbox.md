@@ -32,8 +32,8 @@ risks in the field; Veasel therefore avoids that logon pattern.
 - Compose with a Job Object: `KILL_ON_JOB_CLOSE`, active-process cap (64), job
   memory cap (512 MiB); spawn `CREATE_SUSPENDED`, `AssignProcessToJobObject`,
   then `ResumeThread`.
-- Shared knobs `VEASEL_SHELL_SANDBOX=auto|off|require` (fail-closed `require`)
-  and `VEASEL_SHELL_SANDBOX_NETWORK`.
+- Shared knobs `VEASEL_SHELL_SANDBOX` (default `require`; explicit `auto` permits
+  fallback and `off` disables wrapping) and `VEASEL_SHELL_SANDBOX_NETWORK`.
 - Capability `shell.sandbox.windows` is true only when the AppContainer + Job
   Object wrap will run.
 - Autonomous Windows shell also uses AppContainer + Job fail-closed with
@@ -45,8 +45,8 @@ helper-service filters, private logon identities, or LPAC.
 
 ## Trusted MCP stdio (same C helper, separate profile)
 
-Opt-in via `VEASEL_MCP_STDIO_SANDBOX=auto|require` (default/unset = off,
-unsandboxed). When wrapping:
+Fail-closed by default via `VEASEL_MCP_STDIO_SANDBOX=require` (explicit `auto`
+permits fallback; `off` disables wrapping). When wrapping:
 
 - Uses AppContainer profile `VeaselTrustedMcp` (not the approved-shell profile).
 - Grants ACL on `PLUGIN_ROOT` and `PLUGIN_DATA` (and cwd when distinct).

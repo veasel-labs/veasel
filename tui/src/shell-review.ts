@@ -59,7 +59,10 @@ export function formatBoundedBlock(text: string, maxLines: number): BoundedBlock
   }
 }
 
-export function approvedShellSandboxWarning(capability: ApprovedShellSandboxCapability): string {
+export function approvedShellSandboxWarning(
+  capability: ApprovedShellSandboxCapability,
+  preview?: ReviewSandboxPreview,
+): string {
   if (capability === "bubblewrap") {
     return "On Linux, approval still runs as your OS user inside Bubblewrap: read-only host, writable workspace, sensitive home/runtime mounts hidden, network isolated by default. Inherited environment may still carry credentials. Review every effect before approval."
   }
@@ -69,7 +72,13 @@ export function approvedShellSandboxWarning(capability: ApprovedShellSandboxCapa
   if (capability === "windows") {
     return "On Windows, approval still runs as your OS user inside AppContainer + Job Object: workspace ACL grant, network isolated by default, process-tree kill-on-close, active-process and job-memory caps. Not Codex-level WFP/LPAC; inherited environment may still carry credentials. Review every effect before approval."
   }
-  return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox (platform sandbox unavailable or VEASEL_SHELL_SANDBOX=off). Review every effect before approval."
+  if (preview?.mode === "require") {
+    return "This command will be refused because the required OS sandbox is unavailable. Set VEASEL_SHELL_SANDBOX=off only if you intentionally accept unsandboxed execution."
+  }
+  if (preview?.mode === "auto") {
+    return "This explicit auto policy falls back to your OS user with filesystem and network access when no sandbox is available. Set VEASEL_SHELL_SANDBOX=require to fail closed. Review every effect before approval."
+  }
+  return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox because VEASEL_SHELL_SANDBOX=off was explicitly set. Review every effect before approval."
 }
 
 export function formatShellReview(input: {
@@ -97,7 +106,7 @@ export function formatShellReview(input: {
   ]
   const previewLine = formatSandboxPreviewLine(input.sandbox)
   if (previewLine) parts.push(previewLine)
-  parts.push(approvedShellSandboxWarning(capability))
+  parts.push(approvedShellSandboxWarning(capability, input.sandbox))
   if (input.pending) parts.push(`Type /command approve ${input.id} or /command reject ${input.id}.`)
   if (command.text) parts.push(command.text)
   if (!input.pending && input.output) {

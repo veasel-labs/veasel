@@ -157,7 +157,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add `veasel run` for non-interactive session turns using the shared server, provider, and agent runtime; persist and continue sessions, emit machine-readable JSON, and request cancellation on timeout. Default edit, shell, and MCP approvals remain intact.
 - [x] Add an explicitly opt-in autonomous path for isolated benchmark tasks. The running server must opt in separately; ordinary CLI/TUI approval behavior remains unchanged. Autonomous file edits and shell commands retain durable proposal/result records, shell subprocesses receive an allowlisted environment, and MCP sessions are rejected. Autonomous shell is fail-closed OS-sandboxed: Linux Bubblewrap (read-only host, writable workspace, hidden home/removable/runtime, isolated network, allowlisted env), macOS Seatbelt when `/usr/bin/sandbox-exec` is present (allowlisted env, network denied), and Windows AppContainer + Job Object when available (network denied; inherited env filtering remains a known Windows backend limit). Platforms without that backend refuse to start a process. Stdio MCP remains outside this sandbox.
 - [x] Add a graduated execution permission policy (`ask` | `auto-edit` | `sandbox-auto`) with allow/deny/ask decisions bound to those OS sandboxes. `autonomous: true` maps to `sandbox-auto`. Non-interactive turns map ask→deny. Auto-edit requires `VEASEL_ALLOW_AUTO_EDIT=1` (or autonomous allow); sandbox-auto still requires `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`. MCP stays deny under sandbox-auto and ask/deny otherwise (never auto-apply). Capability `agent.execution_policy` (+ `.auto_edit` / `.sandbox_auto` when server-enabled).
-- [x] Wrap manually approved Linux shell commands in Bubblewrap when `bwrap` is available (`VEASEL_SHELL_SANDBOX=auto|off|require`, network deny by default with optional `VEASEL_SHELL_SANDBOX_NETWORK=allow`). Capability `shell.sandbox.bubblewrap` is true only when the wrap will run; missing bwrap falls back unsandboxed under auto and never pretends sandboxed. Approval remains mandatory.
+- [x] Wrap manually approved shell commands in the platform OS sandbox by default (`VEASEL_SHELL_SANDBOX` unset/invalid = `require`; explicit `auto` allows unsandboxed fallback; explicit `off` disables wrapping). Linux uses Bubblewrap, macOS Seatbelt, and Windows AppContainer + Job. Capabilities are true only when the wrap will run; `require` fails closed when the backend is missing. Network is denied by default for shell. Approval remains mandatory.
 - [x] macOS Seatbelt parity for approved shell via `/usr/bin/sandbox-exec` only (`shell.sandbox.seatbelt` when wrap will run; shared `VEASEL_SHELL_SANDBOX` / `VEASEL_SHELL_SANDBOX_NETWORK` knobs; fail-closed `require`).
 - [x] Windows Job Object wrap for approved shell (kill-on-close + active-process/memory caps; shared sandbox knobs; fail-closed `require`).
 - [x] Windows AppContainer deepening for approved shell (`shell.sandbox.windows` only when AppContainer + Job Object wrap will run; workspace ACL grant; network deny by default via missing capability SIDs, `VEASEL_SHELL_SANDBOX_NETWORK=allow` adds well-known network SIDs; not Codex WFP helper-service / LPAC).
@@ -415,20 +415,21 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the
   qualified catalog name and the original discovery source.
-- [x] Opt-in Linux Bubblewrap wrap for trusted MCP stdio
-  (`VEASEL_MCP_STDIO_SANDBOX=auto|require`; default `off` / unset = unsandboxed);
+- [x] Fail-closed-by-default Linux Bubblewrap wrap for trusted MCP stdio
+  (`VEASEL_MCP_STDIO_SANDBOX` unset/invalid = `require`; explicit `auto` allows
+  fallback; explicit `off` disables wrapping);
   capability `mcp.stdio.sandbox.bubblewrap` only when wrap will run; network
   shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest unsandboxed fallback under
   auto.
-- [x] Opt-in macOS Seatbelt wrap for trusted MCP stdio under the same
+- [x] macOS Seatbelt wrap for trusted MCP stdio under the same
   `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.seatbelt` only
-  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest
+  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; explicit
   unsandboxed fallback under auto; `require` fails closed without
   `/usr/bin/sandbox-exec`.
-- [x] Opt-in Windows AppContainer + Job wrap for trusted MCP stdio under the
+- [x] Windows AppContainer + Job wrap for trusted MCP stdio under the
   same `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.windows`
   only when wrap will run; PLUGIN_ROOT/PLUGIN_DATA ACL grants; network
-  capability SIDs always enabled (parity with Linux/macOS MCP); honest
+  capability SIDs always enabled (parity with Linux/macOS MCP); explicit
   unsandboxed fallback under auto; `require` fails closed without AppContainer.
   Not Codex WFP/LPAC.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect

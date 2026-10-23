@@ -78,13 +78,10 @@ mut:
 }
 
 fn mcp_stdio_sandbox_mode() ApprovedShellSandboxMode {
-	// Default off: MCP stdio stays unsandboxed until operators opt into
-	// auto/require. Empty VEASEL_SHELL_SANDBOX defaults to auto for shell;
-	// do not inherit that default here.
+	// Trusted MCP stdio fails closed by default. Operators can explicitly opt
+	// into the compatibility fallback with `auto` or unsandboxed execution with
+	// `off`; an invalid value is handled as `require` by the shared parser.
 	raw := os.getenv(mcp_stdio_sandbox_mode_env).trim_space().to_lower()
-	if raw.len == 0 {
-		return .off
-	}
 	return approved_shell_sandbox_mode_from(raw)
 }
 
@@ -113,7 +110,7 @@ fn mcp_stdio_review_sandbox_preview() ReviewSandboxPreview {
 }
 
 fn warn_mcp_stdio_unsandboxed_default() {
-	eprintln('veasel: trusted MCP stdio starts unsandboxed (VEASEL_MCP_STDIO_SANDBOX unset/off). Set VEASEL_MCP_STDIO_SANDBOX=auto or require for Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer when available. Default stays off.')
+	eprintln('veasel: trusted MCP stdio is running unsandboxed because VEASEL_MCP_STDIO_SANDBOX=off was explicitly set. It inherits Veasel OS-user permissions.')
 }
 
 // mcp_stdio_sandbox_bubblewrap_capability is true only when Linux Bubblewrap
@@ -236,7 +233,7 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	}
 }
 
-// Windows AppContainer policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// Windows AppContainer policy for trusted MCP stdio (required by default):
 // - separate VeaselTrustedMcp profile; PLUGIN_ROOT and PLUGIN_DATA ACL grants
 // - network capability SIDs always enabled (many MCP servers need outbound HTTPS)
 // - Job Object kill-on-close + process/memory caps; not Codex WFP/LPAC
@@ -262,7 +259,7 @@ fn start_plugin_mcp_transport_windows_sandboxed(root string, data string, cwd st
 	}
 }
 
-// macOS Seatbelt policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// macOS Seatbelt policy for trusted MCP stdio (required by default):
 // - sandbox-exec only from /usr/bin/sandbox-exec
 // - default deny; host readable; writes limited to PLUGIN_ROOT, PLUGIN_DATA, and temp
 // - /Users, /var/root, and /Volumes denied except PLUGIN_ROOT/PLUGIN_DATA carve-outs
@@ -341,7 +338,7 @@ fn start_plugin_mcp_transport_macos_sandboxed(root string, data string, cwd stri
 	}
 }
 
-// Linux Bubblewrap policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// Linux Bubblewrap policy for trusted MCP stdio (required by default):
 // - host root is read-only; PLUGIN_ROOT and PLUGIN_DATA are writable binds
 // - home/runtime paths are masked; /tmp is a private tmpfs
 // - network is shared (many MCP servers need outbound HTTPS); not a shell-style deny

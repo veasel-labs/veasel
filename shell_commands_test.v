@@ -4,15 +4,28 @@ import os
 import uuid
 
 fn test_approved_shell_sandbox_mode_parses_known_values() {
-	assert approved_shell_sandbox_mode_from('') == .auto
+	assert approved_shell_sandbox_mode_from('') == .require
 	assert approved_shell_sandbox_mode_from('auto') == .auto
 	assert approved_shell_sandbox_mode_from('OFF') == .off
 	assert approved_shell_sandbox_mode_from('require') == .require
 	assert approved_shell_sandbox_mode_from('strict') == .require
-	assert approved_shell_sandbox_mode_from('unknown-value') == .auto
+	assert approved_shell_sandbox_mode_from('unknown-value') == .require
 	assert approved_shell_sandbox_mode_label(.off) == 'off'
 	assert approved_shell_sandbox_mode_label(.auto) == 'auto'
 	assert approved_shell_sandbox_mode_label(.require) == 'require'
+}
+
+fn test_approved_shell_sandbox_defaults_to_fail_closed() {
+	previous := os.getenv_opt(shell_sandbox_mode_env)
+	defer {
+		if value := previous {
+			os.setenv(shell_sandbox_mode_env, value, true)
+		} else {
+			os.unsetenv(shell_sandbox_mode_env)
+		}
+	}
+	os.unsetenv(shell_sandbox_mode_env)
+	assert approved_shell_sandbox_mode() == .require
 }
 
 fn test_shell_review_sandbox_preview_matches_capabilities() {
@@ -152,7 +165,7 @@ fn test_approved_shell_uses_bubblewrap_when_available() {
 			os.setenv(shell_sandbox_network_env, previous_network, true)
 		}
 	}
-	os.setenv(shell_sandbox_mode_env, 'auto', true)
+	os.unsetenv(shell_sandbox_mode_env)
 	os.unsetenv(shell_sandbox_network_env)
 	assert shell_sandbox_bubblewrap_capability()
 
@@ -188,7 +201,7 @@ fn test_approved_shell_require_mode_fails_closed_without_pretending_success() {
 			os.setenv(shell_sandbox_mode_env, previous, true)
 		}
 	}
-	os.setenv(shell_sandbox_mode_env, 'require', true)
+	os.unsetenv(shell_sandbox_mode_env)
 	if bubblewrap_available() {
 		assert shell_sandbox_bubblewrap_capability()
 		return
@@ -227,7 +240,7 @@ fn test_approved_shell_uses_seatbelt_when_available() {
 			os.setenv(shell_sandbox_network_env, previous_network, true)
 		}
 	}
-	os.setenv(shell_sandbox_mode_env, 'auto', true)
+	os.unsetenv(shell_sandbox_mode_env)
 	os.unsetenv(shell_sandbox_network_env)
 	assert shell_sandbox_seatbelt_capability()
 
@@ -269,7 +282,7 @@ fn test_approved_shell_uses_windows_appcontainer_sandbox_when_available() {
 			os.setenv(shell_sandbox_network_env, previous_network, true)
 		}
 	}
-	os.setenv(shell_sandbox_mode_env, 'auto', true)
+	os.unsetenv(shell_sandbox_mode_env)
 	os.unsetenv(shell_sandbox_network_env)
 	assert shell_sandbox_windows_capability()
 
@@ -324,7 +337,7 @@ fn test_approved_shell_windows_appcontainer_denies_network_by_default() {
 			os.setenv(shell_sandbox_network_env, previous_network, true)
 		}
 	}
-	os.setenv(shell_sandbox_mode_env, 'auto', true)
+	os.unsetenv(shell_sandbox_mode_env)
 	os.unsetenv(shell_sandbox_network_env)
 
 	root := os.join_path(os.temp_dir(), 'veasel-approved-windows-net-${uuid.new_v4().str()}')

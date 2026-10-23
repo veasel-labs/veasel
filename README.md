@@ -108,15 +108,16 @@ The working vertical slice includes:
 
 Honesty bounds that stay in the product voice:
 
-- Approved shell uses Bubblewrap on Linux (`shell.sandbox.bubblewrap`), Seatbelt
-  on macOS (`shell.sandbox.seatbelt`), or AppContainer + Job Object on Windows
-  (`shell.sandbox.windows`) when the backend is available; otherwise it falls
-  back unsandboxed. Windows grants workspace ACL to the AppContainer SID and
-  denies network by default; it is not Codex-level WFP/LPAC. Trusted MCP stdio
-  defaults unsandboxed (`VEASEL_MCP_STDIO_SANDBOX` unset/off); set
-  `auto`/`require` for Linux Bubblewrap, macOS Seatbelt, or Windows
-  AppContainer when available (`mcp.stdio.sandbox.*` only when wrap will run)—
-  inspect effects before approval
+- Approved shell defaults to fail-closed OS sandboxing: Bubblewrap on Linux
+  (`shell.sandbox.bubblewrap`), Seatbelt on macOS (`shell.sandbox.seatbelt`),
+  or AppContainer + Job Object on Windows (`shell.sandbox.windows`). Missing
+  backends refuse execution by default; `VEASEL_SHELL_SANDBOX=auto` explicitly
+  permits an unsandboxed fallback and `off` disables wrapping. Windows grants
+  workspace ACL to the AppContainer SID and denies network by default; it is
+  not Codex-level WFP/LPAC. Trusted MCP stdio also defaults to fail-closed
+  sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); `auto` explicitly permits
+  unsandboxed fallback and `off` disables wrapping. Capabilities are shown only
+  when the platform wrap will run; inspect effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full

@@ -26,9 +26,9 @@ Veasel can ship honestly in this slice.
   temp directories, deny reads/writes under `/Users`, `/var/root`, and
   `/Volumes` except the workspace carve-out, network denied unless
   `VEASEL_SHELL_SANDBOX_NETWORK=allow`.
-- Shared knobs `VEASEL_SHELL_SANDBOX=auto|off|require` and
-  `VEASEL_SHELL_SANDBOX_NETWORK`; capability `shell.sandbox.seatbelt` is true
-  only when wrap will run.
+- Shared knobs `VEASEL_SHELL_SANDBOX` (default `require`; `auto` explicitly
+  permits fallback, `off` disables wrapping) and `VEASEL_SHELL_SANDBOX_NETWORK`;
+  capability `shell.sandbox.seatbelt` is true only when wrap will run.
 - Autonomous macOS shell also uses Seatbelt fail-closed with a filtered
   environment and network denied (never shares the approved-path network knob).
 - Windows AppContainer + Job Object wrap is documented separately in
@@ -37,11 +37,11 @@ Veasel can ship honestly in this slice.
 ## MCP stdio reuse (same pin)
 
 Trusted MCP stdio may opt into the same `/usr/bin/sandbox-exec` binary via
-`VEASEL_MCP_STDIO_SANDBOX=auto|require` (default `off`). The MCP profile keeps
-network shared (many servers need outbound HTTPS), carves writable
-`PLUGIN_ROOT` and `PLUGIN_DATA` instead of a workspace root, and advertises
-`mcp.stdio.sandbox.seatbelt` only when wrap will run. Default/unset stays
-unsandboxed; `require` fails closed without pretending otherwise. Windows MCP
+`VEASEL_MCP_STDIO_SANDBOX` defaults to `require` (unset/invalid fails closed);
+explicit `auto` allows unsandboxed fallback and `off` disables wrapping. The
+MCP profile keeps network shared (many servers need outbound HTTPS), carves
+writable `PLUGIN_ROOT` and `PLUGIN_DATA` instead of a workspace root, and
+advertises `mcp.stdio.sandbox.seatbelt` only when wrap will run. Windows MCP
 stdio AppContainer wrap is documented in
 [`shell-windows-job-sandbox.md`](shell-windows-job-sandbox.md).
 

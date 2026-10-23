@@ -732,14 +732,6 @@ function LiveAppShell(props: LiveAppProps) {
         const usage = await props.api.getSessionUsage(sessionId)
         const fromUsage = formatUsageLine(usage)
         if (fromUsage) usageLine = fromUsage
-        try {
-          const globalLine = formatGlobalUsageLine(await props.api.getUsage())
-          if (globalLine) {
-            usageLine = usageLine ? `${usageLine} · ${globalLine}` : globalLine
-          }
-        } catch {
-          // Global usage is additive; session usage still stands on its own.
-        }
       } catch {
         // Keep model settings fallback line.
       }
@@ -754,6 +746,12 @@ function LiveAppShell(props: LiveAppProps) {
       } catch {
         mcpServers = []
       }
+    }
+    try {
+      const globalLine = formatGlobalUsageLine(await props.api.getUsage())
+      if (globalLine) usageLine = usageLine ? `${usageLine} · ${globalLine}` : globalLine
+    } catch {
+      // Global usage is additive; model/session status still stands on its own.
     }
     openStatusDialog(dialog, {
       sessionTitle: inSession() ? sessionTitle() : "Home",

@@ -47,22 +47,8 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	path_l := normalized_path.to_lower()
 	base := os.file_name(path)
 	base_l := os.file_name(path_l)
-	mut has_lexical_hints := false
-	for ident in hints.idents {
-		if repository_map_is_lexical_hint(ident) {
-			has_lexical_hints = true
-			break
-		}
-	}
 	lower_segments := if hints.idents.len > 0 { path_l.split('/') } else { []string{} }
 	mut path_segment_parts := [][]string{}
-	if has_lexical_hints {
-		path_segments := normalized_path.split('/')
-		path_segment_parts = [][]string{cap: path_segments.len}
-		for segment in path_segments {
-			path_segment_parts << repository_map_ident_parts(repository_map_stem(segment))
-		}
-	}
 	if base in repository_map_important_basenames || path in repository_map_important_basenames {
 		// Static importance is a tie-breaker, not a relevance signal: at the
 		// old +1000 every repo root (README, .gitignore, pyproject.toml...)
@@ -105,6 +91,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// signal weaker than exact mentions, so it helps without replacing them.
 	mut seen_lexical_hints := map[string]bool{}
 	mut exact_path_term_matches := 0
+	mut path_segment_parts_ready := false
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
 			continue
@@ -114,6 +101,14 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			continue
 		}
 		seen_lexical_hints[normalized] = true
+		if !path_segment_parts_ready {
+			path_segments := normalized_path.split('/')
+			path_segment_parts = [][]string{cap: path_segments.len}
+			for segment in path_segments {
+				path_segment_parts << repository_map_ident_parts(repository_map_stem(segment))
+			}
+			path_segment_parts_ready = true
+		}
 		mut matched := false
 		for parts in path_segment_parts {
 			for part in parts {

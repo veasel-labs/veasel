@@ -15,9 +15,7 @@ HPCON = wintypes.HANDLE
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 STARTF_USESTDHANDLES = 0x00000100
-STD_INPUT_HANDLE = 0xFFFFFFF6
 HANDLE_FLAG_INHERIT = 0x00000001
-DUPLICATE_SAME_ACCESS = 0x00000002
 
 
 class Coord(ctypes.Structure):
@@ -77,19 +75,6 @@ kernel32.CreatePipe.argtypes = [
 kernel32.CreatePipe.restype = wintypes.BOOL
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.CloseHandle.restype = wintypes.BOOL
-kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
-kernel32.GetStdHandle.restype = wintypes.HANDLE
-kernel32.DuplicateHandle.argtypes = [
-    wintypes.HANDLE,
-    wintypes.HANDLE,
-    wintypes.HANDLE,
-    ctypes.POINTER(wintypes.HANDLE),
-    wintypes.DWORD,
-    wintypes.BOOL,
-    wintypes.DWORD,
-]
-kernel32.DuplicateHandle.restype = wintypes.BOOL
 kernel32.SetHandleInformation.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD]
 kernel32.SetHandleInformation.restype = wintypes.BOOL
 kernel32.CreatePseudoConsole.argtypes = [
@@ -182,7 +167,8 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
     attribute_list_initialized = False
     output = bytearray()
     process_created = False
-    child_stdin = wintypes.HANDLE()
+    child_stdin_read = wintypes.HANDLE()
+    child_stdin_write = wintypes.HANDLE()
 
     def close(handle: wintypes.HANDLE | int) -> None:
         value = handle.value if isinstance(handle, wintypes.HANDLE) else handle
@@ -246,26 +232,21 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
             raise _winerror("WriteFile(ConPTY input)")
         if written.value != len(keys):
             raise OSError(f"ConPTY accepted {written.value} of {len(keys)} input bytes")
+        if not kernel32.WriteFile(child_stdin_write, buffer, len(keys), ctypes.byref(written), None):
+            raise _winerror("WriteFile(TUI stdin)")
+        if written.value != len(keys):
+            raise OSError(f"TUI accepted {written.value} of {len(keys)} input bytes")
 
     try:
-        current_process = kernel32.GetCurrentProcess()
-        parent_stdin = kernel32.GetStdHandle(STD_INPUT_HANDLE)
-        if not parent_stdin or not kernel32.DuplicateHandle(
-            current_process,
-            parent_stdin,
-            current_process,
-            ctypes.byref(child_stdin),
-            0,
-            True,
-            DUPLICATE_SAME_ACCESS,
-        ):
-            raise _winerror("DuplicateHandle(stdin)")
-
         security = SecurityAttributes(ctypes.sizeof(SecurityAttributes), None, False)
         for read_handle, write_handle in ((ctypes.byref(input_read), ctypes.byref(input_write)),
                                           (ctypes.byref(output_read), ctypes.byref(output_write))):
             if not kernel32.CreatePipe(read_handle, write_handle, ctypes.byref(security), 0):
                 raise _winerror("CreatePipe")
+        if not kernel32.CreatePipe(
+            ctypes.byref(child_stdin_read), ctypes.byref(child_stdin_write), ctypes.byref(security), 0
+        ):
+            raise _winerror("CreatePipe(TUI stdin)")
 
         result = kernel32.CreatePseudoConsole(
             Coord(100, 24), input_read, output_write, 0, ctypes.byref(pseudoconsole)
@@ -294,7 +275,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         startup = StartupInfoEx()
         startup.StartupInfo.cb = ctypes.sizeof(StartupInfoEx)
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
-        startup.StartupInfo.hStdInput = child_stdin
+        startup.StartupInfo.hStdInput = child_stdin_read
         startup.StartupInfo.hStdOutput = output_write
         startup.StartupInfo.hStdError = output_write
         startup.lpAttributeList = attribute_list
@@ -303,10 +284,12 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
             f"{key}={value}" for key, value in sorted(env.items(), key=lambda item: item[0].upper())
         ) + "\0\0"
         environment_block = ctypes.create_unicode_buffer(environment)
-        if not kernel32.SetHandleInformation(
-            output_write, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT
+        for handle, description in (
+            (child_stdin_read, "TUI stdin"),
+            (output_write, "ConPTY output"),
         ):
-            raise _winerror("SetHandleInformation(ConPTY output)")
+            if not kernel32.SetHandleInformation(handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT):
+                raise _winerror(f"SetHandleInformation({description})")
         if not kernel32.CreateProcessW(
             str(tui_path),
             command_line,
@@ -360,6 +343,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         close(input_write)
         close(output_read)
         close(output_write)
-        close(child_stdin)
+        close(child_stdin_read)
+        close(child_stdin_write)
         close(process.hThread)
         close(process.hProcess)

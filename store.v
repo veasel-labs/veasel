@@ -1899,7 +1899,7 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 	if sessions.len != 1 {
 		return error('session not found')
 	}
-	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? ORDER BY created_at ASC, id ASC',
+	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? ORDER BY rowid ASC',
 		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {

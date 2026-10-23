@@ -435,6 +435,15 @@ export class VeaselApiClient {
     return await response.json() as ApiSessionUsageSummary
   }
 
+  async listSessionOperations(sessionId: string): Promise<ApiSessionOperation[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/operations`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSessionOperation[]
+  }
+
   async listGlobalOperations(options: { before?: string; limit?: number; search?: string } = {}): Promise<ApiGlobalOperationsPage> {
     const query = new URLSearchParams()
     if (options.before) query.set("before", options.before)

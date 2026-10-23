@@ -1,12 +1,9 @@
 # Third-party notices
 
-## Veasel mascot
+## V mascot research
 
-The startup pixel portrait is an adaptation of **Veasel**, the official mascot
-of the V programming language. The original artwork is credited to the V
-contributors and is available from the [V mascot repository](https://github.com/vlang/v-mascot).
-
-The original and this pixel-art adaptation are provided under the
-[Creative Commons Attribution-NonCommercial 4.0 International license](https://creativecommons.org/licenses/by-nc/4.0/).
-The adaptation is not covered by Veasel Code's MIT license. Commercial use
-requires separate permission from the rights holder.
+The official V mascot artwork in [vlang/v-mascot](https://github.com/vlang/v-mascot)
+is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+Veasel Code's terminal sprite is an independently drawn geometric terminal
+companion. It does not include or adapt the upstream artwork and is covered by
+this repository's MIT license.

@@ -636,8 +636,9 @@ honoring its license and attribution.
 
 ## Risks and decisions
 
-- The official Veasel artwork is CC BY-NC 4.0. Keep it out of the product until
-  commercial-use rights are established; use original typography and colors.
+- The official V mascot artwork is CC BY-NC 4.0. The terminal client uses an
+  independently drawn geometric pixel companion under MIT; do not add upstream
+  mascot artwork unless rights for the intended use are established.
 - Session creation records an existing, canonical workspace root. The initial
   list/read/search tools enforce root-bound access on every operation, reject
   symlink escapes, and treat file contents as untrusted. Loopback plus Origin

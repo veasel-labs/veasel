@@ -10,9 +10,9 @@ listed capabilities.
 
 | Source | Inspection location / revision | What it contributes |
 |---|---|---|
-| V compiler and `vlib` | Veasel pins [`abc788623028ab17462448e9b1d9b2627aad0627`](https://github.com/vlang/v/commit/abc788623028ab17462448e9b1d9b2627aad0627) in `.v-version`, V 0.5.2 (updated 2026-10-18 with `v up`). | The pinned compiler remains the release/CI source of truth until an updated V pin passes Veasel's cross-platform checks. The latest local compiler is useful for forward-compatibility checks, but does not silently replace that pin. Production build guidance and CI are documented in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). Upstream can move independently; recheck APIs and flags when updating `.v-version`. |
+| V compiler and `vlib` | Veasel pins [`ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`](https://github.com/vlang/v/commit/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f) in `.v-version`, V 0.5.2 (updated 2026-10-22 with `v up`). | Release and CI now target the same compiler revision as the local `v up`; the pin is verified through the cross-platform workflow. Production build guidance and CI are documented in [`V_BUILD_PROFILE.md`](V_BUILD_PROFILE.md). Upstream can move independently; recheck APIs and flags when updating `.v-version`. |
 | `awesome-v` | Upstream [repository](https://github.com/vlang/awesome-v), CC0 list. No local checkout. | Discovery index for V libraries, CLI/TUI projects, databases, HTTP and terminal packages; listings are leads, not a quality or maintenance guarantee. |
-| `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch `add-mascot`. No local checkout. | Official Veasel mascot source. The startup pixel adaptation is included with attribution under CC BY-NC 4.0; commercial use requires separate permission. |
+| `v-mascot` | Upstream [repository](https://github.com/vlang/v-mascot), branch [`add-mascot` at `60d8ded`](https://github.com/vlang/v-mascot/commit/60d8ded570c451765f425587e05484f9101db789), inspected 2026-10-23. | Official mascot artwork uses CC BY-NC 4.0. It was reviewed for product context, then excluded from the terminal sprite; Veasel Code uses an independently drawn geometric pixel companion under MIT. |
 | VSL | `~/.vmodules/vsl`, commit `a27f8ececf35ba91e58e71e3f6e707d2b609fc8e`, branch `main`. No tracked edits; two untracked V compiler cache directories were present and left untouched. | V-native modules, optional numerical/native backends, APIs with explicit backend expectations, module docs, examples, bounded local/CI testing. |
 | VTL | `~/.vmodules/vtl`, commit `1236453e7c3a5cfdded43aa71d4d1c1f2fb492d1`, branch `perf/in-place-autograd-grad-accumulation`. Clean at inspection. | Public pure-V API over a lower-level VSL compute library; stable API separated from experimental CUDA/Vulkan paths; lightweight local test workflow. |
 | RxV | Upstream [repository](https://github.com/ulises-jeremias/rxv), `main`. No local checkout. | V-native, dependency-free, channel-oriented asynchronous stream operators; informs event abstractions, but does not remove the need to own cancellation and shutdown semantics. |
@@ -29,9 +29,10 @@ listed capabilities.
 | Pi (`pi-mono`) | Project now appears as [earendil-works/pi](https://github.com/earendil-works/pi), MIT. No local checkout. A 2026-09 historical immutable sample is [`71dca87`](https://github.com/earendil-works/pi/commit/71dca87); this is not asserted to be the current head. | Small composable core, provider API boundary, multiple UI/SDK surfaces, append-only session/event history and extension seams. Extensions execute code and therefore need a trust model. |
 
 Local checkout status is evidence only for the paths listed. There were no
-local source checkouts of OpenCode, Claude Code, Codex CLI, Pi, RxV, setup-v,
-`awesome-v`, or `v-mascot` in the workspace when inspected. Public repositories
-and product documentation were reviewed read-only for those sources.
+local source checkouts of OpenCode, Claude Code, Codex CLI, Pi, RxV, setup-v, or
+`awesome-v` in the workspace when inspected. The V mascot repository was
+inspected read-only from a temporary checkout on 2026-10-23; no upstream art was
+copied into the product.
 
 ## V ecosystem findings
 
@@ -199,8 +200,8 @@ called complete:
 
 Research-only license snapshot: V, VSL, VTL, RxV and setup-v are MIT; Agent
 Toolkit, agentic-harness and agentic-workstation are MIT; OpenCode and Pi are
-MIT; Codex is Apache-2.0; Awesome V is CC0; Veasel mascot artwork is CC BY-NC
-4.0; Claude Code source is not available under a public source license. This is
-not legal advice. Preserve upstream notices for any adapted code. The startup
-pixel portrait is already included under CC BY-NC 4.0; do not use it in
-commercial product materials without separate rights.
+MIT; Codex is Apache-2.0; Awesome V is CC0; the official V mascot artwork is
+CC BY-NC 4.0; Claude Code source is not available under a public source
+license. This is not legal advice. Preserve upstream notices for any adapted
+code or art. The current terminal sprite is independently drawn and covered by
+Veasel Code's MIT license; no upstream mascot artwork is included.

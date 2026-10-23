@@ -867,7 +867,7 @@ mut:
 	id        string
 	type      string
 	name      string
-	arguments string
+	arguments strings.Builder
 }
 
 struct OpenAIStreamOutput {
@@ -927,7 +927,15 @@ struct AnthropicStreamToolCall {
 mut:
 	id        string
 	name      string
-	arguments string
+	arguments strings.Builder
+}
+
+fn append_provider_stream_tool_arguments(mut arguments strings.Builder, delta string) ! {
+	if arguments.len > max_provider_response_bytes
+		|| delta.len > max_provider_response_bytes - arguments.len {
+		return error('tool arguments size limit exceeded')
+	}
+	arguments.write_string(delta)
 }
 
 struct AnthropicStreamOutput {
@@ -1291,10 +1299,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 				if tool_delta.id != '' { tool.id += tool_delta.id }
 				if tool_delta.type != '' { tool.type = tool_delta.type }
 				tool.name += tool_delta.function.name
-				tool.arguments += tool_delta.function.arguments
-				if tool.arguments.len > max_provider_response_bytes {
-					return error('tool arguments size limit exceeded')
-				}
+				append_provider_stream_tool_arguments(mut tool.arguments, tool_delta.function.arguments)!
 				stream_state.tools[tool_delta.index] = tool
 			}
 		}
@@ -1303,14 +1308,15 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 		callback)!
 	content := stream_state.content_parts.join('')
 	mut tool_calls := []ProviderToolCall{}
-	for tool in stream_state.tools {
-		if tool.id == '' && tool.name == '' && tool.arguments == '' {
+	for mut tool in stream_state.tools {
+		if tool.id == '' && tool.name == '' && tool.arguments.len == 0 {
 			continue
 		}
-		if tool.id == '' || tool.name == '' || tool.arguments == '' {
+		if tool.id == '' || tool.name == '' || tool.arguments.len == 0 {
 			return error('incomplete streamed tool call')
 		}
-		json2.decode[map[string]json2.Any](tool.arguments) or {
+		arguments := tool.arguments.str()
+		json2.decode[map[string]json2.Any](arguments) or {
 			return error('invalid streamed tool arguments')
 		}
 		tool_calls << ProviderToolCall{
@@ -1318,7 +1324,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 			type:     if tool.type == '' { 'function' } else { tool.type }
 			function: ProviderFunctionCall{
 				name:      tool.name
-				arguments: tool.arguments
+				arguments: arguments
 			}
 		}
 	}
@@ -1541,10 +1547,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 					stream_state.tools << AnthropicStreamToolCall{}
 				}
 				mut tool := stream_state.tools[event.index]
-				tool.arguments += event.delta.partial_json
-				if tool.arguments.len > max_provider_response_bytes {
-					return error('tool arguments size limit exceeded')
-				}
+				append_provider_stream_tool_arguments(mut tool.arguments, event.delta.partial_json)!
 				stream_state.tools[event.index] = tool
 			}
 		}
@@ -1554,12 +1557,13 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 	mut content := []string{}
 	mut tool_calls := []ProviderToolCall{}
 	content << stream_state.content_parts
-	for tool in stream_state.tools {
-		if tool.id == '' && tool.name == '' && tool.arguments == '' { continue }
-		if tool.id == '' || tool.name == '' || tool.arguments == '' {
+	for mut tool in stream_state.tools {
+		if tool.id == '' && tool.name == '' && tool.arguments.len == 0 { continue }
+		if tool.id == '' || tool.name == '' || tool.arguments.len == 0 {
 			return error('incomplete streamed tool call')
 		}
-		json2.decode[map[string]json2.Any](tool.arguments) or {
+		arguments := tool.arguments.str()
+		json2.decode[map[string]json2.Any](arguments) or {
 			return error('invalid streamed tool arguments')
 		}
 		tool_calls << ProviderToolCall{
@@ -1568,7 +1572,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 			type:             'function'
 			function:         ProviderFunctionCall{
 				name:      tool.name
-				arguments: tool.arguments
+				arguments: arguments
 			}
 		}
 	}

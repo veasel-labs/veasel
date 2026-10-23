@@ -1,5 +1,7 @@
 module main
 
+import strings
+
 fn test_openai_chat_usage_parses_cached_tokens_subset() {
 	usage := provider_usage_from_fixture_json('openai-chat', '{
 		"prompt_tokens": 1200,
@@ -189,6 +191,21 @@ fn test_anthropic_stream_merges_message_start_and_delta_usage() {
 	assert merged.cache_reported
 	assert merged.cache_read_tokens == 80
 	assert merged.cache_creation_tokens == 10
+}
+
+fn test_provider_stream_tool_arguments_use_bounded_builder() {
+	mut arguments := strings.new_builder(16)
+	append_provider_stream_tool_arguments(mut arguments, '{"query":')!
+	append_provider_stream_tool_arguments(mut arguments, '"sentinel"}')!
+	assert arguments.str() == '{"query":"sentinel"}'
+
+	mut full := strings.new_builder(max_provider_response_bytes)
+	full.write_string(strings.repeat(`x`, max_provider_response_bytes))
+	append_provider_stream_tool_arguments(mut full, 'x') or {
+		assert err.msg() == 'tool arguments size limit exceeded'
+		return
+	}
+	assert false, 'tool argument buffer exceeded its size limit'
 }
 
 fn test_openai_and_anthropic_usage_clamp_negative_cache_and_reasoning() {

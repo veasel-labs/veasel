@@ -412,7 +412,9 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	for ident in hints.idents {
 		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
 			ident) {
-			score += 300.0
+			// A queried term used as the filename is stronger than the same
+			// term inferred from declarations or general file contents.
+			score += 500.0
 			break
 		}
 	}
@@ -564,7 +566,7 @@ fn repository_map_lexical_match_weight(left string, right string) f64 {
 		&& (b in ['arg', 'args', 'argument', 'arguments']) {
 		// Argument terminology is a high-confidence filename alias in codebases
 		// that use `args` (e.g. `args.py`) instead of `arguments`.
-		return 360.0
+		return 480.0
 	}
 	return 0.0
 }

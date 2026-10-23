@@ -195,6 +195,17 @@ fingerprints and per-query rankings are recorded in the
 and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23-implementation-bias.json)
 reports.
 
+A filename-alias follow-up raises the explicit `argument`/`args` lexical match
+while keeping exact basename matches stronger. On the same pinned checkouts,
+Aider improved from 5/6 to 6/6 recall@3: `aider/args.py` moved from rank 6 to 3
+and `aider/history.py` stayed at rank 1. mini-swe-agent remained 4/4 and
+SWE-agent 6/6 at recall@3; all three remained perfect at recall@10. This is a
+small labeled retrieval check, not a broad quality or task-completion claim.
+The candidate binary hash, source diff fingerprint, revisions, and per-query
+rankings are recorded in [`Aider`](reports/repo-map-recall-aider-2026-10-23-alias-priority.json),
+[`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23-alias-priority.json),
+and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23-alias-priority.json).
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

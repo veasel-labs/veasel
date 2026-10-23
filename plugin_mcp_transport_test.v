@@ -670,7 +670,9 @@ fn test_plugin_mcp_frame_buffer_handles_fragmented_and_buffered_frames() {
 	mut buffer := PluginMCPFrameBuffer{}
 	assert buffer.append('{"id":')! == ''
 	assert buffer.append('1}\r\n{"id":2}\n')! == '{"id":1}'
+	assert buffer.read_from > 0
 	assert buffer.take_frame()! == '{"id":2}'
+	assert buffer.read_from == 0
 	assert buffer.take_frame()! == ''
 }
 

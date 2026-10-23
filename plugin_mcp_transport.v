@@ -34,12 +34,23 @@ mut:
 struct PluginMCPFrameBuffer {
 mut:
 	bytes     []u8
+	read_from int
 	scan_from int
 }
 
 fn (mut buffer PluginMCPFrameBuffer) append(chunk string) !string {
-	if chunk.len > max_plugin_mcp_frame_bytes - buffer.bytes.len {
+	pending_bytes := buffer.bytes.len - buffer.read_from
+	if chunk.len > max_plugin_mcp_frame_bytes - pending_bytes {
 		return error('MCP response exceeds the frame size limit')
+	}
+	if buffer.read_from == buffer.bytes.len {
+		buffer.bytes.clear()
+		buffer.read_from = 0
+		buffer.scan_from = 0
+	} else if buffer.read_from > 0 {
+		buffer.bytes = buffer.bytes[buffer.read_from..].clone()
+		buffer.scan_from -= buffer.read_from
+		buffer.read_from = 0
 	}
 	buffer.bytes << chunk.bytes()
 	return buffer.take_frame()
@@ -48,11 +59,16 @@ fn (mut buffer PluginMCPFrameBuffer) append(chunk string) !string {
 fn (mut buffer PluginMCPFrameBuffer) take_frame() !string {
 	for index in buffer.scan_from .. buffer.bytes.len {
 		if buffer.bytes[index] == `\n` {
-			frame := buffer.bytes[..index].bytestr().trim_right('\r')
-			buffer.bytes = buffer.bytes[index + 1..].clone()
-			buffer.scan_from = 0
+			frame := buffer.bytes[buffer.read_from..index].bytestr().trim_right('\r')
+			buffer.read_from = index + 1
+			buffer.scan_from = buffer.read_from
 			if frame.len == 0 {
 				return error('MCP server returned an empty frame')
+			}
+			if buffer.read_from == buffer.bytes.len {
+				buffer.bytes.clear()
+				buffer.read_from = 0
+				buffer.scan_from = 0
 			}
 			return frame
 		}

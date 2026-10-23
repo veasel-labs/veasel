@@ -53,7 +53,7 @@ fn test_opencode_go_requests_use_stable_session_ids() {
 }
 
 fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
-	info := model_provider_info('opencode-go') or { panic(err) }
+	info := model_provider_info('opencode-go') or { panic('OpenCode Go provider preset is missing') }
 	assert info.base_url == opencode_go_chat_base_url
 	assert openai_chat_completions_url(ModelConfig{
 		provider: 'opencode-go'

@@ -35,7 +35,7 @@ fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 }
 
 fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
-	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\n'
+	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\nsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}\n'
 	symbols := extract_repository_map_symbols(content)
 	mut names := []string{}
 	mut kinds := []string{}
@@ -43,8 +43,10 @@ fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
 		names << symbol.name
 		kinds << symbol.kind
 	}
-	assert names == ['LoadSession', 'Transform', 'SessionController', 'createSession', 'open_session']
-	assert kinds == ['func', 'func', 'public class', 'export default function', 'pub fn']
+	assert names == ['LoadSession', 'Transform', 'SessionController', 'createSession', 'open_session',
+		'SessionState', 'loadSession', 'SessionStore', 'SessionState']
+	assert kinds == ['func', 'func', 'public class', 'export default function', 'pub fn', 'data class',
+		'suspend fun', 'public protocol', 'extension']
 }
 
 fn test_repository_map_ranks_case_insensitive_path_and_symbol_mentions() {

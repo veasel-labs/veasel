@@ -61,6 +61,7 @@ const repository_map_symbol_prefixes = [
 	'pub const ',
 	'pub trait ',
 	'async def ',
+	'suspend fun ',
 	'export default async function ',
 	'export default function ',
 	'export async function ',
@@ -70,16 +71,25 @@ const repository_map_symbol_prefixes = [
 	'export type ',
 	'export enum ',
 	'export const ',
+	'data class ',
+	'sealed class ',
+	'enum class ',
+	'annotation class ',
+	'value class ',
 	'fn ',
 	'func ',
+	'fun ',
 	'struct ',
 	'enum ',
 	'interface ',
+	'protocol ',
+	'extension ',
 	'type ',
 	'const ',
 	'trait ',
 	'impl ',
 	'mod ',
+	'object ',
 	'def ',
 	'class ',
 	'function ',
@@ -920,7 +930,8 @@ fn repository_map_go_receiver_end(receiver string) ?int {
 fn repository_map_leading_modifier(line string) ?string {
 	for modifier in ['public', 'private', 'protected', 'internal', 'static', 'final', 'abstract',
 		'sealed', 'virtual', 'override', 'extern', 'unsafe', 'inline', 'constexpr', 'async', 'export',
-		'declare', 'default', 'pub'] {
+		'declare', 'default', 'pub', 'suspend', 'data', 'annotation', 'value', 'open', 'tailrec',
+		'operator', 'infix'] {
 		if line.starts_with('${modifier} ') {
 			return modifier
 		}

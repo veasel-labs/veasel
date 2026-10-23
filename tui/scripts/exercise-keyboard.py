@@ -757,7 +757,8 @@ def run_core_suite() -> None:
         screen.wait_for("Check the API key", 4)
         screen.wait_for("MODEL SETTINGS", 4)  # wizard stays open after a rejected save
         screen.send("\r", 0.9)  # retry save from the model step
-        screen.wait_for("/connect · s to manage providers", 6)
+        screen.wait_for("n new", 6)
+        screen.wait_for("/connect", 6)
         saved = state["saved"] or {}
         if saved.get("model") != "gpt-5" or not saved.get("api_key"):
             raise AssertionError("selected model and api key were not saved")

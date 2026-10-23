@@ -594,8 +594,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   high-confidence argument/args filename alias, and applies a test-file
   demotion only when the user asks about behavior rather than tests. Bounded
   source reads now prioritize path relevance and enforce the aggregate byte
-  cap. Real-repo recall on Aider, mini-swe-agent, and SWE-agent is recorded in
-  `benchmarks/README.md`; semantic retrieval remains a broader open gap.
+  cap. The metadata-only walk now considers up to 20,000 paths before ranking
+  the strongest 2,000 candidates; source extraction remains capped at 800 files
+  and 8 MiB, and ranking uses V's O(n log n) `sort_with_compare`. Curated
+  retrieval cases for Aider, mini-swe-agent, SWE-agent, OpenCode, and Pi are
+  recorded in `benchmarks/README.md` (19/21 recall@3, 21/21 recall@10 on this
+  small sample); semantic retrieval and broader task-success evidence remain
+  open gaps.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in

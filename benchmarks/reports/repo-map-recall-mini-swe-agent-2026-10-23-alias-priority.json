@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-23T02:37:17.114Z",
+  "generatedAt": "2026-10-23T03:07:33.288Z",
   "veasel": {
     "version": "Veasel Code 0.1.0-dev",
-    "sourceRevision": "434d2e5fc68ac604a22f131616138cb644d47d94",
-    "sourceDiffSha256": "a8ab13a9f117f4e1b1f411ae66b2499ad44e03a9bb769f44c5bb1d493d512d03",
+    "sourceRevision": "671132302c7176371f7f11b4d0fbcd2e3c48b78a",
+    "sourceDiffSha256": "f31eb2a2f63f08f2251d38b3019ac271750d970e1284a733bdbc91c66f0d1bbd",
     "untrackedSourceFiles": [],
-    "binarySha256": "fea0fae036b0aefdb5d00c99792720cce3bb675ceeac76ac3cc2da86e1566830",
-    "compilerVersion": null,
-    "buildFlags": null
+    "binarySha256": "d0d39bbd25060826d92a879e3a60565f266b58452a4bbc13f4b9c8772478608e",
+    "compilerVersion": "V 0.5.2 ffc38ad",
+    "buildFlags": "default"
   },
   "platform": {
     "os": "linux",
@@ -26,17 +26,17 @@
     {
       "query": "the main agent loop that runs until the task is done",
       "expected": "src/minisweagent/agents/default.py",
-      "rank": 2,
+      "rank": 3,
       "top3": [
+        "docs/overrides/main.html",
         "src/minisweagent/agents/interactive.py",
-        "src/minisweagent/agents/default.py",
-        "src/minisweagent/__init__.py"
+        "src/minisweagent/agents/default.py"
       ],
       "rankedPaths": [
+        "docs/overrides/main.html",
         "src/minisweagent/agents/interactive.py",
         "src/minisweagent/agents/default.py",
         "src/minisweagent/__init__.py",
-        "docs/overrides/main.html",
         "tests/agents/test_init.py",
         "src/minisweagent/run/benchmarks/utils/common.py",
         "src/minisweagent/run/utilities/inspector.py",
@@ -84,26 +84,26 @@
       "rank": 1,
       "top3": [
         "src/minisweagent/environments/docker.py",
-        "src/minisweagent/environments/singularity.py",
-        "src/minisweagent/environments/extra/swerex_docker.py"
+        "src/minisweagent/environments/extra/swerex_docker.py",
+        "src/minisweagent/environments/singularity.py"
       ],
       "rankedPaths": [
         "src/minisweagent/environments/docker.py",
-        "src/minisweagent/environments/singularity.py",
         "src/minisweagent/environments/extra/swerex_docker.py",
+        "src/minisweagent/environments/singularity.py",
         "src/minisweagent/environments/local.py",
+        "docs/reference/environments/docker.md",
         "src/minisweagent/environments/extra/contree.py",
         "src/minisweagent/environments/extra/bubblewrap.py",
         "src/minisweagent/environments/extra/swerex_modal.py",
-        "docs/reference/environments/docker.md",
         "src/minisweagent/__init__.py",
         "src/minisweagent/environments/__init__.py",
+        "tests/environments/test_docker.py",
         "src/minisweagent/run/benchmarks/swebench.py",
         "src/minisweagent/agents/interactive.py",
         "src/minisweagent/agents/default.py",
         "src/minisweagent/run/utilities/config.py",
         "src/minisweagent/models/utils/actions_toolcall_response.py",
-        "tests/environments/test_docker.py",
         "src/minisweagent/models/utils/actions_toolcall.py",
         "src/minisweagent/models/openrouter_model.py",
         "src/minisweagent/models/litellm_model.py",
@@ -124,38 +124,39 @@
         "tests/environments/test_local.py",
         "tests/run/test_programbench.py",
         "tests/environments/extra/test_bubblewrap.py",
+        "docs/reference/environments/swerex_docker.md",
         "src/minisweagent/environments/README.md",
         "tests/conftest.py",
         "src/minisweagent/models/utils/cache_control.py",
         "tests/environments/test_init.py",
         "src/minisweagent/agents/__init__.py"
       ],
-      "fileCount": 41,
+      "fileCount": 42,
       "filesScanned": 221
     },
     {
       "query": "litellm model that calls the LLM API",
       "expected": "src/minisweagent/models/litellm_model.py",
-      "rank": 2,
+      "rank": 1,
       "top3": [
-        "src/minisweagent/models/__init__.py",
-        "src/minisweagent/models/litellm_model.py",
-        "src/minisweagent/models/litellm_response_model.py"
-      ],
-      "rankedPaths": [
-        "src/minisweagent/models/__init__.py",
         "src/minisweagent/models/litellm_model.py",
         "src/minisweagent/models/litellm_response_model.py",
-        "src/minisweagent/models/portkey_model.py",
-        "src/minisweagent/models/openrouter_model.py",
-        "src/minisweagent/models/test_models.py",
-        "src/minisweagent/models/portkey_response_model.py",
+        "src/minisweagent/models/__init__.py"
+      ],
+      "rankedPaths": [
+        "src/minisweagent/models/litellm_model.py",
+        "src/minisweagent/models/litellm_response_model.py",
+        "src/minisweagent/models/__init__.py",
         "tests/models/test_litellm_textbased_model.py",
+        "src/minisweagent/models/portkey_model.py",
+        "src/minisweagent/models/portkey_response_model.py",
+        "src/minisweagent/models/openrouter_model.py",
         "src/minisweagent/models/requesty_model.py",
-        "tests/models/test_portkey_response_model.py",
         "docs/reference/models/litellm.md",
-        "src/minisweagent/__init__.py",
+        "src/minisweagent/models/test_models.py",
         "src/minisweagent/models/openrouter_response_model.py",
+        "tests/models/test_portkey_response_model.py",
+        "src/minisweagent/__init__.py",
         "src/minisweagent/models/litellm_textbased_model.py",
         "src/minisweagent/models/utils/actions_toolcall_response.py",
         "src/minisweagent/models/extra/roulette.py",
@@ -163,6 +164,7 @@
         "tests/models/test_openrouter_textbased_model.py",
         "src/minisweagent/agents/default.py",
         "src/minisweagent/models/openrouter_textbased_model.py",
+        "src/minisweagent/models/utils/retry.py",
         "src/minisweagent/agents/interactive.py",
         "src/minisweagent/run/utilities/config.py",
         "src/minisweagent/environments/docker.py",
@@ -172,18 +174,19 @@
         "src/minisweagent/environments/extra/swerex_modal.py",
         "src/minisweagent/environments/local.py",
         "src/minisweagent/environments/extra/swerex_docker.py",
-        "src/minisweagent/models/utils/retry.py",
         "src/minisweagent/run/benchmarks/utils/common.py",
         "src/minisweagent/exceptions.py",
+        "src/minisweagent/models/utils/openai_multimodal.py",
         "src/minisweagent/utils/serialize.py",
         "tests/agents/test_default.py",
         "tests/agents/test_init.py",
         "src/minisweagent/config/__init__.py",
-        "src/minisweagent/models/utils/openai_multimodal.py",
+        "src/minisweagent/models/utils/cache_control.py",
         "src/minisweagent/environments/__init__.py",
+        "tests/models/test_litellm_model.py",
         "tests/models/test_format_error_response_persistence.py"
       ],
-      "fileCount": 39,
+      "fileCount": 41,
       "filesScanned": 221
     },
     {

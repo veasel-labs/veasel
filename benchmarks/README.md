@@ -206,6 +206,24 @@ rankings are recorded in [`Aider`](reports/repo-map-recall-aider-2026-10-23-alia
 [`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23-alias-priority.json),
 and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23-alias-priority.json).
 
+To cover monorepos larger than the previous lexical walk cutoff, RepoMap now
+scores up to 20,000 metadata-only paths, ranks the best 2,000, and retains the
+existing source-read ceilings of 800 files and 8 MiB. Candidate sorting uses
+V's `sort_with_compare` rather than quadratic insertion sort. On the pinned
+OpenCode checkout (8,502 paths scanned), the three labeled cases moved from
+0/3 to 3/3 recall@10; recall@3 is 1/3. The full local case run took about 8.8 s
+versus 8.0 s for the previous 2,000-path cutoff. Pi remained 2/3 at recall@3
+and 3/3 at recall@10 (1,953 paths; about 8.2 s versus 8.6 s). These timings
+include server and harness startup and are not per-query latency. Results and
+case definitions are in [`OpenCode cases`](repo-map-recall-opencode-cases.json),
+[`OpenCode report`](reports/repo-map-recall-opencode-2026-10-23.json),
+[`Pi cases`](repo-map-recall-pi-cases.json), and
+[`Pi report`](reports/repo-map-recall-pi-2026-10-23.json). Together with the
+unchanged Aider, mini-swe-agent, and SWE-agent runs above, the current candidate
+hits 19/21 cases at recall@3 and 21/21 at recall@10 across these five small
+curated samples. This measures file retrieval only, not coding-task success or
+general semantic-search quality.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

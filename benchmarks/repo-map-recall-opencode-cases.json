@@ -1,0 +1,5 @@
+[
+  {"query": "spawn a subagent tool for a task", "expected": "packages/core/src/tool/plugin/subagent.ts"},
+  {"query": "subagent job lifecycle resume", "expected": "packages/core/src/session/subagent-job.ts"},
+  {"query": "subagent completion delivery", "expected": "packages/core/src/session/subagent-completion.ts"}
+]

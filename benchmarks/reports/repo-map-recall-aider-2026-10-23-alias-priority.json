@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-23T02:37:16.228Z",
+  "generatedAt": "2026-10-23T03:07:29.972Z",
   "veasel": {
     "version": "Veasel Code 0.1.0-dev",
-    "sourceRevision": "434d2e5fc68ac604a22f131616138cb644d47d94",
-    "sourceDiffSha256": "a8ab13a9f117f4e1b1f411ae66b2499ad44e03a9bb769f44c5bb1d493d512d03",
+    "sourceRevision": "671132302c7176371f7f11b4d0fbcd2e3c48b78a",
+    "sourceDiffSha256": "07fde5c5d0bf1c5c7e416cdf607b763167fb87bda41775e91b28f11e486a2ca2",
     "untrackedSourceFiles": [],
-    "binarySha256": "fea0fae036b0aefdb5d00c99792720cce3bb675ceeac76ac3cc2da86e1566830",
-    "compilerVersion": null,
-    "buildFlags": null
+    "binarySha256": "d0d39bbd25060826d92a879e3a60565f266b58452a4bbc13f4b9c8772478608e",
+    "compilerVersion": "V 0.5.2 ffc38ad",
+    "buildFlags": "default"
   },
   "platform": {
     "os": "linux",
@@ -73,11 +73,11 @@
         "aider/coders/search_replace.py",
         "aider/args.py",
         "aider/commands.py",
+        "aider/website/docs/config/options.md",
         "aider/gui.py",
         "aider/linter.py",
         "aider/utils.py",
         "tests/basic/test_main.py",
-        "aider/website/docs/config/options.md",
         "aider/args_formatter.py",
         "aider/models.py",
         "aider/onboarding.py",
@@ -138,11 +138,11 @@
         "aider/coders/base_coder.py",
         "aider/gui.py",
         "aider/repo.py",
-        "aider/models.py",
-        "aider/main.py",
         "aider/website/assets/watch.jpg",
         "aider/website/assets/watch.mp4",
         "aider/website/docs/usage/watch.md",
+        "aider/models.py",
+        "aider/main.py",
         "aider/io.py",
         "aider/coders/search_replace.py",
         "aider/copypaste.py",
@@ -153,9 +153,10 @@
         "aider/onboarding.py",
         "benchmark/over_time.py",
         "aider/help.py",
+        "tests/basic/test_watch.py",
         "tests/basic/test_wholefile.py"
       ],
-      "fileCount": 21,
+      "fileCount": 22,
       "filesScanned": 685
     },
     {
@@ -175,9 +176,9 @@
         "aider/models.py",
         "tests/basic/test_commands.py",
         "aider/utils.py",
+        "aider/website/docs/git.md",
         "tests/basic/test_main.py",
         "aider/coders/search_replace.py",
-        "aider/website/docs/git.md",
         "scripts/blame.py",
         "aider/main.py",
         "aider/repomap.py",
@@ -215,12 +216,12 @@
         "aider/openrouter.py",
         "tests/basic/test_models.py",
         "tests/basic/test_onboarding.py",
+        "tests/basic/test_history.py",
         "aider/repo.py",
         "aider/repomap.py",
         "aider/analytics.py",
         "aider/watch.py",
-        "aider/help.py",
-        "aider/coders/single_wholefile_func_coder.py"
+        "aider/help.py"
       ],
       "fileCount": 23,
       "filesScanned": 685

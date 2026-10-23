@@ -10,7 +10,11 @@ const repository_map_default_budget_bytes = 12_288
 const repository_map_min_budget_bytes = 1_024
 const repository_map_max_budget_bytes = 65_536
 const repository_map_focus_budget_bytes = 2_048
+// Cap path scoring, symbol extraction, and graph ranking independently from a
+// larger metadata-only walk so relevant files beyond the first directory slice
+// remain eligible without multiplying source reads or pairwise ranking work.
 const repository_map_max_files = 2_000
+const repository_map_max_walk_files = 20_000
 const repository_map_max_symbol_files = 800
 const repository_map_max_file_read_bytes = 262_144
 const repository_map_max_total_read_bytes = 8_388_608
@@ -144,14 +148,13 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	hints := extract_repository_map_hints(hint_text)
 	mut walker := WorkspaceWalker{
 		root:      canonical_root
-		max_files: repository_map_max_files + 1
+		max_files: repository_map_max_walk_files + 1
 		files:     []string{cap: 256}
 	}
 	os.walk_dir(canonical_root, walker.visit)!
-	walker.files.sort()
-	truncated_walk := walker.stopped || walker.files.len > repository_map_max_files
-	if walker.files.len > repository_map_max_files {
-		walker.files = walker.files[..repository_map_max_files]
+	truncated_walk := walker.stopped || walker.files.len > repository_map_max_walk_files
+	if walker.files.len > repository_map_max_walk_files {
+		walker.files = walker.files[..repository_map_max_walk_files]
 	}
 	mut contents := map[string]string{}
 	mut entries := []RepositoryMapEntry{cap: walker.files.len}
@@ -162,9 +165,17 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 			score: score_repository_map_path(normalized, hints)
 		}
 	}
-	// Spend bounded source reads on the paths most relevant to this request.
-	// The walker remains deterministic; ties keep lexical path order.
+	// The score/path comparator establishes the deterministic ranking order, so
+	// sorting the walk's paths separately would repeat an O(n log n) pass.
+	// Select the strongest paths from the metadata-only candidate walk before
+	// expensive source reads and cross-file ranking. This keeps those costs
+	// bounded while avoiding a lexical/OS traversal cutoff that hides later
+	// relevant directories in large workspaces.
 	sort_repository_map_entries(mut entries)
+	candidate_truncated := entries.len > repository_map_max_files
+	if candidate_truncated {
+		entries = entries[..repository_map_max_files]
+	}
 	mut symbols_total := 0
 	mut bytes_read := 0
 	mut symbol_files := 0
@@ -248,7 +259,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 		file_count:            selected_paths.len
 		symbol_count:          selected_symbols
 		files_scanned:         walker.files.len
-		truncated:             truncated_walk || map_truncated
+		truncated:             truncated_walk || candidate_truncated || map_truncated
 		untrusted:             true
 	}
 	return RepositoryMapResult{
@@ -443,7 +454,9 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			for part in repository_map_ident_parts(name) {
 				match_weight := repository_map_lexical_match_weight(part, ident)
 				if match_weight > 0.0 {
-					score += match_weight
+					// An exact word inside a compound filename (subagent-job.ts)
+					// is stronger path evidence than general source-token overlap.
+					score += if part == ident.to_lower() { 120.0 } else { match_weight }
 					matched = true
 					break
 				}
@@ -1033,21 +1046,26 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 	}
 }
 
-fn sort_repository_map_entries(mut entries []RepositoryMapEntry) {
-	// Insertion sort keeps higher scores first and breaks ties by path.
-	for i in 1 .. entries.len {
-		mut j := i
-		for j > 0 {
-			left := entries[j - 1]
-			right := entries[j]
-			if left.score > right.score || (left.score == right.score && left.path <= right.path) {
-				break
-			}
-			entries[j - 1] = right
-			entries[j] = left
-			j--
-		}
+fn compare_repository_map_entries(a &RepositoryMapEntry, b &RepositoryMapEntry) int {
+	if a.score > b.score {
+		return -1
 	}
+	if a.score < b.score {
+		return 1
+	}
+	if a.path < b.path {
+		return -1
+	}
+	if a.path > b.path {
+		return 1
+	}
+	return 0
+}
+
+fn sort_repository_map_entries(mut entries []RepositoryMapEntry) {
+	// The metadata-only path walk can produce thousands of candidates. Use V's
+	// O(n log n) sort rather than insertion sort, then keep lexical ties stable.
+	entries.sort_with_compare(compare_repository_map_entries)
 }
 
 fn repository_map_ident_is_interesting(name string) bool {

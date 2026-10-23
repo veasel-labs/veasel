@@ -1,0 +1,5 @@
+[
+  {"query": "agent loop tool call execution", "expected": "packages/agent/src/agent-loop.ts"},
+  {"query": "configure a Pi agent and initialize its state", "expected": "packages/agent/src/agent.ts"},
+  {"query": "define agent context and tool execution types", "expected": "packages/agent/src/types.ts"}
+]

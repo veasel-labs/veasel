@@ -283,7 +283,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         close(input_read)
         close(output_write)
 
-        wait_for_markers((b"SESSIONS", b"q quit", b"VEASEL"), 20, "its home session screen")
+        wait_for_markers((b"connected", b"SESSIONS", b"VEASEL"), 30, "its connected session screen")
         send_keys(b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
         for _ in range(5):

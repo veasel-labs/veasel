@@ -638,8 +638,8 @@ honoring its license and attribution.
 
 ## Risks and decisions
 
-- The official V mascot artwork is CC BY-NC 4.0. The terminal client uses an
-  independently drawn pixel-weasel portrait under MIT; do not add upstream
+- The official V mascot artwork is CC BY-NC 4.0. The terminal client encodes
+  Veasel Labs' original website pixel companion under MIT; do not add upstream
   mascot artwork unless rights for the intended use are established.
 - Session creation records an existing, canonical workspace root. The initial
   list/read/search tools enforce root-bound access on every operation, reject

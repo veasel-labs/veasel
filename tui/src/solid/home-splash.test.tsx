@@ -6,8 +6,9 @@ import { compactDirectory, HomeSplash } from "./component/home-splash"
 import {
   VEASEL_PORTRAIT_ROWS,
   VEASEL_PORTRAIT_WIDTH,
-  portraitRowPlain,
+  portraitRowCells,
 } from "../veasel-portrait"
+import { themes } from "../themes"
 
 const setups: Array<Awaited<ReturnType<typeof testRender>>> = []
 
@@ -27,12 +28,17 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(compactDirectory("/tmp/long-project-name", 6)).toBe("…-name")
   })
 
-  test("portrait rows render as double-width blocks", () => {
-    const plain = portraitRowPlain(VEASEL_PORTRAIT_ROWS[0])
-    expect(plain.includes("██")).toBe(true)
-    expect(VEASEL_PORTRAIT_ROWS.length).toBe(17)
+  test("portrait row pairs render square pixel art in half-block cells", () => {
+    const cells = portraitRowCells(
+      themes.mint,
+      VEASEL_PORTRAIT_ROWS[1] ?? "",
+      VEASEL_PORTRAIT_ROWS[2] ?? "",
+    )
+    expect(cells.some((cell) => cell.glyph !== " ")).toBe(true)
+    expect(VEASEL_PORTRAIT_ROWS.length).toBe(24)
     expect(VEASEL_PORTRAIT_ROWS.every((row) => row.length <= VEASEL_PORTRAIT_WIDTH)).toBe(true)
-    expect(portraitRowPlain(VEASEL_PORTRAIT_ROWS[0]).length).toBe(VEASEL_PORTRAIT_WIDTH * 2)
+    expect(cells).toHaveLength(VEASEL_PORTRAIT_WIDTH)
+    expect(cells.some((cell) => cell.glyph === "▀" && cell.background !== themes.mint.panelBg)).toBe(true)
   })
 
   test("HomeSplash shows brand and mascot chrome at 80×30", async () => {
@@ -46,7 +52,7 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(frame).toContain("Ctrl+P")
     expect(frame).toContain("Ctrl+R reviews")
     // Block pixels from the portrait should appear.
-    expect(frame).toContain("██")
+    expect(frame).toContain("▀")
   })
 
   test("empty App session shows the splash instead of transcript hint", async () => {
@@ -59,7 +65,7 @@ describe("Veasel home splash + pixel portrait", () => {
     const frame = setup.captureCharFrame()
     expect(frame).toContain("VEASEL CODE")
     expect(frame).toContain("Ctrl+P")
-    expect(frame).toContain("██")
+    expect(frame).toContain("▀")
     expect(frame).not.toContain("Start with a question or describe a coding task.")
   })
 })

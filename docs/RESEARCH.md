@@ -203,5 +203,6 @@ Toolkit, agentic-harness and agentic-workstation are MIT; OpenCode and Pi are
 MIT; Codex is Apache-2.0; Awesome V is CC0; the official V mascot artwork is
 CC BY-NC 4.0; Claude Code source is not available under a public source
 license. This is not legal advice. Preserve upstream notices for any adapted
-code or art. The current terminal sprite is independently drawn and covered by
-Veasel Code's MIT license; no upstream mascot artwork is included.
+code or art. The terminal sprite is a palette encoding of Veasel Labs' original
+MIT pixel companion from the website repository; no upstream V mascot artwork
+is included.

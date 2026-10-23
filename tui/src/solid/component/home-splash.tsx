@@ -60,6 +60,10 @@ export function HomeSplash(props: HomeSplashProps) {
   const compact = () => props.compact ?? true
   const connectLine = `/connect · ${paletteShortcut.label} commands · /theme`
   const reviewLine = `${activityToggleShortcut.label} activity · ${reviewShortcut.label} reviews`
+  const portraitPairs = Array.from(
+    { length: Math.ceil(VEASEL_PORTRAIT_ROWS.length / 2) },
+    (_, index) => index,
+  )
 
   return (
     <box
@@ -82,11 +86,17 @@ export function HomeSplash(props: HomeSplashProps) {
       </box>
 
       <box flexDirection="column" alignItems="center" flexShrink={0}>
-        <For each={[...VEASEL_PORTRAIT_ROWS]}>
-          {(row) => (
+        <For each={portraitPairs}>
+          {(pair) => (
             <text>
-              <For each={portraitRowCells(theme(), row)}>
-                {(cell) => <span style={{ fg: cell.color }}>{cell.glyph}</span>}
+              <For
+                each={portraitRowCells(
+                  theme(),
+                  VEASEL_PORTRAIT_ROWS[pair * 2] ?? "",
+                  VEASEL_PORTRAIT_ROWS[pair * 2 + 1] ?? "",
+                )}
+              >
+                {(cell) => <span style={{ fg: cell.color, bg: cell.background }}>{cell.glyph}</span>}
               </For>
             </text>
           )}

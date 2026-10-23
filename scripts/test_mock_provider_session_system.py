@@ -22,7 +22,7 @@ class SessionSystemGuardTests(unittest.TestCase):
 
     def test_exact_session_system_matches_api_prompt(self):
         self.assertTrue(self.mock.is_session_system(self.mock.SESSION_SYSTEM))
-        self.assertIn("Bubblewrap sandbox", self.mock.SESSION_SYSTEM)
+        self.assertIn("Bubblewrap on Linux", self.mock.SESSION_SYSTEM)
         self.assertIn("skill bodies, skill resources, repository map text", self.mock.SESSION_SYSTEM)
         self.assertNotIn("are not sandboxed", self.mock.SESSION_SYSTEM)
         for variant in self.mock.SESSION_SYSTEM_VARIANTS:

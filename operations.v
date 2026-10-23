@@ -20,6 +20,26 @@ struct ActiveTurnOperation {
 }
 
 fn (app &App) begin_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn) {
+	mut background := vcontext.background()
+	turn_ctx, cancel := vcontext.with_timeout(mut background, max_agent_turn_duration)
+	return app.register_turn_operation(session_id, requested_id, turn_ctx, cancel)
+}
+
+fn (app &App) begin_queued_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn) {
+	mut background := vcontext.background()
+	turn_ctx, cancel := vcontext.with_cancel(mut background)
+	return app.register_turn_operation(session_id, requested_id, turn_ctx, cancel)
+}
+
+fn (app &App) begin_requested_session_turn(session_id string, requested_id string, respond_async bool) !(string, vcontext.Context, vcontext.CancelFn) {
+	if respond_async {
+		return app.begin_queued_turn_operation(session_id, requested_id)
+	}
+	return app.begin_turn_operation(session_id, requested_id)
+}
+
+fn (app &App) register_turn_operation(session_id string, requested_id string, turn_ctx vcontext.Context,
+	cancel vcontext.CancelFn) !(string, vcontext.Context, vcontext.CancelFn) {
 	operation_id := if requested_id.trim_space().len == 0 {
 		uuid.new_v4().str()
 	} else {
@@ -29,8 +49,6 @@ fn (app &App) begin_turn_operation(session_id string, requested_id string) !(str
 		}
 		parsed.str()
 	}
-	mut background := vcontext.background()
-	turn_ctx, cancel := vcontext.with_timeout(mut background, max_agent_turn_duration)
 	mut registry := app.operation_registry
 	mut registry_lock := registry.mutex
 	registry_lock.lock()
@@ -137,6 +155,41 @@ fn (app &App) acquire_session_turn(mut turn_ctx vcontext.Context, session_id str
 			}
 			return
 		}
+	}
+}
+
+// Durable jobs may wake from the session semaphore in any order. Recheck the
+// persisted queue while holding it so only the oldest queued operation can
+// claim the session; later workers yield and retry after a short pause.
+fn (app &App) acquire_queued_session_turn(mut turn_ctx vcontext.Context, session_id string,
+	operation_id string) ! {
+	mut slot := app.session_turn_lock(session_id)
+	for {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		if !slot.timed_wait(10 * time.millisecond) {
+			continue
+		}
+		queued := app.store.list_queued_session_operations() or {
+			slot.post()
+			return error('unable to inspect queued session operations')
+		}
+		queued_for_session := queued.filter(it.session_id == session_id)
+		if queued_for_session.len == 0 {
+			slot.post()
+			return error('queued_operation_no_longer_pending')
+		}
+		first_for_session := queued_for_session[0]
+		if first_for_session.id == operation_id {
+			if context_error := turn_context_error(mut turn_ctx) {
+				slot.post()
+				return error(context_error)
+			}
+			return
+		}
+		slot.post()
+		time.sleep(10 * time.millisecond)
 	}
 }
 

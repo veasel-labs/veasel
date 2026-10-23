@@ -1541,7 +1541,9 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	if !validate_operation_id(requested_id) {
 		return json_request_error(mut ctx, 'X-Veasel-Operation-ID must be a non-nil UUID')
 	}
-	operation_id, mut turn_ctx, cancel := app.begin_turn_operation(id, requested_id) or {
+	respond_async := request_prefers_async(mut ctx)
+	operation_id, mut turn_ctx, cancel := app.begin_requested_session_turn(id, requested_id,
+		respond_async) or {
 		if err.msg() == 'operations_busy' {
 			ctx.res.set_status(.service_unavailable)
 			ctx.res.header.add_custom('Retry-After', '1') or {}
@@ -1554,7 +1556,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'Operation identifier is already active or invalid'
 		})
 	}
-	if request_prefers_async(mut ctx) {
+	if respond_async {
 		mut store := app.store
 		request_json := json2.encode(input)
 		store.enqueue_session_operation(id, operation_id, request_json) or {
@@ -1572,8 +1574,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			}
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
-		turn_done := turn_ctx.done()
-		app.schedule_durable_session_operation(operation_id, turn_done, cancel, id, session, input)
+		app.schedule_durable_session_operation(operation_id, mut turn_ctx, cancel, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
 		return ctx.json(SessionTurnAccepted{
@@ -1704,16 +1705,21 @@ fn session_turn_failure(message string) (string, string) {
 
 fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, session Session,
 	input ChatMessageInput, operation_id string) !ChatExchange {
-	user_message := ChatMessage{
-		role:    'user'
-		content: input.content
-	}
 	mut turn_lock := app.session_turn_lock(id)
 	app.acquire_session_turn(mut turn_ctx, id) or {
 		return err
 	}
 	defer {
 		turn_lock.post()
+	}
+	return app.run_session_message_locked(mut turn_ctx, id, session, input, operation_id)
+}
+
+fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id string, session Session,
+	input ChatMessageInput, operation_id string) !ChatExchange {
+	user_message := ChatMessage{
+		role:    'user'
+		content: input.content
 	}
 	policy := execution_policy_turn_from_input(input.execution_policy, input.autonomous,
 		input.non_interactive)

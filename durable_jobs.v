@@ -103,7 +103,7 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
-		operation_id, mut turn_ctx, cancel := app.begin_turn_operation(operation.session_id,
+		operation_id, mut turn_ctx, cancel := app.begin_queued_turn_operation(operation.session_id,
 			operation.id) or {
 			eprintln('veasel: unable to resume queued operation ${operation.id} (${err.msg()})')
 			continue
@@ -113,33 +113,25 @@ fn (app &App) resume_durable_queued_operations() {
 			cancel()
 			continue
 		}
-		turn_done := turn_ctx.done()
-		app.schedule_durable_session_operation(operation.id, turn_done, cancel, operation.session_id,
+		app.schedule_durable_session_operation(operation.id, mut turn_ctx, cancel, operation.session_id,
 			session, input)
 	}
 }
 
-fn (app &App) schedule_durable_session_operation(operation_id string, turn_done chan int,
+fn (app &App) schedule_durable_session_operation(operation_id string, mut turn_ctx vcontext.Context,
 	cancel vcontext.CancelFn, id string, session Session, input ChatMessageInput) {
-	spawn fn (app &App, operation_id string, turn_done chan int, cancel vcontext.CancelFn, id string,
+	spawn fn (app &App, operation_id string, mut turn_ctx vcontext.Context, cancel vcontext.CancelFn, id string,
 		session Session, input ChatMessageInput) {
-		mut background := vcontext.background()
-		mut turn_ctx, cancel_turn := vcontext.with_timeout(mut background, max_agent_turn_duration)
-		worker_done := chan int{cap: 1}
-		spawn fn (turn_done chan int, worker_done chan int, cancel_turn vcontext.CancelFn) {
-			select {
-				_ := <-turn_done {
-					cancel_turn()
-				}
-				_ := <-worker_done {
-				}
-			}
-		}(turn_done, worker_done, cancel_turn)
 		defer {
-			worker_done <- 0
-			cancel_turn()
 			app.finish_turn_operation(operation_id)
 			cancel()
+		}
+		// Keep the durable row queued while it waits for this session's active turn.
+		// A restart can then safely resume it because no provider or tool effect began.
+		mut turn_lock := app.session_turn_lock(id)
+		app.acquire_queued_session_turn(mut turn_ctx, id, operation_id) or { return }
+		defer {
+			turn_lock.post()
 		}
 		mut store := app.store
 		_ = store.claim_session_operation(id, operation_id) or {
@@ -152,9 +144,14 @@ fn (app &App) schedule_durable_session_operation(operation_id string, turn_done 
 				input.content)
 			return
 		}
-		_ = app.run_session_message(mut turn_ctx, id, session, input, operation_id) or {
+		mut bounded_turn_ctx, cancel_deadline := vcontext.with_timeout(mut turn_ctx,
+			max_agent_turn_duration)
+		defer {
+			cancel_deadline()
+		}
+		_ = app.run_session_message_locked(mut bounded_turn_ctx, id, session, input, operation_id) or {
 			app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
 			return
 		}
-	}(app, operation_id, turn_done, cancel, id, session, input)
+	}(app, operation_id, mut turn_ctx, cancel, id, session, input)
 }

@@ -664,6 +664,39 @@ fn open_store(path string) !&Store {
 			return error('unable to commit global operation history migration')
 		}
 	}
+	if current < 18 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin queued operation ordering migration')
+		}
+		db.exec('ALTER TABLE session_operations ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add queued operation ordering')
+		}
+		// Backfill existing rows once; future queue ordering no longer depends
+		// on second-resolution timestamps, UUIDs, or mutable SQLite rowids.
+		db.exec('UPDATE session_operations SET queue_order = rowid') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to backfill queued operation ordering')
+		}
+		db.exec('CREATE INDEX session_operations_queue_order ON session_operations (status, queue_order)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index queued operation ordering')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (18)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record queued operation ordering migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit queued operation ordering migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued jobs never claimed a worker; their request_json is kept
@@ -1528,7 +1561,7 @@ fn (mut store Store) insert_session_operation(session_id string, operation_id st
 			return error('queued_operations_full')
 		}
 	}
-	_ = store.db.exec_param_many('INSERT INTO session_operations (id, session_id, status, request_json) VALUES (?, ?, ?, ?)', [
+	_ = store.db.exec_param_many('INSERT INTO session_operations (id, session_id, status, request_json, queue_order) VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(queue_order), 0) + 1 FROM session_operations))', [
 		operation_id,
 		session_id,
 		status,
@@ -1688,7 +1721,7 @@ fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY created_at ASC, id ASC")!
+	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY queue_order ASC, created_at ASC, id ASC")!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
 		operations << store.session_operation_from_row(row)

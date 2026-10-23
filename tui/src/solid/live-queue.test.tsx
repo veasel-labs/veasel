@@ -7,6 +7,7 @@ import { VeaselApiClient } from "../api-client"
 test("queues a follow-up and cancels it without affecting the active turn", async () => {
   const posts: string[] = []
   const cancellations: string[] = []
+  const cancellationStatuses = new Map<string, string>()
   const controller = new AbortController()
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -24,7 +25,8 @@ test("queues a follow-up and cancels it without affecting the active turn", asyn
         const operationId = path.split("/").at(-2)
         return Response.json({
           operation_id: operationId,
-          status: operationId === posts.at(-1) ? "cancelled" : "cancelling",
+          status: cancellationStatuses.get(operationId ?? "")
+            ?? (operationId === posts.at(-1) ? "cancelled" : "cancelling"),
         }, { status: 202 })
       }
       if (path.endsWith("/messages")) {
@@ -64,15 +66,29 @@ test("queues a follow-up and cancels it without affecting the active turn", asyn
     const [firstId, queuedId] = posts
     expect(queuedId).not.toBe(firstId)
 
+    cancellationStatuses.set(queuedId, "completed")
     setup.mockInput.pressKey("x", { ctrl: true, shift: true })
     await until(() => cancellations.length === 1)
     await until(() => !setup.captureCharFrame().includes("Follow-up turn"))
     expect(cancellations).toEqual([`/v1/sessions/s1/operations/${queuedId}/cancel`])
 
-    setup.mockInput.pressKey("x", { ctrl: true })
+    setup.mockInput.typeText("Next follow-up")
+    setup.mockInput.pressEnter()
+    await until(() => posts.length === 3)
+    const nextQueuedId = posts[2]
+    cancellationStatuses.set(nextQueuedId, "cancelled")
+    setup.mockInput.pressKey("x", { ctrl: true, shift: true })
     await until(() => cancellations.length === 2)
+    await until(() => !setup.captureCharFrame().includes("Next follow-up"))
+    setup.mockInput.pressKey("x", { ctrl: true, shift: true })
+    await setup.renderOnce()
+    expect(cancellations).toHaveLength(2)
+
+    setup.mockInput.pressKey("x", { ctrl: true })
+    await until(() => cancellations.length === 3)
     expect(cancellations).toEqual([
       `/v1/sessions/s1/operations/${queuedId}/cancel`,
+      `/v1/sessions/s1/operations/${nextQueuedId}/cancel`,
       `/v1/sessions/s1/operations/${firstId}/cancel`,
     ])
   } finally {

@@ -1256,6 +1256,104 @@ fn test_session_operation_survives_restart_and_uncertain_work_is_not_replayed() 
 	assert second_events.filter(it.type == 'session.turn_completed').len == 1
 }
 
+fn test_queued_session_operation_waits_for_active_session_turn_before_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-queued-lock-plugins-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-test-queued-lock-workspace-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Queued turn lock'
+		directory: workspace
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"wait for the active turn"}') or {
+		panic(err)
+	}
+	mut session_lock := app.session_turn_lock(session.id)
+	session_lock.wait()
+	actual_id, mut turn_ctx, cancel := app.begin_queued_turn_operation(session.id, operation_id) or {
+		panic(err)
+	}
+	assert actual_id == operation_id
+	app.schedule_durable_session_operation(operation_id, mut turn_ctx, cancel, session.id, session,
+		ChatMessageInput{
+			content: 'wait for the active turn'
+		})
+	time.sleep(50 * time.millisecond)
+	waiting := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert waiting.status == 'queued'
+	session_lock.post()
+	mut started := false
+	for _ in 0 .. 200 {
+		events := store.events_after(0) or { panic(err) }
+		if events.any(it.type == 'session.turn_started' && it.data.operation_id == operation_id) {
+			started = true
+			break
+		}
+		time.sleep(10 * time.millisecond)
+	}
+	assert started
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status in ['running', 'failed']
+}
+
+fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_reversed() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-queued-order-plugins-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-test-queued-order-workspace-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Queued turn FIFO'
+		directory: workspace
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	first_id := uuid.new_v4().str()
+	second_id := uuid.new_v4().str()
+	_ = store.enqueue_session_operation(session.id, first_id, '{"content":"first"}') or { panic(err) }
+	_ = store.enqueue_session_operation(session.id, second_id, '{"content":"second"}') or { panic(err) }
+	mut session_lock := app.session_turn_lock(session.id)
+	session_lock.wait()
+	second_operation, mut second_ctx, second_cancel := app.begin_queued_turn_operation(session.id,
+		second_id) or { panic(err) }
+	app.schedule_durable_session_operation(second_operation, mut second_ctx, second_cancel, session.id,
+		session, ChatMessageInput{
+			content: 'second'
+		})
+	time.sleep(30 * time.millisecond)
+	first_operation, mut first_ctx, first_cancel := app.begin_queued_turn_operation(session.id, first_id) or {
+		panic(err)
+	}
+	app.schedule_durable_session_operation(first_operation, mut first_ctx, first_cancel, session.id, session,
+		ChatMessageInput{
+			content: 'first'
+		})
+	time.sleep(30 * time.millisecond)
+	session_lock.post()
+	mut started_ids := []string{}
+	for _ in 0 .. 300 {
+		events := store.events_after(0) or { panic(err) }
+		started_ids = events.filter(it.type == 'session.turn_started').map(it.data.operation_id)
+		if started_ids.len >= 2 {
+			break
+		}
+		time.sleep(10 * time.millisecond)
+	}
+	assert started_ids == [first_id, second_id]
+}
+
 fn test_queued_session_operation_survives_restart_and_claims_to_completion() {
 	database := os.join_path(os.temp_dir(), 'veasel-queued-recovery-${uuid.new_v4().str()}.sqlite')
 	defer {

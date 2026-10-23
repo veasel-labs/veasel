@@ -158,6 +158,12 @@ import {
   sanitizeWorktreeName,
 } from "./workspace-git"
 
+type QueuedFollowUp = {
+  id: string
+  sessionId: string
+  message: ToolAwareMessage
+}
+
 export type LiveAppProps = {
   api: VeaselApiClient
   directory?: string
@@ -266,11 +272,7 @@ function LiveAppShell(props: LiveAppProps) {
     loadHomeSidebarWidth({}, terminalColumns()),
   )
   const [cancelling, setCancelling] = createSignal(false)
-  const [queuedFollowUps, setQueuedFollowUps] = createSignal<{
-    id: string
-    sessionId: string
-    message: ToolAwareMessage
-  }[]>([])
+  const [queuedFollowUps, setQueuedFollowUps] = createSignal<QueuedFollowUp[]>([])
   let activeTurnSessionId: string | undefined
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   const [executionPolicy, setExecutionPolicy] = createSignal<ExecutionPolicyId>("ask")
@@ -1278,6 +1280,14 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const forgetQueuedFollowUp = (queued: QueuedFollowUp, removeMessage: boolean) => {
+    queuedOperationIds.delete(queued.id)
+    setQueuedFollowUps((current) => current.filter((item) => item.id !== queued.id))
+    if (removeMessage) {
+      setMessages((current) => current.filter((item) => item !== queued.message))
+    }
+  }
+
   const cancelQueuedFollowUp = async () => {
     const queued = queuedFollowUps().at(-1)
     if (!queued) {
@@ -1288,9 +1298,7 @@ function LiveAppShell(props: LiveAppProps) {
       const result = await props.api.cancelOperation(queued.sessionId, queued.id)
       if (result.status === "cancelled") {
         const remaining = queuedFollowUps().filter((item) => item.id !== queued.id).length
-        queuedOperationIds.delete(queued.id)
-        setQueuedFollowUps((current) => current.filter((item) => item.id !== queued.id))
-        setMessages((current) => current.filter((item) => item !== queued.message))
+        forgetQueuedFollowUp(queued, true)
         setStatus(remaining > 0
           ? formatBusyStatus(`${remaining} follow-up${remaining === 1 ? "" : "s"} queued`)
           : activeTurnId()
@@ -1298,8 +1306,23 @@ function LiveAppShell(props: LiveAppProps) {
             : "● connected  ·  listening for activity")
         toast.success("Removed the most recent follow-up", "Turn queue")
       } else if (result.status === "cancelling") {
+        forgetQueuedFollowUp(queued, false)
+        setActiveTurnId(queued.id)
+        activeTurnSessionId = queued.sessionId
+        setCancelling(true)
+        turnController = new AbortController()
+        setStreamingText("")
+        setStreaming(true)
+        setSending(true)
+        setStatus(formatBusyStatus("Cancellation requested; waiting for the server…"))
         toast.info("Follow-up started; stopping that turn", "Turn queue")
+      } else if (["completed", "failed", "uncertain"].includes(result.status ?? "")) {
+        forgetQueuedFollowUp(queued, true)
+        void finishTurn(queued.sessionId, result)
+        void refreshSessions()
+        toast.info("Follow-up already finished; conversation refreshed", "Turn queue")
       } else {
+        forgetQueuedFollowUp(queued, true)
         toast.info("Follow-up already finished", "Turn queue")
       }
     } catch (error) {
@@ -1538,6 +1561,8 @@ function LiveAppShell(props: LiveAppProps) {
         queuedOperationIds.delete(queuedId)
         setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
         setMessages((current) => current.filter((item) => item !== queuedMessage))
+        setRestoreToken({ id: crypto.randomUUID(), text: content })
+        setComposerFocused(true)
         noteError(
           "messages.queue",
           `follow-up could not be queued · ${error instanceof Error ? error.message : "request failed"}`,
@@ -2022,8 +2047,8 @@ function LiveAppShell(props: LiveAppProps) {
         },
         onTurnStarted: (sessionId, operationId) => {
           if (!queuedOperationIds.has(operationId)) return
-          queuedOperationIds.delete(operationId)
-          setQueuedFollowUps((current) => current.filter((item) => item.id !== operationId))
+          const queued = queuedFollowUps().find((item) => item.id === operationId)
+          if (queued) forgetQueuedFollowUp(queued, false)
           setActiveTurnId(operationId)
           activeTurnSessionId = sessionId
           setCancelling(false)
@@ -2039,9 +2064,7 @@ function LiveAppShell(props: LiveAppProps) {
           const queuedId = completion.operation_id
           const pending = queuedFollowUps().find((item) => item.id === queuedId)
           if (queuedId && pending && queuedOperationIds.has(queuedId)) {
-            queuedOperationIds.delete(queuedId)
-            setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
-            setMessages((current) => current.filter((item) => item !== pending.message))
+            forgetQueuedFollowUp(pending, true)
           }
           void finishTurn(sessionId, completion)
           void refreshSessions()

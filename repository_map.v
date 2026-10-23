@@ -439,6 +439,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// pluralization or a common code abbreviation (argument/args). Keep this
 	// signal weaker than exact mentions, so it helps without replacing them.
 	mut seen_lexical_hints := map[string]bool{}
+	mut exact_path_term_matches := 0
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
 			continue
@@ -456,7 +457,12 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 				if match_weight > 0.0 {
 					// An exact word inside a compound filename (subagent-job.ts)
 					// is stronger path evidence than general source-token overlap.
-					score += if part == ident.to_lower() { 120.0 } else { match_weight }
+					if part == ident.to_lower() {
+						score += 120.0
+						exact_path_term_matches++
+					} else {
+						score += match_weight
+					}
 					matched = true
 					break
 				}
@@ -465,6 +471,13 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 				break
 			}
 		}
+	}
+	// A filename that names multiple distinct concepts from the query is a
+	// stronger destination than a file matching one common word (e.g. tool.ts
+	// versus tool/plugin/subagent.ts). Keep individual exact-word weight bounded
+	// so generic documentation filenames do not swamp high-confidence aliases.
+	if exact_path_term_matches > 1 {
+		score += f64(exact_path_term_matches - 1) * 180.0
 	}
 	// For behavior questions, prefer implementation files over tests that
 	// merely import the same symbols. A query explicitly about tests keeps them

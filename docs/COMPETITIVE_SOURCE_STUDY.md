@@ -11,6 +11,12 @@ not a claim that every source file was re-read at the refreshed pins: findings
 below retain their individual historical revisions and need re-audit before
 they drive compatibility claims.
 
+**Focused subagent recheck:** 2026-10-23 at OpenCode
+`ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e` (MIT), the refreshed revision in
+[`refs/REVISIONS.md`](../research/refs/REVISIONS.md). This recheck covers only
+the subagent files and lifecycle tests linked below; earlier runner findings
+remain pinned to their original revisions.
+
 ## Source revisions
 
 | Project | Inspected revision | License / scope |
@@ -55,6 +61,25 @@ remain sequential. This reduces a known latency source without copying
 OpenCode's TypeScript/Effect stack. Cross-platform cancellation and large
 workspace profiling remain separate evidence gaps. Preserve the existing
 approval boundary while improving event lifecycles.
+
+The recheck covered [`subagent-job.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/src/session/subagent-job.ts), [`subagent-completion.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/src/session/subagent-completion.ts), [`subagent.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/src/tool/plugin/subagent.ts), [`subagent-lifetime.test.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/test/subagent-lifetime.test.ts), and recovery cases in [`session-execution.test.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/test/session-execution.test.ts).
+
+OpenCode stores each child under its parent, checks agent permission when the
+tool runs, rejects primary agents as children, limits nesting depth, and only
+continues a child owned by the current parent. Background work uses durable
+jobs. Its completion observer outlives the launching plugin and delivers one
+terminal result per child generation. Tests cover completion and cancellation
+after plugin eviction, plus restart recovery without rerunning a result that
+was already persisted.
+
+**Veasel decision:** this is a product gap, not a request to copy OpenCode's
+framework. Veasel persists sessions and durable operations, but has no
+child-session ownership or subagent tool. Build on those existing contracts.
+Before a model can start child work, require persisted parent lineage, explicit
+agent authorization, bounded depth/concurrency/runtime/output, workspace
+isolation, cancellation, and one-time result delivery after restart. Keep the
+item open until focused lifecycle tests pass and a task benchmark shows gains
+beyond parallel read-only tools.
 
 Rechecked the session runner on 2026-10-15 at
 `37df62f4a1b6d89187a1169187a6cef10557c0ca` (`dev`), in

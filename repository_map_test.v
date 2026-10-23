@@ -81,6 +81,8 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	assert score_repository_map_path('aider/args.py', args_query) > score_repository_map_path('aider/io.py', args_query)
 	subagent_query := extract_repository_map_hints('resume the subagent job and notify the parent session')
 	assert score_repository_map_path('packages/core/src/session/subagent-job.ts', subagent_query) > score_repository_map_path('packages/core/src/session/operation.ts', subagent_query)
+	spawn_subagent_query := extract_repository_map_hints('spawn a subagent tool for a task')
+	assert score_repository_map_path('packages/core/src/tool/plugin/subagent.ts', spawn_subagent_query) > score_repository_map_path('packages/core/src/tool.ts', spawn_subagent_query)
 	paired := extract_repository_map_hints('Please fix src/agents/default.py')
 	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)
 	assert repository_map_lexically_related('policy', 'policies')

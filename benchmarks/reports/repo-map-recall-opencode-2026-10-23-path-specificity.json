@@ -1,0 +1,129 @@
+{
+  "generatedAt": "2026-10-23T03:36:05.701Z",
+  "veasel": {
+    "version": "Veasel Code 0.1.0-dev",
+    "sourceRevision": "a8ff1d68994470061202bbc0ac3ac6f92c0f590a",
+    "sourceDiffSha256": "e99265f3d768f6b06c1d5ade4ff59e128fe1d5c1a2f611f4562c1178427d7650",
+    "untrackedSourceFiles": [],
+    "binarySha256": "79373de4afac385c7fdf8098d8c1797c14a35256d68f33c66377e4dc4433cdde",
+    "compilerVersion": "V 0.5.2 ffc38ad",
+    "buildFlags": "default"
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "repository": {
+    "name": "anomalyco--opencode",
+    "revision": "ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e"
+  },
+  "summary": {
+    "cases": 3,
+    "recallAt3": 2,
+    "recallAt10": 3
+  },
+  "results": [
+    {
+      "query": "spawn a subagent tool for a task",
+      "expected": "packages/core/src/tool/plugin/subagent.ts",
+      "rank": 1,
+      "top3": [
+        "packages/core/src/tool/plugin/subagent.ts",
+        "packages/cli/src/acp/tool.ts",
+        "packages/tui/src/mini/tool.ts"
+      ],
+      "rankedPaths": [
+        "packages/core/src/tool/plugin/subagent.ts",
+        "packages/cli/src/acp/tool.ts",
+        "packages/tui/src/mini/tool.ts",
+        "packages/ai/src/tool.ts",
+        "packages/core/src/tool.ts",
+        "packages/plugin/src/promise/tool.ts",
+        "packages/codemode/src/tool.ts",
+        "packages/core/src/codemode/tool.ts",
+        "packages/core/test/lib/tool.ts",
+        "packages/plugin/src/effect/tool.ts",
+        "packages/schema/src/tool.ts",
+        "packages/tui/src/util/tool-display.ts",
+        "packages/core/src/tool/plugin/shell.ts",
+        "packages/ai/src/protocols/utils/tool-stream.ts",
+        "packages/codemode/src/tool-runtime.ts",
+        "packages/session-ui/src/message/current-tool-state.ts",
+        "packages/ai/src/tool-history.ts",
+        "packages/ai/src/tool-runtime.ts",
+        "packages/core/src/tool/plugin/edit.ts"
+      ],
+      "fileCount": 19,
+      "filesScanned": 8502
+    },
+    {
+      "query": "subagent job lifecycle resume",
+      "expected": "packages/core/src/session/subagent-job.ts",
+      "rank": 5,
+      "top3": [
+        "packages/core/src/job.ts",
+        "packages/desktop/src/main/extension/lifecycle.ts",
+        "packages/core/src/tool/plugin/subagent.ts"
+      ],
+      "rankedPaths": [
+        "packages/core/src/job.ts",
+        "packages/desktop/src/main/extension/lifecycle.ts",
+        "packages/core/src/tool/plugin/subagent.ts",
+        "packages/ai/src/protocols/utils/lifecycle.ts",
+        "packages/core/src/session/subagent-job.ts",
+        "packages/ai/src/protocols/utils/responses-hosted-tools.ts",
+        "packages/desktop/src/main/lifecycle/index.ts",
+        "packages/core/src/session/subagent-completion.ts",
+        "packages/desktop/src/main/lifecycle/environment.ts",
+        "packages/desktop/src/main/lifecycle/onboarding.ts",
+        "packages/core/src/location-lifecycle.ts",
+        "packages/ai/src/image.ts",
+        "packages/ai/src/protocols/cohere-chat.ts",
+        "packages/desktop/src/main/lifecycle/shutdown.ts",
+        "packages/desktop/src/main/lifecycle/desktop-initialization.ts",
+        "script/drive/subagent-eviction.ts",
+        "packages/tui/src/routes/session/composer/subagents-tab.tsx",
+        "packages/ai/src/protocols/utils/tool-stream.ts",
+        "packages/desktop/src/main/lifecycle/marks.ts",
+        "packages/ai/src/protocols/utils/partial-json.ts",
+        "packages/ai/src/protocols/utils/bedrock-media.ts",
+        "packages/ai/src/protocols/utils/open-responses-options.ts",
+        "packages/ai/src/protocols/utils/responses-compaction.ts",
+        "packages/ai/src/protocols/utils/gemini-generate-content.ts",
+        "packages/ai/src/protocols/utils/speech-stream.ts"
+      ],
+      "fileCount": 25,
+      "filesScanned": 8502
+    },
+    {
+      "query": "subagent completion delivery",
+      "expected": "packages/core/src/session/subagent-completion.ts",
+      "rank": 2,
+      "top3": [
+        "packages/core/src/tool/plugin/subagent.ts",
+        "packages/core/src/session/subagent-completion.ts",
+        "script/drive/subagent-eviction.ts"
+      ],
+      "rankedPaths": [
+        "packages/core/src/tool/plugin/subagent.ts",
+        "packages/core/src/session/subagent-completion.ts",
+        "script/drive/subagent-eviction.ts",
+        "packages/core/src/session/subagent-job.ts",
+        "packages/tui/src/routes/session/composer/subagents-tab.tsx",
+        "packages/tui/src/prompt/directory-completion.ts",
+        "packages/ai/script/recording-cost-report.ts",
+        "packages/ai/src/protocols/open-responses-continuation.ts",
+        "github/index.ts",
+        "packages/ai/script/setup-recording-env.ts",
+        "packages/ai/src/protocols/mistral-chat.ts",
+        "packages/ai/src/protocols/openai-chat.ts",
+        "packages/ai/src/protocols/venice-chat.ts",
+        "packages/ai/src/provider-error.ts",
+        "packages/ai/src/providers/alibaba.ts",
+        "packages/ai/src/providers/meta.ts"
+      ],
+      "fileCount": 16,
+      "filesScanned": 8502
+    }
+  ]
+}

@@ -566,7 +566,15 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   catalog endpoint placeholders such as `YOUR_ACCOUNT_ID` or `<ACCOUNT_ID>`.
   Interactive TUI matrix gaps remain under the separate ConPTY /
   measured-baseline item, including the Windows ConPTY CI result.
-- [ ] Multi-agent isolation and orchestration.
+- [ ] Multi-agent isolation and orchestration. OpenCode's focused 2026-10-23
+  recheck is in [`COMPETITIVE_SOURCE_STUDY.md`](COMPETITIVE_SOURCE_STUDY.md),
+  with exact source and test links.
+  Design this over Veasel's existing session/durable-operation store: persist
+  parent-child ownership; authorize the selected non-primary agent; bound
+  nesting, concurrent children, runtime, and result bytes; isolate each child
+  workspace; support cancellation; and deliver terminal outcomes once across
+  restart. Do not expose a model-callable subagent tool until those lifecycle
+  guarantees have focused tests and task-level benchmark evidence.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the
@@ -598,9 +606,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the strongest 2,000 candidates; source extraction remains capped at 800 files
   and 8 MiB, and ranking uses V's O(n log n) `sort_with_compare`. Curated
   retrieval cases for Aider, mini-swe-agent, SWE-agent, OpenCode, and Pi are
-  recorded in `benchmarks/README.md` (19/21 recall@3, 21/21 recall@10 on this
-  small sample); semantic retrieval and broader task-success evidence remain
-  open gaps.
+  recorded in `benchmarks/README.md` (20/22 recall@3, 22/22 recall@10 on this
+  small sample after bounded path-specificity ranking); semantic retrieval and
+  broader task-success evidence remain open gaps.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in

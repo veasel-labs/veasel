@@ -220,9 +220,25 @@ case definitions are in [`OpenCode cases`](repo-map-recall-opencode-cases.json),
 [`Pi cases`](repo-map-recall-pi-cases.json), and
 [`Pi report`](reports/repo-map-recall-pi-2026-10-23.json). Together with the
 unchanged Aider, mini-swe-agent, and SWE-agent runs above, the current candidate
-hits 19/21 cases at recall@3 and 21/21 at recall@10 across these five small
+hits 19/22 cases at recall@3 and 22/22 at recall@10 across these five small
 curated samples. This measures file retrieval only, not coding-task success or
 general semantic-search quality.
+
+A path-specificity follow-up adds a bounded bonus when a path matches multiple
+distinct exact query terms. This helps compound implementation names such as
+`tool/plugin/subagent.ts` outrank files matching only the generic `tool` term,
+while keeping single-word filename weight low enough that documentation paths
+do not outrank high-confidence `argument`/`args` aliases. On the same five
+checkouts and case sets, Aider stayed 6/6, mini-swe-agent 4/4, SWE-agent 6/6,
+Pi 2/3, and OpenCode improved from 1/3 to 2/3 at recall@3; all five stayed at
+22/22 recall@10. This raises the aggregate to 20/22 at recall@3 on the same
+small curated sample, not a general semantic retrieval or task-success claim.
+Reports include ranked paths, source fingerprints, and upstream revisions for
+[Aider](reports/repo-map-recall-aider-2026-10-23-path-specificity.json),
+[mini-SWE-agent](reports/repo-map-recall-mini-swe-agent-2026-10-23-path-specificity.json),
+[SWE-agent](reports/repo-map-recall-swe-agent-2026-10-23-path-specificity.json),
+[OpenCode](reports/repo-map-recall-opencode-2026-10-23-path-specificity.json),
+and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
 
 ### Recorded local TUI baseline
 

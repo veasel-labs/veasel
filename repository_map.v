@@ -155,30 +155,40 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	}
 	mut contents := map[string]string{}
 	mut entries := []RepositoryMapEntry{cap: walker.files.len}
-	mut symbols_total := 0
-	mut bytes_read := 0
-	mut symbol_files := 0
 	for relative_path in walker.files {
 		normalized := relative_path.replace('\\', '/')
-		mut entry := RepositoryMapEntry{
+		entries << RepositoryMapEntry{
 			path:  normalized
 			score: score_repository_map_path(normalized, hints)
 		}
+	}
+	// Spend bounded source reads on the paths most relevant to this request.
+	// The walker remains deterministic; ties keep lexical path order.
+	sort_repository_map_entries(mut entries)
+	mut symbols_total := 0
+	mut bytes_read := 0
+	mut symbol_files := 0
+	for i in 0 .. entries.len {
+		mut entry := entries[i]
+		normalized := entry.path
 		if symbol_files < repository_map_max_symbol_files
 			&& bytes_read < repository_map_max_total_read_bytes
 			&& symbols_total < repository_map_max_symbols_total
 			&& repository_map_path_is_source(normalized) {
-			abs_path := resolve_workspace_file_path_for_map(canonical_root, relative_path) or {
-				entries << entry
+			abs_path := resolve_workspace_file_path_for_map(canonical_root, normalized) or {
 				continue
 			}
 			size := os.file_size(abs_path)
-			if size == 0 || size > repository_map_max_file_read_bytes {
-				entries << entry
+			remaining_read_bytes := repository_map_max_total_read_bytes - bytes_read
+			file_read_limit := if remaining_read_bytes < repository_map_max_file_read_bytes {
+				remaining_read_bytes
+			} else {
+				repository_map_max_file_read_bytes
+			}
+			if size == 0 || size > file_read_limit {
 				continue
 			}
-			content := read_workspace_text_file_limited(abs_path, repository_map_max_file_read_bytes) or {
-				entries << entry
+			content := read_workspace_text_file_limited(abs_path, file_read_limit) or {
 				continue
 			}
 			contents[normalized] = content
@@ -209,7 +219,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 				count_bonus
 			}
 		}
-		entries << entry
+		entries[i] = entry
 	}
 	// Pull same-directory siblings of strongly mentioned paths into budget
 	// without tree-sitter/PageRank — extractive co-location only.
@@ -468,9 +478,9 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 }
 
 fn repository_map_is_lexical_hint(ident string) bool {
-	return ident.len >= 3 && ident.to_lower() !in ['the', 'and', 'for', 'with', 'that', 'from', 'into', 'where',
-		'when', 'what', 'how', 'why', 'are', 'was', 'were', 'has', 'have', 'had', 'not', 'all',
-		'any', 'each', 'can', 'does', 'its']
+	return ident.len >= 3 && ident.to_lower() !in ['the', 'and', 'for', 'with', 'that', 'from',
+		'into', 'where', 'when', 'what', 'how', 'why', 'are', 'was', 'were', 'has', 'have', 'had',
+		'not', 'all', 'any', 'each', 'can', 'does', 'its']
 }
 
 fn repository_map_lexically_related(left string, right string) bool {
@@ -484,7 +494,7 @@ fn repository_map_lexical_candidates(term string) []string {
 		candidates << '${lower[..lower.len - 3]}y'
 	} else if lower.len > 4 && lower.ends_with('es')
 		&& (lower.ends_with('sses') || lower.ends_with('xes') || lower.ends_with('zes')
-		|| lower.ends_with('ches') || lower.ends_with('shes')) {
+			|| lower.ends_with('ches') || lower.ends_with('shes')) {
 		candidates << lower[..lower.len - 2]
 	} else if lower.len > 3 && lower.ends_with('ss') {
 		candidates << '${lower}es'

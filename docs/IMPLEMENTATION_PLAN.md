@@ -591,8 +591,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   this remains bounded line-based extraction, not parsing.
   Ranking also uses bounded lexical overlap against already-read source and
   compound path terms, with common argument/args matching and a test-file
-  demotion only when the user asks about behavior rather than tests. Real-repo
-  recall on Aider, mini-swe-agent, and SWE-agent is recorded in
+  demotion only when the user asks about behavior rather than tests. Bounded
+  source reads now prioritize path relevance and enforce the aggregate byte
+  cap. Real-repo recall on Aider, mini-swe-agent, and SWE-agent is recorded in
   `benchmarks/README.md`; semantic retrieval remains a broader open gap.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same

@@ -49,6 +49,10 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_veasel_provider("meta", "meta/muse-wonder-1.0"), ("meta", "muse-wonder-1.0"))
         self.assertEqual(_veasel_provider("google", "google/gemini-test"), ("gemini", "gemini-test"))
         self.assertEqual(
+            _veasel_provider("opencode-go", "opencode-go/claude-haiku-5-5"),
+            ("opencode-go", "claude-haiku-5-5"),
+        )
+        self.assertEqual(
             _veasel_provider("openai-responses", "openai-responses/gpt-test"),
             ("openai-responses", "gpt-test"),
         )
@@ -167,6 +171,65 @@ class VeaselHarborAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("trap 'kill", command)
         self.assertEqual(call["timeout_sec"], 1830)
         subprocess.run(["bash", "-n"], input=command, text=True, check=True)
+
+    async def test_opencode_go_uses_console_key_environment_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = VeaselCode(
+                logs_dir=Path(directory),
+                model_name="opencode-go/claude-haiku-5-5",
+                extra_env={
+                    "OPENCODE_API_KEY": "fixture-console-key",
+                    "OPENCODE_BASE_URL": "http://127.0.0.1:4321/v1",
+                },
+                veasel_version="1.2.3",
+            )
+            environment = RecordingEnvironment()
+
+            await agent.run("Fixture only; no model call", environment, AgentContext())
+
+        env = environment.calls[0]["env"]
+        self.assertEqual(env["VEASEL_MODEL_PROVIDER"], "opencode-go")
+        self.assertEqual(env["VEASEL_MODEL"], "claude-haiku-5-5")
+        self.assertEqual(env["VEASEL_MODEL_API_KEY"], "fixture-console-key")
+        self.assertEqual(env["VEASEL_MODEL_BASE_URL"], "http://127.0.0.1:4321/v1")
+        self.assertNotIn("fixture-console-key", str(environment.calls[0]["command"]))
+
+    async def test_opencode_go_prefers_console_key_and_explicit_provider_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = VeaselCode(
+                logs_dir=Path(directory),
+                model_name="opencode-go/claude-haiku-5-5",
+                extra_env={
+                    "OPENCODE_GO_API_KEY": "fixture-harbor-key",
+                    "OPENCODE_API_KEY": "fixture-fallback-key",
+                    "OPENCODE_GO_BASE_URL": "http://127.0.0.1:4322/v1",
+                    "OPENCODE_BASE_URL": "http://127.0.0.1:4321/v1",
+                },
+                veasel_version="1.2.3",
+            )
+            environment = RecordingEnvironment()
+            await agent.run("Fixture only; no model call", environment, AgentContext())
+
+        call = environment.calls[0]
+        self.assertEqual(call["env"]["VEASEL_MODEL_API_KEY"], "fixture-fallback-key")
+        self.assertEqual(call["env"]["VEASEL_MODEL_BASE_URL"], "http://127.0.0.1:4322/v1")
+        self.assertNotIn("fixture-harbor-key", str(call["command"]))
+        self.assertNotIn("fixture-fallback-key", str(call["command"]))
+        self.assertNotIn("fixture-harbor-key", str(call))
+
+    async def test_opencode_go_accepts_provider_specific_key_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            agent = VeaselCode(
+                logs_dir=Path(directory),
+                model_name="opencode-go/claude-haiku-5-5",
+                extra_env={"OPENCODE_GO_API_KEY": "fixture-provider-key"},
+                veasel_version="1.2.3",
+            )
+            environment = RecordingEnvironment()
+            await agent.run("Fixture only; no model call", environment, AgentContext())
+
+        self.assertEqual(environment.calls[0]["env"]["VEASEL_MODEL_API_KEY"], "fixture-provider-key")
+        self.assertNotIn("fixture-provider-key", str(environment.calls[0]["command"]))
 
     async def test_install_pins_release_and_verifies_archive_hash_before_extracting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

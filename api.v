@@ -325,9 +325,9 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 }
 
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
-	messages []ChatMessage,
+	session_id string, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	config := app.model_config()!
+	config := app.model_config_for_session(session_id)!
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}

@@ -333,7 +333,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if agent_context_bytes(messages) > agent_context_byte_limit() {
 			return error('agent context size limit reached')
 		}
-		output := app.complete_agent_with_provider_limit(mut turn_ctx, messages, tools, on_text_delta)!
+		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, tools,
+			on_text_delta)!
 		if output.usage.reported {
 			trace_usage = add_provider_usage(trace_usage, output.usage)
 		}
@@ -359,7 +360,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent tool call limit reached')
 		}
 		if round == max_agent_tool_rounds - 1 {
-			return app.finish_with_tool_budget_summary(mut turn_ctx, messages, output, on_text_delta,
+			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output, on_text_delta,
 				mut trace_steps, mut trace_usage, collect_trace)
 		}
 		for call in output.tool_calls {
@@ -505,7 +506,8 @@ fn messages_for_tool_budget_summary(messages []ChatMessage, calls []ProviderTool
 	return summary_messages
 }
 
-fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, messages []ChatMessage,
+fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, session_id string,
+	messages []ChatMessage,
 	blocked CompletionOutput, on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep,
 	mut trace_usage ProviderUsage, collect_trace bool) !AgentTraceResult {
 	summary_messages := messages_for_tool_budget_summary(messages, blocked.tool_calls)
@@ -516,7 +518,7 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, mes
 	if boundary.len > 0 {
 		on_text_delta(boundary)!
 	}
-	summary := app.complete_agent_with_provider_limit(mut turn_ctx, summary_messages, [],
+	summary := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, summary_messages, [],
 		on_text_delta)!
 	if summary.usage.reported {
 		trace_usage = add_provider_usage(trace_usage, summary.usage)
@@ -950,8 +952,8 @@ fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut
 				context_tokens, reserved_output_tokens)
 		}
 		'llm' {
-			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, messages, context_tokens,
-				reserved_output_tokens)
+			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, session_id, messages,
+				context_tokens, reserved_output_tokens)
 		}
 		else {
 			compact_session_messages(messages, context_tokens, reserved_output_tokens)
@@ -966,7 +968,8 @@ fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut
 }
 
 fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext.Context,
-	messages []ChatMessage, model_context_tokens int, reserved_output_tokens int) SessionCompactionResult {
+	session_id string, messages []ChatMessage, model_context_tokens int,
+	reserved_output_tokens int) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
 	due, reason := session_compaction_due(messages, model_context_tokens, reserved_output_tokens)
 	if !due {
@@ -982,7 +985,8 @@ fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext
 	if older.len == 0 {
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}
-	preferred := app.llm_session_compaction_summary(mut turn_ctx, older, bytes_before, reason) or {
+	preferred := app.llm_session_compaction_summary(mut turn_ctx, session_id, older, bytes_before,
+		reason) or {
 		return apply_extractive_compaction(messages, bytes_before, reason, 'llm_fallback_extractive',
 			ProviderUsage{}, keep_bytes)
 	}
@@ -990,7 +994,8 @@ fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext
 		reserved_output_tokens)
 }
 
-fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, older []ChatMessage,
+fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, session_id string,
+	older []ChatMessage,
 	bytes_before int, reason string) !SessionCompactionSummarizerOutput {
 	// Feed the bounded extractive digest to the model so the summarizer request
 	// itself stays under local UTF-8 pressure without inventing token savings.
@@ -1005,7 +1010,8 @@ fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, olde
 			content: digest
 		},
 	]
-	output := app.complete_agent_with_provider_limit(mut turn_ctx, prompt, [], ignore_provider_text_delta)!
+	output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, prompt, [],
+		ignore_provider_text_delta)!
 	text := output.content.trim_space()
 	if text.len == 0 {
 		return error('compaction summarizer returned empty content')

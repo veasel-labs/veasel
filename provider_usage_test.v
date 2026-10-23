@@ -2,6 +2,20 @@ module main
 
 import strings
 
+fn test_opencode_go_requests_use_stable_session_ids() {
+	assert opencode_go_session_header(ModelConfig{
+		provider:   'opencode-go'
+		session_id: 'session-123'
+	}) == 'session-123'
+	assert opencode_go_session_header(ModelConfig{
+		provider: 'opencode-go'
+	}) == ''
+	assert opencode_go_session_header(ModelConfig{
+		provider:   'openai-compatible'
+		session_id: 'session-123'
+	}) == ''
+}
+
 fn test_openai_chat_usage_parses_cached_tokens_subset() {
 	usage := provider_usage_from_fixture_json('openai-chat', '{
 		"prompt_tokens": 1200,

@@ -75,7 +75,7 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
         )
 
     try:
-        wait_for_markers((b"connected", b"SESSIONS", b"VEASEL"), 10, "its connected session screen")
+        wait_for_markers((b"SESSIONS", b"q quit", b"VEASEL"), 10, "its home session screen")
 
         os.write(terminal, b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")

@@ -215,6 +215,12 @@ fn (app &App) model_config() !ModelConfig {
 	return config
 }
 
+fn (app &App) model_config_for_session(session_id string) !ModelConfig {
+	mut config := app.model_config()!
+	config.session_id = session_id
+	return config
+}
+
 fn (app &App) provider_model_config(provider string, fallback_model string) !ModelConfig {
 	return app.resolve_provider_model_config(provider, fallback_model, '', '', false)
 }

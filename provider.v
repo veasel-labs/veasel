@@ -567,10 +567,12 @@ fn (mut decoder ProviderSSEDecoder) finish() ! {
 }
 
 struct ModelConfig {
-	provider          string
-	base_url          string
-	model             string
-	api_key           string
+	provider string
+	base_url string
+	model    string
+	api_key  string
+mut:
+	session_id        string
 	max_output_tokens int
 }
 
@@ -2255,6 +2257,13 @@ enum ModelAuth {
 	gemini
 }
 
+fn opencode_go_session_header(config ModelConfig) string {
+	if config.provider == 'opencode-go' && config.session_id.len > 0 {
+		return config.session_id
+	}
+	return ''
+}
+
 fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig, payload string,
 	auth ModelAuth, on_data ProviderSSEDataFn) !http.Response {
 	if context_error := turn_context_error(mut turn_ctx) {
@@ -2269,6 +2278,13 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	write_timeout := if remaining < 10 * time.second { remaining } else { 10 * time.second }
 	mut headers := http.new_header(key: .content_type, value: 'application/json')
 	headers.add_custom('Accept', 'text/event-stream')!
+	if config.provider == 'opencode-go' {
+		session_id := opencode_go_session_header(config)
+		if session_id.len > 0 {
+			headers.add_custom('x-opencode-session', session_id)!
+		}
+		headers.add_custom('User-Agent', 'Veasel Code/${product_version}')!
+	}
 	match auth {
 		.bearer {
 			if config.api_key.len > 0 {

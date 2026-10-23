@@ -11,6 +11,8 @@ The Models.dev selection filter requires its OpenAI-compatible adapter marker, a
 
 If live model discovery fails, Veasel reports safe upstream status details without returning the provider response body or submitted credential. HTTP 401 means the provider rejected the key; 403 means the account or model lacks access; 404 usually means the configured endpoint has no model-list route, so enter a model ID manually; 429 means the provider rate-limited the request. Other failures keep a generic message to avoid exposing provider response data.
 
+OpenCode and OpenCode Go presets require an OpenCode Console API key; Veasel does not import the OpenCode CLI OAuth session. OpenCode Console free-tier chat models are limited to OpenCode itself, while Go is intended for compatible coding agents. Veasel sends OpenCode Go a stable session ID and its own User-Agent on each agent turn. See [OpenCode inference authentication](https://opencode.ai/v2/docs/console/api/inference) and [OpenCode Go integration requirements](https://opencode.ai/v2/docs/console/go/).
+
 | Provider | ID | Protocol used by Veasel | Default API endpoint | Credential | Reference |
 |---|---|---|---|---|---|
 | 302.AI | 302-ai | openai-compatible | https://api.302.ai/v1 | 302AI_API_KEY | — |

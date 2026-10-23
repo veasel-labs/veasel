@@ -328,15 +328,15 @@ At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under
 `internal/ui/model/status.go` and `internal/ui/chat/` keeps mode badges, help
 hints, and message rendering as separate models with golden/bench tests. Its
 pending-queue tests (`internal/ui/model/pending_queue_test.go`) keep in-flight
-prompts visible above a spinner. Veasel uses OpenTUI Core 0.6.2, surfaces
+prompts visible above a spinner. Veasel uses OpenTUI Core 0.6.6, surfaces
 provider-reported token counts in the footer, and now prefers a compact
 `review needed` footer cue when edits, shell commands, or MCP calls await
-approval. The current client pins OpenTUI Core 0.6.2. At OpenTUI commit
+approval. The current client pins OpenTUI Core 0.6.6. At OpenTUI commit
 `a8f27451b09bdd0670ff661525268ae6f97ec0fc` (0.6.7), `packages/core/src/testing/test-renderer.ts`
 provides scheduler-aware `waitForFrame`, `waitForVisualIdle`, and bounded
 `waitFor` helpers with last-frame diagnostics; Veasel's existing rendered tests
 often use hand-written polling loops. The new live MCP configuration journey
-uses the installed 0.6.2 `waitForFrame` and awaited `dispose` APIs; migrating the
+uses the installed 0.6.6 `waitForFrame` and awaited `dispose` APIs; migrating the
 remaining polling tests is a concrete test-reliability opportunity. Richer
 markdown/diff chrome remains open; do not port Crush's Lip Gloss stack into the
 TypeScript client.

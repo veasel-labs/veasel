@@ -186,6 +186,7 @@ fn test_turn_cancellation_releases_a_queued_session_turn() {
 	slot.wait()
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	done := turn_ctx.done()
 	result := chan string{cap: 1}
 	spawn fn (app &App, mut turn_ctx vcontext.Context, result chan string) {
 		app.acquire_session_turn(mut turn_ctx, 'session-queued') or {
@@ -198,6 +199,7 @@ fn test_turn_cancellation_releases_a_queued_session_turn() {
 	}(app, mut turn_ctx, result)
 	time.sleep(25 * time.millisecond)
 	cancel()
+	assert operation_cancelled(done)
 	assert <-result == 'cancelled'
 	slot.post()
 }
@@ -1282,7 +1284,8 @@ fn test_queued_session_operation_waits_for_active_session_turn_before_claiming()
 		panic(err)
 	}
 	assert actual_id == operation_id
-	app.schedule_durable_session_operation(operation_id, mut turn_ctx, cancel, session.id, session,
+	turn_done := turn_ctx.done()
+	app.schedule_durable_session_operation(operation_id, cancel, turn_done, session.id, session,
 		ChatMessageInput{
 			content: 'wait for the active turn'
 		})
@@ -1328,7 +1331,8 @@ fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_re
 	session_lock.wait()
 	second_operation, mut second_ctx, second_cancel := app.begin_queued_turn_operation(session.id,
 		second_id) or { panic(err) }
-	app.schedule_durable_session_operation(second_operation, mut second_ctx, second_cancel, session.id,
+	second_done := second_ctx.done()
+	app.schedule_durable_session_operation(second_operation, second_cancel, second_done, session.id,
 		session, ChatMessageInput{
 			content: 'second'
 		})
@@ -1336,7 +1340,8 @@ fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_re
 	first_operation, mut first_ctx, first_cancel := app.begin_queued_turn_operation(session.id, first_id) or {
 		panic(err)
 	}
-	app.schedule_durable_session_operation(first_operation, mut first_ctx, first_cancel, session.id, session,
+	first_done := first_ctx.done()
+	app.schedule_durable_session_operation(first_operation, first_cancel, first_done, session.id, session,
 		ChatMessageInput{
 			content: 'first'
 		})
@@ -1359,8 +1364,9 @@ fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_re
 	mut background := vcontext.background()
 	mut empty_queue_ctx, cancel_empty_queue := vcontext.with_cancel(mut background)
 	defer { cancel_empty_queue() }
+	empty_queue_done := empty_queue_ctx.done()
 	mut saw_empty_queue_error := false
-	app.acquire_queued_session_turn(mut empty_queue_ctx, session.id, 'cancelled-operation') or {
+	app.acquire_queued_session_turn(empty_queue_done, session.id, 'cancelled-operation') or {
 		saw_empty_queue_error = err.msg() == 'queued_operation_no_longer_pending'
 	}
 	assert saw_empty_queue_error
@@ -1481,6 +1487,42 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 		SessionOperation{}
 	}
 	assert claim_failed
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_cancel_before_enqueue_is_persisted_by_durable_worker() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-early-cancel-plugins-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-test-early-cancel-workspace-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Cancel before enqueue'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	actual_id, mut turn_ctx, cancel := app.begin_queued_turn_operation(session.id, operation_id) or {
+		panic(err)
+	}
+	assert actual_id == operation_id
+	turn_done := turn_ctx.done()
+	cancel()
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"cancelled before persistence"}') or {
+		panic(err)
+	}
+	app.schedule_durable_session_operation(operation_id, cancel, turn_done, session.id, session,
+		ChatMessageInput{
+			content: 'cancelled before persistence'
+		})
+	app.wait_for_turn_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 

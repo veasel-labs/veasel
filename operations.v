@@ -166,12 +166,11 @@ fn (app &App) acquire_session_turn(mut turn_ctx vcontext.Context, session_id str
 // Durable jobs may wake from the session semaphore in any order. Recheck the
 // persisted queue while holding it so only the oldest queued operation can
 // claim the session; later workers yield and retry after a short pause.
-fn (app &App) acquire_queued_session_turn(mut turn_ctx vcontext.Context, session_id string,
-	operation_id string) ! {
+fn (app &App) acquire_queued_session_turn(turn_done chan int, session_id string, operation_id string) ! {
 	mut slot := app.session_turn_lock(session_id)
 	for {
-		if context_error := turn_context_error(mut turn_ctx) {
-			return error(context_error)
+		if operation_cancelled(turn_done) {
+			return error('cancelled')
 		}
 		if !slot.timed_wait(10 * time.millisecond) {
 			continue
@@ -186,15 +185,21 @@ fn (app &App) acquire_queued_session_turn(mut turn_ctx vcontext.Context, session
 		}
 		first_for_session := queued[0]
 		if first_for_session.id == operation_id {
-			if context_error := turn_context_error(mut turn_ctx) {
+			if operation_cancelled(turn_done) {
 				slot.post()
-				return error(context_error)
+				return error('cancelled')
 			}
 			return
 		}
 		slot.post()
 		time.sleep(10 * time.millisecond)
 	}
+}
+
+fn operation_cancelled(turn_done chan int) bool {
+	mut done_channel := turn_done
+	mut ignored := 0
+	return done_channel.try_pop(mut ignored) != .not_ready
 }
 
 fn turn_context_error(mut ctx vcontext.Context) ?string {

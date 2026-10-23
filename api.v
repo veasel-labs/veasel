@@ -1560,6 +1560,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		})
 	}
 	if respond_async {
+		// Capture the cancellation signal before the operation context crosses
+		// into the durable worker. The worker must not dispatch Context.done()
+		// on the shared interface value.
+		turn_done := turn_ctx.done()
 		mut store := app.store
 		request_json := json2.encode(input)
 		store.enqueue_session_operation(id, operation_id, request_json) or {
@@ -1577,7 +1581,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			}
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
-		app.schedule_durable_session_operation(operation_id, mut turn_ctx, cancel, id, session, input)
+		app.schedule_durable_session_operation(operation_id, cancel, turn_done, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
 		return ctx.json(SessionTurnAccepted{

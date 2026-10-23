@@ -39,7 +39,9 @@ risks in the field; Veasel therefore avoids that logon pattern.
 - Autonomous Windows shell also uses AppContainer + Job fail-closed with
   network denied and receives only the platform environment allowlist
   (`PATH`, `PATHEXT`, `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `TEMP`, `TMP`,
-  `USERPROFILE`). Environment variable names are matched case-insensitively,
+  `USERPROFILE`, `LOCALAPPDATA`). `LOCALAPPDATA` is required for Windows to
+  resolve the AppContainer profile during process creation. Environment
+  variable names are matched case-insensitively,
   then normalized in the child block.
 
 No Codex source was copied. Veasel does **not** claim Codex-level WFP

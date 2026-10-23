@@ -1352,6 +1352,22 @@ fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_re
 		time.sleep(10 * time.millisecond)
 	}
 	assert started_ids == [first_id, second_id]
+	app.wait_for_turn_operations()
+	// A worker can hold the session lock just as cancellation removes its last
+	// queued row. The helper must release exactly the permit it acquired and
+	// signal its caller to skip the caller-side unlock defer.
+	mut background := vcontext.background()
+	mut empty_queue_ctx, cancel_empty_queue := vcontext.with_cancel(mut background)
+	defer { cancel_empty_queue() }
+	mut saw_empty_queue_error := false
+	app.acquire_queued_session_turn(mut empty_queue_ctx, session.id, 'cancelled-operation') or {
+		saw_empty_queue_error = err.msg() == 'queued_operation_no_longer_pending'
+	}
+	assert saw_empty_queue_error
+	mut lock_guard := app.session_turn_lock(session.id)
+	assert lock_guard.try_wait()
+	assert !lock_guard.try_wait()
+	lock_guard.post()
 }
 
 fn test_queued_session_operation_survives_restart_and_claims_to_completion() {

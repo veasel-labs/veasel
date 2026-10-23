@@ -1,1 +1,4 @@
 harbor==0.24.0
+# Harbor's dependency tree includes filelock; require the first release fixing
+# GHSA-v4x8-3wr5-3wq8 / CVE-2026-112940.
+filelock>=4.2.1

@@ -63,7 +63,9 @@ export function reviewHotkey(
   if (key.name === "[" || key.name === "p") return { action: "prev" }
   if (context.review.kind === "patch" && key.name === "}") return { action: "hunkNext" }
   if (context.review.kind === "patch" && key.name === "{") return { action: "hunkPrev" }
-  if (context.review.kind === "patch" && key.name === "pagedown" && !key.shift) return { action: "diffPageNext" }
+  if (context.review.kind === "patch" && ["pagedown", "npage"].includes(key.name) && !key.shift) {
+    return { action: "diffPageNext" }
+  }
   if (context.review.kind === "patch" && key.name === "b") return { action: "diffPagePrev" }
   // v toggles OpenTUI DiffRenderable split vs word-diff segments (patch only).
   if (context.review.kind === "patch" && key.name === "v") return { action: "toggleDiffSurface" }
@@ -80,8 +82,8 @@ export function reviewHotkeyHint(
   } = {},
 ): string | undefined {
   if (!review?.pending) return undefined
-  const hunks = review.kind === "patch"
-    ? `${(options.hunkCount ?? 0) > 1 ? " · {/} hunks" : ""} · PgDn/b diff page`
+  const hunks = review.kind === "patch" && (options.hunkCount ?? 0) > 1
+    ? " · {/} hunks"
     : ""
   const split = review.kind === "patch"
     ? (options.diffSurfaceHint ?? " · v split view")

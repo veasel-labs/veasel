@@ -45,6 +45,7 @@ describe("reviewHotkey", () => {
     expect(reviewHotkey({ name: "{", ctrl: false, meta: false }, ctx)).toEqual({ action: "hunkPrev" })
     expect(reviewHotkey({ name: "}", ctrl: false, meta: false }, ctx)).toEqual({ action: "hunkNext" })
     expect(reviewHotkey({ name: "pagedown", ctrl: false, meta: false }, ctx)).toEqual({ action: "diffPageNext" })
+    expect(reviewHotkey({ name: "npage", ctrl: false, meta: false }, ctx)).toEqual({ action: "diffPageNext" })
     expect(reviewHotkey({ name: "b", ctrl: false, meta: false }, ctx)).toEqual({ action: "diffPagePrev" })
     expect(reviewHotkey({ name: "v", ctrl: false, meta: false }, ctx)).toEqual({ action: "toggleDiffSurface" })
     expect(reviewHotkey({ name: "v", ctrl: false, meta: false }, {

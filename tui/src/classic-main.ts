@@ -4192,7 +4192,15 @@ renderer.keyInput.on("keypress", (key) => {
   }
   if (chatInput && activeSession) {
     if ((slashMatches.length > 0 || pathMatches.length > 0) && handleSlashMenuKey(key, chatInput)) return
-    if (slashMatches.length === 0 && (key.name === "pageup" || key.name === "pagedown")) {
+    const pagingPatchDiff = key.name === "pagedown"
+      && chatInput.value.trim() === ""
+      && activeReview?.pending === true
+      && activeReview.kind === "patch"
+    if (
+      slashMatches.length === 0
+      && (key.name === "pageup" || key.name === "pagedown")
+      && !pagingPatchDiff
+    ) {
       key.preventDefault()
       key.stopPropagation()
       scrollTranscript(key.name)

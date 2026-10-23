@@ -564,8 +564,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   (including `backend_is_healthy` / `ensure_backend` healthy-reuse); Windows
   keeps `main_test` plus repository-map coverage. Save/discovery also reject
   catalog endpoint placeholders such as `YOUR_ACCOUNT_ID` or `<ACCOUNT_ID>`.
-  Interactive TUI matrix gaps remain under the separate ConPTY /
-  measured-baseline item, including the Windows ConPTY CI result.
+  The packaged interactive smoke now passes on Linux, macOS, and Windows; the
+  exact Windows ConPTY run is recorded in
+  [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
 - [ ] Multi-agent isolation and orchestration. OpenCode's focused 2026-10-23
   recheck is in [`COMPETITIVE_SOURCE_STUDY.md`](COMPETITIVE_SOURCE_STUDY.md),
   with exact source and test links.
@@ -616,13 +617,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   accessibility review.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
-- [ ] Validate interactive TUI behavior on each platform and establish
-  measured performance baselines. Linux + macOS standalone PTY smoke is in
-  CI; one Linux workstation CLI/PTY baseline is recorded in
+- [x] Validate the packaged interactive TUI smoke on Linux, macOS, and Windows.
+  The exact-head Windows ConPTY result and journey are recorded in
   [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
-  Windows ConPTY is now exercised by the packaged-client smoke in CI; its
-  exact-head result is pending in the compatibility ledger. macOS/Windows
-  timing baselines remain open.
+- [ ] Establish measured TUI performance baselines beyond the existing Linux
+  workstation CLI/PTY baseline, and broaden interactive coverage to approvals,
+  streaming, MCP OAuth browser open, and long diffs. macOS/Windows timing
+  baselines remain open.
 
 ## Initial compatibility target
 

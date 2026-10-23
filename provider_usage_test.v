@@ -1,6 +1,42 @@
 module main
 
+import context as vcontext
+import net.http
 import strings
+import time
+
+struct OpenCodeGoHeaderFixture {
+mut:
+	hits       int
+	session_id string
+	user_agent string
+}
+
+fn (mut fixture OpenCodeGoHeaderFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	fixture.session_id = request.header.get_custom('x-opencode-session') or { '' }
+	fixture.user_agent = request.header.get_custom('User-Agent') or { '' }
+	mut response := http.Response{}
+	response.set_status(.ok)
+	response.header.set(.content_type, 'text/event-stream')
+	return response
+}
+
+fn start_opencode_go_header_fixture(mut fixture OpenCodeGoHeaderFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
 
 fn test_opencode_go_requests_use_stable_session_ids() {
 	assert opencode_go_session_header(ModelConfig{
@@ -14,6 +50,30 @@ fn test_opencode_go_requests_use_stable_session_ids() {
 		provider:   'openai-compatible'
 		session_id: 'session-123'
 	}) == ''
+}
+
+fn test_opencode_go_turn_sends_required_session_and_client_headers() {
+	mut fixture := &OpenCodeGoHeaderFixture{}
+	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer {
+		cancel()
+	}
+	session_id := 'f40de9bc-2bce-4b4f-840d-316e2e019570'
+	response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/chat/completions', ModelConfig{
+		provider:   'opencode-go'
+		api_key:    'fixture-key'
+		session_id: session_id
+	}, '{}', .bearer, fn (_ string) ! {}) or { panic(err) }
+	assert response.status_code == 200
+	assert fixture.hits == 1
+	assert fixture.session_id == session_id
+	assert fixture.user_agent == 'Veasel Code/${product_version}'
 }
 
 fn test_openai_chat_usage_parses_cached_tokens_subset() {

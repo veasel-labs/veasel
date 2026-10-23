@@ -171,16 +171,15 @@ fn (app &App) acquire_queued_session_turn(mut turn_ctx vcontext.Context, session
 		if !slot.timed_wait(10 * time.millisecond) {
 			continue
 		}
-		queued := app.store.list_queued_session_operations() or {
+		queued := app.store.first_queued_session_operation(session_id) or {
 			slot.post()
 			return error('unable to inspect queued session operations')
 		}
-		queued_for_session := queued.filter(it.session_id == session_id)
-		if queued_for_session.len == 0 {
+		if queued.len == 0 {
 			slot.post()
 			return error('queued_operation_no_longer_pending')
 		}
-		first_for_session := queued_for_session[0]
+		first_for_session := queued[0]
 		if first_for_session.id == operation_id {
 			if context_error := turn_context_error(mut turn_ctx) {
 				slot.post()

@@ -4,10 +4,9 @@ import { testRender } from "@opentui/solid"
 import { LiveApp } from "./live-app"
 import { VeaselApiClient } from "../api-client"
 
-test("queues a follow-up without replacing the active turn, then promotes it", async () => {
+test("queues a follow-up and cancels it without affecting the active turn", async () => {
   const posts: string[] = []
   const cancellations: string[] = []
-  let events!: ReadableStreamDefaultController<Uint8Array>
   const controller = new AbortController()
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -15,17 +14,18 @@ test("queues a follow-up without replacing the active turn, then promotes it", a
     fetch(request) {
       const path = new URL(request.url).pathname
       if (path === "/v1/events") return new Response(new ReadableStream({
-        start(stream) {
-          events = stream
-          stream.enqueue(new TextEncoder().encode(": connected\n\n"))
-        },
+        start(stream) { stream.enqueue(new TextEncoder().encode(": connected\n\n")) },
       }), { headers: { "content-type": "text/event-stream" } })
       if (path === "/v1/sessions") {
         return Response.json([{ id: "s1", title: "Session alpha", directory: "/tmp" }])
       }
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
-        return Response.json({ operation_id: posts.at(-1), status: "cancelling" }, { status: 202 })
+        const operationId = path.split("/").at(-2)
+        return Response.json({
+          operation_id: operationId,
+          status: operationId === posts.at(-1) ? "cancelled" : "cancelling",
+        }, { status: 202 })
       }
       if (path.endsWith("/messages")) {
         if (request.method === "POST") {
@@ -64,18 +64,17 @@ test("queues a follow-up without replacing the active turn, then promotes it", a
     const [firstId, queuedId] = posts
     expect(queuedId).not.toBe(firstId)
 
-    events.enqueue(new TextEncoder().encode(
-      `event: session.turn_completed\ndata: ${JSON.stringify({
-        session_id: "s1", data: { operation_id: firstId, status: "completed" },
-      })}\n\n` +
-      `event: session.turn_started\ndata: ${JSON.stringify({
-        session_id: "s1", data: { operation_id: queuedId, status: "running" },
-      })}\n\n`,
-    ))
-    await until(() => setup.captureCharFrame().includes("queued follow-up"))
-    setup.mockInput.pressKey("x", { ctrl: true })
+    setup.mockInput.pressKey("x", { ctrl: true, shift: true })
     await until(() => cancellations.length === 1)
+    await until(() => !setup.captureCharFrame().includes("Follow-up turn"))
     expect(cancellations).toEqual([`/v1/sessions/s1/operations/${queuedId}/cancel`])
+
+    setup.mockInput.pressKey("x", { ctrl: true })
+    await until(() => cancellations.length === 2)
+    expect(cancellations).toEqual([
+      `/v1/sessions/s1/operations/${queuedId}/cancel`,
+      `/v1/sessions/s1/operations/${firstId}/cancel`,
+    ])
   } finally {
     controller.abort()
     setup.renderer.destroy()

@@ -140,7 +140,7 @@ import {
 } from "./composer-attachments"
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
-const liveFooterHint = `Ctrl+X stop turn · ${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
+const liveFooterHint = `Ctrl+X stop turn · Ctrl+Shift+X cancel queued follow-up · ${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
 const historyPageSize = 100
 import {
   type SolidOpenProject,
@@ -1278,6 +1278,40 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const cancelQueuedFollowUp = async () => {
+    const queued = queuedFollowUps().at(-1)
+    if (!queued) {
+      toast.info("No queued follow-up to cancel", "Turn queue")
+      return
+    }
+    try {
+      const result = await props.api.cancelOperation(queued.sessionId, queued.id)
+      if (result.status === "cancelled") {
+        const remaining = queuedFollowUps().filter((item) => item.id !== queued.id).length
+        queuedOperationIds.delete(queued.id)
+        setQueuedFollowUps((current) => current.filter((item) => item.id !== queued.id))
+        setMessages((current) => current.filter((item) => item !== queued.message))
+        setStatus(remaining > 0
+          ? formatBusyStatus(`${remaining} follow-up${remaining === 1 ? "" : "s"} queued`)
+          : activeTurnId()
+            ? formatBusyStatus(streaming() ? "Veasel is working…" : "Veasel is thinking…")
+            : "● connected  ·  listening for activity")
+        toast.success("Removed the most recent follow-up", "Turn queue")
+      } else if (result.status === "cancelling") {
+        toast.info("Follow-up started; stopping that turn", "Turn queue")
+      } else {
+        toast.info("Follow-up already finished", "Turn queue")
+      }
+    } catch (error) {
+      noteError(
+        "turns.queue.cancel",
+        `could not cancel queued follow-up · ${error instanceof Error ? error.message : "request failed"}`,
+        queued.sessionId,
+        "Turn queue",
+      )
+    }
+  }
+
   const dismissHomeComposer = () => {
     if (homeComposerOpen()) setHomeComposerOpen(false)
   }
@@ -2147,6 +2181,11 @@ function LiveAppShell(props: LiveAppProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (dialog.open()) return
+    if (key.ctrl && key.shift && key.name === "x" && !key.meta) {
+      key.preventDefault()
+      void cancelQueuedFollowUp()
+      return
+    }
     if (key.ctrl && key.name === "x" && !key.meta) {
       key.preventDefault()
       void cancelActiveTurn()

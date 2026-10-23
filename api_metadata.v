@@ -127,7 +127,7 @@ pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
 	models := fetch_provider_models(config) or {
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
-			error: model_catalog_error_message(err.msg())
+			error: model_catalog_error_message(provider, err.msg())
 		})
 	}
 	return ctx.json(ModelCatalogView{
@@ -150,7 +150,7 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 	models := fetch_provider_models(config) or {
 		ctx.res.set_status(.bad_gateway)
 		return ctx.json(APIError{
-			error: model_catalog_error_message(err.msg())
+			error: model_catalog_error_message(config.provider, err.msg())
 		})
 	}
 	return ctx.json(ModelCatalogView{
@@ -159,12 +159,18 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 	})
 }
 
-fn model_catalog_error_message(provider_error string) string {
+fn model_catalog_error_message(provider string, provider_error string) string {
 	match provider_error {
 		'model catalog endpoint returned HTTP 401' {
+			if provider in ['opencode', 'opencode-go'] {
+				return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; create a new key in OpenCode Console because signing in again will not renew it.'
+			}
 			return 'Provider rejected the API key (HTTP 401). Check the key and account.'
 		}
 		'model catalog endpoint returned HTTP 403' {
+			if provider == 'opencode' {
+				return 'OpenCode denied model-list access (HTTP 403). Check account and model access; Go subscriptions for coding agents use the OpenCode Go preset and Console API key.'
+			}
 			return 'Provider denied model-list access (HTTP 403). Check model access and account permissions.'
 		}
 		'model catalog endpoint returned HTTP 404' {

@@ -614,7 +614,8 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 		verify:               verify
 	) or { return error('model catalog request failed') }
 	if response.status_code < 200 || response.status_code >= 300 {
-		return error('model catalog endpoint returned HTTP ${response.status_code}')
+		return error(provider_http_error_message(config.provider, response.status_code,
+			'model catalog endpoint returned'))
 	}
 	if response.body.len > max_provider_model_catalog_bytes {
 		return error('model catalog response is too large')
@@ -674,6 +675,16 @@ fn opencode_go_model_protocol(model string) string {
 		}
 		else { '' }
 	}
+}
+
+fn provider_http_error_message(provider string, status_code int, operation string) string {
+	if provider == 'opencode-go' && status_code == 401 {
+		return 'OpenCode Go rejected the API key (HTTP 401). Check it in OpenCode Console; if it expired, create a new key because signing in again does not renew it.'
+	}
+	if operation.len > 0 {
+		return '${operation} HTTP ${status_code}'
+	}
+	return 'HTTP ${status_code}'
 }
 
 struct ModelProviderRoute {
@@ -2424,7 +2435,7 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	}
 	stream_state.decoder.finish()!
 	if response.status_code < 200 || response.status_code >= 300 {
-		return error('HTTP ${response.status_code}')
+		return error(provider_http_error_message(config.provider, response.status_code, ''))
 	}
 	return response
 }

@@ -155,6 +155,16 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 	assert unknown.protocol == ''
 }
 
+fn test_opencode_go_invalid_key_error_explains_how_to_recover() {
+	message := provider_http_error_message('opencode-go', 401, '')
+	assert message.contains('HTTP 401')
+	assert message.contains('OpenCode Console')
+	assert message.contains('create a new key')
+	assert message.contains('signing in again does not renew it')
+	assert provider_http_error_message('opencode-go', 403, 'model catalog endpoint returned') == 'model catalog endpoint returned HTTP 403'
+	assert provider_http_error_message('openai-compatible', 401, '') == 'HTTP 401'
+}
+
 fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	mut fixture := &OpenCodeGoHeaderFixture{}
 	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }

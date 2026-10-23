@@ -269,6 +269,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [queuedFollowUps, setQueuedFollowUps] = createSignal<{
     id: string
     sessionId: string
+    message: ToolAwareMessage
   }[]>([])
   let activeTurnSessionId: string | undefined
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
@@ -1483,8 +1484,10 @@ function LiveAppShell(props: LiveAppProps) {
         return
       }
       const queuedId = crypto.randomUUID()
+      const queuedMessage: ToolAwareMessage = { role: "user", content }
       queuedOperationIds.add(queuedId)
-      setQueuedFollowUps((current) => [...current, { id: queuedId, sessionId }])
+      setQueuedFollowUps((current) => [...current, { id: queuedId, sessionId, message: queuedMessage }])
+      setMessages((current) => [...current, queuedMessage])
       setStatus(formatBusyStatus(`Queuing follow-up · ${queuedFollowUps().length} waiting`))
       try {
         await props.api.sendMessage(
@@ -1495,8 +1498,12 @@ function LiveAppShell(props: LiveAppProps) {
           executionPolicyForAgent(executionPolicy()),
         )
       } catch (error) {
+        // A replayed start/completion event proves the server accepted it even
+        // if the HTTP response was lost after commit.
+        if (!queuedOperationIds.has(queuedId)) return
         queuedOperationIds.delete(queuedId)
         setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
+        setMessages((current) => current.filter((item) => item !== queuedMessage))
         noteError(
           "messages.queue",
           `follow-up could not be queued · ${error instanceof Error ? error.message : "request failed"}`,
@@ -1505,10 +1512,9 @@ function LiveAppShell(props: LiveAppProps) {
         )
         return
       }
-      try {
-        const latest = await props.api.listMessages(sessionId, { limit: historyPageSize })
-        if (!disposed && activeSessionId() === sessionId) applyHistoryPage(latest, "replace")
-      } catch { /* The queued message is durable; transcript refresh can wait. */ }
+      if (queuedOperationIds.has(queuedId)) {
+        setStatus(formatBusyStatus(`${queuedFollowUps().length} follow-up${queuedFollowUps().length === 1 ? "" : "s"} queued`))
+      }
       return
     }
     const operationId = crypto.randomUUID()
@@ -1996,6 +2002,13 @@ function LiveAppShell(props: LiveAppProps) {
           }
         },
         onTurnCompleted: (sessionId, completion) => {
+          const queuedId = completion.operation_id
+          const pending = queuedFollowUps().find((item) => item.id === queuedId)
+          if (queuedId && pending && queuedOperationIds.has(queuedId)) {
+            queuedOperationIds.delete(queuedId)
+            setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
+            setMessages((current) => current.filter((item) => item !== pending.message))
+          }
           void finishTurn(sessionId, completion)
           void refreshSessions()
         },

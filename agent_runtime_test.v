@@ -587,6 +587,7 @@ fn test_autonomous_shell_environment_does_not_forward_credentials() {
 		'TEMP':                  'C:\\Temp'
 		'TMP':                   'C:\\Temp'
 		'USERPROFILE':           'C:\\Users\\tester'
+		'LOCALAPPDATA':          'C:\\Users\\tester\\AppData\\Local'
 		'TMPDIR':                '/tmp'
 		'LANG':                  'en_US.UTF-8'
 		'LC_ALL':                'en_US.UTF-8'
@@ -604,8 +605,8 @@ fn test_autonomous_shell_environment_does_not_forward_credentials() {
 		assert environment['COMSPEC'] == 'C:\\Windows\\System32\\cmd.exe'
 		assert environment['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'
 		assert !environment.keys().contains('HOME')
-		assert environment.keys().sorted() == ['COMSPEC', 'PATH', 'PATHEXT', 'SYSTEMROOT', 'TEMP',
-			'TMP', 'USERPROFILE', 'WINDIR']
+		assert environment.keys().sorted() == ['COMSPEC', 'LOCALAPPDATA', 'PATH', 'PATHEXT',
+			'SYSTEMROOT', 'TEMP', 'TMP', 'USERPROFILE', 'WINDIR']
 	} $else {
 		assert environment['HOME'] == '/tmp/home'
 		assert environment.keys().sorted() == ['HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES',
@@ -619,15 +620,17 @@ fn test_windows_autonomous_shell_environment_matches_windows_name_casing() {
 		return
 	}
 	environment := autonomous_shell_environment_from({
-		'Path':       'C:\\tools'
-		'PathExt':    '.COM;.EXE;.BAT;.CMD'
-		'SystemRoot': 'C:\\Windows'
-		'ComSpec':    'C:\\Windows\\System32\\cmd.exe'
+		'Path':         'C:\\tools'
+		'PathExt':      '.COM;.EXE;.BAT;.CMD'
+		'SystemRoot':   'C:\\Windows'
+		'ComSpec':      'C:\\Windows\\System32\\cmd.exe'
+		'LocalAppData': 'C:\\Users\\tester\\AppData\\Local'
 	})
 	assert environment['PATH'] == 'C:\\tools'
 	assert environment['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'
 	assert environment['SYSTEMROOT'] == 'C:\\Windows'
 	assert environment['COMSPEC'] == 'C:\\Windows\\System32\\cmd.exe'
+	assert environment['LOCALAPPDATA'] == 'C:\\Users\\tester\\AppData\\Local'
 }
 
 fn test_autonomous_shell_runs_in_fail_closed_os_sandbox() {

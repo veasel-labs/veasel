@@ -166,3 +166,66 @@ fn test_session_usage_summary_prices_matching_schedule_models() {
 	summary := store.session_usage_summary(session.id) or { panic(err) }
 	assert summary.cost == '$3.00'
 }
+
+fn test_global_usage_summary_prices_grouped_turns() {
+	prior := os.getenv_opt(cost_schedule_env) or { '' }
+	os.unsetenv(cost_schedule_env)
+	defer {
+		if prior.len == 0 {
+			os.unsetenv(cost_schedule_env)
+		} else {
+			os.setenv(cost_schedule_env, prior, true)
+		}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Grouped global usage'
+		directory: '/tmp/grouped-global-usage'
+	}) or { panic(err) }
+	for index in 1 .. 3 {
+		operation := 'a1b2c3d4-e5f6-4789-a012-3456789ab${index:03}'
+		_ = store.create_session_operation(session.id, operation) or { panic(err) }
+		_ = store.append_exchange(session.id, operation, 'hi', 'there', 'anthropic',
+			'claude-sonnet-4-5', '', ProviderUsage{
+				input_tokens: 1_000_000
+				reported:     true
+			}) or { panic(err) }
+	}
+	summary := store.usage_summary() or { panic(err) }
+	assert summary.reported_turns == 2
+	assert summary.cost == '$6.00'
+}
+
+fn test_global_usage_cost_preserves_invalid_cached_input_guard_after_grouping() {
+	prior := os.getenv_opt(cost_schedule_env) or { '' }
+	os.unsetenv(cost_schedule_env)
+	defer {
+		if prior.len == 0 {
+			os.unsetenv(cost_schedule_env)
+		} else {
+			os.setenv(cost_schedule_env, prior, true)
+		}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Invalid cached usage'
+		directory: '/tmp/invalid-cached-usage'
+	}) or { panic(err) }
+	for index in 0 .. 2 {
+		input_tokens := if index == 0 { i64(1) } else { i64(10) }
+		cache_tokens := if index == 0 { i64(2) } else { i64(0) }
+		operation := 'b1b2c3d4-e5f6-4789-a012-3456789ab${index:03}'
+		_ = store.create_session_operation(session.id, operation) or { panic(err) }
+		_ = store.append_exchange(session.id, operation, 'hi', 'there', 'openai', 'gpt-4o', '',
+			ProviderUsage{
+				input_tokens:      input_tokens
+				reported:          true
+				cache_read_tokens: cache_tokens
+				cache_reported:    true
+			}) or { panic(err) }
+	}
+	summary := store.usage_summary() or { panic(err) }
+	assert summary.cost == cost_unavailable
+}

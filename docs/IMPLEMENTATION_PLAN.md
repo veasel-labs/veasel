@@ -238,7 +238,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The same reported-only aggregation is available across all sessions on
   `GET /v1/usage` (`sessions`, turn counts, token/cache/reasoning totals and
   the pinned-schedule cost label); LiveApp Home Status exposes a compact
-  aggregate of those counters even without an active session. A durable
+  aggregate of those counters even without an active session. Global cost
+  pricing groups reported totals by provider, model, and cache-reporting state
+  before pricing, reducing application-side cost-turn materialization;
+  latency improvement has not been benchmarked. A durable
   dashboard with broader execution history remains open below.
 - [x] Fork a session with `POST /v1/sessions/{id}/fork`: the chat history is
   copied under a new id (title suffixed ` (fork)`) so an alternative direction

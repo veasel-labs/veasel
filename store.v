@@ -1908,18 +1908,36 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	reported_turns := row.val(1).int()
 	cache_turns := row.val(6).int()
 	reasoning_turns := row.val(8).int()
-	turn_rows := store.db.exec("SELECT provider, model, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported FROM session_operations WHERE status = 'completed' ORDER BY created_at ASC, id ASC")!
-	mut cost_turns := []CostScheduleTurn{cap: turn_rows.len}
-	for turn_row in turn_rows {
-		cost_turns << CostScheduleTurn{
-			provider:              turn_row.val(0)
-			model:                 turn_row.val(1)
-			input_tokens:          turn_row.val(2).i64()
-			output_tokens:         turn_row.val(3).i64()
-			usage_reported:        turn_row.val(4).int() == 1
-			cache_read_tokens:     turn_row.val(5).i64()
-			cache_creation_tokens: turn_row.val(6).i64()
-			cache_reported:        turn_row.val(7).int() == 1
+	mut cost := cost_unavailable
+	schedule := active_cost_schedule()
+	if schedule.entries.len > 0 {
+		// Price grouped token totals instead of materializing every historical
+		// operation. Prices are linear per provider/model; keep cache-reporting
+		// groups separate and retain a per-turn invalid-cache guard below.
+		cost_rows := store.db.exec("SELECT provider, model, cache_reported, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), SUM(CASE WHEN cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END) FROM session_operations WHERE status = 'completed' AND usage_reported = 1 GROUP BY provider, model, cache_reported")!
+		mut cost_turns := []CostScheduleTurn{cap: cost_rows.len}
+		mut invalid_subset_cache := false
+		for cost_row in cost_rows {
+			provider := cost_row.val(0)
+			model := cost_row.val(1)
+			if entry := lookup_cost_schedule_entry(schedule, provider, model) {
+				if cost_input_is_subset_provider(entry.provider) && cost_row.val(7).int() > 0 {
+					invalid_subset_cache = true
+				}
+			}
+			cost_turns << CostScheduleTurn{
+				provider:              provider
+				model:                 model
+				input_tokens:          cost_row.val(3).i64()
+				output_tokens:         cost_row.val(4).i64()
+				usage_reported:        true
+				cache_read_tokens:     cost_row.val(5).i64()
+				cache_creation_tokens: cost_row.val(6).i64()
+				cache_reported:        cost_row.val(2).int() == 1
+			}
+		}
+		if !invalid_subset_cache {
+			cost = usage_cost_label(schedule, cost_turns)
 		}
 	}
 	return GlobalUsageSummary{
@@ -1934,7 +1952,7 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 		cache_reported:        cache_turns > 0
 		reasoning_tokens:      row.val(7).i64()
 		reasoning_reported:    reasoning_turns > 0
-		cost:                  session_usage_cost_label(cost_turns)
+		cost:                  cost
 	}
 }
 

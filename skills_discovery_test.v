@@ -334,7 +334,10 @@ fn test_standalone_skills_qualify_when_plugin_name_collides() {
 	loaded := load_skill_instructions(root, skill) or { panic(err) }
 	assert loaded.contains('STANDALONE COLLIDE BODY')
 
-	entries, _ := available_skill_entries_from_catalog(catalog)
+	enabled_keys := map[string]bool{
+		'standalone-agents/repo-check': true
+	}
+	entries, _ := available_skill_entries_from_catalog(catalog, enabled_keys)
 	assert entries.any(it.plugin_name == 'standalone-agents' && it.skill_name == 'repo-check')
 	assert entries.any(it.plugin_name == 'agents' && it.skill_name == 'plugin-skill')
 }

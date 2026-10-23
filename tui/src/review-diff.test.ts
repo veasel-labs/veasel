@@ -3,6 +3,7 @@ import {
   alignWordDiff,
   formatReviewDiff,
   moveReviewHunkIndex,
+  moveReviewDiffPage,
   prefersSideBySideDiff,
   reviewDiffLineBudget,
   reviewHunkStarts,
@@ -50,14 +51,21 @@ describe("formatReviewDiff", () => {
     expect(review.shownLines).toBe(review.totalLines)
   })
 
-  test("hides the tail of a diff that is taller than the terminal", () => {
+  test("pages through a long single hunk without losing the file header", () => {
     expect(reviewDiffLineBudget(40)).toBe(22)
     const review = formatReviewDiff(sampleDiff(28), reviewDiffLineBudget(40))
     expect(review.totalLines).toBeGreaterThan(review.shownLines)
-    expect(review.text).toContain(`Showing ${review.shownLines} of ${review.totalLines} lines`)
-    expect(review.text).toContain("remain")
+    expect(review.text).toContain("Hunk lines 1-22/")
+    expect(review.hasNextPage).toBe(true)
     expect(review.text).toContain("diff --git a/src/main.v b/src/main.v")
     expect(review.text).not.toContain("TAIL-SENTINEL")
+    const lastPage = formatReviewDiff(sampleDiff(28), reviewDiffLineBudget(40), { lineOffset: 22 })
+    expect(lastPage.hasPreviousPage).toBe(true)
+    expect(lastPage.hasNextPage).toBe(false)
+    expect(lastPage.text).toContain("+TAIL-SENTINEL")
+    expect(moveReviewDiffPage(0, 1, 22, 32)).toBe(22)
+    expect(moveReviewDiffPage(22, 1, 22, 32)).toBe(22)
+    expect(moveReviewDiffPage(22, -1, 22, 32)).toBe(0)
   })
 
   test("keeps an empty proposal explicit", () => {

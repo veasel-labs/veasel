@@ -43,7 +43,17 @@ test("LiveApp adds, toggles, and confirms removal of configured MCP servers", as
     () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/launch" />,
     { width: 100, height: 35, kittyKeyboard: true },
   )
-  const until = (text: string) => setup.waitForFrame((frame) => frame.includes(text))
+  const until = async (text: string) => {
+    // waitForFrame stops when OpenTUI goes idle, even while an HTTP request is
+    // still in flight. Poll the real rendered output across that async gap.
+    for (let attempt = 0; attempt < 200; attempt++) {
+      await Bun.sleep(10)
+      await setup.renderOnce()
+      const frame = setup.captureCharFrame()
+      if (frame.includes(text)) return frame
+    }
+    throw new Error(`Timed out waiting for "${text}" in LiveApp frame\n${setup.captureCharFrame()}`)
+  }
   try {
     await until("Real project")
     setup.mockInput.pressEnter()

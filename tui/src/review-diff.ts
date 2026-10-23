@@ -6,6 +6,9 @@ export type ReviewDiff = {
   totalLines: number
   hunkIndex: number
   hunkCount: number
+  lineOffset: number
+  hasPreviousPage: boolean
+  hasNextPage: boolean
 }
 
 export type WordDiffToken = {
@@ -47,9 +50,22 @@ export function reviewHunkStarts(diff: string): number[] {
   return starts
 }
 
+export function reviewHunkLineCount(diff: string, hunkIndex: number): number {
+  const lines = diffLines(diff)
+  const starts = reviewHunkStarts(diff)
+  if (starts.length === 0) return 0
+  const index = moveReviewHunkIndex(hunkIndex, 0, starts.length)
+  return (starts[index + 1] ?? lines.length) - (starts[index] ?? 0)
+}
+
 export function moveReviewHunkIndex(index: number, delta: number, count: number): number {
   if (count <= 0) return 0
   return Math.min(count - 1, Math.max(0, index + delta))
+}
+
+export function moveReviewDiffPage(offset: number, delta: number, pageSize: number, lineCount: number): number {
+  const lastPage = Math.max(0, Math.floor(Math.max(0, lineCount - 1) / Math.max(1, pageSize)) * Math.max(1, pageSize))
+  return Math.min(lastPage, Math.max(0, offset + delta * Math.max(1, pageSize)))
 }
 
 // Summarizes a proposal in text and keeps one screen of a long diff, optionally
@@ -57,7 +73,7 @@ export function moveReviewHunkIndex(index: number, delta: number, count: number)
 export function formatReviewDiff(
   diff: string,
   maxLines: number,
-  options: { hunkIndex?: number } = {},
+  options: { hunkIndex?: number; lineOffset?: number } = {},
 ): ReviewDiff {
   const lines = diffLines(diff)
   const { additions, removals } = changedLines(lines)
@@ -72,24 +88,30 @@ export function formatReviewDiff(
       totalLines: 0,
       hunkIndex: 0,
       hunkCount: 0,
+      lineOffset: 0,
+      hasPreviousPage: false,
+      hasNextPage: false,
     }
   }
   const hunkIndex = moveReviewHunkIndex(options.hunkIndex ?? 0, 0, hunkCount)
   // Keep file headers on the first hunk; later hunks jump to their @@ markers.
-  const startLine = hunkIndex === 0 ? 0 : (starts[hunkIndex] ?? 0)
   const limit = Math.max(1, maxLines)
-  const shown = lines.slice(startLine, Math.min(lines.length, startLine + limit))
+  const hunkStart = hunkIndex === 0 ? 0 : (starts[hunkIndex] ?? 0)
+  const hunkEnd = starts[hunkIndex + 1] ?? lines.length
+  const pageOffset = moveReviewDiffPage(options.lineOffset ?? 0, 0, limit, hunkEnd - hunkStart)
+  const startLine = hunkStart + pageOffset
+  const shown = lines.slice(startLine, Math.min(hunkEnd, startLine + limit))
   const hunkLabel = hunkCount > 1 ? `Hunk ${hunkIndex + 1} of ${hunkCount}. ` : ""
   const counts = `${additions} added, ${removals} removed.`
-  const remaining = Math.max(0, lines.length - startLine - shown.length)
-  const truncated = remaining > 0
-  const remainCue = truncated ? ` · ${remaining} remain` : ""
-  const hunkCue = truncated && hunkCount > 1 ? " · } next hunk" : ""
-  const summary = startLine === 0
-    ? truncated
-      ? `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines${remainCue}${hunkCue}.`
-      : `${hunkLabel}${counts}`
-    : `${hunkLabel}${counts} Showing ${shown.length} of ${lines.length} lines from offset ${startLine + 1}${remainCue}${hunkCue}.`
+  const hunkLineCount = hunkEnd - hunkStart
+  const hasPreviousPage = pageOffset > 0
+  const hasNextPage = pageOffset + shown.length < hunkLineCount
+  const pageCue = hasPreviousPage || hasNextPage
+    ? ` · ${hasNextPage ? "PgDn" : "b"} page`
+    : ""
+  const summary = hasPreviousPage || hasNextPage
+    ? `${hunkLabel}${counts} Hunk lines ${pageOffset + 1}-${pageOffset + shown.length}/${hunkLineCount}${pageCue}.`
+    : `${hunkLabel}${counts}`
   return {
     text: `${summary}\n${shown.join("\n")}`,
     additions,
@@ -98,6 +120,9 @@ export function formatReviewDiff(
     totalLines: lines.length,
     hunkIndex,
     hunkCount,
+    lineOffset: pageOffset,
+    hasPreviousPage,
+    hasNextPage,
   }
 }
 

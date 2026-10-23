@@ -120,13 +120,13 @@ describe("Solid review panel", () => {
 
     setup.mockInput.pressKey("r", { ctrl: true })
     await setup.renderOnce()
-    expect(setup.captureCharFrame()).toContain("v split view")
+    expect(setup.captureCharFrame()).toContain("v split")
 
     setup.mockInput.pressKey("v")
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
     expect(frame).toContain("EDIT / pending")
-    expect(frame).toContain("v word-diff")
+    expect(frame).toContain("v word")
   })
 
   test("} scrolls the split diff to the selected hunk", async () => {

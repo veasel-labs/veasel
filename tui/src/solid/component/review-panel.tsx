@@ -18,7 +18,12 @@ import {
   scrollDiffRenderableToHunk,
   type ReviewDiffSurface,
 } from "../../diff-view"
-import { moveReviewHunkIndex } from "../../review-diff"
+import {
+  moveReviewDiffPage,
+  moveReviewHunkIndex,
+  reviewDiffLineBudget,
+  reviewHunkLineCount,
+} from "../../review-diff"
 import { noticeSegments, type TranscriptSegment } from "../../transcript"
 import { DialogHeader, useDialog } from "../ui/dialog"
 import { useSolidTheme, solidToneBold, solidToneFg } from "../theme"
@@ -78,6 +83,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
     Math.min(Math.max(0, props.initialIndex ?? 0), Math.max(0, pending().length - 1)),
   )
   const [hunkIndex, setHunkIndex] = createSignal(0)
+  const [diffLineOffset, setDiffLineOffset] = createSignal(0)
   const [selectedKeys, setSelectedKeys] = createSignal<Set<string>>(new Set())
   const [diffSurface, setDiffSurface] = createSignal<ReviewDiffSurface>("segments")
   let settledOnce = false
@@ -173,6 +179,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
     return formatSolidReviewBody(item, {
       terminalRows: dimensions().height,
       hunkIndex: hunkIndex(),
+      lineOffset: diffLineOffset(),
     })
   })
 
@@ -198,6 +205,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
       setQueue((prev) => settleReviews(prev, result.settled))
       setSelectedKeys(new Set<string>())
       setHunkIndex(0)
+      setDiffLineOffset(0)
     } catch (error) {
       if (!disposed) setFailures([error instanceof Error ? error.message : "Decision request failed"])
     } finally {
@@ -230,6 +238,8 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
     const result = resolveReviewAction(hotkey, queue(), item, selectedKeys())
     if (!result) return
+    // Let DiffRenderable own normal viewport scrolling in split mode.
+    if (result.type === "diffPage" && result.delta > 0 && diffSurface() === "split") return
     key.preventDefault()
 
     if (result.type === "toggleSelect" && item) {
@@ -239,11 +249,34 @@ export function ReviewPanel(props: ReviewPanelProps) {
     if (result.type === "navigate") {
       setIndex((currentIndex) => moveActiveReviewIndex(currentIndex, result.delta, pending().length))
       setHunkIndex(0)
+      setDiffLineOffset(0)
       return
     }
     if (result.type === "hunk") {
       setHunkIndex((currentHunk) =>
         moveReviewHunkIndex(currentHunk, result.delta, hunkCountForReview(item)),
+      )
+      setDiffLineOffset(0)
+      return
+    }
+    if (result.type === "diffPage") {
+      if (!item || item.kind !== "patch") return
+      const pageSize = reviewDiffLineBudget(dimensions().height)
+      if (diffSurface() === "split") {
+        const viewport = splitDiffRenderable as unknown as {
+          leftCodeRenderable?: { scrollY: number } | null
+          rightCodeRenderable?: { scrollY: number } | null
+        } | undefined
+        if (viewport?.leftCodeRenderable) {
+          viewport.leftCodeRenderable.scrollY = Math.max(0, viewport.leftCodeRenderable.scrollY + result.delta * pageSize)
+        }
+        if (viewport?.rightCodeRenderable) {
+          viewport.rightCodeRenderable.scrollY = Math.max(0, viewport.rightCodeRenderable.scrollY + result.delta * pageSize)
+        }
+        return
+      }
+      setDiffLineOffset((offset) =>
+        moveReviewDiffPage(offset, result.delta, pageSize, reviewHunkLineCount(item.diff, hunkIndex())),
       )
       return
     }

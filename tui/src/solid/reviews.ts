@@ -117,12 +117,13 @@ export function reviewSummaryLine(item: SolidReviewItem): string {
 /** Body text for segment / fallback rendering (not used when split DiffRenderable owns the hunk). */
 export function formatSolidReviewBody(
   item: SolidReviewItem,
-  options: { terminalRows?: number; hunkIndex?: number } = {},
+  options: { terminalRows?: number; hunkIndex?: number; lineOffset?: number } = {},
 ): string {
   const rows = options.terminalRows ?? 40
   if (item.kind === "patch") {
     const review = formatReviewDiff(item.diff, reviewDiffLineBudget(rows), {
       hunkIndex: options.hunkIndex ?? 0,
+      lineOffset: options.lineOffset ?? 0,
     })
     const status = item.status?.trim() || (item.pending ? "pending" : "settled")
     return `REVIEW WORKSPACE EDIT  /  ${status}\n${item.path}\n${review.text}`
@@ -188,6 +189,7 @@ export type ReviewActionResult =
   | { type: "toggleSelect" }
   | { type: "navigate"; delta: number }
   | { type: "hunk"; delta: number }
+  | { type: "diffPage"; delta: number }
   | { type: "toggleDiffSurface" }
 
 /** Map a hotkey action + queue state into a Solid review panel effect. */
@@ -202,6 +204,8 @@ export function resolveReviewAction(
     | { action: "prev" }
     | { action: "hunkNext" }
     | { action: "hunkPrev" }
+    | { action: "diffPageNext" }
+    | { action: "diffPagePrev" }
     | { action: "toggleDiffSurface" },
   queue: readonly SolidReviewItem[],
   current: SolidReviewItem | undefined,
@@ -220,6 +224,10 @@ export function resolveReviewAction(
       return { type: "hunk", delta: 1 }
     case "hunkPrev":
       return { type: "hunk", delta: -1 }
+    case "diffPageNext":
+      return { type: "diffPage", delta: 1 }
+    case "diffPagePrev":
+      return { type: "diffPage", delta: -1 }
     case "toggleDiffSurface":
       return { type: "toggleDiffSurface" }
     case "approve":

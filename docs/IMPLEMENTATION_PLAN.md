@@ -572,8 +572,8 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   Titles and directories are clipped so a narrow sidebar cannot wrap the
   selection off screen.
 - [x] A workspace diff review states how many lines were added and removed.
-  A diff taller than the terminal keeps the first screen and says how many
-  lines remain hidden. The + and - markers stay on the visible lines.
+  A diff taller than the terminal pages through the selected hunk with PgDn/b,
+  while {/} moves between hunks. The + and - markers stay on visible lines.
 - [x] A shell-command review states the sandbox warning and the approve
   instruction before the command text. A command or captured output taller
   than the terminal keeps the first screen and says how many lines remain.

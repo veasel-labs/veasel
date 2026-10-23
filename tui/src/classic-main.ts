@@ -66,7 +66,13 @@ import {
   type SkillSuggestion,
 } from "./skill-autocomplete"
 import { formatMcpReview, mcpReviewLineBudget } from "./mcp-review"
-import { formatReviewDiff, moveReviewHunkIndex, reviewDiffLineBudget } from "./review-diff"
+import {
+  formatReviewDiff,
+  moveReviewDiffPage,
+  moveReviewHunkIndex,
+  reviewDiffLineBudget,
+  reviewHunkLineCount,
+} from "./review-diff"
 import {
   createDiffSyntaxStyle,
   cycleReviewDiffSurface,
@@ -658,6 +664,7 @@ let activePatchDiff = ""
 let activePatchPath = ""
 let activePatchStatus = ""
 let activePatchHunkIndex = 0
+let activePatchLineOffset = 0
 let reviewDiffSurface: ReviewDiffSurface = "segments"
 let chatMessages: ChatTurn[] = []
 let composerHistory: ComposerHistory = emptyComposerHistory()
@@ -2552,8 +2559,10 @@ function renderActivePatchDiff() {
   if (!activeReview || activeReview.kind !== "patch" || !activePatchDiff) return
   const review = formatReviewDiff(activePatchDiff, reviewDiffLineBudget(process.stdout.rows ?? 40), {
     hunkIndex: activePatchHunkIndex,
+    lineOffset: activePatchLineOffset,
   })
   activePatchHunkIndex = review.hunkIndex
+  activePatchLineOffset = review.lineOffset
   const pendingInstruction = activeReview.pending
     ? `After inspecting the diff, type /patch approve ${activeReview.id} or /patch reject ${activeReview.id}.`
     : undefined
@@ -2591,7 +2600,7 @@ async function actOnReviewItems(action: "approve" | "reject", items: ActiveRevie
   }
 }
 
-async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "rejectAll" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev" | "toggleDiffSurface") {
+async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "rejectAll" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev" | "diffPageNext" | "diffPagePrev" | "toggleDiffSurface") {
   if (!activeReview?.pending) return
   if (action === "toggleDiffSurface") {
     if (activeReview.kind !== "patch" || !activePatchDiff) return
@@ -2614,7 +2623,31 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
       action === "hunkNext" ? 1 : -1,
       probe.hunkCount,
     )
+    activePatchLineOffset = 0
     renderActivePatchDiff()
+    return
+  }
+  if (action === "diffPageNext" || action === "diffPagePrev") {
+    if (activeReview.kind !== "patch" || !activePatchDiff) return
+    if (reviewDiffSurface === "split") {
+      const viewport = reviewDiffRenderable as unknown as {
+        leftCodeRenderable?: { scrollY: number } | null
+        rightCodeRenderable?: { scrollY: number } | null
+      }
+      const page = reviewDiffLineBudget(process.stdout.rows ?? 40)
+      const delta = action === "diffPageNext" ? page : -page
+      if (viewport.leftCodeRenderable) viewport.leftCodeRenderable.scrollY += delta
+      if (viewport.rightCodeRenderable) viewport.rightCodeRenderable.scrollY += delta
+    } else {
+      const page = reviewDiffLineBudget(process.stdout.rows ?? 40)
+      activePatchLineOffset = moveReviewDiffPage(
+        activePatchLineOffset,
+        action === "diffPageNext" ? 1 : -1,
+        page,
+        reviewHunkLineCount(activePatchDiff, activePatchHunkIndex),
+      )
+      renderActivePatchDiff()
+    }
     return
   }
   if (action === "approveAll" || action === "rejectAll") {
@@ -2761,6 +2794,7 @@ async function showWorkspaceEdit(editId: string) {
     activePatchPath = edit.path
     activePatchStatus = edit.status.toUpperCase()
     activePatchHunkIndex = 0
+    activePatchLineOffset = 0
     const reviewState: ActiveReview = { kind: "patch", id: edit.id, pending: edit.status === "pending" }
     setActiveReview(reviewState)
     renderActivePatchDiff()
@@ -4429,6 +4463,7 @@ renderer.keyInput.on("keypress", (key) => {
         activePatchPath = ""
         activePatchStatus = ""
         activePatchHunkIndex = 0
+        activePatchLineOffset = 0
         reviewDiffSurface = "segments"
         hideReviewDiffRenderable()
         selectedReviewKeys = new Set()

@@ -61,12 +61,18 @@ test("queues a follow-up and cancels it without affecting the active turn", asyn
     setup.mockInput.pressEnter()
     await until(() => posts.length === 2)
     await until(() => setup.captureCharFrame().includes("Follow-up turn"))
-    const [firstId, queuedId] = posts
-    expect(queuedId).not.toBe(firstId)
+    setup.mockInput.typeText("Last follow-up")
+    setup.mockInput.pressEnter()
+    await until(() => posts.length === 3)
+    await until(() => setup.captureCharFrame().includes("Last follow-up"))
+    const [firstId, earlierQueuedId, queuedId] = posts
+    expect(earlierQueuedId).not.toBe(firstId)
+    expect(queuedId).not.toBe(earlierQueuedId)
 
     setup.mockInput.pressKey("x", { ctrl: true, shift: true })
     await until(() => cancellations.length === 1)
-    await until(() => !setup.captureCharFrame().includes("Follow-up turn"))
+    await until(() => !setup.captureCharFrame().includes("Last follow-up"))
+    expect(setup.captureCharFrame()).toContain("Follow-up turn")
     expect(cancellations).toEqual([`/v1/sessions/s1/operations/${queuedId}/cancel`])
 
     setup.mockInput.pressKey("x", { ctrl: true })

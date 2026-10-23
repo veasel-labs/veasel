@@ -16,6 +16,7 @@ import {
   formatWarnStatus,
 } from "../status-a11y"
 import { liveStreamStatusMessage } from "../transcript-scroll"
+import { formatProviderConnectionError } from "../settings-errors"
 import { homeFooterHint } from "../footer-hints"
 import {
   isBuiltinThemeId,
@@ -1582,7 +1583,10 @@ function LiveAppShell(props: LiveAppProps) {
                 toast.success(`Connected · ${label}`, "MODEL SETTINGS")
               } catch (error) {
                 toast.info(
-                  error instanceof Error ? error.message : "could not save provider",
+                  formatProviderConnectionError(
+                    model.providerID,
+                    error instanceof Error ? error.message : "could not save provider",
+                  ),
                   "MODEL SETTINGS",
                 )
               } finally {
@@ -1594,7 +1598,10 @@ function LiveAppShell(props: LiveAppProps) {
         })
       } catch (error) {
         toast.info(
-          error instanceof Error ? error.message : "model discovery failed",
+          formatProviderConnectionError(
+            provider.id,
+            error instanceof Error ? error.message : "model discovery failed",
+          ),
           "MODEL SETTINGS",
         )
         setComposerFocused(true)

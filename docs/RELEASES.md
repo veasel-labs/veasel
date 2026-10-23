@@ -32,9 +32,7 @@ health endpoint is not already responding, then launch the bundled standalone
 TUI executable beside the V backend.
 
 These automated builds are prereleases while the product remains under active
-development. They are not stable compatibility promises. The mascot artwork
-licensing restriction documented in `THIRD_PARTY_NOTICES.md` also applies to
-redistributed builds.
+development. They are not stable compatibility promises.
 
 ## Verify an archive
 

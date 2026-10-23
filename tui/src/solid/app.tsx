@@ -438,6 +438,13 @@ function AppShell(props: SolidAppProps) {
           mcpServers: demoMcpServers(),
         })
       },
+      showRuns: () => {
+        setComposerFocused(false)
+        openDialogAlert(dialog, {
+          title: "Execution history",
+          message: "Open a session to browse its execution history.",
+        })
+      },
       showAgent: () => {
         setComposerFocused(false)
         openAgentDialog(dialog, {

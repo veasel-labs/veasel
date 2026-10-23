@@ -16,9 +16,34 @@ describe("resolveLiveSlash", () => {
       kind: "skills",
       filter: "auth oauth",
     })
-    expect(resolveLiveSlash("/skill on user/demo")).toEqual({ kind: "skills", filter: "" })
+    expect(resolveLiveSlash("/skill on user/demo")).toEqual({ kind: "skill-action", action: "on", key: "user/demo" })
+    expect(resolveLiveSlash("/skill off user/demo")).toEqual({ kind: "skill-action", action: "off", key: "user/demo" })
+    expect(resolveLiveSlash("/skill run user/demo")).toEqual({ kind: "skill-action", action: "run", key: "user/demo" })
     expect(resolveLiveSlash("/mcp")).toEqual({ kind: "mcp", filter: "" })
+    expect(resolveLiveSlash("/mcp add")).toEqual({ kind: "mcp-add-wizard" })
     expect(resolveLiveSlash("/mcp http")).toEqual({ kind: "mcp", filter: "http" })
+    expect(resolveLiveSlash("/mcp trust configured/echo-tools")).toEqual({
+      kind: "mcp-trust",
+      trusted: true,
+      key: "configured/echo-tools",
+    })
+    expect(resolveLiveSlash("/mcp untrust local-kit/calendar")).toEqual({
+      kind: "mcp-trust",
+      trusted: false,
+      key: "local-kit/calendar",
+    })
+    expect(resolveLiveSlash('/mcp add project stdio demo-server npx -y "demo package"')).toEqual({
+      kind: "mcp-add", scope: "project", name: "demo-server", transport: "stdio", command: "npx", args: ["-y", "demo package"],
+    })
+    expect(resolveLiveSlash("/mcp add http docs https://example.test/mcp")).toEqual({
+      kind: "mcp-add", scope: "user", name: "docs", transport: "streamable-http", url: "https://example.test/mcp",
+    })
+    expect(resolveLiveSlash("/mcp disable project docs")).toEqual({
+      kind: "mcp-configure", action: "disable", scope: "project", name: "docs",
+    })
+    expect(resolveLiveSlash("/mcp remove docs")).toEqual({
+      kind: "mcp-configure", action: "remove", scope: "user", name: "docs",
+    })
     expect(resolveLiveSlash("/help")).toEqual({ kind: "help", advanced: false })
     expect(resolveLiveSlash("/help advanced")).toEqual({ kind: "help", advanced: true })
     expect(resolveLiveSlash("/?")).toEqual({ kind: "help", advanced: false })
@@ -39,12 +64,15 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/mcp calls")).toEqual({ kind: "reviews" })
     expect(resolveLiveSlash("/mcp call show deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
       kind: "reviews",
+      target: { kind: "mcp", id: "deadbeef-dead-4ead-8ead-deadbeefdead" },
     })
     expect(resolveLiveSlash("/patch approve deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
       kind: "reviews",
+      target: { kind: "patch", id: "deadbeef-dead-4ead-8ead-deadbeefdead" },
     })
     expect(resolveLiveSlash("/command show deadbeef-dead-4ead-8ead-deadbeefdead")).toEqual({
       kind: "reviews",
+      target: { kind: "command", id: "deadbeef-dead-4ead-8ead-deadbeefdead" },
     })
   })
 
@@ -52,20 +80,40 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/plugins")).toEqual({ kind: "plugins", filter: "" })
     expect(resolveLiveSlash("/plugins auth")).toEqual({ kind: "plugins", filter: "auth" })
     expect(resolveLiveSlash("/plugin")).toEqual({ kind: "plugins", filter: "" })
+    expect(resolveLiveSlash("/plugin add")).toEqual({ kind: "plugin-add", replace: false })
+    expect(resolveLiveSlash('/plugin add --replace "/tmp/plugin package"')).toEqual({
+      kind: "plugin-add",
+      path: "/tmp/plugin package",
+      replace: true,
+    })
+    expect(resolveLiveSlash("/plugin add /tmp/plugin")).toEqual({
+      kind: "plugin-add",
+      path: "/tmp/plugin",
+      replace: false,
+    })
+    expect(resolveLiveSlash("/plugin remove review-tools")).toEqual({
+      kind: "plugin-remove",
+      name: "review-tools",
+    })
     expect(resolveLiveSlash("/map")).toEqual({ kind: "map", hint: "" })
     expect(resolveLiveSlash("/map boot")).toEqual({ kind: "map", hint: "boot" })
     expect(resolveLiveSlash("/history older")).toEqual({ kind: "history-older" })
+    expect(resolveLiveSlash("/runs")).toEqual({ kind: "runs" })
+    expect(resolveLiveSlash("/history runs")).toEqual({ kind: "runs" })
     expect(resolveLiveSlash("/history")).toEqual({ kind: "history-hint" })
   })
 
   test("marks unsupported known slashes and unknown typos", () => {
     expect(resolveLiveSlash("/mcp add user stdio demo echo hi")).toEqual({
-      kind: "unsupported",
-      command: "/mcp add user stdio demo echo hi",
+      kind: "mcp-add", scope: "user", name: "demo", transport: "stdio", command: "echo", args: ["hi"],
     })
     expect(resolveLiveSlash("/theme reload")).toEqual({
       kind: "unsupported",
       command: "/theme reload",
+    })
+    expect(resolveLiveSlash("/skill whatever user/demo")).toEqual({
+      kind: "unsupported",
+      command: "/skill whatever user/demo",
     })
     expect(resolveLiveSlash("/not-a-real-command")).toEqual({
       kind: "unknown",

@@ -6,6 +6,8 @@ export type SlashCommand = {
   category: SlashCategory
   // Present when the command needs arguments; name completion stops after a trailing space.
   usage?: string
+  /** Run on Enter even when the command also documents its arguments. */
+  run?: boolean
 }
 
 export const slashCategoryLabels: Record<SlashCategory, string> = {
@@ -71,13 +73,13 @@ export const slashCommands: SlashCommand[] = [
   { name: "/skills", category: "skills", description: "List discovered Skills; add text to filter (all tokens must match)" },
   { name: "/skill", category: "skills", description: "Enable, disable, or one-shot invoke a Skill", usage: "/skill on|off|run <source>/<skill>" },
   { name: "/plugins", category: "plugins", description: "List linked Agent Plugin packages; add text to filter" },
-  { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory (optional --replace)", usage: "/plugin add [--replace] <absolute-path>" },
+  { name: "/plugin add", category: "plugins", description: "Link an absolute local plugin directory (optional --replace)", usage: "/plugin add [--replace] <absolute-path>", run: true },
   { name: "/plugin remove", category: "plugins", description: "Remove a managed plugin link", usage: "/plugin remove <name>" },
   { name: "/mcp", category: "mcp", description: "List MCP servers; add text to filter (stdio, trusted, name…)" },
-  { name: "/mcp add", category: "mcp", description: "Add a configured MCP server (user or project scope)", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>" },
-  { name: "/mcp remove", category: "mcp", description: "Remove a configured MCP server", usage: "/mcp remove [user|project] <name>" },
-  { name: "/mcp enable", category: "mcp", description: "Enable a configured MCP server", usage: "/mcp enable [user|project] <name>" },
-  { name: "/mcp disable", category: "mcp", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>" },
+  { name: "/mcp add", category: "mcp", description: "Open a guided flow or add a configured MCP server directly", usage: "/mcp add [user|project] stdio <name> <command> [args…]  or  /mcp add [user|project] http <name> <url>", run: true },
+  { name: "/mcp remove", category: "mcp", description: "Remove a configured MCP server", usage: "/mcp remove [user|project] <name>", run: true },
+  { name: "/mcp enable", category: "mcp", description: "Enable a configured MCP server", usage: "/mcp enable [user|project] <name>", run: true },
+  { name: "/mcp disable", category: "mcp", description: "Disable a configured MCP server without deleting it", usage: "/mcp disable [user|project] <name>", run: true },
   { name: "/mcp trust", category: "mcp", description: "Trust an MCP server", usage: "/mcp trust <plugin>/<server>" },
   { name: "/mcp untrust", category: "mcp", description: "Stop trusting an MCP server", usage: "/mcp untrust <plugin>/<server>" },
   { name: "/mcp credentials", category: "mcp", description: "List named Streamable HTTP credentials (header names only; no secret values)" },
@@ -90,6 +92,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/commands", category: "approvals", description: "List proposed shell commands waiting for approval; add text to filter by command or cwd" },
   { name: "/command", category: "approvals", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", category: "session", description: "Load earlier messages in this session" },
+  { name: "/runs", category: "session", description: "Browse durable execution history for this session" },
   { name: "/usage", category: "session", description: "Show provider-reported token totals for this session" },
   { name: "/status", category: "session", description: "Session, model, and connection snapshot (same as /usage)" },
   { name: "/map", category: "session", description: "Show the extractive workspace repository map; add text to hint ranking" },
@@ -236,7 +239,7 @@ function normalize(input: string): string {
 
 function asSuggestion(command: SlashCommand): SlashSuggestion {
   const insert = command.usage ? `${command.name} ` : command.name
-  return { ...command, insert, run: !command.usage }
+  return { ...command, insert, run: command.run ?? !command.usage }
 }
 
 function activeArgumentCommand(query: string): SlashCommand | undefined {

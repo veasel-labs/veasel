@@ -1631,7 +1631,7 @@
       "name": "OpenCode Go",
       "description": "OpenAI-compatible Chat Completions API",
       "protocol": "openai-compatible",
-      "api": "https://opencode.ai/inference/go/v1",
+      "api": "https://opencode.ai/inference/go/openai/v1",
       "environment_key": "OPENCODE_API_KEY",
       "documentation_url": "https://opencode.ai/v2/docs/console/go/",
       "requires_api_key": true,

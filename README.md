@@ -99,6 +99,8 @@ The working vertical slice includes:
   `veasel run` when adapters set `usage.reported` (no invented cost)
 - Bounded workspace list/read/search; durable edit/shell/MCP proposals that
   require explicit review before effect
+- Searchable, paginated durable execution history across sessions in the Solid
+  TUI via `/runs`
 - Agent Plugins (local READY): package discovery, durable `/plugin` links with
   install summaries, component toggles, Skills, and trusted stdio / Streamable
   HTTP MCP with per-call review (no remote marketplace — see the
@@ -106,15 +108,16 @@ The working vertical slice includes:
 
 Honesty bounds that stay in the product voice:
 
-- Approved shell uses Bubblewrap on Linux (`shell.sandbox.bubblewrap`), Seatbelt
-  on macOS (`shell.sandbox.seatbelt`), or AppContainer + Job Object on Windows
-  (`shell.sandbox.windows`) when the backend is available; otherwise it falls
-  back unsandboxed. Windows grants workspace ACL to the AppContainer SID and
-  denies network by default; it is not Codex-level WFP/LPAC. Trusted MCP stdio
-  defaults unsandboxed (`VEASEL_MCP_STDIO_SANDBOX` unset/off); set
-  `auto`/`require` for Linux Bubblewrap, macOS Seatbelt, or Windows
-  AppContainer when available (`mcp.stdio.sandbox.*` only when wrap will run)—
-  inspect effects before approval
+- Approved shell defaults to fail-closed OS sandboxing: Bubblewrap on Linux
+  (`shell.sandbox.bubblewrap`), Seatbelt on macOS (`shell.sandbox.seatbelt`),
+  or AppContainer + Job Object on Windows (`shell.sandbox.windows`). Missing
+  backends refuse execution by default; `VEASEL_SHELL_SANDBOX=auto` explicitly
+  permits an unsandboxed fallback and `off` disables wrapping. Windows grants
+  workspace ACL to the AppContainer SID and denies network by default; it is
+  not Codex-level WFP/LPAC. Trusted MCP stdio also defaults to fail-closed
+  sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); `auto` explicitly permits
+  unsandboxed fallback and `off` disables wrapping. Capabilities are shown only
+  when the platform wrap will run; inspect effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full
@@ -207,8 +210,8 @@ For memory-bounded local V checks, see [AGENTS.md](AGENTS.md). Related maps:
 
 ## Licensing
 
-Code is MIT. The startup TUI pixel portrait adapts the official Veasel mascot
-under **CC BY-NC 4.0** (commercial use needs separate permission). See
+Code and the original geometric TUI pixel companion are MIT. The V project's
+official mascot artwork is CC BY-NC 4.0 and is not included or adapted. See
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No endorsement by the V
 project is implied. The README banner and mark in `static/` are Veasel Code
 originals under MIT.

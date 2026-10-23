@@ -1,11 +1,21 @@
 # Competitive coding-agent source study
 
-**Reviewed:** 2026-10-12; clone inventory and selected rechecks 2026-10-15.
+**Original study:** 2026-10-12; selected source rechecks 2026-10-15.
 This document records implementation observations from the pinned upstream
 commits below. It is an engineering input, not a feature or performance claim
 about Veasel. Recheck upstream before using these references to make
-compatibility decisions. Local read-only clones live under
-`~/.cache/veasel-reference-research` (28/28 present on 2026-10-15).
+compatibility decisions. The 26 mission reference clones were refreshed on
+2026-10-22 under `research/refs/`; exact fetched revisions are recorded in
+[`refs/REVISIONS.md`](../research/refs/REVISIONS.md). That inventory refresh is
+not a claim that every source file was re-read at the refreshed pins: findings
+below retain their individual historical revisions and need re-audit before
+they drive compatibility claims.
+
+**Focused subagent recheck:** 2026-10-23 at OpenCode
+`ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e` (MIT), the refreshed revision in
+[`refs/REVISIONS.md`](../research/refs/REVISIONS.md). This recheck covers only
+the subagent files and lifecycle tests linked below; earlier runner findings
+remain pinned to their original revisions.
 
 ## Source revisions
 
@@ -17,7 +27,7 @@ compatibility decisions. Local read-only clones live under
 | [Goose](https://github.com/aaif-goose/goose/tree/dd17bf2021f3fb3b326c471593c352e1b0d62bbd) | `dd17bf2021f3fb3b326c471593c352e1b0d62bbd` | Apache-2.0; agent state machine and effects |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli/tree/06d329873703ddabe8a842d962342ac4ad779e83) | `06d329873703ddabe8a842d962342ac4ad779e83` | Apache-2.0; telemetry, redaction, and checkpointing |
 | [Aider](https://github.com/Aider-AI/aider/tree/5dc9490bb35f9729ef2c95d00a19ccd30c26339c) | `5dc9490bb35f9729ef2c95d00a19ccd30c26339c` | Apache-2.0; syntax-aware repository map and cache |
-| [Cline](https://github.com/cline/cline/tree/789f79e46d3ba579717e8dc8be35fe28af935b06) | `789f79e46d3ba579717e8dc8be35fe28af935b06` | Apache-2.0; shared agent/session and CLI runtime |
+| [Cline](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128) | `590785eff565f167b16d5f750d682c4d9d2b7128` | Apache-2.0; shared agent/session runtime with host-injected tools |
 | [OpenHands](https://github.com/OpenHands/OpenHands/tree/1c75a05d587bcb502cd3f63d7e13eaa98ca84d53) | `1c75a05d587bcb502cd3f63d7e13eaa98ca84d53` | MIT; web client; pair with software-agent-sdk |
 | [software-agent-sdk](https://github.com/OpenHands/software-agent-sdk/tree/8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547) | `8efff8d3cf1a5a3fcf7ce5e3b97c7f00684d9547` | MIT; Agent Server REST/WebSocket lifecycle |
 | [Continue](https://github.com/continuedev/continue/tree/5522c6f44ca0ac3528b37244818fbfa39b5af470) | `5522c6f44ca0ac3528b37244818fbfa39b5af470` | Apache-2.0; context-provider and repository-map interfaces |
@@ -44,12 +54,32 @@ session permissions, while the tool boundary performs its own authorization;
 discovery filtering is not treated as the security check.
 
 **Useful principle:** keep user-visible event publication, execution lifetime,
-and side-effect authorization explicit. Concurrent read-only calls are a
-possible Veasel optimization, but require profiling and ordering/cancellation
-tests first. Veasel currently executes provider tool calls sequentially and
-does not have equivalent user-facing recovery/permission breadth. Preserve the
-existing approval boundary while improving event lifecycles; don't copy its
-TypeScript/Effect stack into V.
+and side-effect authorization explicit. Veasel now runs a provider round
+concurrently only when every call is a read-only workspace list/read/search
+operation, then records results in provider order; mixed and effectful rounds
+remain sequential. This reduces a known latency source without copying
+OpenCode's TypeScript/Effect stack. Cross-platform cancellation and large
+workspace profiling remain separate evidence gaps. Preserve the existing
+approval boundary while improving event lifecycles.
+
+The recheck covered [`subagent-job.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/src/session/subagent-job.ts), [`subagent-completion.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/src/session/subagent-completion.ts), [`subagent.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/src/tool/plugin/subagent.ts), [`subagent-lifetime.test.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/test/subagent-lifetime.test.ts), and recovery cases in [`session-execution.test.ts`](https://github.com/anomalyco/opencode/blob/ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e/packages/core/test/session-execution.test.ts).
+
+OpenCode stores each child under its parent, checks agent permission when the
+tool runs, rejects primary agents as children, limits nesting depth, and only
+continues a child owned by the current parent. Background work uses durable
+jobs. Its completion observer outlives the launching plugin and delivers one
+terminal result per child generation. Tests cover completion and cancellation
+after plugin eviction, plus restart recovery without rerunning a result that
+was already persisted.
+
+**Veasel decision:** this is a product gap, not a request to copy OpenCode's
+framework. Veasel persists sessions and durable operations, but has no
+child-session ownership or subagent tool. Build on those existing contracts.
+Before a model can start child work, require persisted parent lineage, explicit
+agent authorization, bounded depth/concurrency/runtime/output, workspace
+isolation, cancellation, and one-time result delivery after restart. Keep the
+item open until focused lifecycle tests pass and a task benchmark shows gains
+beyond parallel read-only tools.
 
 Rechecked the session runner on 2026-10-15 at
 `37df62f4a1b6d89187a1169187a6cef10557c0ca` (`dev`), in
@@ -143,11 +173,12 @@ and records which step was interrupted. This leaves storage and runtime effects
 replaceable without putting provider execution into a presentation layer.
 
 **Useful principle:** represent lifecycle outcomes and effects explicitly.
-Veasel's API already has durable operation states and separate transport/core
-modules; next improvement is a stable internal event/trace contract shared by
-TUI, headless execution, and benchmark exports. The state-machine abstraction
-is useful only if it reduces branching or enables another runtime; avoid a
-parallel abstraction over the current loop without such evidence.
+Veasel has durable operation states, replayable SSE, and an opt-in ATIF v1.8
+trace shared by headless execution and benchmark adapters. Traces can retain
+partial failed/cancelled turns and provider-reported token totals; source and
+private instructions remain sensitive even after credential redaction. Continue
+to evolve the existing contracts rather than adding a parallel state machine
+unless it reduces branching or enables a real runtime.
 
 ### Gemini CLI — telemetry should be typed, sanitized, and testable
 
@@ -161,9 +192,12 @@ and its utilities have dedicated tests.
 **Useful principle:** telemetry privacy is an implementation property: redact
 before export, bound/rate-limit high-volume events, and test the sanitizer.
 Checkpoints should capture recoverable state, not replay uncertain external
-effects. Veasel currently lacks a versioned trace schema and token/cost
-accounting; introduce those as opt-in machine-readable outputs before adding
-an exporter or dashboard. OTel is not a substitute for durable session state.
+effects. Veasel now has opt-in ATIF v1.8 export, credential redaction, and
+provider-reported token/cache accounting; costs remain unavailable unless every
+turn is covered by the pinned price schedule. Raw source and private
+instructions remain in traces, so they are sensitive artifacts. A general
+telemetry exporter and broader resume/checkpoint UX remain separate gaps. OTel
+is not a substitute for durable session state.
 
 ### Aider — repository structure under an explicit token budget
 
@@ -183,22 +217,33 @@ It is not tree-sitter/PageRank parity and does not claim provider token savings.
 Next: measure coding-task success versus grep-only baselines, then consider a
 parser adapter or cache only when measurements justify it.
 
-### Cline — one runtime for CLI and interactive surfaces
+### Cline — share orchestration, inject host capabilities
 
-Cline's CLI has separate interactive and headless entry points under
-[`apps/cli/src/runtime/`](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1/apps/cli/src/runtime).
-Its SDK runtime orchestrator is under
-[`sdk/packages/core/src/runtime/orchestration/`](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1/sdk/packages/core/src/runtime/orchestration),
-with an agent-runtime provider seam in
-[`sdk/packages/agents/src/`](https://github.com/cline/cline/tree/8eba11b2703f5b12d3f415544be37ffc0ca03be1/sdk/packages/agents/src).
-The CLI's `run-agent.ts` consumes that SDK runtime and emits session and usage
-events, rather than implementing an unrelated agent loop.
+Rechecked the refreshed Cline clone on 2026-10-22 at
+[`590785eff565f167b16d5f750d682c4d9d2b7128`](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128).
+The CLI runtime has its own interactive approval/controller layer under
+[`apps/cli/src/runtime/`](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128/apps/cli/src/runtime),
+while the shared SDK owns orchestration in
+[`sdk/packages/core/src/runtime/orchestration/`](https://github.com/cline/cline/tree/590785eff565f167b16d5f750d682c4d9d2b7128/sdk/packages/core/src/runtime/orchestration).
+The core's [`createBuiltinToolsList`](https://github.com/cline/cline/blob/590785eff565f167b16d5f750d682c4d9d2b7128/sdk/packages/core/src/extensions/tools/definitions.ts)
+adds a capability only when its executor is supplied. Runtime construction
+also accepts executor overrides; its plan-mode command guard is merged through
+the same extension path for shared and host-provided `run_commands` tools.
+Browser sessions, however, live in the VS Code host at
+[`apps/vscode/src/services/browser/BrowserSession.ts`](https://github.com/cline/cline/blob/590785eff565f167b16d5f750d682c4d9d2b7128/apps/vscode/src/services/browser/BrowserSession.ts).
+Shared orchestration therefore does not imply identical capabilities across
+CLI and desktop hosts.
 
 **Useful principle:** Veasel's `veasel run`, API, and TUI should keep sharing
-the V runtime and persisted operations. The new headless CLI follows this
-boundary; it still needs completion trajectories, budget controls, and
-benchmark-safe execution policies. Cline's larger extension surface also has
-more lifecycle complexity; adopt only interfaces needed by real clients.
+the V runtime and persisted operations. The headless CLI follows this boundary
+with operation IDs, bounded timeouts, cancellation, optional ATIF trajectories,
+explicit autonomous opt-in, and a Harbor installed-agent adapter.
+Autonomous opt-in is not itself isolation; benchmark runs must use a disposable
+task environment, and runtime execution fails closed when its OS sandbox is
+unavailable. Real-model task evaluation remains unrun without an authorized
+budget. If Veasel adds browser automation, keep the browser host separately
+supervised and expose it through a versioned, capability-gated tool/API contract;
+do not make browser availability depend on which TUI renderer is active.
 
 ### OpenHands — typed remote execution and session identity
 
@@ -232,6 +277,34 @@ bounded, tool-requested repository data; a future retrieval layer should have
 an inspectable budget and source provenance. Avoid porting Continue's IDE
 context catalog into a terminal agent without matching user workflows.
 
+The pinned Continue source also shows where the product owns the operational
+cost of that context. `DocsService.ts` maintains a LanceDB vector table plus
+SQLite metadata, selects the configured embedding model (with a Transformers.js
+fallback where supported), tracks indexing status, and reindexes when the
+embedding provider or crawl URL/depth changes. It serializes work per start URL,
+checks cancellation and provider changes while crawling/embedding, and marks
+failed configs to avoid repeating the same failing attempt. `DocsContextProvider`
+retrieves up to 30 chunks, optionally reranks them to 15, exposes URL provenance,
+and tells the model to answer from retrieved docs and cite URLs. This is a
+meaningful reference for a future Veasel docs-index feature, but it is a larger
+dependency and lifecycle commitment than Veasel's current bounded,
+extractive repository map; it is not a reason by itself to add embeddings.
+
+Continue's `NextEditProvider` is a separate inline-edit product path: it tracks
+accepted/rejected outcomes and edit chains, blocks sensitive paths, uses
+model-specific providers, and retrieves autocomplete context. Its
+`PrefetchQueue` is explicitly limited to three pending outcomes by default, and
+its source comment says the original background-prefetch idea was abandoned
+because location prediction quality, latency, and token cost were not good
+enough. Veasel's repository map instead ranks workspace paths/symbols
+extractively under a 12 KiB default UTF-8 budget (with explicit scan/read
+limits), supports a separate 2 KiB query-focus map, and records measurements in
+the session. These are different features and should not be compared as
+equivalent autocomplete implementations. The actionable lesson is to measure
+retrieval relevance and context cost before adding model-driven prefetch or
+vector indexing; keep any future index cancellable, provider-aware, bounded,
+and inspectable.
+
 ### Roo Code — archived mode personas, not a performance baseline
 
 At archived commit `b867ec9145750d0ae1ff7f02d35406e9bf2a0b16`, Roo Code's
@@ -255,11 +328,18 @@ At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under
 `internal/ui/model/status.go` and `internal/ui/chat/` keeps mode badges, help
 hints, and message rendering as separate models with golden/bench tests. Its
 pending-queue tests (`internal/ui/model/pending_queue_test.go`) keep in-flight
-prompts visible above a spinner. Veasel keeps OpenTUI Core 0.5.17 renderables,
-surfaces provider-reported token counts in the footer, and now prefers a compact
+prompts visible above a spinner. Veasel uses OpenTUI Core 0.6.2, surfaces
+provider-reported token counts in the footer, and now prefers a compact
 `review needed` footer cue when edits, shell commands, or MCP calls await
-approval. Richer markdown/diff chrome remains open; do not port Crush's Lip Gloss
-stack into the TypeScript client.
+approval. The current client pins OpenTUI Core 0.6.2. At OpenTUI commit
+`a8f27451b09bdd0670ff661525268ae6f97ec0fc` (0.6.7), `packages/core/src/testing/test-renderer.ts`
+provides scheduler-aware `waitForFrame`, `waitForVisualIdle`, and bounded
+`waitFor` helpers with last-frame diagnostics; Veasel's existing rendered tests
+often use hand-written polling loops. The new live MCP configuration journey
+uses the installed 0.6.2 `waitForFrame` and awaited `dispose` APIs; migrating the
+remaining polling tests is a concrete test-reliability opportunity. Richer
+markdown/diff chrome remains open; do not port Crush's Lip Gloss stack into the
+TypeScript client.
 
 ### Pi — session forks without forcing compaction into the core loop
 
@@ -334,9 +414,9 @@ integrations already exist. For current verified feature status, see
 | Failed turns missing from TUI transcript | Fixed: `store.record_session_turn_completion` persists user/assistant text for failed/cancelled turns; covered by `main_test.v`. |
 | `veasel run` concatenating text across tool calls | Fixed: tool-round boundaries keep newlines; tool-budget summary path added. |
 | Artificial 100k input limit | Fixed: `max_chat_input_bytes = 1_048_576` (1 MiB of text, not Muse's token window). |
-| Incomplete real-terminal keyboard testing | Linux + macOS standalone PTY smoke in CI; Linux `keyboard-exercise` local. Windows interactive still open (ConPTY checklist in `compatibility/tui-interactive-smoke.md`). |
+| Incomplete real-terminal keyboard testing | Linux + macOS standalone PTY smoke in CI; Linux `keyboard-exercise` local. Windows now has a native ConPTY packaged-client smoke in CI; exact-head result is pending in `compatibility/tui-interactive-smoke.md`. |
 | Provider onboarding friction | Catalog-driven Select → Authenticate → Model flow shipped; Ctrl+U/Ctrl+O for advanced cases. |
-| Agent Plugins conformance gaps | Local host READY (fixtures, durable links + replace, install summaries, component toggles). Remaining: remote marketplace, upstream cross-impl fixtures (none at pin), OAuth DCR (deferred), TUI browser-open UX, GET notification productization. Linux/macOS/Windows MCP stdio sandbox opt-in (`VEASEL_MCP_STDIO_SANDBOX`; default off) shipped. |
+| Agent Plugins conformance gaps | Local host READY (fixtures, durable links + replace, install summaries, component toggles). Remaining: remote marketplace, upstream cross-impl fixtures (none at pin), OAuth DCR (deferred), TUI browser-open UX, GET notification productization. Linux/macOS/Windows MCP stdio sandbox shipped with fail-closed defaults (`VEASEL_MCP_STDIO_SANDBOX=require` unless explicitly overridden). |
 | Durable job recovery across restart | Queued Prefer: respond-async jobs resume after restart; claimed running/cancelling ops become `uncertain` and are never replayed. See `docs/compatibility/durable-queued-session-operations.md`. |
-| Incomplete execution sandboxing | Approved Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer+Job wrap when available (honest capabilities); `VEASEL_SHELL_SANDBOX=auto` may fall back unsandboxed when the backend is missing, while `require` fails closed. Autonomous shell is fail-closed on Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer+Job (allowlisted env on Linux/macOS; Windows AppContainer still inherits process env — documented limit). Trusted MCP stdio may wrap under the same platforms via `VEASEL_MCP_STDIO_SANDBOX` (default off). Codex-level Windows WFP/LPAC and deeper Seatbelt hardening remain open. |
+| Incomplete execution sandboxing | Approved Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer+Job wrap when available (honest capabilities); unset/invalid `VEASEL_SHELL_SANDBOX` fails closed, while explicit `auto` permits an unsandboxed fallback and `off` disables wrapping. Autonomous shell is fail-closed on Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer+Job (allowlisted env on Linux/macOS; Windows AppContainer still inherits process env — documented limit). Trusted MCP stdio uses those platform wraps by default via `VEASEL_MCP_STDIO_SANDBOX=require`; explicit `auto` permits fallback and `off` disables wrapping. Codex-level Windows WFP/LPAC and deeper Seatbelt hardening remain open. |
 | Missing credible E2E benchmark comparisons | Harbor smoke adapter + ATIF validation exist; no Harbor Index / Terminal-Bench / SWE-bench submission or leaderboard claim. |

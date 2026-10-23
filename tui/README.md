@@ -34,8 +34,7 @@ turns with `Prefer: respond-async`, renders durable assistant deltas while the
 operation runs, and reloads the committed exchange after its
 `session.turn_completed` event.
 
-The startup portrait is a pixel-art adaptation of Veasel, the V language
-mascot. The original mascot is by the V contributors; this adaptation is
-licensed under CC BY-NC 4.0 and is not covered by Veasel Code's MIT license.
-Commercial use requires separate permission from the rights holder. See
-[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+The startup screen uses an original geometric pixel companion drawn for Veasel
+Code. It does not reuse the V language mascot artwork and is covered by this
+repository's MIT license. The upstream mascot's CC BY-NC 4.0 license is recorded
+in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).

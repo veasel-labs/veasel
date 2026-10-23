@@ -245,7 +245,10 @@ fn compute_turn_cost_usd(schedule CostSchedule, turn CostScheduleTurn) !f64 {
 // session_usage_cost_label returns a USD string only when every usage-reported
 // turn has a schedule entry and can be priced. Otherwise returns unavailable.
 fn session_usage_cost_label(turns []CostScheduleTurn) string {
-	schedule := active_cost_schedule()
+	return usage_cost_label(active_cost_schedule(), turns)
+}
+
+fn usage_cost_label(schedule CostSchedule, turns []CostScheduleTurn) string {
 	if schedule.entries.len == 0 {
 		return cost_unavailable
 	}

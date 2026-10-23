@@ -31,6 +31,54 @@ mut:
 	http_transport  &PluginMCPHTTPTransport = unsafe { nil }
 }
 
+struct PluginMCPFrameBuffer {
+mut:
+	bytes     []u8
+	read_from int
+	scan_from int
+}
+
+fn (mut buffer PluginMCPFrameBuffer) append(chunk string) !string {
+	pending_bytes := buffer.bytes.len - buffer.read_from
+	if chunk.len > max_plugin_mcp_frame_bytes - pending_bytes {
+		return error('MCP response exceeds the frame size limit')
+	}
+	if buffer.read_from == buffer.bytes.len {
+		buffer.bytes.clear()
+		buffer.read_from = 0
+		buffer.scan_from = 0
+	} else if buffer.read_from > 0 {
+		buffer.bytes = buffer.bytes[buffer.read_from..].clone()
+		buffer.scan_from -= buffer.read_from
+		buffer.read_from = 0
+	}
+	// []u8 has one-byte elements, so push_many copies directly from the
+	// string's owned byte buffer without allocating a temporary chunk.bytes().
+	unsafe { buffer.bytes.push_many(chunk.str, chunk.len) }
+	return buffer.take_frame()
+}
+
+fn (mut buffer PluginMCPFrameBuffer) take_frame() !string {
+	for index in buffer.scan_from .. buffer.bytes.len {
+		if buffer.bytes[index] == `\n` {
+			frame := buffer.bytes[buffer.read_from..index].bytestr().trim_right('\r')
+			buffer.read_from = index + 1
+			buffer.scan_from = buffer.read_from
+			if frame.len == 0 {
+				return error('MCP server returned an empty frame')
+			}
+			if buffer.read_from == buffer.bytes.len {
+				buffer.bytes.clear()
+				buffer.read_from = 0
+				buffer.scan_from = 0
+			}
+			return frame
+		}
+	}
+	buffer.scan_from = buffer.bytes.len
+	return ''
+}
+
 // PluginMCPTransport supplies the process configuration missing from the
 // stdlib convenience constructor while keeping MCP JSON-RPC in vlib/mcp.
 // On Windows, win_mcp holds an AppContainer-backed stdio process when
@@ -40,7 +88,7 @@ struct PluginMCPTransport {
 mut:
 	process            &os.Process = unsafe { nil }
 	win_mcp            voidptr     = unsafe { nil } // &WindowsMcpStdioProcess on Windows
-	buffer             string
+	buffer             PluginMCPFrameBuffer
 	response_timeout   time.Duration = plugin_mcp_response_timeout
 	cancel_requested   bool
 	active_request_id  string
@@ -48,13 +96,10 @@ mut:
 }
 
 fn mcp_stdio_sandbox_mode() ApprovedShellSandboxMode {
-	// Default off: MCP stdio stays unsandboxed until operators opt into
-	// auto/require. Empty VEASEL_SHELL_SANDBOX defaults to auto for shell;
-	// do not inherit that default here.
+	// Trusted MCP stdio fails closed by default. Operators can explicitly opt
+	// into the compatibility fallback with `auto` or unsandboxed execution with
+	// `off`; an invalid value is handled as `require` by the shared parser.
 	raw := os.getenv(mcp_stdio_sandbox_mode_env).trim_space().to_lower()
-	if raw.len == 0 {
-		return .off
-	}
 	return approved_shell_sandbox_mode_from(raw)
 }
 
@@ -83,7 +128,7 @@ fn mcp_stdio_review_sandbox_preview() ReviewSandboxPreview {
 }
 
 fn warn_mcp_stdio_unsandboxed_default() {
-	eprintln('veasel: trusted MCP stdio starts unsandboxed (VEASEL_MCP_STDIO_SANDBOX unset/off). Set VEASEL_MCP_STDIO_SANDBOX=auto or require for Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer when available. Default stays off.')
+	eprintln('veasel: trusted MCP stdio is running unsandboxed because VEASEL_MCP_STDIO_SANDBOX=off was explicitly set. It inherits Veasel OS-user permissions.')
 }
 
 // mcp_stdio_sandbox_bubblewrap_capability is true only when Linux Bubblewrap
@@ -206,7 +251,7 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	}
 }
 
-// Windows AppContainer policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// Windows AppContainer policy for trusted MCP stdio (required by default):
 // - separate VeaselTrustedMcp profile; PLUGIN_ROOT and PLUGIN_DATA ACL grants
 // - network capability SIDs always enabled (many MCP servers need outbound HTTPS)
 // - Job Object kill-on-close + process/memory caps; not Codex WFP/LPAC
@@ -232,7 +277,7 @@ fn start_plugin_mcp_transport_windows_sandboxed(root string, data string, cwd st
 	}
 }
 
-// macOS Seatbelt policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// macOS Seatbelt policy for trusted MCP stdio (required by default):
 // - sandbox-exec only from /usr/bin/sandbox-exec
 // - default deny; host readable; writes limited to PLUGIN_ROOT, PLUGIN_DATA, and temp
 // - /Users, /var/root, and /Volumes denied except PLUGIN_ROOT/PLUGIN_DATA carve-outs
@@ -311,7 +356,7 @@ fn start_plugin_mcp_transport_macos_sandboxed(root string, data string, cwd stri
 	}
 }
 
-// Linux Bubblewrap policy for trusted MCP stdio (opt-in via VEASEL_MCP_STDIO_SANDBOX):
+// Linux Bubblewrap policy for trusted MCP stdio (required by default):
 // - host root is read-only; PLUGIN_ROOT and PLUGIN_DATA are writable binds
 // - home/runtime paths are masked; /tmp is a private tmpfs
 // - network is shared (many MCP servers need outbound HTTPS); not a shell-style deny
@@ -567,20 +612,16 @@ fn (mut transport PluginMCPTransport) receive() !string {
 		if time.since(started) > transport.response_timeout {
 			return error('MCP server response timed out')
 		}
+		mut frame := transport.buffer.take_frame()!
+		if frame != '' {
+			return frame
+		}
 		if transport.mcp_stdio_pending_stderr() {
 			_ := transport.mcp_stdio_stderr_read()
 		}
 		if transport.mcp_stdio_pending_stdout() {
-			transport.buffer += transport.mcp_stdio_stdout_read()
-			if transport.buffer.len > max_plugin_mcp_frame_bytes {
-				return error('MCP response exceeds the frame size limit')
-			}
-			if newline := transport.buffer.index('\n') {
-				frame := transport.buffer[..newline].trim_right('\r')
-				transport.buffer = transport.buffer[newline + 1..]
-				if frame.len == 0 {
-					return error('MCP server returned an empty frame')
-				}
+			frame = transport.buffer.append(transport.mcp_stdio_stdout_read())!
+			if frame != '' {
 				return frame
 			}
 		}

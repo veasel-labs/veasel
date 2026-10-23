@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { diffRenderableTheme } from "./diff-view"
 import {
   clearCustomThemes,
   defaultThemeId,
@@ -23,6 +24,60 @@ import {
 } from "./themes"
 
 describe("TUI themes", () => {
+  test("secondary text and warning status keep readable contrast on their surfaces", () => {
+    const luminance = (hex: string) => {
+      const values = hex.match(/[0-9a-f]{2}/gi)?.map((pair) => Number.parseInt(pair, 16) / 255)
+      if (!values || values.length !== 3) throw new Error("Expected six-digit hex color")
+      const linear = values.map((value) =>
+        value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+      )
+      return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+    }
+    const contrast = (foreground: string, background: string) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+      return (values[0]! + 0.05) / (values[1]! + 0.05)
+    }
+
+    for (const theme of Object.values(themes)) {
+      for (const token of [theme.muted, theme.meta]) {
+        for (const background of [
+          theme.shellBg,
+          theme.panelBg,
+          theme.headerBg,
+          theme.inputBg,
+          theme.inputFocusBg,
+        ]) {
+          expect(contrast(token, background)).toBeGreaterThanOrEqual(4.5)
+        }
+      }
+      for (const background of [theme.shellBg, theme.panelBg, theme.inputBg]) {
+        expect(contrast(theme.statusWarn, background)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  test("split diff line numbers remain readable over added and removed lines", () => {
+    const luminance = (hex: string) => {
+      const values = hex.match(/[0-9a-f]{2}/gi)?.map((pair) => Number.parseInt(pair, 16) / 255)
+      if (!values || values.length !== 3) throw new Error("Expected six-digit hex color")
+      const linear = values.map((value) =>
+        value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+      )
+      return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+    }
+    const contrast = (foreground: string, background: string) => {
+      const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a)
+      return (values[0]! + 0.05) / (values[1]! + 0.05)
+    }
+
+    for (const theme of Object.values(themes)) {
+      const diff = diffRenderableTheme(theme)
+      for (const background of [diff.addedBg, diff.removedBg]) {
+        expect(contrast(diff.lineNumberFg, background)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
   test("ships the mint product look as the default theme", () => {
     expect(defaultThemeId).toBe("mint")
     expect(themes.mint.brand).toBe("#9af7c9")

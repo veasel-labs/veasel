@@ -41,7 +41,8 @@ import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openReviewPanel } from "./component/review-panel"
 import { decideSolidReviews, loadPendingSolidReviews, inspectSolidReview } from "./reviews-inventory"
-import { reviewShortcut } from "./reviews"
+import { reviewShortcut, reviewSummaryLine, type SolidReviewItem } from "./reviews"
+import type { ActiveReviewKind } from "../active-review"
 import { openAgentDialog } from "./component/agent-dialog"
 import {
   EXECUTION_POLICY_AGENTS,
@@ -50,9 +51,10 @@ import {
   type ExecutionPolicyId,
 } from "./agent-policy"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
-import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
+import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
+import type { ApiGlobalSessionOperation } from "../api-client"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
 import {
   recordLiveLastError,
@@ -88,9 +90,12 @@ import { skillCatalogFromPlugins } from "./skills-inventory"
 import { type SkillCatalogEntry } from "../skill-autocomplete"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
+import { createLiveMcpWorkflows, openLiveMcpDialog } from "./live-mcp-dialog"
+import { createLivePluginWorkflows } from "./live-plugin-workflows"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
 import { openDialogExportResult } from "./ui/dialog-export-result"
 import { openDialogPrompt } from "./ui/dialog-prompt"
+import { openDialogConfirm } from "./ui/dialog-confirm"
 import {
   formatGlobalUsageLine,
   formatSessionExport,
@@ -110,6 +115,7 @@ import { resolveLiveSlash } from "./live-slash"
 import { createAttentionNotifier } from "./attention"
 import { pageMayHaveOlder, type ChatTurn } from "../chat-history"
 import { formatRepositoryMapSummary } from "../repository-map"
+import type { SlashArgument } from "../slash-commands"
 import {
   HOME_SIDEBAR_DEFAULT,
   clampHomeSidebarWidth,
@@ -629,7 +635,7 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
-  const openLiveReviews = async () => {
+  const openLiveReviews = async (target?: { kind: ActiveReviewKind; id: string }) => {
     const sessionId = activeSessionId()
     if (!sessionId) {
       toast.info("Open a session to review pending proposals", "Reviews")
@@ -638,6 +644,7 @@ function LiveAppShell(props: LiveAppProps) {
     setComposerFocused(false)
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
+      if (sessionId !== activeSessionId()) return
       if (reviews.length === 0) {
         openDialogAlert(dialog, {
           title: "Reviews",
@@ -646,8 +653,17 @@ function LiveAppShell(props: LiveAppProps) {
         })
         return
       }
+      const targetIndex = target
+        ? reviews.findIndex((item) => item.kind === target.kind && item.id === target.id)
+        : 0
+      if (target && targetIndex < 0) {
+        toast.info(`Review ${target.kind}:${target.id.slice(0, 8)} is no longer pending`, "Reviews")
+        setComposerFocused(true)
+        return
+      }
       openReviewPanel(dialog, {
         reviews,
+        initialIndex: Math.max(0, targetIndex),
         onClose: () => setComposerFocused(true),
         onInspect: (target) => inspectSolidReview(props.api, sessionId, target),
         onDecide: async (decision, targets) => {
@@ -719,14 +735,6 @@ function LiveAppShell(props: LiveAppProps) {
         const usage = await props.api.getSessionUsage(sessionId)
         const fromUsage = formatUsageLine(usage)
         if (fromUsage) usageLine = fromUsage
-        try {
-          const globalLine = formatGlobalUsageLine(await props.api.getUsage())
-          if (globalLine) {
-            usageLine = usageLine ? `${usageLine} · ${globalLine}` : globalLine
-          }
-        } catch {
-          // Global usage is additive; session usage still stands on its own.
-        }
       } catch {
         // Keep model settings fallback line.
       }
@@ -735,12 +743,18 @@ function LiveAppShell(props: LiveAppProps) {
         mcpServers = trusted.map((server) => ({
           name: `${server.plugin_name}/${server.server_name}`,
           transport: "plugin",
-          status: "connected" as const,
+          status: "trusted" as const,
           scope: "session",
         }))
       } catch {
         mcpServers = []
       }
+    }
+    try {
+      const globalLine = formatGlobalUsageLine(await props.api.getUsage())
+      if (globalLine) usageLine = usageLine ? `${usageLine} · ${globalLine}` : globalLine
+    } catch {
+      // Global usage is additive; model/session status still stands on its own.
     }
     openStatusDialog(dialog, {
       sessionTitle: inSession() ? sessionTitle() : "Home",
@@ -753,12 +767,41 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
+  const openLiveExecutionHistory = () => {
+    setComposerFocused(false)
+    openExecutionHistoryDialog(dialog, props.api)
+  }
+
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
   const [skillCatalogStatus, setSkillCatalogStatus] = createSignal<string>()
+  const [mcpArgumentServers, setMcpArgumentServers] = createSignal<SlashArgument[]>([])
+  const [configuredMcpArguments, setConfiguredMcpArguments] = createSignal<SlashArgument[]>([])
+  const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
+  const [pluginLinkArguments, setPluginLinkArguments] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {
     const draft = composerDraft()
-    return /(^|\s)\$/.test(draft)
+    return /(^|\s)\$/.test(draft) || /^\/skill\s+(?:on|off|run)\s+/.test(draft)
   })
+  const mcpTrustCompletionAction = createMemo(() => {
+    const match = /^\/mcp\s+(trust|untrust)\s+/i.exec(composerDraft())
+    const action = match?.[1]?.toLowerCase()
+    return action === "trust" || action === "untrust" ? action : undefined
+  })
+  const configuredMcpCompletionScope = createMemo(() => {
+    const match = /^\/mcp\s+(?:remove|enable|disable)(?:\s+(user|project))?\s+/i.exec(composerDraft())
+    if (!match) return undefined
+    return match[1]?.toLowerCase() === "project" ? "project" : "user"
+  })
+  const reviewCompletionKind = createMemo(() => {
+    const draft = composerDraft()
+    if (/^\/patch\s+(?:show|approve|reject)\s+/i.test(draft)) return "patch"
+    if (/^\/command\s+(?:show|approve|reject)\s+/i.test(draft)) return "command"
+    if (/^\/mcp\s+call\s+(?:show|approve|reject)\s+/i.test(draft)) return "mcp"
+    return undefined
+  })
+  const wantsPluginRemovalSuggestions = createMemo(() =>
+    /^\/plugin\s+remove\s+/i.test(composerDraft()),
+  )
   const skillDirectory = createMemo(() =>
     sessions().find((session) => session.id === activeSessionId())?.directory ?? directory(),
   )
@@ -780,6 +823,85 @@ function LiveAppShell(props: LiveAppProps) {
     }).catch(() => {
       if (!current) return
       setSkillCatalogStatus("Skills unavailable · use /skills to retry")
+    })
+  })
+  createEffect(() => {
+    const scope = configuredMcpCompletionScope()
+    const root = directory()
+    const sessionId = activeSessionId()
+    setConfiguredMcpArguments([])
+    if (!scope) return
+    let current = true
+    onCleanup(() => { current = false })
+    void props.api.listConfiguredMcpServers(root).then((catalog) => {
+      if (!current || sessionId !== activeSessionId() || root !== directory()) return
+      setConfiguredMcpArguments(catalog.servers
+        .filter((server) => server.scope === scope)
+        .map((server) => ({
+          value: server.name,
+          description: `${server.scope} · ${server.enabled ? "enabled" : "disabled"} · ${server.transport}`,
+        })))
+    }).catch(() => {
+      if (current) setConfiguredMcpArguments([])
+    })
+  })
+  createEffect(() => {
+    const sessionId = activeSessionId()
+    const root = directory()
+    const action = mcpTrustCompletionAction()
+    setMcpArgumentServers([])
+    if (!action || !sessionId) return
+    let current = true
+    onCleanup(() => { current = false })
+    void Promise.all([
+      props.api.listConfiguredMcpServers(root),
+      props.api.listSessionMcpServers(sessionId),
+    ]).then(([configured, trusted]) => {
+      if (!current || sessionId !== activeSessionId()) return
+      const rows = solidMcpServersFromCatalog(configured, trusted)
+      const eligible = rows.filter((server) =>
+        action === "untrust"
+          ? server.status === "trusted"
+          : server.status === "available",
+      )
+      setMcpArgumentServers(
+        eligible.map((server) => ({
+          value: server.name,
+          description: `${server.transport} · ${server.status}`,
+        })),
+      )
+    }).catch(() => {
+      if (current) setMcpArgumentServers([])
+    })
+  })
+  createEffect(() => {
+    const sessionId = activeSessionId()
+    const kind = reviewCompletionKind()
+    setReviewArgumentItems([])
+    if (!kind || !sessionId) return
+    let current = true
+    onCleanup(() => { current = false })
+    void loadPendingSolidReviews(props.api, sessionId).then((items) => {
+      if (!current || sessionId !== activeSessionId()) return
+      setReviewArgumentItems(items)
+    }).catch(() => {
+      if (current) setReviewArgumentItems([])
+    })
+  })
+  createEffect(() => {
+    const wanted = wantsPluginRemovalSuggestions()
+    setPluginLinkArguments([])
+    if (!wanted) return
+    let current = true
+    onCleanup(() => { current = false })
+    void props.api.listPluginLinks().then((catalog) => {
+      if (!current) return
+      setPluginLinkArguments(catalog.links.map((link) => ({
+        value: link.name,
+        description: link.path,
+      })))
+    }).catch(() => {
+      if (current) setPluginLinkArguments([])
     })
   })
 
@@ -830,96 +952,33 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
-  const openLiveMcp = async (filter = "") => {
-    setComposerFocused(false)
-    const sessionId = activeSessionId()
-    try {
-      const [configured, trusted] = await Promise.all([
-        props.api.listConfiguredMcpServers(directory()),
-        sessionId
-          ? props.api.listSessionMcpServers(sessionId)
-          : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionMcpServers>>),
-      ])
-      const needle = filter.trim().toLowerCase()
-      const servers = solidMcpServersFromCatalog(configured, trusted).filter((server) => {
-        if (!needle) return true
-        const haystack = `${server.name} ${server.transport} ${server.status} ${server.scope ?? ""}`.toLowerCase()
-        return needle.split(/\s+/).every((token) => haystack.includes(token))
-      })
-      if (servers.length === 0) {
-        openDialogAlert(dialog, {
-          title: "MCP",
-          message: needle
-            ? `No MCP servers match “${filter.trim()}”.`
-            : "No configured or trusted MCP servers yet. Add with /mcp add (headless) or configure ~/.config/veasel, then /mcp trust.",
-          onConfirm: () => setComposerFocused(true),
-        })
-        return
-      }
-      openMcpDialog(dialog, {
-        servers,
-        onSelect: (server) => {
-          toast.info(
-            server.status === "connected"
-              ? `Trusted · ${server.name}`
-              : `${server.status} · ${server.name}`,
-            "MCP",
-          )
-          setComposerFocused(true)
-        },
-      })
-    } catch (error) {
-      openDialogAlert(dialog, {
-        title: "MCP",
-        message: error instanceof Error ? error.message : "could not list MCP servers",
-        onConfirm: () => setComposerFocused(true),
-      })
-    }
-  }
-
-  const openLivePlugins = async (filter = "") => {
-    setComposerFocused(false)
-    try {
-      const catalog = await props.api.listPluginLinks()
-      const needle = filter.trim().toLowerCase()
-      const links = catalog.links.filter((link) => {
-        if (!needle) return true
-        const haystack = `${link.name} ${link.path} ${link.display_name ?? ""} ${link.description ?? ""}`.toLowerCase()
-        return needle.split(/\s+/).every((token) => haystack.includes(token))
-      })
-      if (links.length === 0) {
-        openDialogAlert(dialog, {
-          title: "Plugins",
-          message: needle
-            ? `No plugin links match “${filter.trim()}”.`
-            : "No managed plugin links. Use /plugin add [--replace] <absolute-path> (headless) to link a local Agent Plugin package.",
-          onConfirm: () => setComposerFocused(true),
-        })
-        return
-      }
-      openDialogSelect(dialog, {
-        title: "Plugin links",
-        placeholder: "Filter plugins…",
-        options: links.map((link) => ({
-          title: link.display_name?.trim() || link.name,
-          value: link.name,
-          description: link.path,
-          searchText: `${link.name} ${link.path} ${link.display_name ?? ""} ${link.description ?? ""}`,
-        })),
-        onSelect: (option) => {
-          toast.info(`Linked · ${option.value}`, "Plugins")
-          setComposerFocused(true)
-        },
-        onCancel: () => setComposerFocused(true),
-        footer: "Enter selects · /plugin add|remove stays headless for now",
-      })
-    } catch (error) {
-      openDialogAlert(dialog, {
-        title: "Plugins",
-        message: error instanceof Error ? error.message : "could not list plugin links",
-        onConfirm: () => setComposerFocused(true),
-      })
-    }
+  const mcpWorkflows = createLiveMcpWorkflows({
+    api: props.api,
+    dialog,
+    toast,
+    directory,
+    sessionId: activeSessionId,
+    setComposerFocused,
+  })
+  const pluginWorkflows = createLivePluginWorkflows({
+    api: props.api,
+    dialog,
+    toast,
+    setComposerFocused,
+  })
+  const openLiveMcp = (filter = "") => {
+    const context = { directory: directory(), sessionId: activeSessionId() }
+    return openLiveMcpDialog({
+      api: props.api,
+      dialog,
+      toast,
+      ...context,
+      setComposerFocused,
+      isCurrentContext: () => directory() === context.directory && activeSessionId() === context.sessionId,
+      runTrustAction: (trusted, key, target) => { void mcpWorkflows.runTrustAction(trusted, key, target) },
+      runConfigure: (action, scope, name, target) => { void mcpWorkflows.runConfigure(action, scope, name, target) },
+      filter,
+    })
   }
 
   const openLiveMap = async (hint = "") => {
@@ -1214,6 +1273,50 @@ function LiveAppShell(props: LiveAppProps) {
     if (homeComposerOpen()) setHomeComposerOpen(false)
   }
 
+  const runLiveSkillAction = async (action: "on" | "off" | "run", key?: string) => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Session required",
+        message: "Open a session before enabling or invoking a Skill.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    if (!key) {
+      openDialogAlert(dialog, {
+        title: "Skill name required",
+        message: `Use /skill ${action} <source>/<skill>. Open /skills to browse available Skills.`,
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const separator = key.indexOf("/")
+    if (separator <= 0 || separator === key.length - 1) {
+      openDialogAlert(dialog, {
+        title: "Invalid Skill name",
+        message: "Use the source/skill key shown by /skills, for example /skill run local-kit/review.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    const pluginName = key.slice(0, separator)
+    const skillName = key.slice(separator + 1)
+    try {
+      if (action === "run") {
+        await props.api.invokeSessionSkill(sessionId, pluginName, skillName)
+        toast.success(`Queued ${pluginName}/${skillName} for the next turn`, "Skill")
+      } else {
+        await props.api.setSessionSkill(sessionId, pluginName, skillName, action === "on")
+        toast.success(`${action === "on" ? "Enabled" : "Disabled"} ${pluginName}/${skillName} for this session`, "Skill")
+      }
+      setComposerFocused(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update Skill", "Skill")
+      setComposerFocused(true)
+    }
+  }
+
   const handleComposerSubmit = (text: string) => {
     const action = resolveLiveSlash(text)
     switch (action.kind) {
@@ -1250,13 +1353,41 @@ function LiveAppShell(props: LiveAppProps) {
         dismissHomeComposer()
         void openLiveSkills(action.filter)
         return
+      case "skill-action":
+        dismissHomeComposer()
+        void runLiveSkillAction(action.action, action.key)
+        return
       case "mcp":
         dismissHomeComposer()
         void openLiveMcp(action.filter)
         return
+      case "mcp-trust":
+        dismissHomeComposer()
+        void mcpWorkflows.runTrustAction(action.trusted, action.key)
+        return
+      case "mcp-add":
+        dismissHomeComposer()
+        void mcpWorkflows.runAdd(action)
+        return
+      case "mcp-add-wizard":
+        dismissHomeComposer()
+        mcpWorkflows.openAddWizard()
+        return
+      case "mcp-configure":
+        dismissHomeComposer()
+        void mcpWorkflows.runConfigure(action.action, action.scope, action.name)
+        return
       case "plugins":
         dismissHomeComposer()
-        void openLivePlugins(action.filter)
+        void pluginWorkflows.openPlugins(action.filter)
+        return
+      case "plugin-add":
+        dismissHomeComposer()
+        pluginWorkflows.add(action.path, action.replace)
+        return
+      case "plugin-remove":
+        dismissHomeComposer()
+        void pluginWorkflows.remove(action.name)
         return
       case "map":
         dismissHomeComposer()
@@ -1271,6 +1402,10 @@ function LiveAppShell(props: LiveAppProps) {
           message: "Use /history older to load the preceding page of this session's chat history.",
           onConfirm: () => setComposerFocused(true),
         })
+        return
+      case "runs":
+        dismissHomeComposer()
+        void openLiveExecutionHistory()
         return
       case "help":
         dismissHomeComposer()
@@ -1297,7 +1432,7 @@ function LiveAppShell(props: LiveAppProps) {
         return
       case "reviews":
         dismissHomeComposer()
-        void openLiveReviews()
+        void openLiveReviews(action.target)
         return
       case "export":
         dismissHomeComposer()
@@ -1882,12 +2017,15 @@ function LiveAppShell(props: LiveAppProps) {
         showStatus: () => {
           void openLiveStatus()
         },
+        showRuns: () => {
+          void openLiveExecutionHistory()
+        },
         showExport: () => openLiveExport(),
         showMcp: () => {
           void openLiveMcp()
         },
         showPlugins: () => {
-          void openLivePlugins()
+          void pluginWorkflows.openPlugins()
         },
         showSkills: () => {
           void openLiveSkills()
@@ -2224,6 +2362,24 @@ function LiveAppShell(props: LiveAppProps) {
           onDraftChange={setComposerDraft}
           skills={composerSkills()}
           skillCatalogStatus={skillCatalogStatus()}
+          slashContext={{
+            skills: composerSkills().map((skill) => ({
+              value: skill.key,
+              description: skill.description,
+            })),
+            mcpServers: mcpArgumentServers(),
+            configuredMcpServers: configuredMcpArguments(),
+            patches: reviewArgumentItems()
+              .filter((item) => item.kind === "patch")
+              .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
+            commands: reviewArgumentItems()
+              .filter((item) => item.kind === "command")
+              .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
+            mcpCalls: reviewArgumentItems()
+              .filter((item) => item.kind === "mcp")
+              .map((item) => ({ value: item.id, description: reviewSummaryLine(item) })),
+            pluginLinks: pluginLinkArguments(),
+          }}
           attachments={inSession() ? attachments() : []}
           onRemoveAttachment={(id) => setAttachments((current) => removeComposerAttachment(current, id))}
           onPreviewAttachment={previewAttachment}

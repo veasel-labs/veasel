@@ -3,6 +3,7 @@ module main
 import json2
 import mcp
 import os
+import strings
 import time
 import uuid
 
@@ -115,7 +116,7 @@ fn test_plugin_mcp_data_persists_across_processes_and_environment_is_filtered() 
 }
 
 fn plugin_mcp_persistence_call(root string, data string, server PluginMCPServer, action string) string {
-	mut client := new_plugin_mcp_client(root, data, server) or { panic(err) }
+	mut client := new_plugin_mcp_fixture_client(root, data, server) or { panic(err) }
 	defer {
 		client.close()
 	}
@@ -132,6 +133,33 @@ fn plugin_mcp_persistence_call(root string, data string, server PluginMCPServer,
 	assert items.len == 1
 	text := items[0].as_map()['text'] or { panic('MCP tool returned no text') }
 	return text.str()
+}
+
+// Protocol fixtures use host-installed runtimes; only the dedicated sandbox
+// test below exercises the fail-closed wrapper itself.
+fn with_mcp_fixture_sandbox_off[T](start fn () !T) !T {
+	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	os.setenv(mcp_stdio_sandbox_mode_env, 'off', true)
+	defer {
+		if value := prior {
+			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
+		} else {
+			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+	}
+	return start()!
+}
+
+fn new_plugin_mcp_fixture_client(root string, data string, server PluginMCPServer) !mcp.Client {
+	return with_mcp_fixture_sandbox_off(fn [root, data, server] () !mcp.Client {
+		return new_plugin_mcp_client(root, data, server)
+	})
+}
+
+fn start_plugin_mcp_fixture_transport(root string, data string, server PluginMCPServer) !&PluginMCPTransport {
+	return with_mcp_fixture_sandbox_off(fn [root, data, server] () !&PluginMCPTransport {
+		return start_plugin_mcp_transport(root, data, server)
+	})
 }
 
 fn test_plugin_stdio_mcp_process_environment_handshake_and_tool_call() {
@@ -170,7 +198,7 @@ fn test_plugin_stdio_mcp_process_environment_handshake_and_tool_call() {
 		args:      [script]
 		cwd:       './'
 	}
-	mut client := new_plugin_mcp_client(root, data, server) or { panic(err) }
+	mut client := new_plugin_mcp_fixture_client(root, data, server) or { panic(err) }
 	defer {
 		client.close()
 	}
@@ -191,6 +219,15 @@ fn test_plugin_stdio_mcp_process_environment_handshake_and_tool_call() {
 }
 
 fn test_trusted_session_mcp_tool_discovery_and_dispatch_keep_turn_state() {
+	prior_sandbox_mode := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	os.setenv(mcp_stdio_sandbox_mode_env, 'off', true)
+	defer {
+		if value := prior_sandbox_mode {
+			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
+		} else {
+			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+	}
 	node := os.find_abs_path_of_executable('node') or {
 		if os.getenv('CI') == 'true' {
 			panic('Node.js is required to run the MCP process fixture in CI')
@@ -292,7 +329,7 @@ fn test_plugin_stdio_mcp_malformed_frame_fails_initialize() {
 		"for await (const line of lines) { process.stdout.write('this is not json\\n'); }\n") or {
 		panic(err)
 	}
-	mut client := new_plugin_mcp_client(root, data, bad_mcp_server(node, script)) or { panic(err) }
+	mut client := new_plugin_mcp_fixture_client(root, data, bad_mcp_server(node, script)) or { panic(err) }
 	defer { client.close() }
 	mut failed := false
 	client.initialize() or { failed = true }
@@ -315,7 +352,7 @@ fn test_plugin_stdio_mcp_oversized_frame_fails_receive() {
 		"for await (const line of lines) { process.stdout.write('x'.repeat(1000001) + '\\n'); }\n") or {
 		panic(err)
 	}
-	mut transport := start_plugin_mcp_transport(root, data, bad_mcp_server(node, script)) or {
+	mut transport := start_plugin_mcp_fixture_transport(root, data, bad_mcp_server(node, script)) or {
 		panic(err)
 	}
 	defer { transport.close() }
@@ -339,7 +376,7 @@ fn test_plugin_stdio_mcp_silent_server_times_out() {
 	os.write_file(script, "import readline from 'node:readline';\n" +
 		'const lines = readline.createInterface({ input: process.stdin });\n' +
 		'for await (const line of lines) { }\n') or { panic(err) }
-	mut transport := start_plugin_mcp_transport(root, data, bad_mcp_server(node, script)) or {
+	mut transport := start_plugin_mcp_fixture_transport(root, data, bad_mcp_server(node, script)) or {
 		panic(err)
 	}
 	defer { transport.close() }
@@ -371,7 +408,7 @@ fn test_plugin_stdio_mcp_cancel_sends_notifications_cancelled() {
 		'    break;\n' +
 		'  }\n' +
 		'}\n') or { panic(err) }
-	mut transport := start_plugin_mcp_transport(root, data, bad_mcp_server(node, script)) or {
+	mut transport := start_plugin_mcp_fixture_transport(root, data, bad_mcp_server(node, script)) or {
 		panic(err)
 	}
 	defer {
@@ -394,7 +431,7 @@ fn test_plugin_stdio_mcp_cancel_sends_notifications_cancelled() {
 	assert false, 'expected cancel before frame, got ${frame}'
 }
 
-fn test_mcp_stdio_review_sandbox_preview_defaults_off() {
+fn test_mcp_stdio_review_sandbox_preview_defaults_fail_closed() {
 	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
 	defer {
 		if value := prior {
@@ -405,10 +442,24 @@ fn test_mcp_stdio_review_sandbox_preview_defaults_off() {
 	}
 	os.unsetenv(mcp_stdio_sandbox_mode_env)
 	preview := mcp_stdio_review_sandbox_preview()
-	assert preview.mode == 'off'
-	assert !preview.will_wrap
-	assert preview.backend == 'none'
-	assert preview.network == 'host'
+	assert preview.mode == 'require'
+	if mcp_stdio_sandbox_bubblewrap_capability() {
+		assert preview.will_wrap
+		assert preview.backend == 'bubblewrap'
+		assert preview.network == 'shared'
+	} else if mcp_stdio_sandbox_seatbelt_capability() {
+		assert preview.will_wrap
+		assert preview.backend == 'seatbelt'
+		assert preview.network == 'shared'
+	} else if mcp_stdio_sandbox_windows_capability() {
+		assert preview.will_wrap
+		assert preview.backend == 'windows'
+		assert preview.network == 'shared'
+	} else {
+		assert !preview.will_wrap
+		assert preview.backend == 'none'
+		assert preview.network == 'host'
+	}
 	assert os.setenv(mcp_stdio_sandbox_mode_env, 'auto', true) == 0
 	auto := mcp_stdio_review_sandbox_preview()
 	assert auto.mode == 'auto'
@@ -431,9 +482,8 @@ fn test_mcp_stdio_review_sandbox_preview_defaults_off() {
 	}
 }
 
-fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_present() {
+fn test_mcp_stdio_invalid_sandbox_mode_fails_closed() {
 	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
-	assert os.setenv(mcp_stdio_sandbox_mode_env, 'require', true) == 0
 	defer {
 		if value := prior {
 			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
@@ -441,12 +491,27 @@ fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_
 			os.unsetenv(mcp_stdio_sandbox_mode_env)
 		}
 	}
+	assert os.setenv(mcp_stdio_sandbox_mode_env, 'typo', true) == 0
+	assert mcp_stdio_sandbox_mode() == .require
+}
+
+fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_present() {
+	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	assert os.unsetenv(mcp_stdio_sandbox_mode_env) == 0
+	defer {
+		if value := prior {
+			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
+		} else {
+			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+	}
+	assert mcp_stdio_sandbox_mode() == .require
 	$if linux {
 		assert mcp_stdio_sandbox_bubblewrap_capability() == bubblewrap_available()
 		assert !mcp_stdio_sandbox_seatbelt_capability()
 		assert !mcp_stdio_sandbox_windows_capability()
 		if bubblewrap_available() {
-			node := os.find_abs_path_of_executable('node') or { return }
+			node := if os.is_file('/usr/bin/node') { '/usr/bin/node' } else { return }
 			root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-${uuid.new_v4().str()}')
 			data := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-data-${uuid.new_v4().str()}')
 			os.mkdir_all(root) or { panic(err) }
@@ -468,6 +533,12 @@ fn test_mcp_stdio_sandbox_require_fails_closed_without_bubblewrap_or_wraps_when_
 				transport.close()
 			}
 			assert transport.mcp_stdio_alive()
+			transport.send('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}') or {
+				panic(err)
+			}
+			frame := transport.receive() or { panic(err) }
+			assert frame.contains('"id":1')
+			assert frame.contains('"sandboxed":true')
 		}
 	} $else $if macos {
 		assert !mcp_stdio_sandbox_bubblewrap_capability()
@@ -593,4 +664,32 @@ fn test_mcp_stdio_sandbox_seatbelt_profile_carves_plugin_roots_and_allows_networ
 	assert profile.contains('(param "PLUGIN_DATA")')
 	assert profile.contains('(allow network-outbound)')
 	assert profile.contains('(deny default)')
+}
+
+fn test_plugin_mcp_frame_buffer_handles_fragmented_and_buffered_frames() {
+	mut buffer := PluginMCPFrameBuffer{}
+	assert buffer.append('{"id":')! == ''
+	assert buffer.append('1}\r\n{"id":2}\n')! == '{"id":1}'
+	assert buffer.read_from > 0
+	assert buffer.take_frame()! == '{"id":2}'
+	assert buffer.read_from == 0
+	assert buffer.take_frame()! == ''
+}
+
+fn test_plugin_mcp_frame_buffer_rejects_empty_frames() {
+	mut empty := PluginMCPFrameBuffer{}
+	_ = empty.append('\n') or {
+		assert err.msg() == 'MCP server returned an empty frame'
+		return
+	}
+	assert false
+}
+
+fn test_plugin_mcp_frame_buffer_enforces_frame_size_limit() {
+	mut oversized := PluginMCPFrameBuffer{}
+	_ = oversized.append(strings.repeat(`x`, max_plugin_mcp_frame_bytes + 1)) or {
+		assert err.msg() == 'MCP response exceeds the frame size limit'
+		return
+	}
+	assert false
 }

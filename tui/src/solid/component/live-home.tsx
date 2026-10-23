@@ -103,7 +103,11 @@ export function LiveHome(props: LiveHomeProps) {
           border
           borderColor={colors.panelBorder}
         >
-          <HomeSplash theme={props.theme} directory={props.directory} />
+          <HomeSplash
+            theme={props.theme}
+            directory={props.directory}
+            directoryMaxWidth={Math.max(1, cols() - preferred() - 6)}
+          />
         </box>
       </box>
 

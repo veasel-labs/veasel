@@ -34,6 +34,102 @@ fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 	assert other_pos < 0 || widget_pos < other_pos
 }
 
+fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test_queries() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-lexical')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'agents', 'default.py'),
+		'class DefaultAgent:\n    def run(self):\n        pass\n')
+	write_map_fixture_file(os.join_path(root, 'tests', 'agents', 'test_init.py'),
+		'class TestAgent:\n    def test_agent(self):\n        pass\n')
+	write_map_fixture_file(os.join_path(root, 'aider', 'args.py'),
+		'def get_parser():\n    """Parse command line arguments and options."""\n')
+	behavior := build_repository_map(root, 'the main agent loop that runs until done',
+		repository_map_default_budget_bytes) or { panic(err) }
+	assert behavior.ranked_paths[0].ends_with('src/agents/default.py')
+	test_query := build_repository_map(root, 'test the agent loading behavior',
+		repository_map_default_budget_bytes) or { panic(err) }
+	assert test_query.ranked_paths.any(it.ends_with('tests/agents/test_init.py'))
+	arguments := extract_repository_map_hints('command line argument parsing and options')
+	assert repository_map_lexically_related('args', 'arguments')
+	assert repository_map_path_has_segment('aider/args.py', 'args')
+	assert score_repository_map_path('aider/args.py', arguments) >= 300.0
+	assert score_repository_map_content('Add an argument to the command line parser options.',
+		arguments) > 0.0
+	assert score_repository_map_content('parse_args parser', RepositoryMapHintSet{
+		idents: ['parsing']
+	}) == 24.0
+	assert score_repository_map_content('run_batch', RepositoryMapHintSet{
+		idents: ['running']
+	}) == 24.0
+	assert score_repository_map_path('aider/args.py', arguments) > score_repository_map_path('tests/test_args.py', arguments)
+	model_behavior := extract_repository_map_hints('litellm model that calls the LLM API')
+	assert repository_map_is_package_index_path('src/minisweagent/models/__init__.py')
+	assert !repository_map_is_package_index_path('src/minisweagent/models/litellm_model.py')
+	assert !repository_map_hint_mentions_package_indexes(model_behavior)
+	assert repository_map_content_is_reexport_only('from .litellm_model import LiteLLMModel\n__all__ = ["LiteLLMModel"]')
+	assert repository_map_content_is_reexport_only("export { createClient } from './client.js'\n")
+	assert !repository_map_content_is_reexport_only('export function createClient() {}')
+	export_query := extract_repository_map_hints('show the package exports and entrypoint')
+	assert repository_map_hint_mentions_package_indexes(export_query)
+	history_query := extract_repository_map_hints('format the chat history for the model')
+	assert score_repository_map_path('aider/history.py', history_query) > score_repository_map_path('aider/models.py', history_query)
+	args_query := extract_repository_map_hints('command line argument parsing and options')
+	assert score_repository_map_path('aider/args.py', args_query) > score_repository_map_path('aider/io.py', args_query)
+	subagent_query := extract_repository_map_hints('resume the subagent job and notify the parent session')
+	assert score_repository_map_path('packages/core/src/session/subagent-job.ts', subagent_query) > score_repository_map_path('packages/core/src/session/operation.ts', subagent_query)
+	spawn_subagent_query := extract_repository_map_hints('spawn a subagent tool for a task')
+	assert score_repository_map_path('packages/core/src/tool/plugin/subagent.ts', spawn_subagent_query) > score_repository_map_path('packages/core/src/tool.ts', spawn_subagent_query)
+	paired := extract_repository_map_hints('Please fix src/agents/default.py')
+	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)
+	assert repository_map_lexically_related('policy', 'policies')
+	assert repository_map_lexically_related('class', 'classes')
+	assert score_repository_map_content('class policy', RepositoryMapHintSet{
+		idents: [
+			'classes',
+			'policy',
+		]
+	}) == 48.0
+	assert score_repository_map_content('classes policies', RepositoryMapHintSet{
+		idents: [
+			'class',
+			'policy',
+		]
+	}) == 48.0
+	assert score_repository_map_path('src/AuthService.ts', RepositoryMapHintSet{ idents: ['auth'] }) > score_repository_map_path('src/Other.ts', RepositoryMapHintSet{ idents: ['auth'] })
+	assert repository_map_is_test_path('src/auth.spec.ts')
+	assert repository_map_is_test_path('src/__specs__/auth_spec.ts')
+	assert !repository_map_is_test_path('src/AuthService.ts')
+	case_hints := RepositoryMapHintSet{ idents: ['AGENT', 'agent', 'Agent', 'args'] }
+	assert !repository_map_is_lexical_hint('The')
+	assert !repository_map_is_lexical_hint('For')
+	assert score_repository_map_content('agent argument parser', case_hints) == 72.0
+	assert score_repository_map_path('src/agent.py', case_hints) == score_repository_map_path('src/agent.py', RepositoryMapHintSet{
+		idents: [
+			'agent',
+			'args',
+		]
+	})
+}
+
+fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
+	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\nsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}\n'
+	symbols := extract_repository_map_symbols(content)
+	mut names := []string{}
+	mut kinds := []string{}
+	for symbol in symbols {
+		names << symbol.name
+		kinds << symbol.kind
+	}
+	assert names == ['LoadSession', 'Transform', 'SessionController', 'createSession', 'open_session',
+		'SessionState', 'loadSession', 'SessionStore', 'SessionState']
+	assert kinds == ['func', 'func', 'public class', 'export default function', 'pub fn', 'data class',
+		'suspend fun', 'public protocol', 'extension']
+}
+
 fn test_repository_map_ranks_case_insensitive_path_and_symbol_mentions() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-case')
 	os.rmdir_all(root) or {}

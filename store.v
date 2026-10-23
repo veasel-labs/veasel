@@ -8,6 +8,7 @@ import sync
 import uuid
 
 const max_session_history_page_size = 100
+const max_global_operation_history_page_size = 100
 const max_event_stream_page_size = 500
 const max_retained_terminal_session_operations = 200
 const max_retained_session_events = 5_000
@@ -48,6 +49,18 @@ pub:
 	reasoning_reported    bool @[omitempty]
 	created_at            string
 	updated_at            string
+}
+
+pub struct GlobalSessionOperation {
+pub:
+	operation     SessionOperation
+	session_title string
+}
+
+pub struct GlobalSessionOperationsPage {
+pub mut:
+	operations  []GlobalSessionOperation
+	next_before string @[omitempty]
 }
 
 // SessionUsageSummary aggregates adapter-reported tokens for one session.
@@ -628,6 +641,27 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit session skill invoke migration')
+		}
+	}
+	if current < 17 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin global operation history migration')
+		}
+		db.exec('CREATE INDEX session_operations_created_id ON session_operations (created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index global operation history')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (17)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record global operation history migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit global operation history migration')
 		}
 	}
 	// Running or cancelling work may have contacted a provider or started a tool
@@ -1595,6 +1629,60 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 	return operations
 }
 
+fn (mut store Store) list_global_session_operations(limit int, before string, search string) !GlobalSessionOperationsPage {
+	if limit < 1 || limit > max_global_operation_history_page_size {
+		return error('global operation history page bounds are invalid')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	mut cursor_created_at := ''
+	if before.len > 0 {
+		cursor := store.db.exec_param('SELECT created_at FROM session_operations WHERE id = ?', before)!
+		if cursor.len != 1 {
+			return error('operation cursor not found')
+		}
+		cursor_created_at = cursor[0].val(0)
+	}
+	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
+	mut filters := []string{}
+	mut params := []string{}
+	if before.len > 0 {
+		filters << '(o.created_at < ? OR (o.created_at = ? AND o.id < ?))'
+		params << cursor_created_at
+		params << cursor_created_at
+		params << before
+	}
+	if search.len > 0 {
+		filters << '(instr(lower(o.id), lower(?)) > 0 OR instr(lower(o.status), lower(?)) > 0 OR instr(lower(o.provider), lower(?)) > 0 OR instr(lower(o.model), lower(?)) > 0 OR instr(lower(o.error), lower(?)) > 0 OR instr(lower(s.title), lower(?)) > 0)'
+		for _ in 0 .. 6 {
+			params << search
+		}
+	}
+	if filters.len > 0 {
+		query += ' WHERE ${filters.join(' AND ')}'
+	}
+	params << (limit + 1).str()
+	rows := store.db.exec_param_many('${query} ORDER BY o.created_at DESC, o.id DESC LIMIT ?', params)!
+	mut page := GlobalSessionOperationsPage{
+		operations: []GlobalSessionOperation{cap: if rows.len > limit { limit } else { rows.len }}
+	}
+	for index, row in rows {
+		if index == limit {
+			break
+		}
+		page.operations << GlobalSessionOperation{
+			operation:     store.session_operation_from_row(row)
+			session_title: row.val(16)
+		}
+	}
+	if rows.len > limit && page.operations.len > 0 {
+		page.next_before = page.operations[page.operations.len - 1].operation.id
+	}
+	return page
+}
+
 fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
 	store.mu.lock()
 	defer {
@@ -1820,18 +1908,36 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	reported_turns := row.val(1).int()
 	cache_turns := row.val(6).int()
 	reasoning_turns := row.val(8).int()
-	turn_rows := store.db.exec("SELECT provider, model, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported FROM session_operations WHERE status = 'completed' ORDER BY created_at ASC, id ASC")!
-	mut cost_turns := []CostScheduleTurn{cap: turn_rows.len}
-	for turn_row in turn_rows {
-		cost_turns << CostScheduleTurn{
-			provider:              turn_row.val(0)
-			model:                 turn_row.val(1)
-			input_tokens:          turn_row.val(2).i64()
-			output_tokens:         turn_row.val(3).i64()
-			usage_reported:        turn_row.val(4).int() == 1
-			cache_read_tokens:     turn_row.val(5).i64()
-			cache_creation_tokens: turn_row.val(6).i64()
-			cache_reported:        turn_row.val(7).int() == 1
+	mut cost := cost_unavailable
+	schedule := active_cost_schedule()
+	if schedule.entries.len > 0 {
+		// Price grouped token totals instead of materializing every historical
+		// operation. Prices are linear per provider/model; keep cache-reporting
+		// groups separate and retain a per-turn invalid-cache guard below.
+		cost_rows := store.db.exec("SELECT provider, model, cache_reported, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), SUM(CASE WHEN cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END) FROM session_operations WHERE status = 'completed' AND usage_reported = 1 GROUP BY provider, model, cache_reported")!
+		mut cost_turns := []CostScheduleTurn{cap: cost_rows.len}
+		mut invalid_subset_cache := false
+		for cost_row in cost_rows {
+			provider := cost_row.val(0)
+			model := cost_row.val(1)
+			if entry := lookup_cost_schedule_entry(schedule, provider, model) {
+				if cost_input_is_subset_provider(entry.provider) && cost_row.val(7).int() > 0 {
+					invalid_subset_cache = true
+				}
+			}
+			cost_turns << CostScheduleTurn{
+				provider:              provider
+				model:                 model
+				input_tokens:          cost_row.val(3).i64()
+				output_tokens:         cost_row.val(4).i64()
+				usage_reported:        true
+				cache_read_tokens:     cost_row.val(5).i64()
+				cache_creation_tokens: cost_row.val(6).i64()
+				cache_reported:        cost_row.val(2).int() == 1
+			}
+		}
+		if !invalid_subset_cache {
+			cost = usage_cost_label(schedule, cost_turns)
 		}
 	}
 	return GlobalUsageSummary{
@@ -1846,7 +1952,7 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 		cache_reported:        cache_turns > 0
 		reasoning_tokens:      row.val(7).i64()
 		reasoning_reported:    reasoning_turns > 0
-		cost:                  session_usage_cost_label(cost_turns)
+		cost:                  cost
 	}
 }
 

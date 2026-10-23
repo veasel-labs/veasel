@@ -1,29 +1,40 @@
 import type { Theme } from "./themes"
 
 /**
- * Pixel portrait of Veasel (V language mascot adaptation).
- * License: CC BY-NC 4.0 — see THIRD_PARTY_NOTICES.md. Not covered by MIT.
+ * Original pixel companion for the Veasel Code terminal client.
+ * This geometric terminal sprite was drawn for this project and is covered by
+ * the repository MIT license. It does not reuse the V mascot artwork.
  *
- * Legend: D dark outline · B body · L leaf · K/H eyes · N nose · W muzzle · space empty
+ * Legend: D outline · B shell · L status light · K visor · H gleam · N signal · W display
  */
-export const VEASEL_PORTRAIT_ROWS = [
-  "    DDDDD     DDDDD    ",
-  "   DLLLLD     DLLLLD   ",
-  "  DLLLLLDDDDDDDLLLLLD  ",
-  "  DLLLDDDDDDDDDDDLLLDD ",
-  " DDDDDDDDBBBBBBDDDDDDD ",
-  "DDDDDDBBBBBBBBBBBBBBDDDD",
-  "DDDDBBBBBBBBBBBBBBBBBBDDD",
-  "DDBBBBBBBBBBBBBBBBBBBBBBDD",
-  "DBBBBKBBBBBBBBBBBBKBBBBBBBD",
-  "DBBBBHKBBBBBBBBBBHKBBBBBBBD",
-  "DBBBBBBBBBBNNBBBBBBBBBBBBBD",
-  " DDBBWWWWWNNNNNWWWWWWBBBBDD ",
-  "  DDBBWWWWWWWWWWWWBBBBDD  ",
-  "   DDDBBWWWWWWWWBBBDDD   ",
-  "     DDDBBBBBBBDDD     ",
-  "       DDDDDD       ",
-] as const
+export const VEASEL_PORTRAIT_WIDTH = 24
+
+function centerSpriteRow(row: string): string {
+  const left = Math.max(0, Math.floor((VEASEL_PORTRAIT_WIDTH - row.length) / 2))
+  return row.padStart(left + row.length, " ").padEnd(VEASEL_PORTRAIT_WIDTH, " ")
+}
+
+const pixelSprite = [
+  "DDDDDDD",
+  "DBBBBBBD",
+  "DBLHLBD",
+  "DDD",
+  "BBB",
+  `D${"B".repeat(21)}D`,
+  `D${"B".repeat(4)}${"K".repeat(13)}${"B".repeat(4)}D`,
+  `D${"B".repeat(4)}KLLHKKKKKHLLK${"B".repeat(4)}D`,
+  `D${"B".repeat(4)}${"K".repeat(13)}${"B".repeat(4)}D`,
+  `D${"B".repeat(4)}KKKKKLLLKKKKK${"B".repeat(4)}D`,
+  `D${"B".repeat(21)}D`,
+  `D${"B".repeat(3)}DD${"B".repeat(11)}DD${"B".repeat(3)}D`,
+  `  D${"B".repeat(5)}L${"B".repeat(5)}D  `,
+  `   D${"B".repeat(4)}LLL${"B".repeat(4)}D   `,
+  `   D${"B".repeat(3)}DDDDD${"B".repeat(3)}D   `,
+  `  DDD${"B".repeat(3)}D D${"B".repeat(3)}DDD  `,
+  `  DDDDDLLL DDDDD  `,
+].map(centerSpriteRow)
+
+export const VEASEL_PORTRAIT_ROWS = pixelSprite
 
 export type PortraitKey = keyof Theme["portrait"]
 
@@ -39,14 +50,16 @@ export function portraitCellColor(theme: Theme, pixel: string): string {
   return theme.portrait[key] ?? theme.panelBg
 }
 
-/** Expand one portrait row into colored double-width cells for TUI rendering. */
+/** Expand one sprite row into colored double-width cells for TUI rendering. */
 export function portraitRowCells(theme: Theme, row: string): PortraitCell[] {
-  return [...row].map((pixel) => ({
+  return [...row.padEnd(VEASEL_PORTRAIT_WIDTH, " ")].map((pixel) => ({
     glyph: pixel === " " ? "  " : "██",
     color: portraitCellColor(theme, pixel),
   }))
 }
 
 export function portraitRowPlain(row: string): string {
-  return [...row].map((pixel) => (pixel === " " ? "  " : "██")).join("")
+  return [...row.padEnd(VEASEL_PORTRAIT_WIDTH, " ")]
+    .map((pixel) => (pixel === " " ? "  " : "██"))
+    .join("")
 }

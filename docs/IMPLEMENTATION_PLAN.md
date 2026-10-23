@@ -29,15 +29,17 @@ retired imperative shell lives at `src/classic-main.ts` (`bun run start:classic`
 tool/activity grouping (**Ctrl+G**), **Ctrl+P** command palette, pending
 **reviews** (**Ctrl+R**), toast host, session list / rename, dialog primitives,
 and product dialogs. Pins and adapted patterns are recorded in
-[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). Remaining
-parity (full review HTTP approve path, pane-resize, deeper settings connect) is
-follow-up. CI builds and packages the backend and TUI bundle for x64 Linux, macOS,
+[`compatibility/opentui-solid.md`](compatibility/opentui-solid.md). The default
+journeys are wired to the loopback API where supported; remaining work is
+tracked per journey and must be validated against the production backend. CI
+builds and packages the backend and TUI bundle for x64 Linux, macOS,
 and Windows and publishes verified main builds automatically. Standalone
-interactive TUI PTY smoke runs on Linux and macOS in CI; Windows interactive
-validation still needs a ConPTY harness (see
+interactive TUI PTY smoke runs on Linux and macOS in CI; a native Windows
+ConPTY harness now runs in the same CI workflow, with the exact-head result
+tracked in the compatibility ledger (see
 [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md)).
-Linux TUI CLI + PTY-connected baselines are recorded there; macOS/Windows
-baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
+Linux TUI CLI + PTY-connected baselines are recorded there; timing baselines
+remain open. See [`RESEARCH.md`](RESEARCH.md) and
 [`VLIB_REUSE.md`](VLIB_REUSE.md).
 
 ## Milestones and backlog
@@ -58,10 +60,13 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   use `solid/main.tsx` / `LiveApp` (loopback HTTP session loop + SSE); classic
   shell retired to `classic-main.ts` / `start:classic`.
 - [x] Solid composer `/` `@` `$` autocomplete dropdown (classic matchers,
-  Tab/Enter/Esc/arrows); fixture skills/paths until HTTP session wiring.
+  Tab/Enter/Esc/arrows); live workspace Skills and path catalogs load from the
+  loopback API/filesystem, with rendered tests for cursor movement and suffix
+  preservation.
 - [x] Solid session transcript on `scrollbox` with sticky follow-tail,
   `transcriptSegments` tone rendering, and `testRender` coverage (long scroll,
-  streaming append, 80×30); HTTP session wiring still optional.
+  streaming append, 80×30); LiveApp loads and refreshes transcript history via
+  the loopback API.
 - [x] Solid dialog host + Ctrl+P command palette (`solid/ui/dialog.tsx`,
   `solid/component/command-palette.tsx`) wired to slash/help/theme-cycle/
   session-list stubs; `testRender` for open/close, filter, keyboard select, Esc.
@@ -152,7 +157,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add `veasel run` for non-interactive session turns using the shared server, provider, and agent runtime; persist and continue sessions, emit machine-readable JSON, and request cancellation on timeout. Default edit, shell, and MCP approvals remain intact.
 - [x] Add an explicitly opt-in autonomous path for isolated benchmark tasks. The running server must opt in separately; ordinary CLI/TUI approval behavior remains unchanged. Autonomous file edits and shell commands retain durable proposal/result records, shell subprocesses receive an allowlisted environment, and MCP sessions are rejected. Autonomous shell is fail-closed OS-sandboxed: Linux Bubblewrap (read-only host, writable workspace, hidden home/removable/runtime, isolated network, allowlisted env), macOS Seatbelt when `/usr/bin/sandbox-exec` is present (allowlisted env, network denied), and Windows AppContainer + Job Object when available (network denied; inherited env filtering remains a known Windows backend limit). Platforms without that backend refuse to start a process. Stdio MCP remains outside this sandbox.
 - [x] Add a graduated execution permission policy (`ask` | `auto-edit` | `sandbox-auto`) with allow/deny/ask decisions bound to those OS sandboxes. `autonomous: true` maps to `sandbox-auto`. Non-interactive turns map ask→deny. Auto-edit requires `VEASEL_ALLOW_AUTO_EDIT=1` (or autonomous allow); sandbox-auto still requires `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`. MCP stays deny under sandbox-auto and ask/deny otherwise (never auto-apply). Capability `agent.execution_policy` (+ `.auto_edit` / `.sandbox_auto` when server-enabled).
-- [x] Wrap manually approved Linux shell commands in Bubblewrap when `bwrap` is available (`VEASEL_SHELL_SANDBOX=auto|off|require`, network deny by default with optional `VEASEL_SHELL_SANDBOX_NETWORK=allow`). Capability `shell.sandbox.bubblewrap` is true only when the wrap will run; missing bwrap falls back unsandboxed under auto and never pretends sandboxed. Approval remains mandatory.
+- [x] Wrap manually approved shell commands in the platform OS sandbox by default (`VEASEL_SHELL_SANDBOX` unset/invalid = `require`; explicit `auto` allows unsandboxed fallback; explicit `off` disables wrapping). Linux uses Bubblewrap, macOS Seatbelt, and Windows AppContainer + Job. Capabilities are true only when the wrap will run; `require` fails closed when the backend is missing. Network is denied by default for shell. Approval remains mandatory.
 - [x] macOS Seatbelt parity for approved shell via `/usr/bin/sandbox-exec` only (`shell.sandbox.seatbelt` when wrap will run; shared `VEASEL_SHELL_SANDBOX` / `VEASEL_SHELL_SANDBOX_NETWORK` knobs; fail-closed `require`).
 - [x] Windows Job Object wrap for approved shell (kill-on-close + active-process/memory caps; shared sandbox knobs; fail-closed `require`).
 - [x] Windows AppContainer deepening for approved shell (`shell.sandbox.windows` only when AppContainer + Job Object wrap will run; workspace ACL grant; network deny by default via missing capability SIDs, `VEASEL_SHELL_SANDBOX_NETWORK=allow` adds well-known network SIDs; not Codex WFP helper-service / LPAC).
@@ -232,7 +237,12 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   and surface them through the TUI `/usage` command without inventing rates.
   The same reported-only aggregation is available across all sessions on
   `GET /v1/usage` (`sessions`, turn counts, token/cache/reasoning totals and
-  the pinned-schedule cost label); a durable dashboard UI remains open below.
+  the pinned-schedule cost label); LiveApp Home Status exposes a compact
+  aggregate of those counters even without an active session. Global cost
+  pricing groups reported totals by provider, model, and cache-reporting state
+  before pricing, reducing application-side cost-turn materialization;
+  latency improvement has not been benchmarked. A durable
+  dashboard with broader execution history remains open below.
 - [x] Fork a session with `POST /v1/sessions/{id}/fork`: the chat history is
   copied under a new id (title suffixed ` (fork)`) so an alternative direction
   can be explored without losing the original conversation. Operations, usage,
@@ -256,8 +266,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] TUI `/map` shows the extractive workspace repository map with measured
   UTF-8 bytes, bytes/4 bound, ranked paths, and an optional ranking hint.
   Help documents Windows AppContainer alongside Bubblewrap/Seatbelt.
-- [ ] General execution history and a durable usage/cost dashboard beyond
-  per-session reported tokens and opt-in ATIF `final_metrics`.
+- [ ] A durable usage/cost dashboard beyond per-session reported tokens and
+  opt-in ATIF `final_metrics`. The Solid TUI exposes paginated, searchable
+  execution history across sessions via `/runs`, and Home Status shows compact
+  all-session usage; a richer dashboard remains open.
 - [x] Request-side Anthropic prompt-cache markers: default ephemeral
   `cache_control` (top-level automatic + system-block breakpoint), opt-out /
   `1h` TTL via `VEASEL_ANTHROPIC_PROMPT_CACHE`, capability
@@ -303,18 +315,23 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   loading, manifest and Skill validation, MCP stdio/Streamable HTTP,
   `PLUGIN_DATA`, placeholder expansion, failure isolation, and per-call MCP
   consent are CI-gated with the spec-derived fixture corpus. Operator-managed
-  local package links (`/v1/plugins/links`, TUI `/plugin add [--replace]|remove`,
-  headless `veasel plugins links … [--replace]`, capability `plugins.links`)
-  ship with a durable `$VEASEL_DATA_DIR/plugin-links.json` sidecar (restore
-  missing symlinks on list; optional `replace`) and validated package summary
-  fields for install UX; they do not fetch remote packages. Remaining open:
+  local package links use `/v1/plugins/links` and capability `plugins.links`.
+  Solid TUI supports `/plugin add [--replace] <absolute-path>` with an
+  interactive path prompt and explicit replacement confirmation, plus
+  `/plugin remove <name>` with confirmation. Links ship with a durable
+  `$VEASEL_DATA_DIR/plugin-links.json` sidecar (restore missing symlinks on
+  list; optional `replace`) and validated
+  package summary fields for install UX; they do not fetch remote packages.
+  Remaining open:
   remote marketplace, upstream cross-implementation fixtures (none published at
   the pinned revision), OAuth DCR (deferred), legacy HTTP+SSE.
   Operator-configured MCP servers support user scope, project scope
   (`<workspace>/.veasel/mcp-servers.json`), and read-only project-import of
-  portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, TUI
-  `/mcp add|remove|enable|disable` with optional `user|project`, and
-  capability `mcp.servers.configured`; trust and per-call approval reuse
+  portable `.mcp.json` / `.cursor/mcp.json` via `/v1/mcp-servers`, headless
+  `veasel mcp add|remove|enable|disable` with optional `user|project`, and
+  capability `mcp.servers.configured`; the default Solid TUI lists these
+  servers with `/mcp` and sets session trust with `/mcp trust|untrust`, while
+  every tool call still uses the per-call review panel. Trust reuses
   `configured/<name>`. Precedence: project > project-import > user. The
   client namespace `com.veasel.code` records an optional `display_name` and
   whether its directory stays inside the package; it does not read that
@@ -398,20 +415,21 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   name, expose the standalone source as `standalone-<source>` (with a catalog
   diagnostic) instead of omitting the entire source; load resolves both the
   qualified catalog name and the original discovery source.
-- [x] Opt-in Linux Bubblewrap wrap for trusted MCP stdio
-  (`VEASEL_MCP_STDIO_SANDBOX=auto|require`; default `off` / unset = unsandboxed);
+- [x] Fail-closed-by-default Linux Bubblewrap wrap for trusted MCP stdio
+  (`VEASEL_MCP_STDIO_SANDBOX` unset/invalid = `require`; explicit `auto` allows
+  fallback; explicit `off` disables wrapping);
   capability `mcp.stdio.sandbox.bubblewrap` only when wrap will run; network
   shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest unsandboxed fallback under
   auto.
-- [x] Opt-in macOS Seatbelt wrap for trusted MCP stdio under the same
+- [x] macOS Seatbelt wrap for trusted MCP stdio under the same
   `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.seatbelt` only
-  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest
+  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; explicit
   unsandboxed fallback under auto; `require` fails closed without
   `/usr/bin/sandbox-exec`.
-- [x] Opt-in Windows AppContainer + Job wrap for trusted MCP stdio under the
+- [x] Windows AppContainer + Job wrap for trusted MCP stdio under the
   same `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.windows`
   only when wrap will run; PLUGIN_ROOT/PLUGIN_DATA ACL grants; network
-  capability SIDs always enabled (parity with Linux/macOS MCP); honest
+  capability SIDs always enabled (parity with Linux/macOS MCP); explicit
   unsandboxed fallback under auto; `require` fails closed without AppContainer.
   Not Codex WFP/LPAC.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
@@ -423,7 +441,7 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   portable `.mcp.json` / `.cursor/mcp.json`, `GET/POST /v1/mcp-servers` and
   `PATCH/DELETE /v1/mcp-servers/{name}` with scope, TUI `/mcp` with
   `user|project`, capability `mcp.servers.configured`, synthetic catalog
-  package `configured`, trust as `configured/<name>`. Per-call approval is
+  package `configured`, Solid TUI session trust as `configured/<name>`. Per-call approval is
   unchanged. Headless `veasel mcp list|add|enable|disable|remove` manages the
   same scopes via the local API, including `veasel mcp credentials
   list|set|remove` for named HTTP header sets. Named HTTP credentials via
@@ -450,13 +468,10 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
-- [ ] Progressive SolidJS + `@opentui/solid` 0.6.2 migration (ordered:
-  shell → … → toast → session dialogs → dialog primitives → product dialogs →
-  settings). Shell through model/theme/stash/error/shell dual-path shipped;
-  next slices are pane-resize/sidebar, fade/spinner, HTTP session wiring /
-  mount-budget, or remaining OpenCode dialogs (MCP/skill/agent/workspaces).
-  Solid LiveApp is already the default; audit remaining journeys against the
-  classic client rather than treating the default cutover as pending. See
+- [x] Make the SolidJS + `@opentui/solid` 0.6.2 LiveApp the standalone TUI
+  default. The default migration is complete. Remaining Solid work is product
+  behavior and validation, not a pending migration; audit each journey against
+  the production HTTP backend and current OpenCode/OpenTUI sources. See
   [`compatibility/opentui-solid.md`](compatibility/opentui-solid.md).
 - [x] Configure and persist multiple provider profiles from the TUI; keep API
   keys out of responses and mask them in the input flow.
@@ -550,16 +565,25 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   (including `backend_is_healthy` / `ensure_backend` healthy-reuse); Windows
   keeps `main_test` plus repository-map coverage. Save/discovery also reject
   catalog endpoint placeholders such as `YOUR_ACCOUNT_ID` or `<ACCOUNT_ID>`.
-  Interactive TUI matrix gaps remain under the separate ConPTY /
-  measured-baseline item.
-- [ ] Multi-agent isolation and orchestration.
+  The packaged interactive smoke now passes on Linux, macOS, and Windows; the
+  exact Windows ConPTY run is recorded in
+  [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
+- [ ] Multi-agent isolation and orchestration. OpenCode's focused 2026-10-23
+  recheck is in [`COMPETITIVE_SOURCE_STUDY.md`](COMPETITIVE_SOURCE_STUDY.md),
+  with exact source and test links.
+  Design this over Veasel's existing session/durable-operation store: persist
+  parent-child ownership; authorize the selected non-primary agent; bound
+  nesting, concurrent children, runtime, and result bytes; isolate each child
+  workspace; support cancellation; and deliver terminal outcomes once across
+  restart. Do not expose a model-callable subagent tool until those lifecycle
+  guarantees have focused tests and task-level benchmark evidence.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the
   selection off screen.
 - [x] A workspace diff review states how many lines were added and removed.
-  A diff taller than the terminal keeps the first screen and says how many
-  lines remain hidden. The + and - markers stay on the visible lines.
+  A diff taller than the terminal pages through the selected hunk with PgDn/b,
+  while {/} moves between hunks. The + and - markers stay on visible lines.
 - [x] A shell-command review states the sandbox warning and the approve
   instruction before the command text. A command or captured output taller
   than the terminal keeps the first screen and says how many lines remain.
@@ -571,14 +595,36 @@ baselines remain open. See [`RESEARCH.md`](RESEARCH.md) and
   test/source pairing, CamelCase/snake symbol-part matches, same-directory
   neighbor boosts, cross-directory same-basename-stem sibling boosts, and
   file↔package stem pairing (`lib/session.v` ↔ `lib/session/`)
-  (still not tree-sitter/PageRank).
+  (still not tree-sitter/PageRank). Symbol extraction recognizes Go functions
+  and receiver methods, Kotlin `fun`/class forms, Swift protocols/extensions,
+  and common visibility/behavior modifiers on supported declaration forms;
+  this remains bounded line-based extraction, not parsing.
+  Ranking also uses bounded lexical overlap against already-read source and
+  compound path terms, normalizes common `-ing` query words, strengthens the
+  high-confidence argument/args filename alias, and applies a test-file
+  demotion only when the user asks about behavior rather than tests. Bounded
+  source reads now prioritize path relevance and enforce the aggregate byte
+  cap. The metadata-only walk now considers up to 20,000 paths before ranking
+  the strongest 2,000 candidates; source extraction remains capped at 800 files
+  and 8 MiB, and ranking uses V's O(n log n) `sort_with_compare`. Curated
+  retrieval cases for Aider, mini-swe-agent, SWE-agent, OpenCode, and Pi are
+  recorded in `benchmarks/README.md` (20/22 recall@3, 22/22 recall@10 on this
+  small sample after bounded path-specificity ranking); semantic retrieval and
+  broader task-success evidence remain open gaps.
+  Built-in muted/meta text now has at least 4.5:1 contrast against shell,
+  panel, header, and composer backgrounds. Warning-status text meets the same
+  threshold on shell, panel, and composer backgrounds. The regression lives in
+  `tui/src/themes.test.ts`; this is a targeted color check, not a complete
+  accessibility review.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
-- [ ] Validate interactive TUI behavior on each platform and establish
-  measured performance baselines. Linux + macOS standalone PTY smoke is in
-  CI; one Linux workstation CLI/PTY baseline is recorded in
+- [x] Validate the packaged interactive TUI smoke on Linux, macOS, and Windows.
+  The exact-head Windows ConPTY result and journey are recorded in
   [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
-  Windows remains a ConPTY checklist; macOS/Windows timing baselines are open.
+- [ ] Establish measured TUI performance baselines beyond the existing Linux
+  workstation CLI/PTY baseline, and broaden interactive coverage to approvals,
+  streaming, MCP OAuth browser open, and long diffs. macOS/Windows timing
+  baselines remain open.
 
 ## Initial compatibility target
 
@@ -592,8 +638,9 @@ honoring its license and attribution.
 
 ## Risks and decisions
 
-- The official Veasel artwork is CC BY-NC 4.0. Keep it out of the product until
-  commercial-use rights are established; use original typography and colors.
+- The official V mascot artwork is CC BY-NC 4.0. The terminal client uses an
+  independently drawn geometric pixel companion under MIT; do not add upstream
+  mascot artwork unless rights for the intended use are established.
 - Session creation records an existing, canonical workspace root. The initial
   list/read/search tools enforce root-bound access on every operation, reject
   symlink escapes, and treat file contents as untrusted. Loopback plus Origin
@@ -621,11 +668,28 @@ honoring its license and attribution.
   shared library. CI checks these platform-specific linkage guarantees.
 - SSE and SQLite behavior must be tested under concurrent clients before the
   server claims durable or restart-resilient background execution.
-- Solid MCP/Skills dialogs + session export options/result (OpenCode parity rows 7–8, 11–12).
+- Solid MCP/Skills dialogs and session export options/results (OpenCode parity
+  rows 7–8, 11–12) still need journey-level comparison and validation; the live
+  dialogs already load their catalogs through the loopback API. MCP server
+  configuration now adds stdio/Streamable HTTP servers and enables, disables,
+  or removes configured servers through the same API; removal is confirmed.
+  Bare `/mcp add` opens a guided stdio/HTTP setup that records configuration but
+  does not launch a server before the operator separately trusts it.
 - Solid composer `/` `@` `$` autocomplete (`solid/composer-autocomplete.ts` +
   `composer.tsx`): reuses classic slash/path/skill matchers; Tab/Enter/Esc/arrows;
-  `testRender` coverage. HTTP catalog wiring and polish (sticky cursor sync,
-  argument-context refresh) remain open.
+  live catalog wiring and cursor synchronization are implemented and covered by
+  rendered tests. `/skill on|off|run <source>/<skill>` now loads the active
+  project's catalog and offers real argument completions. `/mcp trust|untrust`
+  loads configured servers plus session trust state and suggests enabled,
+  available or trusted targets as appropriate. `/mcp remove|enable|disable`
+  suggests configured server names from the live catalog, filtered by scope.
+  Selecting a server in `/mcp` opens actions for session trust and configured
+  enable/disable/removal; replacement and removal require confirmation.
+  Pending edit, shell, and MCP
+  review IDs come from the summary-only inventory; Enter opens the selected
+  review and fetches details only for that item, without applying a decision.
+  Plugin-link add and removal complete from the live registry, with explicit
+  confirmation for replacement/removal. Cross-terminal validation remains open.
 
 ### Transcript keyboard ownership
 
@@ -651,7 +715,7 @@ honoring its license and attribution.
 
 - User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.
 - Message lines wrap to the actual available width, including narrow terminals. Rendered snapshots at 32, 56, and 100 columns protect long-text visibility and role boundaries.
-- Production streaming, thinking sections, and activity groups retain their existing data flow. Full rich-Markdown migration and the complete design-system audit remain open.
+- Production streaming, thinking sections, and activity groups retain their existing data flow. The Solid transcript renders assistant history and live responses as rich Markdown, including syntax-highlighted code blocks. The classic transcript renders the followed live/latest assistant response as rich Markdown and uses styled Markdown segments when scrolled. The complete design-system audit and cross-terminal rendering review remain open.
 ### Real Skill completions
 
 - Production composer defaults to an empty Skill catalog instead of demo entries. LiveApp discovers Skills through the versioned plugin API when a draft first contains a Skill token.

@@ -887,8 +887,8 @@ def run_core_suite() -> None:
         screen.clear_line(13)  # "/patch show "
         screen.send(f"/patch show {EDIT_ID}\r", 0.7)
         screen.wait_for("29 added, 3 removed", 4)
-        screen.wait_for("Showing ")
-        screen.wait_for("remain", 4)
+        screen.wait_for("Hunk lines 1-22/34", 4)
+        screen.wait_for("PgDn", 4)
         screen.wait_for("Hunk 1 of 2", 4)
         screen.wait_for("{/} hunks", 4)
         screen.wait_for("alpha")
@@ -902,22 +902,28 @@ def run_core_suite() -> None:
             raise AssertionError(f"diff review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
         if "alpha" not in reviewed or "beta" not in reviewed or " │ " not in reviewed:
             raise AssertionError(f"diff review missed side-by-side alpha/beta pair\n--- screen ---\n{reviewed}")
+        screen.send("\x1b[6~", 0.55)  # PageDown inspects the hidden tail of the same hunk
+        screen.wait_for("TAIL-SENTINEL", 4)
+        screen.send("b", 0.55)  # return to the first page before reviewing the split view
+        screen.wait_for("Hunk lines 1-22/34", 4)
+        returned = screen.terminal.text()
+        if "TAIL-SENTINEL" in returned or "hunk-two-marker" in returned:
+            raise AssertionError(f"backward diff paging left the first hunk window\n--- screen ---\n{returned}")
         screen.send("v", 0.55)  # toggle OpenTUI DiffRenderable split view
         screen.wait_for("v word-diff", 4)
-        screen.wait_for("OpenTUI split", 4)
-        # Counts may wrap across the panel width ("29" then "added, 3 removed").
-        screen.wait_for("added, 3 removed", 4)
-        screen.wait_for("Hunk 1 of 2", 4)
+        screen.wait_for("EDIT / PENDING", 4)
+        screen.wait_for("+29 / -3", 4)
+        screen.wait_for("Hunk 1/2", 4)
         screen.wait_for("const answer = alpha", 4)
         screen.wait_for("const answer = beta", 4)
         split_view = screen.terminal.text()
         if "Error parsing diff" in split_view:
             raise AssertionError(f"DiffRenderable rejected the review patch\n--- screen ---\n{split_view}")
         screen.send("}", 0.55)  # next hunk while split is mounted
-        screen.wait_for("Hunk 2 of 2", 4)
+        screen.wait_for("Hunk 2/2", 4)
         screen.wait_for("hunk-two-marker", 4)
         screen.send("{", 0.55)  # previous hunk scrolls split back
-        screen.wait_for("Hunk 1 of 2", 4)
+        screen.wait_for("Hunk 1/2", 4)
         screen.wait_for("const answer = alpha", 4)
         screen.send("v", 0.55)  # back to word-diff segments
         screen.wait_for("v split view", 4)
@@ -927,7 +933,7 @@ def run_core_suite() -> None:
         screen.wait_for("hunk-two-marker", 4)
         screen.send("{", 0.5)  # previous hunk
         screen.wait_for("Hunk 1 of 2", 4)
-        screen.wait_for("remain", 4)
+        screen.wait_for("Hunk lines 1-22/34", 4)
         screen.send(" ", 0.45)  # Space multi-select current review
         screen.wait_for("selected", 4)
         screen.wait_for("● Space", 4)

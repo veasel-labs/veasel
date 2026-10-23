@@ -37,6 +37,8 @@ const max_provider_response_bytes = 1_000_000
 const max_provider_stream_bytes = 16_000_000
 const max_provider_model_catalog_bytes = 1_000_000
 const max_provider_model_catalog_entries = 500
+const opencode_go_chat_base_url = 'https://opencode.ai/inference/go/openai/v1'
+const opencode_go_models_url = 'https://opencode.ai/inference/go/v1/models'
 // Request-side Anthropic prompt caching. Default `auto` emits ephemeral
 // cache_control (top-level automatic + system-block breakpoint). Set to `off`
 // to disable; `1h` requests the extended TTL. This only shapes requests—
@@ -567,16 +569,18 @@ fn (mut decoder ProviderSSEDecoder) finish() ! {
 }
 
 struct ModelConfig {
-	provider          string
-	base_url          string
-	model             string
-	api_key           string
+	provider string
+	base_url string
+	model    string
+	api_key  string
+mut:
+	session_id        string
 	max_output_tokens int
 }
 
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
-	url := '${secure_endpoint(config.base_url)!}/models'
+	url := provider_model_catalog_url(config)!
 	verify := provider_tls_verify_path(url)!
 	mut headers := http.new_header(key: .accept, value: 'application/json')
 	match info.protocol {
@@ -614,6 +618,17 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	}
 	models := parse_provider_model_catalog(info.protocol, response.body)!
 	return filter_provider_chat_models(config.provider, models)
+}
+
+fn provider_model_catalog_url(config ModelConfig) !string {
+	base_url := secure_endpoint(config.base_url)!
+	// OpenCode Go serves model discovery from the shared `/v1/models` path,
+	// while each model family's completion endpoint has an API-family segment.
+	// Keep custom endpoints composable by special-casing only the shipped Go URL.
+	if config.provider == 'opencode-go' && base_url == opencode_go_chat_base_url {
+		return opencode_go_models_url
+	}
+	return '${base_url}/models'
 }
 
 fn filter_provider_chat_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
@@ -867,7 +882,7 @@ mut:
 	id        string
 	type      string
 	name      string
-	arguments string
+	arguments strings.Builder
 }
 
 struct OpenAIStreamOutput {
@@ -927,7 +942,15 @@ struct AnthropicStreamToolCall {
 mut:
 	id        string
 	name      string
-	arguments string
+	arguments strings.Builder
+}
+
+fn append_provider_stream_tool_arguments(mut arguments strings.Builder, delta string) ! {
+	if arguments.len > max_provider_response_bytes
+		|| delta.len > max_provider_response_bytes - arguments.len {
+		return error('tool arguments size limit exceeded')
+	}
+	arguments.write_string(delta)
 }
 
 struct AnthropicStreamOutput {
@@ -1259,10 +1282,14 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 
 fn ignore_provider_text_delta(_ string) ! {}
 
+fn openai_chat_completions_url(config ModelConfig) !string {
+	return '${secure_endpoint(config.base_url)!}/chat/completions'
+}
+
 fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	url := '${secure_endpoint(config.base_url)!}/chat/completions'
+	url := openai_chat_completions_url(config)!
 	request := build_openai_chat_request(config, messages, tools)
 	mut stream_state := &OpenAIStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {
@@ -1291,10 +1318,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 				if tool_delta.id != '' { tool.id += tool_delta.id }
 				if tool_delta.type != '' { tool.type = tool_delta.type }
 				tool.name += tool_delta.function.name
-				tool.arguments += tool_delta.function.arguments
-				if tool.arguments.len > max_provider_response_bytes {
-					return error('tool arguments size limit exceeded')
-				}
+				append_provider_stream_tool_arguments(mut tool.arguments, tool_delta.function.arguments)!
 				stream_state.tools[tool_delta.index] = tool
 			}
 		}
@@ -1303,14 +1327,15 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 		callback)!
 	content := stream_state.content_parts.join('')
 	mut tool_calls := []ProviderToolCall{}
-	for tool in stream_state.tools {
-		if tool.id == '' && tool.name == '' && tool.arguments == '' {
+	for mut tool in stream_state.tools {
+		if tool.id == '' && tool.name == '' && tool.arguments.len == 0 {
 			continue
 		}
-		if tool.id == '' || tool.name == '' || tool.arguments == '' {
+		if tool.id == '' || tool.name == '' || tool.arguments.len == 0 {
 			return error('incomplete streamed tool call')
 		}
-		json2.decode[map[string]json2.Any](tool.arguments) or {
+		arguments := tool.arguments.str()
+		json2.decode[map[string]json2.Any](arguments) or {
 			return error('invalid streamed tool arguments')
 		}
 		tool_calls << ProviderToolCall{
@@ -1318,7 +1343,7 @@ fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, c
 			type:     if tool.type == '' { 'function' } else { tool.type }
 			function: ProviderFunctionCall{
 				name:      tool.name
-				arguments: tool.arguments
+				arguments: arguments
 			}
 		}
 	}
@@ -1541,10 +1566,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 					stream_state.tools << AnthropicStreamToolCall{}
 				}
 				mut tool := stream_state.tools[event.index]
-				tool.arguments += event.delta.partial_json
-				if tool.arguments.len > max_provider_response_bytes {
-					return error('tool arguments size limit exceeded')
-				}
+				append_provider_stream_tool_arguments(mut tool.arguments, event.delta.partial_json)!
 				stream_state.tools[event.index] = tool
 			}
 		}
@@ -1554,12 +1576,13 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 	mut content := []string{}
 	mut tool_calls := []ProviderToolCall{}
 	content << stream_state.content_parts
-	for tool in stream_state.tools {
-		if tool.id == '' && tool.name == '' && tool.arguments == '' { continue }
-		if tool.id == '' || tool.name == '' || tool.arguments == '' {
+	for mut tool in stream_state.tools {
+		if tool.id == '' && tool.name == '' && tool.arguments.len == 0 { continue }
+		if tool.id == '' || tool.name == '' || tool.arguments.len == 0 {
 			return error('incomplete streamed tool call')
 		}
-		json2.decode[map[string]json2.Any](tool.arguments) or {
+		arguments := tool.arguments.str()
+		json2.decode[map[string]json2.Any](arguments) or {
 			return error('invalid streamed tool arguments')
 		}
 		tool_calls << ProviderToolCall{
@@ -1568,7 +1591,7 @@ fn (provider AnthropicProvider) complete(mut turn_ctx vcontext.Context, config M
 			type:             'function'
 			function:         ProviderFunctionCall{
 				name:      tool.name
-				arguments: tool.arguments
+				arguments: arguments
 			}
 		}
 	}
@@ -2251,6 +2274,13 @@ enum ModelAuth {
 	gemini
 }
 
+fn opencode_go_session_header(config ModelConfig) string {
+	if config.provider == 'opencode-go' && config.session_id.len > 0 {
+		return config.session_id
+	}
+	return ''
+}
+
 fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig, payload string,
 	auth ModelAuth, on_data ProviderSSEDataFn) !http.Response {
 	if context_error := turn_context_error(mut turn_ctx) {
@@ -2265,6 +2295,13 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	write_timeout := if remaining < 10 * time.second { remaining } else { 10 * time.second }
 	mut headers := http.new_header(key: .content_type, value: 'application/json')
 	headers.add_custom('Accept', 'text/event-stream')!
+	if config.provider == 'opencode-go' {
+		session_id := opencode_go_session_header(config)
+		if session_id.len > 0 {
+			headers.add_custom('x-opencode-session', session_id)!
+		}
+		headers.add_custom('User-Agent', 'Veasel Code/${product_version}')!
+	}
 	match auth {
 		.bearer {
 			if config.api_key.len > 0 {

@@ -1,5 +1,98 @@
 module main
 
+import context as vcontext
+import net.http
+import strings
+import time
+
+struct OpenCodeGoHeaderFixture {
+mut:
+	hits       int
+	session_id string
+	user_agent string
+}
+
+fn (mut fixture OpenCodeGoHeaderFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	fixture.session_id = request.header.get_custom('x-opencode-session') or { '' }
+	fixture.user_agent = request.header.get_custom('User-Agent') or { '' }
+	mut response := http.Response{}
+	response.set_status(.ok)
+	response.header.set(.content_type, 'text/event-stream')
+	return response
+}
+
+fn start_opencode_go_header_fixture(mut fixture OpenCodeGoHeaderFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
+fn test_opencode_go_requests_use_stable_session_ids() {
+	assert opencode_go_session_header(ModelConfig{
+		provider:   'opencode-go'
+		session_id: 'session-123'
+	}) == 'session-123'
+	assert opencode_go_session_header(ModelConfig{
+		provider: 'opencode-go'
+	}) == ''
+	assert opencode_go_session_header(ModelConfig{
+		provider:   'openai-compatible'
+		session_id: 'session-123'
+	}) == ''
+}
+
+fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
+	info := model_provider_info('opencode-go') or { panic('OpenCode Go provider preset is missing') }
+	assert info.base_url == opencode_go_chat_base_url
+	assert openai_chat_completions_url(ModelConfig{
+		provider: 'opencode-go'
+		base_url: info.base_url
+	})! == 'https://opencode.ai/inference/go/openai/v1/chat/completions'
+	assert provider_model_catalog_url(ModelConfig{
+		provider: 'opencode-go'
+		base_url: info.base_url
+	})! == opencode_go_models_url
+	assert provider_model_catalog_url(ModelConfig{
+		provider: 'opencode-go'
+		base_url: 'https://models.example.test/v1'
+	})! == 'https://models.example.test/v1/models'
+}
+
+fn test_opencode_go_turn_sends_required_session_and_client_headers() {
+	mut fixture := &OpenCodeGoHeaderFixture{}
+	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer {
+		cancel()
+	}
+	session_id := 'f40de9bc-2bce-4b4f-840d-316e2e019570'
+	response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/chat/completions', ModelConfig{
+		provider:   'opencode-go'
+		api_key:    'fixture-key'
+		session_id: session_id
+	}, '{}', .bearer, fn (_ string) ! {}) or { panic(err) }
+	assert response.status_code == 200
+	assert fixture.hits == 1
+	assert fixture.session_id == session_id
+	assert fixture.user_agent == 'Veasel Code/${product_version}'
+}
+
 fn test_openai_chat_usage_parses_cached_tokens_subset() {
 	usage := provider_usage_from_fixture_json('openai-chat', '{
 		"prompt_tokens": 1200,
@@ -189,6 +282,21 @@ fn test_anthropic_stream_merges_message_start_and_delta_usage() {
 	assert merged.cache_reported
 	assert merged.cache_read_tokens == 80
 	assert merged.cache_creation_tokens == 10
+}
+
+fn test_provider_stream_tool_arguments_use_bounded_builder() {
+	mut arguments := strings.new_builder(16)
+	append_provider_stream_tool_arguments(mut arguments, '{"query":')!
+	append_provider_stream_tool_arguments(mut arguments, '"sentinel"}')!
+	assert arguments.str() == '{"query":"sentinel"}'
+
+	mut full := strings.new_builder(max_provider_response_bytes)
+	full.write_string(strings.repeat(`x`, max_provider_response_bytes))
+	append_provider_stream_tool_arguments(mut full, 'x') or {
+		assert err.msg() == 'tool arguments size limit exceeded'
+		return
+	}
+	assert false, 'tool argument buffer exceeded its size limit'
 }
 
 fn test_openai_and_anthropic_usage_clamp_negative_cache_and_reasoning() {

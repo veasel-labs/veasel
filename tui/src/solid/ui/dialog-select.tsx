@@ -27,6 +27,8 @@ export type DialogSelectProps<T = string> = {
   onSelect?: (option: DialogSelectOption<T>) => void
   /** Fires when the highlight moves (theme live-preview). */
   onMove?: (option: DialogSelectOption<T>) => void
+  /** Fires whenever the local filter changes, for remote-backed catalogs. */
+  onQueryChange?: (query: string) => void
   onCancel?: () => void
   /**
    * When false, leave the dialog stack alone after onSelect (caller may
@@ -134,6 +136,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
         onInput={(value: string) => {
           setQuery(value)
           setSelected(0)
+          props.onQueryChange?.(value)
         }}
       />
       <Show

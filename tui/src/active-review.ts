@@ -16,6 +16,8 @@ export type ReviewHotkey =
   | { action: "prev" }
   | { action: "hunkNext" }
   | { action: "hunkPrev" }
+  | { action: "diffPageNext" }
+  | { action: "diffPagePrev" }
   | { action: "toggleDiffSurface" }
 
 export function reviewSelectionKey(review: Pick<ActiveReview, "kind" | "id">): string {
@@ -61,6 +63,10 @@ export function reviewHotkey(
   if (key.name === "[" || key.name === "p") return { action: "prev" }
   if (context.review.kind === "patch" && key.name === "}") return { action: "hunkNext" }
   if (context.review.kind === "patch" && key.name === "{") return { action: "hunkPrev" }
+  if (context.review.kind === "patch" && ["pagedown", "npage"].includes(key.name) && !key.shift) {
+    return { action: "diffPageNext" }
+  }
+  if (context.review.kind === "patch" && key.name === "b") return { action: "diffPagePrev" }
   // v toggles OpenTUI DiffRenderable split vs word-diff segments (patch only).
   if (context.review.kind === "patch" && key.name === "v") return { action: "toggleDiffSurface" }
   return undefined

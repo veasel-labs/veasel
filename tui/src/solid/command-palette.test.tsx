@@ -26,6 +26,7 @@ const noopPaletteHandlers = {
   toggleThinking: () => {},
   showOpen: () => {},
   showStatus: () => {},
+  showRuns: () => {},
   showAgent: () => {},
   showVariant: () => {},
   showWorkspaces: () => {},

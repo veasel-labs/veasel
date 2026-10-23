@@ -325,9 +325,9 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 }
 
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
-	messages []ChatMessage,
+	session_id string, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	config := app.model_config()!
+	config := app.model_config_for_session(session_id)!
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
@@ -1275,6 +1275,44 @@ pub fn (app &App) list_session_operations(mut ctx Context, id string) veb.Result
 		return json_server_error(mut ctx, 'Unable to list session operations')
 	}
 	return ctx.json(operations)
+}
+
+@['/v1/operations'; get]
+pub fn (app &App) list_global_operations(mut ctx Context) veb.Result {
+	limit, before, search := parse_global_operation_history_query(ctx.query) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut store := app.store
+	page := store.list_global_session_operations(limit, before, search) or {
+		if err.msg() == 'operation cursor not found' {
+			return json_request_error(mut ctx, 'Operation cursor was not found; restart history from the newest page')
+		}
+		return json_server_error(mut ctx, 'Unable to list global session operations')
+	}
+	return ctx.json(page)
+}
+
+fn parse_global_operation_history_query(query map[string]string) !(int, string, string) {
+	mut limit := max_global_operation_history_page_size
+	if raw_limit := query['limit'] {
+		limit = strconv.atoi(raw_limit) or {
+			return error('limit must be an integer from 1 to ${max_global_operation_history_page_size}')
+		}
+		if limit < 1 || limit > max_global_operation_history_page_size {
+			return error('limit must be an integer from 1 to ${max_global_operation_history_page_size}')
+		}
+	}
+	mut before := ''
+	if raw_before := query['before'] {
+		before = canonical_operation_id(raw_before) or {
+			return error('before must be a non-nil operation UUID')
+		}
+	}
+	search := (query['search'] or { '' }).trim_space()
+	if search.len > 160 {
+		return error('search must be 160 characters or fewer')
+	}
+	return limit, before, search
 }
 
 @['/v1/sessions/:id/operations/:operation_id'; get]

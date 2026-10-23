@@ -36,6 +36,8 @@ function mcpStatusLabel(server: SolidMcpServer): string {
   switch (server.status) {
     case "connected":
       return "Connected"
+    case "trusted":
+      return "Trusted · review each call"
     case "failed":
       return server.error ?? "Failed"
     case "needs_auth":
@@ -78,7 +80,7 @@ export function StatusDialog(props: StatusDialogSnapshot) {
   return (
     <DialogLayout
       header={<DialogHeader title="Status" hint="Enter · Esc" />}
-      footer={<text fg={colors.muted}>Rich status · wire to /usage and live MCP list</text>}
+      footer={<text fg={colors.muted}>Usage reflects provider-reported totals · Enter closes</text>}
     >
       <box flexDirection="column" gap={1}>
         <text fg={colors.body}>

@@ -112,10 +112,9 @@ describe("review diff surface", () => {
       hunkIndex: 1,
       pendingInstruction: "After inspecting the diff, type /patch approve id.",
     })
-    expect(chrome).toContain("OpenTUI split")
-    expect(chrome).toContain("29 added, 3 removed")
-    expect(chrome).toContain("Hunk 2 of 2")
-    expect(chrome).toContain("Press v for word-diff segments")
+    expect(chrome).toContain("EDIT / pending · +29 / -3 · Hunk 2/2")
+    expect(chrome).toContain("v word-diff · {/} navigate hunks")
+    expect(chrome).not.toContain("OpenTUI")
     expect(chrome).not.toContain("diff --git")
     expect(chrome).toContain("/patch approve")
     expect(chrome.indexOf("29 added")).toBeLessThan(chrome.indexOf("\n"))

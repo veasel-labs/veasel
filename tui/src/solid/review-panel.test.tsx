@@ -38,6 +38,28 @@ describe("Solid review panel", () => {
     expect(frame).toContain("Ctrl+R")
   })
 
+  test("review controls remain available in a narrow, short terminal", async () => {
+    const setup = await testRender(
+      () => <App initialMessages={[]} initialReviews={demoPendingReviews()} />,
+      { width: 32, height: 12, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Review")
+    expect(frame).toContain("a approve")
+    expect(frame).toContain("pending")
+
+    setup.mockInput.pressKey("v")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Hunk 1/2")
+    setup.mockInput.pressKey("}")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Hunk 2/2")
+  })
+
   test("a approves the current review and advances the queue", async () => {
     const decided: Array<{ decision: ReviewDecision; targets: ActiveReview[] }> = []
     const setup = await testRender(
@@ -103,8 +125,32 @@ describe("Solid review panel", () => {
     setup.mockInput.pressKey("v")
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
-    expect(frame).toContain("OpenTUI split")
+    expect(frame).toContain("EDIT / pending")
     expect(frame).toContain("v word-diff")
+  })
+
+  test("} scrolls the split diff to the selected hunk", async () => {
+    const setup = await testRender(
+      () => <App initialMessages={[]} initialReviews={demoPendingReviews()} />,
+      { width: 80, height: 20, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await setup.renderOnce()
+    setup.mockInput.pressKey("v")
+    await setup.renderOnce()
+    await Promise.resolve()
+    const firstHunkFrame = setup.captureCharFrame()
+
+    setup.mockInput.pressKey("}")
+    await setup.renderOnce()
+    await Promise.resolve()
+    const secondHunkFrame = setup.captureCharFrame()
+    expect(firstHunkFrame).not.toContain("+   // pending")
+    expect(secondHunkFrame).toContain("+   // pending")
+    expect(secondHunkFrame).toContain("Hunk 2/2")
   })
 
   test("Esc dismisses the review panel", async () => {

@@ -10,7 +10,11 @@ const repository_map_default_budget_bytes = 12_288
 const repository_map_min_budget_bytes = 1_024
 const repository_map_max_budget_bytes = 65_536
 const repository_map_focus_budget_bytes = 2_048
+// Cap path scoring, symbol extraction, and graph ranking independently from a
+// larger metadata-only walk so relevant files beyond the first directory slice
+// remain eligible without multiplying source reads or pairwise ranking work.
 const repository_map_max_files = 2_000
+const repository_map_max_walk_files = 20_000
 const repository_map_max_symbol_files = 800
 const repository_map_max_file_read_bytes = 262_144
 const repository_map_max_total_read_bytes = 8_388_608
@@ -61,6 +65,9 @@ const repository_map_symbol_prefixes = [
 	'pub const ',
 	'pub trait ',
 	'async def ',
+	'suspend fun ',
+	'export default async function ',
+	'export default function ',
 	'export async function ',
 	'export function ',
 	'export class ',
@@ -68,15 +75,25 @@ const repository_map_symbol_prefixes = [
 	'export type ',
 	'export enum ',
 	'export const ',
+	'data class ',
+	'sealed class ',
+	'enum class ',
+	'annotation class ',
+	'value class ',
 	'fn ',
+	'func ',
+	'fun ',
 	'struct ',
 	'enum ',
 	'interface ',
+	'protocol ',
+	'extension ',
 	'type ',
 	'const ',
 	'trait ',
 	'impl ',
 	'mod ',
+	'object ',
 	'def ',
 	'class ',
 	'function ',
@@ -131,41 +148,58 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	hints := extract_repository_map_hints(hint_text)
 	mut walker := WorkspaceWalker{
 		root:      canonical_root
-		max_files: repository_map_max_files + 1
+		max_files: repository_map_max_walk_files + 1
 		files:     []string{cap: 256}
 	}
 	os.walk_dir(canonical_root, walker.visit)!
-	walker.files.sort()
-	truncated_walk := walker.stopped || walker.files.len > repository_map_max_files
-	if walker.files.len > repository_map_max_files {
-		walker.files = walker.files[..repository_map_max_files]
+	truncated_walk := walker.stopped || walker.files.len > repository_map_max_walk_files
+	if walker.files.len > repository_map_max_walk_files {
+		walker.files = walker.files[..repository_map_max_walk_files]
 	}
 	mut contents := map[string]string{}
 	mut entries := []RepositoryMapEntry{cap: walker.files.len}
-	mut symbols_total := 0
-	mut bytes_read := 0
-	mut symbol_files := 0
 	for relative_path in walker.files {
 		normalized := relative_path.replace('\\', '/')
-		mut entry := RepositoryMapEntry{
+		entries << RepositoryMapEntry{
 			path:  normalized
 			score: score_repository_map_path(normalized, hints)
 		}
+	}
+	// The score/path comparator establishes the deterministic ranking order, so
+	// sorting the walk's paths separately would repeat an O(n log n) pass.
+	// Select the strongest paths from the metadata-only candidate walk before
+	// expensive source reads and cross-file ranking. This keeps those costs
+	// bounded while avoiding a lexical/OS traversal cutoff that hides later
+	// relevant directories in large workspaces.
+	sort_repository_map_entries(mut entries)
+	candidate_truncated := entries.len > repository_map_max_files
+	if candidate_truncated {
+		entries = entries[..repository_map_max_files]
+	}
+	mut symbols_total := 0
+	mut bytes_read := 0
+	mut symbol_files := 0
+	for i in 0 .. entries.len {
+		mut entry := entries[i]
+		normalized := entry.path
 		if symbol_files < repository_map_max_symbol_files
 			&& bytes_read < repository_map_max_total_read_bytes
 			&& symbols_total < repository_map_max_symbols_total
 			&& repository_map_path_is_source(normalized) {
-			abs_path := resolve_workspace_file_path_for_map(canonical_root, relative_path) or {
-				entries << entry
+			abs_path := resolve_workspace_file_path_for_map(canonical_root, normalized) or {
 				continue
 			}
 			size := os.file_size(abs_path)
-			if size == 0 || size > repository_map_max_file_read_bytes {
-				entries << entry
+			remaining_read_bytes := repository_map_max_total_read_bytes - bytes_read
+			file_read_limit := if remaining_read_bytes < repository_map_max_file_read_bytes {
+				remaining_read_bytes
+			} else {
+				repository_map_max_file_read_bytes
+			}
+			if size == 0 || size > file_read_limit {
 				continue
 			}
-			content := read_workspace_text_file_limited(abs_path, repository_map_max_file_read_bytes) or {
-				entries << entry
+			content := read_workspace_text_file_limited(abs_path, file_read_limit) or {
 				continue
 			}
 			contents[normalized] = content
@@ -188,6 +222,12 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 				symbol_relevance = repository_map_symbol_relevance_cap
 			}
 			entry.score += symbol_relevance
+			entry.score += score_repository_map_content(content, hints)
+			if repository_map_is_package_index_path(normalized)
+				&& !repository_map_hint_mentions_package_indexes(hints)
+				&& repository_map_content_is_reexport_only(content) {
+				entry.score -= 120.0
+			}
 			count_bonus := f64(entry.symbols.len)
 			entry.score += if count_bonus > repository_map_symbol_count_bonus_cap {
 				repository_map_symbol_count_bonus_cap
@@ -195,7 +235,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 				count_bonus
 			}
 		}
-		entries << entry
+		entries[i] = entry
 	}
 	// Pull same-directory siblings of strongly mentioned paths into budget
 	// without tree-sitter/PageRank — extractive co-location only.
@@ -219,7 +259,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 		file_count:            selected_paths.len
 		symbol_count:          selected_symbols
 		files_scanned:         walker.files.len
-		truncated:             truncated_walk || map_truncated
+		truncated:             truncated_walk || candidate_truncated || map_truncated
 		untrusted:             true
 	}
 	return RepositoryMapResult{
@@ -327,473 +367,6 @@ fn repository_map_looks_like_path(token string) bool {
 		|| lower.ends_with('.scss') || lower.ends_with('.html')
 }
 
-fn repository_map_stem(name string) string {
-	dot := name.last_index('.') or { return name }
-	if dot <= 0 {
-		return name
-	}
-	return name[..dot]
-}
-
-fn repository_map_eq_ci(left string, right string) bool {
-	return left.to_lower() == right.to_lower()
-}
-
-fn repository_map_path_matches_mention(path string, mentioned string) bool {
-	if mentioned.len == 0 {
-		return false
-	}
-	path_l := path.to_lower()
-	mentioned_l := mentioned.to_lower().replace('\\', '/')
-	if path_l == mentioned_l || path_l.ends_with('/' + mentioned_l) {
-		return true
-	}
-	base_l := os.file_name(path).to_lower()
-	if base_l == mentioned_l || base_l == os.file_name(mentioned_l) {
-		return true
-	}
-	return path_l.contains(mentioned_l)
-}
-
-fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
-	mut score := 1.0
-	base := os.file_name(path)
-	if base in repository_map_important_basenames || path in repository_map_important_basenames {
-		// Static importance is a tie-breaker, not a relevance signal: at the
-		// old +1000 every repo root (README, .gitignore, pyproject.toml...)
-		// outranked the file a hint actually pointed at, and tripped the
-		// >=500 hot-directory/stem boosts meant for real path mentions.
-		score += 120.0
-	}
-	for mentioned in hints.paths {
-		if repository_map_path_matches_mention(path, mentioned) {
-			score += 500.0
-			break
-		}
-	}
-	// Directory / prefix mentions (e.g. "src/auth" or "auth/") pull related
-	// children into budget before unrelated deep leaves — extractive, not
-	// tree-sitter/PageRank.
-	for mentioned in hints.paths {
-		if repository_map_path_under_mention(path, mentioned) {
-			score += 220.0
-			break
-		}
-	}
-	for ident in hints.idents {
-		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
-			ident) {
-			score += 300.0
-			break
-		}
-	}
-	for ident in hints.idents {
-		if repository_map_path_has_segment(path, ident) {
-			score += 120.0
-			break
-		}
-	}
-	// Test/source pairing: mention of foo.v or stem foo also elevates
-	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
-	for mentioned in hints.paths {
-		if repository_map_is_test_pair(path, mentioned) {
-			score += 280.0
-			break
-		}
-	}
-	for ident in hints.idents {
-		if repository_map_is_test_pair_for_stem(path, ident) {
-			score += 180.0
-			break
-		}
-	}
-	depth := path.count('/')
-	if depth == 0 {
-		score += 25.0
-	} else if depth == 1 {
-		score += 10.0
-	}
-	return score
-}
-
-fn repository_map_path_under_mention(path string, mentioned string) bool {
-	if mentioned.len == 0 {
-		return false
-	}
-	path_l := path.to_lower()
-	mentioned_l := mentioned.to_lower().replace('\\', '/').trim_right('/')
-	if mentioned_l.len < 2 {
-		return false
-	}
-	if path_l == mentioned_l {
-		return false
-	}
-	prefix := mentioned_l + '/'
-	if path_l.starts_with(prefix) {
-		return true
-	}
-	return path_l.contains('/' + prefix)
-}
-
-fn repository_map_path_has_segment(path string, ident string) bool {
-	if ident.len < 2 {
-		return false
-	}
-	ident_l := ident.to_lower()
-	for segment in path.replace('\\', '/').split('/') {
-		if repository_map_eq_ci(segment, ident_l) || repository_map_eq_ci(repository_map_stem(segment),
-			ident_l) {
-			return true
-		}
-	}
-	return false
-}
-
-fn score_repository_map_symbol(name string, hints RepositoryMapHintSet) f64 {
-	// Only hint-matching symbols carry relevance. A non-matching symbol used
-	// to add 1-9 points each, which let symbol count alone dominate ranking.
-	mut score := 0.0
-	for ident in hints.idents {
-		if repository_map_eq_ci(name, ident) {
-			score += 200.0
-			break
-		}
-	}
-	if score == 0.0 {
-		for ident in hints.idents {
-			if repository_map_symbol_part_match(name, ident) {
-				score += 80.0
-				break
-			}
-		}
-	}
-	if score == 0.0 {
-		return 0.0
-	}
-	if repository_map_ident_is_interesting(name) {
-		score += 8.0
-	}
-	if name.starts_with('_') {
-		score *= 0.1
-	}
-	return score
-}
-
-fn boost_repository_map_directory_neighbors(mut entries []RepositoryMapEntry) {
-	mut hot_dirs := map[string]bool{}
-	for entry in entries {
-		// Path-mention tier from score_repository_map_path is +500.
-		if entry.score < 500.0 {
-			continue
-		}
-		dir := os.dir(entry.path).replace('\\', '/')
-		if dir.len == 0 || dir == '.' {
-			continue
-		}
-		hot_dirs[dir] = true
-	}
-	if hot_dirs.len == 0 {
-		return
-	}
-	for mut entry in entries {
-		if entry.score >= 500.0 {
-			continue
-		}
-		dir := os.dir(entry.path).replace('\\', '/')
-		if hot_dirs[dir] {
-			entry.score += 90.0
-		}
-	}
-}
-
-fn boost_repository_map_same_stem_siblings(mut entries []RepositoryMapEntry) {
-	mut hot_stems := map[string]bool{}
-	for entry in entries {
-		if entry.score < 500.0 {
-			continue
-		}
-		stem := repository_map_stem(os.file_name(entry.path)).to_lower()
-		if stem.len < 2 {
-			continue
-		}
-		hot_stems[stem] = true
-		base := repository_map_stem_base(stem)
-		if base.len >= 2 {
-			hot_stems[base] = true
-		}
-	}
-	if hot_stems.len == 0 {
-		return
-	}
-	for mut entry in entries {
-		if entry.score >= 500.0 {
-			continue
-		}
-		stem := repository_map_stem(os.file_name(entry.path)).to_lower()
-		if stem.len < 2 {
-			continue
-		}
-		base := repository_map_stem_base(stem)
-		if hot_stems[stem] || (base.len >= 2 && hot_stems[base]) {
-			entry.score += 70.0
-		}
-	}
-}
-
-fn boost_repository_map_stem_packages(mut entries []RepositoryMapEntry) {
-	mut hot_package_prefixes := []string{}
-	mut hot_package_files := map[string]bool{}
-	for entry in entries {
-		if entry.score < 500.0 {
-			continue
-		}
-		path_l := entry.path.to_lower().replace('\\', '/')
-		stem := repository_map_stem(os.file_name(path_l))
-		if stem.len >= 2 {
-			dir := os.dir(path_l).replace('\\', '/')
-			prefix := if dir.len == 0 || dir == '.' {
-				stem + '/'
-			} else {
-				dir + '/' + stem + '/'
-			}
-			if prefix !in hot_package_prefixes {
-				hot_package_prefixes << prefix
-			}
-		}
-		// Nested hot path lib/session/foo.v also elevates lib/session.v.
-		parent := os.dir(path_l).replace('\\', '/')
-		if parent.len > 0 && parent != '.' {
-			hot_package_files[parent] = true
-		}
-	}
-	if hot_package_prefixes.len == 0 && hot_package_files.len == 0 {
-		return
-	}
-	for mut entry in entries {
-		if entry.score >= 500.0 {
-			continue
-		}
-		path_l := entry.path.to_lower().replace('\\', '/')
-		mut boosted := false
-		for prefix in hot_package_prefixes {
-			if path_l.starts_with(prefix) {
-				entry.score += 80.0
-				boosted = true
-				break
-			}
-		}
-		if !boosted && hot_package_files[repository_map_stem(path_l)] {
-			entry.score += 80.0
-		}
-	}
-}
-
-fn repository_map_is_test_pair(path string, mentioned string) bool {
-	if mentioned.len == 0 {
-		return false
-	}
-	path_stem := repository_map_stem(os.file_name(path)).to_lower()
-	mentioned_stem := repository_map_stem(os.file_name(mentioned.replace('\\', '/'))).to_lower()
-	if path_stem.len < 2 || mentioned_stem.len < 2 {
-		return false
-	}
-	return repository_map_stems_are_test_pair(path_stem, mentioned_stem)
-}
-
-fn repository_map_is_test_pair_for_stem(path string, stem string) bool {
-	if stem.len < 2 {
-		return false
-	}
-	path_stem := repository_map_stem(os.file_name(path)).to_lower()
-	return repository_map_stems_are_test_pair(path_stem, stem.to_lower())
-}
-
-fn repository_map_stems_are_test_pair(left string, right string) bool {
-	if left == right {
-		return false
-	}
-	return repository_map_stem_base(left) == right || repository_map_stem_base(right) == left
-		|| repository_map_stem_base(left) == repository_map_stem_base(right)
-}
-
-fn repository_map_stem_base(stem string) string {
-	mut s := stem
-	for suffix in ['_test', '_spec', '.test', '.spec', '-test', '-spec'] {
-		if s.ends_with(suffix) {
-			s = s[..s.len - suffix.len]
-			break
-		}
-	}
-	for prefix in ['test_', 'spec_', 'test-', 'spec-'] {
-		if s.starts_with(prefix) {
-			s = s[prefix.len..]
-			break
-		}
-	}
-	return s
-}
-
-fn repository_map_symbol_part_match(name string, ident string) bool {
-	if name.len < 3 || ident.len < 3 {
-		return false
-	}
-	if repository_map_eq_ci(name, ident) {
-		return false
-	}
-	name_parts := repository_map_ident_parts(name)
-	ident_parts := repository_map_ident_parts(ident)
-	if name_parts.len == 0 || ident_parts.len == 0 {
-		return false
-	}
-	for part in ident_parts {
-		if part.len < 3 {
-			continue
-		}
-		for candidate in name_parts {
-			if repository_map_eq_ci(candidate, part) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-fn repository_map_ident_parts(name string) []string {
-	mut parts := []string{}
-	mut current := ''
-	for ch in name {
-		if ch == `_` || ch == `-` {
-			if current.len >= 3 {
-				parts << current.to_lower()
-			}
-			current = ''
-			continue
-		}
-		is_upper := ch >= `A` && ch <= `Z`
-		if is_upper && current.len > 0 {
-			if current.len >= 3 {
-				parts << current.to_lower()
-			}
-			current = ''
-		}
-		current += ch.ascii_str()
-	}
-	if current.len >= 3 {
-		parts << current.to_lower()
-	}
-	return parts
-}
-
-const repository_map_cross_reference_weight = 40.0
-const repository_map_cross_reference_hint_multiplier = 2.0
-const repository_map_cross_reference_hint_min_path_score = 120.0
-const repository_map_cross_reference_max_boost = 400.0
-const repository_map_cross_reference_max_definers = 8
-const repository_map_cross_reference_min_symbol_len = 3
-
-fn repository_map_content_identifiers(content string) map[string]bool {
-	mut identifiers := map[string]bool{}
-	mut start := -1
-	for index, ch in content {
-		if is_repository_map_ident_byte(ch) {
-			if start < 0 {
-				start = index
-			}
-			continue
-		}
-		if start >= 0 {
-			if index - start >= repository_map_cross_reference_min_symbol_len {
-				identifiers[content[start..index]] = true
-			}
-			start = -1
-		}
-	}
-	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
-		identifiers[content[start..]] = true
-	}
-	return identifiers
-}
-
-// boost_repository_map_cross_references raises files whose defined symbols
-// are mentioned by other files. One distinct referring file contributes one
-// weight unit regardless of mention count, symbols defined in many files
-// are skipped as too generic, and the total boost per file is capped.
-fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet) {
-	mut definers := map[string][]int{}
-	for index, entry in entries {
-		if entry.path !in contents {
-			continue
-		}
-		mut seen := map[string]bool{}
-		for symbol in entry.symbols {
-			name := symbol.name
-			// Module declarations (e.g. `module main`) and entrypoints are
-			// not callable references; including them would link every file
-			// in a package to every other file.
-			if symbol.kind == 'module' || name == 'main' {
-				continue
-			}
-			if name.len < repository_map_cross_reference_min_symbol_len || name in seen {
-				continue
-			}
-			seen[name] = true
-			definers[name] << index
-		}
-	}
-	mut boosts := map[int]f64{}
-	for index, entry in entries {
-		content := contents[entry.path] or { continue }
-		identifiers := repository_map_content_identifiers(content)
-		mut referrers := map[int]bool{}
-		for token, _ in identifiers {
-			defs := definers[token] or { continue }
-			if defs.len > repository_map_cross_reference_max_definers {
-				continue
-			}
-			for definer in defs {
-				if definer != index {
-					referrers[definer] = true
-				}
-			}
-		}
-		// Personalization (Aider-style): a reference coming from a file the
-		// hint already points at counts more than one from an unrelated file.
-		referrer_weight := if score_repository_map_path(entry.path, hints) >= repository_map_cross_reference_hint_min_path_score {
-			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
-		} else {
-			repository_map_cross_reference_weight
-		}
-		for definer, _ in referrers {
-			boosts[definer] = (boosts[definer] or { 0.0 }) + referrer_weight
-		}
-	}
-	for index, boost in boosts {
-		capped := if boost > repository_map_cross_reference_max_boost {
-			repository_map_cross_reference_max_boost
-		} else {
-			boost
-		}
-		entries[index].score += capped
-	}
-}
-
-fn sort_repository_map_entries(mut entries []RepositoryMapEntry) {
-	// Insertion sort keeps higher scores first and breaks ties by path.
-	for i in 1 .. entries.len {
-		mut j := i
-		for j > 0 {
-			left := entries[j - 1]
-			right := entries[j]
-			if left.score > right.score || (left.score == right.score && left.path <= right.path) {
-				break
-			}
-			entries[j - 1] = right
-			entries[j] = left
-			j--
-		}
-	}
-}
-
 fn repository_map_ident_is_interesting(name string) bool {
 	if name.len < 8 {
 		return false
@@ -857,12 +430,76 @@ fn extract_repository_map_symbols(content string) []RepositoryMapSymbol {
 }
 
 fn repository_map_symbol_from_line(line string) ?(string, string) {
+	// Preserve the most specific declaration kind (for example `pub fn` or
+	// `export default function`) before stripping modifiers for fallback forms.
 	for prefix in repository_map_symbol_prefixes {
 		if line.starts_with(prefix) {
-			rest := line[prefix.len..]
-			name := take_repository_map_ident(rest) or { continue }
-			kind := prefix.trim_space()
-			return kind, name
+			return repository_map_symbol_from_prefix(line, prefix, prefix.trim_space())
+		}
+	}
+	mut declaration := line
+	mut modifiers := []string{}
+	// Common visibility/behavior modifiers precede declarations in Java, C#,
+	// TypeScript, Rust, and C/C++. Strip only whole leading words so names and
+	// types are left intact for the declaration recognizer below.
+	for _ in 0 .. 8 {
+		modifier := repository_map_leading_modifier(declaration) or { break }
+		modifiers << modifier
+		declaration = declaration[modifier.len..].trim_space()
+	}
+	for prefix in repository_map_symbol_prefixes {
+		if declaration.starts_with(prefix) {
+			kind := if modifiers.len > 0 {
+				'${modifiers.join(' ')} ${prefix.trim_space()}'
+			} else {
+				prefix.trim_space()
+			}
+			return repository_map_symbol_from_prefix(declaration, prefix, kind)
+		}
+	}
+	return none
+}
+
+fn repository_map_symbol_from_prefix(line string, prefix string, kind string) ?(string, string) {
+	mut rest := line[prefix.len..]
+	if prefix == 'func ' && rest.starts_with('(') {
+		// Go method: func (receiver Type) Method(...). Balance nested function
+		// types in generic receivers, e.g. Box[func(int)].
+		close_receiver := repository_map_go_receiver_end(rest) or { return none }
+		rest = rest[close_receiver + 1..]
+	}
+	name := take_repository_map_ident(rest) or { return none }
+	return kind, name
+}
+
+fn repository_map_go_receiver_end(receiver string) ?int {
+	mut depth := 0
+	for index, ch in receiver {
+		if ch == `(` {
+			depth++
+		} else if ch == `)` {
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return none
+}
+
+fn repository_map_leading_modifier(line string) ?string {
+	for modifier in ['public', 'private', 'protected', 'internal', 'static', 'final', 'abstract',
+		'sealed', 'virtual', 'override', 'extern', 'unsafe', 'inline', 'constexpr', 'async', 'export',
+		'declare', 'default', 'pub', 'suspend', 'data', 'annotation', 'value', 'open', 'tailrec',
+		'operator', 'infix'] {
+		if line.starts_with('${modifier} ') {
+			return modifier
+		}
+	}
+	if line.starts_with('pub(') {
+		close := line.index(')') or { return none }
+		if line.len > close + 1 && line[close + 1] == ` ` {
+			return line[..close + 1]
 		}
 	}
 	return none

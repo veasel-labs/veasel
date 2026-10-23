@@ -1,0 +1,206 @@
+{
+  "generatedAt": "2026-10-23T01:49:13.870Z",
+  "veasel": {
+    "version": "Veasel Code 0.0.0-dev",
+    "sourceRevision": "6032b710bf7d0d7138088768c9f696e54cc967c0",
+    "sourceDiffSha256": "238269a6966ddfc1a4b83b07798a1fc26102f41bee04f1f56d4bc1dee7b2f0f3",
+    "untrackedSourceFiles": [],
+    "binarySha256": "6e0e82df2a123bb731d072ffcb6ce8f04e0f18e84c8cca256a8724e50ef32492",
+    "compilerVersion": "V 0.5.2 768bc16",
+    "buildFlags": "-cc gcc -prod -d veasel_version=0.0.0-dev -o /tmp/veasel-map-current ."
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "repository": {
+    "name": "Aider-AI--aider",
+    "revision": "5dc9490bb35f9729ef2c95d00a19ccd30c26339c"
+  },
+  "summary": {
+    "cases": 6,
+    "recallAt3": 4,
+    "recallAt10": 6
+  },
+  "results": [
+    {
+      "query": "repository map PageRank ranking of source files",
+      "expected": "aider/repomap.py",
+      "rank": 1,
+      "top3": [
+        "aider/repomap.py",
+        "aider/coders/base_coder.py",
+        "tests/basic/test_main.py"
+      ],
+      "rankedPaths": [
+        "aider/repomap.py",
+        "aider/coders/base_coder.py",
+        "tests/basic/test_main.py",
+        "aider/repo.py",
+        "tests/basic/test_wholefile.py",
+        "aider/watch.py",
+        "aider/gui.py",
+        "aider/models.py",
+        "aider/io.py",
+        "aider/coders/search_replace.py",
+        "tests/basic/test_commands.py",
+        "aider/coders/patch_coder.py",
+        "aider/help.py",
+        "aider/main.py",
+        "aider/commands.py"
+      ],
+      "fileCount": 15,
+      "filesScanned": 685
+    },
+    {
+      "query": "command line argument parsing and options",
+      "expected": "aider/args.py",
+      "rank": 6,
+      "top3": [
+        "aider/io.py",
+        "aider/coders/search_replace.py",
+        "tests/basic/test_main.py"
+      ],
+      "rankedPaths": [
+        "aider/io.py",
+        "aider/coders/search_replace.py",
+        "tests/basic/test_main.py",
+        "tests/basic/test_commands.py",
+        "aider/commands.py",
+        "aider/args.py",
+        "aider/gui.py",
+        "aider/linter.py",
+        "aider/coders/base_coder.py",
+        "benchmark/over_time.py",
+        "aider/utils.py",
+        "aider/website/_includes/leaderboard_table.js",
+        "aider/models.py",
+        "aider/onboarding.py"
+      ],
+      "fileCount": 14,
+      "filesScanned": 685
+    },
+    {
+      "query": "lint edited files and report errors",
+      "expected": "aider/linter.py",
+      "rank": 1,
+      "top3": [
+        "aider/linter.py",
+        "aider/coders/base_coder.py",
+        "tests/basic/test_main.py"
+      ],
+      "rankedPaths": [
+        "aider/linter.py",
+        "aider/coders/base_coder.py",
+        "tests/basic/test_main.py",
+        "aider/report.py",
+        "aider/main.py",
+        "aider/gui.py",
+        "tests/basic/test_commands.py",
+        "tests/basic/test_wholefile.py",
+        "aider/watch.py",
+        "aider/repo.py",
+        "aider/commands.py",
+        "aider/coders/search_replace.py",
+        "aider/io.py",
+        "aider/repomap.py",
+        "aider/coders/patch_coder.py",
+        "aider/help.py",
+        "aider/coders/udiff_coder.py",
+        "benchmark/over_time.py"
+      ],
+      "fileCount": 18,
+      "filesScanned": 685
+    },
+    {
+      "query": "watch files for changes and reload",
+      "expected": "aider/watch.py",
+      "rank": 1,
+      "top3": [
+        "aider/watch.py",
+        "aider/coders/base_coder.py",
+        "tests/fixtures/watch.js"
+      ],
+      "rankedPaths": [
+        "aider/watch.py",
+        "aider/coders/base_coder.py",
+        "tests/fixtures/watch.js",
+        "aider/gui.py",
+        "tests/basic/test_commands.py",
+        "tests/basic/test_main.py",
+        "aider/repo.py",
+        "aider/models.py",
+        "tests/basic/test_wholefile.py",
+        "tests/basic/test_onboarding.py",
+        "aider/main.py",
+        "aider/io.py",
+        "tests/basic/test_watch.py",
+        "aider/coders/search_replace.py",
+        "aider/copypaste.py"
+      ],
+      "fileCount": 15,
+      "filesScanned": 685
+    },
+    {
+      "query": "undo the last git commit command",
+      "expected": "aider/commands.py",
+      "rank": 1,
+      "top3": [
+        "aider/commands.py",
+        "tests/basic/test_commands.py",
+        "aider/repo.py"
+      ],
+      "rankedPaths": [
+        "aider/commands.py",
+        "tests/basic/test_commands.py",
+        "aider/repo.py",
+        "aider/gui.py",
+        "aider/io.py",
+        "aider/models.py",
+        "tests/basic/test_main.py",
+        "aider/utils.py",
+        "aider/coders/search_replace.py",
+        "scripts/blame.py",
+        "aider/main.py",
+        "aider/repomap.py",
+        "aider/linter.py",
+        "aider/watch.py",
+        "aider/coders/base_coder.py"
+      ],
+      "fileCount": 15,
+      "filesScanned": 685
+    },
+    {
+      "query": "format the chat history for the model",
+      "expected": "aider/history.py",
+      "rank": 4,
+      "top3": [
+        "aider/models.py",
+        "aider/utils.py",
+        "aider/commands.py"
+      ],
+      "rankedPaths": [
+        "aider/models.py",
+        "aider/utils.py",
+        "aider/commands.py",
+        "aider/history.py",
+        "aider/coders/base_coder.py",
+        "aider/io.py",
+        "aider/onboarding.py",
+        "aider/gui.py",
+        "tests/basic/test_models.py",
+        "tests/basic/test_onboarding.py",
+        "aider/coders/editblock_coder.py",
+        "aider/website/_includes/code-in-json-benchmark.js",
+        "aider/website/_includes/code-in-json-syntax.js",
+        "tests/basic/test_history.py",
+        "benchmark/over_time.py",
+        "aider/openrouter.py",
+        "aider/repo.py",
+        "aider/repomap.py"
+      ],
+      "fileCount": 18,
+      "filesScanned": 685
+    }
+  ]
+}

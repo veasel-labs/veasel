@@ -27,7 +27,7 @@ of review.
 
 | Variable | Values | Behavior |
 |---|---|---|
-| `VEASEL_SHELL_SANDBOX` | `auto` (default), `off`, `require` | Wrap when the platform backend is available; never wrap; or fail closed if wrap cannot run |
+| `VEASEL_SHELL_SANDBOX` | `require` (default), `auto`, `off` | Fail closed unless wrapped; explicitly allow fallback when unavailable; or explicitly disable wrapping |
 | `VEASEL_SHELL_SANDBOX_NETWORK` | unset/deny (default), `allow` | Whether the platform sandbox may share host network |
 
 Capability flags are advertised only when that platform will actually wrap:
@@ -38,14 +38,15 @@ Capability flags are advertised only when that platform will actually wrap:
 | `shell.sandbox.seatbelt` | macOS, mode not `off`, and `/usr/bin/sandbox-exec` present |
 | `shell.sandbox.windows` | Windows, mode not `off`, and AppContainer + Job Object wrap can be created |
 
-Under `require`, missing backends fail closed with no unsandboxed fallback.
-Under `auto`, missing backends fall through unsandboxed and do **not**
-advertise a sandbox capability.
+Unset, empty, and invalid values resolve to `require`. Missing backends then
+fail closed with no unsandboxed fallback. `auto` is an explicit compatibility
+choice that allows unsandboxed fallback and does **not** advertise a sandbox
+capability; `off` explicitly disables wrapping.
 
 ## Linux Bubblewrap for approved commands
 
-On Linux, when `bwrap` is on `PATH` and `VEASEL_SHELL_SANDBOX` is not `off`,
-approved commands run inside Bubblewrap with this default policy:
+On Linux, when `bwrap` is on `PATH` and `VEASEL_SHELL_SANDBOX` is `require` or
+`auto`, approved commands run inside Bubblewrap with this default policy:
 
 | Control | Default |
 |---|---|
@@ -64,8 +65,9 @@ credentials.
 
 ## macOS Seatbelt for approved commands
 
-On macOS, when `/usr/bin/sandbox-exec` exists and `VEASEL_SHELL_SANDBOX` is not
-`off`, approved commands run under a Seatbelt profile with this default policy:
+On macOS, when `/usr/bin/sandbox-exec` exists and `VEASEL_SHELL_SANDBOX` is
+`require` or `auto`, approved commands run under a Seatbelt profile with this
+default policy:
 
 | Control | Default |
 |---|---|
@@ -115,8 +117,9 @@ deny network sharing; Linux and macOS also filter the environment to an
 allowlist (Windows AppContainer still inherits process env — a documented
 backend limit). Do not treat this as a VM or a boundary against a hostile
 kernel. MCP stdio does not use `VEASEL_SHELL_SANDBOX`; it has a separate
-opt-in under `VEASEL_MCP_STDIO_SANDBOX` (Linux Bubblewrap / macOS Seatbelt /
-Windows AppContainer when available; default off).
+policy under `VEASEL_MCP_STDIO_SANDBOX` (Linux Bubblewrap / macOS Seatbelt /
+Windows AppContainer when available; default `require`, missing backends fail
+closed).
 
 ## Limits and API trust
 
@@ -132,8 +135,10 @@ object (`mode`, `will_wrap`, `backend`, `network`) from `VEASEL_SHELL_SANDBOX`,
 `VEASEL_SHELL_SANDBOX_NETWORK`, and the current platform backends so reviewers
 see wrap intent and network posture before approval (`deny`/`allow` when
 wrapping, `host` when unsandboxed). MCP tool-call reviews expose the parallel
-`stdio_sandbox` object from `VEASEL_MCP_STDIO_SANDBOX` (default off; `network`
-is `shared` when wrapping, otherwise `host`).
+`stdio_sandbox` object from `VEASEL_MCP_STDIO_SANDBOX` (default `require`;
+`network` is `shared` when wrapping, otherwise `host`). Missing backends under
+`require` refuse to start the server; `auto` explicitly allows unsandboxed
+fallback and `off` explicitly disables wrapping.
 
 The API is loopback-only and has no authentication token. A local same-user
 process can access session APIs and invoke approvals. Treat same-user processes

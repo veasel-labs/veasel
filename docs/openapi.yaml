@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local sessions, multi-provider chat, bounded workspace tools with durable file edit and shell command approval, local Agent Plugins (Skills and trusted stdio/Streamable HTTP MCP) with explicit per-call review, and replayable events. Workspace excerpts and MCP tool arguments/results are sent to the configured model provider. Approved shell commands use Bubblewrap on Linux or Seatbelt on macOS when available (writable workspace, restricted home-like paths, network isolated by default), or a Windows AppContainer + Job Object wrap when available (workspace ACL grant, network denied by default via missing capability SIDs, Job Object kill-on-close and process/memory caps; not Codex WFP/LPAC). Otherwise they fall back to unsandboxed execution with the server OS user identity. Capabilities shell.sandbox.bubblewrap, shell.sandbox.seatbelt, and shell.sandbox.windows are advertised only when that platform will wrap. Trusted MCP stdio defaults to unsandboxed (VEASEL_MCP_STDIO_SANDBOX unset/off; stderr warns once). Opt-in VEASEL_MCP_STDIO_SANDBOX=auto|require may wrap trusted stdio in Linux Bubblewrap, macOS Seatbelt (/usr/bin/sandbox-exec), or Windows AppContainer + Job when the backend is available; capabilities mcp.stdio.sandbox.bubblewrap, mcp.stdio.sandbox.seatbelt, and mcp.stdio.sandbox.windows are advertised only when that wrap will run. Missing backends under auto fall back unsandboxed honestly; require fails closed. MCP network stays shared inside those wraps; PLUGIN_ROOT/PLUGIN_DATA stay writable. Not Codex WFP/LPAC.
+  description: Local sessions, multi-provider chat, bounded workspace tools, durable approvals, local Agent Plugins and replayable events. Approved shell and trusted stdio MCP default to platform OS sandboxing and fail closed when the backend is unavailable. Explicit VEASEL_SHELL_SANDBOX=auto or VEASEL_MCP_STDIO_SANDBOX=auto permits unsandboxed fallback; off explicitly disables wrapping. Shell network is denied by default; MCP stdio network is shared inside its sandbox. Capabilities are advertised only when wrapping will run. AppContainer + Job is not Codex WFP/LPAC.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -226,7 +226,11 @@ paths:
   /v1/mcp-oauth/complete:
     post:
       operationId: completeMcpOauth
-      description: Completes a pending MCP OAuth flow with an authorization `code`+`state` or a full loopback `callback_url`. Exchanges the code at the token endpoint and upserts `Authorization: Bearer` into the named MCP credential. Secret token values are never returned.
+      description: >-
+        Completes a pending MCP OAuth flow with an authorization `code`+`state`
+        or a full loopback `callback_url`. Exchanges the code at the token
+        endpoint and upserts `Authorization: Bearer` into the named MCP
+        credential. Secret token values are never returned.
       requestBody:
         required: true
         content:
@@ -650,6 +654,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/operations:
+    get:
+      operationId: listGlobalOperations
+      description: >-
+        Lists durable turn operations across all sessions, newest first. Pages
+        are bounded to at most 100 rows and use the last operation id as the
+        before cursor. Terminal rows follow the per-session retention bound;
+        active jobs are included. The optional search term matches operation
+        id, status, provider, model, error, or session title across retained
+        history. A pruned cursor returns 400 so clients can restart from the
+        newest page.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - in: query
+          name: before
+          description: Operation id returned as next_before by the preceding page.
+          schema: { type: string, format: uuid }
+        - in: query
+          name: search
+          description: Case-insensitive substring over operation id, status, provider, model, error, and session title; maximum 160 characters.
+          schema: { type: string, maxLength: 160 }
+      responses:
+        '200':
+          description: Bounded global operation history page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalSessionOperationsPage'
+        '400':
+          description: Invalid limit/cursor or cursor no longer retained.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Unable to list global operations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/fork:
     post:
       operationId: forkSession
@@ -1681,7 +1725,7 @@ paths:
         schema: { type: string, format: uuid }
     post:
       operationId: approveShellCommandProposal
-      description: Durably records explicit approval before running the exact reviewed command with the Veasel process OS user's identity. On Linux with bwrap available and VEASEL_SHELL_SANDBOX not off, execution is wrapped in Bubblewrap. On macOS with /usr/bin/sandbox-exec available and VEASEL_SHELL_SANDBOX not off, execution is wrapped in Seatbelt. On Windows when an AppContainer profile and Job Object can be created and VEASEL_SHELL_SANDBOX not off, execution is wrapped in AppContainer + Job Object (workspace ACL grant, network denied by default unless VEASEL_SHELL_SANDBOX_NETWORK=allow adds capability SIDs, kill-on-close and process/memory caps). Linux/macOS/Windows network is isolated by default unless VEASEL_SHELL_SANDBOX_NETWORK=allow. When the platform backend is missing under auto mode, execution falls back unsandboxed and the matching capability is not advertised. Under require mode, missing backends fail closed. Bounded timeout/output apply; execution is never retried after interruption.
+      description: Durably records explicit approval before running the exact reviewed command. Shell execution defaults to the platform OS sandbox. An unset or invalid VEASEL_SHELL_SANDBOX fails closed if the backend is unavailable; explicit auto permits unsandboxed fallback and off disables wrapping. Shell network is denied unless VEASEL_SHELL_SANDBOX_NETWORK=allow. Bounded timeout and output apply; execution is never retried after interruption.
       responses:
         '200':
           description: Command outcome and bounded output.
@@ -1799,7 +1843,31 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. Catch-up reads return at most 500 events per poll so reconnect clients can drain a large backlog faster than the previous 100-event page. During quiet periods the stream emits `event: heartbeat` with `data: {}` about every 15 seconds so proxies and clients can detect a live connection without inventing session events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. When the provider payload included cache fields, completion also includes cache_reported with cache_read_tokens and cache_creation_tokens (provider-reported only). Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, summarizer mode (extractive, native, llm, or *_fallback_extractive), optional provider usage when a summarizer adapter reported it, and an untrusted summary preview; durable chat history rows are not deleted. When a turn injects a repository map into the system prompt, session.repository_map records measured map bytes, a bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost is never estimated.
+      description: >-
+        Replays persisted events newer than Last-Event-ID, then streams new
+        events. Catch-up reads return at most 500 events per poll so reconnect
+        clients can drain a large backlog faster than the previous 100-event
+        page. During quiet periods the stream emits `event: heartbeat` with
+        `data: {}` about every 15 seconds so proxies and clients can detect a
+        live connection without inventing session events. During session turns,
+        assistant.delta events include data.operation_id and data.delta. Async
+        turns begin with session.turn_started and end with session.turn_completed.
+        Completion includes operation_id and status; successful events include
+        provider and model, and when a provider adapter reported token counts
+        they also include usage_reported with input_tokens and output_tokens.
+        When the provider payload included cache fields, completion also
+        includes cache_reported with cache_read_tokens and cache_creation_tokens
+        (provider-reported only). Failed events include a safe public error, and
+        uncertain events indicate the process stopped before a result was
+        recorded. When measured UTF-8 provider-request payload pressure rises,
+        session.compaction records measured bytes_before/bytes_after, a
+        conservative bytes/4 token bound, summarizer mode (extractive, native,
+        llm, or *_fallback_extractive), optional provider usage when a summarizer
+        adapter reported it, and an untrusted summary preview; durable chat
+        history rows are not deleted. When a turn injects a repository map into
+        the system prompt, session.repository_map records measured map bytes, a
+        bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost
+        is never estimated.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -1810,7 +1878,15 @@ paths:
             pattern: '^(0|[1-9][0-9]*)$'
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, session.compaction reports measured request-payload compaction, session.repository_map reports an injected extractive workspace map, and session.turn_completed carries its final status. Quiet streams also emit heartbeat events (`event: heartbeat`, `data: {}`) about every 15 seconds.
+          description: >-
+            Server-sent event stream using event IDs as resumable cursors. Each
+            event data field is a JSON Event object; assistant.delta carries
+            operation_id and delta, session.turn_started announces a durable
+            operation, session.compaction reports measured request-payload
+            compaction, session.repository_map reports an injected extractive
+            workspace map, and session.turn_completed carries its final status.
+            Quiet streams also emit heartbeat events (`event: heartbeat`,
+            `data: {}`) about every 15 seconds.
           content:
             text/event-stream:
               schema:
@@ -1839,7 +1915,7 @@ components:
           type: string
         features:
           type: array
-          description: Includes mcp.stdio.sandbox.bubblewrap, mcp.stdio.sandbox.seatbelt, and mcp.stdio.sandbox.windows only when VEASEL_MCP_STDIO_SANDBOX is auto or require and that platform wrap will run (default off stays unsandboxed without advertising). Includes sessions.operations.list and sessions.operations.durable_queue for Prefer respond-async turns that persist as queued, resume after restart, and expose GET /v1/sessions/{id}/operations. sessions.operations.trace.atif_v1_8 covers opt-in successful operation trajectory export. Traces may contain prompt and workspace content. sessions.usage.prompt_cache means adapters persist provider-reported cache_read/cache_creation counters when present (OpenAI cached_tokens subset, Anthropic disjoint cache_*_input_tokens, Gemini cachedContentTokenCount); absent fields stay unreported and Veasel never invents savings. provider.anthropic.prompt_cache means Anthropic Messages requests emit cache_control markers (top-level automatic ephemeral plus system-block breakpoint when a system prompt is present); controlled by VEASEL_ANTHROPIC_PROMPT_CACHE (auto/1h/off). provider.openai.prompt_cache means OpenAI Chat Completions (catalog openai) and Responses (catalog openai-responses) requests emit prompt_cache_key (default veasel; override VEASEL_OPENAI_PROMPT_CACHE_KEY) and optional prompt_cache_retention when VEASEL_OPENAI_PROMPT_CACHE is 24h or in_memory; controlled by VEASEL_OPENAI_PROMPT_CACHE (auto/24h/in_memory/off). Not applied to Meta or generic openai-compatible gateways. provider.gemini.prompt_cache means Gemini generateContent requests emit cachedContent when VEASEL_GEMINI_CACHED_CONTENT names a resource and VEASEL_GEMINI_PROMPT_CACHE is not off; create/expire use explicit helpers (POST/DELETE cachedContents) and are not on the turn path. Request markers/keys enable caching attempts; they are not proof of cache hits—hits still require provider-reported cache fields. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings. session.compaction.summarizer appears when VEASEL_SESSION_COMPACTION_SUMMARIZER is native or llm (structured local summary or one no-tools LLM completion with extractive fallback). workspace.repository_map and session.repository_map advertise the extractive repository map (GET /v1/sessions/{id}/workspace/map and optional turn injection); sizes are measured UTF-8 bytes plus a bytes/4 bound, not provider usage or tree-sitter/PageRank parity.
+          description: Includes mcp.stdio.sandbox.bubblewrap, mcp.stdio.sandbox.seatbelt, and mcp.stdio.sandbox.windows when VEASEL_MCP_STDIO_SANDBOX is require or auto and the platform wrap will run (default require refuses to start without a backend; off stays unsandboxed without advertising). Includes sessions.operations.list and sessions.operations.durable_queue for Prefer respond-async turns that persist as queued, resume after restart, and expose GET /v1/sessions/{id}/operations. sessions.operations.trace.atif_v1_8 covers opt-in successful operation trajectory export. Traces may contain prompt and workspace content. sessions.usage.prompt_cache means adapters persist provider-reported cache_read/cache_creation counters when present (OpenAI cached_tokens subset, Anthropic disjoint cache_*_input_tokens, Gemini cachedContentTokenCount); absent fields stay unreported and Veasel never invents savings. provider.anthropic.prompt_cache means Anthropic Messages requests emit cache_control markers (top-level automatic ephemeral plus system-block breakpoint when a system prompt is present); controlled by VEASEL_ANTHROPIC_PROMPT_CACHE (auto/1h/off). provider.openai.prompt_cache means OpenAI Chat Completions (catalog openai) and Responses (catalog openai-responses) requests emit prompt_cache_key (default veasel; override VEASEL_OPENAI_PROMPT_CACHE_KEY) and optional prompt_cache_retention when VEASEL_OPENAI_PROMPT_CACHE is 24h or in_memory; controlled by VEASEL_OPENAI_PROMPT_CACHE (auto/24h/in_memory/off). Not applied to Meta or generic openai-compatible gateways. provider.gemini.prompt_cache means Gemini generateContent requests emit cachedContent when VEASEL_GEMINI_CACHED_CONTENT names a resource and VEASEL_GEMINI_PROMPT_CACHE is not off; create/expire use explicit helpers (POST/DELETE cachedContents) and are not on the turn path. Request markers/keys enable caching attempts; they are not proof of cache hits—hits still require provider-reported cache fields. Also includes agent.tools.skill_load and agent.tools.skill_read_resource when model support is configured. skill_load lets the model fetch a discovered skill body without prior session enablement; skill_read_resource then reads bounded UTF-8 files from session-enabled or turn-loaded skill directories. Neither tool executes files. session.compaction is present when the runtime may replace older in-flight provider messages with an untrusted summary under measured UTF-8 payload pressure; it does not delete durable chat history or invent provider token savings. session.compaction.summarizer appears when VEASEL_SESSION_COMPACTION_SUMMARIZER is native or llm (structured local summary or one no-tools LLM completion with extractive fallback). workspace.repository_map and session.repository_map advertise the extractive repository map (GET /v1/sessions/{id}/workspace/map and optional turn injection); sizes are measured UTF-8 bytes plus a bytes/4 bound, not provider usage or tree-sitter/PageRank parity.
           items:
             type: string
     ModelSettingsInput:
@@ -2419,7 +2495,10 @@ components:
         scope:
           type: string
           enum: [user, mixed]
-          description: `user` when only `$VEASEL_DATA_DIR/mcp-servers.json` is considered; `mixed` when a workspace directory also contributes project or imported servers.
+          description: >-
+            `user` when only `$VEASEL_DATA_DIR/mcp-servers.json` is considered;
+            `mixed` when a workspace directory also contributes project or
+            imported servers.
         path:
           type: string
           description: Absolute path of the user-scope JSON file when available.
@@ -2955,7 +3034,7 @@ components:
         updated_at: { type: string }
         sandbox:
           $ref: '#/components/schemas/ReviewSandboxPreview'
-          description: Preview from VEASEL_SHELL_SANDBOX and platform backends (default auto).
+          description: Preview from VEASEL_SHELL_SANDBOX and platform backends (default require; missing backends fail closed).
     CreateSession:
       type: object
       required: [title, directory]
@@ -3170,8 +3249,34 @@ components:
         cache_reported:
           type: boolean
           description: True only when the provider payload included cache-related usage fields.
+        reasoning_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported reasoning token count when reasoning_reported is true.
+        reasoning_reported:
+          type: boolean
+          description: True only when the provider supplied a reasoning token counter.
         created_at: { type: string }
         updated_at: { type: string }
+    GlobalSessionOperation:
+      type: object
+      required: [operation, session_title]
+      properties:
+        operation:
+          $ref: '#/components/schemas/SessionOperation'
+        session_title: { type: string }
+    GlobalSessionOperationsPage:
+      type: object
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlobalSessionOperation'
+        next_before:
+          type: string
+          format: uuid
+          description: Present when another page is available.
     SessionOperationResult:
       type: object
       required: [session_id, operation_id, status, provider, model, content]

@@ -30,9 +30,9 @@ change extends a related policy to **manually approved** shell commands when
 - Default approved policy: read-only host, writable workspace, masked
   home/runtime mounts, `--unshare-all`, network denied unless
   `VEASEL_SHELL_SANDBOX_NETWORK=allow`.
-- `VEASEL_SHELL_SANDBOX=auto|off|require` controls wrap vs honest unsandboxed
-  fallback; capability `shell.sandbox.bubblewrap` is true only when wrap will
-  run.
+- `VEASEL_SHELL_SANDBOX` defaults to `require`; unset/invalid values fail closed.
+  Explicit `auto` allows unsandboxed fallback, and `off` disables wrapping. The
+  capability `shell.sandbox.bubblewrap` is true only when wrap will run.
 - Autonomous path remains stricter across Linux/macOS/Windows backends (filtered
   environment on Linux Bubblewrap and macOS Seatbelt, always fail-closed,
   never share network).

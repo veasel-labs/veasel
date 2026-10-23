@@ -117,12 +117,13 @@ export function reviewSummaryLine(item: SolidReviewItem): string {
 /** Body text for segment / fallback rendering (not used when split DiffRenderable owns the hunk). */
 export function formatSolidReviewBody(
   item: SolidReviewItem,
-  options: { terminalRows?: number; hunkIndex?: number } = {},
+  options: { terminalRows?: number; hunkIndex?: number; lineOffset?: number } = {},
 ): string {
   const rows = options.terminalRows ?? 40
   if (item.kind === "patch") {
     const review = formatReviewDiff(item.diff, reviewDiffLineBudget(rows), {
       hunkIndex: options.hunkIndex ?? 0,
+      lineOffset: options.lineOffset ?? 0,
     })
     const status = item.status?.trim() || (item.pending ? "pending" : "settled")
     return `REVIEW WORKSPACE EDIT  /  ${status}\n${item.path}\n${review.text}`
@@ -153,7 +154,11 @@ export function formatSolidReviewBody(
   })
 }
 
-export function patchSplitChrome(item: SolidPatchReview, hunkIndex: number): string {
+export function patchSplitChrome(
+  item: SolidPatchReview,
+  hunkIndex: number,
+  terminalColumns = 80,
+): string {
   const starts = reviewHunkStarts(item.diff)
   const review = formatReviewDiff(item.diff, reviewDiffLineBudget(40), { hunkIndex })
   return formatPatchSplitChrome({
@@ -163,6 +168,7 @@ export function patchSplitChrome(item: SolidPatchReview, hunkIndex: number): str
     removals: review.removals,
     hunkCount: starts.length,
     hunkIndex,
+    terminalColumns,
     pendingInstruction: item.pending
       ? `Type /patch approve ${item.id} or /patch reject ${item.id}.`
       : undefined,
@@ -183,6 +189,7 @@ export type ReviewActionResult =
   | { type: "toggleSelect" }
   | { type: "navigate"; delta: number }
   | { type: "hunk"; delta: number }
+  | { type: "diffPage"; delta: number }
   | { type: "toggleDiffSurface" }
 
 /** Map a hotkey action + queue state into a Solid review panel effect. */
@@ -197,6 +204,8 @@ export function resolveReviewAction(
     | { action: "prev" }
     | { action: "hunkNext" }
     | { action: "hunkPrev" }
+    | { action: "diffPageNext" }
+    | { action: "diffPagePrev" }
     | { action: "toggleDiffSurface" },
   queue: readonly SolidReviewItem[],
   current: SolidReviewItem | undefined,
@@ -215,6 +224,10 @@ export function resolveReviewAction(
       return { type: "hunk", delta: 1 }
     case "hunkPrev":
       return { type: "hunk", delta: -1 }
+    case "diffPageNext":
+      return { type: "diffPage", delta: 1 }
+    case "diffPagePrev":
+      return { type: "diffPage", delta: -1 }
     case "toggleDiffSurface":
       return { type: "toggleDiffSurface" }
     case "approve":
@@ -265,13 +278,13 @@ export function demoPendingReviews(): SolidReviewItem[] {
         "diff --git a/tui/src/solid/reviews.ts b/tui/src/solid/reviews.ts",
         "--- a/tui/src/solid/reviews.ts",
         "+++ b/tui/src/solid/reviews.ts",
-        "@@ -1,3 +1,4 @@",
+        "@@ -1,4 +1,5 @@",
         " export const reviewShortcut = {",
         "   name: \"r\",",
         "+  ctrl: true,",
         "   label: \"Ctrl+R\",",
         " }",
-        "@@ -10,6 +11,7 @@",
+        "@@ -10,4 +11,5 @@",
         " export function countsFromReviews(items) {",
         "   let edits = 0",
         "+  // pending file / shell / MCP",

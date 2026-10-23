@@ -175,7 +175,7 @@ const macos_seatbelt_executable = '/usr/bin/sandbox-exec'
 
 fn approved_shell_sandbox_mode_from(value string) ApprovedShellSandboxMode {
 	match value.trim_space().to_lower() {
-		'', 'auto' {
+		'auto' {
 			return .auto
 		}
 		'off', '0', 'false', 'none', 'disable', 'disabled' {
@@ -185,7 +185,9 @@ fn approved_shell_sandbox_mode_from(value string) ApprovedShellSandboxMode {
 			return .require
 		}
 		else {
-			return .auto
+			// Empty and invalid values must not silently enable an unsandboxed
+			// fallback. Operators can explicitly choose auto or off.
+			return .require
 		}
 	}
 }

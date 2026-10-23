@@ -8,6 +8,7 @@
         "@opentui/core": "0.6.2",
         "@opentui/solid": "0.6.2",
         "solid-js": "1.9.17",
+        "string-width": "7.2.0",
       },
       "devDependencies": {
         "@types/bun": "1.4.3",

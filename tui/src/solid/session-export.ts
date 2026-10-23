@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { formatReportedCacheUsage, formatTokenCount } from "../usage"
 
 export type ExportMessage = {
   role: string
@@ -112,17 +113,38 @@ export function writeSessionExport(path: string, body: string): void {
 
 export function formatGlobalUsageLine(summary: {
   sessions: number
+  completed_turns?: number
+  reported_turns?: number
   input_tokens: number
   output_tokens: number
   usage_reported: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
+  reasoning_tokens?: number
+  reasoning_reported?: boolean
   cost?: string
 }): string | undefined {
   if (!summary.usage_reported) return undefined
   const parts = [
-    `all sessions (${summary.sessions}): ${summary.input_tokens} in`,
-    `${summary.output_tokens} out`,
+    `all sessions (${summary.sessions})`,
   ]
-  if (summary.cost && summary.cost !== "unavailable") parts.push(`cost ${summary.cost}`)
+  if (typeof summary.completed_turns === "number") {
+    const reported = typeof summary.reported_turns === "number"
+      ? ` · ${summary.reported_turns} metered`
+      : ""
+    parts.push(`${summary.completed_turns} turns${reported}`)
+  }
+  parts.push(`${formatTokenCount(summary.input_tokens)} in`, `${formatTokenCount(summary.output_tokens)} out`)
+  if (summary.cache_reported) {
+    parts.push(formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0))
+  }
+  if (summary.reasoning_reported) {
+    parts.push(`${formatTokenCount(summary.reasoning_tokens ?? 0)} reasoning`)
+  }
+  if (summary.cost) {
+    parts.push(summary.cost === "unavailable" ? "cost unavailable" : `cost ${summary.cost}`)
+  }
   return parts.join(" · ")
 }
 

@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
-import type { KeyEvent } from "@opentui/core"
+import type { DiffRenderable, KeyEvent } from "@opentui/core"
 import {
   moveActiveReviewIndex,
   reviewHotkey,
@@ -15,9 +15,15 @@ import {
   diffRenderableTheme,
   filetypeFromReviewPath,
   reviewDiffSurfaceHint,
+  scrollDiffRenderableToHunk,
   type ReviewDiffSurface,
 } from "../../diff-view"
-import { moveReviewHunkIndex } from "../../review-diff"
+import {
+  moveReviewDiffPage,
+  moveReviewHunkIndex,
+  reviewDiffLineBudget,
+  reviewHunkLineCount,
+} from "../../review-diff"
 import { noticeSegments, type TranscriptSegment } from "../../transcript"
 import { DialogHeader, useDialog } from "../ui/dialog"
 import { useSolidTheme, solidToneBold, solidToneFg } from "../theme"
@@ -77,10 +83,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
     Math.min(Math.max(0, props.initialIndex ?? 0), Math.max(0, pending().length - 1)),
   )
   const [hunkIndex, setHunkIndex] = createSignal(0)
+  const [diffLineOffset, setDiffLineOffset] = createSignal(0)
   const [selectedKeys, setSelectedKeys] = createSignal<Set<string>>(new Set())
   const [diffSurface, setDiffSurface] = createSignal<ReviewDiffSurface>("segments")
   let settledOnce = false
   let disposed = false
+  let splitDiffRenderable: DiffRenderable | undefined
   onCleanup(() => {
     disposed = true
   })
@@ -126,6 +134,27 @@ export function ReviewPanel(props: ReviewPanelProps) {
     })
   }))
 
+  // DiffRenderable rebuilds its code panes after receiving a new diff. Defer
+  // hunk navigation until that rebuild has populated the row offsets.
+  createEffect(() => {
+    const item = current()
+    const surface = diffSurface()
+    const targetHunk = hunkIndex()
+    if (!item || item.kind !== "patch" || surface !== "split") return
+    const key = reviewSelectionKey(item)
+    queueMicrotask(() => {
+      const activeItem = current()
+      if (disposed || diffSurface() !== "split" || !activeItem || reviewSelectionKey(activeItem) !== key) return
+      const diff = splitDiffRenderable
+      if (!diff) return
+      scrollDiffRenderableToHunk(
+        diff as unknown as Parameters<typeof scrollDiffRenderableToHunk>[0],
+        targetHunk,
+        { accent: colors.brand },
+      )
+    })
+  })
+
   const hotkeyHint = createMemo(() => {
     const item = current()
     if (!item) return undefined
@@ -145,11 +174,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
     const item = current()
     if (!item) return "No pending file, shell, or MCP reviews."
     if (item.kind === "patch" && diffSurface() === "split") {
-      return patchSplitChrome(item, hunkIndex())
+      return patchSplitChrome(item, hunkIndex(), dimensions().width)
     }
     return formatSolidReviewBody(item, {
       terminalRows: dimensions().height,
       hunkIndex: hunkIndex(),
+      lineOffset: diffLineOffset(),
     })
   })
 
@@ -175,6 +205,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
       setQueue((prev) => settleReviews(prev, result.settled))
       setSelectedKeys(new Set<string>())
       setHunkIndex(0)
+      setDiffLineOffset(0)
     } catch (error) {
       if (!disposed) setFailures([error instanceof Error ? error.message : "Decision request failed"])
     } finally {
@@ -207,6 +238,8 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
     const result = resolveReviewAction(hotkey, queue(), item, selectedKeys())
     if (!result) return
+    // Let DiffRenderable own normal viewport scrolling in split mode.
+    if (result.type === "diffPage" && result.delta > 0 && diffSurface() === "split") return
     key.preventDefault()
 
     if (result.type === "toggleSelect" && item) {
@@ -216,11 +249,34 @@ export function ReviewPanel(props: ReviewPanelProps) {
     if (result.type === "navigate") {
       setIndex((currentIndex) => moveActiveReviewIndex(currentIndex, result.delta, pending().length))
       setHunkIndex(0)
+      setDiffLineOffset(0)
       return
     }
     if (result.type === "hunk") {
       setHunkIndex((currentHunk) =>
         moveReviewHunkIndex(currentHunk, result.delta, hunkCountForReview(item)),
+      )
+      setDiffLineOffset(0)
+      return
+    }
+    if (result.type === "diffPage") {
+      if (!item || item.kind !== "patch") return
+      const pageSize = reviewDiffLineBudget(dimensions().height)
+      if (diffSurface() === "split") {
+        const viewport = splitDiffRenderable as unknown as {
+          leftCodeRenderable?: { scrollY: number } | null
+          rightCodeRenderable?: { scrollY: number } | null
+        } | undefined
+        if (viewport?.leftCodeRenderable) {
+          viewport.leftCodeRenderable.scrollY = Math.max(0, viewport.leftCodeRenderable.scrollY + result.delta * pageSize)
+        }
+        if (viewport?.rightCodeRenderable) {
+          viewport.rightCodeRenderable.scrollY = Math.max(0, viewport.rightCodeRenderable.scrollY + result.delta * pageSize)
+        }
+        return
+      }
+      setDiffLineOffset((offset) =>
+        moveReviewDiffPage(offset, result.delta, pageSize, reviewHunkLineCount(item.diff, hunkIndex())),
       )
       return
     }
@@ -287,8 +343,12 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   <For each={bodySegments()}>{(segment) => <SegmentSpan segment={segment} />}</For>
                 </text>
                 <diff
+                  ref={(node: DiffRenderable) => { splitDiffRenderable = node }}
                   width="100%"
-                  height={Math.max(8, Math.min(16, dimensions().height - 16))}
+                  height={Math.max(
+                    3,
+                    Math.min(16, dimensions().height - (dimensions().width < 44 ? 14 : 16)),
+                  )}
                   diff={(item() as Extract<SolidReviewItem, { kind: "patch" }>).diff}
                   view="split"
                   filetype={filetypeFromReviewPath(

@@ -82,6 +82,22 @@ describe("formatShellReview", () => {
     expect(approvedShellSandboxWarning("windows")).toContain("network isolated by default")
   })
 
+  test("warns that required sandboxing will refuse execution when unavailable", () => {
+    const text = formatShellReview({
+      command: "echo must-not-run",
+      cwd: ".",
+      timeoutSeconds: 10,
+      runner: "/bin/sh",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+      output: "",
+      maxLines: 20,
+      sandbox: { mode: "require", will_wrap: false, backend: "none", network: "host" },
+    })
+    expect(text).toContain("will be refused because the required OS sandbox is unavailable")
+    expect(text).toContain("VEASEL_SHELL_SANDBOX=off only if you intentionally accept")
+  })
+
   test("hides the tail of a command taller than the terminal", () => {
     expect(shellReviewLineBudget(40)).toBe(20)
     const command = longCommand()

@@ -44,6 +44,35 @@ export type SessionTurnCompletion = {
   error?: string
 }
 
+export type ApiSessionOperation = {
+  id: string
+  session_id: string
+  status: "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled" | "uncertain" | string
+  provider: string
+  model: string
+  error: string
+  input_tokens?: number
+  output_tokens?: number
+  usage_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
+  reasoning_tokens?: number
+  reasoning_reported?: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ApiGlobalSessionOperation = {
+  operation: ApiSessionOperation
+  session_title: string
+}
+
+export type ApiGlobalOperationsPage = {
+  operations: ApiGlobalSessionOperation[]
+  next_before?: string
+}
+
 export type SendMessageResult =
   | { kind: "async"; operationId: string }
   | { kind: "sync"; messages: ChatTurn[] }
@@ -109,6 +138,16 @@ export type ApiSessionUsageSummary = {
 export type ApiSessionPluginMcpServer = {
   plugin_name: string
   server_name: string
+}
+
+export type ApiPluginLink = {
+  name: string
+  path: string
+  version?: string
+  description?: string
+  display_name?: string
+  skill_count?: number
+  mcp_server_count?: number
 }
 
 export type ApiWorkspaceEditSummary = {
@@ -372,10 +411,40 @@ export class VeaselApiClient {
     return await response.json() as ApiSessionUsageSummary
   }
 
+  async listGlobalOperations(options: { before?: string; limit?: number; search?: string } = {}): Promise<ApiGlobalOperationsPage> {
+    const query = new URLSearchParams()
+    if (options.before) query.set("before", options.before)
+    if (options.limit !== undefined) query.set("limit", String(options.limit))
+    if (options.search?.trim()) query.set("search", options.search.trim())
+    const suffix = query.size > 0 ? `?${query}` : ""
+    const response = await fetch(`${this.base}/v1/operations${suffix}`, { signal: this.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiGlobalOperationsPage
+  }
+
   async listSessionMcpServers(sessionId: string): Promise<ApiSessionPluginMcpServer[]> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
       { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSessionPluginMcpServer[]
+  }
+
+  async setSessionMcpServerTrust(
+    sessionId: string,
+    pluginName: string,
+    serverName: string,
+    trusted: boolean,
+  ): Promise<ApiSessionPluginMcpServer[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plugin_name: pluginName, server_name: serverName, trusted }),
+        signal: this.signal,
+      },
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as ApiSessionPluginMcpServer[]
@@ -408,6 +477,60 @@ export class VeaselApiClient {
     }
   }
 
+  async addConfiguredMcpServer(input: {
+    name: string
+    transport: "stdio" | "streamable-http"
+    command?: string
+    args?: string[]
+    url?: string
+    scope: "user" | "project"
+    directory?: string
+  }): Promise<{ name: string; transport: string; scope?: string }> {
+    const response = await fetch(`${this.base}/v1/mcp-servers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, enabled: true }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { name: string; transport: string; scope?: string }
+  }
+
+  async updateConfiguredMcpServer(name: string, input: {
+    enabled: boolean
+    scope: "user" | "project"
+    directory?: string
+  }): Promise<{ name: string; enabled: boolean }> {
+    const query = new URLSearchParams()
+    if (input.scope === "project") {
+      query.set("scope", "project")
+      if (input.directory) query.set("directory", input.directory)
+    }
+    const suffix = query.size ? `?${query}` : ""
+    const response = await fetch(`${this.base}/v1/mcp-servers/${encodeURIComponent(name)}${suffix}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: input.enabled }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as { name: string; enabled: boolean }
+  }
+
+  async removeConfiguredMcpServer(name: string, scope: "user" | "project", directory?: string): Promise<void> {
+    const query = new URLSearchParams()
+    if (scope === "project") {
+      query.set("scope", "project")
+      if (directory) query.set("directory", directory)
+    }
+    const suffix = query.size ? `?${query}` : ""
+    const response = await fetch(`${this.base}/v1/mcp-servers/${encodeURIComponent(name)}${suffix}`, {
+      method: "DELETE",
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+  }
+
   async listPlugins(directory: string): Promise<{
     plugins: Array<{
       name: string
@@ -426,25 +549,34 @@ export class VeaselApiClient {
   }
 
   async listPluginLinks(): Promise<{
-    links: Array<{
-      name: string
-      path: string
-      display_name?: string
-      description?: string
-    }>
+    links: ApiPluginLink[]
     diagnostics?: Array<{ component: string; message: string }>
   }> {
     const response = await fetch(`${this.base}/v1/plugins/links`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as {
-      links: Array<{
-        name: string
-        path: string
-        display_name?: string
-        description?: string
-      }>
+      links: ApiPluginLink[]
       diagnostics?: Array<{ component: string; message: string }>
     }
+  }
+
+  async addPluginLink(path: string, replace = false): Promise<ApiPluginLink> {
+    const response = await fetch(`${this.base}/v1/plugins/links`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, replace }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiPluginLink
+  }
+
+  async removePluginLink(name: string): Promise<void> {
+    const response = await fetch(`${this.base}/v1/plugins/links/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+      signal: this.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
   }
 
   async getWorkspaceMap(sessionId: string, hint = ""): Promise<WorkspaceRepositoryMap> {
@@ -464,6 +596,47 @@ export class VeaselApiClient {
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as Array<{ plugin_name: string; skill_name: string }>
+  }
+
+  async setSessionSkill(
+    sessionId: string,
+    pluginName: string,
+    skillName: string,
+    enabled: boolean,
+  ): Promise<Array<{ plugin_name: string; skill_name: string }>> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/skills`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plugin_name: pluginName, skill_name: skillName, enabled }),
+        signal: this.signal,
+      },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as Array<{ plugin_name: string; skill_name: string }>
+  }
+
+  async invokeSessionSkill(
+    sessionId: string,
+    pluginName: string,
+    skillName: string,
+  ): Promise<{ plugin_name: string; skill_name: string; pending: Array<{ plugin_name: string; skill_name: string }> }> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/skills/invoke`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ plugin_name: pluginName, skill_name: skillName }),
+        signal: this.signal,
+      },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as {
+      plugin_name: string
+      skill_name: string
+      pending: Array<{ plugin_name: string; skill_name: string }>
+    }
   }
 
   async listGitWorktrees(sessionId: string): Promise<ApiGitWorktreeCatalog> {

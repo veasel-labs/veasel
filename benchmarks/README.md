@@ -130,6 +130,12 @@ VEASEL_BIN=veasel node benchmarks/repo-map-recall.mjs \
   /path/to/aider benchmarks/repo-map-recall-aider-cases.json
 ```
 
+Add `--output benchmarks/reports/<name>.json` to save each query's ranked paths
+and position with the Veasel version, source revision and dirty-diff digest,
+binary SHA-256, target repository revision, and recall totals. Set
+`VEASEL_COMPILER_VERSION` and `VEASEL_BUILD_FLAGS` when building locally so the
+report records those too.
+
 Recorded on the Aider checkout (685 files scanned, 12 KiB map budget),
 2026-10-19: before the symbol-flooding fix, recall@3 was 2/6 and recall@10
 3/6 (a large test file ranked #1 for unrelated queries). After capping
@@ -147,6 +153,92 @@ Same measurement on the SWE-agent checkout (407 files scanned,
 `repo-map-recall-swe-agent-cases.json`), confirmed against the published
 v0.64.2 binary: recall@3 5/6, recall@10 6/6, with four expected files
 at #1.
+
+The bounded lexical-ranking implementation described here was measured on the
+same pinned research checkouts listed in the workspace's
+`research/refs/REVISIONS.md`, using the same cases and 12 KiB budget. On the
+Linux x64 workstation, recall was:
+
+| Checkout | Recall@3 | Recall@10 | Change from prior recorded baseline |
+|---|---:|---:|---|
+| Aider (685 files) | 4/6 | 6/6 | @3 unchanged; @10 +1 |
+| mini-swe-agent (221 files) | 3/4 | 4/4 | @3 +1; @10 unchanged |
+| SWE-agent (407 files) | 6/6 | 6/6 | @3 +1; @10 unchanged |
+
+The lexical signal reuses source text already read for declaration extraction,
+caps query-term contribution, normalizes common `-ing` query words such as
+"parsing" to code identifiers such as `parse_args`, and demotes test paths for
+behavior queries. The latest measured change strengthens the high-confidence
+`argument`/`args` filename alias: Aider recall@3 stayed 4/6 while recall@10
+rose from 5/6 to 6/6, placing `aider/args.py` at rank 6 for the command-line
+parsing query. mini-swe-agent stayed at 3/4 and 4/4; SWE-agent stayed at 6/6
+and 6/6. These small labeled sets show one additional top-10 hit and no
+aggregate regression; they do not establish broad semantic retrieval quality.
+The per-query results and run fingerprints are checked in:
+[`Aider`](reports/repo-map-recall-aider-2026-10-23.json),
+[`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23.json),
+and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23.json).
+
+A follow-up implementation-bias change demotes unrequested test files and
+applies a small penalty to package indexes only when their source is entirely
+imports/re-exports. Executable package modules remain eligible. The penalty is
+disabled for explicit export/index/entrypoint and test queries. On the same
+pinned checkouts and cases, mini-swe-agent improved from 3/4 to 4/4 recall@3;
+its `litellm_model.py` moved from rank 4 to rank 2. Aider remained 4/6 at recall@3 and 6/6 at recall@10;
+`aider/args.py` moved from rank 6 to rank 5, while the history-formatting miss
+remains at rank 4. SWE-agent stayed 6/6 at both cutoffs. This is one additional
+top-three hit across these small labeled sets, with no aggregate regressions;
+it does not establish general semantic retrieval quality. Candidate source
+fingerprints and per-query rankings are recorded in the
+[`Aider`](reports/repo-map-recall-aider-2026-10-23-implementation-bias.json),
+[`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23-implementation-bias.json),
+and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23-implementation-bias.json)
+reports.
+
+A filename-alias follow-up raises the explicit `argument`/`args` lexical match
+while keeping exact basename matches stronger. On the same pinned checkouts,
+Aider improved from 5/6 to 6/6 recall@3: `aider/args.py` moved from rank 6 to 3
+and `aider/history.py` stayed at rank 1. mini-swe-agent remained 4/4 and
+SWE-agent 6/6 at recall@3; all three remained perfect at recall@10. This is a
+small labeled retrieval check, not a broad quality or task-completion claim.
+The candidate binary hash, source diff fingerprint, revisions, and per-query
+rankings are recorded in [`Aider`](reports/repo-map-recall-aider-2026-10-23-alias-priority.json),
+[`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23-alias-priority.json),
+and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23-alias-priority.json).
+
+To cover monorepos larger than the previous lexical walk cutoff, RepoMap now
+scores up to 20,000 metadata-only paths, ranks the best 2,000, and retains the
+existing source-read ceilings of 800 files and 8 MiB. Candidate sorting uses
+V's `sort_with_compare` rather than quadratic insertion sort. On the pinned
+OpenCode checkout (8,502 paths scanned), the three labeled cases moved from
+0/3 to 3/3 recall@10; recall@3 is 1/3. The full local case run took about 8.8 s
+versus 8.0 s for the previous 2,000-path cutoff. Pi remained 2/3 at recall@3
+and 3/3 at recall@10 (1,953 paths; about 8.2 s versus 8.6 s). These timings
+include server and harness startup and are not per-query latency. Results and
+case definitions are in [`OpenCode cases`](repo-map-recall-opencode-cases.json),
+[`OpenCode report`](reports/repo-map-recall-opencode-2026-10-23.json),
+[`Pi cases`](repo-map-recall-pi-cases.json), and
+[`Pi report`](reports/repo-map-recall-pi-2026-10-23.json). Together with the
+unchanged Aider, mini-swe-agent, and SWE-agent runs above, the current candidate
+hits 19/22 cases at recall@3 and 22/22 at recall@10 across these five small
+curated samples. This measures file retrieval only, not coding-task success or
+general semantic-search quality.
+
+A path-specificity follow-up adds a bounded bonus when a path matches multiple
+distinct exact query terms. This helps compound implementation names such as
+`tool/plugin/subagent.ts` outrank files matching only the generic `tool` term,
+while keeping single-word filename weight low enough that documentation paths
+do not outrank high-confidence `argument`/`args` aliases. On the same five
+checkouts and case sets, Aider stayed 6/6, mini-swe-agent 4/4, SWE-agent 6/6,
+Pi 2/3, and OpenCode improved from 1/3 to 2/3 at recall@3; all five stayed at
+22/22 recall@10. This raises the aggregate to 20/22 at recall@3 on the same
+small curated sample, not a general semantic retrieval or task-success claim.
+Reports include ranked paths, source fingerprints, and upstream revisions for
+[Aider](reports/repo-map-recall-aider-2026-10-23-path-specificity.json),
+[mini-SWE-agent](reports/repo-map-recall-mini-swe-agent-2026-10-23-path-specificity.json),
+[SWE-agent](reports/repo-map-recall-swe-agent-2026-10-23-path-specificity.json),
+[OpenCode](reports/repo-map-recall-opencode-2026-10-23-path-specificity.json),
+and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
 
 ### Recorded local TUI baseline
 

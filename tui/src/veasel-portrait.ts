@@ -1,12 +1,6 @@
 import type { Theme } from "./themes"
 
-/**
- * Original pixel companion for the Veasel Code terminal client.
- * This geometric terminal sprite was drawn for this project and is covered by
- * the repository MIT license. It does not reuse the V mascot artwork.
- *
- * Legend: D outline · B shell · L status light · K visor · H gleam · N signal · W display
- */
+/** Original MIT-licensed pixel weasel for the Veasel Code terminal client. */
 export const VEASEL_PORTRAIT_WIDTH = 24
 
 function centerSpriteRow(row: string): string {
@@ -15,23 +9,23 @@ function centerSpriteRow(row: string): string {
 }
 
 const pixelSprite = [
-  "DDDDDDD",
-  "DBBBBBBD",
-  "DBLHLBD",
-  "DDD",
-  "BBB",
-  `D${"B".repeat(21)}D`,
-  `D${"B".repeat(4)}${"K".repeat(13)}${"B".repeat(4)}D`,
-  `D${"B".repeat(4)}KLLHKKKKKHLLK${"B".repeat(4)}D`,
-  `D${"B".repeat(4)}${"K".repeat(13)}${"B".repeat(4)}D`,
-  `D${"B".repeat(4)}KKKKKLLLKKKKK${"B".repeat(4)}D`,
-  `D${"B".repeat(21)}D`,
-  `D${"B".repeat(3)}DD${"B".repeat(11)}DD${"B".repeat(3)}D`,
-  `  D${"B".repeat(5)}L${"B".repeat(5)}D  `,
-  `   D${"B".repeat(4)}LLL${"B".repeat(4)}D   `,
-  `   D${"B".repeat(3)}DDDDD${"B".repeat(3)}D   `,
-  `  DDD${"B".repeat(3)}D D${"B".repeat(3)}DDD  `,
-  `  DDDDDLLL DDDDD  `,
+  "       DDD    DDD      ",
+  "      DBBBD  DBBBD     ",
+  "     DBBBBLDDLBLBBBBBD ",
+  "    DBBBBBBDDDDBBBBBBD ",
+  "   DBBBBBBBBBBBBBBBBD  ",
+  "  DBBBBBBBBBBBBBBBBBD  ",
+  " DBBBBBBBBBBBBBBBBBBBD ",
+  "DBBBBLLBBBBBBBBLLBBBBD",
+  "DBBBLLLBBBBBBBBLLLBBBD",
+  ["D", "BBB", "WWLKH", "BBB", "HKLWW", "BBB", "D"].join(""),
+  ["D", "BBB", "WWLLK", "BBB", "KLLWW", "BBB", "D"].join(""),
+  " DBBBBBBLLLLBBBBBBBBBD",
+  "  DBBBBBBLLKKLLBBBBBBD",
+  "   DBBBBBBBLKKLBBBBBBD",
+  "    DBBBBBBBLLBBBBBBD",
+  "     DBBBBBBBBBBBBBD",
+  "      DDDDDDDDDDDDD",
 ].map(centerSpriteRow)
 
 export const VEASEL_PORTRAIT_ROWS = pixelSprite

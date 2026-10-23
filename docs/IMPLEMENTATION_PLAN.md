@@ -136,6 +136,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Serialize turns per session and cap concurrent provider requests with a bounded semaphore.
 - [x] Reject provider work immediately with `503` and `Retry-After` when all provider slots are occupied, keeping overload from accumulating unbounded waiting requests.
 - [x] Add UUID operation IDs and explicit cancellation endpoints, make queued per-session turns cancellable, enforce a two-minute turn deadline, pass context deadlines into all provider transports, and expose Escape cancellation in the TUI. The provider slot remains reserved until the blocking transport finishes its bounded cleanup.
+- [x] Let the Solid TUI queue follow-up prompts during an active turn, cancel the newest queued follow-up separately, and restore queued/running operation state when reopening a session. Live events win over a stale recovery snapshot, and interrupted running turns are shown as uncertain with an inspect-before-retry warning; no provider operation is replayed by the client.
 - [x] Abort provider SSE body progress as soon as turn cancellation is visible,
   including non-2xx and status_code-0 progress callbacks, and re-check the turn
   context after `http.fetch` returns. True socket close before any progress

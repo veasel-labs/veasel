@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { VeaselApiClient } from "../api-client"
 import type { DialogHost } from "./ui/dialog"
 import type { ToastHost } from "./ui/toast"
-import { createLiveMcpWorkflows, openLiveMcpDialog } from "./live-mcp-dialog"
+import { createLiveMcpWorkflows, mcpServerActions, openLiveMcpDialog } from "./live-mcp-dialog"
 
 test("ignores an MCP inventory response after the workspace changes", async () => {
   let openedDialog = false
@@ -75,4 +75,15 @@ test("MCP actions from an open dialog stay bound to its original session and wor
     { kind: "configure", directory: "/workspace/old" },
     { kind: "trust", sessionId: "old-session" },
   ])
+})
+
+test("does not offer per-session MCP trust from the sessionless home view", () => {
+  const actions = mcpServerActions({
+    name: "configured/docs",
+    transport: "stdio",
+    status: "available",
+    scope: "user",
+  }, false)
+
+  expect(actions.map((action) => action.value)).toEqual(["disable", "remove"])
 })

@@ -7,11 +7,33 @@ import { openMcpDialog } from "./component/mcp-dialog"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
 import { openDialogConfirm } from "./ui/dialog-confirm"
 import { openDialogPrompt } from "./ui/dialog-prompt"
+import type { DialogSelectOption } from "./ui/dialog-select"
 import { resolveLiveSlash, splitMcpArgs } from "./live-slash"
+import type { SolidMcpServer } from "./component/mcp-dialog"
 
 export type McpConfigAction = "remove" | "enable" | "disable"
 export type McpConfigScope = "user" | "project"
 export type LiveMcpContext = { directory: string; sessionId?: string }
+
+export function mcpServerActions(server: SolidMcpServer, hasSession: boolean): DialogSelectOption<string>[] {
+  const configuredScope = server.scope === "user" || server.scope === "project"
+  const trusted = server.status === "trusted" || server.status === "connected"
+  return [
+    ...(!hasSession || server.status === "disabled" ? [] : [{
+      title: trusted ? "Revoke session trust" : "Trust for this session",
+      value: trusted ? "untrust" : "trust",
+      description: "MCP calls still require per-call review",
+    }]),
+    ...(configuredScope ? [
+      {
+        title: server.status === "disabled" ? "Enable server" : "Disable server",
+        value: server.status === "disabled" ? "enable" : "disable",
+        description: `${server.scope} configuration`,
+      },
+      { title: "Remove server…", value: "remove", description: `${server.scope} configuration · confirmation required` },
+    ] : []),
+  ]
+}
 
 export function createLiveMcpWorkflows(deps: {
   api: VeaselApiClient
@@ -226,23 +248,7 @@ export async function openLiveMcpDialog(options: {
     openMcpDialog(dialog, {
       servers,
       onSelect: (server) => {
-        const configuredScope = server.scope === "user" || server.scope === "project"
-        const trustedServer = server.status === "trusted" || server.status === "connected"
-        const actions = [
-          ...(server.status === "disabled" ? [] : [{
-            title: trustedServer ? "Revoke session trust" : "Trust for this session",
-            value: trustedServer ? "untrust" : "trust",
-            description: "MCP calls still require per-call review",
-          }]),
-          ...(configuredScope ? [
-            {
-              title: server.status === "disabled" ? "Enable server" : "Disable server",
-              value: server.status === "disabled" ? "enable" : "disable",
-              description: `${server.scope} configuration`,
-            },
-            { title: "Remove server…", value: "remove", description: `${server.scope} configuration · confirmation required` },
-          ] : []),
-        ]
+        const actions = mcpServerActions(server, Boolean(sessionId))
         if (actions.length === 0) {
           toast.info(`${server.status} · ${server.name}`, "MCP")
           setComposerFocused(true)

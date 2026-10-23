@@ -411,10 +411,11 @@ export class VeaselApiClient {
     return await response.json() as ApiSessionUsageSummary
   }
 
-  async listGlobalOperations(options: { before?: string; limit?: number } = {}): Promise<ApiGlobalOperationsPage> {
+  async listGlobalOperations(options: { before?: string; limit?: number; search?: string } = {}): Promise<ApiGlobalOperationsPage> {
     const query = new URLSearchParams()
     if (options.before) query.set("before", options.before)
     if (options.limit !== undefined) query.set("limit", String(options.limit))
+    if (options.search?.trim()) query.set("search", options.search.trim())
     const suffix = query.size > 0 ? `?${query}` : ""
     const response = await fetch(`${this.base}/v1/operations${suffix}`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)

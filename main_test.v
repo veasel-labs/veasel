@@ -1756,40 +1756,59 @@ fn test_global_operation_history_pages_across_sessions_without_duplicates() {
 	for index, id in ids {
 		_ = store.create_session_operation(sessions[index], id) or { panic(err) }
 	}
-	first := store.list_global_session_operations(2, '') or { panic(err) }
+	first := store.list_global_session_operations(2, '', '') or { panic(err) }
 	assert first.operations.len == 2
 	assert first.operations[0].operation.id == ids[3]
 	assert first.operations[0].session_title == 'Beta project'
 	assert first.operations[1].operation.id == ids[2]
 	assert first.next_before == ids[2]
-	second := store.list_global_session_operations(2, first.next_before) or { panic(err) }
+	second := store.list_global_session_operations(2, first.next_before, '') or { panic(err) }
 	assert second.operations.len == 2
 	assert second.operations[0].operation.id == ids[1]
 	assert second.operations[0].session_title == 'Beta project'
 	assert second.operations[1].operation.id == ids[0]
 	assert second.next_before == ''
+	searched := store.list_global_session_operations(1, '', 'beta') or { panic(err) }
+	assert searched.operations.len == 1
+	assert searched.operations[0].session_title == 'Beta project'
+	assert searched.next_before == ids[3]
+	searched_next := store.list_global_session_operations(1, searched.next_before, 'beta') or {
+		panic(err)
+	}
+	assert searched_next.operations.len == 1
+	assert searched_next.operations[0].operation.id == ids[1]
+	assert searched_next.next_before == ''
 }
 
 fn test_global_operation_history_query_rejects_unbounded_or_invalid_cursors() {
-	limit, before := parse_global_operation_history_query(map[string]string{}) or { panic(err) }
+	limit, before, search := parse_global_operation_history_query(map[string]string{}) or { panic(err) }
 	assert limit == max_global_operation_history_page_size
 	assert before == ''
+	assert search == ''
 	mut invalid_limit := false
-	_, _ = parse_global_operation_history_query({
+	_, _, _ = parse_global_operation_history_query({
 		'limit': '101'
 	}) or {
 		invalid_limit = true
-		0, ''
+		0, '', ''
 	}
 	assert invalid_limit
 	mut invalid_cursor := false
-	_, _ = parse_global_operation_history_query({
+	_, _, _ = parse_global_operation_history_query({
 		'before': 'not-an-operation-id'
 	}) or {
 		invalid_cursor = true
-		0, ''
+		0, '', ''
 	}
 	assert invalid_cursor
+	mut invalid_search := false
+	_, _, _ = parse_global_operation_history_query({
+		'search': 'x'.repeat(161)
+	}) or {
+		invalid_search = true
+		0, '', ''
+	}
+	assert invalid_search
 }
 
 fn test_session_operation_completion_commits_with_chat_history() {

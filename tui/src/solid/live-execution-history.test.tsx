@@ -19,6 +19,16 @@ test("LiveApp browses durable session executions and inspects a failed run", asy
     ])
     if (path === "/v1/sessions/a/messages") return Response.json([])
     if (path === "/v1/operations") {
+      if (url.searchParams.get("search") === "needle") return Response.json({ operations: [
+        {
+          session_title: "Needle project",
+          operation: {
+            id: "run-4", session_id: "d", status: "failed", provider: "openai", model: "gpt-test",
+            error: "needle found in durable error", usage_reported: false,
+            created_at: "2026-10-19 09:00:00", updated_at: "2026-10-19 09:00:30",
+          },
+        },
+      ] })
       if (url.searchParams.has("before")) return Response.json({ operations: [
         {
           session_title: "Older project",
@@ -72,18 +82,20 @@ test("LiveApp browses durable session executions and inspects a failed run", asy
     expect(requested.some((item) => item.startsWith("/v1/operations?limit=50"))).toBe(true)
     expect(setup.captureCharFrame()).toContain("FAILED")
     expect(setup.captureCharFrame()).toContain("Beta project")
-    await setup.mockInput.typeText("load older")
-    await setup.renderOnce()
+    setup.mockInput.pressArrow("down")
+    setup.mockInput.pressArrow("down")
     setup.mockInput.pressEnter()
     await until("All executions · 3")
     expect(requested).toContain("/v1/operations?before=run-1&limit=50")
     expect(setup.captureCharFrame()).toContain("Older project")
-    await setup.mockInput.typeText("Older project")
-    await setup.renderOnce()
+    await setup.mockInput.typeText("needle")
+    await until("All executions · 1")
+    expect(requested.some((item) => item.includes("search=needle"))).toBe(true)
+    expect(setup.captureCharFrame()).toContain("Needle project")
     setup.mockInput.pressEnter()
     await until("Execution details")
-    expect(setup.captureCharFrame()).toContain("Session: Older project")
-    expect(setup.captureCharFrame()).toContain("server restarted during execution")
+    expect(setup.captureCharFrame()).toContain("Session: Needle project")
+    expect(setup.captureCharFrame()).toContain("needle found in durable error")
   } finally {
     setup.renderer.destroy()
     controller.abort()

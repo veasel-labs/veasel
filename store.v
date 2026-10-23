@@ -1629,7 +1629,7 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 	return operations
 }
 
-fn (mut store Store) list_global_session_operations(limit int, before string) !GlobalSessionOperationsPage {
+fn (mut store Store) list_global_session_operations(limit int, before string, search string) !GlobalSessionOperationsPage {
 	if limit < 1 || limit > max_global_operation_history_page_size {
 		return error('global operation history page bounds are invalid')
 	}
@@ -1646,12 +1646,22 @@ fn (mut store Store) list_global_session_operations(limit int, before string) !G
 		cursor_created_at = cursor[0].val(0)
 	}
 	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
+	mut filters := []string{}
 	mut params := []string{}
 	if before.len > 0 {
-		query += ' WHERE o.created_at < ? OR (o.created_at = ? AND o.id < ?)'
+		filters << '(o.created_at < ? OR (o.created_at = ? AND o.id < ?))'
 		params << cursor_created_at
 		params << cursor_created_at
 		params << before
+	}
+	if search.len > 0 {
+		filters << '(instr(lower(o.id), lower(?)) > 0 OR instr(lower(o.status), lower(?)) > 0 OR instr(lower(o.provider), lower(?)) > 0 OR instr(lower(o.model), lower(?)) > 0 OR instr(lower(o.error), lower(?)) > 0 OR instr(lower(s.title), lower(?)) > 0)'
+		for _ in 0 .. 6 {
+			params << search
+		}
+	}
+	if filters.len > 0 {
+		query += ' WHERE ${filters.join(' AND ')}'
 	}
 	params << (limit + 1).str()
 	rows := store.db.exec_param_many('${query} ORDER BY o.created_at DESC, o.id DESC LIMIT ?', params)!

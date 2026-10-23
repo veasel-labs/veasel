@@ -1279,11 +1279,11 @@ pub fn (app &App) list_session_operations(mut ctx Context, id string) veb.Result
 
 @['/v1/operations'; get]
 pub fn (app &App) list_global_operations(mut ctx Context) veb.Result {
-	limit, before := parse_global_operation_history_query(ctx.query) or {
+	limit, before, search := parse_global_operation_history_query(ctx.query) or {
 		return json_request_error(mut ctx, err.msg())
 	}
 	mut store := app.store
-	page := store.list_global_session_operations(limit, before) or {
+	page := store.list_global_session_operations(limit, before, search) or {
 		if err.msg() == 'operation cursor not found' {
 			return json_request_error(mut ctx, 'Operation cursor was not found; restart history from the newest page')
 		}
@@ -1292,7 +1292,7 @@ pub fn (app &App) list_global_operations(mut ctx Context) veb.Result {
 	return ctx.json(page)
 }
 
-fn parse_global_operation_history_query(query map[string]string) !(int, string) {
+fn parse_global_operation_history_query(query map[string]string) !(int, string, string) {
 	mut limit := max_global_operation_history_page_size
 	if raw_limit := query['limit'] {
 		limit = strconv.atoi(raw_limit) or {
@@ -1308,7 +1308,11 @@ fn parse_global_operation_history_query(query map[string]string) !(int, string) 
 			return error('before must be a non-nil operation UUID')
 		}
 	}
-	return limit, before
+	search := (query['search'] or { '' }).trim_space()
+	if search.len > 160 {
+		return error('search must be 160 characters or fewer')
+	}
+	return limit, before, search
 }
 
 @['/v1/sessions/:id/operations/:operation_id'; get]

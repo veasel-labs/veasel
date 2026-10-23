@@ -661,8 +661,10 @@ paths:
         Lists durable turn operations across all sessions, newest first. Pages
         are bounded to at most 100 rows and use the last operation id as the
         before cursor. Terminal rows follow the per-session retention bound;
-        active jobs are included. A pruned cursor returns 400 so clients can
-        restart from the newest page.
+        active jobs are included. The optional search term matches operation
+        id, status, provider, model, error, or session title across retained
+        history. A pruned cursor returns 400 so clients can restart from the
+        newest page.
       parameters:
         - in: query
           name: limit
@@ -671,6 +673,10 @@ paths:
           name: before
           description: Operation id returned as next_before by the preceding page.
           schema: { type: string, format: uuid }
+        - in: query
+          name: search
+          description: Case-insensitive substring over operation id, status, provider, model, error, and session title; maximum 160 characters.
+          schema: { type: string, maxLength: 160 }
       responses:
         '200':
           description: Bounded global operation history page.

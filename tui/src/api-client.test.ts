@@ -453,8 +453,8 @@ describe("VeaselApiClient usage and MCP", () => {
       }), { status: 200, headers: { "content-type": "application/json" } })
     }) as typeof fetch
     const client = new VeaselApiClient("http://127.0.0.1:4097")
-    const page = await client.listGlobalOperations({ before: "cursor-id", limit: 50 })
-    expect(requestedUrl).toBe("http://127.0.0.1:4097/v1/operations?before=cursor-id&limit=50")
+    const page = await client.listGlobalOperations({ before: "cursor-id", limit: 50, search: "  parser error  " })
+    expect(requestedUrl).toBe("http://127.0.0.1:4097/v1/operations?before=cursor-id&limit=50&search=parser+error")
     expect(page.operations[0]?.session_title).toBe("Example")
     expect(page.next_before).toBe("op-id")
   })

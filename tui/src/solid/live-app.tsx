@@ -766,32 +766,9 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
-  const openLiveExecutionHistory = async () => {
+  const openLiveExecutionHistory = () => {
     setComposerFocused(false)
-    const openPage = (
-      entries: ApiGlobalSessionOperation[],
-      nextBefore?: string,
-    ) => openExecutionHistoryDialog(dialog, entries, nextBefore, (cursor) => {
-      void props.api.listGlobalOperations({ before: cursor, limit: 50 }).then((page) => {
-        openPage([...entries, ...page.operations], page.next_before)
-      }).catch((error: unknown) => {
-        openDialogAlert(dialog, {
-          title: "Older executions unavailable",
-          message: error instanceof Error ? error.message : "Could not load the next history page.",
-          onConfirm: () => setComposerFocused(true),
-        })
-      })
-    })
-    try {
-      const page = await props.api.listGlobalOperations({ limit: 50 })
-      openPage(page.operations, page.next_before)
-    } catch (error) {
-      openDialogAlert(dialog, {
-        title: "Execution history unavailable",
-        message: error instanceof Error ? error.message : "Could not load execution history.",
-        onConfirm: () => setComposerFocused(true),
-      })
-    }
+    openExecutionHistoryDialog(dialog, props.api)
   }
 
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])

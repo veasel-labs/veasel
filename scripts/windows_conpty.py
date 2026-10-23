@@ -14,6 +14,10 @@ kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 HPCON = wintypes.HANDLE
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+STARTF_USESTDHANDLES = 0x00000100
+STD_INPUT_HANDLE = 0xFFFFFFF6
+HANDLE_FLAG_INHERIT = 0x00000001
+DUPLICATE_SAME_ACCESS = 0x00000002
 
 
 class Coord(ctypes.Structure):
@@ -73,6 +77,21 @@ kernel32.CreatePipe.argtypes = [
 kernel32.CreatePipe.restype = wintypes.BOOL
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.CloseHandle.restype = wintypes.BOOL
+kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
+kernel32.GetStdHandle.restype = wintypes.HANDLE
+kernel32.DuplicateHandle.argtypes = [
+    wintypes.HANDLE,
+    wintypes.HANDLE,
+    wintypes.HANDLE,
+    ctypes.POINTER(wintypes.HANDLE),
+    wintypes.DWORD,
+    wintypes.BOOL,
+    wintypes.DWORD,
+]
+kernel32.DuplicateHandle.restype = wintypes.BOOL
+kernel32.SetHandleInformation.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD]
+kernel32.SetHandleInformation.restype = wintypes.BOOL
 kernel32.CreatePseudoConsole.argtypes = [
     Coord,
     wintypes.HANDLE,
@@ -163,6 +182,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
     attribute_list_initialized = False
     output = bytearray()
     process_created = False
+    child_stdin = wintypes.HANDLE()
 
     def close(handle: wintypes.HANDLE | int) -> None:
         value = handle.value if isinstance(handle, wintypes.HANDLE) else handle
@@ -228,6 +248,19 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
             raise OSError(f"ConPTY accepted {written.value} of {len(keys)} input bytes")
 
     try:
+        current_process = kernel32.GetCurrentProcess()
+        parent_stdin = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+        if not parent_stdin or not kernel32.DuplicateHandle(
+            current_process,
+            parent_stdin,
+            current_process,
+            ctypes.byref(child_stdin),
+            0,
+            True,
+            DUPLICATE_SAME_ACCESS,
+        ):
+            raise _winerror("DuplicateHandle(stdin)")
+
         security = SecurityAttributes(ctypes.sizeof(SecurityAttributes), None, False)
         for read_handle, write_handle in ((ctypes.byref(input_read), ctypes.byref(input_write)),
                                           (ctypes.byref(output_read), ctypes.byref(output_write))):
@@ -260,18 +293,26 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
 
         startup = StartupInfoEx()
         startup.StartupInfo.cb = ctypes.sizeof(StartupInfoEx)
+        startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES
+        startup.StartupInfo.hStdInput = child_stdin
+        startup.StartupInfo.hStdOutput = output_write
+        startup.StartupInfo.hStdError = output_write
         startup.lpAttributeList = attribute_list
         command_line = ctypes.create_unicode_buffer(f'"{tui_path}"')
         environment = "\0".join(
             f"{key}={value}" for key, value in sorted(env.items(), key=lambda item: item[0].upper())
         ) + "\0\0"
         environment_block = ctypes.create_unicode_buffer(environment)
+        if not kernel32.SetHandleInformation(
+            output_write, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT
+        ):
+            raise _winerror("SetHandleInformation(ConPTY output)")
         if not kernel32.CreateProcessW(
             str(tui_path),
             command_line,
             None,
             None,
-            False,
+            True,
             EXTENDED_STARTUPINFO_PRESENT | 0x00000400,  # CREATE_UNICODE_ENVIRONMENT
             environment_block,
             None,
@@ -319,5 +360,6 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         close(input_write)
         close(output_read)
         close(output_write)
+        close(child_stdin)
         close(process.hThread)
         close(process.hProcess)

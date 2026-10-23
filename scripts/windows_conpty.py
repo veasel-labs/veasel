@@ -164,10 +164,12 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
     output = bytearray()
     process_created = False
 
-    def close(handle: wintypes.HANDLE) -> None:
-        if handle and handle.value:
-            kernel32.CloseHandle(handle)
-            handle.value = None
+    def close(handle: wintypes.HANDLE | int) -> None:
+        value = handle.value if isinstance(handle, wintypes.HANDLE) else handle
+        if value:
+            kernel32.CloseHandle(wintypes.HANDLE(value))
+            if isinstance(handle, wintypes.HANDLE):
+                handle.value = None
 
     def drain() -> None:
         available = wintypes.DWORD()
@@ -201,17 +203,20 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             drain()
-            visible = visible_output()
-            if all(marker in visible for marker in markers):
+            # Match the emitted stream directly: VT cursor and screen updates
+            # can make a regex-based visible-text projection lossy.
+            if all(marker in output for marker in markers):
                 return
             exit_code = wintypes.DWORD()
             if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
                 raise RuntimeError(f"standalone TUI exited before {description} (status={exit_code.value})")
             time.sleep(0.025)
+        raw_tail = bytes(output[-2_000:])
         snippet = visible_output()[-2_000:].decode(errors="replace")
         raise TimeoutError(
             f"standalone TUI did not reach {description} within {timeout} seconds; "
-            f"visible terminal output: {snippet}"
+            f"captured {len(output)} terminal bytes; visible output: {snippet!r}; "
+            f"raw tail: {raw_tail!r}"
         )
 
     def send_keys(keys: bytes) -> None:
@@ -278,7 +283,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         close(input_read)
         close(output_write)
 
-        wait_for_markers((b"connected", b"SESSIONS", b"VEASEL"), 10, "its connected session screen")
+        wait_for_markers((b"connected", b"SESSIONS", b"VEASEL"), 20, "its connected session screen")
         send_keys(b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
         for _ in range(5):

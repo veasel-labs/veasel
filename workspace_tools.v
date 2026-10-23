@@ -214,7 +214,9 @@ fn read_workspace_text_file(path string) !string {
 		|| os.stat(path)!.size > u64(max_workspace_file_bytes) {
 		return error('workspace file exceeds the ${max_workspace_file_bytes} byte limit')
 	}
-	content := bytes[..count].clone()
+	// bytestr() below allocates the owned string and copies these bytes once;
+	// cloning the slice here would duplicate the same file contents again.
+	content := unsafe { bytes[..count] }
 	if content.contains(0) {
 		return error('binary files are not supported by workspace text tools')
 	}

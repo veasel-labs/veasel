@@ -34,6 +34,48 @@ fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 	assert other_pos < 0 || widget_pos < other_pos
 }
 
+fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test_queries() {
+	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-lexical')
+	os.rmdir_all(root) or {}
+	os.mkdir_all(root) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+	}
+	write_map_fixture_file(os.join_path(root, 'src', 'agents', 'default.py'),
+		'class DefaultAgent:\n    def run(self):\n        pass\n')
+	write_map_fixture_file(os.join_path(root, 'tests', 'agents', 'test_init.py'),
+		'class TestAgent:\n    def test_agent(self):\n        pass\n')
+	write_map_fixture_file(os.join_path(root, 'aider', 'args.py'),
+		'def get_parser():\n    """Parse command line arguments and options."""\n')
+	behavior := build_repository_map(root, 'the main agent loop that runs until done',
+		repository_map_default_budget_bytes) or { panic(err) }
+	assert behavior.ranked_paths[0].ends_with('src/agents/default.py')
+	test_query := build_repository_map(root, 'test the agent loading behavior',
+		repository_map_default_budget_bytes) or { panic(err) }
+	assert test_query.ranked_paths.any(it.ends_with('tests/agents/test_init.py'))
+	arguments := extract_repository_map_hints('command line argument parsing and options')
+	assert repository_map_lexically_related('args', 'arguments')
+	assert repository_map_path_has_segment('aider/args.py', 'args')
+	assert score_repository_map_content('Add an argument to the command line parser options.',
+		arguments) > 0.0
+	assert score_repository_map_path('aider/args.py', arguments) > score_repository_map_path('tests/test_args.py', arguments)
+	paired := extract_repository_map_hints('Please fix src/agents/default.py')
+	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)
+	assert repository_map_lexically_related('policy', 'policies')
+	assert repository_map_lexically_related('class', 'classes')
+	assert score_repository_map_content('class policy', RepositoryMapHintSet{idents: ['classes', 'policy']}) == 48.0
+	assert score_repository_map_content('classes policies', RepositoryMapHintSet{idents: ['class', 'policy']}) == 48.0
+	assert score_repository_map_path('src/AuthService.ts', RepositoryMapHintSet{idents: ['auth']}) > score_repository_map_path('src/Other.ts', RepositoryMapHintSet{idents: ['auth']})
+	assert repository_map_is_test_path('src/auth.spec.ts')
+	assert repository_map_is_test_path('src/__specs__/auth_spec.ts')
+	assert !repository_map_is_test_path('src/AuthService.ts')
+	case_hints := RepositoryMapHintSet{idents: ['AGENT', 'agent', 'Agent', 'args']}
+	assert !repository_map_is_lexical_hint('The')
+	assert !repository_map_is_lexical_hint('For')
+	assert score_repository_map_content('agent argument parser', case_hints) == 72.0
+	assert score_repository_map_path('src/agent.py', case_hints) == score_repository_map_path('src/agent.py', RepositoryMapHintSet{idents: ['agent', 'args']})
+}
+
 fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
 	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\nsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}\n'
 	symbols := extract_repository_map_symbols(content)

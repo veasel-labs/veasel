@@ -589,6 +589,11 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   and receiver methods, Kotlin `fun`/class forms, Swift protocols/extensions,
   and common visibility/behavior modifiers on supported declaration forms;
   this remains bounded line-based extraction, not parsing.
+  Ranking also uses bounded lexical overlap against already-read source and
+  compound path terms, with common argument/args matching and a test-file
+  demotion only when the user asks about behavior rather than tests. Real-repo
+  recall on Aider, mini-swe-agent, and SWE-agent is recorded in
+  `benchmarks/README.md`; semantic retrieval remains a broader open gap.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in

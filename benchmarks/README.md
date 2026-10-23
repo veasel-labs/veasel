@@ -148,6 +148,24 @@ Same measurement on the SWE-agent checkout (407 files scanned,
 v0.64.2 binary: recall@3 5/6, recall@10 6/6, with four expected files
 at #1.
 
+The bounded lexical-ranking implementation described here was measured on the
+same pinned research checkouts listed in the workspace's
+`research/refs/REVISIONS.md`, using the same cases and 12 KiB budget. On the
+Linux x64 workstation, recall was:
+
+| Checkout | Recall@3 | Recall@10 | Change from prior recorded baseline |
+|---|---:|---:|---|
+| Aider (685 files) | 4/6 | 5/6 | unchanged |
+| mini-swe-agent (221 files) | 3/4 | 4/4 | @3 +1; @10 unchanged |
+| SWE-agent (407 files) | 6/6 | 6/6 | @3 +1; @10 unchanged |
+
+The lexical signal reuses source text already read for declaration extraction,
+caps query-term contribution, and demotes test paths for behavior queries.
+These small labeled sets show improved recall on two checkouts and no aggregate
+regression on the third; they do not establish broad semantic retrieval quality.
+The Aider command-line parsing case still misses `aider/args.py` and remains a
+known failure.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

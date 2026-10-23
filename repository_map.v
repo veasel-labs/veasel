@@ -201,6 +201,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 				symbol_relevance = repository_map_symbol_relevance_cap
 			}
 			entry.score += symbol_relevance
+			entry.score += score_repository_map_content(content, hints)
 			count_bonus := f64(entry.symbols.len)
 			entry.score += if count_bonus > repository_map_symbol_count_bonus_cap {
 				repository_map_symbol_count_bonus_cap
@@ -406,18 +407,55 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			break
 		}
 	}
-	// Test/source pairing: mention of foo.v or stem foo also elevates
-	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
-	for mentioned in hints.paths {
-		if repository_map_is_test_pair(path, mentioned) {
-			score += 280.0
-			break
+	// Natural-language task terms often differ from path spelling only by
+	// pluralization or a common code abbreviation (argument/args). Keep this
+	// signal weaker than exact mentions, so it helps without replacing them.
+	mut seen_lexical_hints := map[string]bool{}
+	for ident in hints.idents {
+		if !repository_map_is_lexical_hint(ident) {
+			continue
+		}
+		normalized := ident.to_lower()
+		if normalized in seen_lexical_hints {
+			continue
+		}
+		seen_lexical_hints[normalized] = true
+		mut matched := false
+		for segment in path.replace('\\', '/').split('/') {
+			name := repository_map_stem(segment)
+			for part in repository_map_ident_parts(name) {
+				match_weight := repository_map_lexical_match_weight(part, ident)
+				if match_weight > 0.0 {
+					score += match_weight
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
 		}
 	}
-	for ident in hints.idents {
-		if repository_map_is_test_pair_for_stem(path, ident) {
-			score += 180.0
-			break
+	// For behavior questions, prefer implementation files over tests that
+	// merely import the same symbols. A query explicitly about tests keeps them
+	// eligible for the existing exact and source/test-pair signals.
+	if repository_map_is_test_path(path) && !repository_map_hint_mentions_tests(hints) {
+		score -= 120.0
+	}
+	// Test/source pairing: mention of foo.v or stem foo also elevates
+	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
+	if !repository_map_is_test_path(path) || repository_map_hint_mentions_tests(hints) {
+		for mentioned in hints.paths {
+			if repository_map_is_test_pair(path, mentioned) {
+				score += 280.0
+				break
+			}
+		}
+		for ident in hints.idents {
+			if repository_map_is_test_pair_for_stem(path, ident) {
+				score += 180.0
+				break
+			}
 		}
 	}
 	depth := path.count('/')
@@ -425,6 +463,146 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		score += 25.0
 	} else if depth == 1 {
 		score += 10.0
+	}
+	return score
+}
+
+fn repository_map_is_lexical_hint(ident string) bool {
+	return ident.len >= 3 && ident.to_lower() !in ['the', 'and', 'for', 'with', 'that', 'from', 'into', 'where',
+		'when', 'what', 'how', 'why', 'are', 'was', 'were', 'has', 'have', 'had', 'not', 'all',
+		'any', 'each', 'can', 'does', 'its']
+}
+
+fn repository_map_lexically_related(left string, right string) bool {
+	return repository_map_lexical_match_weight(left, right) > 0.0
+}
+
+fn repository_map_lexical_candidates(term string) []string {
+	lower := term.to_lower()
+	mut candidates := [lower]
+	if lower.len > 4 && lower.ends_with('ies') {
+		candidates << '${lower[..lower.len - 3]}y'
+	} else if lower.len > 4 && lower.ends_with('es')
+		&& (lower.ends_with('sses') || lower.ends_with('xes') || lower.ends_with('zes')
+		|| lower.ends_with('ches') || lower.ends_with('shes')) {
+		candidates << lower[..lower.len - 2]
+	} else if lower.len > 3 && lower.ends_with('ss') {
+		candidates << '${lower}es'
+	} else if lower.len > 3 && lower.ends_with('s') {
+		candidates << lower[..lower.len - 1]
+	} else if lower.len > 3 {
+		plural := if lower.ends_with('y') && lower.len > 1 {
+			'${lower[..lower.len - 1]}ies'
+		} else if lower.ends_with('s') || lower.ends_with('x') || lower.ends_with('z')
+			|| lower.ends_with('ch') || lower.ends_with('sh') {
+			'${lower}es'
+		} else {
+			'${lower}s'
+		}
+		candidates << plural
+	}
+	if lower in ['arg', 'args', 'argument', 'arguments'] {
+		for candidate in ['arg', 'args', 'argument', 'arguments'] {
+			if candidate !in candidates {
+				candidates << candidate
+			}
+		}
+	}
+	return candidates
+}
+
+fn repository_map_lexical_match_weight(left string, right string) f64 {
+	a := left.to_lower()
+	b := right.to_lower()
+	if a == b {
+		// This also matches a word inside compound names such as
+		// `litellm_model`; whole path-segment matches already scored above.
+		return 45.0
+	}
+	if a.len > 3 && a.ends_with('s') && a[..a.len - 1] == b {
+		return 45.0
+	}
+	if b.len > 3 && b.ends_with('s') && b[..b.len - 1] == a {
+		return 45.0
+	}
+	if a.len > 4 && a.ends_with('ies') && '${a[..a.len - 3]}y' == b {
+		return 45.0
+	}
+	if b.len > 4 && b.ends_with('ies') && '${b[..b.len - 3]}y' == a {
+		return 45.0
+	}
+	if a.len > 4 && a.ends_with('es') && a[..a.len - 2] == b {
+		return 45.0
+	}
+	if b.len > 4 && b.ends_with('es') && b[..b.len - 2] == a {
+		return 45.0
+	}
+	if (a in ['arg', 'args', 'argument', 'arguments'])
+		&& (b in ['arg', 'args', 'argument', 'arguments']) {
+		return 180.0
+	}
+	return 0.0
+}
+
+fn repository_map_is_test_path(path string) bool {
+	for segment in path.to_lower().replace('\\', '/').split('/') {
+		stem := repository_map_stem(segment)
+		if segment in ['test', 'tests', '__tests__', 'spec', 'specs', '__specs__']
+			|| stem.starts_with('test_') || stem.starts_with('test-') || stem.ends_with('_test')
+			|| stem.ends_with('.test') || stem.starts_with('spec_') || stem.starts_with('spec-')
+			|| stem.ends_with('_spec') || stem.ends_with('.spec') {
+			return true
+		}
+	}
+	return false
+}
+
+fn repository_map_hint_mentions_tests(hints RepositoryMapHintSet) bool {
+	for ident in hints.idents {
+		if ident.to_lower() in ['test', 'tests', 'testing', 'spec', 'specs'] {
+			return true
+		}
+	}
+	return false
+}
+
+fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 {
+	// The map already reads bounded source files to extract declarations. Reuse
+	// that text for a small lexical retrieval signal instead of another index or
+	// embedding dependency. Count each query term once and cap total influence.
+	identifiers := repository_map_content_identifiers(content)
+	mut terms := map[string]bool{}
+	for identifier, _ in identifiers {
+		lower := identifier.to_lower()
+		terms[lower] = true
+		for part in repository_map_ident_parts(identifier) {
+			terms[part] = true
+		}
+	}
+	mut matched_terms := 0
+	mut score := 0.0
+	mut seen_hints := map[string]bool{}
+	for ident in hints.idents {
+		if !repository_map_is_lexical_hint(ident) {
+			continue
+		}
+		normalized := ident.to_lower()
+		if normalized in seen_hints {
+			continue
+		}
+		seen_hints[normalized] = true
+		candidates := repository_map_lexical_candidates(ident)
+		for candidate in candidates {
+			if candidate in terms {
+				is_alias := ident != candidate && ident in ['arg', 'args', 'argument', 'arguments']
+				score += if is_alias { 48.0 } else { 24.0 }
+				matched_terms++
+				break
+			}
+		}
+		if matched_terms >= 6 {
+			break
+		}
 	}
 	return score
 }

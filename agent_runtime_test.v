@@ -967,6 +967,26 @@ fn test_agent_tool_loop_tracker_warns_then_stops_canonical_repeats() {
 	}) == .ok
 }
 
+fn test_agent_tool_loop_warnings_match_provider_context_in_atif_trace() {
+	warning := 'Repeated workspace_search calls; change approach.'
+	mut messages := []ChatMessage{}
+	mut trace_steps := [ATIFStep{
+		step_id: 1
+		source:  'agent'
+		message: 'Searching the workspace.'
+	}]
+
+	append_agent_tool_loop_warnings(mut messages, mut trace_steps, [warning], true)
+
+	assert messages.len == 1
+	assert messages[0].role == 'user'
+	assert messages[0].content == warning
+	assert trace_steps.len == 2
+	assert trace_steps[1].step_id == 2
+	assert trace_steps[1].source == 'system'
+	assert trace_steps[1].message == warning
+}
+
 fn test_provider_tool_transcripts_preserve_native_context() {
 	messages := [
 		ChatMessage{

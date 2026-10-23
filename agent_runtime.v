@@ -124,6 +124,23 @@ fn agent_tool_loop_stop_note(call ProviderToolCall) string {
 	return encode_agent_tool_note('Repeated identical ${call.function.name} call was not run to prevent an execution loop. Change the tool or its arguments to continue.')
 }
 
+fn append_agent_tool_loop_warnings(mut messages []ChatMessage, mut trace_steps []ATIFStep,
+	warnings []string, collect_trace bool) {
+	for warning in warnings {
+		messages << ChatMessage{
+			role:    'user'
+			content: warning
+		}
+		if collect_trace {
+			trace_steps << ATIFStep{
+				step_id: trace_steps.len + 1
+				source:  'system'
+				message: warning
+			}
+		}
+	}
+}
+
 // encode_agent_tool_note encodes a short advisory object (not a hard tool failure).
 fn encode_agent_tool_note(message string) string {
 	mut buf := []u8{cap: 96 + message.len}
@@ -591,12 +608,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				results: trace_observations
 			}
 		}
-		for warning in loop_warnings {
-			messages << ChatMessage{
-				role:    'user'
-				content: warning
-			}
-		}
+		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
+			collect_trace)
 		// Text from the next model round must not stick to this round's
 		// narration. The model-visible message stays unchanged.
 		boundary := tool_round_text_boundary(output.content)

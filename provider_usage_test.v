@@ -7,15 +7,25 @@ import time
 
 struct OpenCodeGoHeaderFixture {
 mut:
-	hits       int
-	session_id string
-	user_agent string
+	hits              int
+	path              string
+	session_id        string
+	user_agent        string
+	authorization     string
+	api_key_header    string
+	google_key_header string
+	anthropic_version string
 }
 
 fn (mut fixture OpenCodeGoHeaderFixture) handle(request http.Request) http.Response {
 	fixture.hits++
+	fixture.path = request.url
 	fixture.session_id = request.header.get_custom('x-opencode-session') or { '' }
 	fixture.user_agent = request.header.get_custom('User-Agent') or { '' }
+	fixture.authorization = request.header.get_custom('Authorization') or { '' }
+	fixture.api_key_header = request.header.get_custom('x-api-key') or { '' }
+	fixture.google_key_header = request.header.get_custom('x-goog-api-key') or { '' }
+	fixture.anthropic_version = request.header.get_custom('anthropic-version') or { '' }
 	mut response := http.Response{}
 	response.set_status(.ok)
 	response.header.set(.content_type, 'text/event-stream')
@@ -69,6 +79,71 @@ fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
 	})! == 'https://models.example.test/v1/models'
 }
 
+fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
+	models := [
+		ModelCatalogEntry{
+			id: 'kimi-k3'
+		},
+		ModelCatalogEntry{
+			id: 'gpt-6-luna'
+		},
+		ModelCatalogEntry{
+			id: 'claude-haiku-5-5'
+		},
+		ModelCatalogEntry{
+			id: 'gemini-4-argon-contributor'
+		},
+		ModelCatalogEntry{
+			id: 'grok-4.6'
+		},
+	]
+	available := filter_provider_models('opencode-go', models)
+	assert available.map(it.id) == ['kimi-k3', 'gpt-6-luna', 'claude-haiku-5-5',
+		'gemini-4-argon-contributor']
+
+	chat := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'kimi-k3'
+	}) or { panic(err) }
+	assert chat.protocol == 'openai-compatible'
+	assert chat.base_url == opencode_go_openai_base_url
+
+	responses := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'gpt-6-luna'
+	}) or { panic(err) }
+	assert responses.protocol == 'openai-responses'
+	assert responses.base_url == opencode_go_openai_base_url
+
+	claude := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'claude-haiku-5-5'
+	}) or { panic(err) }
+	assert claude.protocol == 'anthropic'
+	assert claude.base_url == opencode_go_anthropic_base_url
+
+	gemini := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'gemini-4-argon-contributor'
+	}) or { panic(err) }
+	assert gemini.protocol == 'gemini'
+	assert gemini.base_url == opencode_go_google_base_url
+
+	unknown := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'unknown-go-model'
+	}) or {
+		assert err.msg().contains('no supported API mapping')
+		return
+	}
+	assert unknown.protocol == ''
+}
+
 fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	mut fixture := &OpenCodeGoHeaderFixture{}
 	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }
@@ -89,8 +164,33 @@ fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	}, '{}', .bearer, fn (_ string) ! {}) or { panic(err) }
 	assert response.status_code == 200
 	assert fixture.hits == 1
+	assert fixture.path == '/v1/chat/completions'
 	assert fixture.session_id == session_id
 	assert fixture.user_agent == 'Veasel Code/${product_version}'
+	assert fixture.authorization == 'Bearer fixture-key'
+	assert fixture.api_key_header == ''
+	assert fixture.google_key_header == ''
+
+	anthropic_response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/messages', ModelConfig{
+		provider:   'opencode-go'
+		api_key:    'fixture-key'
+		session_id: session_id
+	}, '{}', .anthropic, fn (_ string) ! {}) or { panic(err) }
+	assert anthropic_response.status_code == 200
+	assert fixture.path == '/v1/messages'
+	assert fixture.authorization == 'Bearer fixture-key'
+	assert fixture.api_key_header == ''
+	assert fixture.anthropic_version == '2023-06-01'
+
+	gemini_response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1beta/models/test:streamGenerateContent', ModelConfig{
+		provider:   'opencode-go'
+		api_key:    'fixture-key'
+		session_id: session_id
+	}, '{}', .gemini, fn (_ string) ! {}) or { panic(err) }
+	assert gemini_response.status_code == 200
+	assert fixture.path == '/v1beta/models/test:streamGenerateContent'
+	assert fixture.authorization == 'Bearer fixture-key'
+	assert fixture.google_key_header == ''
 }
 
 fn test_openai_chat_usage_parses_cached_tokens_subset() {

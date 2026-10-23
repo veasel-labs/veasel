@@ -39,6 +39,9 @@ const max_provider_model_catalog_bytes = 1_000_000
 const max_provider_model_catalog_entries = 500
 const opencode_go_chat_base_url = 'https://opencode.ai/inference/go/openai/v1'
 const opencode_go_models_url = 'https://opencode.ai/inference/go/v1/models'
+const opencode_go_openai_base_url = 'https://opencode.ai/inference/go/openai/v1'
+const opencode_go_anthropic_base_url = 'https://opencode.ai/inference/go/anthropic/v1'
+const opencode_go_google_base_url = 'https://opencode.ai/inference/go/google/v1beta'
 // Request-side Anthropic prompt caching. Default `auto` emits ephemeral
 // cache_control (top-level automatic + system-block breakpoint). Set to `off`
 // to disable; `1h` requests the extended TTL. This only shapes requests—
@@ -617,7 +620,7 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 		return error('model catalog response is too large')
 	}
 	models := parse_provider_model_catalog(info.protocol, response.body)!
-	return filter_provider_chat_models(config.provider, models)
+	return filter_provider_models(config.provider, models)
 }
 
 fn provider_model_catalog_url(config ModelConfig) !string {
@@ -631,18 +634,74 @@ fn provider_model_catalog_url(config ModelConfig) !string {
 	return '${base_url}/models'
 }
 
-fn filter_provider_chat_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
-	if provider != 'meta' {
-		return models
-	}
+fn filter_provider_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
 	mut compatible := []ModelCatalogEntry{cap: models.len}
 	for model in models {
 		id := model.id.to_lower()
-		if id.starts_with('muse-wonder-') || id.starts_with('muse-spark-') {
+		is_compatible := if provider == 'meta' {
+			id.starts_with('muse-wonder-') || id.starts_with('muse-spark-')
+		} else if provider == 'opencode-go' {
+			opencode_go_model_protocol(id) != ''
+		} else {
+			true
+		}
+		if is_compatible {
 			compatible << model
 		}
 	}
 	return compatible
+}
+
+// OpenCode Go's public model catalog is OpenAI-shaped but omits each model's
+// required inference API family. Keep this mapping aligned with the official
+// endpoint table; unknown IDs stay out of discovery and fail closed at runtime.
+fn opencode_go_model_protocol(model string) string {
+	return match model.to_lower() {
+		'grok-4.7', 'gpt-6-luna', 'gpt-5.6-luna', 'muse-spark-1.3-contributor',
+		'muse-spark-1.2-contributor' {
+			'openai-responses'
+		}
+		'claude-haiku-5-5', 'minimax-m3', 'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus' {
+			'anthropic'
+		}
+		'gemini-4-argon-contributor' { 'gemini' }
+		'glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3', 'kimi-k2.7-code', 'longcat-2.0',
+		'deepseek-v4.1-flash', 'deepseek-v4-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro',
+		'mimo-v2.5', 'mimo-v2.5-pro', 'minimax-m3.1-flash', 'hy4-preview', 'hy3',
+		'longcat-2.5-preview-free', 'step-5-preview', 'beam-free' {
+			'openai-compatible'
+		}
+		else { '' }
+	}
+}
+
+struct ModelProviderRoute {
+	protocol string
+	base_url string
+}
+
+fn model_provider_route(config ModelConfig) !ModelProviderRoute {
+	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
+	if config.provider != 'opencode-go' || secure_endpoint(config.base_url)! != opencode_go_chat_base_url {
+		return ModelProviderRoute{
+			protocol: info.protocol
+			base_url: config.base_url
+		}
+	}
+	protocol := opencode_go_model_protocol(config.model)
+	if protocol == '' {
+		return error('OpenCode Go model has no supported API mapping; choose a model from the discovered list')
+	}
+	base_url := match protocol {
+		'openai-compatible', 'openai-responses' { opencode_go_openai_base_url }
+		'anthropic' { opencode_go_anthropic_base_url }
+		'gemini' { opencode_go_google_base_url }
+		else { return error('unsupported OpenCode Go model API family') }
+	}
+	return ModelProviderRoute{
+		protocol: protocol
+		base_url: base_url
+	}
 }
 
 fn parse_provider_model_catalog(protocol string, body string) ![]ModelCatalogEntry {
@@ -1261,8 +1320,16 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 
 fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) !CompletionOutput {
-	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
-	provider := match info.protocol {
+	route := model_provider_route(config)!
+	routed_config := ModelConfig{
+		provider:          config.provider
+		base_url:          route.base_url
+		model:             config.model
+		api_key:           config.api_key
+		session_id:        config.session_id
+		max_output_tokens: config.max_output_tokens
+	}
+	provider := match route.protocol {
 		'openai-compatible' {
 			ModelProvider(OpenAICompatibleProvider{})
 		}
@@ -1277,7 +1344,7 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 		}
 		else { return error('unsupported model provider') }
 	}
-	return provider.complete(mut turn_ctx, config, messages, tools, on_text_delta)
+	return provider.complete(mut turn_ctx, routed_config, messages, tools, on_text_delta)
 }
 
 fn ignore_provider_text_delta(_ string) ! {}
@@ -1455,7 +1522,7 @@ fn openai_responses_model_supports_reasoning(provider string, model string) bool
 		return true
 	}
 	model_id := model.to_lower()
-	return model_id.starts_with('gpt-5') || model_id.starts_with('o1') || model_id.starts_with('o3')
+	return model_id.starts_with('gpt-5') || model_id.starts_with('gpt-6') || model_id.starts_with('o1') || model_id.starts_with('o3')
 		|| model_id.starts_with('o4') || model_id.starts_with('codex-')
 }
 
@@ -2302,18 +2369,27 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 		}
 		headers.add_custom('User-Agent', 'Veasel Code/${product_version}')!
 	}
-	match auth {
-		.bearer {
-			if config.api_key.len > 0 {
-				headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
-			}
+	if config.provider == 'opencode-go' {
+		if config.api_key.len > 0 {
+			headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
 		}
-		.anthropic {
-			headers.add_custom('x-api-key', config.api_key)!
+		if auth == .anthropic {
 			headers.add_custom('anthropic-version', '2023-06-01')!
 		}
-		.gemini {
-			headers.add_custom('x-goog-api-key', config.api_key)!
+	} else {
+		match auth {
+			.bearer {
+				if config.api_key.len > 0 {
+					headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
+				}
+			}
+			.anthropic {
+				headers.add_custom('x-api-key', config.api_key)!
+				headers.add_custom('anthropic-version', '2023-06-01')!
+			}
+			.gemini {
+				headers.add_custom('x-goog-api-key', config.api_key)!
+			}
 		}
 	}
 	mut stream_state := &ProviderSSERequestState{

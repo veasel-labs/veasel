@@ -52,7 +52,9 @@ fn (mut buffer PluginMCPFrameBuffer) append(chunk string) !string {
 		buffer.scan_from -= buffer.read_from
 		buffer.read_from = 0
 	}
-	buffer.bytes << chunk.bytes()
+	// []u8 has one-byte elements, so push_many copies directly from the
+	// string's owned byte buffer without allocating a temporary chunk.bytes().
+	unsafe { buffer.bytes.push_many(chunk.str, chunk.len) }
 	return buffer.take_frame()
 }
 

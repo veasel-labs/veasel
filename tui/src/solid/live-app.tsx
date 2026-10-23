@@ -5,6 +5,7 @@ import { useKeyboard, useRenderer } from "@opentui/solid"
 import {
   appendStreamingDelta,
   type ApiSession,
+  type ApiSessionOperation,
   type SessionTurnCompletion,
   type VeaselApiClient,
 } from "../api-client"
@@ -269,14 +270,26 @@ function LiveAppShell(props: LiveAppProps) {
   const [queuedFollowUps, setQueuedFollowUps] = createSignal<{
     id: string
     sessionId: string
-    message: ToolAwareMessage
+    message?: ToolAwareMessage
   }[]>([])
+  const [restoringSessionOperations, setRestoringSessionOperations] = createSignal<string>()
   let activeTurnSessionId: string | undefined
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   const [executionPolicy, setExecutionPolicy] = createSignal<ExecutionPolicyId>("ask")
   let turnController: AbortController | undefined
   const handledCompletions = new Set<string>()
   const queuedOperationIds = new Set<string>()
+  const observedOperationStatuses = new Map<string, string>()
+
+  const observeOperationStatus = (operationId: string, status: string) => {
+    observedOperationStatuses.delete(operationId)
+    observedOperationStatuses.set(operationId, status)
+    while (observedOperationStatuses.size > 64) {
+      const oldest = observedOperationStatuses.keys().next().value
+      if (!oldest) break
+      observedOperationStatuses.delete(oldest)
+    }
+  }
 
   const commitSidebarWidth = (width: number) => {
     const next = clampHomeSidebarWidth(width, terminalColumns())
@@ -1134,6 +1147,74 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const restoreSessionOperations = (sessionId: string, operations: ApiSessionOperation[]) => {
+    const reconciled = operations.map((operation) => ({
+      ...operation,
+      status: observedOperationStatuses.get(operation.id) ?? operation.status,
+    }))
+    const queued = reconciled.filter((operation) => operation.status === "queued")
+    const queuedIds = new Set(queued.map((operation) => operation.id))
+    const knownIds = new Set(reconciled.map((operation) => operation.id))
+    const current = queuedFollowUps()
+    const localRequests = current.filter((item) =>
+      item.sessionId === sessionId && queuedOperationIds.has(item.id) && !knownIds.has(item.id)
+    )
+    for (const item of current) {
+      if (item.sessionId === sessionId && !queuedIds.has(item.id) && !localRequests.includes(item)) {
+        queuedOperationIds.delete(item.id)
+      }
+    }
+    const recovered = queued.map((operation) => {
+      queuedOperationIds.add(operation.id)
+      return current.find((item) => item.id === operation.id)
+        ?? { id: operation.id, sessionId }
+    })
+    setQueuedFollowUps((items) => [
+      ...items.filter((item) => item.sessionId !== sessionId),
+      ...recovered,
+      ...localRequests,
+    ])
+
+    const active = reconciled.filter((operation) =>
+      operation.status === "running" || operation.status === "cancelling"
+    ).at(-1)
+    const latest = reconciled.at(-1)
+    if (!activeTurnId() || activeTurnSessionId === sessionId) {
+      if (active) {
+        setActiveTurnId(active.id)
+        activeTurnSessionId = sessionId
+        setSending(true)
+        setCancelling(active.status === "cancelling")
+        setStreaming(false)
+        turnController = new AbortController()
+      } else if (activeTurnSessionId === sessionId) {
+        setActiveTurnId(undefined)
+        activeTurnSessionId = undefined
+        setSending(false)
+        setCancelling(false)
+        setStreaming(false)
+        turnController = undefined
+      }
+    }
+
+    if (sessionId !== activeSessionId()) return
+    const waiting = queued.length + localRequests.length
+    if (activeTurnSessionId === sessionId && activeTurnId()) {
+      const activity = active?.status === "cancelling" ? "Cancellation requested…" : "Veasel is working…"
+      setStatus(formatBusyStatus(waiting > 0
+        ? `${activity} · ${waiting} follow-up${waiting === 1 ? "" : "s"} queued`
+        : activity))
+    } else if (activeTurnId()) {
+      setStatus(formatBusyStatus("Turn active in another session"))
+    } else if (waiting > 0) {
+      setStatus(formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`))
+    } else if (latest?.status === "uncertain") {
+      setStatus(formatWarnStatus("Outcome uncertain; inspect the workspace before retrying"))
+    } else {
+      setStatus("● connected  ·  listening for activity")
+    }
+  }
+
   const openSession = async (session: SolidSessionEntry) => {
     rememberSessionDraft()
     setSessionDirectory(session.directory)
@@ -1146,15 +1227,35 @@ function LiveAppShell(props: LiveAppProps) {
     setHistoryHasOlder(false)
     setStreamingText("")
     setStreaming(false)
+    setRestoringSessionOperations(session.id)
+    setStatus(formatBusyStatus("Restoring session activity…"))
     setHomeComposerOpen(false)
     setComposerFocused(true)
     try {
+      const operationsPromise = props.api.listSessionOperations(session.id).then(
+        (operations) => ({ operations }),
+        (error: unknown) => ({ error }),
+      )
       const turns = await props.api.listMessages(session.id, { limit: historyPageSize })
       if (disposed || viewRevision !== sessionViewRevision) return
       applyHistoryPage(turns, "replace")
-      setStatus("● connected  ·  listening for activity")
+      const operationsResult = await operationsPromise
+      if (disposed || viewRevision !== sessionViewRevision) return
+      if ("operations" in operationsResult) {
+        restoreSessionOperations(session.id, operationsResult.operations)
+      } else {
+        setStatus("● connected  ·  listening for activity")
+        noteError(
+          "sessions.operations",
+          `could not restore queued turns · ${operationsResult.error instanceof Error ? operationsResult.error.message : "request failed"}`,
+          session.id,
+          "Turn recovery unavailable",
+        )
+      }
+      setRestoringSessionOperations((current) => current === session.id ? undefined : current)
     } catch (error) {
       if (disposed || viewRevision !== sessionViewRevision) return
+      setRestoringSessionOperations((current) => current === session.id ? undefined : current)
       noteError(
         "sessions.open",
         `could not open session  ·  ${error instanceof Error ? error.message : "request failed"}`,
@@ -1290,7 +1391,9 @@ function LiveAppShell(props: LiveAppProps) {
         const remaining = queuedFollowUps().filter((item) => item.id !== queued.id).length
         queuedOperationIds.delete(queued.id)
         setQueuedFollowUps((current) => current.filter((item) => item.id !== queued.id))
-        setMessages((current) => current.filter((item) => item !== queued.message))
+        if (queued.message) {
+          setMessages((current) => current.filter((item) => item !== queued.message))
+        }
         setStatus(remaining > 0
           ? formatBusyStatus(`${remaining} follow-up${remaining === 1 ? "" : "s"} queued`)
           : activeTurnId()
@@ -1510,6 +1613,11 @@ function LiveAppShell(props: LiveAppProps) {
     const content = text.trim()
     const sessionId = activeSessionId()
     if (!content || !sessionId) return
+    if (restoringSessionOperations() === sessionId) {
+      setRestoreToken({ id: crypto.randomUUID(), text: content })
+      toast.info("Restoring this session's queued turns; try again shortly", "Session recovery")
+      return
+    }
     if (sending() || queuedFollowUps().length > 0) {
       const queueSessionId = activeTurnSessionId ?? queuedFollowUps().at(-1)?.sessionId
       if (queueSessionId && queueSessionId !== sessionId) {
@@ -2021,9 +2129,18 @@ function LiveAppShell(props: LiveAppProps) {
           setStreaming(true)
         },
         onTurnStarted: (sessionId, operationId) => {
-          if (!queuedOperationIds.has(operationId)) return
-          queuedOperationIds.delete(operationId)
-          setQueuedFollowUps((current) => current.filter((item) => item.id !== operationId))
+          observeOperationStatus(operationId, "running")
+          const queued = queuedOperationIds.has(operationId)
+          if (!queued && sessionId !== activeSessionId()) return
+          if (!queued && activeTurnSessionId && activeTurnSessionId !== sessionId) return
+          if (queued) {
+            queuedOperationIds.delete(operationId)
+            const pending = queuedFollowUps().find((item) => item.id === operationId)
+            setQueuedFollowUps((current) => current.filter((item) => item.id !== operationId))
+            if (pending?.message) {
+              setMessages((current) => current.filter((item) => item !== pending.message))
+            }
+          }
           setActiveTurnId(operationId)
           activeTurnSessionId = sessionId
           setCancelling(false)
@@ -2032,16 +2149,22 @@ function LiveAppShell(props: LiveAppProps) {
           setStreaming(true)
           setSending(true)
           if (sessionId === activeSessionId()) {
-            setStatus(formatBusyStatus("Veasel is working on the queued follow-up…"))
+            const waiting = queuedFollowUps().length
+            setStatus(formatBusyStatus(waiting > 0
+              ? `Veasel is working… · ${waiting} follow-up${waiting === 1 ? "" : "s"} queued`
+              : queued ? "Veasel is working on the queued follow-up…" : "Veasel is working…"))
           }
         },
         onTurnCompleted: (sessionId, completion) => {
           const queuedId = completion.operation_id
+          if (queuedId) observeOperationStatus(queuedId, completion.status ?? "completed")
           const pending = queuedFollowUps().find((item) => item.id === queuedId)
           if (queuedId && pending && queuedOperationIds.has(queuedId)) {
             queuedOperationIds.delete(queuedId)
             setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
-            setMessages((current) => current.filter((item) => item !== pending.message))
+            if (pending.message) {
+              setMessages((current) => current.filter((item) => item !== pending.message))
+            }
           }
           void finishTurn(sessionId, completion)
           void refreshSessions()

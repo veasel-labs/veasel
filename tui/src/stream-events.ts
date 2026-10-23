@@ -45,3 +45,38 @@ export function admitAssistantDelta(input: {
 export function appendStreamingDelta(current: string, delta: string): string {
   return current + delta
 }
+
+/** Coalesce rapid SSE fragments within a short window before reactive updates. */
+export function createStreamDeltaBatcher<Timer>(
+	onFlush: (text: string) => void,
+	schedule: (callback: () => void) => Timer,
+	cancel: (timer: Timer) => void,
+) {
+  let pending: string[] = []
+  let timer: Timer | undefined
+
+  const flush = () => {
+    if (timer !== undefined) {
+      cancel(timer)
+      timer = undefined
+    }
+    if (pending.length === 0) return
+    const text = pending.join("")
+    pending = []
+    onFlush(text)
+  }
+
+  return {
+    push(delta: string) {
+      if (delta.length === 0) return
+      pending.push(delta)
+      timer ??= schedule(flush)
+    },
+    flush,
+    clear() {
+      if (timer !== undefined) cancel(timer)
+      timer = undefined
+      pending = []
+    },
+  }
+}

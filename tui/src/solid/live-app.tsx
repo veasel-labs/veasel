@@ -8,6 +8,7 @@ import {
   type SessionTurnCompletion,
   type VeaselApiClient,
 } from "../api-client"
+import { createStreamDeltaBatcher } from "../stream-events"
 import {
   formatHomeSessionStatus,
   formatBusyStatus,
@@ -213,6 +214,11 @@ function LiveAppShell(props: LiveAppProps) {
   }
   const [streaming, setStreaming] = createSignal(false)
   const [streamingText, setStreamingText] = createSignal("")
+  const streamDeltaBatch = createStreamDeltaBatcher(
+    (delta) => setStreamingText((current) => appendStreamingDelta(current, delta)),
+    (flush) => setTimeout(flush, 16),
+    (timer) => clearTimeout(timer),
+  )
   const [sending, setSending] = createSignal(false)
   const { themeId, setThemeId } = useSolidThemeState()
   /**
@@ -1130,6 +1136,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   const openSession = async (session: SolidSessionEntry) => {
     rememberSessionDraft()
+    streamDeltaBatch.clear()
     setSessionDirectory(session.directory)
     const viewRevision = ++sessionViewRevision
     setActiveSessionId(session.id)
@@ -1198,6 +1205,7 @@ function LiveAppShell(props: LiveAppProps) {
   const finishTurn = async (sessionId: string, completion: SessionTurnCompletion) => {
     const operationId = completion.operation_id
     if (!operationId || handledCompletions.has(operationId)) return
+    if (activeTurnId() === operationId) streamDeltaBatch.flush()
     handledCompletions.add(operationId)
     if (handledCompletions.size > 128) {
       const oldest = handledCompletions.values().next().value
@@ -1468,6 +1476,7 @@ function LiveAppShell(props: LiveAppProps) {
     const sessionId = activeSessionId()
     if (!content || !sessionId || sending()) return
     const operationId = crypto.randomUUID()
+    streamDeltaBatch.clear()
     setSending(true)
     setActiveTurnId(operationId)
     activeTurnSessionId = sessionId
@@ -1486,6 +1495,7 @@ function LiveAppShell(props: LiveAppProps) {
         executionPolicyForAgent(executionPolicy()),
       )
       if (result.kind === "async") return
+      streamDeltaBatch.flush()
       if (!disposed && activeSessionId() === sessionId) {
         applyHistoryPage(result.messages, "replace")
       }
@@ -1499,6 +1509,7 @@ function LiveAppShell(props: LiveAppProps) {
       setStatus("● connected  ·  listening for activity")
       setComposerFocused(true)
     } catch (error) {
+      streamDeltaBatch.flush()
       if (turnController?.signal.aborted) {
         setStatus("▲ response cancelled")
       } else {
@@ -1933,7 +1944,7 @@ function LiveAppShell(props: LiveAppProps) {
         },
         onReconnect: () => setStatus(formatBusyStatus("reconnecting to event stream…")),
         onAssistantDelta: (delta) => {
-          setStreamingText((current) => appendStreamingDelta(current, delta))
+          streamDeltaBatch.push(delta)
           setStreaming(true)
         },
         onTurnCompleted: (sessionId, completion) => {
@@ -2243,6 +2254,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   onCleanup(() => {
     disposed = true
+    streamDeltaBatch.clear()
     attention.dispose()
     sessionViewRevision++
     turnController?.abort()

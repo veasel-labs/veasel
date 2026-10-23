@@ -24,16 +24,12 @@ fn agent_tool_allows_parallel_readonly(name string) bool {
 	return name in ['workspace_list_files', 'workspace_read_file', 'workspace_search']
 }
 
-fn agent_tool_batch_allows_parallel_readonly(calls []ProviderToolCall) bool {
-	if calls.len < 2 {
-		return false
+fn agent_tool_readonly_run_end(calls []ProviderToolCall, start int) int {
+	mut end := start
+	for end < calls.len && agent_tool_allows_parallel_readonly(calls[end].function.name) {
+		end++
 	}
-	for call in calls {
-		if !agent_tool_allows_parallel_readonly(call.function.name) {
-			return false
-		}
-	}
-	return true
+	return end
 }
 
 struct ParallelReadonlyToolResult {
@@ -122,6 +118,67 @@ fn execute_parallel_readonly_workspace_tool_worker(app &App, root string, sessio
 		index:  index
 		result: result
 	}
+}
+
+// execute_agent_tool_batch runs adjacent read-only workspace calls concurrently,
+// with every other tool acting as a sequential barrier. Results always remain in
+// provider call order, and repeated file reads stay deduplicated across waves.
+fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string,
+	session_id string, operation_id string, calls []ProviderToolCall,
+	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
+	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn,
+	mut read_paths map[string]bool) ![]string {
+	if calls.len > 1 && agent_tool_readonly_run_end(calls, 0) == calls.len {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		results := execute_parallel_readonly_workspace_tools(app, root, session_id, calls,
+			skill_context.tool_policy, mut read_paths)
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		return results
+	}
+	mut results := []string{len: calls.len}
+	mut index := 0
+	for index < calls.len {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		end := agent_tool_readonly_run_end(calls, index)
+		if end > index {
+			start := index
+			index = end
+			if index - start > 1 {
+				batch_results := execute_parallel_readonly_workspace_tools(app, root, session_id,
+					calls[start..index], skill_context.tool_policy, mut read_paths)
+				for offset, result in batch_results {
+					results[start + offset] = result
+				}
+				if context_error := turn_context_error(mut turn_ctx) {
+					return error(context_error)
+				}
+				continue
+			}
+			index = start
+		}
+		call := calls[index]
+		if path := workspace_read_path_from_call(call) {
+			if read_paths[path] {
+				results[index] = duplicate_workspace_read_note(path)
+				index++
+				continue
+			}
+		}
+		results[index] = sanitize_agent_tool_result(execute_agent_tool_if_allowed(app,
+			mut turn_ctx, root, session_id, operation_id, call, mut skill_context, mcp_bindings,
+			mut mcp_connections, policy)!)
+		if path := workspace_read_path_from_call(call) {
+			read_paths[path] = true
+		}
+		index++
+	}
+	return results
 }
 
 struct AgentToolError {
@@ -397,36 +454,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			provider_context: output.provider_context
 		}
 		tool_calls += output.tool_calls.len
-		mut tool_results := []string{cap: output.tool_calls.len}
-		if agent_tool_batch_allows_parallel_readonly(output.tool_calls) {
-			if context_error := turn_context_error(mut turn_ctx) {
-				return error(context_error)
-			}
-			tool_results = execute_parallel_readonly_workspace_tools(app, root, session_id,
-				output.tool_calls, skill_context.tool_policy, mut read_paths)
-			if context_error := turn_context_error(mut turn_ctx) {
-				return error(context_error)
-			}
-		} else {
-			for call in output.tool_calls {
-				if context_error := turn_context_error(mut turn_ctx) {
-					return error(context_error)
-				}
-				if path := workspace_read_path_from_call(call) {
-					if read_paths[path] {
-						tool_results << duplicate_workspace_read_note(path)
-						continue
-					}
-				}
-				result := sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
-					root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
-					policy)!)
-				if path := workspace_read_path_from_call(call) {
-					read_paths[path] = true
-				}
-				tool_results << result
-			}
-		}
+		tool_results := execute_agent_tool_batch(app, mut turn_ctx, root, session_id, operation_id,
+			output.tool_calls, mut skill_context, mcp_bindings, mut mcp_connections, policy,
+			mut read_paths)!
 		mut trace_observations := []ATIFObservationResult{}
 		for i, call in output.tool_calls {
 			result := tool_results[i]

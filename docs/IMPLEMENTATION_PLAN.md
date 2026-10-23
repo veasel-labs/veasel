@@ -144,9 +144,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
-- [x] When a provider returns two or more workspace list/read/search calls in one
-  round, execute them concurrently and append tool results in provider call
-  order; skill load/read, edits, shell, and MCP stay sequential.
+- [x] Execute contiguous workspace list/read/search calls in a provider round
+  concurrently as ordered waves, with skill load/read, edits, shell, and MCP as
+  sequential barriers. Preserve provider result order and suppress duplicate
+  file reads across waves.
 - [x] Generate bounded single-file diffs, persist proposals, require explicit durable approval, reject stale snapshots, and recover interrupted applications without replay.
 - [x] Add permissioned shell execution with explicit, durable approval. The
   TUI requires opening the exact command, working directory, and timeout before

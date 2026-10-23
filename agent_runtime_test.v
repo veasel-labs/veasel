@@ -684,25 +684,6 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert agent_tool_allows_parallel_readonly('workspace_search')
 	assert !agent_tool_allows_parallel_readonly('workspace_propose_file_edit')
 	assert !agent_tool_allows_parallel_readonly('agent_skill_load')
-	assert !agent_tool_batch_allows_parallel_readonly([
-		ProviderToolCall{
-			id:       'solo'
-			function: ProviderFunctionCall{ name: 'workspace_read_file', arguments: '{"path":"src/main.v"}' }
-		},
-	])
-	assert !agent_tool_batch_allows_parallel_readonly([
-		ProviderToolCall{
-			id:       'read'
-			function: ProviderFunctionCall{ name: 'workspace_read_file', arguments: '{"path":"src/main.v"}' }
-		},
-		ProviderToolCall{
-			id:       'edit'
-			function: ProviderFunctionCall{
-				name:      'workspace_propose_file_edit'
-				arguments: '{"path":"src/main.v","content":"x"}'
-			}
-		},
-	])
 	parallel_calls := [
 		ProviderToolCall{
 			id:       'list-p'
@@ -723,15 +704,56 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 			}
 		},
 	]
-	assert agent_tool_batch_allows_parallel_readonly(parallel_calls)
+	assert agent_tool_readonly_run_end(parallel_calls, 0) == parallel_calls.len
 	mut parallel_read_paths := map[string]bool{}
-	parallel_results := execute_parallel_readonly_workspace_tools(app, root, session.id, parallel_calls,
-		AgentToolPolicy{}, mut parallel_read_paths)
+	mut parallel_context := vcontext.background()
+	mut parallel_turn, cancel_parallel := vcontext.with_timeout(mut parallel_context, 2 * time.second)
+	defer { cancel_parallel() }
+	mut parallel_skill_context := SessionSkillContext{}
+	mut parallel_connections := []PluginMCPConnection{}
+	parallel_results := execute_agent_tool_batch(app, mut parallel_turn, root, session.id,
+		'test-parallel-operation', parallel_calls, mut parallel_skill_context, {},
+		mut parallel_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut parallel_read_paths) or { panic(err) }
 	assert parallel_results.len == 3
 	assert parallel_results[0].contains('src/main.v')
 	assert parallel_results[1].contains('workspace-sentinel')
 	assert parallel_results[2].contains('workspace-sentinel')
 	assert parallel_read_paths['src/main.v']
+	mixed_calls := [
+		parallel_calls[0],
+		parallel_calls[1],
+		ProviderToolCall{
+			id:       'edit-between-waves'
+			function: ProviderFunctionCall{
+				name:      'workspace_propose_file_edit'
+				arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\n"}'
+			}
+		},
+		parallel_calls[2],
+		parallel_calls[1],
+	]
+	assert agent_tool_readonly_run_end(mixed_calls, 0) == 2
+	assert agent_tool_readonly_run_end(mixed_calls, 2) == 2
+	assert agent_tool_readonly_run_end(mixed_calls, 3) == 5
+	mut mixed_context := vcontext.background()
+	mut mixed_turn, cancel_mixed := vcontext.with_timeout(mut mixed_context, 2 * time.second)
+	defer { cancel_mixed() }
+	mut mixed_skill_context := SessionSkillContext{}
+	mut mixed_connections := []PluginMCPConnection{}
+	mut mixed_read_paths := map[string]bool{}
+	mixed_results := execute_agent_tool_batch(app, mut mixed_turn, root, session.id,
+		'test-mixed-operation', mixed_calls, mut mixed_skill_context, {}, mut mixed_connections,
+		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut mixed_read_paths) or {
+		panic(err)
+	}
+	assert mixed_results.len == mixed_calls.len
+	assert mixed_results[0].contains('src/main.v')
+	assert mixed_results[1].contains('workspace-sentinel')
+	assert mixed_results[2].contains('Stored for human review')
+	assert mixed_results[3].contains('workspace-sentinel')
+	assert mixed_results[4].contains('Already provided this turn')
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
 
 	duplicate_batch := [
 		ProviderToolCall{
@@ -848,7 +870,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert proposal_result.contains('"id"')
 	assert !proposal_result.contains('module fixture')
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
-	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 2
 
 	shell_proposal := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'shell-propose-1'

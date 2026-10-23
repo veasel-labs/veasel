@@ -266,11 +266,16 @@ function LiveAppShell(props: LiveAppProps) {
     loadHomeSidebarWidth({}, terminalColumns()),
   )
   const [cancelling, setCancelling] = createSignal(false)
+  const [queuedFollowUps, setQueuedFollowUps] = createSignal<{
+    id: string
+    sessionId: string
+  }[]>([])
   let activeTurnSessionId: string | undefined
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   const [executionPolicy, setExecutionPolicy] = createSignal<ExecutionPolicyId>("ask")
   let turnController: AbortController | undefined
   const handledCompletions = new Set<string>()
+  const queuedOperationIds = new Set<string>()
 
   const commitSidebarWidth = (width: number) => {
     const next = clampHomeSidebarWidth(width, terminalColumns())
@@ -1227,7 +1232,10 @@ function LiveAppShell(props: LiveAppProps) {
       setStreamingText("")
       if (activeSessionId() === sessionId) {
         if (completion.status === "completed") {
-          setStatus("● connected  ·  listening for activity")
+          const waiting = queuedFollowUps().length
+          setStatus(waiting > 0
+            ? formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`)
+            : "● connected  ·  listening for activity")
         } else if (completion.status === "cancelled") {
           setStatus(formatWarnStatus("Turn cancelled"))
         } else if (completion.status === "uncertain") {
@@ -1466,7 +1474,43 @@ function LiveAppShell(props: LiveAppProps) {
   const sendMessage = async (text: string) => {
     const content = text.trim()
     const sessionId = activeSessionId()
-    if (!content || !sessionId || sending()) return
+    if (!content || !sessionId) return
+    if (sending() || queuedFollowUps().length > 0) {
+      const queueSessionId = activeTurnSessionId ?? queuedFollowUps().at(-1)?.sessionId
+      if (queueSessionId && queueSessionId !== sessionId) {
+        setRestoreToken({ id: crypto.randomUUID(), text: content })
+        toast.info("Return to the active session to queue a follow-up", "Turn in progress")
+        return
+      }
+      const queuedId = crypto.randomUUID()
+      queuedOperationIds.add(queuedId)
+      setQueuedFollowUps((current) => [...current, { id: queuedId, sessionId }])
+      setStatus(formatBusyStatus(`Queuing follow-up · ${queuedFollowUps().length} waiting`))
+      try {
+        await props.api.sendMessage(
+          sessionId,
+          content,
+          queuedId,
+          undefined,
+          executionPolicyForAgent(executionPolicy()),
+        )
+      } catch (error) {
+        queuedOperationIds.delete(queuedId)
+        setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
+        noteError(
+          "messages.queue",
+          `follow-up could not be queued · ${error instanceof Error ? error.message : "request failed"}`,
+          sessionId,
+          "Queue failed",
+        )
+        return
+      }
+      try {
+        const latest = await props.api.listMessages(sessionId, { limit: historyPageSize })
+        if (!disposed && activeSessionId() === sessionId) applyHistoryPage(latest, "replace")
+      } catch { /* The queued message is durable; transcript refresh can wait. */ }
+      return
+    }
     const operationId = crypto.randomUUID()
     setSending(true)
     setActiveTurnId(operationId)
@@ -1936,6 +1980,21 @@ function LiveAppShell(props: LiveAppProps) {
           setStreamingText((current) => appendStreamingDelta(current, delta))
           setStreaming(true)
         },
+        onTurnStarted: (sessionId, operationId) => {
+          if (!queuedOperationIds.has(operationId)) return
+          queuedOperationIds.delete(operationId)
+          setQueuedFollowUps((current) => current.filter((item) => item.id !== operationId))
+          setActiveTurnId(operationId)
+          activeTurnSessionId = sessionId
+          setCancelling(false)
+          turnController = new AbortController()
+          setStreamingText("")
+          setStreaming(true)
+          setSending(true)
+          if (sessionId === activeSessionId()) {
+            setStatus(formatBusyStatus("Veasel is working on the queued follow-up…"))
+          }
+        },
         onTurnCompleted: (sessionId, completion) => {
           void finishTurn(sessionId, completion)
           void refreshSessions()
@@ -2350,7 +2409,11 @@ function LiveAppShell(props: LiveAppProps) {
         <SolidComposer
           placeholder={
             inSession()
-              ? undefined
+              ? (sending()
+                ? activeTurnSessionId === activeSessionId()
+                  ? "Message Veasel…  ·  queued after this turn"
+                  : "Turn in another session · return to queue a follow-up"
+                : undefined)
               : "Type /connect · /skills · /help  (Esc dismisses)"
           }
           onSubmit={(text) => {

@@ -160,7 +160,7 @@ fn test_turn_operation_can_be_cancelled_and_is_session_scoped() {
 	mut app := new_app(store, plugin_directory)
 	defer { app.close() }
 	operation_id := uuid.new_v4().str()
-	actual_id, mut turn_ctx, cancel := app.begin_turn_operation('session-a', operation_id) or {
+	actual_id, mut turn_ctx, cancel, _ := app.begin_turn_operation('session-a', operation_id) or {
 		panic(err)
 	}
 	assert actual_id == operation_id

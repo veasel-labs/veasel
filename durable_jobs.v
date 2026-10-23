@@ -1,7 +1,9 @@
 module main
 
 import context as vcontext
+import context.onecontext
 import json2
+import time
 
 // Durable Prefer: respond-async turns persist as queued with request_json before a
 // worker claims them. Queued jobs resume after restart. Running/cancelling rows
@@ -144,12 +146,23 @@ fn (app &App) schedule_durable_session_operation(operation_id string, mut turn_c
 				input.content)
 			return
 		}
-		mut bounded_turn_ctx, cancel_deadline := vcontext.with_timeout(mut turn_ctx,
-			max_agent_turn_duration)
+		// Start the time limit from a fresh background context, then combine its
+		// cancellation with the queued operation. Nesting a timeout around the
+		// cross-thread CancelContext asks V to dispatch its optional deadline
+		// method on a shared interface value.
+		mut deadline_parent := vcontext.background()
+		request_deadline := time.now().add(max_agent_turn_duration)
+		mut deadline_ctx, cancel_deadline := vcontext.with_deadline(mut deadline_parent,
+			request_deadline)
 		defer {
 			cancel_deadline()
 		}
-		_ = app.run_session_message_locked(mut bounded_turn_ctx, id, session, input, operation_id) or {
+		mut bounded_turn_ctx, cancel_bounded := onecontext.merge(turn_ctx, deadline_ctx)
+		defer {
+			cancel_bounded()
+		}
+		_ = app.run_session_message_locked(mut bounded_turn_ctx, id, session, input, operation_id,
+			request_deadline) or {
 			app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
 			return
 		}

@@ -19,10 +19,13 @@ struct ActiveTurnOperation {
 	cancel     vcontext.CancelFn @[required]
 }
 
-fn (app &App) begin_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn) {
+fn (app &App) begin_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn, time.Time) {
 	mut background := vcontext.background()
-	turn_ctx, cancel := vcontext.with_timeout(mut background, max_agent_turn_duration)
-	return app.register_turn_operation(session_id, requested_id, turn_ctx, cancel)
+	deadline := time.now().add(max_agent_turn_duration)
+	turn_ctx, cancel := vcontext.with_deadline(mut background, deadline)
+	operation_id, registered_ctx, registered_cancel := app.register_turn_operation(session_id,
+		requested_id, turn_ctx, cancel)!
+	return operation_id, registered_ctx, registered_cancel, deadline
 }
 
 fn (app &App) begin_queued_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn) {
@@ -31,11 +34,13 @@ fn (app &App) begin_queued_turn_operation(session_id string, requested_id string
 	return app.register_turn_operation(session_id, requested_id, turn_ctx, cancel)
 }
 
-fn (app &App) begin_requested_session_turn(session_id string, requested_id string, respond_async bool) !(string, vcontext.Context, vcontext.CancelFn) {
+fn (app &App) begin_requested_session_turn(session_id string, requested_id string, respond_async bool) !(string, vcontext.Context, vcontext.CancelFn, ?time.Time) {
 	if respond_async {
-		return app.begin_queued_turn_operation(session_id, requested_id)
+		operation_id, turn_ctx, cancel := app.begin_queued_turn_operation(session_id, requested_id)!
+		return operation_id, turn_ctx, cancel, none
 	}
-	return app.begin_turn_operation(session_id, requested_id)
+	operation_id, turn_ctx, cancel, deadline := app.begin_turn_operation(session_id, requested_id)!
+	return operation_id, turn_ctx, cancel, deadline
 }
 
 fn (app &App) register_turn_operation(session_id string, requested_id string, turn_ctx vcontext.Context,

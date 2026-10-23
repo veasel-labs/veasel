@@ -37,6 +37,8 @@ const max_provider_response_bytes = 1_000_000
 const max_provider_stream_bytes = 16_000_000
 const max_provider_model_catalog_bytes = 1_000_000
 const max_provider_model_catalog_entries = 500
+const opencode_go_chat_base_url = 'https://opencode.ai/inference/go/openai/v1'
+const opencode_go_models_url = 'https://opencode.ai/inference/go/v1/models'
 // Request-side Anthropic prompt caching. Default `auto` emits ephemeral
 // cache_control (top-level automatic + system-block breakpoint). Set to `off`
 // to disable; `1h` requests the extended TTL. This only shapes requests—
@@ -578,7 +580,7 @@ mut:
 
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
-	url := '${secure_endpoint(config.base_url)!}/models'
+	url := provider_model_catalog_url(config)!
 	verify := provider_tls_verify_path(url)!
 	mut headers := http.new_header(key: .accept, value: 'application/json')
 	match info.protocol {
@@ -616,6 +618,17 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 	}
 	models := parse_provider_model_catalog(info.protocol, response.body)!
 	return filter_provider_chat_models(config.provider, models)
+}
+
+fn provider_model_catalog_url(config ModelConfig) !string {
+	base_url := secure_endpoint(config.base_url)!
+	// OpenCode Go serves model discovery from the shared `/v1/models` path,
+	// while each model family's completion endpoint has an API-family segment.
+	// Keep custom endpoints composable by special-casing only the shipped Go URL.
+	if config.provider == 'opencode-go' && base_url == opencode_go_chat_base_url {
+		return opencode_go_models_url
+	}
+	return '${base_url}/models'
 }
 
 fn filter_provider_chat_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
@@ -1269,10 +1282,14 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 
 fn ignore_provider_text_delta(_ string) ! {}
 
+fn openai_chat_completions_url(config ModelConfig) !string {
+	return '${secure_endpoint(config.base_url)!}/chat/completions'
+}
+
 fn (provider OpenAICompatibleProvider) complete(mut turn_ctx vcontext.Context, config ModelConfig,
 	messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	url := '${secure_endpoint(config.base_url)!}/chat/completions'
+	url := openai_chat_completions_url(config)!
 	request := build_openai_chat_request(config, messages, tools)
 	mut stream_state := &OpenAIStreamOutput{}
 	callback := fn [mut stream_state, on_text_delta] (data string) ! {

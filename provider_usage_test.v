@@ -52,6 +52,23 @@ fn test_opencode_go_requests_use_stable_session_ids() {
 	}) == ''
 }
 
+fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
+	info := model_provider_info('opencode-go') or { panic(err) }
+	assert info.base_url == opencode_go_chat_base_url
+	assert openai_chat_completions_url(ModelConfig{
+		provider: 'opencode-go'
+		base_url: info.base_url
+	})! == 'https://opencode.ai/inference/go/openai/v1/chat/completions'
+	assert provider_model_catalog_url(ModelConfig{
+		provider: 'opencode-go'
+		base_url: info.base_url
+	})! == opencode_go_models_url
+	assert provider_model_catalog_url(ModelConfig{
+		provider: 'opencode-go'
+		base_url: 'https://models.example.test/v1'
+	})! == 'https://models.example.test/v1/models'
+}
+
 fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	mut fixture := &OpenCodeGoHeaderFixture{}
 	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }

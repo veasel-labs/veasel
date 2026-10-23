@@ -54,6 +54,7 @@ import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
+import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
 import {
   recordLiveLastError,
@@ -762,6 +763,28 @@ function LiveAppShell(props: LiveAppProps) {
       connection: "LOCAL · loopback",
       mcpServers,
     })
+  }
+
+  const openLiveExecutionHistory = async () => {
+    setComposerFocused(false)
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Execution history",
+        message: "Open a session to browse its durable execution history.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    try {
+      openExecutionHistoryDialog(dialog, await props.api.listSessionOperations(sessionId))
+    } catch (error) {
+      openDialogAlert(dialog, {
+        title: "Execution history unavailable",
+        message: error instanceof Error ? error.message : "Could not load this session's executions.",
+        onConfirm: () => setComposerFocused(true),
+      })
+    }
   }
 
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
@@ -1722,6 +1745,10 @@ function LiveAppShell(props: LiveAppProps) {
           onConfirm: () => setComposerFocused(true),
         })
         return
+      case "runs":
+        dismissHomeComposer()
+        void openLiveExecutionHistory()
+        return
       case "help":
         dismissHomeComposer()
         setComposerFocused(false)
@@ -2331,6 +2358,9 @@ function LiveAppShell(props: LiveAppProps) {
         showSessionTimeline: () => openSessionTimeline(),
         showStatus: () => {
           void openLiveStatus()
+        },
+        showRuns: () => {
+          void openLiveExecutionHistory()
         },
         showExport: () => openLiveExport(),
         showMcp: () => {

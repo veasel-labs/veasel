@@ -44,6 +44,25 @@ export type SessionTurnCompletion = {
   error?: string
 }
 
+export type ApiSessionOperation = {
+  id: string
+  session_id: string
+  status: "queued" | "running" | "cancelling" | "completed" | "failed" | "cancelled" | "uncertain" | string
+  provider: string
+  model: string
+  error: string
+  input_tokens?: number
+  output_tokens?: number
+  usage_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
+  reasoning_tokens?: number
+  reasoning_reported?: boolean
+  created_at: string
+  updated_at: string
+}
+
 export type SendMessageResult =
   | { kind: "async"; operationId: string }
   | { kind: "sync"; messages: ChatTurn[] }
@@ -380,6 +399,15 @@ export class VeaselApiClient {
     )
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
     return await response.json() as ApiSessionUsageSummary
+  }
+
+  async listSessionOperations(sessionId: string): Promise<ApiSessionOperation[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/operations`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    return await response.json() as ApiSessionOperation[]
   }
 
   async listSessionMcpServers(sessionId: string): Promise<ApiSessionPluginMcpServer[]> {

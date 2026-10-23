@@ -263,8 +263,11 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] TUI `/map` shows the extractive workspace repository map with measured
   UTF-8 bytes, bytes/4 bound, ranked paths, and an optional ranking hint.
   Help documents Windows AppContainer alongside Bubblewrap/Seatbelt.
-- [ ] General execution history and a durable usage/cost dashboard beyond
-  per-session reported tokens and opt-in ATIF `final_metrics`.
+- [ ] Cross-session execution history and a durable usage/cost dashboard
+  beyond per-session reported tokens and opt-in ATIF `final_metrics`. The Solid
+  TUI now exposes up to 200 retained terminal runs plus active operations via
+  `/runs`, and Home Status shows compact all-session usage; a cross-session
+  searchable history and durable dashboard remain open.
 - [x] Request-side Anthropic prompt-cache markers: default ephemeral
   `cache_control` (top-level automatic + system-block breakpoint), opt-out /
   `1h` TTL via `VEASEL_ANTHROPIC_PROMPT_CACHE`, capability

@@ -98,6 +98,8 @@ describe("resolveLiveSlash", () => {
     expect(resolveLiveSlash("/map")).toEqual({ kind: "map", hint: "" })
     expect(resolveLiveSlash("/map boot")).toEqual({ kind: "map", hint: "boot" })
     expect(resolveLiveSlash("/history older")).toEqual({ kind: "history-older" })
+    expect(resolveLiveSlash("/runs")).toEqual({ kind: "runs" })
+    expect(resolveLiveSlash("/history runs")).toEqual({ kind: "runs" })
     expect(resolveLiveSlash("/history")).toEqual({ kind: "history-hint" })
   })
 

@@ -31,6 +31,7 @@ export type LiveSlashAction =
   | { kind: "map"; hint: string }
   | { kind: "history-older" }
   | { kind: "history-hint" }
+  | { kind: "runs" }
   | { kind: "unsupported"; command: string }
   | { kind: "unknown"; command: string }
 
@@ -66,6 +67,7 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
   if (isConnectCommand(content)) return { kind: "connect" }
   if (isModelSettingsCommand(content)) return { kind: "models" }
 
+  if (content === "/runs" || content === "/history runs") return { kind: "runs" }
   if (content === "/history older") return { kind: "history-older" }
   if (/^\/history(?:\s|$)/.test(content)) return { kind: "history-hint" }
 

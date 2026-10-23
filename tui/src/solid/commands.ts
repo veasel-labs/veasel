@@ -72,6 +72,8 @@ export type PaletteActionHandlers = {
   showOpen: () => void
   /** Rich status dialog (MCP, model, usage). */
   showStatus: () => void
+  /** Open durable executions for the active session. */
+  showRuns: () => void
   /** Open agent picker dialog. */
   showAgent: () => void
   /** Open model variant picker dialog. */
@@ -329,6 +331,14 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
       run: () => handlers.showStatus(),
     },
     {
+      id: "veasel.execution.history",
+      title: "Execution history",
+      description: "Inspect durable runs for the active session",
+      group: "session",
+      keywords: ["runs", "history", "operations", "executions"],
+      run: () => handlers.showRuns(),
+    },
+    {
       id: "veasel.agent.picker",
       title: "Select agent",
       description: "Execution policy or demo agent profile",
@@ -428,6 +438,7 @@ export type LivePaletteHandlers = {
   showShellOutput: () => void
   showSessionTimeline: () => void
   showStatus: () => void
+  showRuns: () => void
   showExport: () => void
   showMcp: () => void
   showPlugins: () => void
@@ -703,6 +714,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["status", "info", "usage", "connection", "mcp"],
       shortcut: "Ctrl+I",
       run: () => handlers.showStatus(),
+    },
+    {
+      id: "veasel.execution.history",
+      title: "Execution history",
+      description: "Inspect durable runs for the active session",
+      group: "session",
+      keywords: ["runs", "history", "operations", "executions"],
+      run: () => handlers.showRuns(),
     },
     {
       id: "veasel.error.details",

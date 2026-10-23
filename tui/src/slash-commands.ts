@@ -92,6 +92,7 @@ export const slashCommands: SlashCommand[] = [
   { name: "/commands", category: "approvals", description: "List proposed shell commands waiting for approval; add text to filter by command or cwd" },
   { name: "/command", category: "approvals", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", category: "session", description: "Load earlier messages in this session" },
+  { name: "/runs", category: "session", description: "Browse durable execution history for this session" },
   { name: "/usage", category: "session", description: "Show provider-reported token totals for this session" },
   { name: "/status", category: "session", description: "Session, model, and connection snapshot (same as /usage)" },
   { name: "/map", category: "session", description: "Show the extractive workspace repository map; add text to hint ranking" },

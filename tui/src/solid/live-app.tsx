@@ -51,7 +51,6 @@ import {
   type ExecutionPolicyId,
 } from "./agent-policy"
 import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
-import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
@@ -91,6 +90,7 @@ import { skillCatalogFromPlugins } from "./skills-inventory"
 import { type SkillCatalogEntry } from "../skill-autocomplete"
 import { SessionTabs } from "./component/session-tabs"
 import { solidMcpServersFromCatalog } from "./mcp-inventory"
+import { createLiveMcpWorkflows, openLiveMcpDialog } from "./live-mcp-dialog"
 import { openDialogExportOptions } from "./ui/dialog-export-options"
 import { openDialogExportResult } from "./ui/dialog-export-result"
 import { openDialogPrompt } from "./ui/dialog-prompt"
@@ -110,7 +110,7 @@ import {
   sessionTabsFromEntries,
 } from "./session-tabs"
 import { buildLivePaletteCommands, nextBuiltinThemeId, paletteShortcut } from "./commands"
-import { resolveLiveSlash, splitMcpArgs } from "./live-slash"
+import { resolveLiveSlash } from "./live-slash"
 import { createAttentionNotifier } from "./attention"
 import { pageMayHaveOlder, type ChatTurn } from "../chat-history"
 import { formatRepositoryMapSummary } from "../repository-map"
@@ -951,73 +951,27 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
-  const openLiveMcp = async (filter = "") => {
-    setComposerFocused(false)
-    const sessionId = activeSessionId()
-    try {
-      const [configured, trusted] = await Promise.all([
-        props.api.listConfiguredMcpServers(directory()),
-        sessionId
-          ? props.api.listSessionMcpServers(sessionId)
-          : Promise.resolve([] as Awaited<ReturnType<typeof props.api.listSessionMcpServers>>),
-      ])
-      const needle = filter.trim().toLowerCase()
-      const servers = solidMcpServersFromCatalog(configured, trusted).filter((server) => {
-        if (!needle) return true
-        const haystack = `${server.name} ${server.transport} ${server.status} ${server.scope ?? ""}`.toLowerCase()
-        return needle.split(/\s+/).every((token) => haystack.includes(token))
-      })
-      if (servers.length === 0) {
-        openDialogAlert(dialog, {
-          title: "MCP",
-          message: needle
-            ? `No MCP servers match “${filter.trim()}”.`
-            : "No configured or trusted MCP servers yet. Add with /mcp add [user|project] stdio|http … or configure ~/.config/veasel, then review and /mcp trust.",
-          onConfirm: () => setComposerFocused(true),
-        })
-        return
-      }
-      openMcpDialog(dialog, {
-        servers,
-        onSelect: (server) => {
-          const configuredScope = server.scope === "user" || server.scope === "project"
-          const trusted = server.status === "trusted" || server.status === "connected"
-          const options = [
-            ...(server.status === "disabled" ? [] : [{ title: trusted ? "Revoke session trust" : "Trust for this session", value: trusted ? "untrust" : "trust", description: "MCP calls still require per-call review" }]),
-            ...(configuredScope ? [
-              { title: server.status === "disabled" ? "Enable server" : "Disable server", value: server.status === "disabled" ? "enable" : "disable", description: `${server.scope} configuration` },
-              { title: "Remove server…", value: "remove", description: `${server.scope} configuration · confirmation required` },
-            ] : []),
-          ]
-          if (options.length === 0) {
-            toast.info(`${server.status} · ${server.name}`, "MCP")
-            setComposerFocused(true)
-            return
-          }
-          openDialogSelect(dialog, {
-            title: `MCP · ${server.name}`,
-            options,
-            dismissOnSelect: false,
-            onCancel: () => setComposerFocused(true),
-            onSelect: (option) => {
-              dialog.clear()
-              if (option.value === "trust" || option.value === "untrust") {
-                void runLiveMcpTrustAction(option.value === "trust", server.name)
-              } else if (option.value === "enable" || option.value === "disable" || option.value === "remove") {
-                void runLiveMcpConfigure(option.value, server.scope as "user" | "project", server.name.slice("configured/".length))
-              }
-            },
-            footer: "Trust permits connection only · review each tool call",
-          })
-        },
-      })
-    } catch (error) {
-      openDialogAlert(dialog, {
-        title: "MCP",
-        message: error instanceof Error ? error.message : "could not list MCP servers",
-        onConfirm: () => setComposerFocused(true),
-      })
-    }
+  const mcpWorkflows = createLiveMcpWorkflows({
+    api: props.api,
+    dialog,
+    toast,
+    directory,
+    sessionId: activeSessionId,
+    setComposerFocused,
+  })
+  const openLiveMcp = (filter = "") => {
+    const context = { directory: directory(), sessionId: activeSessionId() }
+    return openLiveMcpDialog({
+      api: props.api,
+      dialog,
+      toast,
+      ...context,
+      setComposerFocused,
+      isCurrentContext: () => directory() === context.directory && activeSessionId() === context.sessionId,
+      runTrustAction: (trusted, key, target) => { void mcpWorkflows.runTrustAction(trusted, key, target) },
+      runConfigure: (action, scope, name, target) => { void mcpWorkflows.runConfigure(action, scope, name, target) },
+      filter,
+    })
   }
 
   const openLivePlugins = async (filter = "") => {
@@ -1478,171 +1432,6 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
-  const runLiveMcpTrustAction = async (trusted: boolean, key?: string) => {
-    const sessionId = activeSessionId()
-    if (!sessionId) {
-      openDialogAlert(dialog, {
-        title: "Session required",
-        message: "Open a session before trusting an MCP server.",
-        onConfirm: () => setComposerFocused(true),
-      })
-      return
-    }
-    if (!key) {
-      openDialogAlert(dialog, {
-        title: "MCP server name required",
-        message: `Use /mcp ${trusted ? "trust" : "untrust"} <plugin>/<server>. Open /mcp to review available and trusted servers.`,
-        onConfirm: () => setComposerFocused(true),
-      })
-      return
-    }
-    const separator = key.indexOf("/")
-    if (separator <= 0 || separator === key.length - 1) {
-      openDialogAlert(dialog, {
-        title: "Invalid MCP server name",
-        message: "Use the plugin/server key shown by /mcp, for example /mcp trust configured/echo-tools.",
-        onConfirm: () => setComposerFocused(true),
-      })
-      return
-    }
-    const pluginName = key.slice(0, separator)
-    const serverName = key.slice(separator + 1)
-    try {
-      await props.api.setSessionMcpServerTrust(sessionId, pluginName, serverName, trusted)
-      toast.success(
-        trusted
-          ? `Trusted ${pluginName}/${serverName}; it connects on the next turn. Each tool call still needs review.`
-          : `Revoked trust for ${pluginName}/${serverName}; it will not connect on future turns.`,
-        "MCP",
-      )
-      setComposerFocused(true)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update MCP trust", "MCP")
-      setComposerFocused(true)
-    }
-  }
-
-  const runLiveMcpAdd = async (input: Extract<ReturnType<typeof resolveLiveSlash>, { kind: "mcp-add" }>) => {
-    const root = directory()
-    if (input.scope === "project" && (!activeSessionId() || !root)) {
-      openDialogAlert(dialog, { title: "Workspace required", message: "Open a workspace before adding a project-scoped MCP server.", onConfirm: () => setComposerFocused(true) })
-      return
-    }
-    const add = async () => {
-      try {
-        const server = await props.api.addConfiguredMcpServer({
-          name: input.name,
-          transport: input.transport,
-          command: input.command,
-          args: input.args,
-          url: input.url,
-          scope: input.scope,
-          directory: input.scope === "project" ? root : undefined,
-        })
-        toast.success(`Added configured/${server.name} · ${server.scope ?? input.scope}. Review it, then use /mcp trust configured/${server.name}; tool calls still need approval.`, "MCP")
-      } catch (error) {
-        openDialogAlert(dialog, { title: "MCP server could not be added", message: error instanceof Error ? error.message : "request failed", onConfirm: () => setComposerFocused(true) })
-      } finally {
-        setComposerFocused(true)
-      }
-    }
-    try {
-      const catalog = await props.api.listConfiguredMcpServers(root)
-      const existing = catalog.servers.find((server) => server.name === input.name && server.scope === input.scope)
-      if (existing) {
-        openDialogConfirm(dialog, {
-          title: "Replace configured MCP server?",
-          message: `${input.name} already exists in ${input.scope} scope (${existing.transport}${existing.command ? ` · ${existing.command}` : existing.url_origin ? ` · ${existing.url_origin}` : ""}). Replace its saved configuration?`,
-          label: { confirm: "Replace server", cancel: "Keep existing" },
-          onClose: () => setComposerFocused(true),
-          onConfirm: () => { void add() },
-        })
-      } else await add()
-    } catch (error) {
-      openDialogAlert(dialog, { title: "MCP configuration unavailable", message: error instanceof Error ? error.message : "could not check existing servers", onConfirm: () => setComposerFocused(true) })
-      setComposerFocused(true)
-    }
-  }
-
-  const openLiveMcpAddWizard = () => {
-    setComposerFocused(false)
-    const choices = [
-      { title: "User · stdio", value: "user stdio", description: "Local process · available to your user" },
-      { title: "User · Streamable HTTP", value: "user http", description: "HTTPS remote or loopback HTTP endpoint" },
-      ...(activeSessionId() ? [
-        { title: "Project · stdio", value: "project stdio", description: "Local process · saved in this workspace" },
-        { title: "Project · Streamable HTTP", value: "project http", description: "HTTPS remote or loopback HTTP endpoint · saved in this workspace" },
-      ] : []),
-    ]
-    openDialogSelect(dialog, {
-      title: "Add MCP server",
-      options: choices,
-      dismissOnSelect: false,
-      onCancel: () => setComposerFocused(true),
-      onSelect: (choice) => {
-        dialog.clear()
-        const [scope, transport] = choice.value.split(" ") as ["user" | "project", "stdio" | "http"]
-        const description = transport === "stdio"
-          ? "Enter a server name, executable, and optional arguments. Nothing is launched until you trust the server."
-          : "Enter a server name and endpoint. Remote servers require HTTPS; HTTP is accepted only for loopback. Nothing connects until trust."
-        openDialogPrompt(dialog, {
-          title: transport === "stdio" ? "Configure stdio MCP" : "Configure Streamable HTTP MCP",
-          description,
-          placeholder: transport === "stdio" ? "name npx -y package-name" : "name https://example.com/mcp",
-          confirmLabel: "Validate and add",
-          onCancel: () => setComposerFocused(true),
-          onConfirm: (value) => queueMicrotask(() => {
-            const parts = splitMcpArgs(value.trim())
-            const minimum = transport === "stdio" ? 2 : 2
-            if (parts.length < minimum) {
-              openDialogAlert(dialog, {
-                title: "MCP server details required",
-                message: transport === "stdio"
-                  ? "Enter a server name and executable, for example: docs npx -y @example/docs-mcp."
-                  : "Enter a server name and an HTTPS MCP endpoint, for example: docs https://example.com/mcp.",
-                onConfirm: () => setComposerFocused(true),
-              })
-              return
-            }
-            if (transport === "stdio") {
-              void runLiveMcpAdd({ kind: "mcp-add", scope, transport, name: parts[0]!, command: parts[1]!, args: parts.slice(2) })
-            } else {
-              void runLiveMcpAdd({ kind: "mcp-add", scope, transport: "streamable-http", name: parts[0]!, url: parts[1]! })
-            }
-          }),
-        })
-      },
-    })
-  }
-
-  const runLiveMcpConfigure = async (action: "remove" | "enable" | "disable", scope: "user" | "project", name: string) => {
-    const root = directory()
-    if (scope === "project" && (!activeSessionId() || !root)) {
-      openDialogAlert(dialog, { title: "Workspace required", message: "Open the workspace that owns this project-scoped MCP server.", onConfirm: () => setComposerFocused(true) })
-      return
-    }
-    const perform = async () => {
-      try {
-        if (action === "remove") await props.api.removeConfiguredMcpServer(name, scope, scope === "project" ? root : undefined)
-        else await props.api.updateConfiguredMcpServer(name, { enabled: action === "enable", scope, directory: scope === "project" ? root : undefined })
-        toast.success(`${action === "remove" ? "Removed" : action === "enable" ? "Enabled" : "Disabled"} ${scope}-scope MCP server · ${name}`, "MCP")
-      } catch (error) {
-        openDialogAlert(dialog, { title: "MCP server update failed", message: error instanceof Error ? error.message : "request failed", onConfirm: () => setComposerFocused(true) })
-      } finally {
-        setComposerFocused(true)
-      }
-    }
-    if (action === "remove") {
-      openDialogConfirm(dialog, {
-        title: "Remove configured MCP server?",
-        message: `Remove ${name} from ${scope} configuration? This does not remove its executable or remote service.`,
-        label: { confirm: "Remove server", cancel: "Keep server" },
-        onClose: () => setComposerFocused(true),
-        onConfirm: () => { void perform() },
-      })
-    } else await perform()
-  }
-
   const handleComposerSubmit = (text: string) => {
     const action = resolveLiveSlash(text)
     switch (action.kind) {
@@ -1689,19 +1478,19 @@ function LiveAppShell(props: LiveAppProps) {
         return
       case "mcp-trust":
         dismissHomeComposer()
-        void runLiveMcpTrustAction(action.trusted, action.key)
+        void mcpWorkflows.runTrustAction(action.trusted, action.key)
         return
       case "mcp-add":
         dismissHomeComposer()
-        void runLiveMcpAdd(action)
+        void mcpWorkflows.runAdd(action)
         return
       case "mcp-add-wizard":
         dismissHomeComposer()
-        openLiveMcpAddWizard()
+        mcpWorkflows.openAddWizard()
         return
       case "mcp-configure":
         dismissHomeComposer()
-        void runLiveMcpConfigure(action.action, action.scope, action.name)
+        void mcpWorkflows.runConfigure(action.action, action.scope, action.name)
         return
       case "plugins":
         dismissHomeComposer()

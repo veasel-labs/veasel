@@ -60,6 +60,7 @@ test("queues a follow-up without replacing the active turn, then promotes it", a
     setup.mockInput.typeText("Follow-up turn")
     setup.mockInput.pressEnter()
     await until(() => posts.length === 2)
+    await until(() => setup.captureCharFrame().includes("Follow-up turn"))
     const [firstId, queuedId] = posts
     expect(queuedId).not.toBe(firstId)
 

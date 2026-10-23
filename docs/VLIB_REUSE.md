@@ -7,7 +7,7 @@ supported V compiler's `vlib/`. Prefer its maintained modules when they cover
 the need. A gap or a required product-specific policy is a valid reason for
 Veasel code or a third-party adapter; importing unrelated libraries is not.
 This map was verified against V
-`407c52edddca9715fb57e6571afeef0d193f2465`, the revision pinned in
+`ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`, the revision pinned in
 `.v-version` and built by the current CI. Recheck the APIs during compiler
 upgrades.
 
@@ -29,7 +29,7 @@ It does not mean importing modules unrelated to a coding agent.
 | Synchronization | `vlib/sync/` | Use mutexes, channels, wait groups and timers for shared state and workers; define ownership, shutdown and cancellation at the application layer. |
 | Cancellation | `vlib/context/` | Use cancel/deadline contexts for jobs and provider calls; explicitly bridge cancellation to child process signals because V contexts do not stop processes by themselves. |
 | Child processes | `vlib/os/process.v`, `vlib/os/command.c.v` | Use literal argument arrays, working directories, bounded output and explicit process lifecycle. Never interpolate untrusted input into `os.execute` shell strings. |
-| Filesystem | `vlib/os/os.v`, `vlib/os/filepath.v` | Reuse path handling, `read_file`, `write_file`, `walk`, `walk_ext`, `walk_dir`, and `glob`. Add root containment, symlink and permission policy in Veasel. |
+| Filesystem | `vlib/os/os.v`, `vlib/os/filepath.v`, `vlib/os/file.c.v` (`File.read_bytes_into`) | Reuse path handling, `stat`, bounded positional reads, `write_file`, `walk`, `walk_ext`, `walk_dir`, and `glob`. Size bounded text-read buffers from the file's stat size plus a sentinel byte instead of allocating the maximum for every file; retain root containment, symlink and permission policy in Veasel. |
 | Text search | `vlib/regex/` | Use for bounded filtering/matching. `vlib` has no indexed, ripgrep-class source search; use an explicit `rg` tool adapter or a measured bounded walker rather than claiming equivalent search. |
 | Diffs | `vlib/arrays/diff/` | Evaluate generic Myers-style diff and patch generation for line changes before introducing another diff engine; wrap it with file/path policy and tests. |
 | Git | No high-level Git client module found in this checkout. | Use the shell-free process adapter to invoke Git with fixed argument arrays; parse structured output and test each supported Git version. |

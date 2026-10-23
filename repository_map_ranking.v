@@ -117,11 +117,11 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		mut matched := false
 		for parts in path_segment_parts {
 			for part in parts {
-				match_weight := repository_map_lexical_match_weight(part, ident)
+				match_weight := repository_map_lexical_match_weight_lower(part, normalized)
 				if match_weight > 0.0 {
 					// An exact word inside a compound filename (subagent-job.ts)
 					// is stronger path evidence than general source-token overlap.
-					if part == ident.to_lower() {
+					if part == normalized {
 						score += 120.0
 						exact_path_term_matches++
 					} else {
@@ -234,6 +234,12 @@ fn repository_map_lexical_candidates(term string) []string {
 fn repository_map_lexical_match_weight(left string, right string) f64 {
 	a := left.to_lower()
 	b := right.to_lower()
+	return repository_map_lexical_match_weight_lower(a, b)
+}
+
+// Both arguments are already lowercase; path ranking prepares the hint once
+// and reuses it across the candidate's path components.
+fn repository_map_lexical_match_weight_lower(a string, b string) f64 {
 	if a == b {
 		// This also matches a word inside compound names such as
 		// `litellm_model`; whole path-segment matches already scored above.

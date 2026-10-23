@@ -36,8 +36,11 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
 
 - `tui/bunfig.toml` preload `@opentui/solid/preload` (dev + test)
 - `tui/tsconfig.json` `jsx: preserve` + `jsxImportSource: @opentui/solid`
-- **Default entry:** `bun run start` → `src/solid/main.tsx` → `LiveApp`
+- **Default entry:** `bun run start` → `src/entry.ts` →
+  `src/solid/main.tsx` → `LiveApp`
   (loopback `api-client.ts`, session home, SSE deltas, MODEL SETTINGS).
+  The standalone CLI entry handles `--help` and `--version` without loading the
+  API client or Solid UI graph; interactive launches import the application.
   Standalone `build:standalone` defaults to Solid; `--classic` builds the
   retired imperative shell at `src/classic-main.ts`.
 - Solid UI modules under `tui/src/solid/` with Veasel mint chrome (no OpenCode branding)

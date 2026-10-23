@@ -66,6 +66,15 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 		idents: ['running']
 	}) == 24.0
 	assert score_repository_map_path('aider/args.py', arguments) > score_repository_map_path('tests/test_args.py', arguments)
+	model_behavior := extract_repository_map_hints('litellm model that calls the LLM API')
+	assert repository_map_is_package_index_path('src/minisweagent/models/__init__.py')
+	assert !repository_map_is_package_index_path('src/minisweagent/models/litellm_model.py')
+	assert !repository_map_hint_mentions_package_indexes(model_behavior)
+	assert repository_map_content_is_reexport_only('from .litellm_model import LiteLLMModel\n__all__ = ["LiteLLMModel"]')
+	assert repository_map_content_is_reexport_only("export { createClient } from './client.js'\n")
+	assert !repository_map_content_is_reexport_only('export function createClient() {}')
+	export_query := extract_repository_map_hints('show the package exports and entrypoint')
+	assert repository_map_hint_mentions_package_indexes(export_query)
 	paired := extract_repository_map_hints('Please fix src/agents/default.py')
 	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)
 	assert repository_map_lexically_related('policy', 'policies')

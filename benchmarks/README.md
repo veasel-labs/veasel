@@ -179,6 +179,22 @@ The per-query results and run fingerprints are checked in:
 [`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23.json),
 and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23.json).
 
+A follow-up implementation-bias change demotes unrequested test files and
+applies a small penalty to package indexes only when their source is entirely
+imports/re-exports. Executable package modules remain eligible. The penalty is
+disabled for explicit export/index/entrypoint and test queries. On the same
+pinned checkouts and cases, mini-swe-agent improved from 3/4 to 4/4 recall@3;
+its `litellm_model.py` moved from rank 4 to rank 2. Aider remained 4/6 at recall@3 and 6/6 at recall@10;
+`aider/args.py` moved from rank 6 to rank 5, while the history-formatting miss
+remains at rank 4. SWE-agent stayed 6/6 at both cutoffs. This is one additional
+top-three hit across these small labeled sets, with no aggregate regressions;
+it does not establish general semantic retrieval quality. Candidate source
+fingerprints and per-query rankings are recorded in the
+[`Aider`](reports/repo-map-recall-aider-2026-10-23-implementation-bias.json),
+[`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23-implementation-bias.json),
+and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23-implementation-bias.json)
+reports.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

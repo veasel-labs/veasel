@@ -212,6 +212,11 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 			}
 			entry.score += symbol_relevance
 			entry.score += score_repository_map_content(content, hints)
+			if repository_map_is_package_index_path(normalized)
+				&& !repository_map_hint_mentions_package_indexes(hints)
+				&& repository_map_content_is_reexport_only(content) {
+				entry.score -= 120.0
+			}
 			count_bonus := f64(entry.symbols.len)
 			entry.score += if count_bonus > repository_map_symbol_count_bonus_cap {
 				repository_map_symbol_count_bonus_cap
@@ -450,7 +455,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// merely import the same symbols. A query explicitly about tests keeps them
 	// eligible for the existing exact and source/test-pair signals.
 	if repository_map_is_test_path(path) && !repository_map_hint_mentions_tests(hints) {
-		score -= 120.0
+		score -= 240.0
 	}
 	// Test/source pairing: mention of foo.v or stem foo also elevates
 	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
@@ -584,6 +589,44 @@ fn repository_map_hint_mentions_tests(hints RepositoryMapHintSet) bool {
 		}
 	}
 	return false
+}
+
+fn repository_map_is_package_index_path(path string) bool {
+	base := os.file_name(path).to_lower()
+	return base in ['__init__.py', '__init__.pyi', 'mod.rs', 'index.ts', 'index.tsx', 'index.js',
+		'index.jsx', 'index.mjs', 'index.cjs', 'index.d.ts']
+}
+
+fn repository_map_hint_mentions_package_indexes(hints RepositoryMapHintSet) bool {
+	for ident in hints.idents {
+		if ident.to_lower() in ['entrypoint', 'entrypoints', 'export', 'exports', 'reexport',
+			'reexports', 'index'] {
+			return true
+		}
+	}
+	return false
+}
+
+fn repository_map_content_is_reexport_only(content string) bool {
+	mut found_reexport := false
+	for raw_line in content.split('\n') {
+		line := raw_line.trim_space()
+		if line.len == 0 || line.starts_with('#') || line.starts_with('//') || line.starts_with('/*')
+			|| line.starts_with('*') {
+			continue
+		}
+		is_python_import := line.starts_with('from ') && line.contains(' import ')
+		is_import := line.starts_with('import ')
+		is_export := line.starts_with('export ') && (line.contains(' from ') || line.starts_with('export *'))
+		is_rust_reexport := line.starts_with('pub use ')
+		is_python_all := line.starts_with('__all__')
+		if is_python_import || is_import || is_export || is_rust_reexport || is_python_all {
+			found_reexport = true
+			continue
+		}
+		return false
+	}
+	return found_reexport
 }
 
 fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 {

@@ -3,6 +3,7 @@ module main
 import json2
 import mcp
 import os
+import strings
 import time
 import uuid
 
@@ -593,4 +594,30 @@ fn test_mcp_stdio_sandbox_seatbelt_profile_carves_plugin_roots_and_allows_networ
 	assert profile.contains('(param "PLUGIN_DATA")')
 	assert profile.contains('(allow network-outbound)')
 	assert profile.contains('(deny default)')
+}
+
+fn test_plugin_mcp_frame_buffer_handles_fragmented_and_buffered_frames() {
+	mut buffer := PluginMCPFrameBuffer{}
+	assert buffer.append('{"id":')! == ''
+	assert buffer.append('1}\r\n{"id":2}\n')! == '{"id":1}'
+	assert buffer.take_frame()! == '{"id":2}'
+	assert buffer.take_frame()! == ''
+}
+
+fn test_plugin_mcp_frame_buffer_rejects_empty_frames() {
+	mut empty := PluginMCPFrameBuffer{}
+	_ = empty.append('\n') or {
+		assert err.msg() == 'MCP server returned an empty frame'
+		return
+	}
+	assert false
+}
+
+fn test_plugin_mcp_frame_buffer_enforces_frame_size_limit() {
+	mut oversized := PluginMCPFrameBuffer{}
+	_ = oversized.append(strings.repeat(`x`, max_plugin_mcp_frame_bytes + 1)) or {
+		assert err.msg() == 'MCP response exceeds the frame size limit'
+		return
+	}
+	assert false
 }

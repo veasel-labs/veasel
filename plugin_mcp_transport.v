@@ -31,6 +31,36 @@ mut:
 	http_transport  &PluginMCPHTTPTransport = unsafe { nil }
 }
 
+struct PluginMCPFrameBuffer {
+mut:
+	bytes     []u8
+	scan_from int
+}
+
+fn (mut buffer PluginMCPFrameBuffer) append(chunk string) !string {
+	if chunk.len > max_plugin_mcp_frame_bytes - buffer.bytes.len {
+		return error('MCP response exceeds the frame size limit')
+	}
+	buffer.bytes << chunk.bytes()
+	return buffer.take_frame()
+}
+
+fn (mut buffer PluginMCPFrameBuffer) take_frame() !string {
+	for index in buffer.scan_from .. buffer.bytes.len {
+		if buffer.bytes[index] == `\n` {
+			frame := buffer.bytes[..index].bytestr().trim_right('\r')
+			buffer.bytes = buffer.bytes[index + 1..].clone()
+			buffer.scan_from = 0
+			if frame.len == 0 {
+				return error('MCP server returned an empty frame')
+			}
+			return frame
+		}
+	}
+	buffer.scan_from = buffer.bytes.len
+	return ''
+}
+
 // PluginMCPTransport supplies the process configuration missing from the
 // stdlib convenience constructor while keeping MCP JSON-RPC in vlib/mcp.
 // On Windows, win_mcp holds an AppContainer-backed stdio process when
@@ -40,7 +70,7 @@ struct PluginMCPTransport {
 mut:
 	process            &os.Process = unsafe { nil }
 	win_mcp            voidptr     = unsafe { nil } // &WindowsMcpStdioProcess on Windows
-	buffer             string
+	buffer             PluginMCPFrameBuffer
 	response_timeout   time.Duration = plugin_mcp_response_timeout
 	cancel_requested   bool
 	active_request_id  string
@@ -567,20 +597,16 @@ fn (mut transport PluginMCPTransport) receive() !string {
 		if time.since(started) > transport.response_timeout {
 			return error('MCP server response timed out')
 		}
+		mut frame := transport.buffer.take_frame()!
+		if frame != '' {
+			return frame
+		}
 		if transport.mcp_stdio_pending_stderr() {
 			_ := transport.mcp_stdio_stderr_read()
 		}
 		if transport.mcp_stdio_pending_stdout() {
-			transport.buffer += transport.mcp_stdio_stdout_read()
-			if transport.buffer.len > max_plugin_mcp_frame_bytes {
-				return error('MCP response exceeds the frame size limit')
-			}
-			if newline := transport.buffer.index('\n') {
-				frame := transport.buffer[..newline].trim_right('\r')
-				transport.buffer = transport.buffer[newline + 1..]
-				if frame.len == 0 {
-					return error('MCP server returned an empty frame')
-				}
+			frame = transport.buffer.append(transport.mcp_stdio_stdout_read())!
+			if frame != '' {
 				return frame
 			}
 		}

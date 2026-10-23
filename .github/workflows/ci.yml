@@ -100,7 +100,7 @@ jobs:
         include:
           - os: linux
             runner: ubuntu-22.04
-            cc: gcc
+            cc: clang
             binary: dist/veasel
             tui_target: bun-linux-x64
             tui_binary: dist/veasel-tui
@@ -169,13 +169,15 @@ jobs:
       - name: Install terminal client dependencies
         run: bun install --frozen-lockfile
         working-directory: tui
-      - name: Build Linux backend with bundled SQLite
+      - name: Build Linux backend with bundled SQLite and Clang
         if: runner.os == 'Linux'
         run: |
+          # GCC 11 rejects V fastc's static aggregate compound literals; Clang 14 accepts them.
+          # Keep Ubuntu 22.04 here so the produced binary retains the Debian 12 glibc baseline.
           mkdir -p "$RUNNER_TEMP/no-pkgconfig"
           export PKG_CONFIG_PATH=""
           export PKG_CONFIG_LIBDIR="$RUNNER_TEMP/no-pkgconfig"
-          v -cc gcc -prod \
+          v -cc clang -prod \
             -d "veasel_version=${{ needs.release-plan.outputs.version || '0.1.0-dev' }}" \
             -o dist/veasel .
       - name: Build macOS backend with system SQLite

@@ -585,7 +585,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   test/source pairing, CamelCase/snake symbol-part matches, same-directory
   neighbor boosts, cross-directory same-basename-stem sibling boosts, and
   file↔package stem pairing (`lib/session.v` ↔ `lib/session/`)
-  (still not tree-sitter/PageRank).
+  (still not tree-sitter/PageRank). Symbol extraction recognizes Go functions
+  and receiver methods, plus common visibility/behavior modifiers on supported
+  declaration forms; this remains bounded line-based extraction, not parsing.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in

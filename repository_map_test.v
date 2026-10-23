@@ -34,6 +34,19 @@ fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 	assert other_pos < 0 || widget_pos < other_pos
 }
 
+fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
+	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\n'
+	symbols := extract_repository_map_symbols(content)
+	mut names := []string{}
+	mut kinds := []string{}
+	for symbol in symbols {
+		names << symbol.name
+		kinds << symbol.kind
+	}
+	assert names == ['LoadSession', 'Transform', 'SessionController', 'createSession', 'open_session']
+	assert kinds == ['func', 'func', 'public class', 'export default function', 'pub fn']
+}
+
 fn test_repository_map_ranks_case_insensitive_path_and_symbol_mentions() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-case')
 	os.rmdir_all(root) or {}

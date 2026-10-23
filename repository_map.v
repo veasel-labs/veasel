@@ -61,6 +61,8 @@ const repository_map_symbol_prefixes = [
 	'pub const ',
 	'pub trait ',
 	'async def ',
+	'export default async function ',
+	'export default function ',
 	'export async function ',
 	'export function ',
 	'export class ',
@@ -69,6 +71,7 @@ const repository_map_symbol_prefixes = [
 	'export enum ',
 	'export const ',
 	'fn ',
+	'func ',
 	'struct ',
 	'enum ',
 	'interface ',
@@ -857,12 +860,75 @@ fn extract_repository_map_symbols(content string) []RepositoryMapSymbol {
 }
 
 fn repository_map_symbol_from_line(line string) ?(string, string) {
+	// Preserve the most specific declaration kind (for example `pub fn` or
+	// `export default function`) before stripping modifiers for fallback forms.
 	for prefix in repository_map_symbol_prefixes {
 		if line.starts_with(prefix) {
-			rest := line[prefix.len..]
-			name := take_repository_map_ident(rest) or { continue }
-			kind := prefix.trim_space()
-			return kind, name
+			return repository_map_symbol_from_prefix(line, prefix, prefix.trim_space())
+		}
+	}
+	mut declaration := line
+	mut modifiers := []string{}
+	// Common visibility/behavior modifiers precede declarations in Java, C#,
+	// TypeScript, Rust, and C/C++. Strip only whole leading words so names and
+	// types are left intact for the declaration recognizer below.
+	for _ in 0 .. 8 {
+		modifier := repository_map_leading_modifier(declaration) or { break }
+		modifiers << modifier
+		declaration = declaration[modifier.len..].trim_space()
+	}
+	for prefix in repository_map_symbol_prefixes {
+		if declaration.starts_with(prefix) {
+			kind := if modifiers.len > 0 {
+				'${modifiers.join(' ')} ${prefix.trim_space()}'
+			} else {
+				prefix.trim_space()
+			}
+			return repository_map_symbol_from_prefix(declaration, prefix, kind)
+		}
+	}
+	return none
+}
+
+fn repository_map_symbol_from_prefix(line string, prefix string, kind string) ?(string, string) {
+	mut rest := line[prefix.len..]
+	if prefix == 'func ' && rest.starts_with('(') {
+		// Go method: func (receiver Type) Method(...). Balance nested function
+		// types in generic receivers, e.g. Box[func(int)].
+		close_receiver := repository_map_go_receiver_end(rest) or { return none }
+		rest = rest[close_receiver + 1..]
+	}
+	name := take_repository_map_ident(rest) or { return none }
+	return kind, name
+}
+
+fn repository_map_go_receiver_end(receiver string) ?int {
+	mut depth := 0
+	for index, ch in receiver {
+		if ch == `(` {
+			depth++
+		} else if ch == `)` {
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return none
+}
+
+fn repository_map_leading_modifier(line string) ?string {
+	for modifier in ['public', 'private', 'protected', 'internal', 'static', 'final', 'abstract',
+		'sealed', 'virtual', 'override', 'extern', 'unsafe', 'inline', 'constexpr', 'async', 'export',
+		'declare', 'default', 'pub'] {
+		if line.starts_with('${modifier} ') {
+			return modifier
+		}
+	}
+	if line.starts_with('pub(') {
+		close := line.index(')') or { return none }
+		if line.len > close + 1 && line[close + 1] == ` ` {
+			return line[..close + 1]
 		}
 	}
 	return none

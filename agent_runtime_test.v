@@ -511,6 +511,35 @@ fn test_agent_skill_load_tool_loads_body_without_session_enable() {
 		}
 	}, mut skill_context, {}, mut mcp_connections)
 	assert read_after_load.contains('Turn-loaded reference.')
+	mut batch_skill_context := SessionSkillContext{}
+	mut batch_connections := []PluginMCPConnection{}
+	mut batch_read_paths := map[string]bool{}
+	mut batch_background := vcontext.background()
+	mut batch_turn, cancel_batch := vcontext.with_timeout(mut batch_background, 2 * time.second)
+	defer { cancel_batch() }
+	batch_results := execute_agent_tool_batch(app, mut batch_turn, project, session.id,
+		'test-skill-resource-barrier', [
+			ProviderToolCall{
+				id:       'load-before-resource'
+				function: ProviderFunctionCall{
+					name:      'agent_skill_load'
+					arguments: '{"plugin_name":"agents","skill_name":"deep-review"}'
+				}
+			},
+			ProviderToolCall{
+				id:       'resource-after-load'
+				function: ProviderFunctionCall{
+					name:      'agent_skill_read_resource'
+					arguments: '{"plugin_name":"agents","skill_name":"deep-review","path":"references/guide.md"}'
+				}
+			},
+		], mut batch_skill_context, {}, mut batch_connections, ExecutionPolicyTurn{
+			mode:        .ask
+			interactive: true
+		}, mut batch_read_paths, {}) or { panic(err) }
+	assert batch_results.len == 2
+	assert batch_results[0].contains('Use the reference guide.')
+	assert batch_results[1].contains('Turn-loaded reference.')
 	mut missing_context := SessionSkillContext{}
 	missing := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
 		id:       'missing-skill'

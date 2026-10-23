@@ -297,7 +297,8 @@ fn session_can_trust_plugin_mcp_server(active []SessionPluginMCPServer, plugin_n
 
 fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 	input CompletionInput) !CompletionOutput {
-	config := app.model_config()!
+	mut config := app.model_config()!
+	config.request_deadline = turn_ctx.deadline() or { return error('deadline_missing') }
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}
@@ -327,7 +328,8 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	session_id string, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	config := app.model_config_for_session(session_id)!
+	mut config := app.model_config_for_session(session_id)!
+	config.request_deadline = turn_ctx.deadline() or { return error('deadline_missing') }
 	if !app.try_provider_slot() {
 		return error('provider_busy')
 	}

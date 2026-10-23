@@ -33,6 +33,10 @@ settings use the server's catalog and active credential state. It sends chat
 turns with `Prefer: respond-async`, renders durable assistant deltas while the
 operation runs, and reloads the committed exchange after its
 `session.turn_completed` event.
+While a turn is running, another message in that same session is durably queued
+as the next turn; it does not change the prompt the model is currently working
+on. Queued messages appear in the transcript and become cancellable when their
+`session.turn_started` event arrives.
 
 The startup screen uses an original geometric pixel companion drawn for Veasel
 Code. It does not reuse the V language mascot artwork and is covered by this

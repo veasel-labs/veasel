@@ -99,8 +99,8 @@ The working vertical slice includes:
   `veasel run` when adapters set `usage.reported` (no invented cost)
 - Bounded workspace list/read/search; durable edit/shell/MCP proposals that
   require explicit review before effect
-- Per-session durable execution history in the Solid TUI via `/runs` (retained
-  terminal operations and active jobs)
+- Searchable, paginated durable execution history across sessions in the Solid
+  TUI via `/runs`
 - Agent Plugins (local READY): package discovery, durable `/plugin` links with
   install summaries, component toggles, Skills, and trusted stdio / Streamable
   HTTP MCP with per-call review (no remote marketplace — see the

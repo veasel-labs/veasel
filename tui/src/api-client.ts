@@ -63,6 +63,16 @@ export type ApiSessionOperation = {
   updated_at: string
 }
 
+export type ApiGlobalSessionOperation = {
+  operation: ApiSessionOperation
+  session_title: string
+}
+
+export type ApiGlobalOperationsPage = {
+  operations: ApiGlobalSessionOperation[]
+  next_before?: string
+}
+
 export type SendMessageResult =
   | { kind: "async"; operationId: string }
   | { kind: "sync"; messages: ChatTurn[] }
@@ -401,13 +411,14 @@ export class VeaselApiClient {
     return await response.json() as ApiSessionUsageSummary
   }
 
-  async listSessionOperations(sessionId: string): Promise<ApiSessionOperation[]> {
-    const response = await fetch(
-      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/operations`,
-      { signal: this.signal },
-    )
+  async listGlobalOperations(options: { before?: string; limit?: number } = {}): Promise<ApiGlobalOperationsPage> {
+    const query = new URLSearchParams()
+    if (options.before) query.set("before", options.before)
+    if (options.limit !== undefined) query.set("limit", String(options.limit))
+    const suffix = query.size > 0 ? `?${query}` : ""
+    const response = await fetch(`${this.base}/v1/operations${suffix}`, { signal: this.signal })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
-    return await response.json() as ApiSessionOperation[]
+    return await response.json() as ApiGlobalOperationsPage
   }
 
   async listSessionMcpServers(sessionId: string): Promise<ApiSessionPluginMcpServer[]> {

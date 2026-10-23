@@ -55,6 +55,7 @@ import { openMcpDialog } from "./component/mcp-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
+import type { ApiGlobalSessionOperation } from "../api-client"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
 import {
   recordLiveLastError,
@@ -767,21 +768,27 @@ function LiveAppShell(props: LiveAppProps) {
 
   const openLiveExecutionHistory = async () => {
     setComposerFocused(false)
-    const sessionId = activeSessionId()
-    if (!sessionId) {
-      openDialogAlert(dialog, {
-        title: "Execution history",
-        message: "Open a session to browse its durable execution history.",
-        onConfirm: () => setComposerFocused(true),
+    const openPage = (
+      entries: ApiGlobalSessionOperation[],
+      nextBefore?: string,
+    ) => openExecutionHistoryDialog(dialog, entries, nextBefore, (cursor) => {
+      void props.api.listGlobalOperations({ before: cursor, limit: 50 }).then((page) => {
+        openPage([...entries, ...page.operations], page.next_before)
+      }).catch((error: unknown) => {
+        openDialogAlert(dialog, {
+          title: "Older executions unavailable",
+          message: error instanceof Error ? error.message : "Could not load the next history page.",
+          onConfirm: () => setComposerFocused(true),
+        })
       })
-      return
-    }
+    })
     try {
-      openExecutionHistoryDialog(dialog, await props.api.listSessionOperations(sessionId))
+      const page = await props.api.listGlobalOperations({ limit: 50 })
+      openPage(page.operations, page.next_before)
     } catch (error) {
       openDialogAlert(dialog, {
         title: "Execution history unavailable",
-        message: error instanceof Error ? error.message : "Could not load this session's executions.",
+        message: error instanceof Error ? error.message : "Could not load execution history.",
         onConfirm: () => setComposerFocused(true),
       })
     }

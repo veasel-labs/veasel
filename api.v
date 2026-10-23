@@ -1277,6 +1277,40 @@ pub fn (app &App) list_session_operations(mut ctx Context, id string) veb.Result
 	return ctx.json(operations)
 }
 
+@['/v1/operations'; get]
+pub fn (app &App) list_global_operations(mut ctx Context) veb.Result {
+	limit, before := parse_global_operation_history_query(ctx.query) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	mut store := app.store
+	page := store.list_global_session_operations(limit, before) or {
+		if err.msg() == 'operation cursor not found' {
+			return json_request_error(mut ctx, 'Operation cursor was not found; restart history from the newest page')
+		}
+		return json_server_error(mut ctx, 'Unable to list global session operations')
+	}
+	return ctx.json(page)
+}
+
+fn parse_global_operation_history_query(query map[string]string) !(int, string) {
+	mut limit := max_global_operation_history_page_size
+	if raw_limit := query['limit'] {
+		limit = strconv.atoi(raw_limit) or {
+			return error('limit must be an integer from 1 to ${max_global_operation_history_page_size}')
+		}
+		if limit < 1 || limit > max_global_operation_history_page_size {
+			return error('limit must be an integer from 1 to ${max_global_operation_history_page_size}')
+		}
+	}
+	mut before := ''
+	if raw_before := query['before'] {
+		before = canonical_operation_id(raw_before) or {
+			return error('before must be a non-nil operation UUID')
+		}
+	}
+	return limit, before
+}
+
 @['/v1/sessions/:id/operations/:operation_id'; get]
 pub fn (app &App) get_session_operation(mut ctx Context, id string, operation_id string) veb.Result {
 	_ := app.store.get_session(id) or {

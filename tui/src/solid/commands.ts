@@ -333,7 +333,7 @@ export function buildPaletteCommands(handlers: PaletteActionHandlers): PaletteCo
     {
       id: "veasel.execution.history",
       title: "Execution history",
-      description: "Inspect durable runs for the active session",
+      description: "Search durable executions across sessions",
       group: "session",
       keywords: ["runs", "history", "operations", "executions"],
       run: () => handlers.showRuns(),
@@ -718,7 +718,7 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
     {
       id: "veasel.execution.history",
       title: "Execution history",
-      description: "Inspect durable runs for the active session",
+      description: "Search durable executions across sessions",
       group: "session",
       keywords: ["runs", "history", "operations", "executions"],
       run: () => handlers.showRuns(),

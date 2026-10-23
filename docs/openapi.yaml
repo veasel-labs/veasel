@@ -226,7 +226,11 @@ paths:
   /v1/mcp-oauth/complete:
     post:
       operationId: completeMcpOauth
-      description: Completes a pending MCP OAuth flow with an authorization `code`+`state` or a full loopback `callback_url`. Exchanges the code at the token endpoint and upserts `Authorization: Bearer` into the named MCP credential. Secret token values are never returned.
+      description: >-
+        Completes a pending MCP OAuth flow with an authorization `code`+`state`
+        or a full loopback `callback_url`. Exchanges the code at the token
+        endpoint and upserts `Authorization: Bearer` into the named MCP
+        credential. Secret token values are never returned.
       requestBody:
         required: true
         content:
@@ -650,6 +654,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/operations:
+    get:
+      operationId: listGlobalOperations
+      description: >-
+        Lists durable turn operations across all sessions, newest first. Pages
+        are bounded to at most 100 rows and use the last operation id as the
+        before cursor. Terminal rows follow the per-session retention bound;
+        active jobs are included. A pruned cursor returns 400 so clients can
+        restart from the newest page.
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+        - in: query
+          name: before
+          description: Operation id returned as next_before by the preceding page.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Bounded global operation history page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalSessionOperationsPage'
+        '400':
+          description: Invalid limit/cursor or cursor no longer retained.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Unable to list global operations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/fork:
     post:
       operationId: forkSession
@@ -1799,7 +1837,31 @@ paths:
   /v1/events:
     get:
       operationId: streamEvents
-      description: Replays persisted events newer than Last-Event-ID, then streams new events. Catch-up reads return at most 500 events per poll so reconnect clients can drain a large backlog faster than the previous 100-event page. During quiet periods the stream emits `event: heartbeat` with `data: {}` about every 15 seconds so proxies and clients can detect a live connection without inventing session events. During session turns, assistant.delta events include data.operation_id and data.delta. Async turns begin with session.turn_started and end with session.turn_completed. Completion includes operation_id and status; successful events include provider and model, and when a provider adapter reported token counts they also include usage_reported with input_tokens and output_tokens. When the provider payload included cache fields, completion also includes cache_reported with cache_read_tokens and cache_creation_tokens (provider-reported only). Failed events include a safe public error, and uncertain events indicate the process stopped before a result was recorded. When measured UTF-8 provider-request payload pressure rises, session.compaction records measured bytes_before/bytes_after, a conservative bytes/4 token bound, summarizer mode (extractive, native, llm, or *_fallback_extractive), optional provider usage when a summarizer adapter reported it, and an untrusted summary preview; durable chat history rows are not deleted. When a turn injects a repository map into the system prompt, session.repository_map records measured map bytes, a bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost is never estimated.
+      description: >-
+        Replays persisted events newer than Last-Event-ID, then streams new
+        events. Catch-up reads return at most 500 events per poll so reconnect
+        clients can drain a large backlog faster than the previous 100-event
+        page. During quiet periods the stream emits `event: heartbeat` with
+        `data: {}` about every 15 seconds so proxies and clients can detect a
+        live connection without inventing session events. During session turns,
+        assistant.delta events include data.operation_id and data.delta. Async
+        turns begin with session.turn_started and end with session.turn_completed.
+        Completion includes operation_id and status; successful events include
+        provider and model, and when a provider adapter reported token counts
+        they also include usage_reported with input_tokens and output_tokens.
+        When the provider payload included cache fields, completion also
+        includes cache_reported with cache_read_tokens and cache_creation_tokens
+        (provider-reported only). Failed events include a safe public error, and
+        uncertain events indicate the process stopped before a result was
+        recorded. When measured UTF-8 provider-request payload pressure rises,
+        session.compaction records measured bytes_before/bytes_after, a
+        conservative bytes/4 token bound, summarizer mode (extractive, native,
+        llm, or *_fallback_extractive), optional provider usage when a summarizer
+        adapter reported it, and an untrusted summary preview; durable chat
+        history rows are not deleted. When a turn injects a repository map into
+        the system prompt, session.repository_map records measured map bytes, a
+        bytes/4 token bound, file/symbol counts, and an untrusted preview. Cost
+        is never estimated.
       parameters:
         - in: header
           name: Last-Event-ID
@@ -1810,7 +1872,15 @@ paths:
             pattern: '^(0|[1-9][0-9]*)$'
       responses:
         '200':
-          description: Server-sent event stream using event IDs as resumable cursors. Each event data field is a JSON Event object; assistant.delta carries operation_id and delta, session.turn_started announces a durable operation, session.compaction reports measured request-payload compaction, session.repository_map reports an injected extractive workspace map, and session.turn_completed carries its final status. Quiet streams also emit heartbeat events (`event: heartbeat`, `data: {}`) about every 15 seconds.
+          description: >-
+            Server-sent event stream using event IDs as resumable cursors. Each
+            event data field is a JSON Event object; assistant.delta carries
+            operation_id and delta, session.turn_started announces a durable
+            operation, session.compaction reports measured request-payload
+            compaction, session.repository_map reports an injected extractive
+            workspace map, and session.turn_completed carries its final status.
+            Quiet streams also emit heartbeat events (`event: heartbeat`,
+            `data: {}`) about every 15 seconds.
           content:
             text/event-stream:
               schema:
@@ -2419,7 +2489,10 @@ components:
         scope:
           type: string
           enum: [user, mixed]
-          description: `user` when only `$VEASEL_DATA_DIR/mcp-servers.json` is considered; `mixed` when a workspace directory also contributes project or imported servers.
+          description: >-
+            `user` when only `$VEASEL_DATA_DIR/mcp-servers.json` is considered;
+            `mixed` when a workspace directory also contributes project or
+            imported servers.
         path:
           type: string
           description: Absolute path of the user-scope JSON file when available.
@@ -3170,8 +3243,34 @@ components:
         cache_reported:
           type: boolean
           description: True only when the provider payload included cache-related usage fields.
+        reasoning_tokens:
+          type: integer
+          minimum: 0
+          description: Provider-reported reasoning token count when reasoning_reported is true.
+        reasoning_reported:
+          type: boolean
+          description: True only when the provider supplied a reasoning token counter.
         created_at: { type: string }
         updated_at: { type: string }
+    GlobalSessionOperation:
+      type: object
+      required: [operation, session_title]
+      properties:
+        operation:
+          $ref: '#/components/schemas/SessionOperation'
+        session_title: { type: string }
+    GlobalSessionOperationsPage:
+      type: object
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/GlobalSessionOperation'
+        next_before:
+          type: string
+          format: uuid
+          description: Present when another page is available.
     SessionOperationResult:
       type: object
       required: [session_id, operation_id, status, provider, model, content]

@@ -1,13 +1,8 @@
 import type { useDialog } from "../ui/dialog"
 import { openDialogAlert } from "../ui/dialog-alert"
 import { openDialogSelect } from "../ui/dialog-select"
-import type { ApiSessionOperation } from "../../api-client"
+import type { ApiGlobalSessionOperation, ApiSessionOperation } from "../../api-client"
 import { formatTokenCount } from "../../usage"
-
-function operationTitle(operation: ApiSessionOperation): string {
-  const model = [operation.provider, operation.model].filter(Boolean).join("/") || "Model unavailable"
-  return `${operation.status.toUpperCase()} · ${model}`
-}
 
 function operationUsage(operation: ApiSessionOperation): string | undefined {
   if (!operation.usage_reported) return undefined
@@ -36,32 +31,53 @@ function operationDetails(operation: ApiSessionOperation): string {
 
 export function openExecutionHistoryDialog(
   dialog: ReturnType<typeof useDialog>,
-  operations: ApiSessionOperation[],
+  entries: ApiGlobalSessionOperation[],
+  nextBefore?: string,
+  onLoadMore?: (cursor: string) => void,
 ) {
-  const recent = [...operations].reverse()
+  const recent = entries
   const options = recent.length > 0
-    ? recent.map((operation) => ({
-        title: operationTitle(operation),
-        value: operation.id,
-        description: `${operation.created_at} · ${operation.id.slice(0, 8)}`,
-        footer: operationUsage(operation),
-        searchText: `${operation.id} ${operation.error} ${operation.status}`,
+    ? recent.map((entry) => ({
+        title: entry.operation.status.toUpperCase(),
+        value: entry.operation.id,
+        description: `${entry.session_title} · ${[entry.operation.provider, entry.operation.model].filter(Boolean).join("/") || "Model unavailable"} · ${entry.operation.created_at} · ${entry.operation.id.slice(0, 8)}`,
+        footer: operationUsage(entry.operation),
+        searchText: `${entry.operation.id} ${entry.operation.error} ${entry.operation.status} ${entry.session_title}`,
       }))
-    : [{ title: "No executions yet", value: "empty", description: "Completed and interrupted turns will appear here" }]
+    : [{
+        title: "No executions yet",
+        value: "empty",
+        description: "Completed and interrupted turns will appear here",
+        footer: undefined,
+        searchText: "",
+      }]
+  if (nextBefore) {
+    options.push({
+      title: "Load older executions…",
+      value: "__load_older__",
+      description: "Fetch the next page from durable history",
+      footer: undefined,
+      searchText: "",
+    })
+  }
 
   openDialogSelect(dialog, {
-    title: `Executions · ${recent.length}`,
+    title: `All executions · ${recent.length}`,
     options,
     size: "large",
     placeholder: "Filter executions…",
-    footer: "Newest first · up to 200 retained terminal runs plus active jobs",
+    footer: nextBefore ? "Newest first · select Load older to continue · Esc closes" : "Newest first · Esc closes",
     dismissOnSelect: false,
     onSelect: (option) => {
-      const operation = recent.find((item) => item.id === option.value)
-      if (!operation) return
+      if (option.value === "__load_older__" && nextBefore) {
+        onLoadMore?.(nextBefore)
+        return
+      }
+      const entry = recent.find((item) => item.operation.id === option.value)
+      if (!entry) return
       openDialogAlert(dialog, {
         title: "Execution details",
-        message: operationDetails(operation),
+        message: `Session: ${entry.session_title}\n${operationDetails(entry.operation)}`,
         confirmLabel: "close",
       })
     },

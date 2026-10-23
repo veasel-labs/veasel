@@ -440,6 +440,25 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(usage.input_tokens).toBe(150)
   })
 
+  test("listGlobalOperations sends a bounded cursor page request", async () => {
+    let requestedUrl = ""
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrl = String(input)
+      return new Response(JSON.stringify({
+        operations: [{
+          session_title: "Example",
+          operation: { id: "op-id", session_id: "session-id", status: "completed" },
+        }],
+        next_before: "op-id",
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const page = await client.listGlobalOperations({ before: "cursor-id", limit: 50 })
+    expect(requestedUrl).toBe("http://127.0.0.1:4097/v1/operations?before=cursor-id&limit=50")
+    expect(page.operations[0]?.session_title).toBe("Example")
+    expect(page.next_before).toBe("op-id")
+  })
+
   test("forkSession posts to the fork route", async () => {
     const calls: Array<{ url: string; method?: string }> = []
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

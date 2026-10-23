@@ -8,6 +8,7 @@ import sync
 import uuid
 
 const max_session_history_page_size = 100
+const max_global_operation_history_page_size = 100
 const max_event_stream_page_size = 500
 const max_retained_terminal_session_operations = 200
 const max_retained_session_events = 5_000
@@ -48,6 +49,18 @@ pub:
 	reasoning_reported    bool @[omitempty]
 	created_at            string
 	updated_at            string
+}
+
+pub struct GlobalSessionOperation {
+pub:
+	operation     SessionOperation
+	session_title string
+}
+
+pub struct GlobalSessionOperationsPage {
+pub mut:
+	operations  []GlobalSessionOperation
+	next_before string @[omitempty]
 }
 
 // SessionUsageSummary aggregates adapter-reported tokens for one session.
@@ -628,6 +641,27 @@ fn open_store(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit session skill invoke migration')
+		}
+	}
+	if current < 17 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin global operation history migration')
+		}
+		db.exec('CREATE INDEX session_operations_created_id ON session_operations (created_at, id)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index global operation history')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (17)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record global operation history migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit global operation history migration')
 		}
 	}
 	// Running or cancelling work may have contacted a provider or started a tool
@@ -1593,6 +1627,50 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 		operations << store.session_operation_from_row(row)
 	}
 	return operations
+}
+
+fn (mut store Store) list_global_session_operations(limit int, before string) !GlobalSessionOperationsPage {
+	if limit < 1 || limit > max_global_operation_history_page_size {
+		return error('global operation history page bounds are invalid')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	mut cursor_created_at := ''
+	if before.len > 0 {
+		cursor := store.db.exec_param('SELECT created_at FROM session_operations WHERE id = ?', before)!
+		if cursor.len != 1 {
+			return error('operation cursor not found')
+		}
+		cursor_created_at = cursor[0].val(0)
+	}
+	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
+	mut params := []string{}
+	if before.len > 0 {
+		query += ' WHERE o.created_at < ? OR (o.created_at = ? AND o.id < ?)'
+		params << cursor_created_at
+		params << cursor_created_at
+		params << before
+	}
+	params << (limit + 1).str()
+	rows := store.db.exec_param_many('${query} ORDER BY o.created_at DESC, o.id DESC LIMIT ?', params)!
+	mut page := GlobalSessionOperationsPage{
+		operations: []GlobalSessionOperation{cap: if rows.len > limit { limit } else { rows.len }}
+	}
+	for index, row in rows {
+		if index == limit {
+			break
+		}
+		page.operations << GlobalSessionOperation{
+			operation:     store.session_operation_from_row(row)
+			session_title: row.val(16)
+		}
+	}
+	if rows.len > limit && page.operations.len > 0 {
+		page.next_before = page.operations[page.operations.len - 1].operation.id
+	}
+	return page
 }
 
 fn (mut store Store) list_queued_session_operations() ![]SessionOperation {

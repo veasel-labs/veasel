@@ -32,9 +32,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 		'workspace.search', 'workspace.repository_map', 'workspace.git.worktrees',
 		'workspace.edits.review', 'workspace.edits.approve', 'workspace.edits.reject',
 		'workspace.commands.propose', 'workspace.commands.review', 'workspace.commands.approve',
-		'workspace.commands.reject', 'sessions.operations.list', 'sessions.operations.result',
-		'sessions.operations.trace.atif_v1_8', 'sessions.operations.durable_queue',
-		'sessions.usage.prompt_cache', 'sessions.usage.reasoning']
+		'workspace.commands.reject', 'sessions.operations.list', 'sessions.operations.global_list',
+		'sessions.operations.result', 'sessions.operations.trace.atif_v1_8',
+		'sessions.operations.durable_queue', 'sessions.usage.prompt_cache', 'sessions.usage.reasoning']
 	if cost_schedule_present() {
 		features << 'sessions.usage.cost'
 	}

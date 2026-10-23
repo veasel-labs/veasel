@@ -82,6 +82,9 @@ fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
 fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 	models := [
 		ModelCatalogEntry{
+			id: 'kimi-k3.1-pro'
+		},
+		ModelCatalogEntry{
 			id: 'kimi-k3'
 		},
 		ModelCatalogEntry{
@@ -98,8 +101,16 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		},
 	]
 	available := filter_provider_models('opencode-go', models)
-	assert available.map(it.id) == ['kimi-k3', 'gpt-6-luna', 'claude-haiku-5-5',
+	assert available.map(it.id) == ['kimi-k3.1-pro', 'kimi-k3', 'gpt-6-luna', 'claude-haiku-5-5',
 		'gemini-4-argon-contributor']
+
+	kimi := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'kimi-k3.1-pro'
+	}) or { panic(err) }
+	assert kimi.protocol == 'openai-compatible'
+	assert kimi.base_url == opencode_go_openai_base_url
 
 	chat := model_provider_route(ModelConfig{
 		provider: 'opencode-go'

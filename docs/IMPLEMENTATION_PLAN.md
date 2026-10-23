@@ -590,7 +590,8 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   and common visibility/behavior modifiers on supported declaration forms;
   this remains bounded line-based extraction, not parsing.
   Ranking also uses bounded lexical overlap against already-read source and
-  compound path terms, with common argument/args matching and a test-file
+  compound path terms, normalizes common `-ing` query words, strengthens the
+  high-confidence argument/args filename alias, and applies a test-file
   demotion only when the user asks about behavior rather than tests. Bounded
   source reads now prioritize path relevance and enforce the aggregate byte
   cap. Real-repo recall on Aider, mini-swe-agent, and SWE-agent is recorded in
@@ -698,7 +699,7 @@ honoring its license and attribution.
 
 - User messages have a raised surface and a left rail; assistant text stays on the main conversation surface. Spoken role labels remain visible without color.
 - Message lines wrap to the actual available width, including narrow terminals. Rendered snapshots at 32, 56, and 100 columns protect long-text visibility and role boundaries.
-- Production streaming, thinking sections, and activity groups retain their existing data flow. Full rich-Markdown migration and the complete design-system audit remain open.
+- Production streaming, thinking sections, and activity groups retain their existing data flow. The Solid transcript renders assistant history and live responses as rich Markdown, including syntax-highlighted code blocks. The classic transcript renders the followed live/latest assistant response as rich Markdown and uses styled Markdown segments when scrolled. The complete design-system audit and cross-terminal rendering review remain open.
 ### Real Skill completions
 
 - Production composer defaults to an empty Skill catalog instead of demo entries. LiveApp discovers Skills through the versioned plugin API when a draft first contains a Skill token.

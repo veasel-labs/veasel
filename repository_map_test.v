@@ -56,8 +56,15 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	arguments := extract_repository_map_hints('command line argument parsing and options')
 	assert repository_map_lexically_related('args', 'arguments')
 	assert repository_map_path_has_segment('aider/args.py', 'args')
+	assert score_repository_map_path('aider/args.py', arguments) >= 300.0
 	assert score_repository_map_content('Add an argument to the command line parser options.',
 		arguments) > 0.0
+	assert score_repository_map_content('parse_args parser', RepositoryMapHintSet{
+		idents: ['parsing']
+	}) == 24.0
+	assert score_repository_map_content('run_batch', RepositoryMapHintSet{
+		idents: ['running']
+	}) == 24.0
 	assert score_repository_map_path('aider/args.py', arguments) > score_repository_map_path('tests/test_args.py', arguments)
 	paired := extract_repository_map_hints('Please fix src/agents/default.py')
 	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)

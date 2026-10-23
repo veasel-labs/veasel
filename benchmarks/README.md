@@ -130,6 +130,12 @@ VEASEL_BIN=veasel node benchmarks/repo-map-recall.mjs \
   /path/to/aider benchmarks/repo-map-recall-aider-cases.json
 ```
 
+Add `--output benchmarks/reports/<name>.json` to save each query's ranked paths
+and position with the Veasel version, source revision and dirty-diff digest,
+binary SHA-256, target repository revision, and recall totals. Set
+`VEASEL_COMPILER_VERSION` and `VEASEL_BUILD_FLAGS` when building locally so the
+report records those too.
+
 Recorded on the Aider checkout (685 files scanned, 12 KiB map budget),
 2026-10-19: before the symbol-flooding fix, recall@3 was 2/6 and recall@10
 3/6 (a large test file ranked #1 for unrelated queries). After capping
@@ -155,16 +161,23 @@ Linux x64 workstation, recall was:
 
 | Checkout | Recall@3 | Recall@10 | Change from prior recorded baseline |
 |---|---:|---:|---|
-| Aider (685 files) | 4/6 | 5/6 | unchanged |
+| Aider (685 files) | 4/6 | 6/6 | @3 unchanged; @10 +1 |
 | mini-swe-agent (221 files) | 3/4 | 4/4 | @3 +1; @10 unchanged |
 | SWE-agent (407 files) | 6/6 | 6/6 | @3 +1; @10 unchanged |
 
 The lexical signal reuses source text already read for declaration extraction,
-caps query-term contribution, and demotes test paths for behavior queries.
-These small labeled sets show improved recall on two checkouts and no aggregate
-regression on the third; they do not establish broad semantic retrieval quality.
-The Aider command-line parsing case still misses `aider/args.py` and remains a
-known failure.
+caps query-term contribution, normalizes common `-ing` query words such as
+"parsing" to code identifiers such as `parse_args`, and demotes test paths for
+behavior queries. The latest measured change strengthens the high-confidence
+`argument`/`args` filename alias: Aider recall@3 stayed 4/6 while recall@10
+rose from 5/6 to 6/6, placing `aider/args.py` at rank 6 for the command-line
+parsing query. mini-swe-agent stayed at 3/4 and 4/4; SWE-agent stayed at 6/6
+and 6/6. These small labeled sets show one additional top-10 hit and no
+aggregate regression; they do not establish broad semantic retrieval quality.
+The per-query results and run fingerprints are checked in:
+[`Aider`](reports/repo-map-recall-aider-2026-10-23.json),
+[`mini-swe-agent`](reports/repo-map-recall-mini-swe-agent-2026-10-23.json),
+and [`SWE-agent`](reports/repo-map-recall-swe-agent-2026-10-23.json).
 
 ### Recorded local TUI baseline
 

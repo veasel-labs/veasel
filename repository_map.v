@@ -490,7 +490,15 @@ fn repository_map_lexically_related(left string, right string) bool {
 fn repository_map_lexical_candidates(term string) []string {
 	lower := term.to_lower()
 	mut candidates := [lower]
-	if lower.len > 4 && lower.ends_with('ies') {
+	if lower.len > 6 && lower.ends_with('ing') {
+		stem := lower[..lower.len - 3]
+		candidates << stem
+		if stem.len > 2 && stem[stem.len - 1] == stem[stem.len - 2] {
+			candidates << stem[..stem.len - 1]
+		} else if !stem.ends_with('e') {
+			candidates << '${stem}e'
+		}
+	} else if lower.len > 4 && lower.ends_with('ies') {
 		candidates << '${lower[..lower.len - 3]}y'
 	} else if lower.len > 4 && lower.ends_with('es')
 		&& (lower.ends_with('sses') || lower.ends_with('xes') || lower.ends_with('zes')
@@ -549,7 +557,9 @@ fn repository_map_lexical_match_weight(left string, right string) f64 {
 	}
 	if (a in ['arg', 'args', 'argument', 'arguments'])
 		&& (b in ['arg', 'args', 'argument', 'arguments']) {
-		return 180.0
+		// Argument terminology is a high-confidence filename alias in codebases
+		// that use `args` (e.g. `args.py`) instead of `arguments`.
+		return 360.0
 	}
 	return 0.0
 }

@@ -54,7 +54,9 @@ export function diffRenderableTheme(theme: Theme): {
     fg: theme.body,
     addedSignColor: theme.diffAdd,
     removedSignColor: theme.diffRemove,
-    lineNumberFg: theme.meta,
+    // Diff gutters use their own saturated hunk fills; meta is too dim against
+    // the added-line fill in Ember and Mono. Keep line numbers legible there.
+    lineNumberFg: theme.body,
     addedBg: light ? "#dcfce7" : "#1a3328",
     removedBg: light ? "#fee2e2" : "#33201f",
     contextBg: "transparent",

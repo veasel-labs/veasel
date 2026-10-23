@@ -781,8 +781,72 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert mixed_results[1].contains('workspace-sentinel')
 	assert mixed_results[2].contains('Stored for human review')
 	assert mixed_results[3].contains('workspace-sentinel')
-	assert mixed_results[4].contains('Already provided this turn')
+	assert mixed_results[4].contains('workspace-sentinel')
+	assert !mixed_results[4].contains('Already provided this turn')
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
+
+	// A real auto-edit between reads must invalidate prior content for this path.
+	auto_edit_path := os.join_path(root, 'src', 'auto-edit.txt')
+	os.write_file(auto_edit_path, 'before edit') or { panic(err) }
+	auto_edit_calls := [
+		ProviderToolCall{
+			id:       'read-before-edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/auto-edit.txt"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'apply-edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_propose_file_edit'
+				arguments: '{"path":"src/auto-edit.txt","content":"after edit"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'read-after-edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/auto-edit.txt"}'
+			}
+		},
+	]
+	mut auto_edit_context := vcontext.background()
+	mut auto_edit_turn, cancel_auto_edit := vcontext.with_timeout(mut auto_edit_context, 2 * time.second)
+	defer { cancel_auto_edit() }
+	mut auto_edit_skill_context := SessionSkillContext{}
+	mut auto_edit_connections := []PluginMCPConnection{}
+	mut auto_edit_read_paths := map[string]bool{}
+	auto_edit_results := execute_agent_tool_batch(app, mut auto_edit_turn, root, session.id,
+		'test-auto-edit-operation', auto_edit_calls, mut auto_edit_skill_context, {},
+		mut auto_edit_connections, ExecutionPolicyTurn{ mode: .auto_edit },
+		mut auto_edit_read_paths, {}) or { panic(err) }
+	assert auto_edit_results[0].contains('before edit')
+	assert auto_edit_results[1].contains('Applied by graduated execution policy')
+	assert auto_edit_results[2].contains('after edit')
+	assert !auto_edit_results[2].contains('Already provided this turn')
+	assert os.read_file(auto_edit_path) or { panic(err) } == 'after edit'
+
+	// A Skill-denied read must leave no stale cache entry that could mask a later grant.
+	mut denied_read_context := vcontext.background()
+	mut denied_read_turn, cancel_denied_read := vcontext.with_timeout(mut denied_read_context,
+		2 * time.second)
+	defer { cancel_denied_read() }
+	mut denied_read_skill_context := SessionSkillContext{
+		tool_policy: agent_tool_policy_for_skills([PluginSkill{
+			name:                   'search-only'
+			allowed_tools:          'workspace_search'
+			allowed_tools_declared: true
+		}])
+	}
+	mut denied_read_connections := []PluginMCPConnection{}
+	mut denied_read_paths := map[string]bool{}
+	denied_read_results := execute_agent_tool_batch(app, mut denied_read_turn, root, session.id,
+		'test-denied-read-operation', [parallel_calls[1]], mut denied_read_skill_context, {},
+		mut denied_read_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut denied_read_paths, {}) or { panic(err) }
+	assert denied_read_results[0].contains('active Agent Skill tool restrictions')
+	assert denied_read_paths.len == 0
 
 	skipped_edit := ProviderToolCall{
 		id:       'loop-skipped-edit'
@@ -797,6 +861,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	mut skip_skill_context := SessionSkillContext{}
 	mut skip_connections := []PluginMCPConnection{}
 	mut skip_read_paths := map[string]bool{}
+	edits_before_skipped_call := (store.workspace_edits(session.id) or { panic(err) }).len
 	skipped_results := execute_agent_tool_batch(app, mut skip_turn, root, session.id,
 		'test-loop-skipped-operation', [skipped_edit], mut skip_skill_context, {}, mut skip_connections,
 		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut skip_read_paths,
@@ -804,7 +869,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 			'loop-skipped-edit': agent_tool_loop_stop_note(skipped_edit)
 		}) or { panic(err) }
 	assert skipped_results[0].contains('was not run')
-	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == edits_before_skipped_call
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
 
 	duplicate_batch := [
@@ -832,6 +897,20 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert dup_results[1].contains('src/main.v')
 	assert !dup_results[1].contains('workspace-sentinel')
 	assert batch_paths['src/main.v']
+	assert workspace_read_path_from_call(ProviderToolCall{
+		id:       'read-spaced-path'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":" src/main.v "}'
+		}
+	}) or { '' } == ' src/main.v '
+	assert workspace_read_path_from_call(ProviderToolCall{
+		id:       'read-extra-argument'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","extra":true}'
+		}
+	}) == none
 
 	mut turn_paths := map[string]bool{}
 	turn_paths['src/main.v'] = true
@@ -911,6 +990,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	})
 	assert unknown.contains('not available')
 
+	edits_before_proposal := (store.workspace_edits(session.id) or { panic(err) }).len
 	proposal_result := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'propose-1'
 		function: ProviderFunctionCall{
@@ -922,7 +1002,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert proposal_result.contains('"id"')
 	assert !proposal_result.contains('module fixture')
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
-	assert (store.workspace_edits(session.id) or { panic(err) }).len == 2
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == edits_before_proposal + 1
 
 	shell_proposal := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'shell-propose-1'

@@ -155,16 +155,26 @@ fn workspace_read_path_from_call(call ProviderToolCall) ?string {
 		return none
 	}
 	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or { return none }
-	path := string_tool_argument(tool_arguments, 'path') or { return none }
-	normalized := path.replace('\\', '/').trim_space()
-	if normalized.len == 0 {
+	if tool_arguments.len != 1 {
 		return none
 	}
-	return normalized
+	path := string_tool_argument(tool_arguments, 'path') or { return none }
+	if path.len == 0 {
+		return none
+	}
+	// Preserve the path spelling: whitespace and backslashes can be literal
+	// filename characters on supported platforms, so normalizing them could
+	// suppress a distinct read.
+	return path
 }
 
 fn duplicate_workspace_read_note(path string) string {
 	return encode_agent_tool_note('Already provided this turn for path "${path}". Reuse the earlier workspace_read_file result; do not request it again.')
+}
+
+fn agent_tool_may_mutate_workspace(name string, mcp_bindings map[string]PluginMCPToolBinding) bool {
+	return name in ['workspace_propose_file_edit', 'workspace_propose_shell_command']
+		|| name in mcp_bindings
 }
 
 // execute_parallel_readonly_workspace_tools runs a read-only batch concurrently.
@@ -181,12 +191,16 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 			ordered[i] = note
 			continue
 		}
-		if path := workspace_read_path_from_call(call) {
-			if read_paths[path] {
-				ordered[i] = duplicate_workspace_read_note(path)
-				continue
+		// A denied read did not provide any workspace content, so it must not
+		// poison the turn-scoped duplicate-read cache.
+		if tool_policy.allows(call.function.name) {
+			if path := workspace_read_path_from_call(call) {
+				if read_paths[path] {
+					ordered[i] = duplicate_workspace_read_note(path)
+					continue
+				}
+				read_paths[path] = true
 			}
-			read_paths[path] = true
 		}
 		run_indexes << i
 		run_calls << call
@@ -275,17 +289,27 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 			continue
 		}
 		if path := workspace_read_path_from_call(call) {
-			if read_paths[path] {
-				results[index] = duplicate_workspace_read_note(path)
-				index++
-				continue
+			if skill_context.tool_policy.allows(call.function.name) {
+				if read_paths[path] {
+					results[index] = duplicate_workspace_read_note(path)
+					index++
+					continue
+				}
 			}
+		}
+		// Edits, shell, and MCP may change workspace contents. A denied Skill
+		// read is handled below without entering the duplicate-read cache.
+		if skill_context.tool_policy.allows(call.function.name)
+			&& agent_tool_may_mutate_workspace(call.function.name, mcp_bindings) {
+			read_paths.clear()
 		}
 		results[index] = sanitize_agent_tool_result(execute_agent_tool_if_allowed(app,
 			mut turn_ctx, root, session_id, operation_id, call, mut skill_context, mcp_bindings,
 			mut mcp_connections, policy)!)
 		if path := workspace_read_path_from_call(call) {
-			read_paths[path] = true
+			if skill_context.tool_policy.allows(call.function.name) {
+				read_paths[path] = true
+			}
 		}
 		index++
 	}

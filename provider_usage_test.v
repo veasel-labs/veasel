@@ -7,13 +7,15 @@ import time
 
 struct OpenCodeGoHeaderFixture {
 mut:
-	hits       int
-	session_id string
-	user_agent string
+	hits          int
+	authorization string
+	session_id    string
+	user_agent    string
 }
 
 fn (mut fixture OpenCodeGoHeaderFixture) handle(request http.Request) http.Response {
 	fixture.hits++
+	fixture.authorization = request.header.get_custom('Authorization') or { '' }
 	fixture.session_id = request.header.get_custom('x-opencode-session') or { '' }
 	fixture.user_agent = request.header.get_custom('User-Agent') or { '' }
 	mut response := http.Response{}
@@ -74,6 +76,29 @@ fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	assert fixture.hits == 1
 	assert fixture.session_id == session_id
 	assert fixture.user_agent == 'Veasel Code/${product_version}'
+	assert fixture.authorization == 'Bearer fixture-key'
+}
+
+fn test_opencode_free_model_request_allows_missing_api_key() {
+	mut fixture := &OpenCodeGoHeaderFixture{}
+	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer {
+		cancel()
+	}
+	response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/chat/completions', ModelConfig{
+		provider: 'opencode'
+		model:    'flint-40b-free'
+	}, '{}', .bearer, fn (_ string) ! {}) or { panic(err) }
+	assert response.status_code == 200
+	assert fixture.hits == 1
+	assert fixture.authorization == ''
+	assert fixture.session_id == ''
 }
 
 fn test_openai_chat_usage_parses_cached_tokens_subset() {

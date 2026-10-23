@@ -1617,12 +1617,12 @@
     {
       "id": "opencode",
       "name": "OpenCode",
-      "description": "OpenAI-compatible Chat Completions API",
+      "description": "OpenAI-compatible API · free models need no key; paid models use OPENCODE_API_KEY",
       "protocol": "openai-compatible",
       "api": "https://opencode.ai/inference/v1",
       "environment_key": "OPENCODE_API_KEY",
       "documentation_url": "https://opencode.ai/v2/docs/console/models/",
-      "requires_api_key": true,
+      "requires_api_key": false,
       "source": "models.dev",
       "models_dev_source": "providers/opencode/provider.toml"
     },

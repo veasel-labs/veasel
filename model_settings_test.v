@@ -317,6 +317,12 @@ fn test_provider_catalog_ids_are_declared_in_openapi() {
 	}
 	assert openapi.contains('documentation_url: { type: string }')
 	assert openapi.contains('openai-responses')
+	opencode := model_provider_info('opencode') or { panic('OpenCode missing from catalog') }
+	assert !opencode.requires_api_key
+	assert opencode.environment_key == 'OPENCODE_API_KEY'
+	opencode_go := model_provider_info('opencode-go') or { panic('OpenCode Go missing from catalog') }
+	assert opencode_go.requires_api_key
+	assert opencode_go.environment_key == 'OPENCODE_API_KEY'
 }
 
 fn test_model_settings_view_exposes_provider_catalog_without_secrets() {
@@ -451,6 +457,38 @@ fn test_ollama_profile_builds_a_local_model_config_without_credentials() {
 	assert config.model == 'qwen2.5-coder:7b'
 	assert config.api_key == ''
 	assert config.base_url == 'http://127.0.0.1:11434/v1'
+	app.close()
+	store.close() or { panic(err) }
+}
+
+fn test_opencode_free_model_profile_allows_missing_key_but_opencode_go_does_not() {
+	root := os.join_path(os.temp_dir(), 'veasel-opencode-settings-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'opencode'
+		model:    'flint-40b-free'
+		base_url: 'https://opencode.ai/inference/v1'
+	}) or { panic(err) }
+	config := app.model_config() or { panic(err) }
+	assert config.provider == 'opencode'
+	assert config.model == 'flint-40b-free'
+	assert config.api_key == ''
+	free_discovery := app.provider_catalog_model_config(ModelCatalogInput{
+		provider: 'opencode'
+	}) or { panic(err) }
+	assert free_discovery.provider == 'opencode'
+	assert free_discovery.api_key == ''
+	mut opencode_go_rejected := false
+	app.provider_catalog_model_config(ModelCatalogInput{
+		provider: 'opencode-go'
+	}) or {
+		opencode_go_rejected = true
+		assert err.msg().contains('credentials are not configured')
+	}
+	assert opencode_go_rejected
 	app.close()
 	store.close() or { panic(err) }
 }

@@ -71,6 +71,7 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	assert !repository_map_is_package_index_path('src/minisweagent/models/litellm_model.py')
 	assert !repository_map_hint_mentions_package_indexes(model_behavior)
 	assert repository_map_content_is_reexport_only('from .litellm_model import LiteLLMModel\n__all__ = ["LiteLLMModel"]')
+	assert repository_map_content_is_reexport_only('\r\n# module exports\r\n  from .client import Client\r\n')
 	assert repository_map_content_is_reexport_only("export { createClient } from './client.js'\n")
 	assert !repository_map_content_is_reexport_only('export function createClient() {}')
 	export_query := extract_repository_map_hints('show the package exports and entrypoint')

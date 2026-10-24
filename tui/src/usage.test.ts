@@ -178,7 +178,7 @@ describe("formatGlobalUsageSummary", () => {
     expect(text).toContain("anthropic / fixture: 150 in · 30 out · 1 reported turns")
     expect(text).not.toContain("Cache:")
     expect(text).not.toContain("Reasoning:")
-    expect(text).toContain("Cost: unavailable")
+    expect(text).toContain("Estimated cost (pinned rates): unavailable")
   })
 
   test("states unavailable when nothing was reported", () => {

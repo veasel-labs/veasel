@@ -635,7 +635,7 @@ fn repository_map_content_identifiers(content string) map[string]bool {
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
 // are skipped as too generic, and the total boost per file is capped.
-fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet) {
+fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string) {
 	mut definers := map[string][]int{}
 	for index, entry in entries {
 		if entry.path !in contents {
@@ -675,7 +675,10 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		}
 		// Personalization (Aider-style): a reference coming from a file the
 		// hint already points at counts more than one from an unrelated file.
-		referrer_weight := if score_repository_map_path(entry.path, hints) >= repository_map_cross_reference_hint_min_path_score {
+		// Keep the path-only relevance computed before content and structural
+		// boosts. Re-scoring here repeats all hint/path matching for each source
+		// file (up to repository_map_max_symbol_files candidates).
+		referrer_weight := if entry.path_score >= repository_map_cross_reference_hint_min_path_score {
 			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
 		} else {
 			repository_map_cross_reference_weight

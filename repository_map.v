@@ -128,9 +128,10 @@ struct RepositoryMapSymbol {
 
 struct RepositoryMapEntry {
 mut:
-	path    string
-	score   f64
-	symbols []RepositoryMapSymbol
+	path       string
+	path_score f64
+	score      f64
+	symbols    []RepositoryMapSymbol
 }
 
 struct RepositoryMapHintSet {
@@ -160,9 +161,11 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	mut entries := []RepositoryMapEntry{cap: walker.files.len}
 	for relative_path in walker.files {
 		normalized := relative_path.replace('\\', '/')
+		path_score := score_repository_map_path(normalized, hints)
 		entries << RepositoryMapEntry{
-			path:  normalized
-			score: score_repository_map_path(normalized, hints)
+			path:       normalized
+			path_score: path_score
+			score:      path_score
 		}
 	}
 	// The score/path comparator establishes the deterministic ranking order, so
@@ -248,7 +251,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	// Cross-file reference graph (one PageRank-style iteration, still
 	// extractive): files whose symbols are mentioned by many other files are
 	// more central to the workspace than files with many unreferenced symbols.
-	boost_repository_map_cross_references(mut entries, contents, hints)
+	boost_repository_map_cross_references(mut entries, contents)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)

@@ -223,6 +223,8 @@ export type ApiMcpToolCallApproval = ApiMcpToolCallSummary & {
 
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
+  onTurnQueued?: (sessionId: string, operationId: string) => void
+  onTurnStarted?: (sessionId: string, operationId: string) => void
   onTurnCompleted?: (sessionId: string, completion: SessionTurnCompletion) => void
   onEvent?: (eventType: string) => void
   onReconnect?: () => void
@@ -847,12 +849,14 @@ export class VeaselApiClient {
             if (!isAssistantDeltaEvent(eventType)) handlers.onEvent?.(eventType)
             if (
               isAssistantDeltaEvent(eventType)
+              || eventType === "session.turn_queued"
+              || eventType === "session.turn_started"
               || eventType === "session.turn_completed"
             ) {
               try {
                 const event = JSON.parse(parsed.data) as {
                   session_id?: string
-                  data?: SessionTurnCompletion & { delta?: string }
+                  data?: SessionTurnCompletion & { delta?: string; operation_id?: string }
                 }
                 if (isAssistantDeltaEvent(eventType)) {
                   const delta = admitAssistantDelta({
@@ -865,6 +869,12 @@ export class VeaselApiClient {
                   if (delta) handlers.onAssistantDelta?.(delta)
                 } else if (eventType === "session.turn_completed" && event.session_id) {
                   handlers.onTurnCompleted?.(event.session_id, event.data ?? {})
+                } else if (event.session_id && event.data?.operation_id) {
+                  if (eventType === "session.turn_queued") {
+                    handlers.onTurnQueued?.(event.session_id, event.data.operation_id)
+                  } else {
+                    handlers.onTurnStarted?.(event.session_id, event.data.operation_id)
+                  }
                 }
               } catch {
                 // Malformed payloads are ignored; persisted history stays authoritative.

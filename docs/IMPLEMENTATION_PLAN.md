@@ -586,7 +586,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   startup recovery transaction also emits one parent-session event for each
   durable terminal outcome that remains unclaimed, including children
   classified as `uncertain`; event persistence and the recovered claim commit
-  together.
+  together. A partial covering SQLite index limits this recovery lookup to
+  terminal runs whose outcomes remain unclaimed instead of scanning the full
+  child-run history at every startup.
   The event contains only the child run ID and terminal status marked untrusted;
   the bounded durable run row remains the source of the result text.
   Replaying the parent turn from these events and fetching the result into model

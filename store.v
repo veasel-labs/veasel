@@ -762,6 +762,27 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child workspace start migration')
 		}
 	}
+	if current < 22 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child outcome recovery index migration')
+		}
+		db.exec("CREATE INDEX subagent_runs_unclaimed_outcome ON subagent_runs (id, parent_session_id, parent_operation_id, status) WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index unclaimed child outcomes')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (22)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child outcome recovery index migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child outcome recovery index migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

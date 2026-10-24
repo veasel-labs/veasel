@@ -1134,7 +1134,7 @@ fn anthropic_stream_apply_usage(mut stream_state AnthropicStreamOutput, event_ty
 	if event_type == 'message_delta' {
 		if usage_any := root['usage'] {
 			delta_usage := provider_usage_from_anthropic_map(usage_any.as_map())
-			if delta_usage.output_tokens > 0 || delta_usage.cache_reported {
+			if has_provider_usage_data(delta_usage) {
 				stream_state.usage = merge_anthropic_stream_usage(stream_state.usage, delta_usage)
 			}
 		}

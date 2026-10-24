@@ -509,6 +509,17 @@ fn test_anthropic_stream_merges_message_start_and_delta_usage() {
 	assert merged.cache_creation_tokens == 10
 }
 
+fn test_anthropic_stream_keeps_billing_only_delta_usage() {
+	mut stream_state := AnthropicStreamOutput{}
+	anthropic_stream_apply_usage(mut stream_state, 'message_delta', '{
+		"type":"message_delta",
+		"usage":{"cost":0.00125,"opencode":{"allowance":0.0042}}
+	}') or { panic(err) }
+	assert !stream_state.usage.reported
+	assert (stream_state.usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
+}
+
 fn test_provider_stream_tool_arguments_use_bounded_builder() {
 	mut arguments := strings.new_builder(16)
 	append_provider_stream_tool_arguments(mut arguments, '{"query":')!

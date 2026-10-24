@@ -4,6 +4,7 @@ import uuid
 import os
 import os.filelock
 import strconv
+import json2
 
 const max_subagent_depth = 2
 const max_active_subagent_runs_per_parent = 4
@@ -272,24 +273,55 @@ fn (mut store Store) finish_subagent_run(run_id string, status string, result st
 	return store.get_subagent_run_unlocked(run_id)
 }
 
-// claim_subagent_outcome provides an at-most-once claim, not end-to-end delivery:
-// callers must commit the parent result durably before treating it as delivered.
+// claim_subagent_outcome records delivery in the parent event stream in the
+// same transaction as the durable claim. Retries return the same terminal run,
+// so a restarted parent can fetch its result again by run ID.
 fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
 	}
-	run := store.get_subagent_run_unlocked(run_id)!
-	if run.outcome_claimed {
-		return error('child agent outcome was already claimed')
+	store.db.begin()!
+	run := store.get_subagent_run_unlocked(run_id) or {
+		store.db.rollback() or {}
+		return err
 	}
 	if run.status !in ['completed', 'failed', 'cancelled', 'uncertain'] {
+		store.db.rollback() or {}
 		return error('child agent outcome is not available')
 	}
+	if run.outcome_claimed {
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit child outcome retry')
+		}
+		return run
+	}
 	_ = store.db.exec_param_many('UPDATE subagent_runs SET outcome_claimed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND outcome_claimed = 0',
-		[run_id])!
+		[run_id]) or {
+		store.db.rollback() or {}
+		return error('unable to persist child outcome claim')
+	}
 	if store.db.get_affected_rows_count() != 1 {
-		return error('child agent outcome was already claimed')
+		store.db.rollback() or {}
+		return error('child agent outcome claim raced with another caller')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'subagent.outcome_delivered',
+		run.parent_session_id,
+		json2.encode[EventData](EventData{
+			operation_id:       run.parent_operation_id
+			subagent_run_id:    run.id
+			subagent_status:    run.status
+			subagent_untrusted: true
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to persist parent child outcome event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit parent child outcome delivery')
 	}
 	return store.get_subagent_run_unlocked(run_id)
 }

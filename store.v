@@ -150,6 +150,9 @@ pub:
 	repository_map_injected        bool   @[omitempty]
 	repository_map_untrusted       bool   @[omitempty]
 	repository_map_preview         string @[omitempty]
+	subagent_run_id                string @[omitempty]
+	subagent_status                string @[omitempty]
+	subagent_untrusted             bool   @[omitempty]
 }
 
 pub struct SessionPluginSkill {

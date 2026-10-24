@@ -15,8 +15,12 @@ mut:
 }
 
 struct ActiveTurnOperation {
-	session_id string
-	cancel     vcontext.CancelFn @[required]
+	session_id        string
+	cancel            vcontext.CancelFn @[required]
+	durable_queue     bool
+	persistence_ready chan int
+mut:
+	persistence_resolved bool
 }
 
 fn (app &App) begin_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn, time.Time) {
@@ -24,14 +28,14 @@ fn (app &App) begin_turn_operation(session_id string, requested_id string) !(str
 	deadline := time.now().add(max_agent_turn_duration)
 	turn_ctx, cancel := vcontext.with_deadline(mut background, deadline)
 	operation_id, registered_ctx, registered_cancel := app.register_turn_operation(session_id,
-		requested_id, turn_ctx, cancel)!
+		requested_id, turn_ctx, cancel, false)!
 	return operation_id, registered_ctx, registered_cancel, deadline
 }
 
 fn (app &App) begin_queued_turn_operation(session_id string, requested_id string) !(string, vcontext.Context, vcontext.CancelFn) {
 	mut background := vcontext.background()
 	turn_ctx, cancel := vcontext.with_cancel(mut background)
-	return app.register_turn_operation(session_id, requested_id, turn_ctx, cancel)
+	return app.register_turn_operation(session_id, requested_id, turn_ctx, cancel, true)
 }
 
 fn (app &App) begin_requested_session_turn(session_id string, requested_id string, respond_async bool) !(string, vcontext.Context, vcontext.CancelFn, ?time.Time) {
@@ -44,7 +48,7 @@ fn (app &App) begin_requested_session_turn(session_id string, requested_id strin
 }
 
 fn (app &App) register_turn_operation(session_id string, requested_id string, turn_ctx vcontext.Context,
-	cancel vcontext.CancelFn) !(string, vcontext.Context, vcontext.CancelFn) {
+	cancel vcontext.CancelFn, durable_queue bool) !(string, vcontext.Context, vcontext.CancelFn) {
 	operation_id := if requested_id.trim_space().len == 0 {
 		uuid.new_v4().str()
 	} else {
@@ -73,8 +77,10 @@ fn (app &App) register_turn_operation(session_id string, requested_id string, tu
 		return error('operations_busy')
 	}
 	registry.operations[operation_id] = ActiveTurnOperation{
-		session_id: session_id
-		cancel:     cancel
+		session_id:        session_id
+		cancel:            cancel
+		durable_queue:     durable_queue
+		persistence_ready: chan int{cap: 1}
 	}
 	registry_lock.unlock()
 	return operation_id, turn_ctx, cancel
@@ -102,23 +108,51 @@ fn (app &App) begin_provider_worker() ?&sync.WaitGroup {
 	return registry.provider_workers
 }
 
-fn (app &App) cancel_turn_operation(session_id string, operation_id string) bool {
-	parsed_id := uuid.parse(operation_id) or { return false }
+fn (app &App) mark_turn_operation_persistence_resolved(operation_id string) {
+	mut registry := app.operation_registry
+	mut registry_lock := registry.mutex
+	registry_lock.lock()
+	mut operation := registry.operations[operation_id] or {
+		registry_lock.unlock()
+		return
+	}
+	if operation.durable_queue && !operation.persistence_resolved {
+		operation.persistence_resolved = true
+		registry.operations[operation_id] = operation
+		operation.persistence_ready <- 0
+		operation.persistence_ready.close()
+	}
+	registry_lock.unlock()
+}
+
+fn (app &App) cancel_turn_operation(session_id string, operation_id string) !(bool, string) {
+	parsed_id := uuid.parse(operation_id) or { return false, '' }
 	canonical_id := parsed_id.str()
 	mut registry := app.operation_registry
 	mut registry_lock := registry.mutex
 	registry_lock.lock()
 	operation := registry.operations[canonical_id] or {
 		registry_lock.unlock()
-		return false
+		return false, ''
 	}
 	if session_id.len > 0 && operation.session_id != session_id {
 		registry_lock.unlock()
-		return false
+		return false, ''
 	}
 	registry_lock.unlock()
 	operation.cancel()
-	return true
+	mut status := 'cancelling'
+	if operation.durable_queue {
+		_ = <-operation.persistence_ready
+		mut store := app.store
+		store.get_session_operation(operation.session_id, canonical_id) or {
+			return error('queued session operation was not persisted')
+		}
+		status = store.cancel_session_operation(operation.session_id, canonical_id) or {
+			return error('unable to persist queued cancellation')
+		}
+	}
+	return true, status
 }
 
 fn (mut app App) cancel_all_turn_operations() {

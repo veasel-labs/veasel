@@ -164,14 +164,85 @@ fn test_turn_operation_can_be_cancelled_and_is_session_scoped() {
 		panic(err)
 	}
 	assert actual_id == operation_id
-	assert !app.cancel_turn_operation('session-b', operation_id)
-	assert app.cancel_turn_operation('session-a', operation_id.to_upper())
+	cancelled_wrong_session, _ := app.cancel_turn_operation('session-b', operation_id) or { false, '' }
+	assert !cancelled_wrong_session
+	cancelled, _ := app.cancel_turn_operation('session-a', operation_id.to_upper()) or { false, '' }
+	assert cancelled
 	ctx_error := turn_ctx.err()
 	assert ctx_error !is none
 	assert ctx_error.msg().contains('canceled')
 	app.finish_turn_operation(operation_id)
-	assert !app.cancel_turn_operation('session-a', operation_id)
+	active, _ := app.cancel_turn_operation('session-a', operation_id) or { false, '' }
+	assert !active
 	cancel()
+}
+
+fn test_durable_cancellation_waits_for_persistence_before_acknowledging() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-durable-cancel-barrier-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	session := store.create_session(SessionInput{
+		title:     'Durable cancel barrier'
+		directory: '/tmp/durable-cancel-barrier'
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_, mut turn_ctx, cancel := app.begin_queued_turn_operation(session.id, operation_id) or { panic(err) }
+	defer { cancel() }
+	defer { app.finish_turn_operation(operation_id) }
+	started := chan int{cap: 1}
+	result := chan bool{cap: 1}
+	spawn fn (app &App, session_id string, operation_id string, started chan int, result chan bool) {
+		started <- 0
+		cancelled, _ := app.cancel_turn_operation(session_id, operation_id) or { false, '' }
+		result <- cancelled
+	}(app, session.id, operation_id, started, result)
+	_ = <-started
+	for _ in 0 .. 100 {
+		if turn_ctx.err() !is none {
+			break
+		}
+		time.sleep(time.millisecond)
+	}
+	assert turn_ctx.err() !is none
+	mut result_value := false
+	assert result.try_pop(mut result_value) == .not_ready
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"must not run"}') or {
+		panic(err)
+	}
+	app.mark_turn_operation_persistence_resolved(operation_id)
+	assert <-result
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_durable_cancellation_is_not_acknowledged_when_enqueue_failed() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-durable-cancel-failed-enqueue-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	session := store.create_session(SessionInput{
+		title:     'Durable cancel failed enqueue'
+		directory: '/tmp/durable-cancel-failed-enqueue'
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_, _, cancel := app.begin_queued_turn_operation(session.id, operation_id) or { panic(err) }
+	defer { cancel() }
+	defer { app.finish_turn_operation(operation_id) }
+	app.mark_turn_operation_persistence_resolved(operation_id)
+	mut saw_missing_persisted_operation := false
+	_, _ = app.cancel_turn_operation(session.id, operation_id) or {
+		saw_missing_persisted_operation = err.msg() == 'queued session operation was not persisted'
+		false, ''
+	}
+	assert saw_missing_persisted_operation
 }
 
 fn test_turn_cancellation_releases_a_queued_session_turn() {
@@ -1284,6 +1355,7 @@ fn test_queued_session_operation_waits_for_active_session_turn_before_claiming()
 		panic(err)
 	}
 	assert actual_id == operation_id
+	app.mark_turn_operation_persistence_resolved(operation_id)
 	turn_done := turn_ctx.done()
 	app.schedule_durable_session_operation(operation_id, cancel, turn_done, session.id, session,
 		ChatMessageInput{
@@ -1331,6 +1403,7 @@ fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_re
 	session_lock.wait()
 	second_operation, mut second_ctx, second_cancel := app.begin_queued_turn_operation(session.id,
 		second_id) or { panic(err) }
+	app.mark_turn_operation_persistence_resolved(second_operation)
 	second_done := second_ctx.done()
 	app.schedule_durable_session_operation(second_operation, second_cancel, second_done, session.id,
 		session, ChatMessageInput{
@@ -1340,6 +1413,7 @@ fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_re
 	first_operation, mut first_ctx, first_cancel := app.begin_queued_turn_operation(session.id, first_id) or {
 		panic(err)
 	}
+	app.mark_turn_operation_persistence_resolved(first_operation)
 	first_done := first_ctx.done()
 	app.schedule_durable_session_operation(first_operation, first_cancel, first_done, session.id, session,
 		ChatMessageInput{
@@ -1516,6 +1590,7 @@ fn test_cancel_before_enqueue_is_persisted_by_durable_worker() {
 	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"cancelled before persistence"}') or {
 		panic(err)
 	}
+	app.mark_turn_operation_persistence_resolved(operation_id)
 	app.schedule_durable_session_operation(operation_id, cancel, turn_done, session.id, session,
 		ChatMessageInput{
 			content: 'cancelled before persistence'

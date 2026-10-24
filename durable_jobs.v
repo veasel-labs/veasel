@@ -114,6 +114,8 @@ fn (app &App) resume_durable_queued_operations() {
 			cancel()
 			continue
 		}
+		// This row was already durable before the worker was registered.
+		app.mark_turn_operation_persistence_resolved(operation_id)
 		turn_done := turn_ctx.done()
 		app.schedule_durable_session_operation(operation.id, cancel, turn_done, operation.session_id,
 			session, input)

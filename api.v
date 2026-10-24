@@ -1419,8 +1419,12 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 	}
 	mut store := app.store
 	operation := store.get_session_operation(id, canonical_id) or {
-		// Synchronous turns may exist only in the process-local registry.
-		if !app.cancel_turn_operation(id, canonical_id) {
+		// Synchronous turns are process-local; async turns may still be persisting
+		// their durable row, so cancellation waits for that write to resolve.
+		cancelled, status := app.cancel_turn_operation(id, canonical_id) or {
+			return json_server_error(mut ctx, 'Unable to persist cancellation state')
+		}
+		if !cancelled {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
 				error: 'active operation not found'
@@ -1429,7 +1433,7 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 		ctx.res.set_status(.accepted)
 		return ctx.json(CancelTurnResponse{
 			operation_id: canonical_id
-			status:       'cancelling'
+			status:       status
 		})
 	}
 	if operation.status in ['completed', 'failed', 'cancelled', 'uncertain'] {
@@ -1439,14 +1443,20 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 			status:       operation.status
 		})
 	}
-	status := store.cancel_session_operation(id, canonical_id) or {
+	cancelled, status := app.cancel_turn_operation(id, canonical_id) or {
 		return json_server_error(mut ctx, 'Unable to persist cancellation state')
 	}
-	_ = app.cancel_turn_operation(id, canonical_id)
+	final_status := if cancelled {
+		status
+	} else {
+		store.cancel_session_operation(id, canonical_id) or {
+			return json_server_error(mut ctx, 'Unable to persist cancellation state')
+		}
+	}
 	ctx.res.set_status(.accepted)
 	return ctx.json(CancelTurnResponse{
 		operation_id: canonical_id
-		status:       status
+		status:       final_status
 	})
 }
 
@@ -1455,7 +1465,10 @@ pub fn (app &App) cancel_chat_completion(mut ctx Context, operation_id string) v
 	canonical_id := canonical_operation_id(operation_id) or {
 		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
 	}
-	if !app.cancel_turn_operation('', canonical_id) {
+	cancelled, status := app.cancel_turn_operation('', canonical_id) or {
+		return json_server_error(mut ctx, 'Unable to persist cancellation state')
+	}
+	if !cancelled {
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{
 			error: 'active operation not found'
@@ -1464,7 +1477,7 @@ pub fn (app &App) cancel_chat_completion(mut ctx Context, operation_id string) v
 	ctx.res.set_status(.accepted)
 	return ctx.json(CancelTurnResponse{
 		operation_id: canonical_id
-		status:       'cancelling'
+		status:       status
 	})
 }
 
@@ -1567,6 +1580,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		mut store := app.store
 		request_json := json2.encode(input)
 		store.enqueue_session_operation(id, operation_id, request_json) or {
+			app.mark_turn_operation_persistence_resolved(operation_id)
 			app.finish_turn_operation(operation_id)
 			cancel()
 			if err.msg() == 'session operation already exists' {
@@ -1581,6 +1595,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			}
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
+		app.mark_turn_operation_persistence_resolved(operation_id)
 		app.schedule_durable_session_operation(operation_id, cancel, turn_done, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}

@@ -4,7 +4,7 @@
 
 The official V mascot artwork in [vlang/v-mascot](https://github.com/vlang/v-mascot)
 is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
-Veasel Code's terminal sprite encodes Veasel Labs' original pixel companion
-from [veasel-labs/website](https://github.com/veasel-labs/website/blob/main/public/veasel-companion.png)
-using theme color roles. That source artwork is distributed under the
-website's MIT license. The sprite does not include or adapt the V mascot.
+Veasel Code's terminal portrait is a 32×32 theme-color encoding of the original
+portrait in [`tui/assets/veasel-portrait-v2.png`](tui/assets/veasel-portrait-v2.png).
+The source artwork and terminal sprite are distributed under this repository's
+MIT license. They do not include or adapt the V mascot.

@@ -31,6 +31,8 @@ export type ThemePortrait = {
   H: string
   N: string
   W: string
+  C: string
+  R: string
 }
 
 export type Theme = {
@@ -77,7 +79,7 @@ export type Theme = {
   portrait: ThemePortrait
 }
 
-const portraitKeys = ["D", "B", "L", "K", "H", "N", "W"] as const
+const portraitKeys = ["D", "B", "L", "K", "H", "N", "W", "C", "R"] as const
 const colorKeys = [
   "shellBg",
   "panelBg",
@@ -161,13 +163,15 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     status: "#8a96a3",
     hint: "#8a96a3",
     portrait: {
-      D: "#1a2830",
-      B: "#3d6a72",
-      L: "#7ec8b8",
-      K: "#080b0f",
-      H: "#ffffff",
-      N: "#080b0f",
+      D: "#0b2631",
+      B: "#086d83",
+      L: "#35d9bf",
+      K: "#07131d",
+      H: "#f4d79d",
+      N: "#fff2cf",
       W: "#ffffff",
+      R: "#a44e37",
+      C: "#f2796f",
     },
   },
   ember: {
@@ -212,13 +216,15 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     status: "#9a9084",
     hint: "#9a9084",
     portrait: {
-      D: "#2a2218",
-      B: "#8a6238",
-      L: "#d4a06a",
+      D: "#302116",
+      B: "#805b3b",
+      L: "#d99b5c",
       K: "#100e0c",
-      H: "#fff8f0",
-      N: "#100e0c",
+      H: "#e9c58e",
+      N: "#fff1dc",
       W: "#fff8f0",
+      R: "#9d4630",
+      C: "#d77258",
     },
   },
   slate: {
@@ -267,9 +273,11 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       B: "#4b6c88",
       L: "#90b8db",
       K: "#080b0f",
-      H: "#ffffff",
-      N: "#080b0f",
+      H: "#e6c07b",
+      N: "#eff6fb",
       W: "#ffffff",
+      R: "#a8543a",
+      C: "#dd8c8c",
     },
   },
   mono: {
@@ -318,9 +326,11 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       B: "#666666",
       L: "#bbbbbb",
       K: "#000000",
-      H: "#ffffff",
+      H: "#dddddd",
       N: "#000000",
       W: "#ffffff",
+      R: "#aaaaaa",
+      C: "#aaaaaa",
     },
   },
   aurora: {
@@ -366,12 +376,14 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     hint: "#7f9a9e",
     portrait: {
       D: "#123038",
-      B: "#2a6a72",
+      B: "#126978",
       L: "#5eead4",
       K: "#061012",
-      H: "#ecfeff",
-      N: "#061012",
+      H: "#a7f3d0",
+      N: "#e6fff9",
       W: "#ecfeff",
+      R: "#ad573c",
+      C: "#ff8a83",
     },
   },
   day: {
@@ -416,13 +428,15 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     status: "#5a6b63",
     hint: "#5a6b63",
     portrait: {
-      D: "#d7e6de",
-      B: "#4a9a7a",
+      D: "#17382c",
+      B: "#39876c",
       L: "#0f6b4c",
       K: "#0c1410",
-      H: "#ffffff",
-      N: "#0c1410",
+      H: "#e3c991",
+      N: "#f3efe2",
       W: "#ffffff",
+      R: "#a44e37",
+      C: "#bd6554",
     },
   },
   contrast: {
@@ -474,6 +488,8 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#ffffff",
       N: "#000000",
       W: "#ffffff",
+      R: "#7a3f2d",
+      C: "#ff00ff",
     },
   },
 }

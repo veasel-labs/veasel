@@ -34,7 +34,9 @@ turns with `Prefer: respond-async`, renders durable assistant deltas while the
 operation runs, and reloads the committed exchange after its
 `session.turn_completed` event.
 
-The startup screen uses an original geometric pixel companion drawn for Veasel
-Code. It does not reuse the V language mascot artwork and is covered by this
-repository's MIT license. The upstream mascot's CC BY-NC 4.0 license is recorded
-in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+The startup screen uses a 32×32 pixel portrait of Veasel's companion, rendered
+as 16 rows of Unicode half-blocks. Russet fur, cream, teal accents, and
+highlights follow the active theme. The source art is a 128×128, 14-color
+pixel-art reinterpretation of Veasel's project-owned companion concept and
+does not use the V mascot as an image input; provenance and license notes are in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).

@@ -210,11 +210,12 @@ For memory-bounded local V checks, see [AGENTS.md](AGENTS.md). Related maps:
 
 ## Licensing
 
-Code and the original geometric TUI pixel companion are MIT. The V project's
-official mascot artwork is CC BY-NC 4.0 and is not included or adapted. See
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No endorsement by the V
-project is implied. The README banner and mark in `static/` are Veasel Code
-originals under MIT.
+Code is MIT. The pixel companion is an original reinterpretation of Veasel's
+project-owned companion concept; the V project's official mascot artwork was
+not used as an image input. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for provenance and license
+notes. No endorsement by the V project is implied. The README banner and mark
+in `static/` are Veasel Code originals under MIT.
 
 ## Community
 

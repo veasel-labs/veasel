@@ -690,6 +690,27 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child agent run migration')
 		}
 	}
+	if current < 19 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child agent cancellation migration')
+		}
+		db.exec('ALTER TABLE subagent_runs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child agent cancellation state')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (19)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child agent cancellation migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child agent cancellation migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -1810,7 +1831,7 @@ fn (mut store Store) finish_queued_session_operation(session_id string, operatio
 			store.db.rollback() or {}
 			return error('unable to cancel session operation')
 		}
-		store.cancel_queued_subagent_runs_unlocked(session_id, operation_id, 'Parent operation cancellation was requested.') or {
+		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation cancellation was requested.') or {
 			store.db.rollback() or {}
 			return err
 		}
@@ -2317,7 +2338,7 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
-		store.cancel_queued_subagent_runs_unlocked(session_id, operation_id, 'Parent operation completed before this child run started.') or {
+		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation completed before this child run started.') or {
 			store.db.rollback() or {}
 			return err
 		}
@@ -2449,7 +2470,7 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 		store.db.rollback() or {}
 		return error('unable to persist session operation failure')
 	}
-	store.cancel_queued_subagent_runs_unlocked(session_id, operation_id, 'Parent operation ended before this child run started.') or {
+	store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation ended before this child run started.') or {
 		store.db.rollback() or {}
 		return err
 	}

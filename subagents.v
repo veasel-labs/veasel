@@ -20,6 +20,7 @@ pub:
 	status              string
 	result              string
 	error               string
+	cancel_requested    bool
 	outcome_claimed     bool
 }
 
@@ -219,7 +220,7 @@ fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 }
 
 fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
-	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed FROM subagent_runs WHERE id = ?',
+	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed, cancel_requested FROM subagent_runs WHERE id = ?',
 		[run_id])!
 	if rows.len != 1 {
 		return error('child agent run not found')
@@ -237,13 +238,32 @@ fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
 		result:              row.val(8)
 		error:               row.val(9)
 		outcome_claimed:     row.val(10).int() == 1
+		cancel_requested:    row.val(11).int() == 1
 	}
 }
 
-// cancel_queued_subagent_runs_unlocked is called inside the owning operation's
-// transaction so child work cannot remain queued after its parent stops.
-fn (mut store Store) cancel_queued_subagent_runs_unlocked(parent_session_id string,
+// request_subagent_cancellations_unlocked is called inside the owning
+// operation's transaction. Queued children stop before execution; running
+// children receive a durable cancellation signal for their worker to observe.
+fn (mut store Store) request_subagent_cancellations_unlocked(parent_session_id string,
 	parent_operation_id string, reason string) ! {
 	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_session_id = ? AND parent_operation_id = ? AND status = 'queued'",
 		[reason, parent_session_id, parent_operation_id])!
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET cancel_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE parent_session_id = ? AND parent_operation_id = ? AND status = 'running' AND cancel_requested = 0",
+		[parent_session_id, parent_operation_id])!
+}
+
+// subagent_cancellation_requested lets a future child worker observe the
+// parent's durable cancellation request without holding the store lock while
+// it waits for provider or tool work to stop.
+fn (mut store Store) subagent_cancellation_requested(run_id string) !bool {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	run := store.get_subagent_run_unlocked(run_id)!
+	if run.status != 'running' {
+		return error('child agent run is not running')
+	}
+	return run.cancel_requested
 }

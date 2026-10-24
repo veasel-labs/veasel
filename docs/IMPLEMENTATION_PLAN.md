@@ -582,10 +582,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   runs and a 32-run persistence ceiling per parent, a 64 KiB terminal result
   cap, and at-most-once terminal outcome claiming. Interrupted running children
   become `uncertain` on restart and are never replayed. This is persistence
-  groundwork only: trusted-agent authorization, isolated worktree creation,
-  deadlines, cancellation propagation, atomic delivery with the parent result,
-  API/TUI integration, and task-level benchmark evidence remain required before
-  a model-callable tool is exposed.
+  groundwork only. Parent stop now cancels queued children and persists a
+  cancellation request for running children so a future worker can observe it;
+  this signal does not itself terminate a provider request or process. Trusted-
+  agent authorization, isolated worktree creation, deadlines, cancellation
+  execution, atomic delivery with the parent result, API/TUI integration, and
+  task-level benchmark evidence remain required before a model-callable tool is
+  exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

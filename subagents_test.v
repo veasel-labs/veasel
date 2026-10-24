@@ -35,8 +35,16 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	}
 	queued := store.create_subagent_run(parent.id, operation_id, 'request-2', 'trusted-reviewer', 1,
 		'Queued child', root) or { panic(err) }
+	running := store.create_subagent_run(parent.id, operation_id, 'request-3', 'trusted-reviewer', 1,
+		'Running child', root) or { panic(err) }
+	_ = store.begin_subagent_run(running.id) or { panic(err) }
+	assert !(store.subagent_cancellation_requested(running.id) or { panic(err) })
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or { panic(err) }
 	assert (store.get_subagent_run_unlocked(queued.id) or { panic(err) }).status == 'cancelled'
+	requested_cancel := store.get_subagent_run_unlocked(running.id) or { panic(err) }
+	assert requested_cancel.status == 'running'
+	assert requested_cancel.cancel_requested
+	assert store.subagent_cancellation_requested(running.id) or { panic(err) }
 	store.close() or { panic(err) }
 
 	mut recovered := open_store(db_path) or { panic(err) }
@@ -44,6 +52,9 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	restored := recovered.get_subagent_run_unlocked(first.id) or { panic(err) }
 	assert restored.status == 'completed'
 	assert restored.outcome_claimed
+	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
+	assert recovered_running.status == 'uncertain'
+	assert recovered_running.cancel_requested
 }
 
 fn test_subagent_schema_migrates_existing_v17_database() {
@@ -53,8 +64,9 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
 	initial_version := store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert initial_version == 18
+	assert initial_version == 19
 	_ = store.db.exec('DROP TABLE subagent_runs') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 19') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 18') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(db_path) or { panic(err) }
@@ -63,7 +75,7 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 		panic(err)
 	} == 1
 	migrated_version := migrated.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert migrated_version == 18
+	assert migrated_version == 19
 }
 
 fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {

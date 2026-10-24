@@ -8,8 +8,9 @@
 
 This track packages the standalone TUI for Linux, macOS, and Windows in CI.
 Interactive PTY smoke is a separate gate from packaging: it proves the bundled
-`veasel-tui` binary can open against a local backend, reach the connected home
-screen, and exercise a short settings path.
+`veasel-tui` binary can open against a local backend, reach a seeded session,
+navigate provider settings, send a prompt through the backend, render a
+mock-provider reply, persist both turns, and exit cleanly.
 
 ## Automated coverage
 
@@ -29,15 +30,17 @@ interactive journeys remain separate work.
 ## Windows acceptance covered by CI
 
 The Windows CI job builds `dist/veasel.exe` and `dist/veasel-tui.exe`, starts
-the backend in isolated temporary state, and drives the packaged client in a
-100×24 pseudoconsole. The shared smoke checks:
+the backend and mock provider in isolated temporary state, and drives the
+packaged client in a 100×24 pseudoconsole. The shared smoke checks:
 
 1. Start the backend on loopback and confirm `GET /v1/health`.
 2. Launch `veasel-tui.exe` in Windows Terminal (or ConPTY-capable host).
 3. Confirm home chrome: connected status, `SESSIONS`, `VEASEL` brand.
 4. Press `s` and confirm `MODEL SETTINGS` opens; Tab cycles provider scopes.
 5. Search for `anthorpic` and confirm typo-tolerant discovery finds Anthropic.
-6. Esc returns to the home session list; `q` exits cleanly.
+6. Open the seeded session, send `Say hello`, and render `Provider fixture reply` from the mock provider.
+7. Confirm both turns are persisted by the backend; the command palette's Quit command exits cleanly.
+The mock provider uses a fixture key and makes no external model requests.
 The Python driver uses `CreatePseudoConsole`, Win32 pipes, and
 `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`; WSL/Git Bash are not used as a proxy for
 ConPTY. Record CI failures with the visible terminal tail emitted by the smoke.

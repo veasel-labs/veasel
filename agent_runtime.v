@@ -35,8 +35,15 @@ fn agent_tool_readonly_run_end(calls []ProviderToolCall, start int) int {
 }
 
 struct ParallelReadonlyToolResult {
-	index  int
-	result string
+	index                    int
+	result                   string
+	workspace_read_attempted bool
+	workspace_read_succeeded bool
+}
+
+struct AgentToolExecutionResult {
+	result                   string
+	workspace_read_succeeded bool
 }
 
 struct AgentToolNote {
@@ -213,13 +220,23 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 		spawn execute_parallel_readonly_workspace_tool_worker(app, root, session_id, tool_policy,
 			i, call, results_ch)
 	}
-	mut run_results := []string{len: run_calls.len}
+	mut run_results := []ParallelReadonlyToolResult{len: run_calls.len}
 	for _ in 0 .. run_calls.len {
 		item := <-results_ch
-		run_results[item.index] = item.result
+		run_results[item.index] = item
 	}
 	for i, call_index in run_indexes {
-		ordered[call_index] = run_results[i]
+		read_result := run_results[i]
+		ordered[call_index] = read_result.result
+		if read_result.workspace_read_attempted {
+			if path := workspace_read_path_from_call(run_calls[i]) {
+				if read_result.workspace_read_succeeded {
+					read_paths[path] = true
+				} else {
+					read_paths.delete(path)
+				}
+			}
+		}
 	}
 	return ordered
 }
@@ -227,15 +244,24 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 fn execute_parallel_readonly_workspace_tool_worker(app &App, root string, session_id string,
 	tool_policy AgentToolPolicy, index int, call ProviderToolCall, results_ch chan ParallelReadonlyToolResult) {
 	mut result := ''
+	mut workspace_read_attempted := false
+	mut workspace_read_succeeded := false
 	if !tool_policy.allows(call.function.name) {
 		result = encode_agent_tool_error('Tool is not available under the active Agent Skill tool restrictions.')
+	} else if call.function.name == 'workspace_read_file' {
+		workspace_read_attempted = true
+		read_result := execute_workspace_read_file_tool(root, call)
+		result = sanitize_agent_tool_result(read_result.result)
+		workspace_read_succeeded = read_result.workspace_read_succeeded
 	} else {
 		result = sanitize_agent_tool_result(execute_workspace_agent_tool(app, root, session_id,
 			call))
 	}
 	results_ch <- ParallelReadonlyToolResult{
-		index:  index
-		result: result
+		index:                    index
+		result:                   result
+		workspace_read_attempted: workspace_read_attempted
+		workspace_read_succeeded: workspace_read_succeeded
 	}
 }
 
@@ -303,11 +329,12 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 			&& agent_tool_may_mutate_workspace(call.function.name, mcp_bindings) {
 			read_paths.clear()
 		}
-		results[index] = sanitize_agent_tool_result(execute_agent_tool_if_allowed(app,
-			mut turn_ctx, root, session_id, operation_id, call, mut skill_context, mcp_bindings,
-			mut mcp_connections, policy)!)
+		execution_result := execute_agent_tool_if_allowed_with_status(app, mut turn_ctx, root,
+			session_id, operation_id, call, mut skill_context, mcp_bindings,
+			mut mcp_connections, policy)!
+		results[index] = sanitize_agent_tool_result(execution_result.result)
 		if path := workspace_read_path_from_call(call) {
-			if skill_context.tool_policy.allows(call.function.name) {
+			if execution_result.workspace_read_succeeded {
 				read_paths[path] = true
 			}
 		}
@@ -813,6 +840,24 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 	return execute_workspace_agent_tool(app, root, session_id, call)
 }
 
+fn execute_agent_tool_if_allowed_with_status(app &App, mut turn_ctx vcontext.Context, root string,
+	session_id string, operation_id string, call ProviderToolCall,
+	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
+	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn) !AgentToolExecutionResult {
+	if call.function.name == 'workspace_read_file' {
+		if !skill_context.tool_policy.allows(call.function.name) {
+			return AgentToolExecutionResult{
+				result: encode_agent_tool_error('Tool is not available under the active Agent Skill tool restrictions.')
+			}
+		}
+		return execute_workspace_read_file_tool(root, call)
+	}
+	return AgentToolExecutionResult{
+		result: execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, operation_id,
+			call, mut skill_context, mcp_bindings, mut mcp_connections, policy)!
+	}
+}
+
 fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id string,
 	call ProviderToolCall) string {
 	if call.function.name == 'workspace_propose_file_edit' {
@@ -1220,19 +1265,7 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			json2.encode[WorkspaceFileList](files)
 		}
 		'workspace_read_file' {
-			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				return encode_agent_tool_error('Tool arguments must be a JSON object.')
-			}
-			path := string_tool_argument(tool_arguments, 'path') or {
-				return encode_agent_tool_error('A relative path string is required.')
-			}
-			if tool_arguments.len != 1 {
-				return encode_agent_tool_error('Unexpected tool argument.')
-			}
-			file := workspace_file(root, path) or {
-				return encode_agent_tool_error('The workspace file is invalid or unavailable.')
-			}
-			json2.encode[WorkspaceFileContent](file)
+			execute_workspace_read_file_tool(root, call).result
 		}
 		'workspace_search' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
@@ -1295,6 +1328,33 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 		}
 	}
 	return result
+}
+
+fn execute_workspace_read_file_tool(root string, call ProviderToolCall) AgentToolExecutionResult {
+	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('Tool arguments must be a JSON object.')
+		}
+	}
+	path := string_tool_argument(tool_arguments, 'path') or {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('A relative path string is required.')
+		}
+	}
+	if tool_arguments.len != 1 {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('Unexpected tool argument.')
+		}
+	}
+	file := workspace_file(root, path) or {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('The workspace file is invalid or unavailable.')
+		}
+	}
+	return AgentToolExecutionResult{
+		result:                   json2.encode[WorkspaceFileContent](file)
+		workspace_read_succeeded: true
+	}
 }
 
 fn string_tool_argument(arguments map[string]json2.Any, key string) !string {

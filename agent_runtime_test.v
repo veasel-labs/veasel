@@ -897,6 +897,60 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert dup_results[1].contains('src/main.v')
 	assert !dup_results[1].contains('workspace-sentinel')
 	assert batch_paths['src/main.v']
+
+	late_path := 'src/late-file.txt'
+	late_read_calls := [
+		ProviderToolCall{
+			id:       'late-read-a'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"${late_path}"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'late-read-b'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"${late_path}"}'
+			}
+		},
+	]
+	mut late_read_paths := map[string]bool{}
+	mut late_read_context := vcontext.background()
+	mut late_read_turn, cancel_late_read := vcontext.with_timeout(mut late_read_context,
+		2 * time.second)
+	defer { cancel_late_read() }
+	mut late_read_skills := SessionSkillContext{}
+	mut late_read_connections := []PluginMCPConnection{}
+	late_read_results := execute_agent_tool_batch(app, mut late_read_turn, root, session.id,
+		'test-late-file-operation', late_read_calls, mut late_read_skills, {},
+		mut late_read_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut late_read_paths, {}) or { panic(err) }
+	assert late_read_results[0].contains('invalid or unavailable')
+	assert late_read_results[1].contains('Already provided this turn')
+	assert !late_read_paths[late_path]
+	os.write_file(os.join_path(root, late_path), 'appeared after the failed read') or {
+		panic(err)
+	}
+	mut late_retry_context := vcontext.background()
+	mut late_retry_turn, cancel_late_retry := vcontext.with_timeout(mut late_retry_context,
+		2 * time.second)
+	defer { cancel_late_retry() }
+	mut late_retry_skills := SessionSkillContext{}
+	mut late_retry_connections := []PluginMCPConnection{}
+	late_retry_call := ProviderToolCall{
+		id:       'late-read-retry'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"${late_path}"}'
+		}
+	}
+	late_retry_results := execute_agent_tool_batch(app, mut late_retry_turn, root, session.id,
+		'test-late-file-retry-operation', [late_retry_call], mut late_retry_skills, {},
+		mut late_retry_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut late_read_paths, {}) or { panic(err) }
+	assert late_retry_results[0].contains('appeared after the failed read')
+	assert late_read_paths[late_path]
 	assert workspace_read_path_from_call(ProviderToolCall{
 		id:       'read-spaced-path'
 		function: ProviderFunctionCall{

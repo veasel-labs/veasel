@@ -210,6 +210,10 @@ fn redact_pem_blocks(text string) string {
 	mut changed := false
 	mut i := 0
 	for i < text.len {
+		if text[i] != `-` {
+			i++
+			continue
+		}
 		if trace_text_starts_with(text, i, '-----BEGIN') {
 			end_at := index_trace_text_from(text, '-----END', i + 10)
 			close := if end_at >= 0 { index_trace_text_from(text, '-----', end_at + 8) } else { -1 }
@@ -252,6 +256,12 @@ fn redact_prefixed_tokens(text string) string {
 	mut changed := false
 	mut i := 0
 	for i < text.len {
+		// All recognized token prefixes start with one of these bytes. Most
+		// trace text can skip the prefix table with a single byte comparison.
+		if text[i] !in [`s`, `g`, `x`, `A`, `L`, `e`] {
+			i++
+			continue
+		}
 		mut consumed := 0
 		for prefix in trace_secret_prefixes {
 			if trace_text_starts_with(text, i, prefix) {
@@ -293,6 +303,12 @@ fn redact_assigned_secrets(text string) string {
 	mut changed := false
 	mut i := 0
 	for i < text.len {
+		// Secret field names are ASCII case-insensitive and start with only
+		// these letters, so ordinary prose avoids the field-name scan.
+		if text[i] !in [`a`, `A`, `c`, `C`, `p`, `P`, `s`, `S`, `t`, `T`] {
+			i++
+			continue
+		}
 		mut field_len := 0
 		if i == 0 || !is_trace_token_byte(text[i - 1]) {
 			for field in trace_secret_field_names {

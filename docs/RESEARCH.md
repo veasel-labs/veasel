@@ -1,6 +1,6 @@
 # Ecosystem and repository research
 
-**Snapshot date:** 2026-10-13
+**Snapshot date:** 2026-10-24
 **Purpose:** Record what was inspected, distinguish local evidence from moving
 upstream references, and turn useful practices into concrete Veasel decisions.
 This is an architecture input, not a claim that Veasel already implements the
@@ -21,18 +21,19 @@ listed capabilities.
 | agentic-harness | Local `/home/ulisesjcf/.ai-workspace/repos/github.com/ulises-jeremias/agentic-harness`. | Durable workspace context and orchestration integration; it is deliberately not another execution runtime. |
 | agentic-workstation | Local `/home/ulisesjcf/.ai-workspace/repos/github.com/ulises-jeremias/agentic-workstation`. | Thin host provisioning and machine-specific LLM policy; reusable orchestration/capabilities live downstream in agent-toolkit. |
 | LangChainV | Local `/home/ulisesjcf/.ai-workspace/repos/github.com/ulises-jeremias/langchainv`. Read README, AGENTS, CONTRIBUTING, implementation plan, standard-library catalog and parity ledger. | Small V-native contracts, isolated adapters, deterministic HTTP fixtures, explicit errors/cancellation, feature-level evidence ledger. Left untouched. |
-| OpenCode | Upstream [repository](https://github.com/anomalyco/opencode), MIT. No local source checkout. API comparison sample [`95daf90670b7c039c436c85537da5fbfe2205b41`](https://github.com/anomalyco/opencode/commit/95daf90670b7c039c436c85537da5fbfe2205b41), committed 2026-09-11. Provider architecture source inspected at [`5a4dd5b4301182591d48a93bbacdc5b7926cd3ca`](https://github.com/anomalyco/opencode/commit/5a4dd5b4301182591d48a93bbacdc5b7926cd3ca), 2026-10-13. | Server-backed multi-client architecture, sessions, event stream, providers/tools, agents and permission UX. The current provider layer separates provider records, integration connections, and credentials; the Models.dev service boots from a bundled snapshot, validates and caches fetched catalogs, deduplicates refreshes, and publishes changes only when the catalog digest changes. Veasel adopts the separation and stable-snapshot principle in V without importing the AI SDK or requiring runtime catalog access. Veasel still lacks OAuth/account connections, provider-specific adapters beyond its four protocol families, model capabilities/variants, and per-account catalog filtering. The route matrix remains pinned separately in [`compatibility/opencode.md`](compatibility/opencode.md). |
+| OpenCode | Upstream [repository](https://github.com/anomalyco/opencode), MIT. Shallow source clone refreshed 2026-10-24 to [`f20760b8bf3bced0fa5620b6afe7b78dd615ee36`](https://github.com/anomalyco/opencode/tree/f20760b8bf3bced0fa5620b6afe7b78dd615ee36). The API compatibility sample remains pinned at [`95daf90670b7c039c436c85537da5fbfe2205b41`](https://github.com/anomalyco/opencode/commit/95daf90670b7c039c436c85537da5fbfe2205b41). | Read the current `packages/ai/src/protocols/shared.ts`, `anthropic-messages.ts`, and `gemini.ts` billing/stream merge paths plus `packages/core/src/session/usage.ts` and `projector.ts`. The provider layer validates optional finite non-negative reported USD, preserves an explicit zero, keeps OpenCode Go `opencode.allowance` separate from charge, uses the latest reported amount for Anthropic stream merges, and sums per-request billing for continued Gemini requests. Veasel's provider billing work follows these semantics while preserving its own incomplete-pricing state. This source comparison found and fixed an Anthropic stream guard that previously dropped billing-only deltas. The broader provider architecture and route limitations remain as previously recorded; the route matrix stays pinned separately in [`compatibility/opencode.md`](compatibility/opencode.md). |
 | Agent Plugins | Official [specification](https://agent-plugins.org/specification), published v1.0.0; immutable release source [`bd383552095128f6effe895b9257cfd580a6d179`](https://github.com/agentplugins/agent-plugins-spec/tree/bd383552095128f6effe895b9257cfd580a6d179), release dated 2026-09-28. Current repository head is the 1.1.0 working draft and is not the compatibility target. | Portable directory package, strict manifest and component failure boundaries, Agent Skills, and MCP config. The full Veasel target and evidence gate live in [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md). Normative documentation is CC BY 4.0; schema/code material is Apache-2.0 per the project charter; do not vendor without preserving applicable notices. |
 | Agent Skills | Official [Skills specification](https://agentskills.io/specification), consulted 2026-10-09. | Required nested format for the Agent Plugins `skills/` component; reuse V `yaml` for frontmatter and validate its constraints without changing skill Markdown instructions. |
 | Claude Code | Public product documentation only; no source repository or source license available. | User-facing concepts and permission/context behavior only. No source copying. |
 | Codex CLI | Upstream [repository](https://github.com/openai/codex), Apache-2.0. No local checkout. A 2026-09 historical immutable sample is [`89c8bcf`](https://github.com/openai/codex/commit/89c8bcf); this is not asserted to be the current head. | App-server protocol, typed requests/notifications/errors, session lifecycle, approvals and client/server separation. Apache license and NOTICE obligations apply to any source reuse. |
 | Pi (`pi-mono`) | Project now appears as [earendil-works/pi](https://github.com/earendil-works/pi), MIT. No local checkout. A 2026-09 historical immutable sample is [`71dca87`](https://github.com/earendil-works/pi/commit/71dca87); this is not asserted to be the current head. | Small composable core, provider API boundary, multiple UI/SDK surfaces, append-only session/event history and extension seams. Extensions execute code and therefore need a trust model. |
 
-Local checkout status is evidence only for the paths listed. There were no
-local source checkouts of OpenCode, Claude Code, Codex CLI, Pi, RxV, setup-v, or
-`awesome-v` in the workspace when inspected. The V mascot repository was
-inspected read-only from a temporary checkout on 2026-10-23; no upstream art was
-copied into the product.
+Local checkout status is evidence only for the paths listed. As of this
+snapshot, source clones also exist for the mission references in
+`research/veasel-mission-clones`; record each clone's exact revision before
+using it as compatibility evidence. Claude Code remains documentation-only.
+The V mascot repository was inspected read-only from a temporary checkout on
+2026-10-23; no upstream art was copied into the product.
 
 ## V ecosystem findings
 

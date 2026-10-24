@@ -180,6 +180,17 @@ fn workspace_agent_tools() []AgentToolDefinition {
 			}
 		},
 		AgentToolDefinition{
+			name:        'subagent_run'
+			description: 'Delegate one focused read-only codebase investigation to a built-in reviewer or explorer. The child runs in an isolated workspace and returns a bounded summary with file evidence.'
+			parameters:  ToolParameters{
+				properties: {
+					'agent_id': ToolParameter{ type: 'string', description: 'Built-in profile: reviewer or explorer.' }
+					'task':     ToolParameter{ type: 'string', description: 'Focused read-only investigation request, at most 8192 UTF-8 bytes.' }
+				}
+				required:   ['agent_id', 'task']
+			}
+		},
+		AgentToolDefinition{
 			name:        'workspace_propose_file_edit'
 			description: 'Propose a change to one UTF-8 file in the current workspace. This never writes the file. The user must inspect and explicitly approve the stored diff before it is applied.'
 			parameters:  ToolParameters{
@@ -605,6 +616,9 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 	}
 	if call.function.name == 'agent_skill_read_resource' {
 		return execute_agent_skill_resource(skill_context.resource_access, call)
+	}
+	if call.function.name == 'subagent_run' {
+		return app.execute_subagent_run(mut turn_ctx, root, session_id, operation_id, call)
 	}
 	if tool_class in ['edit', 'shell'] {
 		decision := decide_execution_permission(policy.mode, tool_class, policy.interactive,

@@ -593,6 +593,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the bounded durable run row remains the source of the result text.
   Replaying the parent turn from these events and fetching the result into model
   context remain separate work.
+  An unmerged prototype on `feat/subagent-readonly-worker` adds a synchronous,
+  model-callable `subagent_run` path for the two built-in read-only profiles,
+  using the parent cancellation context and persisting child usage and outcome.
+  Local fake-provider end-to-end tests now prove dispatch, child file inspection,
+  usage persistence, and safe failure delivery. Cancellation while a child is
+  waiting on its provider and task-level comparative evidence remain outstanding
+  before this can be exposed in a release. The storage tests alone do not
+  establish that delegation improves task success or efficiency.
   The storage boundary accepts only the built-in `reviewer` and `explorer` profile
   IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become

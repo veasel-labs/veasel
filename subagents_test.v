@@ -170,10 +170,13 @@ fn test_builtin_subagent_profiles_grant_only_readonly_tools() {
 	assert reviewer.tool_policy().allows('workspace_search')
 	assert !reviewer.tool_policy().allows('workspace_propose_file_edit')
 	assert !reviewer.tool_policy().allows('workspace_propose_shell_command')
+	assert !reviewer.tool_policy().allows('subagent_run')
+	assert execution_tool_class('subagent_run') == 'read'
 	assert explorer.tool_policy().allowed_tools == reviewer.tool_policy().allowed_tools
 	for name in reviewer.allowed_tools {
 		assert workspace_agent_tools().any(it.name == name)
 	}
+	assert workspace_agent_tools().any(it.name == 'subagent_run')
 	_ = builtin_subagent_profile('project-agent') or {
 		assert err.msg().contains('trusted built-in registry')
 		SubagentProfile{}

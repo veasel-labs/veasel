@@ -58,7 +58,7 @@ fn execution_policy_mode_label(mode ExecutionPolicyMode) string {
 fn execution_tool_class(name string) string {
 	return match name {
 		'workspace_list_files', 'workspace_read_file', 'workspace_search', 'agent_skill_load',
-		'agent_skill_read_resource' {
+		'agent_skill_read_resource', 'subagent_run' {
 			'read'
 		}
 		'workspace_propose_file_edit' {

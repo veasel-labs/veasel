@@ -188,7 +188,8 @@ fn test_opencode_go_invalid_key_error_explains_how_to_recover() {
 	assert message.contains('HTTP 401')
 	assert message.contains('OpenCode Console')
 	assert message.contains('create a new key')
-	assert message.contains('signing in again does not renew it')
+	assert message.contains('signing in again will not renew it')
+	assert message.contains('does not reuse the OpenCode CLI login')
 	access_denied := provider_http_error_message('opencode-go', 403,
 		'model catalog endpoint returned')
 	assert access_denied.contains('HTTP 403')
@@ -207,7 +208,8 @@ fn test_opencode_invalid_key_error_explains_expired_console_key() {
 	assert message.contains('HTTP 401')
 	assert message.contains('OpenCode Console')
 	assert message.contains('create a new key')
-	assert message.contains('signing in again does not renew it')
+	assert message.contains('signing in again will not renew it')
+	assert message.contains('does not reuse the OpenCode CLI login')
 	assert provider_http_error_message('opencode', 403, '') == 'HTTP 403'
 	assert provider_http_error_message('opencode', 401, 'model catalog endpoint returned') == 'model catalog endpoint returned HTTP 401'
 }

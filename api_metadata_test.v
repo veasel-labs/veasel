@@ -24,8 +24,9 @@ fn test_opencode_catalog_expired_key_guidance_survives_provider_error_mapping() 
 			'model catalog endpoint returned')
 		message := model_catalog_error_message(provider, provider_error)
 		assert message.contains('OpenCode Console')
-		assert message.contains('create a new key')
-		assert message.contains('renew it')
+	assert message.contains('create a new key')
+	assert message.contains('renew it')
+	assert message.contains('does not reuse the OpenCode CLI login')
 	}
 }
 
@@ -34,6 +35,7 @@ fn test_opencode_catalog_errors_guide_console_keys_and_go_setup() {
 		'model catalog endpoint returned HTTP 401')
 	assert expired_key.contains('Console keys can expire')
 	assert expired_key.contains('signing in again will not renew it')
+	assert expired_key.contains('does not reuse the OpenCode CLI login')
 	free_access := model_catalog_error_message('opencode',
 		'model catalog endpoint returned HTTP 403')
 	assert free_access.contains('OpenCode Go preset')

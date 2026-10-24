@@ -751,12 +751,12 @@ fn opencode_go_model_protocol(model string) string {
 
 fn provider_http_error_message(provider string, status_code int, operation string) string {
 	if provider == 'opencode' && status_code == 401 && operation.len == 0 {
-		return 'OpenCode rejected the API key (HTTP 401). Check it in OpenCode Console; if it expired, create a new key because signing in again does not renew it.'
+		return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; signing in again will not renew it. Veasel does not reuse the OpenCode CLI login; check the key in OpenCode Console and create a new key if it expired.'
 	}
 	if provider == 'opencode-go' {
 		match status_code {
 			401 {
-				return 'OpenCode Go rejected the API key (HTTP 401). Check it in OpenCode Console; if it expired, create a new key because signing in again does not renew it.'
+				return 'OpenCode Go rejected the API key (HTTP 401). Console keys can expire; signing in again will not renew it. Veasel does not reuse the OpenCode CLI login; check the key in OpenCode Console and create a new key if it expired.'
 			}
 			403 {
 				return 'OpenCode Go denied access (HTTP 403). Check that the Go subscription is active, the model is available to your workspace, and its region or privacy restrictions allow this request.'

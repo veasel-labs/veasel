@@ -87,18 +87,20 @@ pub:
 // the group can be priced from the pinned schedule.
 pub struct GlobalUsageModelSummary {
 pub:
-	provider              string
-	model                 string
-	completed_turns       int
-	reported_turns        int
-	input_tokens          i64
-	output_tokens         i64
-	cache_read_tokens     i64
-	cache_creation_tokens i64
-	cache_reported        bool
-	reasoning_tokens      i64
-	reasoning_reported    bool
-	cost                  string = 'unavailable'
+	provider                 string
+	model                    string
+	completed_turns          int
+	reported_turns           int
+	input_tokens             i64
+	output_tokens            i64
+	cache_read_tokens        i64
+	cache_creation_tokens    i64
+	cache_reported           bool
+	cache_reported_turns     int
+	reasoning_tokens         i64
+	reasoning_reported       bool
+	reasoning_reported_turns int
+	cost                     string = 'unavailable'
 }
 
 pub struct SessionUsageSummary {
@@ -1959,18 +1961,20 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 			}
 		}
 		models << GlobalUsageModelSummary{
-			provider:              provider
-			model:                 model
-			completed_turns:       model_row.val(2).int()
-			reported_turns:        reported_turns
-			input_tokens:          model_row.val(4).i64()
-			output_tokens:         model_row.val(5).i64()
-			cache_read_tokens:     model_row.val(6).i64()
-			cache_creation_tokens: model_row.val(7).i64()
-			cache_reported:        model_row.val(8).int() > 0
-			reasoning_tokens:      model_row.val(9).i64()
-			reasoning_reported:    model_row.val(14).int() > 0
-			cost:                  model_cost
+			provider:                 provider
+			model:                    model
+			completed_turns:          model_row.val(2).int()
+			reported_turns:           reported_turns
+			input_tokens:             model_row.val(4).i64()
+			output_tokens:            model_row.val(5).i64()
+			cache_read_tokens:        model_row.val(6).i64()
+			cache_creation_tokens:    model_row.val(7).i64()
+			cache_reported:           model_row.val(8).int() > 0
+			cache_reported_turns:     model_row.val(8).int()
+			reasoning_tokens:         model_row.val(9).i64()
+			reasoning_reported:       model_row.val(14).int() > 0
+			reasoning_reported_turns: model_row.val(14).int()
+			cost:                     model_cost
 		}
 	}
 	row := rows[0]

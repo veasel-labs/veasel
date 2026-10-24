@@ -41,8 +41,10 @@ test("LiveApp /usage browses durable provider/model data and preserves reported-
           cache_read_tokens: 1200,
           cache_creation_tokens: 100,
           cache_reported: true,
+          cache_reported_turns: 2,
           reasoning_tokens: 42,
           reasoning_reported: true,
+          reasoning_reported_turns: 2,
           cost: "$0.12",
         }],
       })
@@ -75,9 +77,11 @@ test("LiveApp /usage browses durable provider/model data and preserves reported-
 
     setup.mockInput.pressEnter()
     frame = await until("Usage details")
-    expect(frame).toContain("Provider-reported tokens: 3.5k input · 600 output")
-    expect(frame).toContain("Cache: 1.2k read · 100 written")
-    expect(frame).toContain("Reasoning: 42 tokens")
+    const details = frame.replace(/\s+/g, " ")
+    expect(details).toContain("Provider-reported tokens: 3.5k input · 600 output")
+    expect(details).toContain("Cache: 1.2k read · 100 written · reported on 2")
+    expect(details).toContain("turns")
+    expect(details).toContain("Reasoning: 42 tokens · reported on 2 turns")
   } finally {
     setup.renderer.destroy()
     controller.abort()

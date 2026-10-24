@@ -96,8 +96,10 @@ export type GlobalUsageSummary = {
     cache_read_tokens: number
     cache_creation_tokens: number
     cache_reported: boolean
+    cache_reported_turns: number
     reasoning_tokens: number
     reasoning_reported: boolean
+    reasoning_reported_turns: number
     cost: string
   }>
 }
@@ -141,10 +143,10 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
         : `${model.completed_turns} completed turns · usage unavailable`
       lines.push(`- ${name}: ${usage} · cost ${model.cost}`)
       if (model.cache_reported) {
-        lines.push(`  Cache: ${formatReportedCacheUsage(model.cache_read_tokens, model.cache_creation_tokens)}`)
+        lines.push(`  Cache: ${formatReportedCacheUsage(model.cache_read_tokens, model.cache_creation_tokens)} · reported on ${model.cache_reported_turns} turns`)
       }
       if (model.reasoning_reported) {
-        lines.push(`  Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens`)
+        lines.push(`  Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens · reported on ${model.reasoning_reported_turns} turns`)
       }
     }
   }

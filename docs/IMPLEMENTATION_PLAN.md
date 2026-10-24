@@ -241,7 +241,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   aggregate of those counters even without an active session. The searchable
   TUI `/usage` dashboard groups durable counters by provider and model across
   sessions. The aggregate query prices each provider/model group once while
-  retaining per-turn cache validation.
+  retaining per-turn cache validation. Each model group also reports how many
+  completed turns supplied cache and reasoning counters, so partial provider
+  metadata is visible in the dashboard.
 - [x] Fork a session with `POST /v1/sessions/{id}/fork`: the chat history is
   copied under a new id (title suffixed ` (fork)`) so an alternative direction
   can be explored without losing the original conversation. Operations, usage,

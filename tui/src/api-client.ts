@@ -131,8 +131,10 @@ export type ApiGlobalUsageModelSummary = {
   cache_read_tokens: number
   cache_creation_tokens: number
   cache_reported: boolean
+  cache_reported_turns: number
   reasoning_tokens: number
   reasoning_reported: boolean
+  reasoning_reported_turns: number
   cost: string
 }
 

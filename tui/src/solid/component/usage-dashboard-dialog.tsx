@@ -11,8 +11,8 @@ function modelDetails(model: ApiGlobalUsageModelSummary): string {
     `Model: ${model.model}`,
     `Completed turns: ${model.completed_turns} · reported: ${model.reported_turns}`,
     `Provider-reported tokens: ${formatTokenCount(model.input_tokens)} input · ${formatTokenCount(model.output_tokens)} output`,
-    ...(model.cache_reported ? [`Cache: ${formatTokenCount(model.cache_read_tokens)} read · ${formatTokenCount(model.cache_creation_tokens)} written`] : []),
-    ...(model.reasoning_reported ? [`Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens`] : []),
+    ...(model.cache_reported ? [`Cache: ${formatTokenCount(model.cache_read_tokens)} read · ${formatTokenCount(model.cache_creation_tokens)} written · reported on ${model.cache_reported_turns} turns`] : []),
+    ...(model.reasoning_reported ? [`Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens · reported on ${model.reasoning_reported_turns} turns`] : []),
     `Cost: ${model.cost}`,
   ]
   return lines.join("\n")

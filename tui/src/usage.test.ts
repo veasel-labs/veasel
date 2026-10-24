@@ -165,8 +165,10 @@ describe("formatGlobalUsageSummary", () => {
         cache_read_tokens: 0,
         cache_creation_tokens: 0,
         cache_reported: false,
+        cache_reported_turns: 0,
         reasoning_tokens: 0,
         reasoning_reported: false,
+        reasoning_reported_turns: 0,
         cost: "unavailable",
       }],
     })

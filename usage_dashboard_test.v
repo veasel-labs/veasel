@@ -32,7 +32,9 @@ fn test_global_usage_groups_provider_reported_metrics_by_model() {
 	assert summary.models[0].reported_turns == 0
 	assert summary.models[0].input_tokens == 0
 	assert !summary.models[0].cache_reported
+	assert summary.models[0].cache_reported_turns == 0
 	assert !summary.models[0].reasoning_reported
+	assert summary.models[0].reasoning_reported_turns == 0
 	assert summary.models[0].cost == 'unavailable'
 	assert summary.models[1].provider == 'openai-compatible'
 	assert summary.models[1].model == 'fixture'
@@ -40,9 +42,11 @@ fn test_global_usage_groups_provider_reported_metrics_by_model() {
 	assert summary.models[1].input_tokens == 100
 	assert summary.models[1].output_tokens == 20
 	assert summary.models[1].cache_reported
+	assert summary.models[1].cache_reported_turns == 1
 	assert summary.models[1].cache_read_tokens == 12
 	assert summary.models[1].cache_creation_tokens == 4
 	assert summary.models[1].reasoning_reported
+	assert summary.models[1].reasoning_reported_turns == 1
 	assert summary.models[1].reasoning_tokens == 7
 	assert summary.models[1].cost == 'unavailable'
 }

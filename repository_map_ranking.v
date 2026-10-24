@@ -58,9 +58,10 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	for ident in hints.idents {
 		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
 			ident) {
-			// A queried term used as the filename is stronger than the same
-			// term inferred from declarations or general file contents.
-			score += 500.0
+			// A generic file name such as job.ts or lifecycle.ts is a weak clue
+			// when a query also names a specific subsystem. Exact path mentions
+			// still receive their stronger weight above.
+			score += if repository_map_is_generic_filename(base) { 140.0 } else { 500.0 }
 			break
 		}
 	}
@@ -112,7 +113,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// versus tool/plugin/subagent.ts). Keep individual exact-word weight bounded
 	// so generic documentation filenames do not swamp high-confidence aliases.
 	if exact_path_term_matches > 1 {
-		score += f64(exact_path_term_matches - 1) * 180.0
+		score += f64(exact_path_term_matches - 1) * 300.0
 	}
 	// For behavior questions, prefer implementation files over tests that
 	// merely import the same symbols. A query explicitly about tests keeps them
@@ -143,6 +144,12 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		score += 10.0
 	}
 	return score
+}
+
+fn repository_map_is_generic_filename(name string) bool {
+	stem := repository_map_stem(name).to_lower()
+	return stem in ['agent', 'context', 'event', 'handler', 'index', 'job', 'lifecycle', 'models',
+		'provider', 'session', 'state', 'tool', 'types']
 }
 
 fn repository_map_is_lexical_hint(ident string) bool {

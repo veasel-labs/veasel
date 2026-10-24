@@ -69,6 +69,27 @@ fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 		'search query')
 }
 
+fn test_workspace_search_scans_mixed_line_endings_without_materializing_lines() {
+	content := 'before\rneedle CR\r\nneedle LF\nneedle tail\rafter\r\nend'
+	mut result := WorkspaceSearchResult{
+		matches: []WorkspaceSearchMatch{}
+	}
+	assert !append_workspace_search_matches(mut result, 'mixed.txt', content, 'needle')
+	assert result.matches.map(it.line) == [2, 3, 4]
+	assert result.matches.map(it.text) == ['needle CR', 'needle LF', 'needle tail']
+	assert !workspace_search_line_contains('needle\rneedle', 'e\rn', 0, 6)
+	assert workspace_search_line_contains('needle\rneedle', 'needle', 0, 6)
+
+	mut bounded := WorkspaceSearchResult{
+		matches: []WorkspaceSearchMatch{}
+	}
+	assert append_workspace_search_matches(mut bounded, 'many-lines.txt', 'needle\n'.repeat(101),
+		'needle')
+	assert bounded.truncated
+	assert bounded.matches.len == max_workspace_search_results
+	assert bounded.matches.last().line == max_workspace_search_results
+}
+
 fn test_workspace_edit_is_diffed_confined_and_stale_safe() {
 	root := os.join_path(os.temp_dir(), 'veasel-workspace-edit-${uuid.new_v4().str()}')
 	external := os.join_path(os.temp_dir(), 'veasel-workspace-edit-external-${uuid.new_v4().str()}')

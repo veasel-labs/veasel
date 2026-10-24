@@ -137,24 +137,71 @@ fn workspace_search(root string, query string) !WorkspaceSearchResult {
 			result.truncated = true
 			break
 		}
-		for line_number, line in content.split_into_lines() {
-			if line.contains(query) {
-				result.matches << WorkspaceSearchMatch{
-					path: relative_path
-					line: line_number + 1
-					text: workspace_excerpt(line, 2_000)
-				}
-				if result.matches.len >= max_workspace_search_results {
-					result.truncated = true
-					return result
-				}
-			}
+		if append_workspace_search_matches(mut result, relative_path, content, query) {
+			return result
 		}
 	}
 	if walker.stopped {
 		result.truncated = true
 	}
 	return result
+}
+
+// append_workspace_search_matches scans line boundaries in place, retaining
+// only bounded match excerpts instead of allocating one string per source line.
+// Returns true when the result cap is reached and the caller should stop.
+fn append_workspace_search_matches(mut result WorkspaceSearchResult, path string, content string,
+	query string) bool {
+	mut line_start := 0
+	mut line_number := 1
+	mut offset := 0
+	for offset < content.len {
+		byte := content[offset]
+		if byte == `\r` || byte == `\n` {
+			if workspace_search_line_contains(content, query, line_start, offset) {
+				line := content.substr_unsafe(line_start, offset)
+				result.matches << WorkspaceSearchMatch{
+					path: path
+					line: line_number
+					text: workspace_excerpt(line, 2_000)
+				}
+				if result.matches.len >= max_workspace_search_results {
+					result.truncated = true
+					return true
+				}
+			}
+			if byte == `\r` && offset + 1 < content.len && content[offset + 1] == `\n` {
+				offset++
+			}
+			line_start = offset + 1
+			line_number++
+		}
+		offset++
+	}
+	if line_start < content.len && workspace_search_line_contains(content, query, line_start,
+		content.len) {
+		line := content.substr_unsafe(line_start, content.len)
+		result.matches << WorkspaceSearchMatch{
+			path: path
+			line: line_number
+			text: workspace_excerpt(line, 2_000)
+		}
+		if result.matches.len >= max_workspace_search_results {
+			result.truncated = true
+			return true
+		}
+	}
+	return false
+}
+
+fn workspace_search_line_contains(content string, query string, start int, end int) bool {
+	if start < 0 || end < start || end > content.len {
+		return false
+	}
+	// These bounds come from the in-place line scanner above. V's borrowed
+	// substring view keeps the search linear without allocating line strings.
+	line := content.substr_unsafe(start, end)
+	return line.contains(query)
 }
 
 fn workspace_excerpt(line string, max_bytes int) string {

@@ -22,8 +22,11 @@ export type ModelDialogProps = {
   recents?: SolidModelRef[]
   current?: SolidModelRef
   onSelect: (model: SolidModelRef) => void
+  onManual?: () => void
   onCancel?: () => void
 }
+
+const manualModelOption = "__veasel_manual_model_id__"
 
 export function modelPreferenceKey(model: Pick<SolidModelRef, "providerID" | "modelID">): string {
   return `${model.providerID}/${model.modelID}`
@@ -104,6 +107,7 @@ export function buildModelSelectOptions(props: {
   models: SolidModelRef[]
   favorites?: SolidModelRef[]
   recents?: SolidModelRef[]
+  allowManualEntry?: boolean
 }): DialogSelectOption<string>[] {
   const favorites = props.favorites ?? []
   const recents = props.recents ?? []
@@ -116,14 +120,23 @@ export function buildModelSelectOptions(props: {
   const rest = props.models
     .filter((model) => !used.has(modelPreferenceKey(model)))
     .map((model) => toOption(model, model.providerName ?? model.providerID, favKeys))
-  return [...favOpts, ...recentOpts, ...rest]
+  const options = [...favOpts, ...recentOpts, ...rest]
+  if (props.allowManualEntry) {
+    options.push({
+      title: "Use a model ID manually",
+      value: manualModelOption,
+      category: "Custom",
+      searchText: "manual custom model id",
+    })
+  }
+  return options
 }
 
 export function openModelDialog(
   dialog: ReturnType<typeof useDialog>,
   props: ModelDialogProps,
 ) {
-  const options = buildModelSelectOptions(props)
+  const options = buildModelSelectOptions({ ...props, allowManualEntry: Boolean(props.onManual) })
   const byKey = new Map(
     [...(props.favorites ?? []), ...(props.recents ?? []), ...props.models].map((model) => [
       modelPreferenceKey(model),
@@ -137,10 +150,20 @@ export function openModelDialog(
     current: props.current ? modelPreferenceKey(props.current) : undefined,
     options,
     onSelect: (option) => {
+      if (option.value === manualModelOption) {
+        props.onManual?.()
+        return
+      }
       const model = byKey.get(option.value)
-      if (model) props.onSelect(model)
+      if (model) {
+        dialog.clear()
+        props.onSelect(model)
+      }
     },
     onCancel: props.onCancel,
-    footer: "Enter selects · Favorites / Recent when present",
+    footer: props.onManual
+      ? "Enter selects · Favorites / Recent · Enter model ID manually"
+      : "Enter selects · Favorites / Recent when present",
+    dismissOnSelect: false,
   })
 }

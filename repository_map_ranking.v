@@ -292,7 +292,32 @@ fn repository_map_content_is_reexport_only(content string) bool {
 	return found_reexport
 }
 
-fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 {
+struct RepositoryMapContentQueryTerm {
+	ident      string
+	candidates []string
+}
+
+fn repository_map_content_query_terms(hints RepositoryMapHintSet) []RepositoryMapContentQueryTerm {
+	mut query_terms := []RepositoryMapContentQueryTerm{cap: hints.idents.len}
+	mut seen_hints := map[string]bool{}
+	for ident in hints.idents {
+		if !repository_map_is_lexical_hint(ident) {
+			continue
+		}
+		normalized := ident.to_lower()
+		if normalized in seen_hints {
+			continue
+		}
+		seen_hints[normalized] = true
+		query_terms << RepositoryMapContentQueryTerm{
+			ident:      ident
+			candidates: repository_map_lexical_candidates(ident)
+		}
+	}
+	return query_terms
+}
+
+fn score_repository_map_content(content string, query_terms []RepositoryMapContentQueryTerm) f64 {
 	// The map already reads bounded source files to extract declarations. Reuse
 	// that text for a small lexical retrieval signal instead of another index or
 	// embedding dependency. Count each query term once and cap total influence.
@@ -320,20 +345,11 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 	}
 	mut matched_terms := 0
 	mut score := 0.0
-	mut seen_hints := map[string]bool{}
-	for ident in hints.idents {
-		if !repository_map_is_lexical_hint(ident) {
-			continue
-		}
-		normalized := ident.to_lower()
-		if normalized in seen_hints {
-			continue
-		}
-		seen_hints[normalized] = true
-		candidates := repository_map_lexical_candidates(ident)
-		for candidate in candidates {
+	for query_term in query_terms {
+		for candidate in query_term.candidates {
 			if candidate in terms {
-				is_alias := ident != candidate && ident in ['arg', 'args', 'argument', 'arguments']
+				is_alias := query_term.ident != candidate
+					&& query_term.ident in ['arg', 'args', 'argument', 'arguments']
 				score += if is_alias { 48.0 } else { 24.0 }
 				matched_terms++
 				break

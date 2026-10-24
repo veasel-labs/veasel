@@ -87,18 +87,18 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)
 	assert repository_map_lexically_related('policy', 'policies')
 	assert repository_map_lexically_related('class', 'classes')
-	assert score_repository_map_content('class policy', RepositoryMapHintSet{
+	assert score_repository_map_content('class policy', repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: [
 			'classes',
 			'policy',
 		]
-	}) == 48.0
-	assert score_repository_map_content('classes policies', RepositoryMapHintSet{
+	})) == 48.0
+	assert score_repository_map_content('classes policies', repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: [
 			'class',
 			'policy',
 		]
-	}) == 48.0
+	})) == 48.0
 	assert score_repository_map_path('src/AuthService.ts', RepositoryMapHintSet{ idents: ['auth'] }) > score_repository_map_path('src/Other.ts', RepositoryMapHintSet{ idents: ['auth'] })
 	assert repository_map_is_test_path('src/auth.spec.ts')
 	assert repository_map_is_test_path('src/__specs__/auth_spec.ts')
@@ -106,7 +106,8 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	case_hints := RepositoryMapHintSet{ idents: ['AGENT', 'agent', 'Agent', 'args'] }
 	assert !repository_map_is_lexical_hint('The')
 	assert !repository_map_is_lexical_hint('For')
-	assert score_repository_map_content('agent argument parser', case_hints) == 72.0
+	assert score_repository_map_content('agent argument parser',
+		repository_map_content_query_terms(case_hints)) == 72.0
 	assert score_repository_map_path('src/agent.py', case_hints) == score_repository_map_path('src/agent.py', RepositoryMapHintSet{
 		idents: [
 			'agent',

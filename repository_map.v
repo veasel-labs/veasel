@@ -146,6 +146,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	canonical_root := canonical_workspace_root(root)!
 	budget := clamp_repository_map_budget(budget_bytes)
 	hints := extract_repository_map_hints(hint_text)
+	content_query_terms := repository_map_content_query_terms(hints)
 	mut walker := WorkspaceWalker{
 		root:      canonical_root
 		max_files: repository_map_max_walk_files + 1
@@ -222,7 +223,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 				symbol_relevance = repository_map_symbol_relevance_cap
 			}
 			entry.score += symbol_relevance
-			entry.score += score_repository_map_content(content, hints)
+			entry.score += score_repository_map_content(content, content_query_terms)
 			if repository_map_is_package_index_path(normalized)
 				&& !repository_map_hint_mentions_package_indexes(hints)
 				&& repository_map_content_is_reexport_only(content) {

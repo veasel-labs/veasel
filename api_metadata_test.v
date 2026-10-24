@@ -30,6 +30,7 @@ fn test_opencode_catalog_errors_guide_console_keys_and_go_setup() {
 	go_access := model_catalog_error_message('opencode-go',
 		'model catalog endpoint returned HTTP 403')
 	assert go_access.contains('OpenCode Go denied model-list access')
+	assert go_access.contains('Go plan/workspace access')
 	assert go_access.contains('OpenCode Console API key')
 	assert go_access.contains('enter a model ID manually')
 }

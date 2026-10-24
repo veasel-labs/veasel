@@ -273,6 +273,10 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_unclaimed_outcome'") or {
 		panic(err)
 	} == 1
+	query_plan := migrated.db.exec("EXPLAIN QUERY PLAN SELECT id, parent_session_id, parent_operation_id, status FROM subagent_runs WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+		panic(err)
+	}
+	assert query_plan.any(it.val(3).contains('USING COVERING INDEX subagent_runs_unclaimed_outcome'))
 }
 
 fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {

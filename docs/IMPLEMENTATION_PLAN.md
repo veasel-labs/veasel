@@ -587,10 +587,15 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   only. Parent stop now cancels queued children and persists a
   cancellation request for running children so a future worker can observe it;
   this signal does not itself terminate a provider request or process.
-  Authorization of parent callers beyond the built-in allowlist, isolated
-  worktree creation, deadlines, cancellation execution, atomic delivery with
-  the parent result, API/TUI integration, and task-level benchmark evidence
-  remain required before a model-callable tool is exposed.
+  `subagent_worktree.v` now prepares a separate branch/worktree from staged and
+  unstaged tracked changes plus bounded, non-ignored untracked regular files;
+  ignored files are excluded, untracked symlinks are rejected, and the parent
+  checkout stays unchanged. This snapshot helper is not yet wired to child-run
+  creation or lifecycle cleanup. Authorization of parent callers beyond the
+  built-in allowlist, worktree lifecycle integration, deadlines, cancellation
+  execution, atomic delivery with the parent result, API/TUI integration, and
+  task-level benchmark evidence remain required before a model-callable tool is
+  exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

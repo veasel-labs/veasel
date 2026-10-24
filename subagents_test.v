@@ -80,6 +80,56 @@ fn test_builtin_subagent_profiles_grant_only_readonly_tools() {
 	}
 }
 
+fn test_subagent_workspace_captures_parent_changes_without_modifying_checkout() {
+	git := os.find_abs_path_of_executable('git') or { return }
+	_ = git
+	repo := os.join_path(os.temp_dir(), 'veasel-subagent-worktree-repo-${uuid.new_v4().str()}')
+	data := os.join_path(os.temp_dir(), 'veasel-subagent-worktree-data-${uuid.new_v4().str()}')
+	run_id := uuid.new_v4().str()
+	os.mkdir_all(repo) or { panic(err) }
+	os.mkdir_all(data) or { panic(err) }
+	mut workspace := SubagentWorkspace{}
+	defer {
+		if workspace.run_id.len > 0 {
+			remove_subagent_workspace(repo, data, run_id, true) or {}
+		}
+		os.rmdir_all(repo) or {}
+		os.rmdir_all(data) or {}
+	}
+	_ := run_workspace_git_command(repo, ['init', '-b', 'main']) or { panic(err) }
+	_ := run_workspace_git_command(repo, ['config', 'user.email', 'veasel@example.com']) or {
+		panic(err)
+	}
+	_ := run_workspace_git_command(repo, ['config', 'user.name', 'Veasel']) or { panic(err) }
+	os.write_file(os.join_path(repo, '.gitignore'), '.env\n') or { panic(err) }
+	os.write_file(os.join_path(repo, 'README.md'), 'base\n') or { panic(err) }
+	_ := run_workspace_git_command(repo, ['add', '.gitignore', 'README.md']) or { panic(err) }
+	_ := run_workspace_git_command(repo, ['commit', '-m', 'base']) or { panic(err) }
+	os.write_file(os.join_path(repo, 'README.md'), 'staged\n') or { panic(err) }
+	_ := run_workspace_git_command(repo, ['add', 'README.md']) or { panic(err) }
+	os.write_file(os.join_path(repo, 'README.md'), 'staged and unstaged\n') or { panic(err) }
+	os.mkdir_all(os.join_path(repo, 'scratch')) or { panic(err) }
+	os.write_file(os.join_path(repo, 'scratch', 'notes.v'), 'untracked work\n') or { panic(err) }
+	os.write_file(os.join_path(repo, '.env'), 'ignored secret\n') or { panic(err) }
+	status_before := run_workspace_git_command(repo, ['status', '--porcelain=v1',
+		'--untracked-files=all']) or {
+		panic(err)
+	}
+	workspace = create_subagent_workspace(repo, data, run_id) or { panic(err) }
+	assert workspace.path != os.real_path(repo)
+	assert workspace.branch == 'veasel/subagents/${run_id}'
+	assert os.read_file(os.join_path(workspace.path, 'README.md')) or { panic(err) } == 'staged and unstaged\n'
+	assert os.read_file(os.join_path(workspace.path, 'scratch', 'notes.v')) or { panic(err) } == 'untracked work\n'
+	assert !os.exists(os.join_path(workspace.path, '.env'))
+	status_after := run_workspace_git_command(repo, ['status', '--porcelain=v1', '--untracked-files=all']) or {
+		panic(err)
+	}
+	assert status_after == status_before
+	remove_subagent_workspace(repo, data, run_id, true) or { panic(err) }
+	workspace = SubagentWorkspace{}
+	assert !os.exists(os.join_path(data, 'subagent-worktrees', run_id))
+}
+
 fn test_subagent_schema_migrates_existing_v17_database() {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-migration-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

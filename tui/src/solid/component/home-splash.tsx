@@ -86,9 +86,9 @@ export function HomeSplash(props: HomeSplashProps) {
     >
       <box width="100%" flexDirection="column" alignItems="center" flexShrink={0}>
         <text fg={colors.brand}>VEASEL CODE</text>
-        <Show when={!compact()}>
+        {!compact() && (
           <text fg={colors.muted}>your local V-powered workspace</text>
-        </Show>
+        )}
         <text fg={colors.headerMeta}>{visibleDirectory()}</text>
       </box>
 

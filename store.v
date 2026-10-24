@@ -805,6 +805,11 @@ fn open_store(path string) !&Store {
 		db.close() or {}
 		return error('unable to cancel queued child agent run')
 	}
+	recover_unclaimed_subagent_outcomes(mut db) or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to recover child agent outcomes: ${err}')
+	}
 	db.commit() or {
 		db.rollback() or {}
 		db.close() or {}
@@ -933,6 +938,35 @@ fn open_store(path string) !&Store {
 		db:                           db
 		path:                         path
 		active_subagent_preparations: map[string]bool{}
+	}
+}
+
+// recover_unclaimed_subagent_outcomes claims terminal child runs and appends
+// their parent-session events within the caller's startup transaction.
+fn recover_unclaimed_subagent_outcomes(mut db sqlite.DB) ! {
+	outcomes := db.exec("SELECT id, parent_session_id, parent_operation_id, status FROM subagent_runs WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+		return error('unable to inspect unclaimed child agent outcomes: ${err}')
+	}
+	for row in outcomes {
+		_ = db.exec_param_many("UPDATE subagent_runs SET outcome_claimed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')",
+			[row.val(0)]) or {
+			return error('unable to claim recovered child agent outcome: ${err}')
+		}
+		if db.get_affected_rows_count() != 1 {
+			continue
+		}
+		_ = db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'subagent.outcome_delivered',
+			row.val(1),
+			json2.encode[EventData](EventData{
+				operation_id:       row.val(2)
+				subagent_run_id:    row.val(0)
+				subagent_status:    row.val(3)
+				subagent_untrusted: true
+			}),
+		]) or {
+			return error('unable to record recovered child outcome: ${err}')
+		}
 	}
 }
 

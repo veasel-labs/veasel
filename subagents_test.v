@@ -75,7 +75,16 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 		'Running child', workspace_root) or { panic(err) }
 	_ = store.begin_subagent_run(running.id) or { panic(err) }
 	assert !(store.subagent_cancellation_requested(running.id) or { panic(err) })
+	unclaimed := store.create_subagent_run(parent.id, operation_id, 'request-4', 'reviewer', 1,
+		'Unclaimed child', workspace_root) or { panic(err) }
+	_ = store.begin_subagent_run(unclaimed.id) or { panic(err) }
+	_ = store.finish_subagent_run(unclaimed.id, 'completed', 'recovered review', '') or { panic(err) }
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or { panic(err) }
+	recovery_operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, recovery_operation_id) or { panic(err) }
+	uncertain := store.create_subagent_run(parent.id, recovery_operation_id, 'request-5',
+		'reviewer', 1, 'Interrupted child', workspace_root) or { panic(err) }
+	_ = store.begin_subagent_run(uncertain.id) or { panic(err) }
 	assert (store.get_subagent_run_unlocked(queued.id) or { panic(err) }).status == 'cancelled'
 	assert !(store.get_subagent_run_unlocked(queued.id) or { panic(err) }).workspace_started
 	assert (store.get_subagent_run_unlocked(ready_cancelled.id) or { panic(err) }).status == 'cancelled'
@@ -96,14 +105,62 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	store.close() or { panic(err) }
 
 	mut recovered := open_store(db_path) or { panic(err) }
-	defer { recovered.close() or {} }
 	restored := recovered.get_subagent_run_unlocked(first.id) or { panic(err) }
 	assert restored.status == 'completed'
 	assert restored.outcome_claimed
 	assert (recovered.claim_subagent_outcome(first.id) or { panic(err) }).result == 'review complete'
+	recovered_unclaimed := recovered.get_subagent_run_unlocked(unclaimed.id) or { panic(err) }
+	assert recovered_unclaimed.status == 'completed'
+	assert recovered_unclaimed.outcome_claimed
+	assert (recovered.claim_subagent_outcome(unclaimed.id) or { panic(err) }).result == 'recovered review'
+	recovered_events := recovered.events_after(0) or { panic(err) }
+	mut recovered_delivery_count := 0
+	for event in recovered_events {
+		if event.type == 'subagent.outcome_delivered' && event.data.subagent_run_id == unclaimed.id {
+			assert event.session_id == parent.id
+			assert event.data.operation_id == operation_id
+			assert event.data.subagent_status == 'completed'
+			assert event.data.subagent_untrusted
+			recovered_delivery_count++
+		}
+	}
+	assert recovered_delivery_count == 1
+	recovered_uncertain := recovered.get_subagent_run_unlocked(uncertain.id) or { panic(err) }
+	assert recovered_uncertain.status == 'uncertain'
+	assert recovered_uncertain.outcome_claimed
+	mut recovered_uncertain_delivery_count := 0
+	for event in recovered_events {
+		if event.type == 'subagent.outcome_delivered' && event.data.subagent_run_id == uncertain.id {
+			assert event.session_id == parent.id
+			assert event.data.operation_id == recovery_operation_id
+			assert event.data.subagent_status == 'uncertain'
+			assert event.data.subagent_untrusted
+			recovered_uncertain_delivery_count++
+		}
+	}
+	assert recovered_uncertain_delivery_count == 1
 	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
 	assert recovered_running.status == 'cancelled'
 	assert recovered_running.cancel_requested
+	recovered.close() or { panic(err) }
+
+	mut restarted := open_store(db_path) or { panic(err) }
+	defer { restarted.close() or {} }
+	restarted_events := restarted.events_after(0) or { panic(err) }
+	mut restarted_delivery_count := 0
+	for event in restarted_events {
+		if event.type == 'subagent.outcome_delivered' && event.data.subagent_run_id == unclaimed.id {
+			restarted_delivery_count++
+		}
+	}
+	assert restarted_delivery_count == 1
+	mut restarted_uncertain_delivery_count := 0
+	for event in restarted_events {
+		if event.type == 'subagent.outcome_delivered' && event.data.subagent_run_id == uncertain.id {
+			restarted_uncertain_delivery_count++
+		}
+	}
+	assert restarted_uncertain_delivery_count == 1
 }
 
 fn test_builtin_subagent_profiles_grant_only_readonly_tools() {

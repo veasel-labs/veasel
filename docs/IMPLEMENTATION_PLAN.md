@@ -583,7 +583,15 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   cap, and durable terminal outcome delivery. Claiming an outcome and recording
   its parent-session event commit together; retrying after restart returns the
   same terminal result rather than losing it behind a one-shot claim. The
-  storage boundary accepts only the built-in `reviewer` and `explorer` profile
+  startup recovery transaction also emits one parent-session event for each
+  durable terminal outcome that remains unclaimed, including children
+  classified as `uncertain`; event persistence and the recovered claim commit
+  together.
+  The event contains only the child run ID and terminal status marked untrusted;
+  the bounded durable run row remains the source of the result text.
+  Replaying the parent turn from these events and fetching the result into model
+  context remain separate work.
+  The storage boundary accepts only the built-in `reviewer` and `explorer` profile
   IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become
   `uncertain` on restart and are never replayed. This is persistence groundwork
@@ -602,9 +610,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   remain preserved. OS-level preparation locks distinguish a crashed preparer
   from one still creating the workspace, including across store instances.
   Authorizing parent callers beyond the built-in allowlist, deadlines,
-  cancellation execution, wiring the durable event into parent turn recovery,
-  API/TUI integration, and task-level benchmark evidence remain required before
-  a model-callable tool is exposed.
+  cancellation execution, parent turn replay, API/TUI integration, and
+  task-level benchmark evidence remain required before a model-callable tool is
+  exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

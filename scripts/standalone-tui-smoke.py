@@ -41,14 +41,14 @@ def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
     raise TimeoutError("Veasel backend did not become healthy within 15 seconds")
 
 
-def wait_for_persisted_reply(api_base: str, session_id: str) -> None:
+def wait_for_persisted_reply(api_base: str, session_id: str, expected_reply: str = "Provider fixture reply") -> None:
     deadline = time.monotonic() + 30
     url = f"{api_base}/v1/sessions/{session_id}/messages"
     while time.monotonic() < deadline:
         with urlopen(url, timeout=5) as response:
             messages = json.load(response)
         if any(
-            message.get("role") == "assistant" and message.get("content") == "Provider fixture reply"
+            message.get("role") == "assistant" and message.get("content") == expected_reply
             for message in messages
         ):
             return
@@ -92,6 +92,25 @@ def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id:
             f"visible terminal output: {snippet}"
         )
 
+    def wait_for_partial_reply(partial: bytes, complete: bytes, timeout: float) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([terminal], [], [], 0.05)
+            if readable:
+                try:
+                    output.extend(os.read(terminal, 65_536))
+                except OSError:
+                    break
+                if partial in output:
+                    if complete in output:
+                        raise RuntimeError("standalone TUI received the complete reply before the partial-stream check")
+                    return
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                raise RuntimeError(f"standalone TUI exited before rendering partial streamed text (status={status})")
+        snippet = visible_output()[-2_000:].decode(errors="replace")
+        raise TimeoutError(f"standalone TUI did not render partial streamed text within {timeout} seconds: {snippet}")
+
     try:
         wait_for_markers(
             (b"connected", b"SESSIONS", b"VEASEL", session_title.encode()),
@@ -128,9 +147,10 @@ def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id:
         os.write(terminal, b"\r")
         wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
         output.clear()
-        os.write(terminal, b"Say hello\r")
-        wait_for_markers((b"Provider fixture reply",), 30, "the mock provider response in the transcript")
-        wait_for_persisted_reply(env["VEASEL_API_URL"], session_id)
+        os.write(terminal, b"Stream incrementally\r")
+        wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
+        wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
+        wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
         output.clear()
         os.write(terminal, b"\x10")
         wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
@@ -267,7 +287,7 @@ def main() -> None:
             with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
                 messages = json.load(response)
             persisted = {(message.get("role"), message.get("content")) for message in messages}
-            if ("user", "Say hello") not in persisted or ("assistant", "Provider fixture reply") not in persisted:
+            if ("user", "Stream incrementally") not in persisted or ("assistant", "Streaming fixture reply arrives in two pieces") not in persisted:
                 raise RuntimeError(f"TUI conversation was not persisted correctly: {messages!r}")
         finally:
             if server is not None and server.poll() is None:

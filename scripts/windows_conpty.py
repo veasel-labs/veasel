@@ -232,6 +232,21 @@ def run_tui_conpty(
             f"raw tail: {raw_tail!r}"
         )
 
+    def wait_for_partial_reply(partial: bytes, complete: bytes, timeout: float) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            drain()
+            if partial in output:
+                if complete in output:
+                    raise RuntimeError("standalone TUI received the complete reply before the partial-stream check")
+                return
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
+                raise RuntimeError(f"standalone TUI exited before rendering partial streamed text (status={exit_code.value})")
+            time.sleep(0.025)
+        snippet = visible_output()[-2_000:].decode(errors="replace")
+        raise TimeoutError(f"standalone TUI did not render partial streamed text within {timeout} seconds: {snippet!r}")
+
     def send_keys(keys: bytes) -> None:
         written = wintypes.DWORD()
         buffer = ctypes.create_string_buffer(keys)
@@ -340,9 +355,10 @@ def run_tui_conpty(
         send_keys(b"\r")
         wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
         output.clear()
-        send_keys(b"Say hello\r")
-        wait_for_markers((b"Provider fixture reply",), 30, "the mock provider response in the transcript")
-        wait_for_persisted_reply(env["VEASEL_API_URL"], session_id)
+        send_keys(b"Stream incrementally\r")
+        wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
+        wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
+        wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
         output.clear()
         send_keys(b"\x10")
         wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")

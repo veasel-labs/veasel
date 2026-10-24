@@ -273,6 +273,21 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_unclaimed_outcome'") or {
 		panic(err)
 	} == 1
+	parent := migrated.create_session(SessionInput{
+		title:     'Indexed outcome parent'
+		directory: root
+	}) or { panic(err) }
+	migrated.db.begin() or { panic(err) }
+	for i in 0 .. 512 {
+		child_session_id := uuid.new_v4().str()
+		_ = migrated.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)',
+			[child_session_id, 'Indexed outcome child', root]) or { panic(err) }
+		_ = migrated.db.exec_param_many("INSERT INTO subagent_runs (id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, requested_title, requested_directory, depth, status, outcome_claimed) VALUES (?, ?, ?, ?, ?, 'reviewer', 'Indexed outcome child', ?, 1, 'completed', ?)",
+			[uuid.new_v4().str(), i.str(), parent.id, 'indexed-outcome-test', child_session_id,
+				root, if i == 511 { '0' } else { '1' }]) or { panic(err) }
+	}
+	migrated.db.commit() or { panic(err) }
+	_ = migrated.db.exec('ANALYZE subagent_runs') or { panic(err) }
 	query_plan := migrated.db.exec("EXPLAIN QUERY PLAN SELECT id, parent_session_id, parent_operation_id, status FROM subagent_runs WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
 		panic(err)
 	}

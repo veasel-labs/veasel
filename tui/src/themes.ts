@@ -32,6 +32,7 @@ export type ThemePortrait = {
   N: string
   W: string
   C: string
+  R: string
 }
 
 export type Theme = {
@@ -78,7 +79,7 @@ export type Theme = {
   portrait: ThemePortrait
 }
 
-const portraitKeys = ["D", "B", "L", "K", "H", "N", "W", "C"] as const
+const portraitKeys = ["D", "B", "L", "K", "H", "N", "W", "C", "R"] as const
 const colorKeys = [
   "shellBg",
   "panelBg",
@@ -169,6 +170,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#f4d79d",
       N: "#fff2cf",
       W: "#ffffff",
+      R: "#a44e37",
       C: "#f2796f",
     },
   },
@@ -221,6 +223,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#e9c58e",
       N: "#fff1dc",
       W: "#fff8f0",
+      R: "#9d4630",
       C: "#d77258",
     },
   },
@@ -273,6 +276,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#e6c07b",
       N: "#eff6fb",
       W: "#ffffff",
+      R: "#a8543a",
       C: "#dd8c8c",
     },
   },
@@ -325,6 +329,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#dddddd",
       N: "#000000",
       W: "#ffffff",
+      R: "#aaaaaa",
       C: "#aaaaaa",
     },
   },
@@ -377,6 +382,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#a7f3d0",
       N: "#e6fff9",
       W: "#ecfeff",
+      R: "#ad573c",
       C: "#ff8a83",
     },
   },
@@ -429,6 +435,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#e3c991",
       N: "#f3efe2",
       W: "#ffffff",
+      R: "#a44e37",
       C: "#bd6554",
     },
   },
@@ -481,6 +488,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
       H: "#ffffff",
       N: "#000000",
       W: "#ffffff",
+      R: "#7a3f2d",
       C: "#ff00ff",
     },
   },

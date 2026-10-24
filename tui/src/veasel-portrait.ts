@@ -1,46 +1,48 @@
 import type { Theme } from "./themes"
 
 /**
- * Terminal-palette encoding of Veasel Labs' original MIT pixel companion.
- * Source artwork: tui/assets/veasel-portrait-v2.png.
+ * Terminal-palette encoding of the Veasel Code companion.
+ * Source artwork was generated from a text-only prompt; no upstream image was
+ * used.
+ * Source: tui/assets/veasel-companion-v3.png.
  */
 export const VEASEL_PORTRAIT_WIDTH = 32
 
-// D outline · B fur shadow · L teal · K deep shadow · H warm light ·
+// D outline · R russet fur · L teal · K deep shadow · H warm light ·
 // N cream fur · W sparkle · C ear/nose coral.
 const pixelSprite = [
-  "                      KK",
-  "        KKK         KBLNNK",
-  "      KBBBLLK      KBBBDCNK",
-  "     KBNNNBBLK     BBBBDCNK",
-  "     BNNCNNBBLKKKKKBBBBKCCN",
-  "    KNNCCCNNBBKBBBLLLKBKCCNK",
-  "   KBNCCCCKNNBBBDBBLBLLKKCNK",
-  "   KBNCCCDCNNKBBBBBBBBBBKNK",
-  "   KBNNCCCKKKBBBNNBBBBBBNKK",
-  "    BLNCCKKBBBBNNNNBBBBNKN",
-  "    KBNNCCKBBBNKKKNBBBBLKDK",
-  "     KBNWKBBBBKDKKKBBBBNNKD",
-  "      KKKBBBBKKNKKDKBBBNKBKK",
-  "     KBBKBBBNNKNBKKKBBBBBNNNK",
-  "     KBKBBBNNNKNLBNKBBNNNNNNDNNK",
-  "      KKBBNNNNNNNWKBNNNDCCKKNK",
-  "      BKKNNHNNNNNNNNNNNNKKNKNNK",
-  "      KBKDHNHNNNNNNNKNNNHNBNN KK",
-  "       KBKKHNNNNHNNNNNNNND  KNK",
-  "        KKKKBHBHHNNNNNNHD    KN",
-  "         LNKBBHLNNHHHKK",
-  "        KLKKBBBBNNNHHKLLKK",
-  "    KK  KLLNKBBBBNNNHKBKLB",
-  "  KNNNK  KDLNNNKBNNNNHKNLBNK",
-  " KLLLLLLKLLLBLLNNWKNDDNLNNNL",
-  " LDKLLLDKLLLLNLLLLNNNLLNNNNNK",
-  "KK KLLLLLKKKKLNNLLLLLLLLWNNLK",
-  "    LLLLKBBBHKLNNLLLLLKBLLWLKK",
-  "    KLKKBKBBBNHBLNNLBNNNLLWKNN",
-  "       KDBBBBNNHKLNKLNNNNNNNNBK",
-  "        BDBBBBNNHHKLBBBNNLLHNBK",
-  "         KBBBBNNNKLBBBBHKLKKHB",
+  "                                ",
+  "                                ",
+  "                     D          ",
+  "                    HNN         ",
+  "          KD       KNCH         ",
+  "          DDDD   RKHHCCD        ",
+  "         KRKDDKRRRRCCNRD        ",
+  "         KRDKDRRRRRCCCR         ",
+  "         KRDKRRRNRRCNKD         ",
+  "          DRDRNKNRRRKNCD        ",
+  "           KDRKKNRRCRNNNH       ",
+  "            DRKKNRNKKNNK        ",
+  "           KDNNNNDNRNHD         ",
+  "            DDNHHHNNH           ",
+  "       KWWW   KKLLHHNDL         ",
+  "        KLLLK KLLKLWKKKK        ",
+  "         KKKLKKDRKLKLKWK        ",
+  "        KKKLKKKRRRNHCKW         ",
+  "           KK  RRDNNNHD         ",
+  "        NND   KKRDDNNNDR        ",
+  "       NHHK  KRDDKDDNDDK        ",
+  "      KHHDD  RRRNHDDNKD         ",
+  "       HHKKR RRRNNHNHR          ",
+  "       DDKKRKRRRCNNNHN          ",
+  "       KDKKDKRRRRHNHHRK         ",
+  "        DDKKKDRRNHHCHD          ",
+  "         KDKKDKDHHHHD           ",
+  "            KKKH  KKKDD         ",
+  "            KDDD     DDK        ",
+  "              K                 ",
+  "                                ",
+  "                                ",
 ].map((row) => row.padEnd(VEASEL_PORTRAIT_WIDTH, " "))
 
 export const VEASEL_PORTRAIT_ROWS = pixelSprite

@@ -31,10 +31,15 @@ describe("Veasel home splash + pixel portrait", () => {
   test("portrait row pairs render square pixel art in half-block cells", () => {
     const cells = portraitRowCells(
       themes.mint,
-      VEASEL_PORTRAIT_ROWS[1] ?? "",
-      VEASEL_PORTRAIT_ROWS[2] ?? "",
+      VEASEL_PORTRAIT_ROWS[5] ?? "",
+      VEASEL_PORTRAIT_ROWS[6] ?? "",
     )
     expect(cells.some((cell) => cell.glyph !== " ")).toBe(true)
+    expect(
+      cells.some(
+        (cell) => cell.color === themes.mint.portrait.R || cell.background === themes.mint.portrait.R,
+      ),
+    ).toBe(true)
     expect(VEASEL_PORTRAIT_ROWS.length).toBe(32)
     expect(VEASEL_PORTRAIT_ROWS.every((row) => row.length <= VEASEL_PORTRAIT_WIDTH)).toBe(true)
     expect(VEASEL_PORTRAIT_ROWS.join("")).toContain("C")

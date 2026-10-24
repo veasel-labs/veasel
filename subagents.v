@@ -140,12 +140,16 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 		store.db.rollback() or {}
 		return error('unable to commit child agent run')
 	}
+	// Keep in-process cleanup from mistaking a live workspace preparation for
+	// an interrupted one after the parent turn is cancelled or completed.
+	store.active_subagent_preparations[run_id] = true
 	store.mu.unlock()
 	store_locked = false
 	_ := create_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id) or {
 		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
 		store.mu.lock()
 		store_locked = true
+		store.active_subagent_preparations.delete(run_id)
 		_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
 			[err.msg().limit(max_subagent_error_bytes), run_id]) or { return err }
 		store.mu.unlock()
@@ -154,6 +158,7 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 	}
 	store.mu.lock()
 	store_locked = true
+	store.active_subagent_preparations.delete(run_id)
 	_ = store.db.exec_param_many("UPDATE subagent_runs SET workspace_ready = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND EXISTS (SELECT 1 FROM session_operations WHERE id = ? AND session_id = ? AND status = 'running')",
 		[run_id, parent_operation_id, parent_session_id]) or {
 		store.mu.unlock()
@@ -331,15 +336,24 @@ fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
 		eprintln('veasel: unable to list interrupted child workspaces (${err.msg()})')
 		return
 	}
+	mut run_ids := []string{cap: rows.len}
+	mut directories := []string{cap: rows.len}
+	for row in rows {
+		if store.active_subagent_preparations[row.val(0)] {
+			continue
+		}
+		run_ids << row.val(0)
+		directories << row.val(1)
+	}
 	store.mu.unlock()
 	data_directory := os.dir(os.real_path(store.path))
-	for row in rows {
-		path := os.join_path(data_directory, 'subagent-worktrees', row.val(0))
+	for i, run_id in run_ids {
+		path := os.join_path(data_directory, 'subagent-worktrees', run_id)
 		if !os.exists(path) {
 			continue
 		}
-		remove_subagent_workspace(row.val(1), data_directory, row.val(0), true) or {
-			eprintln('veasel: unable to remove interrupted child workspace ${row.val(0)} (${err.msg()})')
+		remove_subagent_workspace(directories[i], data_directory, run_id, true) or {
+			eprintln('veasel: unable to remove interrupted child workspace ${run_id} (${err.msg()})')
 		}
 	}
 }

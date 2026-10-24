@@ -232,6 +232,32 @@ fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {
 	assert outcome.status == 'uncertain'
 }
 
+fn test_unstarted_workspace_cleanup_skips_live_preparation() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-live-preparation-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	parent := store.create_session(SessionInput{ title: 'Parent', directory: workspace_root }) or {
+		panic(err)
+	}
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	run := store.create_subagent_run(parent.id, operation_id, 'request', 'reviewer', 1, 'Child',
+		workspace_root) or { panic(err) }
+	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or {
+		panic(err)
+	}
+	store.active_subagent_preparations[run.id] = true
+	store.cleanup_unstarted_subagent_workspaces()
+	path := os.join_path(root, 'subagent-worktrees', run.id)
+	assert os.is_dir(path)
+	store.active_subagent_preparations.delete(run.id)
+	store.cleanup_unstarted_subagent_workspaces()
+	assert !os.exists(path)
+}
+
 fn init_subagent_test_repo(root string) string {
 	repo := os.join_path(root, 'workspace')
 	os.mkdir_all(repo) or { panic(err) }

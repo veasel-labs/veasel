@@ -167,9 +167,10 @@ pub:
 @[heap]
 struct Store {
 mut:
-	mu   sync.Mutex
-	db   sqlite.DB
-	path string
+	mu                           sync.Mutex
+	db                           sqlite.DB
+	path                         string
+	active_subagent_preparations map[string]bool
 	// When > 0, overrides max_retained_terminal_session_operations (tests only).
 	terminal_ops_retention_limit int
 	// When > 0, overrides max_retained_session_events (tests only).
@@ -926,8 +927,9 @@ fn open_store(path string) !&Store {
 		}
 	}
 	return &Store{
-		db:   db
-		path: path
+		db:                           db
+		path:                         path
+		active_subagent_preparations: map[string]bool{}
 	}
 }
 

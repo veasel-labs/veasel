@@ -195,6 +195,11 @@ fn test_global_usage_summary_prices_grouped_turns() {
 	summary := store.usage_summary() or { panic(err) }
 	assert summary.reported_turns == 2
 	assert summary.cost == '$6.00'
+	assert summary.models.len == 1
+	assert summary.models[0].provider == 'anthropic'
+	assert summary.models[0].model == 'claude-sonnet-4-5'
+	assert summary.models[0].reported_turns == 2
+	assert summary.models[0].cost == '$6.00'
 }
 
 fn test_global_usage_cost_preserves_invalid_cached_input_guard_after_grouping() {
@@ -228,4 +233,6 @@ fn test_global_usage_cost_preserves_invalid_cached_input_guard_after_grouping() 
 	}
 	summary := store.usage_summary() or { panic(err) }
 	assert summary.cost == cost_unavailable
+	assert summary.models.len == 1
+	assert summary.models[0].cost == cost_unavailable
 }

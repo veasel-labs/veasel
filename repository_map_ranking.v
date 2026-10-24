@@ -296,14 +296,24 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 	// The map already reads bounded source files to extract declarations. Reuse
 	// that text for a small lexical retrieval signal instead of another index or
 	// embedding dependency. Count each query term once and cap total influence.
-	identifiers := repository_map_content_identifiers(content)
 	mut terms := map[string]bool{}
-	for identifier, _ in identifiers {
-		lower := identifier.to_lower()
-		terms[lower] = true
-		for part in repository_map_ident_parts(identifier) {
-			terms[part] = true
+	mut start := -1
+	for offset, ch in content {
+		if is_repository_map_ident_byte(ch) {
+			if start < 0 {
+				start = offset
+			}
+			continue
 		}
+		if start >= 0 {
+			if offset - start >= repository_map_cross_reference_min_symbol_len {
+				repository_map_add_content_terms(mut terms, content[start..offset])
+			}
+		}
+		start = -1
+	}
+	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+		repository_map_add_content_terms(mut terms, content[start..])
 	}
 	mut matched_terms := 0
 	mut score := 0.0
@@ -331,6 +341,13 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 		}
 	}
 	return score
+}
+
+fn repository_map_add_content_terms(mut terms map[string]bool, identifier string) {
+	terms[identifier.to_lower()] = true
+	for part in repository_map_ident_parts(identifier) {
+		terms[part] = true
+	}
 }
 
 fn repository_map_path_under_mention(path string, mentioned string) bool {
@@ -608,29 +625,6 @@ const repository_map_cross_reference_max_boost = 400.0
 const repository_map_cross_reference_max_definers = 8
 const repository_map_cross_reference_min_symbol_len = 3
 
-fn repository_map_content_identifiers(content string) map[string]bool {
-	mut identifiers := map[string]bool{}
-	mut start := -1
-	for index, ch in content {
-		if is_repository_map_ident_byte(ch) {
-			if start < 0 {
-				start = index
-			}
-			continue
-		}
-		if start >= 0 {
-			if index - start >= repository_map_cross_reference_min_symbol_len {
-				identifiers[content[start..index]] = true
-			}
-			start = -1
-		}
-	}
-	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
-		identifiers[content[start..]] = true
-	}
-	return identifiers
-}
-
 // boost_repository_map_cross_references raises files whose defined symbols
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
@@ -657,19 +651,50 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 			definers[name] << index
 		}
 	}
-	mut boosts := map[int]f64{}
+	// Reuse index buffers instead of building a distinct-string map and a second
+	// per-file map for every candidate. The mark value is the current entry
+	// index, so repeated identifiers and references are deduplicated in O(1).
+	mut seen_referrers := []int{len: entries.len, init: -1}
+	mut referrers := []int{cap: entries.len}
+	mut boosts := []f64{len: entries.len}
 	for index, entry in entries {
 		content := contents[entry.path] or { continue }
-		identifiers := repository_map_content_identifiers(content)
-		mut referrers := map[int]bool{}
-		for token, _ in identifiers {
-			defs := definers[token] or { continue }
-			if defs.len > repository_map_cross_reference_max_definers {
+		referrers.clear()
+		mut start := -1
+		for offset, ch in content {
+			if is_repository_map_ident_byte(ch) {
+				if start < 0 {
+					start = offset
+				}
 				continue
 			}
-			for definer in defs {
-				if definer != index {
-					referrers[definer] = true
+			if start >= 0 {
+				if offset - start >= repository_map_cross_reference_min_symbol_len {
+					token := content[start..offset]
+					if defs := definers[token] {
+						if defs.len <= repository_map_cross_reference_max_definers {
+							for definer in defs {
+								if definer != index && seen_referrers[definer] != index {
+									seen_referrers[definer] = index
+									referrers << definer
+								}
+							}
+						}
+					}
+				}
+			}
+			start = -1
+		}
+		if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+			token := content[start..]
+			if defs := definers[token] {
+				if defs.len <= repository_map_cross_reference_max_definers {
+					for definer in defs {
+						if definer != index && seen_referrers[definer] != index {
+							seen_referrers[definer] = index
+							referrers << definer
+						}
+					}
 				}
 			}
 		}
@@ -680,8 +705,8 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		} else {
 			repository_map_cross_reference_weight
 		}
-		for definer, _ in referrers {
-			boosts[definer] = (boosts[definer] or { 0.0 }) + referrer_weight
+		for definer in referrers {
+			boosts[definer] += referrer_weight
 		}
 	}
 	for index, boost in boosts {

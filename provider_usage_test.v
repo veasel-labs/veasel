@@ -88,6 +88,12 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 			id: 'kimi-k3'
 		},
 		ModelCatalogEntry{
+			id: 'minimax-m3'
+		},
+		ModelCatalogEntry{
+			id: 'qwen3.8-max'
+		},
+		ModelCatalogEntry{
 			id: 'gpt-6-luna'
 		},
 		ModelCatalogEntry{
@@ -101,8 +107,8 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		},
 	]
 	available := filter_provider_models('opencode-go', models)
-	assert available.map(it.id) == ['kimi-k3.1-pro', 'kimi-k3', 'gpt-6-luna', 'claude-haiku-5-5',
-		'gemini-4-argon-contributor']
+	assert available.map(it.id) == ['kimi-k3.1-pro', 'kimi-k3', 'minimax-m3', 'qwen3.8-max',
+		'gpt-6-luna', 'claude-haiku-5-5', 'gemini-4-argon-contributor']
 
 	kimi := model_provider_route(ModelConfig{
 		provider: 'opencode-go'
@@ -119,6 +125,22 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 	}) or { panic(err) }
 	assert chat.protocol == 'openai-compatible'
 	assert chat.base_url == opencode_go_openai_base_url
+
+	minimax := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'minimax-m3'
+	}) or { panic(err) }
+	assert minimax.protocol == 'openai-compatible'
+	assert minimax.base_url == opencode_go_openai_base_url
+
+	qwen_max := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'qwen3.8-max'
+	}) or { panic(err) }
+	assert qwen_max.protocol == 'openai-compatible'
+	assert qwen_max.base_url == opencode_go_openai_base_url
 
 	responses := model_provider_route(ModelConfig{
 		provider: 'opencode-go'

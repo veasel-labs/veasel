@@ -47,8 +47,8 @@ describe("Veasel home splash + pixel portrait", () => {
       ),
     ).toBe(true)
     expect(VEASEL_PORTRAIT_ROWS.length).toBe(32)
-    expect(VEASEL_PORTRAIT_ROWS.every((row) => row.length <= VEASEL_PORTRAIT_WIDTH)).toBe(true)
-    expect(VEASEL_PORTRAIT_ROWS.join("")).toContain("C")
+    expect(VEASEL_PORTRAIT_ROWS.every((row) => row.length === VEASEL_PORTRAIT_WIDTH)).toBe(true)
+    expect(VEASEL_PORTRAIT_ROWS.join("")).toContain("W")
     expect(cells).toHaveLength(VEASEL_PORTRAIT_WIDTH)
     expect(cells.some((cell) => cell.glyph === "▀" && cell.background !== themes.mint.panelBg)).toBe(true)
   })

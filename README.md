@@ -210,9 +210,9 @@ For memory-bounded local V checks, see [AGENTS.md](AGENTS.md). Related maps:
 
 ## Licensing
 
-Code is MIT. The pixel companion is an original reinterpretation of Veasel's
-project-owned companion concept; the V project's official mascot artwork was
-not used as an image input. See
+Code is MIT. The 128×128 pixel companion and its 32×32 TUI portrait are an
+original reinterpretation of Veasel's project-owned companion concept; the V
+project's official mascot artwork was not used as an image input. See
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for provenance and license
 notes. No endorsement by the V project is implied. The README banner and mark
 in `static/` are Veasel Code originals under MIT.

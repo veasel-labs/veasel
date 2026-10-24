@@ -150,6 +150,22 @@ fn test_subagent_workspace_captures_parent_changes_without_modifying_checkout() 
 	assert !os.exists(os.join_path(data, 'subagent-worktrees', run_id))
 }
 
+fn test_subagent_file_digest_enforces_snapshot_size_limit() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-file-digest-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'untracked.txt')
+	os.write_file(path, 'hello') or { panic(err) }
+	too_large := subagent_file_digest(path, 4) or {
+		assert err.msg().contains('snapshot limit')
+		SubagentFileDigest{}
+	}
+	assert too_large.byte_count == 0
+	valid := subagent_file_digest(path, 5) or { panic(err) }
+	assert valid.byte_count == 5
+	assert valid.sha256 == '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824'
+}
+
 fn test_subagent_schema_migrates_existing_v17_database() {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-migration-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

@@ -23,6 +23,11 @@ struct SubagentUntrackedFile {
 	byte_count i64
 }
 
+struct SubagentFileDigest {
+	sha256     string
+	byte_count i64
+}
+
 // create_subagent_workspace creates a worktree from an immutable snapshot of
 // the parent checkout. Git's stash-create path captures staged and unstaged
 // tracked changes without changing the parent's index or files. Non-ignored
@@ -186,23 +191,20 @@ fn subagent_untracked_files(root string) ![]SubagentUntrackedFile {
 		if relative.len == 0 {
 			continue
 		}
+		if files.len >= max_subagent_untracked_files {
+			return error('untracked file count exceeds the child workspace snapshot limit')
+		}
 		validate_subagent_relative_path(relative)!
 		source := subagent_source_file(root, relative)!
-		file_bytes := os.file_size(source)
-		if file_bytes > max_subagent_untracked_file_bytes {
-			return error('untracked file exceeds the child workspace snapshot limit')
-		}
-		total_bytes += file_bytes
+		snapshot := subagent_file_digest(source, max_subagent_untracked_file_bytes)!
+		total_bytes += snapshot.byte_count
 		if total_bytes > max_subagent_untracked_total_bytes {
 			return error('untracked files exceed the child workspace snapshot limit')
 		}
 		files << SubagentUntrackedFile{
 			path:       relative
-			sha256:     sha256.sum(os.read_bytes(source)!).hex()
-			byte_count: file_bytes
-		}
-		if files.len > max_subagent_untracked_files {
-			return error('untracked file count exceeds the child workspace snapshot limit')
+			sha256:     snapshot.sha256
+			byte_count: snapshot.byte_count
 		}
 	}
 	return files
@@ -222,9 +224,10 @@ fn copy_subagent_untracked_files(root string, worktree string, files []SubagentU
 			return error('untracked path collides with a child workspace entry')
 		}
 		os.copy_file(source, destination)!
-		if os.file_size(destination) != file.byte_count
-			|| sha256.sum(os.read_bytes(destination)!).hex() != file.sha256
-			|| sha256.sum(os.read_bytes(source)!).hex() != file.sha256 {
+		destination_snapshot := subagent_file_digest(destination, file.byte_count) or {
+			return error('child workspace copy exceeds its snapshot limit')
+		}
+		if destination_snapshot.byte_count != file.byte_count || destination_snapshot.sha256 != file.sha256 {
 			return error('untracked source changed while preparing the child workspace')
 		}
 	}
@@ -235,10 +238,47 @@ fn verify_subagent_untracked_files(root string, files []SubagentUntrackedFile) !
 		source := subagent_source_file(root, file.path) or {
 			return error('untracked source changed while preparing the child workspace')
 		}
-		if os.file_size(source) != file.byte_count
-			|| sha256.sum(os.read_bytes(source)!).hex() != file.sha256 {
+		snapshot := subagent_file_digest(source, file.byte_count) or {
 			return error('untracked source changed while preparing the child workspace')
 		}
+		if snapshot.byte_count != file.byte_count || snapshot.sha256 != file.sha256 {
+			return error('untracked source changed while preparing the child workspace')
+		}
+	}
+}
+
+// subagent_file_digest bounds memory use while hashing project-controlled files.
+// Reads past the byte limit never allocate beyond the fixed buffer, even if
+// the file grows after its original stat or while it is being copied.
+fn subagent_file_digest(path string, max_bytes i64) !SubagentFileDigest {
+	mut file := os.open(path)!
+	defer {
+		file.close()
+	}
+	mut digest := sha256.new()
+	mut buffer := []u8{len: 64 * 1024}
+	mut byte_count := i64(0)
+	for {
+		read := file.read(mut buffer) or {
+			if err is os.Eof {
+				break
+			}
+			return err
+		}
+		if read == 0 {
+			break
+		}
+		byte_count += read
+		if byte_count > max_bytes {
+			return error('file exceeds its child workspace snapshot limit')
+		}
+		digest.write(buffer[..read])!
+	}
+	mut sum := []u8{len: sha256.size}
+	digest.checksum_into(mut sum)
+	return SubagentFileDigest{
+		sha256:     sum.hex()
+		byte_count: byte_count
 	}
 }
 

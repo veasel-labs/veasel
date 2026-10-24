@@ -597,10 +597,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   model-callable `subagent_run` path for the two built-in read-only profiles,
   using the parent cancellation context and persisting child usage and outcome.
   Local fake-provider end-to-end tests now prove dispatch, child file inspection,
-  usage persistence, and safe failure delivery. Cancellation while a child is
-  waiting on its provider and task-level comparative evidence remain outstanding
-  before this can be exposed in a release. The storage tests alone do not
-  establish that delegation improves task success or efficiency.
+  usage persistence, safe failure delivery, and that the parent turn returns
+  when cancelled while a child provider HTTP response remains pending. The
+  cancelled child outcome is durable, but its blocking HTTP worker may remain
+  until the configured read timeout: pinned V `net.http.fetch` has no external
+  socket-cancel handle before response progress. Task-level comparative
+  evidence remains outstanding; lifecycle coverage alone does not establish
+  that delegation improves task success or efficiency.
   The storage boundary accepts only the built-in `reviewer` and `explorer` profile
   IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become
@@ -619,10 +622,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   worktrees only when the child never began; workspaces that may have executed
   remain preserved. OS-level preparation locks distinguish a crashed preparer
   from one still creating the workspace, including across store instances.
-  Authorizing parent callers beyond the built-in allowlist, deadlines,
-  cancellation execution, parent turn replay, API/TUI integration, and
-  task-level benchmark evidence remain required before a model-callable tool is
-  exposed.
+  Authorizing callers beyond the built-in allowlist, enforceable child runtime
+  deadlines, cancellation of the underlying in-flight HTTP request/process,
+  parent turn replay, API/TUI integration, and task-level benchmark evidence
+  remain required before a model-callable tool is enabled outside this draft.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

@@ -24,9 +24,9 @@ fn test_opencode_catalog_expired_key_guidance_survives_provider_error_mapping() 
 			'model catalog endpoint returned')
 		message := model_catalog_error_message(provider, provider_error)
 		assert message.contains('OpenCode Console')
-	assert message.contains('create a new key')
-	assert message.contains('renew it')
-	assert message.contains('does not reuse the OpenCode CLI login')
+		assert message.contains('create a new key')
+		assert message.contains('renew it')
+		assert message.contains('does not reuse the OpenCode CLI login')
 	}
 }
 

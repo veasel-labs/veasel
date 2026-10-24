@@ -411,7 +411,7 @@ export const themes: Record<BuiltinThemeId, Theme> = {
     assistantText: "#1a2420",
     systemLabel: "#1d4ed8",
     systemText: "#334155",
-    toolLabel: "#9a6b00",
+    toolLabel: "#956700",
     toolText: "#44403c",
     status: "#5a6b63",
     hint: "#5a6b63",

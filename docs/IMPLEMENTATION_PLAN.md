@@ -615,7 +615,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in
   `tui/src/themes.test.ts`; this is a targeted color check, not a complete
-  accessibility review.
+  accessibility review. Transcript role labels and body text now also have
+  focused contrast coverage against their rendered surfaces; the Day theme's
+  amber tool label was darkened to meet the same 4.5:1 threshold.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
 - [x] Validate the packaged interactive TUI smoke on Linux, macOS, and Windows.

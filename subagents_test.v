@@ -288,13 +288,17 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	}
 	migrated.db.commit() or { panic(err) }
 	_ = migrated.db.exec('ANALYZE subagent_runs') or { panic(err) }
-	// Pin this index-eligibility check to the index itself. SQLite planner
-	// versions may prefer a table scan for one unclaimed row, even though the
-	// partial index is valid and covering.
+	// Force this access path so planner versions cannot prefer a table scan for
+	// one unclaimed row. Check the indexed columns separately: EXPLAIN's
+	// "covering index" wording differs across bundled/system SQLite versions.
+	index_columns := migrated.db.exec("PRAGMA index_info('subagent_runs_unclaimed_outcome')") or {
+		panic(err)
+	}.map(it.val(2))
+	assert index_columns == ['id', 'parent_session_id', 'parent_operation_id', 'status']
 	query_plan := migrated.db.exec("EXPLAIN QUERY PLAN SELECT id, parent_session_id, parent_operation_id, status FROM subagent_runs INDEXED BY subagent_runs_unclaimed_outcome WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
 		panic(err)
 	}
-	assert query_plan.any(it.val(3).contains('USING COVERING INDEX subagent_runs_unclaimed_outcome'))
+	assert query_plan.any(it.val(3).contains('subagent_runs_unclaimed_outcome'))
 }
 
 fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {

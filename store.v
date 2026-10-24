@@ -2387,7 +2387,7 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
-		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation completed before this child run started.') or {
+		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation completed before this child run finished.') or {
 			store.db.rollback() or {}
 			return err
 		}
@@ -2519,7 +2519,7 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 		store.db.rollback() or {}
 		return error('unable to persist session operation failure')
 	}
-	store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation ended before this child run started.') or {
+	store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation ended before this child run finished.') or {
 		store.db.rollback() or {}
 		return err
 	}

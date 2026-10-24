@@ -74,6 +74,12 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	assert requested_cancel.status == 'running'
 	assert requested_cancel.cancel_requested
 	assert store.subagent_cancellation_requested(running.id) or { panic(err) }
+	late_finish := store.finish_subagent_run(running.id, 'completed', 'late child result', '') or {
+		panic(err)
+	}
+	assert late_finish.status == 'cancelled'
+	assert late_finish.result == ''
+	assert late_finish.error == 'Parent operation completed before this child run finished.'
 	store.close() or { panic(err) }
 
 	mut recovered := open_store(db_path) or { panic(err) }
@@ -82,7 +88,7 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	assert restored.status == 'completed'
 	assert restored.outcome_claimed
 	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
-	assert recovered_running.status == 'uncertain'
+	assert recovered_running.status == 'cancelled'
 	assert recovered_running.cancel_requested
 }
 

@@ -586,7 +586,8 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `uncertain` on restart and are never replayed. This is persistence groundwork
   only. Parent stop now cancels queued children and persists a
   cancellation request for running children so a future worker can observe it;
-  this signal does not itself terminate a provider request or process.
+  a late child result is discarded if that request was committed first. This
+  storage-level signal does not itself terminate a provider request or process.
   `subagent_worktree.v` now prepares a separate branch/worktree from staged and
   unstaged tracked changes plus bounded, non-ignored untracked regular files;
   ignored files are excluded, untracked symlinks are rejected, and the parent

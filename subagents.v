@@ -260,7 +260,7 @@ fn (mut store Store) finish_subagent_run(run_id string, status string, result st
 	defer {
 		store.mu.unlock()
 	}
-	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = ?, result = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = CASE WHEN cancel_requested = 1 THEN 'cancelled' ELSE ? END, result = CASE WHEN cancel_requested = 1 THEN '' ELSE ? END, error = CASE WHEN cancel_requested = 1 THEN error ELSE ? END, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'",
 		[status, result, run_error, run_id])!
 	if store.db.get_affected_rows_count() == 0 {
 		return error('child agent run is not running')
@@ -322,8 +322,8 @@ fn (mut store Store) request_subagent_cancellations_unlocked(parent_session_id s
 	parent_operation_id string, reason string) ! {
 	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_session_id = ? AND parent_operation_id = ? AND status = 'queued'",
 		[reason, parent_session_id, parent_operation_id])!
-	_ = store.db.exec_param_many("UPDATE subagent_runs SET cancel_requested = 1, updated_at = CURRENT_TIMESTAMP WHERE parent_session_id = ? AND parent_operation_id = ? AND status = 'running' AND cancel_requested = 0",
-		[parent_session_id, parent_operation_id])!
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET cancel_requested = 1, error = ?, updated_at = CURRENT_TIMESTAMP WHERE parent_session_id = ? AND parent_operation_id = ? AND status = 'running' AND cancel_requested = 0",
+		[reason, parent_session_id, parent_operation_id])!
 }
 
 // subagent_cancellation_requested lets a future child worker observe the

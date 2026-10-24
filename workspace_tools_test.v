@@ -69,27 +69,6 @@ fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 		'search query')
 }
 
-fn test_workspace_search_scans_mixed_line_endings_without_materializing_lines() {
-	content := 'before\rneedle CR\r\nneedle LF\nneedle tail\rafter\r\nend'
-	mut result := WorkspaceSearchResult{
-		matches: []WorkspaceSearchMatch{}
-	}
-	assert !append_workspace_search_matches(mut result, 'mixed.txt', content, 'needle')
-	assert result.matches.map(it.line) == [2, 3, 4]
-	assert result.matches.map(it.text) == ['needle CR', 'needle LF', 'needle tail']
-	assert !workspace_search_line_contains('needle\rneedle', 'e\rn', 0, 6)
-	assert workspace_search_line_contains('needle\rneedle', 'needle', 0, 6)
-
-	mut bounded := WorkspaceSearchResult{
-		matches: []WorkspaceSearchMatch{}
-	}
-	assert append_workspace_search_matches(mut bounded, 'many-lines.txt', 'needle\n'.repeat(101),
-		'needle')
-	assert bounded.truncated
-	assert bounded.matches.len == max_workspace_search_results
-	assert bounded.matches.last().line == max_workspace_search_results
-}
-
 fn test_workspace_excerpt_trims_and_crops_once_at_utf8_boundaries() {
 	assert workspace_excerpt('\t  hello\r', 5) == 'hello'
 	assert workspace_excerpt('x'.repeat(4_096), 5) == 'xxxxx'

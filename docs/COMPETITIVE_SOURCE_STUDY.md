@@ -220,8 +220,9 @@ avoids repeating symbol extraction between sticky and focused maps and across
 unchanged turns. This does not claim an end-to-end latency or task-quality win;
 measure representative workspaces before expanding the cache or changing its
 limits.
-Next: measure coding-task success versus grep-only baselines, then consider a
-parser adapter or cache only when measurements justify it.
+Next: measure coding-task success versus grep-only baselines and this extraction
+cache; consider a parser adapter or persistent cache only when measurements
+justify them.
 
 ### Cline — share orchestration, inject host capabilities
 

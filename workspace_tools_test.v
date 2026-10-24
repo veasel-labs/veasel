@@ -40,6 +40,15 @@ fn test_workspace_file_tools_bound_paths_and_skip_symlinks() {
 		path:    'src/main.v'
 		content: 'module example\nfn main() {}\n'
 	}
+	range := workspace_file_range(root, 'src/main.v', 2, 1) or { panic(err) }
+	assert range.path == 'src/main.v'
+	assert range.start_line == 2
+	assert range.end_line == 2
+	assert range.total_lines == 2
+	assert range.content == '2: fn main() {}\n'
+	assert !range.truncated
+	assert workspace_file_range_error_contains(root, 'src/main.v', 0, 1, 'line range')
+	assert workspace_file_range_error_contains(root, 'src/main.v', 4, 1, 'line count')
 	assert workspace_file_error_contains(root, '../outside-link/secret.txt', 'must not leave')
 	assert workspace_file_error_contains(root, 'outside-link/secret.txt', 'escapes')
 }
@@ -196,6 +205,12 @@ fn test_workspace_git_directory_resolves_linked_worktree_pointer() {
 
 fn workspace_file_error_contains(root string, path string, expected string) bool {
 	_ := workspace_file(root, path) or { return err.msg().contains(expected) }
+	return false
+}
+
+fn workspace_file_range_error_contains(root string, path string, start_line int, line_count int,
+	expected string) bool {
+	_ := workspace_file_range(root, path, start_line, line_count) or { return err.msg().contains(expected) }
 	return false
 }
 

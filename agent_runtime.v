@@ -67,6 +67,17 @@ fn workspace_read_path_from_call(call ProviderToolCall) ?string {
 	return normalized
 }
 
+fn workspace_read_identity_from_call(call ProviderToolCall) ?string {
+	path := workspace_read_path_from_call(call) or { return none }
+	fields := json2.decode[map[string]json2.Any](call.function.arguments) or { return none }
+	if 'start_line' !in fields && 'line_count' !in fields {
+		return path
+	}
+	start := (fields['start_line'] or { return none }).int()
+	count := (fields['line_count'] or { return none }).int()
+	return '${path}#${start}:${count}'
+}
+
 fn duplicate_workspace_read_note(path string) string {
 	return encode_agent_tool_note('Already provided this turn for path "${path}". Reuse the earlier workspace_read_file result; do not request it again.')
 }
@@ -80,12 +91,13 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 	mut run_indexes := []int{cap: calls.len}
 	mut run_calls := []ProviderToolCall{cap: calls.len}
 	for i, call in calls {
-		if path := workspace_read_path_from_call(call) {
-			if read_paths[path] {
+		if identity := workspace_read_identity_from_call(call) {
+			path := workspace_read_path_from_call(call) or { identity }
+			if read_paths[path] || read_paths[identity] {
 				ordered[i] = duplicate_workspace_read_note(path)
 				continue
 			}
-			read_paths[path] = true
+			read_paths[identity] = true
 		}
 		run_indexes << i
 		run_calls << call
@@ -155,13 +167,15 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_read_file'
-			description: 'Read one UTF-8 text file inside the current workspace. Files are limited to 512000 bytes.'
+			description: 'Read one UTF-8 text file inside the current workspace (maximum file size 512000 bytes). Omit line range arguments to read the whole file; otherwise provide start_line and line_count to read a bounded, one-based excerpt. Ranged reads return at most 200 lines and 32000 bytes with line numbers.'
 			parameters:  ToolParameters{
 				properties: {
-					'path': ToolParameter{
+					'path':       ToolParameter{
 						type:        'string'
 						description: 'Relative file path inside the workspace.'
 					}
+					'start_line': ToolParameter{ type: 'integer', description: 'One-based first line to return. Requires line_count.' }
+					'line_count': ToolParameter{ type: 'integer', description: 'Number of lines to return, from 1 to 200. Requires start_line.' }
 				}
 				required:   ['path']
 			}
@@ -1045,8 +1059,35 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			path := string_tool_argument(tool_arguments, 'path') or {
 				return encode_agent_tool_error('A relative path string is required.')
 			}
-			if tool_arguments.len != 1 {
+			has_start := 'start_line' in tool_arguments
+			has_count := 'line_count' in tool_arguments
+			if has_start != has_count {
+				return encode_agent_tool_error('start_line and line_count must be provided together.')
+			}
+			if tool_arguments.len != if has_start { 3 } else { 1 } {
 				return encode_agent_tool_error('Unexpected tool argument.')
+			}
+			if has_start {
+				start_value := tool_arguments['start_line'] or {
+					return encode_agent_tool_error('start_line must be an integer.')
+				}
+				count_value := tool_arguments['line_count'] or {
+					return encode_agent_tool_error('line_count must be an integer.')
+				}
+				if start_value !is f64 || count_value !is f64 {
+					return encode_agent_tool_error('start_line and line_count must be integers.')
+				}
+				start_number := start_value.f64()
+				count_number := count_value.f64()
+				if start_number < 1 || start_number > f64(max_workspace_file_bytes) || count_number < 1
+					|| count_number > max_workspace_read_range_lines || start_number != f64(int(start_number))
+					|| count_number != f64(int(count_number)) {
+					return encode_agent_tool_error('start_line and line_count must be positive whole numbers within the documented limits.')
+				}
+				ranged := workspace_file_range(root, path, int(start_number), int(count_number)) or {
+					return encode_agent_tool_error('The workspace file range is invalid or unavailable.')
+				}
+				return json2.encode[WorkspaceFileRange](ranged)
 			}
 			file := workspace_file(root, path) or {
 				return encode_agent_tool_error('The workspace file is invalid or unavailable.')

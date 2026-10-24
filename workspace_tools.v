@@ -2,10 +2,13 @@ module main
 
 import os
 import encoding.utf8
+import strings
 
 const max_workspace_file_count = 5_000
 const max_workspace_list_results = 500
 const max_workspace_file_bytes = 512_000
+const max_workspace_read_range_lines = 200
+const max_workspace_read_range_bytes = 32_000
 const max_workspace_search_bytes = 32_000_000
 const max_workspace_search_results = 100
 const max_workspace_query_bytes = 256
@@ -22,6 +25,16 @@ pub struct WorkspaceFileContent {
 pub:
 	path    string
 	content string
+}
+
+pub struct WorkspaceFileRange {
+pub:
+	path        string
+	start_line  int
+	end_line    int
+	total_lines int
+	content     string
+	truncated   bool
 }
 
 pub struct WorkspaceSearchMatch {
@@ -107,6 +120,73 @@ fn workspace_file(root string, relative_path string) !WorkspaceFileContent {
 	return WorkspaceFileContent{
 		path:    relative_path.replace('\\', '/')
 		content: content
+	}
+}
+
+fn workspace_file_range(root string, relative_path string, start_line int, line_count int) !WorkspaceFileRange {
+	if start_line < 1 || line_count < 1 || line_count > max_workspace_read_range_lines {
+		return error('line range must start at 1 or greater and contain 1 to ${max_workspace_read_range_lines} lines')
+	}
+	resolved_root := canonical_workspace_root(root)!
+	path := resolve_workspace_file_path(resolved_root, relative_path)!
+	content := read_workspace_text_file(path)!
+	lines := content.split_into_lines()
+	if start_line > lines.len {
+		return error('start_line exceeds the file line count')
+	}
+	stop_line := if start_line - 1 + line_count < lines.len {
+		start_line - 1 + line_count
+	} else {
+		lines.len
+	}
+	mut output := strings.new_builder(4_096)
+	mut included_lines := 0
+	mut truncated := stop_line < lines.len
+	for index in start_line - 1 .. stop_line {
+		line := lines[index]
+		line_number := index + 1
+		prefix_bytes := if line_number < 10 {
+			3
+		} else if line_number < 100 {
+			4
+		} else if line_number < 1_000 {
+			5
+		} else if line_number < 10_000 {
+			6
+		} else if line_number < 100_000 {
+			7
+		} else {
+			8
+		}
+		remaining := max_workspace_read_range_bytes - output.len
+		if remaining <= prefix_bytes {
+			truncated = true
+			break
+		}
+		output.write_decimal(i64(line_number))
+		output.write_string(': ')
+		available := max_workspace_read_range_bytes - output.len
+		if line.len > available {
+			mut end := available
+			for end > 0 && end < line.len && (line[end] & 0xc0) == 0x80 {
+				end--
+			}
+			output.write_string(line[..end])
+			truncated = true
+			included_lines++
+			break
+		}
+		output.write_string(line)
+		output.write_byte(`\n`)
+		included_lines++
+	}
+	return WorkspaceFileRange{
+		path:        relative_path.replace('\\', '/')
+		start_line:  start_line
+		end_line:    start_line + included_lines - 1
+		total_lines: lines.len
+		content:     output.str()
+		truncated:   truncated
 	}
 }
 

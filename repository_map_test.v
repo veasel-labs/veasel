@@ -57,14 +57,17 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	assert repository_map_lexically_related('args', 'arguments')
 	assert repository_map_path_has_segment('aider/args.py', 'args')
 	assert score_repository_map_path('aider/args.py', arguments) >= 300.0
+	argument_terms := repository_map_content_query_terms(arguments)
 	assert score_repository_map_content('Add an argument to the command line parser options.',
-		arguments) > 0.0
-	assert score_repository_map_content('parse_args parser', RepositoryMapHintSet{
+		argument_terms) > 0.0
+	parsing_terms := repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: ['parsing']
-	}) == 24.0
-	assert score_repository_map_content('run_batch', RepositoryMapHintSet{
+	})
+	assert score_repository_map_content('parse_args parser', parsing_terms) == 24.0
+	running_terms := repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: ['running']
-	}) == 24.0
+	})
+	assert score_repository_map_content('run_batch', running_terms) == 24.0
 	assert score_repository_map_path('aider/args.py', arguments) > score_repository_map_path('tests/test_args.py', arguments)
 	model_behavior := extract_repository_map_hints('litellm model that calls the LLM API')
 	assert repository_map_is_package_index_path('src/minisweagent/models/__init__.py')

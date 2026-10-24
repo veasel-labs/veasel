@@ -75,6 +75,10 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// signal weaker than exact mentions, so it helps without replacing them.
 	mut seen_lexical_hints := map[string]bool{}
 	mut exact_path_term_matches := 0
+	mut previous_filename_hint_index := -2
+	mut has_adjacent_filename_terms := false
+	mut lexical_hint_index := 0
+	segments := path.replace('\\', '/').split('/')
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
 			continue
@@ -84,8 +88,14 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			continue
 		}
 		seen_lexical_hints[normalized] = true
+		current_hint_index := lexical_hint_index
+		lexical_hint_index++
 		mut matched := false
-		for segment in path.replace('\\', '/').split('/') {
+		mut matched_exact_filename := false
+		// Search from the filename toward parent directories so a repeated
+		// token in a package name cannot hide its stronger basename match.
+		for segment_offset in 0 .. segments.len {
+			segment := segments[segments.len - segment_offset - 1]
 			name := repository_map_stem(segment)
 			for part in repository_map_ident_parts(name) {
 				match_weight := repository_map_lexical_match_weight(part, ident)
@@ -95,6 +105,9 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 					if part == ident.to_lower() {
 						score += 120.0
 						exact_path_term_matches++
+						if segment_offset == 0 {
+							matched_exact_filename = true
+						}
 					} else {
 						score += match_weight
 					}
@@ -106,6 +119,14 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 				break
 			}
 		}
+		if matched_exact_filename {
+			if current_hint_index == previous_filename_hint_index + 1 {
+				has_adjacent_filename_terms = true
+			}
+			previous_filename_hint_index = current_hint_index
+		} else {
+			previous_filename_hint_index = -2
+		}
 	}
 	// A filename that names multiple distinct concepts from the query is a
 	// stronger destination than a file matching one common word (e.g. tool.ts
@@ -113,6 +134,11 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// so generic documentation filenames do not swamp high-confidence aliases.
 	if exact_path_term_matches > 1 {
 		score += f64(exact_path_term_matches - 1) * 180.0
+	}
+	// Adjacent query concepts co-located in a compound filename identify a
+	// destination more clearly than common terms split across a directory tree.
+	if has_adjacent_filename_terms {
+		score += 500.0
 	}
 	// For behavior questions, prefer implementation files over tests that
 	// merely import the same symbols. A query explicitly about tests keeps them

@@ -7,6 +7,25 @@ fn write_map_fixture_file(path string, content string) {
 	os.write_file(path, content) or { panic(err) }
 }
 
+fn test_repository_map_filename_compounds_rank_above_split_path_terms() {
+	hints := RepositoryMapHintSet{
+		idents: ['subagent', 'job']
+	}
+	compound := score_repository_map_path('packages/core/src/session/subagent-job.ts', hints)
+	split := score_repository_map_path('packages/core/src/subagent/job/worker.ts', hints)
+	assert compound > split
+}
+
+fn test_repository_map_compound_filename_prefers_adjacent_query_terms() {
+	hints := RepositoryMapHintSet{
+		idents: ['agent', 'loop', 'tool', 'call', 'execution']
+	}
+	agent_loop := score_repository_map_path('packages/agent/src/agent-loop.ts', hints)
+	tool_execution := score_repository_map_path('packages/coding-agent/src/extensions/tool-execution.ts',
+		hints)
+	assert agent_loop > tool_execution
+}
+
 fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-rank')
 	os.rmdir_all(root) or {}

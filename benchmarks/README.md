@@ -267,6 +267,22 @@ Reports include ranked paths, source fingerprints, and upstream revisions for
 [OpenCode](reports/repo-map-recall-opencode-2026-10-23-path-specificity.json),
 and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
 
+A basename-co-location follow-up searches filename terms before parent
+directories, so a repeated package segment cannot mask the stronger filename
+match. It adds a bounded boost only when adjacent query concepts occur
+together in the basename. On the same five pinned checkouts and labeled cases,
+the OpenCode `subagent-job.ts` case moved from rank 5 to 2 and Pi's
+`agent-loop.ts` case moved from rank 7 to 1; the other cases stayed within the
+top three. The aggregate is 22/22 recall@3 and 22/22 recall@10. The five
+reports record binary and source-diff hashes, compiler profile, and checkout
+revisions: [Aider](reports/repo-map-recall-aider-2026-10-24-compound-filename.json),
+[mini-SWE-agent](reports/repo-map-recall-mini-swe-agent-2026-10-24-compound-filename.json),
+[SWE-agent](reports/repo-map-recall-swe-agent-2026-10-24-compound-filename.json),
+[OpenCode](reports/repo-map-recall-opencode-2026-10-24-compound-filename.json),
+and [Pi](reports/repo-map-recall-pi-2026-10-24-compound-filename.json). This
+remains a small, curated file-retrieval sample, not evidence of general
+semantic retrieval or coding-task success.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

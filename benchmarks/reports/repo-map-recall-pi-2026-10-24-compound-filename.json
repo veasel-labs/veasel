@@ -1,0 +1,106 @@
+{
+  "generatedAt": "2026-10-24T22:28:16.689Z",
+  "veasel": {
+    "version": "Veasel Code 0.1.0-dev",
+    "sourceRevision": "ebb45d2346bb5e61582e2e9c97009ea055b62cae",
+    "sourceDiffSha256": "ac7656431abcc04d80f4a64a067b22dca491763e0abe1c135a5a329ed8612aeb",
+    "untrackedSourceFiles": [],
+    "binarySha256": "165e919059df4fb68bea8c26527869a715071a57e27819f344decc0e41fa24aa",
+    "compilerVersion": "V 0.5.2 ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "buildFlags": "-cc gcc -prod"
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "repository": {
+    "name": "earendil-works--pi",
+    "revision": "6c2fd73b0c545a4034672cb60e34d53e035dd751"
+  },
+  "summary": {
+    "cases": 3,
+    "recallAt3": 3,
+    "recallAt10": 3
+  },
+  "results": [
+    {
+      "query": "agent loop tool call execution",
+      "expected": "packages/agent/src/agent-loop.ts",
+      "rank": 1,
+      "top3": [
+        "packages/agent/src/agent-loop.ts",
+        "packages/coding-agent/src/extensions/codemode/tool.ts",
+        "packages/coding-agent/src/extensions/tool-search/tool.ts"
+      ],
+      "rankedPaths": [
+        "packages/agent/src/agent-loop.ts",
+        "packages/coding-agent/src/extensions/codemode/tool.ts",
+        "packages/coding-agent/src/extensions/tool-search/tool.ts",
+        "packages/agent/src/agent.ts",
+        "packages/durable/src/harness/tool.ts",
+        "packages/codemode/src/runtime/execution.ts",
+        "packages/durable/src/harness/agent.ts",
+        "packages/coding-agent/test/sdk-codex-cache-probe-tool-loop.ts",
+        "packages/ai/test/tool-call-without-result.test.ts",
+        "packages/ai/test/tool-call-id-normalization.test.ts",
+        "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+        "packages/coding-agent/src/core/nested-tool-calls.ts",
+        "packages/coding-agent/test/tool-execution-component.test.ts",
+        "packages/coding-agent/src/core/export-html/tool-renderer.ts"
+      ],
+      "fileCount": 14,
+      "filesScanned": 2010
+    },
+    {
+      "query": "configure a Pi agent and initialize its state",
+      "expected": "packages/agent/src/agent.ts",
+      "rank": 2,
+      "top3": [
+        "packages/durable/src/harness/agent.ts",
+        "packages/agent/src/agent.ts",
+        "packages/chord/src/state.ts"
+      ],
+      "rankedPaths": [
+        "packages/durable/src/harness/agent.ts",
+        "packages/agent/src/agent.ts",
+        "packages/chord/src/state.ts",
+        "packages/agent/src/agent-loop.ts",
+        "packages/agent/src/types.ts",
+        "packages/agent/examples/mcp-codemode/tools.ts",
+        "packages/coding-agent/src/core/agent-session.ts",
+        "packages/coding-agent/src/core/extensions/loader.ts",
+        "packages/coding-agent/src/core/index.ts",
+        "packages/coding-agent/src/core/sdk.ts",
+        "packages/coding-agent/src/core/agent-session-runtime.ts",
+        "packages/agent/examples/mcp-codemode/main.ts"
+      ],
+      "fileCount": 12,
+      "filesScanned": 2010
+    },
+    {
+      "query": "define agent context and tool execution types",
+      "expected": "packages/agent/src/types.ts",
+      "rank": 2,
+      "top3": [
+        "packages/coding-agent/src/core/extensions/types.ts",
+        "packages/agent/src/types.ts",
+        "packages/coding-agent/src/extensions/codemode/tool.ts"
+      ],
+      "rankedPaths": [
+        "packages/coding-agent/src/core/extensions/types.ts",
+        "packages/agent/src/types.ts",
+        "packages/coding-agent/src/extensions/codemode/tool.ts",
+        "packages/coding-agent/test/tool-execution-component.test.ts",
+        "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+        "packages/coding-agent/src/extensions/tool-search/tool.ts",
+        "packages/durable/src/harness/agent.ts",
+        "packages/durable/src/harness/tool.ts",
+        "packages/durable/src/harness/types.ts",
+        "packages/agent/src/agent.ts",
+        "packages/codemode/src/runtime/execution.ts"
+      ],
+      "fileCount": 11,
+      "filesScanned": 2010
+    }
+  ]
+}

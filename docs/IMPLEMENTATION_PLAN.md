@@ -608,9 +608,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the strongest 2,000 candidates; source extraction remains capped at 800 files
   and 8 MiB, and ranking uses V's O(n log n) `sort_with_compare`. Curated
   retrieval cases for Aider, mini-swe-agent, SWE-agent, OpenCode, and Pi are
-  recorded in `benchmarks/README.md` (20/22 recall@3, 22/22 recall@10 on this
-  small sample after bounded path-specificity ranking); semantic retrieval and
-  broader task-success evidence remain open gaps.
+  recorded in `benchmarks/README.md` (22/22 recall@3 and recall@10 on this small
+  sample after basename co-location ranking); semantic retrieval and broader
+  task-success evidence remain open gaps.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in

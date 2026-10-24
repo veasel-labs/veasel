@@ -274,6 +274,8 @@ fn new_app(store &Store, plugin_directory string) &App {
 		}
 	}
 	// Queued Prefer: respond-async turns survive store reopen; resume workers now.
+	mut mutable_store := store
+	mutable_store.cleanup_unstarted_subagent_workspaces()
 	app.resume_durable_queued_operations()
 	return app
 }

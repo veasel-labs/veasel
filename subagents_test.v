@@ -7,26 +7,31 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
-	parent := store.create_session(SessionInput{ title: 'Parent', directory: root }) or { panic(err) }
+	parent := store.create_session(SessionInput{ title: 'Parent', directory: workspace_root }) or { panic(err) }
 	operation_id := uuid.new_v4().str()
 	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
 	_ = store.create_subagent_run(parent.id, operation_id, 'untrusted-request', 'project-agent', 1,
-		'Untrusted child', root) or {
+		'Untrusted child', workspace_root) or {
 		assert err.msg().contains('trusted built-in registry')
 		SubagentRun{}
 	}
 	assert store.db.q_int('SELECT COUNT(*) FROM subagent_runs') or { panic(err) } == 0
 	first := store.create_subagent_run(parent.id, operation_id, 'request-1', 'reviewer', 1,
-		'Child', root) or { panic(err) }
+		'Child', workspace_root) or { panic(err) }
 	retry := store.create_subagent_run(parent.id, operation_id, 'request-1', 'reviewer', 1,
-		'Child', root) or { panic(err) }
+		'Child', workspace_root) or { panic(err) }
 	assert retry.id == first.id
 	assert retry.child_session_id == first.child_session_id
 	assert first.status == 'queued'
+	assert first.workspace_ready
+	assert (store.get_session(first.child_session_id) or { panic(err) }).directory == os.join_path(root,
+		'subagent-worktrees', first.id)
+	assert os.is_dir(os.join_path(root, 'subagent-worktrees', first.id))
 	_ = store.create_subagent_run(parent.id, operation_id, 'request-1', 'explorer', 1,
-		'Child', root) or {
+		'Child', workspace_root) or {
 		assert err.msg().contains('reused with different parameters')
 		SubagentRun{}
 	}
@@ -40,13 +45,28 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 		SubagentRun{}
 	}
 	queued := store.create_subagent_run(parent.id, operation_id, 'request-2', 'reviewer', 1,
-		'Queued child', root) or { panic(err) }
+		'Queued child', workspace_root) or { panic(err) }
+	ready_cancelled := store.create_subagent_run(parent.id, operation_id, 'request-ready-cancelled',
+		'reviewer', 1, 'Ready then cancelled', workspace_root) or { panic(err) }
+	_ = store.db.exec_param_many('UPDATE subagent_runs SET workspace_ready = 0 WHERE id = ?', [queued.id]) or {
+		panic(err)
+	}
+	_ = store.begin_subagent_run(queued.id) or {
+		assert err.msg().contains('not queued')
+		SubagentRun{}
+	}
 	running := store.create_subagent_run(parent.id, operation_id, 'request-3', 'reviewer', 1,
-		'Running child', root) or { panic(err) }
+		'Running child', workspace_root) or { panic(err) }
 	_ = store.begin_subagent_run(running.id) or { panic(err) }
 	assert !(store.subagent_cancellation_requested(running.id) or { panic(err) })
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or { panic(err) }
 	assert (store.get_subagent_run_unlocked(queued.id) or { panic(err) }).status == 'cancelled'
+	assert !(store.get_subagent_run_unlocked(queued.id) or { panic(err) }).workspace_started
+	assert (store.get_subagent_run_unlocked(ready_cancelled.id) or { panic(err) }).status == 'cancelled'
+	assert !(store.get_subagent_run_unlocked(ready_cancelled.id) or { panic(err) }).workspace_started
+	store.cleanup_unstarted_subagent_workspaces()
+	assert !os.exists(os.join_path(root, 'subagent-worktrees', queued.id))
+	assert !os.exists(os.join_path(root, 'subagent-worktrees', ready_cancelled.id))
 	requested_cancel := store.get_subagent_run_unlocked(running.id) or { panic(err) }
 	assert requested_cancel.status == 'running'
 	assert requested_cancel.cancel_requested
@@ -137,9 +157,11 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
 	initial_version := store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert initial_version == 19
+	assert initial_version == 21
 	_ = store.db.exec('DROP TABLE subagent_runs') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 19') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 20') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 21') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 18') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(db_path) or { panic(err) }
@@ -148,27 +170,28 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 		panic(err)
 	} == 1
 	migrated_version := migrated.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert migrated_version == 19
+	assert migrated_version == 21
 }
 
 fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-recovery-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
-	parent := store.create_session(SessionInput{ title: 'Parent', directory: root }) or { panic(err) }
+	parent := store.create_session(SessionInput{ title: 'Parent', directory: workspace_root }) or { panic(err) }
 	operation_id := uuid.new_v4().str()
 	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
 	mut running_ids := []string{cap: max_active_subagent_runs_per_parent}
 	for i in 0 .. max_active_subagent_runs_per_parent {
 		run := store.create_subagent_run(parent.id, operation_id, 'request-${i}', 'explorer', 1,
-			'Child ${i}', root) or { panic(err) }
+			'Child ${i}', workspace_root) or { panic(err) }
 		_ = store.begin_subagent_run(run.id) or { panic(err) }
 		running_ids << run.id
 	}
 	over_limit := store.create_subagent_run(parent.id, operation_id, 'request-over-limit', 'explorer', 1,
-		'Overflow', root) or {
+		'Overflow', workspace_root) or {
 		assert err.msg().contains('concurrency limit')
 		SubagentRun{}
 	}
@@ -177,7 +200,7 @@ fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {
 		panic(err)
 	}
 	queued := store.create_subagent_run(parent.id, operation_id, 'request-after-slot-release',
-		'explorer', 1, 'Queued at restart', root) or { panic(err) }
+		'explorer', 1, 'Queued at restart', workspace_root) or { panic(err) }
 	store.close() or { panic(err) }
 	mut recovered := open_store(db_path) or { panic(err) }
 	defer { recovered.close() or {} }
@@ -188,4 +211,18 @@ fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {
 	assert (recovered.get_subagent_run_unlocked(queued.id) or { panic(err) }).status == 'cancelled'
 	outcome := recovered.claim_subagent_outcome(running_ids[1]) or { panic(err) }
 	assert outcome.status == 'uncertain'
+}
+
+fn init_subagent_test_repo(root string) string {
+	repo := os.join_path(root, 'workspace')
+	os.mkdir_all(repo) or { panic(err) }
+	_ := run_workspace_git_command(repo, ['init', '-b', 'main']) or { panic(err) }
+	_ := run_workspace_git_command(repo, ['config', 'user.email', 'veasel@example.com']) or {
+		panic(err)
+	}
+	_ := run_workspace_git_command(repo, ['config', 'user.name', 'Veasel']) or { panic(err) }
+	os.write_file(os.join_path(repo, 'README.md'), 'base\n') or { panic(err) }
+	_ := run_workspace_git_command(repo, ['add', 'README.md']) or { panic(err) }
+	_ := run_workspace_git_command(repo, ['commit', '-m', 'base']) or { panic(err) }
+	return repo
 }

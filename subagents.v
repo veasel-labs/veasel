@@ -1,6 +1,7 @@
 module main
 
 import uuid
+import os
 
 const max_subagent_depth = 2
 const max_active_subagent_runs_per_parent = 4
@@ -22,6 +23,8 @@ pub:
 	error               string
 	cancel_requested    bool
 	outcome_claimed     bool
+	workspace_ready     bool
+	workspace_started   bool
 }
 
 // create_subagent_run atomically creates a clean child session and its durable
@@ -41,12 +44,18 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 	if directory.len == 0 || directory.len > 4096 || title.len == 0 || title.len > 512 {
 		return error('child agent session metadata is invalid')
 	}
+	if store.path == ':memory:' {
+		return error('child agent workspaces require a persistent store')
+	}
 	store.mu.lock()
+	mut store_locked := true
 	defer {
-		store.mu.unlock()
+		if store_locked {
+			store.mu.unlock()
+		}
 	}
 	store.db.exec('BEGIN IMMEDIATE') or { return error('unable to reserve child agent capacity') }
-	prior := store.db.exec_param_many('SELECT id, agent_id, requested_title, requested_directory, depth FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ? AND request_id = ?', [
+	prior := store.db.exec_param_many('SELECT id, agent_id, requested_title, requested_directory, depth, workspace_ready FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ? AND request_id = ?', [
 		parent_session_id,
 		parent_operation_id,
 		request_id,
@@ -65,7 +74,13 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 			store.db.rollback() or {}
 			return error('unable to commit child agent retry lookup')
 		}
-		return store.get_subagent_run_unlocked(row.val(0))
+		run := store.get_subagent_run_unlocked(row.val(0))!
+		store.mu.unlock()
+		store_locked = false
+		if !run.workspace_ready {
+			return error('child agent workspace preparation is already in progress or was interrupted')
+		}
+		return run
 	}
 	operation := store.db.exec_param_many('SELECT status FROM session_operations WHERE id = ? AND session_id = ?',
 		[parent_operation_id, parent_session_id]) or {
@@ -101,10 +116,11 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 	}
 	run_id := uuid.new_v4().str()
 	child_session_id := uuid.new_v4().str()
+	child_directory := os.join_path(os.dir(os.real_path(store.path)), 'subagent-worktrees', run_id)
 	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)', [
 		child_session_id,
 		title,
-		directory,
+		child_directory,
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to create child agent session')
@@ -114,7 +130,7 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 		store.db.rollback() or {}
 		return error('unable to record child agent session')
 	}
-	_ = store.db.exec_param_many("INSERT INTO subagent_runs (id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, requested_title, requested_directory, depth, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')",
+	_ = store.db.exec_param_many("INSERT INTO subagent_runs (id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, requested_title, requested_directory, depth, status, workspace_ready, workspace_started) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 0)",
 		[run_id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id,
 			title, directory, depth.str()]) or {
 		store.db.rollback() or {}
@@ -124,7 +140,42 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 		store.db.rollback() or {}
 		return error('unable to commit child agent run')
 	}
-	return store.get_subagent_run_unlocked(run_id)
+	store.mu.unlock()
+	store_locked = false
+	_ := create_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id) or {
+		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
+		store.mu.lock()
+		store_locked = true
+		_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
+			[err.msg().limit(max_subagent_error_bytes), run_id]) or { return err }
+		store.mu.unlock()
+		store_locked = false
+		return error('unable to prepare child agent workspace: ${err.msg()}')
+	}
+	store.mu.lock()
+	store_locked = true
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET workspace_ready = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND EXISTS (SELECT 1 FROM session_operations WHERE id = ? AND session_id = ? AND status = 'running')",
+		[run_id, parent_operation_id, parent_session_id]) or {
+		store.mu.unlock()
+		store_locked = false
+		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
+		return error('unable to activate child agent workspace')
+	}
+	if store.db.get_affected_rows_count() != 1 {
+		store.mu.unlock()
+		store_locked = false
+		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
+		return error('parent operation ended before child workspace was ready')
+	}
+	run := store.get_subagent_run_unlocked(run_id) or {
+		store.mu.unlock()
+		store_locked = false
+		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
+		return err
+	}
+	store.mu.unlock()
+	store_locked = false
+	return run
 }
 
 fn (mut store Store) begin_subagent_run(run_id string) !SubagentRun {
@@ -133,7 +184,7 @@ fn (mut store Store) begin_subagent_run(run_id string) !SubagentRun {
 		store.mu.unlock()
 	}
 	store.db.begin()!
-	run_rows := store.db.exec_param_many("SELECT parent_session_id, parent_operation_id FROM subagent_runs WHERE id = ? AND status = 'queued'",
+	run_rows := store.db.exec_param_many("SELECT parent_session_id, parent_operation_id FROM subagent_runs WHERE id = ? AND status = 'queued' AND workspace_ready = 1",
 		[run_id]) or {
 		store.db.rollback() or {}
 		return error('unable to inspect queued child agent run')
@@ -160,7 +211,7 @@ fn (mut store Store) begin_subagent_run(run_id string) !SubagentRun {
 		store.db.rollback() or {}
 		return error('child agent concurrency limit reached')
 	}
-	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'running', workspace_started = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
 		[run_id]) or {
 		store.db.rollback() or {}
 		return error('unable to start child agent run')
@@ -221,7 +272,7 @@ fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 }
 
 fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
-	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed, cancel_requested FROM subagent_runs WHERE id = ?',
+	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed, cancel_requested, workspace_ready, workspace_started FROM subagent_runs WHERE id = ?',
 		[run_id])!
 	if rows.len != 1 {
 		return error('child agent run not found')
@@ -240,6 +291,8 @@ fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
 		error:               row.val(9)
 		outcome_claimed:     row.val(10).int() == 1
 		cancel_requested:    row.val(11).int() == 1
+		workspace_ready:     row.val(12).int() == 1
+		workspace_started:   row.val(13).int() == 1
 	}
 }
 
@@ -267,4 +320,26 @@ fn (mut store Store) subagent_cancellation_requested(run_id string) !bool {
 		return error('child agent run is not running')
 	}
 	return run.cancel_requested
+}
+
+// Reconcile workspaces from runs that crashed while preparing, before queued
+// parent operations can resume and request more children.
+fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
+	store.mu.lock()
+	rows := store.db.exec("SELECT id, requested_directory FROM subagent_runs WHERE workspace_started = 0 AND status IN ('cancelled', 'failed')") or {
+		store.mu.unlock()
+		eprintln('veasel: unable to list interrupted child workspaces (${err.msg()})')
+		return
+	}
+	store.mu.unlock()
+	data_directory := os.dir(os.real_path(store.path))
+	for row in rows {
+		path := os.join_path(data_directory, 'subagent-worktrees', row.val(0))
+		if !os.exists(path) {
+			continue
+		}
+		remove_subagent_workspace(row.val(1), data_directory, row.val(0), true) or {
+			eprintln('veasel: unable to remove interrupted child workspace ${row.val(0)} (${err.msg()})')
+		}
+	}
 }

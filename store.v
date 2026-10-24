@@ -711,6 +711,53 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child agent cancellation migration')
 		}
 	}
+	if current < 20 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child workspace readiness migration')
+		}
+		db.exec('ALTER TABLE subagent_runs ADD COLUMN workspace_ready INTEGER NOT NULL DEFAULT 1 CHECK (workspace_ready IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child workspace readiness state')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (20)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child workspace readiness migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child workspace readiness migration')
+		}
+	}
+	if current < 21 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child workspace start migration')
+		}
+		db.exec('ALTER TABLE subagent_runs ADD COLUMN workspace_started INTEGER NOT NULL DEFAULT 1 CHECK (workspace_started IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child workspace start state')
+		}
+		db.exec("UPDATE subagent_runs SET workspace_started = 0 WHERE status = 'queued'") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to initialize queued child workspace start state')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (21)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child workspace start migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child workspace start migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

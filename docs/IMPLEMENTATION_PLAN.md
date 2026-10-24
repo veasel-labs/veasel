@@ -590,12 +590,15 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `subagent_worktree.v` now prepares a separate branch/worktree from staged and
   unstaged tracked changes plus bounded, non-ignored untracked regular files;
   ignored files are excluded, untracked symlinks are rejected, and the parent
-  checkout stays unchanged. This snapshot helper is not yet wired to child-run
-  creation or lifecycle cleanup. Authorization of parent callers beyond the
-  built-in allowlist, worktree lifecycle integration, deadlines, cancellation
-  execution, atomic delivery with the parent result, API/TUI integration, and
-  task-level benchmark evidence remain required before a model-callable tool is
-  exposed.
+  checkout stays unchanged. Child-run creation now reserves an unready row,
+  prepares the worktree without holding the SQLite mutex, and marks it ready
+  only while its parent operation is still running. Workers cannot claim
+  unready rows. A durable start marker lets startup remove cancelled/failed
+  worktrees only when the child never began; workspaces that may have executed
+  remain preserved. Authorizing parent callers beyond the built-in allowlist,
+  deadlines, cancellation execution, atomic delivery with the parent result,
+  API/TUI integration, and task-level benchmark evidence remain required before
+  a model-callable tool is exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

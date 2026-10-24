@@ -193,6 +193,8 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 	mut ordered := []string{len: calls.len}
 	mut run_indexes := []int{cap: calls.len}
 	mut run_calls := []ProviderToolCall{cap: calls.len}
+	mut pending_read_indexes := map[string]int{}
+	mut duplicate_read_indexes := map[int]int{}
 	for i, call in calls {
 		if note := loop_skip_notes[call.id] {
 			ordered[i] = note
@@ -206,7 +208,11 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 					ordered[i] = duplicate_workspace_read_note(path)
 					continue
 				}
-				read_paths[path] = true
+				if primary_index := pending_read_indexes[path] {
+					duplicate_read_indexes[i] = primary_index
+					continue
+				}
+				pending_read_indexes[path] = i
 			}
 		}
 		run_indexes << i
@@ -225,6 +231,7 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 		item := <-results_ch
 		run_results[item.index] = item
 	}
+	mut successful_reads := map[int]bool{}
 	for i, call_index in run_indexes {
 		read_result := run_results[i]
 		ordered[call_index] = read_result.result
@@ -232,9 +239,19 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 			if path := workspace_read_path_from_call(run_calls[i]) {
 				if read_result.workspace_read_succeeded {
 					read_paths[path] = true
+					successful_reads[call_index] = true
 				} else {
 					read_paths.delete(path)
 				}
+			}
+		}
+	}
+	for duplicate_index, primary_index in duplicate_read_indexes {
+		if path := workspace_read_path_from_call(calls[duplicate_index]) {
+			ordered[duplicate_index] = if successful_reads[primary_index] {
+				duplicate_workspace_read_note(path)
+			} else {
+				ordered[primary_index]
 			}
 		}
 	}

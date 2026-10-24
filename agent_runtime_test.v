@@ -927,7 +927,8 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		mut late_read_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
 		mut late_read_paths, {}) or { panic(err) }
 	assert late_read_results[0].contains('invalid or unavailable')
-	assert late_read_results[1].contains('Already provided this turn')
+	assert late_read_results[1] == late_read_results[0]
+	assert !late_read_results[1].contains('Already provided this turn')
 	assert !late_read_paths[late_path]
 	os.write_file(os.join_path(root, late_path), 'appeared after the failed read') or {
 		panic(err)

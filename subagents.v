@@ -381,19 +381,21 @@ fn (mut store Store) subagent_cancellation_requested(run_id string) !bool {
 // parent operations can resume and request more children.
 fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
 	store.mu.lock()
-	rows := store.db.exec("SELECT id, requested_directory FROM subagent_runs WHERE workspace_started = 0 AND status IN ('cancelled', 'failed')") or {
+	rows := store.db.exec("SELECT id, requested_directory, child_session_id FROM subagent_runs WHERE workspace_started = 0 AND status IN ('cancelled', 'failed')") or {
 		store.mu.unlock()
 		eprintln('veasel: unable to list interrupted child workspaces (${err.msg()})')
 		return
 	}
 	mut run_ids := []string{cap: rows.len}
 	mut directories := []string{cap: rows.len}
+	mut child_session_ids := []string{cap: rows.len}
 	for row in rows {
 		if store.active_subagent_preparations[row.val(0)] {
 			continue
 		}
 		run_ids << row.val(0)
 		directories << row.val(1)
+		child_session_ids << row.val(2)
 	}
 	store.mu.unlock()
 	data_directory := os.dir(os.real_path(store.path))
@@ -413,8 +415,22 @@ fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
 		if os.exists(path) {
 			remove_subagent_workspace(directories[i], data_directory, run_id, true) or {
 				eprintln('veasel: unable to remove interrupted child workspace ${run_id} (${err.msg()})')
+				preparation_lock.release()
+				continue
 			}
 		}
+		store.mu.lock()
+		store.db.exec_param_many('UPDATE sessions SET directory = ? WHERE id = ? AND directory = ?', [
+			directories[i],
+			child_session_ids[i],
+			path,
+		]) or {
+			store.mu.unlock()
+			eprintln('veasel: unable to restore interrupted child session directory ${run_id} (${err.msg()})')
+			preparation_lock.release()
+			continue
+		}
+		store.mu.unlock()
 		preparation_lock.release()
 	}
 }

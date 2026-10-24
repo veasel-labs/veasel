@@ -354,6 +354,8 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or {
 		panic(err)
 	}
+	child := store.get_session(run.child_session_id) or { panic(err) }
+	assert child.directory == os.join_path(root, 'subagent-worktrees', run.id)
 	store.active_subagent_preparations[run.id] = true
 	store.cleanup_unstarted_subagent_workspaces()
 	path := os.join_path(root, 'subagent-worktrees', run.id)
@@ -361,6 +363,8 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 	store.active_subagent_preparations.delete(run.id)
 	store.cleanup_unstarted_subagent_workspaces()
 	assert !os.exists(path)
+	cleaned_child := store.get_session(run.child_session_id) or { panic(err) }
+	assert cleaned_child.directory == workspace_root
 }
 
 fn test_subagent_preparation_lock_keeps_one_inode_and_excludes_same_process_stores() {

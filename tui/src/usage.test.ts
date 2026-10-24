@@ -155,11 +155,30 @@ describe("formatGlobalUsageSummary", () => {
       output_tokens: 30,
       usage_reported: true,
       cost: "unavailable",
+      models: [{
+        provider: "anthropic",
+        model: "fixture",
+        completed_turns: 2,
+        reported_turns: 1,
+        input_tokens: 150,
+        output_tokens: 30,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_reported: false,
+        cache_reported_turns: 0,
+        reasoning_tokens: 0,
+        reasoning_reported: false,
+        reasoning_reported_turns: 0,
+        cost: "unavailable",
+      }],
     })
     expect(text).toContain("ALL SESSIONS TOKEN USAGE")
     expect(text).toContain("Sessions: 3")
     expect(text).toContain("150 in")
-    expect(text).toContain("Cost: unavailable")
+    expect(text).toContain("anthropic / fixture: 150 in · 30 out · 1 reported turns")
+    expect(text).not.toContain("Cache:")
+    expect(text).not.toContain("Reasoning:")
+    expect(text).toContain("Estimated cost (pinned rates): unavailable")
   })
 
   test("states unavailable when nothing was reported", () => {

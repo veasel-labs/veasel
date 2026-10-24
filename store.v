@@ -79,6 +79,28 @@ pub:
 	reasoning_tokens      i64
 	reasoning_reported    bool
 	cost                  string = 'unavailable'
+	models                []GlobalUsageModelSummary
+}
+
+// GlobalUsageModelSummary contains durable, provider-reported usage grouped by
+// provider and model. Cost remains unavailable unless every reported turn in
+// the group can be priced from the pinned schedule.
+pub struct GlobalUsageModelSummary {
+pub:
+	provider                 string
+	model                    string
+	completed_turns          int
+	reported_turns           int
+	input_tokens             i64
+	output_tokens            i64
+	cache_read_tokens        i64
+	cache_creation_tokens    i64
+	cache_reported           bool
+	cache_reported_turns     int
+	reasoning_tokens         i64
+	reasoning_reported       bool
+	reasoning_reported_turns int
+	cost                     string = 'unavailable'
 }
 
 pub struct SessionUsageSummary {
@@ -1904,40 +1926,65 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	if rows.len != 1 {
 		return error('unable to read usage summary')
 	}
+	model_rows := store.db.exec("SELECT provider, model, COUNT(*), SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 THEN cache_read_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END) FROM session_operations WHERE status = 'completed' GROUP BY provider, model ORDER BY provider, model")!
+	model_schedule := active_cost_schedule()
+	mut models := []GlobalUsageModelSummary{cap: model_rows.len}
+	mut cost_turns := []CostScheduleTurn{cap: model_rows.len}
+	mut invalid_subset_cache := false
+	for model_row in model_rows {
+		provider := model_row.val(0)
+		model := model_row.val(1)
+		reported_turns := model_row.val(3).int()
+		cache_turns := model_row.val(13).int()
+		mut model_cost := cost_unavailable
+		if reported_turns > 0 && model_schedule.entries.len > 0 {
+			mut invalid_model_subset_cache := false
+			if entry := lookup_cost_schedule_entry(model_schedule, provider, model) {
+				invalid_model_subset_cache = cost_input_is_subset_provider(entry.provider)
+					&& model_row.val(10).int() > 0
+			}
+			turn := CostScheduleTurn{
+				provider:              provider
+				model:                 model
+				input_tokens:          model_row.val(4).i64()
+				output_tokens:         model_row.val(5).i64()
+				usage_reported:        true
+				cache_read_tokens:     model_row.val(11).i64()
+				cache_creation_tokens: model_row.val(12).i64()
+				cache_reported:        cache_turns > 0
+			}
+			cost_turns << turn
+			if invalid_model_subset_cache {
+				invalid_subset_cache = true
+			} else {
+				model_cost = usage_cost_label(model_schedule, [turn])
+			}
+		}
+		models << GlobalUsageModelSummary{
+			provider:                 provider
+			model:                    model
+			completed_turns:          model_row.val(2).int()
+			reported_turns:           reported_turns
+			input_tokens:             model_row.val(4).i64()
+			output_tokens:            model_row.val(5).i64()
+			cache_read_tokens:        model_row.val(6).i64()
+			cache_creation_tokens:    model_row.val(7).i64()
+			cache_reported:           model_row.val(8).int() > 0
+			cache_reported_turns:     model_row.val(8).int()
+			reasoning_tokens:         model_row.val(9).i64()
+			reasoning_reported:       model_row.val(14).int() > 0
+			reasoning_reported_turns: model_row.val(14).int()
+			cost:                     model_cost
+		}
+	}
 	row := rows[0]
 	reported_turns := row.val(1).int()
 	cache_turns := row.val(6).int()
 	reasoning_turns := row.val(8).int()
 	mut cost := cost_unavailable
-	schedule := active_cost_schedule()
-	if schedule.entries.len > 0 {
-		// Price grouped token totals instead of materializing every historical
-		// operation. Prices are linear per provider/model; keep cache-reporting
-		// groups separate and retain a per-turn invalid-cache guard below.
-		cost_rows := store.db.exec("SELECT provider, model, cache_reported, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), SUM(CASE WHEN cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END) FROM session_operations WHERE status = 'completed' AND usage_reported = 1 GROUP BY provider, model, cache_reported")!
-		mut cost_turns := []CostScheduleTurn{cap: cost_rows.len}
-		mut invalid_subset_cache := false
-		for cost_row in cost_rows {
-			provider := cost_row.val(0)
-			model := cost_row.val(1)
-			if entry := lookup_cost_schedule_entry(schedule, provider, model) {
-				if cost_input_is_subset_provider(entry.provider) && cost_row.val(7).int() > 0 {
-					invalid_subset_cache = true
-				}
-			}
-			cost_turns << CostScheduleTurn{
-				provider:              provider
-				model:                 model
-				input_tokens:          cost_row.val(3).i64()
-				output_tokens:         cost_row.val(4).i64()
-				usage_reported:        true
-				cache_read_tokens:     cost_row.val(5).i64()
-				cache_creation_tokens: cost_row.val(6).i64()
-				cache_reported:        cost_row.val(2).int() == 1
-			}
-		}
+	if model_schedule.entries.len > 0 {
 		if !invalid_subset_cache {
-			cost = usage_cost_label(schedule, cost_turns)
+			cost = usage_cost_label(model_schedule, cost_turns)
 		}
 	}
 	return GlobalUsageSummary{
@@ -1953,6 +2000,7 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 		reasoning_tokens:      row.val(7).i64()
 		reasoning_reported:    reasoning_turns > 0
 		cost:                  cost
+		models:                models
 	}
 }
 

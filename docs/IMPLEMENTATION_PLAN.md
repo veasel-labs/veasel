@@ -238,11 +238,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The same reported-only aggregation is available across all sessions on
   `GET /v1/usage` (`sessions`, turn counts, token/cache/reasoning totals and
   the pinned-schedule cost label); LiveApp Home Status exposes a compact
-  aggregate of those counters even without an active session. Global cost
-  pricing groups reported totals by provider, model, and cache-reporting state
-  before pricing, reducing application-side cost-turn materialization;
-  latency improvement has not been benchmarked. A durable
-  dashboard with broader execution history remains open below.
+  aggregate of those counters even without an active session. The searchable
+  TUI `/usage` dashboard groups durable counters by provider and model across
+  sessions. The aggregate query prices each provider/model group once while
+  retaining per-turn cache validation. Each model group also reports how many
+  completed turns supplied cache and reasoning counters, so partial provider
+  metadata is visible in the dashboard.
 - [x] Fork a session with `POST /v1/sessions/{id}/fork`: the chat history is
   copied under a new id (title suffixed ` (fork)`) so an alternative direction
   can be explored without losing the original conversation. Operations, usage,
@@ -266,10 +267,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] TUI `/map` shows the extractive workspace repository map with measured
   UTF-8 bytes, bytes/4 bound, ranked paths, and an optional ranking hint.
   Help documents Windows AppContainer alongside Bubblewrap/Seatbelt.
-- [ ] A durable usage/cost dashboard beyond per-session reported tokens and
-  opt-in ATIF `final_metrics`. The Solid TUI exposes paginated, searchable
-  execution history across sessions via `/runs`, and Home Status shows compact
-  all-session usage; a richer dashboard remains open.
+- [x] A durable usage/cost dashboard beyond per-session reported tokens and
+  opt-in ATIF `final_metrics`. `/usage` now browses durable provider/model
+  groups across sessions with reported counters and pinned-schedule cost labels;
+  `/status` remains the session/model/connection snapshot.
 - [x] Request-side Anthropic prompt-cache markers: default ephemeral
   `cache_control` (top-level automatic + system-block breakpoint), opt-out /
   `1h` TTL via `VEASEL_ANTHROPIC_PROMPT_CACHE`, capability

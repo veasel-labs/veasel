@@ -118,6 +118,24 @@ export type ApiGlobalUsageSummary = {
   reasoning_tokens: number
   reasoning_reported: boolean
   cost: string
+  models: ApiGlobalUsageModelSummary[]
+}
+
+export type ApiGlobalUsageModelSummary = {
+  provider: string
+  model: string
+  completed_turns: number
+  reported_turns: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  cache_reported: boolean
+  cache_reported_turns: number
+  reasoning_tokens: number
+  reasoning_reported: boolean
+  reasoning_reported_turns: number
+  cost: string
 }
 
 export type ApiSessionUsageSummary = {

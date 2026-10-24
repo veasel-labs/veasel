@@ -74,8 +74,7 @@ providers, and the proposed repository-tool boundary
   AppContainer MCP stdio sandbox shipped with `VEASEL_MCP_STDIO_SANDBOX=require`
   by default; explicit `auto` permits unsandboxed fallback, while `off` disables wrapping. Remaining Agent Plugins
   residuals: upstream conformance fixtures, louder operator UX for sandbox
-  defaults, general durable usage/cost dashboard beyond per-session schedule
-  pricing.
+  defaults, broader coverage in the curated cost schedule.
 - **Unchanged:** findings #1–#5 threat statements; loopback-without-bearer until
   browser/remote clients.
 - **Next review:** Agent Plugins fixture/conformance expansion; reopen DCR only

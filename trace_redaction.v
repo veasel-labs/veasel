@@ -10,12 +10,14 @@ const trace_redaction_marker = '[REDACTED]'
 // printed by a tool, or returned by an MCP server).
 const trace_secret_prefixes = ['sk-', 'sk_', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_',
 	'xoxb-', 'xoxp-', 'xoxa-', 'xoxs-', 'xoxr-', 'AIza', 'AKIA', 'LLM_', 'eyJ']
+const trace_secret_prefix_initial_bytes = 'sgxALe'
 
 // Field names whose values are credentials wherever they appear, in trace text
 // assignments (`token = ...`) and in structured tool-call arguments alike.
 const trace_secret_field_names = ['api_key', 'api-key', 'api key', 'apikey', 'access_token',
 	'access-token', 'access token', 'auth_token', 'auth-token', 'client_secret', 'client-secret',
 	'client secret', 'password', 'passwd', 'secret', 'token', 'authorization']
+const trace_secret_field_initial_bytes = 'aAcCpPsStT'
 
 // redact_trace_steps returns a copy of the steps with credentials removed from
 // messages, tool-call arguments and observations. This is the only form of a
@@ -258,7 +260,7 @@ fn redact_prefixed_tokens(text string) string {
 	for i < text.len {
 		// All recognized token prefixes start with one of these bytes. Most
 		// trace text can skip the prefix table with a single byte comparison.
-		if text[i] !in [`s`, `g`, `x`, `A`, `L`, `e`] {
+		if !trace_secret_prefix_initial_bytes.contains_u8(text[i]) {
 			i++
 			continue
 		}
@@ -305,7 +307,7 @@ fn redact_assigned_secrets(text string) string {
 	for i < text.len {
 		// Secret field names are ASCII case-insensitive and start with only
 		// these letters, so ordinary prose avoids the field-name scan.
-		if text[i] !in [`a`, `A`, `c`, `C`, `p`, `P`, `s`, `S`, `t`, `T`] {
+		if !trace_secret_field_initial_bytes.contains_u8(text[i]) {
 			i++
 			continue
 		}

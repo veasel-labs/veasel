@@ -37,6 +37,11 @@ pub:
 	truncated   bool
 }
 
+struct WorkspaceRangeLineAppend {
+	written   bool
+	truncated bool
+}
+
 pub struct WorkspaceSearchMatch {
 pub:
 	path string
@@ -130,63 +135,95 @@ fn workspace_file_range(root string, relative_path string, start_line int, line_
 	resolved_root := canonical_workspace_root(root)!
 	path := resolve_workspace_file_path(resolved_root, relative_path)!
 	content := read_workspace_text_file(path)!
-	lines := content.split_into_lines()
-	if start_line > lines.len {
-		return error('start_line exceeds the file line count')
-	}
-	stop_line := if start_line - 1 + line_count < lines.len {
-		start_line - 1 + line_count
-	} else {
-		lines.len
-	}
 	mut output := strings.new_builder(4_096)
+	mut line_start := 0
+	mut total_lines := 0
 	mut included_lines := 0
-	mut truncated := stop_line < lines.len
-	for index in start_line - 1 .. stop_line {
-		line := lines[index]
-		line_number := index + 1
-		prefix_bytes := if line_number < 10 {
-			3
-		} else if line_number < 100 {
-			4
-		} else if line_number < 1_000 {
-			5
-		} else if line_number < 10_000 {
-			6
-		} else if line_number < 100_000 {
-			7
-		} else {
-			8
-		}
-		remaining := max_workspace_read_range_bytes - output.len
-		if remaining <= prefix_bytes {
-			truncated = true
-			break
-		}
-		output.write_decimal(i64(line_number))
-		output.write_string(': ')
-		available := max_workspace_read_range_bytes - output.len
-		if line.len > available {
-			mut end := available
-			for end > 0 && end < line.len && (line[end] & 0xc0) == 0x80 {
-				end--
+	mut byte_truncated := false
+	mut index := 0
+	for index < content.len {
+		if content[index] == `\n` || content[index] == `\r` {
+			line_number := total_lines + 1
+			if line_number >= start_line && included_lines < line_count && !byte_truncated {
+				append_result := append_workspace_range_line(mut output, content[line_start..index],
+					line_number)
+				if append_result.written {
+					included_lines++
+				}
+				byte_truncated = append_result.truncated
 			}
-			output.write_string(line[..end])
-			truncated = true
-			included_lines++
-			break
+			total_lines++
+			if content[index] == `\r` && index + 1 < content.len && content[index + 1] == `\n` {
+				index++
+			}
+			line_start = index + 1
 		}
-		output.write_string(line)
-		output.write_byte(`\n`)
-		included_lines++
+		index++
+	}
+	if line_start < content.len {
+		line_number := total_lines + 1
+		if line_number >= start_line && included_lines < line_count && !byte_truncated {
+			append_result := append_workspace_range_line(mut output, content[line_start..], line_number)
+			if append_result.written {
+				included_lines++
+			}
+			byte_truncated = append_result.truncated
+		}
+		total_lines++
+	}
+	if start_line > total_lines {
+		return error('start_line exceeds the file line count')
 	}
 	return WorkspaceFileRange{
 		path:        relative_path.replace('\\', '/')
 		start_line:  start_line
 		end_line:    start_line + included_lines - 1
-		total_lines: lines.len
+		total_lines: total_lines
 		content:     output.str()
-		truncated:   truncated
+		truncated:   byte_truncated || start_line - 1 + line_count < total_lines
+	}
+}
+
+fn append_workspace_range_line(mut output strings.Builder, line string, line_number int) WorkspaceRangeLineAppend {
+	prefix_bytes := if line_number < 10 {
+		3
+	} else if line_number < 100 {
+		4
+	} else if line_number < 1_000 {
+		5
+	} else if line_number < 10_000 {
+		6
+	} else if line_number < 100_000 {
+		7
+	} else {
+		8
+	}
+	if max_workspace_read_range_bytes - output.len <= prefix_bytes {
+		return WorkspaceRangeLineAppend{
+			truncated: true
+		}
+	}
+	output.write_decimal(i64(line_number))
+	output.write_string(': ')
+	remaining := max_workspace_read_range_bytes - output.len
+	if line.len >= remaining {
+		mut end := remaining
+		if end > line.len {
+			end = line.len
+		}
+		for end > 0 && end < line.len && (line[end] & 0xc0) == 0x80 {
+			end--
+		}
+		output.write_string(line[..end])
+		return WorkspaceRangeLineAppend{
+			written:   true
+			truncated: true
+		}
+	}
+	output.write_string(line)
+	output.write_byte(`\n`)
+	return WorkspaceRangeLineAppend{
+		written: true
 	}
 }
 

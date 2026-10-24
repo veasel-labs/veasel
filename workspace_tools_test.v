@@ -2,6 +2,7 @@ module main
 
 import os
 import uuid
+import encoding.utf8
 
 fn test_workspace_file_tools_bound_paths_and_skip_symlinks() {
 	root := os.join_path(os.temp_dir(), 'veasel-workspace-${uuid.new_v4().str()}')
@@ -51,6 +52,41 @@ fn test_workspace_file_tools_bound_paths_and_skip_symlinks() {
 	assert workspace_file_range_error_contains(root, 'src/main.v', 4, 1, 'line count')
 	assert workspace_file_error_contains(root, '../outside-link/secret.txt', 'must not leave')
 	assert workspace_file_error_contains(root, 'outside-link/secret.txt', 'escapes')
+}
+
+fn test_workspace_file_range_preserves_line_endings_and_bounds_utf8_output() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-range-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'mixed.txt')
+	os.write_file(path, 'α\r\n\nβ\rγ\n') or { panic(err) }
+	first := workspace_file_range(root, 'mixed.txt', 1, 2) or { panic(err) }
+	assert first.total_lines == 4
+	assert first.end_line == 2
+	assert first.content == '1: α\n2: \n'
+	assert first.truncated
+	last := workspace_file_range(root, 'mixed.txt', 3, 2) or { panic(err) }
+	assert last.total_lines == 4
+	assert last.end_line == 4
+	assert last.content == '3: β\n4: γ\n'
+	assert !last.truncated
+
+	os.write_file(path, 'λ'.repeat(max_workspace_read_range_bytes / 2 + 20)) or { panic(err) }
+	long_line := workspace_file_range(root, 'mixed.txt', 1, 1) or { panic(err) }
+	assert long_line.truncated
+	assert long_line.content.len <= max_workspace_read_range_bytes
+	assert long_line.content.len >= max_workspace_read_range_bytes - 1
+	assert utf8.validate(long_line.content.str, long_line.content.len)
+	os.write_file(path, 'x'.repeat(max_workspace_read_range_bytes + 20)) or { panic(err) }
+	max_line := workspace_file_range(root, 'mixed.txt', 1, 1) or { panic(err) }
+	assert max_line.content.len == max_workspace_read_range_bytes
+	first_line := 'x'.repeat(max_workspace_read_range_bytes - 7)
+	os.write_file(path, '${first_line}\nsecond\n') or { panic(err) }
+	near_limit := workspace_file_range(root, 'mixed.txt', 1, 2) or { panic(err) }
+	assert near_limit.end_line == 1
+	assert near_limit.total_lines == 2
+	assert near_limit.truncated
+	assert !near_limit.content.contains('second')
 }
 
 fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {

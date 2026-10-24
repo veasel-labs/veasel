@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   formatReportedCacheHitRatio,
   formatReportedCacheUsage,
+  formatReportedUsd,
   formatReportedUsage,
   formatGlobalUsageSummary,
   formatSessionUsageSummary,
@@ -20,6 +21,14 @@ describe("formatTokenCount", () => {
     expect(formatTokenCount(1200)).toBe("1.2k")
     expect(formatTokenCount(15_400)).toBe("15k")
     expect(formatTokenCount(1_500_000)).toBe("1.5M")
+  })
+})
+
+describe("formatReportedUsd", () => {
+  test("keeps zero, precise small amounts, and rejects invalid amounts", () => {
+    expect(formatReportedUsd(0)).toBe("$0.00")
+    expect(formatReportedUsd(0.000001)).toBe("$0.000001")
+    expect(formatReportedUsd(Number.NaN)).toBe("unavailable")
   })
 })
 
@@ -129,6 +138,22 @@ describe("formatSessionUsageSummary", () => {
     expect(text).toContain("not a dollar savings claim")
     expect(text).not.toContain("$ saved")
   })
+
+  test("surfaces OpenCode Go allowance even when token counters are absent", () => {
+    const text = formatSessionUsageSummary({
+      session_id: "s",
+      completed_turns: 1,
+      reported_turns: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      usage_reported: false,
+      allowance_reported: true,
+      allowance_usd: 0.0042,
+      cost: "$0.00",
+    })
+    expect(text).toContain("Cost: $0.00")
+    expect(text).toContain("OpenCode Go allowance used: $0.0042")
+  })
 })
 
 describe("formatReportedCacheHitRatio", () => {
@@ -173,5 +198,20 @@ describe("formatGlobalUsageSummary", () => {
       cost: "unavailable",
     })
     expect(text).toContain("Tokens: unavailable")
+  })
+
+  test("includes provider-reported OpenCode Go allowance", () => {
+    const text = formatGlobalUsageSummary({
+      sessions: 1,
+      completed_turns: 1,
+      reported_turns: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      usage_reported: false,
+      allowance_reported: true,
+      allowance_usd: 0,
+      cost: "$0.00",
+    })
+    expect(text).toContain("OpenCode Go allowance used: $0.00")
   })
 })

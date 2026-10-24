@@ -7,15 +7,25 @@ import time
 
 struct OpenCodeGoHeaderFixture {
 mut:
-	hits       int
-	session_id string
-	user_agent string
+	hits              int
+	path              string
+	session_id        string
+	user_agent        string
+	authorization     string
+	api_key_header    string
+	google_key_header string
+	anthropic_version string
 }
 
 fn (mut fixture OpenCodeGoHeaderFixture) handle(request http.Request) http.Response {
 	fixture.hits++
+	fixture.path = request.url
 	fixture.session_id = request.header.get_custom('x-opencode-session') or { '' }
 	fixture.user_agent = request.header.get_custom('User-Agent') or { '' }
+	fixture.authorization = request.header.get_custom('Authorization') or { '' }
+	fixture.api_key_header = request.header.get_custom('x-api-key') or { '' }
+	fixture.google_key_header = request.header.get_custom('x-goog-api-key') or { '' }
+	fixture.anthropic_version = request.header.get_custom('anthropic-version') or { '' }
 	mut response := http.Response{}
 	response.set_status(.ok)
 	response.header.set(.content_type, 'text/event-stream')
@@ -69,6 +79,150 @@ fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
 	})! == 'https://models.example.test/v1/models'
 }
 
+fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
+	model_ids := [
+		'grok-4.7',
+		'glm-5.3-flash',
+		'glm-5.3',
+		'glm-5.2',
+		'gpt-6-luna',
+		'gpt-5.6-luna',
+		'claude-haiku-5-5',
+		'gemini-4-argon',
+		'kimi-k3.1-pro',
+		'kimi-k3',
+		'kimi-k2.7-code',
+		'longcat-2.0',
+		'longcat-2.5-preview-free',
+		'step-5-preview',
+		'beam-free',
+		'mimo-v2.6-flash',
+		'mimo-v2.6-pro',
+		'mimo-v2.5',
+		'mimo-v2.5-pro',
+		'minimax-m3.1-flash',
+		'minimax-m3',
+		'muse-spark-1.3-contributor',
+		'muse-spark-1.2-contributor',
+		'qwen3.8-max',
+		'qwen3.8-flash',
+		'qwen3.7-plus',
+		'deepseek-v4.1-flash',
+		'deepseek-v4-pro',
+		'hy4-preview',
+		'hy3',
+	]
+	mut models := []ModelCatalogEntry{cap: model_ids.len + 1}
+	for id in model_ids {
+		models << ModelCatalogEntry{
+			id: id
+		}
+	}
+	models << ModelCatalogEntry{
+		id: 'grok-4.6'
+	}
+	available := filter_provider_models('opencode-go', models)
+	assert available.map(it.id) == model_ids
+	assert_opencode_go_routes([
+		'glm-5.3-flash',
+		'glm-5.3',
+		'glm-5.2',
+		'kimi-k3.1-pro',
+		'kimi-k3',
+		'kimi-k2.7-code',
+		'longcat-2.0',
+		'deepseek-v4.1-flash',
+		'deepseek-v4-pro',
+		'mimo-v2.6-flash',
+		'mimo-v2.6-pro',
+		'mimo-v2.5',
+		'mimo-v2.5-pro',
+		'minimax-m3.1-flash',
+		'hy4-preview',
+		'hy3',
+		'longcat-2.5-preview-free',
+		'step-5-preview',
+		'beam-free',
+	], 'openai-compatible', opencode_go_openai_base_url)
+	assert_opencode_go_routes([
+		'grok-4.7',
+		'gpt-6-luna',
+		'gpt-5.6-luna',
+		'muse-spark-1.3-contributor',
+		'muse-spark-1.2-contributor',
+	], 'openai-responses', opencode_go_openai_base_url)
+	assert_opencode_go_routes([
+		'claude-haiku-5-5',
+		'minimax-m3',
+		'qwen3.8-max',
+		'qwen3.8-flash',
+		'qwen3.7-plus',
+	], 'anthropic', opencode_go_anthropic_base_url)
+	assert_opencode_go_routes(['gemini-4-argon'], 'gemini', opencode_go_google_base_url)
+
+	unknown := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'unknown-go-model'
+	}) or {
+		assert err.msg().contains('no supported API mapping')
+		return
+	}
+	assert unknown.protocol == ''
+	deprecated := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'gemini-4-argon-contributor'
+	}) or {
+		assert err.msg().contains('no supported API mapping')
+		return
+	}
+	assert deprecated.protocol == ''
+}
+
+fn assert_opencode_go_routes(models []string, protocol string, base_url string) {
+	for model in models {
+		route := model_provider_route(ModelConfig{
+			provider: 'opencode-go'
+			base_url: opencode_go_chat_base_url
+			model:    model
+		}) or { panic(err) }
+		assert route.protocol == protocol
+		assert route.base_url == base_url
+	}
+}
+
+fn test_opencode_go_invalid_key_error_explains_how_to_recover() {
+	message := provider_http_error_message('opencode-go', 401, '')
+	assert message.contains('HTTP 401')
+	assert message.contains('OpenCode Console')
+	assert message.contains('create a new key')
+	assert message.contains('signing in again will not renew it')
+	assert message.contains('does not reuse the OpenCode CLI login')
+	access_denied := provider_http_error_message('opencode-go', 403,
+		'model catalog endpoint returned')
+	assert access_denied.contains('HTTP 403')
+	assert access_denied.contains('subscription')
+	assert access_denied.contains('workspace')
+	assert access_denied.contains('region or privacy restrictions')
+	rate_limited := provider_http_error_message('opencode-go', 429, '')
+	assert rate_limited.contains('HTTP 429')
+	assert rate_limited.contains('rate-limited')
+	assert rate_limited.contains('usage limits')
+	assert provider_http_error_message('openai-compatible', 401, '') == 'HTTP 401'
+}
+
+fn test_opencode_invalid_key_error_explains_expired_console_key() {
+	message := provider_http_error_message('opencode', 401, '')
+	assert message.contains('HTTP 401')
+	assert message.contains('OpenCode Console')
+	assert message.contains('create a new key')
+	assert message.contains('signing in again will not renew it')
+	assert message.contains('does not reuse the OpenCode CLI login')
+	assert provider_http_error_message('opencode', 403, '') == 'HTTP 403'
+	assert provider_http_error_message('opencode', 401, 'model catalog endpoint returned') == 'model catalog endpoint returned HTTP 401'
+}
+
 fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	mut fixture := &OpenCodeGoHeaderFixture{}
 	mut server, server_thread := start_opencode_go_header_fixture(mut fixture) or { panic(err) }
@@ -89,8 +243,33 @@ fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	}, '{}', .bearer, fn (_ string) ! {}) or { panic(err) }
 	assert response.status_code == 200
 	assert fixture.hits == 1
+	assert fixture.path == '/v1/chat/completions'
 	assert fixture.session_id == session_id
 	assert fixture.user_agent == 'Veasel Code/${product_version}'
+	assert fixture.authorization == 'Bearer fixture-key'
+	assert fixture.api_key_header == ''
+	assert fixture.google_key_header == ''
+
+	anthropic_response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/messages', ModelConfig{
+		provider:   'opencode-go'
+		api_key:    'fixture-key'
+		session_id: session_id
+	}, '{}', .anthropic, fn (_ string) ! {}) or { panic(err) }
+	assert anthropic_response.status_code == 200
+	assert fixture.path == '/v1/messages'
+	assert fixture.authorization == 'Bearer fixture-key'
+	assert fixture.api_key_header == ''
+	assert fixture.anthropic_version == '2023-06-01'
+
+	gemini_response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1beta/models/test:streamGenerateContent', ModelConfig{
+		provider:   'opencode-go'
+		api_key:    'fixture-key'
+		session_id: session_id
+	}, '{}', .gemini, fn (_ string) ! {}) or { panic(err) }
+	assert gemini_response.status_code == 200
+	assert fixture.path == '/v1beta/models/test:streamGenerateContent'
+	assert fixture.authorization == 'Bearer fixture-key'
+	assert fixture.google_key_header == ''
 }
 
 fn test_openai_chat_usage_parses_cached_tokens_subset() {
@@ -147,6 +326,91 @@ fn test_openai_chat_usage_parses_reasoning_tokens() {
 	assert usage.output_tokens == 80
 	assert usage.reasoning_reported
 	assert usage.reasoning_tokens == 55
+}
+
+fn test_openai_chat_usage_keeps_reported_zero_cost_and_opencode_allowance() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 100,
+		"completion_tokens": 20,
+		"cost": 0,
+		"opencode": {"allowance": 0.0042}
+	}') or { panic(err) }
+	assert usage.reported
+	assert (usage.reported_cost_usd or { -1.0 }) == f64(0)
+	assert (usage.allowance_usd or { -1.0 }) == f64(0.0042)
+}
+
+fn test_openai_chat_billing_fields_do_not_claim_token_usage() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"cost": 0,
+		"opencode": {"allowance": 0.0042}
+	}') or { panic(err) }
+	assert !usage.reported
+	assert has_provider_usage_data(usage)
+	assert usage.input_tokens == 0
+	assert usage.output_tokens == 0
+	zero_tokens := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 0,
+		"completion_tokens": 0
+	}') or { panic(err) }
+	assert zero_tokens.reported
+}
+
+fn test_openai_responses_usage_keeps_reported_cost_and_allowance_without_tokens() {
+	usage := provider_usage_from_fixture_json('openai-responses', '{
+		"cost": 0.00125,
+		"opencode": {"allowance": 0.0075}
+	}') or { panic(err) }
+	assert !usage.reported
+	assert (usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (usage.allowance_usd or { -1.0 }) == f64(0.0075)
+}
+
+fn test_anthropic_and_gemini_usage_keep_opencode_billing_metadata() {
+	anthropic := provider_usage_from_fixture_json('anthropic', '{
+		"input_tokens": 30,
+		"output_tokens": 5,
+		"cost": 0.0001,
+		"opencode": {"allowance": 0.002}
+	}') or { panic(err) }
+	assert (anthropic.reported_cost_usd or { -1.0 }) == f64(0.0001)
+	assert (anthropic.allowance_usd or { -1.0 }) == f64(0.002)
+	gemini := provider_usage_from_fixture_json('gemini', '{
+		"promptTokenCount": 30,
+		"candidatesTokenCount": 5,
+		"cost": 0,
+		"opencode": {"allowance": 0.003}
+	}') or { panic(err) }
+	assert (gemini.reported_cost_usd or { -1.0 }) == f64(0)
+	assert (gemini.allowance_usd or { -1.0 }) == f64(0.003)
+}
+
+fn test_provider_reported_billing_is_added_across_tool_turns() {
+	first := ProviderUsage{
+		reported_cost_usd: f64(0.001)
+		allowance_usd:     f64(0.002)
+	}
+	second := ProviderUsage{
+		reported_cost_usd: f64(0)
+		allowance_usd:     f64(0.003)
+	}
+	total := add_provider_usage(first, second)
+	assert (total.reported_cost_usd or { -1.0 }) == f64(0.001)
+	assert (total.allowance_usd or { -1.0 }) == f64(0.005)
+	assert !total.reported
+	assert has_provider_usage_data(total)
+}
+
+fn test_invalid_provider_reported_amounts_are_ignored_without_losing_tokens() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 100,
+		"completion_tokens": 10,
+		"cost": -1,
+		"opencode": {"allowance": "unknown"}
+	}') or { panic(err) }
+	assert usage.reported
+	assert usage.reported_cost_usd == none
+	assert usage.allowance_usd == none
 }
 
 fn test_openai_responses_usage_parses_reasoning_tokens() {
@@ -282,6 +546,39 @@ fn test_anthropic_stream_merges_message_start_and_delta_usage() {
 	assert merged.cache_reported
 	assert merged.cache_read_tokens == 80
 	assert merged.cache_creation_tokens == 10
+}
+
+fn test_anthropic_stream_keeps_billing_only_delta_usage() {
+	mut stream_state := AnthropicStreamOutput{}
+	anthropic_stream_apply_usage(mut stream_state, 'message_delta', '{
+		"type":"message_delta",
+		"usage":{"cost":0.00125,"opencode":{"allowance":0.0042}}
+	}') or { panic(err) }
+	assert !stream_state.usage.reported
+	assert (stream_state.usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
+}
+
+fn test_gemini_stream_keeps_billing_only_usage() {
+	mut stream_state := GeminiStreamOutput{}
+	gemini_stream_apply_usage(mut stream_state, ProviderUsage{
+		reported_cost_usd: f64(0.00125)
+		allowance_usd:     f64(0.0042)
+	})
+	assert !stream_state.usage.reported
+	assert (stream_state.usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
+	gemini_stream_apply_usage(mut stream_state, ProviderUsage{
+		input_tokens:  24
+		output_tokens: 6
+		total_tokens:  30
+		reported:      true
+	})
+	assert stream_state.usage.reported
+	assert stream_state.usage.input_tokens == 24
+	assert stream_state.usage.output_tokens == 6
+	assert (stream_state.usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
 }
 
 fn test_provider_stream_tool_arguments_use_bounded_builder() {

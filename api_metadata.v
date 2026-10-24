@@ -160,10 +160,17 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 }
 
 fn model_catalog_error_message(provider string, provider_error string) string {
+	if provider == 'opencode-go' {
+		for status_code in [401, 403, 429] {
+			if provider_error == provider_http_error_message(provider, status_code, '') {
+				return provider_error
+			}
+		}
+	}
 	match provider_error {
 		'model catalog endpoint returned HTTP 401' {
 			if provider in ['opencode', 'opencode-go'] {
-				return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; create a new key in OpenCode Console because signing in again will not renew it.'
+				return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; signing in again will not renew it. Veasel does not reuse the OpenCode CLI login; check the key in OpenCode Console and create a new key if it expired.'
 			}
 			return 'Provider rejected the API key (HTTP 401). Check the key and account.'
 		}

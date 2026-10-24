@@ -550,6 +550,28 @@ fn test_anthropic_stream_keeps_billing_only_delta_usage() {
 	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
 }
 
+fn test_gemini_stream_keeps_billing_only_usage() {
+	mut stream_state := GeminiStreamOutput{}
+	gemini_stream_apply_usage(mut stream_state, ProviderUsage{
+		reported_cost_usd: f64(0.00125)
+		allowance_usd:     f64(0.0042)
+	})
+	assert !stream_state.usage.reported
+	assert (stream_state.usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
+	gemini_stream_apply_usage(mut stream_state, ProviderUsage{
+		input_tokens:  24
+		output_tokens: 6
+		total_tokens:  30
+		reported:      true
+	})
+	assert stream_state.usage.reported
+	assert stream_state.usage.input_tokens == 24
+	assert stream_state.usage.output_tokens == 6
+	assert (stream_state.usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (stream_state.usage.allowance_usd or { -1.0 }) == f64(0.0042)
+}
+
 fn test_provider_stream_tool_arguments_use_bounded_builder() {
 	mut arguments := strings.new_builder(16)
 	append_provider_stream_tool_arguments(mut arguments, '{"query":')!

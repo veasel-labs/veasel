@@ -1254,6 +1254,58 @@ mut:
 	usage   ProviderUsage
 }
 
+fn gemini_stream_apply_usage(mut state GeminiStreamOutput, usage ProviderUsage) {
+	if !has_provider_usage_data(usage) {
+		return
+	}
+	previous := state.usage
+	state.usage = ProviderUsage{
+		input_tokens:          if usage.reported {
+			usage.input_tokens
+		} else {
+			previous.input_tokens
+		}
+		output_tokens:         if usage.reported {
+			usage.output_tokens
+		} else {
+			previous.output_tokens
+		}
+		total_tokens:          if usage.reported {
+			usage.total_tokens
+		} else {
+			previous.total_tokens
+		}
+		cache_read_tokens:     if usage.cache_reported {
+			usage.cache_read_tokens
+		} else {
+			previous.cache_read_tokens
+		}
+		cache_creation_tokens: if usage.cache_reported {
+			usage.cache_creation_tokens
+		} else {
+			previous.cache_creation_tokens
+		}
+		cache_reported:        usage.cache_reported || previous.cache_reported
+		reasoning_tokens:      if usage.reasoning_reported {
+			usage.reasoning_tokens
+		} else {
+			previous.reasoning_tokens
+		}
+		reasoning_reported:    usage.reasoning_reported || previous.reasoning_reported
+		reported_cost_usd:     if usage.reported_cost_usd != none {
+			usage.reported_cost_usd
+		} else {
+			previous.reported_cost_usd
+		}
+		allowance_usd:         if usage.allowance_usd != none {
+			usage.allowance_usd
+		} else {
+			previous.allowance_usd
+		}
+		reported:              usage.reported || previous.reported
+	}
+}
+
 struct GeminiCandidate {
 	content GeminiContent
 }
@@ -1791,9 +1843,7 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 	callback := fn [mut stream_state, on_text_delta, messages] (data string) ! {
 		decoded := json2.decode[GeminiResponse](data) or { return error('response_parse') }
 		parsed := provider_usage_from_gemini(decoded.usage_metadata)
-		if parsed.reported {
-			stream_state.usage = parsed
-		}
+		gemini_stream_apply_usage(mut stream_state, parsed)
 		for candidate in decoded.candidates {
 			for part in candidate.content.parts {
 				if part.text != '' {

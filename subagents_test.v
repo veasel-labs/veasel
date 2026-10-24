@@ -2,6 +2,8 @@ module main
 
 import os
 import uuid
+import crypto.sha256
+import strings
 
 fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-${uuid.new_v4().str()}')
@@ -155,15 +157,16 @@ fn test_subagent_file_digest_enforces_snapshot_size_limit() {
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	path := os.join_path(root, 'untracked.txt')
-	os.write_file(path, 'hello') or { panic(err) }
-	too_large := subagent_file_digest(path, 4) or {
+	data := strings.repeat(`x`, 64 * 1024 + 37)
+	os.write_file(path, data) or { panic(err) }
+	too_large := subagent_file_digest(path, data.len - 1) or {
 		assert err.msg().contains('snapshot limit')
 		SubagentFileDigest{}
 	}
 	assert too_large.byte_count == 0
-	valid := subagent_file_digest(path, 5) or { panic(err) }
-	assert valid.byte_count == 5
-	assert valid.sha256 == '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824'
+	valid := subagent_file_digest(path, data.len) or { panic(err) }
+	assert valid.byte_count == data.len
+	assert valid.sha256 == sha256.sum(data.bytes()).hex()
 }
 
 fn test_subagent_schema_migrates_existing_v17_database() {

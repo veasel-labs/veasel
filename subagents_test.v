@@ -12,14 +12,20 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	parent := store.create_session(SessionInput{ title: 'Parent', directory: root }) or { panic(err) }
 	operation_id := uuid.new_v4().str()
 	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
-	first := store.create_subagent_run(parent.id, operation_id, 'request-1', 'trusted-reviewer', 1,
+	_ = store.create_subagent_run(parent.id, operation_id, 'untrusted-request', 'project-agent', 1,
+		'Untrusted child', root) or {
+		assert err.msg().contains('trusted built-in registry')
+		SubagentRun{}
+	}
+	assert store.db.q_int('SELECT COUNT(*) FROM subagent_runs') or { panic(err) } == 0
+	first := store.create_subagent_run(parent.id, operation_id, 'request-1', 'reviewer', 1,
 		'Child', root) or { panic(err) }
-	retry := store.create_subagent_run(parent.id, operation_id, 'request-1', 'trusted-reviewer', 1,
+	retry := store.create_subagent_run(parent.id, operation_id, 'request-1', 'reviewer', 1,
 		'Child', root) or { panic(err) }
 	assert retry.id == first.id
 	assert retry.child_session_id == first.child_session_id
 	assert first.status == 'queued'
-	_ = store.create_subagent_run(parent.id, operation_id, 'request-1', 'different-agent', 1,
+	_ = store.create_subagent_run(parent.id, operation_id, 'request-1', 'explorer', 1,
 		'Child', root) or {
 		assert err.msg().contains('reused with different parameters')
 		SubagentRun{}
@@ -33,9 +39,9 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 		assert err.msg().contains('already claimed')
 		SubagentRun{}
 	}
-	queued := store.create_subagent_run(parent.id, operation_id, 'request-2', 'trusted-reviewer', 1,
+	queued := store.create_subagent_run(parent.id, operation_id, 'request-2', 'reviewer', 1,
 		'Queued child', root) or { panic(err) }
-	running := store.create_subagent_run(parent.id, operation_id, 'request-3', 'trusted-reviewer', 1,
+	running := store.create_subagent_run(parent.id, operation_id, 'request-3', 'reviewer', 1,
 		'Running child', root) or { panic(err) }
 	_ = store.begin_subagent_run(running.id) or { panic(err) }
 	assert !(store.subagent_cancellation_requested(running.id) or { panic(err) })
@@ -55,6 +61,23 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
 	assert recovered_running.status == 'uncertain'
 	assert recovered_running.cancel_requested
+}
+
+fn test_builtin_subagent_profiles_grant_only_readonly_tools() {
+	reviewer := builtin_subagent_profile('reviewer') or { panic(err) }
+	explorer := builtin_subagent_profile('explorer') or { panic(err) }
+	assert reviewer.tool_policy().allows('workspace_read_file')
+	assert reviewer.tool_policy().allows('workspace_search')
+	assert !reviewer.tool_policy().allows('workspace_propose_file_edit')
+	assert !reviewer.tool_policy().allows('workspace_propose_shell_command')
+	assert explorer.tool_policy().allowed_tools == reviewer.tool_policy().allowed_tools
+	for name in reviewer.allowed_tools {
+		assert workspace_agent_tools().any(it.name == name)
+	}
+	_ = builtin_subagent_profile('project-agent') or {
+		assert err.msg().contains('trusted built-in registry')
+		SubagentProfile{}
+	}
 }
 
 fn test_subagent_schema_migrates_existing_v17_database() {
@@ -89,12 +112,12 @@ fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {
 	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
 	mut running_ids := []string{cap: max_active_subagent_runs_per_parent}
 	for i in 0 .. max_active_subagent_runs_per_parent {
-		run := store.create_subagent_run(parent.id, operation_id, 'request-${i}', 'trusted-worker', 1,
+		run := store.create_subagent_run(parent.id, operation_id, 'request-${i}', 'explorer', 1,
 			'Child ${i}', root) or { panic(err) }
 		_ = store.begin_subagent_run(run.id) or { panic(err) }
 		running_ids << run.id
 	}
-	over_limit := store.create_subagent_run(parent.id, operation_id, 'request-over-limit', 'trusted-worker', 1,
+	over_limit := store.create_subagent_run(parent.id, operation_id, 'request-over-limit', 'explorer', 1,
 		'Overflow', root) or {
 		assert err.msg().contains('concurrency limit')
 		SubagentRun{}
@@ -104,7 +127,7 @@ fn test_subagent_run_enforces_concurrency_and_marks_running_as_uncertain() {
 		panic(err)
 	}
 	queued := store.create_subagent_run(parent.id, operation_id, 'request-after-slot-release',
-		'trusted-worker', 1, 'Queued at restart', root) or { panic(err) }
+		'explorer', 1, 'Queued at restart', root) or { panic(err) }
 	store.close() or { panic(err) }
 	mut recovered := open_store(db_path) or { panic(err) }
 	defer { recovered.close() or {} }

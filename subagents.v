@@ -25,8 +25,8 @@ pub:
 }
 
 // create_subagent_run atomically creates a clean child session and its durable
-// ownership record. agent_id must come from a trusted, caller-side registry;
-// this storage primitive does not authorize agents or expose model tools.
+// ownership record. It accepts only built-in profile IDs; it does not authorize
+// callers or expose model tools.
 fn (mut store Store) create_subagent_run(parent_session_id string, parent_operation_id string,
 	request_id string, agent_id string, depth int, title string, directory string) !SubagentRun {
 	if request_id.len == 0 || request_id.len > 128 || request_id.contains('\0') || agent_id.len == 0
@@ -34,6 +34,7 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 		|| parent_operation_id.len > 128 {
 		return error('child agent request or agent ID is invalid')
 	}
+	_ = builtin_subagent_profile(agent_id) or { return err }
 	if depth < 1 || depth > max_subagent_depth {
 		return error('child agent nesting limit exceeded')
 	}

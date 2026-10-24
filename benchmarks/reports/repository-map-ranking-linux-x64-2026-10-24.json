@@ -1,0 +1,40 @@
+{
+  "benchmark": "repository_map_cross_reference_ranking",
+  "measured_at": "2026-10-24",
+  "platform": "Linux x86_64",
+  "compiler": {
+    "version": "V 0.5.2 ffc38ad",
+    "revision": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "repository_pin_matches": true
+  },
+  "build_profile": "gcc -prod",
+  "fixture": {
+    "file_count": 256,
+    "bytes_per_file": 4096,
+    "total_source_bytes": 1048576,
+    "construction_timed": false,
+    "warmup_runs": 2,
+    "sample_count": 11,
+    "scope": "cross-reference ranking only; excludes walking, symbol extraction, and API/server latency"
+  },
+  "baseline": {
+    "revision": "38ea5b59e1baff1537af77b1c6362703cd8ab171",
+    "p50_microseconds": 2952,
+    "p90_microseconds": 3155,
+    "score_checksum": 43016.0,
+    "samples_microseconds": [3026, 3155, 3081, 2874, 2962, 2869, 2867, 2868, 2877, 2952, 3390]
+  },
+  "candidate": {
+    "revision": "a0b39932a467553d1ee12f71193fe52834580a35",
+    "p50_microseconds": 2343,
+    "p90_microseconds": 2785,
+    "score_checksum": 43016.0,
+    "samples_microseconds": [2857, 2329, 2785, 2343, 2401, 2361, 2348, 2320, 2223, 2238, 2246]
+  },
+  "comparison": {
+    "p50_reduction_percent": 20.63,
+    "p90_reduction_percent": 11.73,
+    "score_checksum_unchanged": true,
+    "claim_limit": "single-workstation synthetic microbenchmark; not end-to-end latency or task-success evidence"
+  }
+}

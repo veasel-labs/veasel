@@ -292,21 +292,13 @@ fn repository_map_content_is_reexport_only(content string) bool {
 	return found_reexport
 }
 
-fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 {
-	// The map already reads bounded source files to extract declarations. Reuse
-	// that text for a small lexical retrieval signal instead of another index or
-	// embedding dependency. Count each query term once and cap total influence.
-	identifiers := repository_map_content_identifiers(content)
-	mut terms := map[string]bool{}
-	for identifier, _ in identifiers {
-		lower := identifier.to_lower()
-		terms[lower] = true
-		for part in repository_map_ident_parts(identifier) {
-			terms[part] = true
-		}
-	}
-	mut matched_terms := 0
-	mut score := 0.0
+struct RepositoryMapContentQueryTerm {
+	ident      string
+	candidates []string
+}
+
+fn repository_map_content_query_terms(hints RepositoryMapHintSet) []RepositoryMapContentQueryTerm {
+	mut query_terms := []RepositoryMapContentQueryTerm{cap: hints.idents.len}
 	mut seen_hints := map[string]bool{}
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
@@ -317,10 +309,47 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 			continue
 		}
 		seen_hints[normalized] = true
-		candidates := repository_map_lexical_candidates(ident)
-		for candidate in candidates {
+		query_terms << RepositoryMapContentQueryTerm{
+			ident:      ident
+			candidates: repository_map_lexical_candidates(ident)
+		}
+	}
+	return query_terms
+}
+
+fn score_repository_map_content(content string, query_terms []RepositoryMapContentQueryTerm) f64 {
+	// The map already reads bounded source files to extract declarations. Reuse
+	// that text for a small lexical retrieval signal instead of another index or
+	// embedding dependency. Count each query term once and cap total influence.
+	mut terms := map[string]bool{}
+	mut start := -1
+	for offset, ch in content {
+		if is_repository_map_ident_byte(ch) {
+			if start < 0 {
+				start = offset
+			}
+			continue
+		}
+		if start >= 0 {
+			if offset - start >= repository_map_cross_reference_min_symbol_len {
+				// The view is inspected only; the map stores owned lowercase keys.
+				token := unsafe { content.substr_unsafe(start, offset) }
+				repository_map_add_content_terms(mut terms, token)
+			}
+		}
+		start = -1
+	}
+	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+		token := unsafe { content.substr_unsafe(start, content.len) }
+		repository_map_add_content_terms(mut terms, token)
+	}
+	mut matched_terms := 0
+	mut score := 0.0
+	for query_term in query_terms {
+		for candidate in query_term.candidates {
 			if candidate in terms {
-				is_alias := ident != candidate && ident in ['arg', 'args', 'argument', 'arguments']
+				is_alias := query_term.ident != candidate
+					&& query_term.ident in ['arg', 'args', 'argument', 'arguments']
 				score += if is_alias { 48.0 } else { 24.0 }
 				matched_terms++
 				break
@@ -331,6 +360,22 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 		}
 	}
 	return score
+}
+
+fn repository_map_add_content_terms(mut terms map[string]bool, identifier string) {
+	// The map contains normalized full names and parts. Skip repeated tokens
+	// before lowercasing or splitting so large files do that work once per term.
+	if identifier in terms {
+		return
+	}
+	lower := identifier.to_lower()
+	if lower in terms {
+		return
+	}
+	terms[lower] = true
+	for part in repository_map_ident_parts(identifier) {
+		terms[part] = true
+	}
 }
 
 fn repository_map_path_under_mention(path string, mentioned string) bool {
@@ -577,6 +622,39 @@ fn repository_map_symbol_part_match(name string, ident string) bool {
 
 fn repository_map_ident_parts(name string) []string {
 	mut parts := []string{}
+	mut start := -1
+	for offset, ch in name {
+		if ch >= 128 {
+			// Preserve the existing rune-aware fallback for non-ASCII names.
+			return repository_map_ident_parts_unicode(name)
+		}
+		if ch == `_` || ch == `-` {
+			if start >= 0 && offset - start >= 3 {
+				part := unsafe { name.substr_unsafe(start, offset) }
+				parts << part.to_lower_ascii()
+			}
+			start = -1
+			continue
+		}
+		if ch >= `A` && ch <= `Z` && start >= 0 {
+			if offset - start >= 3 {
+				part := unsafe { name.substr_unsafe(start, offset) }
+				parts << part.to_lower_ascii()
+			}
+			start = offset
+		} else if start < 0 {
+			start = offset
+		}
+	}
+	if start >= 0 && name.len - start >= 3 {
+		part := unsafe { name.substr_unsafe(start, name.len) }
+		parts << part.to_lower_ascii()
+	}
+	return parts
+}
+
+fn repository_map_ident_parts_unicode(name string) []string {
+	mut parts := []string{}
 	mut current := ''
 	for ch in name {
 		if ch == `_` || ch == `-` {
@@ -608,29 +686,6 @@ const repository_map_cross_reference_max_boost = 400.0
 const repository_map_cross_reference_max_definers = 8
 const repository_map_cross_reference_min_symbol_len = 3
 
-fn repository_map_content_identifiers(content string) map[string]bool {
-	mut identifiers := map[string]bool{}
-	mut start := -1
-	for index, ch in content {
-		if is_repository_map_ident_byte(ch) {
-			if start < 0 {
-				start = index
-			}
-			continue
-		}
-		if start >= 0 {
-			if index - start >= repository_map_cross_reference_min_symbol_len {
-				identifiers[content[start..index]] = true
-			}
-			start = -1
-		}
-	}
-	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
-		identifiers[content[start..]] = true
-	}
-	return identifiers
-}
-
 // boost_repository_map_cross_references raises files whose defined symbols
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
@@ -657,19 +712,51 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 			definers[name] << index
 		}
 	}
-	mut boosts := map[int]f64{}
+	// Reuse index buffers instead of building a distinct-string map and a second
+	// per-file map for every candidate. The mark value is the current entry
+	// index, so repeated identifiers and references are deduplicated in O(1).
+	mut seen_referrers := []int{len: entries.len, init: -1}
+	mut referrers := []int{cap: entries.len}
+	mut boosts := []f64{len: entries.len}
 	for index, entry in entries {
 		content := contents[entry.path] or { continue }
-		identifiers := repository_map_content_identifiers(content)
-		mut referrers := map[int]bool{}
-		for token, _ in identifiers {
-			defs := definers[token] or { continue }
-			if defs.len > repository_map_cross_reference_max_definers {
+		referrers.clear()
+		mut start := -1
+		for offset, ch in content {
+			if is_repository_map_ident_byte(ch) {
+				if start < 0 {
+					start = offset
+				}
 				continue
 			}
-			for definer in defs {
-				if definer != index {
-					referrers[definer] = true
+			if start >= 0 {
+				if offset - start >= repository_map_cross_reference_min_symbol_len {
+					// This borrowed token is used only for map lookup, never retained.
+					token := unsafe { content.substr_unsafe(start, offset) }
+					if defs := definers[token] {
+						if defs.len <= repository_map_cross_reference_max_definers {
+							for definer in defs {
+								if definer != index && seen_referrers[definer] != index {
+									seen_referrers[definer] = index
+									referrers << definer
+								}
+							}
+						}
+					}
+				}
+			}
+			start = -1
+		}
+		if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+			token := unsafe { content.substr_unsafe(start, content.len) }
+			if defs := definers[token] {
+				if defs.len <= repository_map_cross_reference_max_definers {
+					for definer in defs {
+						if definer != index && seen_referrers[definer] != index {
+							seen_referrers[definer] = index
+							referrers << definer
+						}
+					}
 				}
 			}
 		}
@@ -680,8 +767,8 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		} else {
 			repository_map_cross_reference_weight
 		}
-		for definer, _ in referrers {
-			boosts[definer] = (boosts[definer] or { 0.0 }) + referrer_weight
+		for definer in referrers {
+			boosts[definer] += referrer_weight
 		}
 	}
 	for index, boost in boosts {

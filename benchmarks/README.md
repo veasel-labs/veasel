@@ -30,6 +30,33 @@ timings are noisy and are reports, not a pass/fail performance promise. The
 benchmark only measures in-memory SQLite session work. It is not evidence of
 agent task success, model efficiency, or end-to-end latency.
 
+## Repository-map ranking microbenchmark
+
+`repository_map_benchmark_test.v` measures cross-reference ranking over a fixed
+256-file, 1 MiB synthetic source corpus. Fixture construction is outside the
+timed region; each result includes 2 warmups, 11 raw samples, p50/p90 elapsed
+time, a score checksum, compiler version, source revision, and host platform.
+It is opt-in and does not add work to ordinary test runs:
+
+```sh
+VEASEL_RUN_REPOSITORY_MAP_BENCHMARK=1 \
+VEASEL_BENCH_COMPILER_VERSION='V <version>' \
+VEASEL_BENCH_SOURCE_REVISION='<git-revision>' \
+VEASEL_BENCH_OUTPUT=/tmp/repository-map-ranking.json \
+VEASEL_BENCH_BUILD_PROFILE='gcc -prod' \
+  v -cc gcc -prod test repository_map_benchmark_test.v
+```
+
+Compare a change with its parent on the same machine using the same pinned V
+compiler. This isolates ranking cost, not filesystem walking, symbol extraction,
+or full API latency; it does not establish task success or end-to-end speed.
+The initial `gcc -prod` comparison of `main` (`38ea5b5`) and the
+lexical-ranking change (`a0b3993`) measured p50 2.952 ms → 2.343 ms (20.63%
+lower) and p90 3.155 ms → 2.785 ms (11.73% lower), with identical score
+checksums. Raw samples and the full compiler pin are in
+[`reports/repository-map-ranking-linux-x64-2026-10-24.json`](reports/repository-map-ranking-linux-x64-2026-10-24.json).
+This is one synthetic Linux x64 measurement, not a general performance claim.
+
 ## Local CLI startup comparison
 
 `cli-startup.mjs` compares process startup and argument handling for Veasel

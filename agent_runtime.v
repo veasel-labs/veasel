@@ -162,7 +162,7 @@ fn workspace_read_path_from_call(call ProviderToolCall) ?string {
 		return none
 	}
 	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or { return none }
-	if tool_arguments.len != 1 {
+	if tool_arguments.len != 1 && tool_arguments.len != 3 {
 		return none
 	}
 	path := string_tool_argument(tool_arguments, 'path') or { return none }
@@ -173,6 +173,43 @@ fn workspace_read_path_from_call(call ProviderToolCall) ?string {
 	// filename characters on supported platforms, so normalizing them could
 	// suppress a distinct read.
 	return path
+}
+
+fn workspace_read_identity_from_call(call ProviderToolCall) ?string {
+	path := workspace_read_path_from_call(call) or { return none }
+	fields := json2.decode[map[string]json2.Any](call.function.arguments) or { return none }
+	start, count := workspace_read_range_arguments(fields) or { return none }
+	return if start == 0 {
+		json2.encode[[]string]([path])
+	} else {
+		json2.encode[[]string]([path, start.str(), count.str()])
+	}
+}
+
+fn workspace_read_range_arguments(arguments map[string]json2.Any) !(int, int) {
+	has_start := 'start_line' in arguments
+	has_count := 'line_count' in arguments
+	if has_start != has_count {
+		return error('start_line and line_count must be provided together.')
+	}
+	if arguments.len != if has_start { 3 } else { 1 } {
+		return error('Unexpected tool argument.')
+	}
+	if !has_start {
+		return 0, 0
+	}
+	start := arguments['start_line'] or { return error('start_line is required.') }
+	count := arguments['line_count'] or { return error('line_count is required.') }
+	if start !is f64 || count !is f64 {
+		return error('start_line and line_count must be integers.')
+	}
+	a := start.f64()
+	b := count.f64()
+	if a < 1 || a > f64(max_workspace_file_bytes) || b < 1 || b > max_workspace_read_range_lines
+		|| a != f64(int(a)) || b != f64(int(b)) {
+		return error('start_line and line_count must be positive whole numbers within the documented limits.')
+	}
+	return int(a), int(b)
 }
 
 fn duplicate_workspace_read_note(path string) string {
@@ -203,16 +240,17 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 		// A denied read did not provide any workspace content, so it must not
 		// poison the turn-scoped duplicate-read cache.
 		if tool_policy.allows(call.function.name) {
-			if path := workspace_read_path_from_call(call) {
-				if read_paths[path] {
+			if identity := workspace_read_identity_from_call(call) {
+				path := workspace_read_path_from_call(call) or { '' }
+				if read_paths[identity] || read_paths[json2.encode[[]string]([path])] {
 					ordered[i] = duplicate_workspace_read_note(path)
 					continue
 				}
-				if primary_index := pending_read_indexes[path] {
+				if primary_index := pending_read_indexes[identity] {
 					duplicate_read_indexes[i] = primary_index
 					continue
 				}
-				pending_read_indexes[path] = i
+				pending_read_indexes[identity] = i
 			}
 		}
 		run_indexes << i
@@ -236,12 +274,12 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 		read_result := run_results[i]
 		ordered[call_index] = read_result.result
 		if read_result.workspace_read_attempted {
-			if path := workspace_read_path_from_call(run_calls[i]) {
+			if identity := workspace_read_identity_from_call(run_calls[i]) {
 				if read_result.workspace_read_succeeded {
-					read_paths[path] = true
+					read_paths[identity] = true
 					successful_reads[call_index] = true
 				} else {
-					read_paths.delete(path)
+					read_paths.delete(identity)
 				}
 			}
 		}
@@ -331,9 +369,10 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 			index++
 			continue
 		}
-		if path := workspace_read_path_from_call(call) {
+		if identity := workspace_read_identity_from_call(call) {
 			if skill_context.tool_policy.allows(call.function.name) {
-				if read_paths[path] {
+				path := workspace_read_path_from_call(call) or { '' }
+				if read_paths[identity] || read_paths[json2.encode[[]string]([path])] {
 					results[index] = duplicate_workspace_read_note(path)
 					index++
 					continue
@@ -350,9 +389,9 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 			session_id, operation_id, call, mut skill_context, mcp_bindings,
 			mut mcp_connections, policy)!
 		results[index] = sanitize_agent_tool_result(execution_result.result)
-		if path := workspace_read_path_from_call(call) {
+		if identity := workspace_read_identity_from_call(call) {
 			if execution_result.workspace_read_succeeded {
-				read_paths[path] = true
+				read_paths[identity] = true
 			}
 		}
 		index++
@@ -391,13 +430,15 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_read_file'
-			description: 'Read one UTF-8 text file inside the current workspace. Files are limited to 512000 bytes.'
+			description: 'Read one UTF-8 text file inside the current workspace (maximum file size 512000 bytes). Omit line range arguments to read the whole file; otherwise provide start_line and line_count to read a bounded, one-based excerpt. Ranged reads return at most 200 lines and 32000 bytes with line numbers.'
 			parameters:  ToolParameters{
 				properties: {
-					'path': ToolParameter{
+					'path':       ToolParameter{
 						type:        'string'
 						description: 'Relative file path inside the workspace.'
 					}
+					'start_line': ToolParameter{ type: 'integer', description: 'One-based first line to return. Requires line_count.' }
+					'line_count': ToolParameter{ type: 'integer', description: 'Number of lines to return, from 1 to 200. Requires start_line.' }
 				}
 				required:   ['path']
 			}
@@ -1377,9 +1418,20 @@ fn execute_workspace_read_file_tool(root string, call ProviderToolCall) AgentToo
 			result: encode_agent_tool_error('A relative path string is required.')
 		}
 	}
-	if tool_arguments.len != 1 {
+	start, count := workspace_read_range_arguments(tool_arguments) or {
 		return AgentToolExecutionResult{
-			result: encode_agent_tool_error('Unexpected tool argument.')
+			result: encode_agent_tool_error(err.msg())
+		}
+	}
+	if start > 0 {
+		range := workspace_file_range(root, path, start, count) or {
+			return AgentToolExecutionResult{
+				result: encode_agent_tool_error('The workspace file range is invalid or unavailable.')
+			}
+		}
+		return AgentToolExecutionResult{
+			result:                   json2.encode[WorkspaceFileRange](range)
+			workspace_read_succeeded: true
 		}
 	}
 	file := workspace_file(root, path) or {

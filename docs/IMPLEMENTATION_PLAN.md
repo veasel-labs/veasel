@@ -165,6 +165,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   concurrently as ordered waves, with skill load/read, edits, shell, and MCP as
   sequential barriers. Preserve provider result order and suppress duplicate
   file reads across waves.
+- [x] Let models request bounded, one-based line ranges from a workspace file, with line-numbered evidence, a 200-line/32 KB result cap, and range-aware duplicate-read suppression. Range and search scans avoid allocating every source line; mixed CR/LF endings and UTF-8 truncation remain covered. Only successful, permitted reads enter the duplicate cache, with collision-safe identities and invalidation at mutation barriers.
 - [x] Generate bounded single-file diffs, persist proposals, require explicit durable approval, reject stale snapshots, and recover interrupted applications without replay.
 - [x] Add permissioned shell execution with explicit, durable approval. The
   TUI requires opening the exact command, working directory, and timeout before

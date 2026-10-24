@@ -72,7 +72,7 @@ test("LiveApp /usage browses durable provider/model data and preserves reported-
     await until("Usage by model")
     let frame = await until("anthropic / claude-test")
     expect(frame).toContain("3.5k in")
-    expect(frame).toContain("$0.12")
+    expect(frame).toContain("est $0.12")
     expect(usageRequests).toBe(1)
 
     setup.mockInput.pressEnter()

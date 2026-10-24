@@ -42,8 +42,8 @@ function UsageDashboardDialog(props: { api: VeaselApiClient }) {
       title: `${model.provider} / ${model.model}`,
       value: `${model.provider}\0${model.model}`,
       description: model.reported_turns > 0
-        ? `${formatTokenCount(model.input_tokens)} in · ${formatTokenCount(model.output_tokens)} out · ${model.reported_turns} turns · ${model.cost}`
-        : `${model.completed_turns} turns · usage unavailable · ${model.cost}`,
+        ? `${formatTokenCount(model.input_tokens)} in · ${formatTokenCount(model.output_tokens)} out · ${model.reported_turns}t · est ${model.cost}`
+        : `${model.completed_turns}t · usage unavailable · est ${model.cost}`,
       searchText: `${model.provider} ${model.model}`,
     }))
   })

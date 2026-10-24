@@ -307,13 +307,16 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 		}
 		if start >= 0 {
 			if offset - start >= repository_map_cross_reference_min_symbol_len {
-				repository_map_add_content_terms(mut terms, content[start..offset])
+				// The view is inspected only; the map stores owned lowercase keys.
+				token := unsafe { content.substr_unsafe(start, offset) }
+				repository_map_add_content_terms(mut terms, token)
 			}
 		}
 		start = -1
 	}
 	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
-		repository_map_add_content_terms(mut terms, content[start..])
+		token := unsafe { content.substr_unsafe(start, content.len) }
+		repository_map_add_content_terms(mut terms, token)
 	}
 	mut matched_terms := 0
 	mut score := 0.0
@@ -344,7 +347,16 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 }
 
 fn repository_map_add_content_terms(mut terms map[string]bool, identifier string) {
-	terms[identifier.to_lower()] = true
+	// The map contains normalized full names and parts. Skip repeated tokens
+	// before lowercasing or splitting so large files do that work once per term.
+	if identifier in terms {
+		return
+	}
+	lower := identifier.to_lower()
+	if lower in terms {
+		return
+	}
+	terms[lower] = true
 	for part in repository_map_ident_parts(identifier) {
 		terms[part] = true
 	}
@@ -670,7 +682,8 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 			}
 			if start >= 0 {
 				if offset - start >= repository_map_cross_reference_min_symbol_len {
-					token := content[start..offset]
+					// This borrowed token is used only for map lookup, never retained.
+					token := unsafe { content.substr_unsafe(start, offset) }
 					if defs := definers[token] {
 						if defs.len <= repository_map_cross_reference_max_definers {
 							for definer in defs {
@@ -686,7 +699,7 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 			start = -1
 		}
 		if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
-			token := content[start..]
+			token := unsafe { content.substr_unsafe(start, content.len) }
 			if defs := definers[token] {
 				if defs.len <= repository_map_cross_reference_max_definers {
 					for definer in defs {

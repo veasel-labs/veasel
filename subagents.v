@@ -251,6 +251,23 @@ fn (mut store Store) begin_subagent_run(run_id string) !SubagentRun {
 	return store.get_subagent_run_unlocked(run_id)
 }
 
+fn (mut store Store) cancel_queued_subagent_run(run_id string, reason string) !SubagentRun {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND workspace_ready = 1 AND workspace_started = 0",
+		[reason.limit(max_subagent_error_bytes), run_id])!
+	if store.db.get_affected_rows_count() == 1 {
+		return store.get_subagent_run_unlocked(run_id)
+	}
+	run := store.get_subagent_run_unlocked(run_id)!
+	if run.status == 'cancelled' && !run.workspace_started {
+		return run
+	}
+	return error('child agent run is no longer queued')
+}
+
 fn (mut store Store) finish_subagent_run(run_id string, status string, result string, run_error string) !SubagentRun {
 	if status !in ['completed', 'failed', 'cancelled', 'uncertain'] {
 		return error('child agent terminal status is invalid')

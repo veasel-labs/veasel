@@ -45,6 +45,18 @@ fn run_repository_map_benchmark_cached(root string, hint string,
 	return result, stopwatch.elapsed().microseconds()
 }
 
+fn run_repository_map_benchmark_pair(root string, hint string,
+	mut cache &RepositoryMapSymbolCache, cached_first bool) (RepositoryMapResult, i64, RepositoryMapResult, i64) {
+	if cached_first {
+		cached, cached_us := run_repository_map_benchmark_cached(root, hint, mut cache)
+		baseline, baseline_us := run_repository_map_benchmark_baseline(root, hint)
+		return baseline, baseline_us, cached, cached_us
+	}
+	baseline, baseline_us := run_repository_map_benchmark_baseline(root, hint)
+	cached, cached_us := run_repository_map_benchmark_cached(root, hint, mut cache)
+	return baseline, baseline_us, cached, cached_us
+}
+
 fn test_benchmark_repository_map_symbol_cache() {
 	if os.getenv('VEASEL_RUN_REPOSITORY_MAP_BENCHMARK') != '1' {
 		return
@@ -81,8 +93,8 @@ fn test_benchmark_repository_map_symbol_cache() {
 	mut source_files := 0
 	mut selected_symbols := 0
 	for sample in 0 .. repository_map_benchmark_warmups + repository_map_benchmark_samples {
-		baseline, baseline_us := run_repository_map_benchmark_baseline(root, hint)
-		cached, cached_us := run_repository_map_benchmark_cached(root, hint, mut cache)
+		baseline, baseline_us, cached, cached_us := run_repository_map_benchmark_pair(root, hint,
+			mut cache, sample % 2 == 1)
 		assert baseline.text == cached.text
 		assert baseline.ranked_paths == cached.ranked_paths
 		source_files = baseline.measurement.files_scanned
@@ -120,6 +132,7 @@ fn test_benchmark_repository_map_symbol_cache() {
 			'null'
 		}},' +
 		'"warmup_pairs":${repository_map_benchmark_warmups},"sample_pairs":${repository_map_benchmark_samples},' +
+		'"pair_order":"alternating baseline-first and cached-first",' +
 		'"uncached_build_us":{"p50":${baseline_samples[3]},"p95":${baseline_samples[6]}},' +
 		'"cached_build_us":{"p50":${cached_samples[3]},"p95":${cached_samples[6]}},' +
 		'"cache_hits":${cache_hits},"platform":"${platform.sysname} ${platform.machine}",' +

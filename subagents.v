@@ -414,13 +414,19 @@ fn subagent_preparation_lock_shard(run_id string) int {
 	return int(strconv.parse_int(run_id[0..2], 16, 0) or { 0 })
 }
 
-fn new_subagent_preparation_lock(path string) !filelock.FileLock {
-	// Create the inode once with private permissions. Lock it in place so release
-	// never unlinks an inode that another process may already have opened.
+struct SubagentPreparationLock {
+	path string
+mut:
+	fd           int = -1
+	windows_lock filelock.FileLock
+}
+
+fn prepare_subagent_preparation_lock_file(path string) ! {
+	// Create the inode once with private permissions. Platform lock backends lock
+	// it in place so release never unlinks an inode that another process opened.
 	mut lock_file := os.open_file(path, 'a', 0o600)!
 	lock_file.close()
 	if os.is_link(path) {
 		return error('child workspace preparation lock cannot be a symlink')
 	}
-	return filelock.new_file(path, filelock.LockOptions{})
 }

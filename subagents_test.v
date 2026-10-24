@@ -265,6 +265,22 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 	assert !os.exists(path)
 }
 
+fn test_subagent_preparation_lock_keeps_one_inode_and_excludes_same_process_stores() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-lock-inode-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	lock_path := os.join_path(root, 'preparation.lock')
+	mut first := new_subagent_preparation_lock(lock_path) or { panic(err) }
+	mut second := new_subagent_preparation_lock(lock_path) or { panic(err) }
+	first.acquire() or { panic(err) }
+	assert !second.try_acquire()
+	assert first.release()
+	assert os.exists(lock_path)
+	assert second.try_acquire()
+	assert second.release()
+	assert os.exists(lock_path)
+}
+
 fn init_subagent_test_repo(root string) string {
 	repo := os.join_path(root, 'workspace')
 	os.mkdir_all(repo) or { panic(err) }

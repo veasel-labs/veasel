@@ -36,6 +36,7 @@ operation runs, and reloads the committed exchange after its
 
 The startup screen uses a 32×32 pixel portrait of Veasel's companion, rendered
 as 16 rows of Unicode half-blocks. Russet fur, cream, teal accents, and
-highlights follow the active theme. The source art was generated from a
-text-only prompt without using the V mascot as an image input; provenance and
-license notes are in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+highlights follow the active theme. The source art is a 128×128, 14-color
+pixel-art reinterpretation of Veasel's project-owned companion concept and
+does not use the V mascot as an image input; provenance and license notes are in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).

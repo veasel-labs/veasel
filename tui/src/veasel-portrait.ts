@@ -1,10 +1,10 @@
 import type { Theme } from "./themes"
 
 /**
- * Terminal-palette encoding of the Veasel Code companion.
- * Source artwork was generated from a text-only prompt; no upstream image was
- * used.
- * Source: tui/assets/veasel-companion-v3.png.
+ * Hand-authored terminal-palette portrait of the Veasel Code companion.
+ * Related full-color art is a pixel-art reinterpretation of project-owned
+ * concept artwork; no upstream mascot image was used.
+ * Source: tui/assets/veasel-companion-pixel-v4.png.
  */
 export const VEASEL_PORTRAIT_WIDTH = 32
 

@@ -95,7 +95,7 @@ The working vertical slice includes:
 - OpenTUI client with session list, composer, slash commands, and selectable
   themes (`/theme`)
 - OpenAI-compatible, Meta Responses, Anthropic, and Gemini adapters with
-  bounded streaming; provider-reported token totals via `/usage` and
+  bounded streaming; provider-reported token totals by model across sessions via `/usage` and
   `veasel run` when adapters set `usage.reported` (no invented cost)
 - Bounded workspace list/read/search; durable edit/shell/MCP proposals that
   require explicit review before effect

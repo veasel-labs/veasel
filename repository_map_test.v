@@ -484,3 +484,23 @@ fn test_repository_map_symbol_count_does_not_flood_ranking() {
 	assert result.ranked_paths.len >= 2
 	assert result.ranked_paths[0] == 'src/target.v', 'mentioned definer must outrank a large unrelated file: ${result.ranked_paths}'
 }
+
+fn test_repository_map_symbol_cache_reuses_only_exact_file_content() {
+	mut cache := new_repository_map_symbol_cache()
+	path := '/workspace/src/agent.v'
+	first_content := 'pub fn first_agent_symbol() {}'
+	first := repository_map_cached_symbols(mut cache, path, first_content)
+	assert first.len == 1
+	assert first[0].name == 'first_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 0
+
+	reused := repository_map_cached_symbols(mut cache, path, first_content)
+	assert reused.len == 1
+	assert reused[0].name == 'first_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+
+	updated := repository_map_cached_symbols(mut cache, path, 'pub fn updated_agent_symbol() {}')
+	assert updated.len == 1
+	assert updated[0].name == 'updated_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+}

@@ -3,6 +3,7 @@ module main
 import os
 import encoding.utf8
 import strings
+import sync
 
 // Repository map budgets are measured UTF-8 bytes. The bytes/4 field is a
 // conservative bound for observability, not provider-reported token usage.
@@ -19,6 +20,12 @@ const repository_map_max_symbol_files = 800
 const repository_map_max_file_read_bytes = 262_144
 const repository_map_max_total_read_bytes = 8_388_608
 const repository_map_max_symbols_per_file = 48
+// The cache stores only extracted symbols and a bounded copy of their source
+// text. Equality checks are exact, so hits do not depend on filesystem timestamp
+// precision or how an editor replaces a file.
+const repository_map_symbol_cache_max_bytes = 1_048_576
+const repository_map_symbol_cache_max_entries = 800
+const repository_map_symbol_cache_max_symbols = 8_000
 // Per-file symbol relevance is capped: without a cap, every extracted symbol
 // added score, so the largest files (test suites, generated code) outranked
 // the file a query actually points at. Measured on the Aider checkout:
@@ -139,10 +146,128 @@ mut:
 	idents []string
 }
 
+struct RepositoryMapSymbolCacheEntry {
+	content string
+	symbols []RepositoryMapSymbol
+}
+
+@[heap]
+struct RepositoryMapSymbolCache {
+	mutex &sync.Mutex @[required]
+mut:
+	entries          map[string]RepositoryMapSymbolCacheEntry
+	eviction_order   []string
+	eviction_index   int
+	retained_bytes   int
+	retained_symbols int
+	hits             int
+}
+
+fn new_repository_map_symbol_cache() &RepositoryMapSymbolCache {
+	return &RepositoryMapSymbolCache{
+		mutex:          sync.new_mutex()
+		entries:        map[string]RepositoryMapSymbolCacheEntry{}
+		eviction_order: []string{cap: repository_map_symbol_cache_max_entries}
+	}
+}
+
+fn repository_map_cached_symbols(mut cache &RepositoryMapSymbolCache, path string,
+	content string) []RepositoryMapSymbol {
+	mut mutex := cache.mutex
+	mutex.lock()
+	if cached := cache.entries[path] {
+		if cached.content == content {
+			cache.hits++
+			symbols := cached.symbols
+			mutex.unlock()
+			return symbols
+		}
+	}
+	mutex.unlock()
+
+	symbols := extract_repository_map_symbols(content)
+	if content.len > repository_map_symbol_cache_max_bytes
+		|| symbols.len > repository_map_symbol_cache_max_symbols {
+		return symbols
+	}
+
+	mutex.lock()
+	if existing := cache.entries[path] {
+		next_bytes := cache.retained_bytes - existing.content.len + content.len
+		next_symbols := cache.retained_symbols - existing.symbols.len + symbols.len
+		if next_bytes <= repository_map_symbol_cache_max_bytes
+			&& next_symbols <= repository_map_symbol_cache_max_symbols {
+			cache.entries[path] = RepositoryMapSymbolCacheEntry{
+				content: content
+				symbols: symbols
+			}
+			cache.retained_bytes = next_bytes
+			cache.retained_symbols = next_symbols
+			mutex.unlock()
+			return symbols
+		}
+		cache.entries.clear()
+		cache.eviction_order.clear()
+		cache.eviction_index = 0
+		cache.retained_bytes = 0
+		cache.retained_symbols = 0
+		cache.entries[path] = RepositoryMapSymbolCacheEntry{
+			content: content
+			symbols: symbols
+		}
+		cache.eviction_order << path
+		cache.retained_bytes = content.len
+		cache.retained_symbols = symbols.len
+	} else {
+		for cache.retained_bytes + content.len > repository_map_symbol_cache_max_bytes
+			|| cache.retained_symbols + symbols.len > repository_map_symbol_cache_max_symbols
+			|| cache.entries.len >= repository_map_symbol_cache_max_entries {
+			if cache.eviction_index >= cache.eviction_order.len {
+				cache.eviction_order.clear()
+				cache.eviction_index = 0
+			}
+			oldest_path := cache.eviction_order[cache.eviction_index]
+			cache.eviction_index++
+			if oldest := cache.entries[oldest_path] {
+				cache.retained_bytes -= oldest.content.len
+				cache.retained_symbols -= oldest.symbols.len
+				cache.entries.delete(oldest_path)
+			}
+		}
+		cache.entries[path] = RepositoryMapSymbolCacheEntry{
+			content: content
+			symbols: symbols
+		}
+		cache.eviction_order << path
+		cache.retained_bytes += content.len
+		cache.retained_symbols += symbols.len
+	}
+	if cache.eviction_index > 128 && cache.eviction_index * 2 >= cache.eviction_order.len {
+		cache.eviction_order = cache.eviction_order[cache.eviction_index..].clone()
+		cache.eviction_index = 0
+	}
+	mutex.unlock()
+	return symbols
+}
+
+fn repository_map_symbol_cache_hits(mut cache &RepositoryMapSymbolCache) int {
+	mut mutex := cache.mutex
+	mutex.lock()
+	hits := cache.hits
+	mutex.unlock()
+	return hits
+}
+
 // build_repository_map walks the workspace, extracts structural symbols, ranks
 // paths against hint text (usually the latest user message), and renders a map
 // that fits inside budget_bytes of UTF-8 content.
 fn build_repository_map(root string, hint_text string, budget_bytes int) !RepositoryMapResult {
+	mut cache := new_repository_map_symbol_cache()
+	return build_repository_map_with_cache(root, hint_text, budget_bytes, mut cache)
+}
+
+fn build_repository_map_with_cache(root string, hint_text string, budget_bytes int,
+	mut cache &RepositoryMapSymbolCache) !RepositoryMapResult {
 	canonical_root := canonical_workspace_root(root)!
 	budget := clamp_repository_map_budget(budget_bytes)
 	hints := extract_repository_map_hints(hint_text)
@@ -205,7 +330,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 			contents[normalized] = content
 			bytes_read += content.len
 			symbol_files++
-			symbols := extract_repository_map_symbols(content)
+			symbols := repository_map_cached_symbols(mut cache, abs_path, content)
 			mut symbol_relevance := 0.0
 			for symbol in symbols {
 				if entry.symbols.len >= repository_map_max_symbols_per_file {
@@ -694,8 +819,15 @@ fn repository_map_summary_preview(text string) string {
 // separate user-message block via maybe_attach_repository_map_focus.
 fn maybe_attach_repository_map(mut messages []ChatMessage, root string, hint_text string,
 	budget_bytes int) !RepositoryMapResult {
+	mut cache := new_repository_map_symbol_cache()
+	return maybe_attach_repository_map_with_cache(mut messages, root, hint_text, budget_bytes,
+		mut cache)
+}
+
+fn maybe_attach_repository_map_with_cache(mut messages []ChatMessage, root string, hint_text string,
+	budget_bytes int, mut cache &RepositoryMapSymbolCache) !RepositoryMapResult {
 	_ = hint_text
-	result := build_repository_map(root, '', budget_bytes)!
+	result := build_repository_map_with_cache(root, '', budget_bytes, mut cache)!
 	if result.measurement.file_count == 0 || result.text.len == 0
 		|| !result.text.contains(repository_map_open) {
 		return result
@@ -769,6 +901,13 @@ fn repository_map_hints_warrant_focus(hints RepositoryMapHintSet) bool {
 // Casual turns without such mentions skip the extra bytes.
 fn maybe_attach_repository_map_focus(mut messages []ChatMessage, root string, hint_text string,
 	budget_bytes int) !RepositoryMapResult {
+	mut cache := new_repository_map_symbol_cache()
+	return maybe_attach_repository_map_focus_with_cache(mut messages, root, hint_text,
+		budget_bytes, mut cache)
+}
+
+fn maybe_attach_repository_map_focus_with_cache(mut messages []ChatMessage, root string,
+	hint_text string, budget_bytes int, mut cache &RepositoryMapSymbolCache) !RepositoryMapResult {
 	hints := extract_repository_map_hints(hint_text)
 	if !repository_map_hints_warrant_focus(hints) {
 		return RepositoryMapResult{}
@@ -784,7 +923,7 @@ fn maybe_attach_repository_map_focus(mut messages []ChatMessage, root string, hi
 	} else {
 		requested
 	}
-	result := build_repository_map(root, hint_text, capped)!
+	result := build_repository_map_with_cache(root, hint_text, capped, mut cache)!
 	if result.measurement.file_count == 0 || result.text.len == 0 {
 		return result
 	}

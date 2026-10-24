@@ -158,6 +158,8 @@ At [`5a4dd5b4301182591d48a93bbacdc5b7926cd3ca`](https://github.com/anomalyco/ope
 
 Veasel's existing settings already keep credentials out of API responses and use a checked-in provider catalog compiled into the V binary, so its startup does not depend on Models.dev availability or a runtime SDK package. The new OpenAI Responses preset uses Veasel's existing V-native Responses adapter; Chat Completions remains separately selectable. The remaining product gap is deeper protocol/auth support and model metadata (capabilities, context limits, pricing, variants), not the number of visible endpoint presets. Provider counts must not be presented as equivalent to OpenCode's 75+ SDK-backed providers.
 
+OpenCode Go's official [endpoint table](https://opencode.ai/v2/docs/console/go/) assigns MiniMax M3 and Qwen3.8 Max to Anthropic Messages (`/inference/go/anthropic/v1/messages`), even though Models.dev's provider-level catalog is OpenAI-compatible. Their pinned model records at Models.dev [`cfce703`](https://github.com/anomalyco/models.dev/tree/cfce703ba643d26c0b7cffdd384ddbbb7f96391e/providers/opencode-go/models) also declare `api.messages`. Veasel therefore maps these IDs to its Anthropic adapter; the shared OpenAI-compatible `/models` catalog alone is not evidence for a model's inference protocol.
+
 ### TUI technology decision
 
 The installed Bun is 1.4.2. Current OpenTUI runtime documentation requires Bun

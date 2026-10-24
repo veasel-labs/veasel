@@ -131,16 +131,16 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		base_url: opencode_go_chat_base_url
 		model:    'minimax-m3'
 	}) or { panic(err) }
-	assert minimax.protocol == 'openai-compatible'
-	assert minimax.base_url == opencode_go_openai_base_url
+	assert minimax.protocol == 'anthropic'
+	assert minimax.base_url == opencode_go_anthropic_base_url
 
 	qwen_max := model_provider_route(ModelConfig{
 		provider: 'opencode-go'
 		base_url: opencode_go_chat_base_url
 		model:    'qwen3.8-max'
 	}) or { panic(err) }
-	assert qwen_max.protocol == 'openai-compatible'
-	assert qwen_max.base_url == opencode_go_openai_base_url
+	assert qwen_max.protocol == 'anthropic'
+	assert qwen_max.base_url == opencode_go_anthropic_base_url
 
 	responses := model_provider_route(ModelConfig{
 		provider: 'opencode-go'

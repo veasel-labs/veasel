@@ -1534,10 +1534,10 @@ function LiveAppShell(props: LiveAppProps) {
         const modelID = value.trim()
         if (!modelID) {
           toast.info("Enter a model ID to continue", "MODEL SETTINGS")
-          setComposerFocused(true)
-          return
+          return false
         }
         onSubmit(modelID)
+        return true
       },
       onCancel: () => setComposerFocused(true),
     })

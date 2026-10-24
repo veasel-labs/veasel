@@ -80,91 +80,85 @@ fn test_opencode_go_model_catalog_uses_its_separate_discovery_endpoint() {
 }
 
 fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
-	models := [
-		ModelCatalogEntry{
-			id: 'kimi-k3.1-pro'
-		},
-		ModelCatalogEntry{
-			id: 'kimi-k3'
-		},
-		ModelCatalogEntry{
-			id: 'minimax-m3'
-		},
-		ModelCatalogEntry{
-			id: 'qwen3.8-max'
-		},
-		ModelCatalogEntry{
-			id: 'gpt-6-luna'
-		},
-		ModelCatalogEntry{
-			id: 'claude-haiku-5-5'
-		},
-		ModelCatalogEntry{
-			id: 'gemini-4-argon-contributor'
-		},
-		ModelCatalogEntry{
-			id: 'grok-4.6'
-		},
+	model_ids := [
+		'grok-4.7',
+		'glm-5.3-flash',
+		'glm-5.3',
+		'glm-5.2',
+		'gpt-6-luna',
+		'gpt-5.6-luna',
+		'claude-haiku-5-5',
+		'gemini-4-argon-contributor',
+		'kimi-k3.1-pro',
+		'kimi-k3',
+		'kimi-k2.7-code',
+		'longcat-2.0',
+		'longcat-2.5-preview-free',
+		'step-5-preview',
+		'beam-free',
+		'mimo-v2.6-flash',
+		'mimo-v2.6-pro',
+		'mimo-v2.5',
+		'mimo-v2.5-pro',
+		'minimax-m3.1-flash',
+		'minimax-m3',
+		'muse-spark-1.3-contributor',
+		'muse-spark-1.2-contributor',
+		'qwen3.8-max',
+		'qwen3.8-flash',
+		'qwen3.7-plus',
+		'deepseek-v4.1-flash',
+		'deepseek-v4-pro',
+		'hy4-preview',
+		'hy3',
 	]
+	mut models := []ModelCatalogEntry{cap: model_ids.len + 1}
+	for id in model_ids {
+		models << ModelCatalogEntry{
+			id: id
+		}
+	}
+	models << ModelCatalogEntry{
+		id: 'grok-4.6'
+	}
 	available := filter_provider_models('opencode-go', models)
-	assert available.map(it.id) == ['kimi-k3.1-pro', 'kimi-k3', 'minimax-m3', 'qwen3.8-max',
-		'gpt-6-luna', 'claude-haiku-5-5', 'gemini-4-argon-contributor']
-
-	kimi := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'kimi-k3.1-pro'
-	}) or { panic(err) }
-	assert kimi.protocol == 'openai-compatible'
-	assert kimi.base_url == opencode_go_openai_base_url
-
-	chat := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'kimi-k3'
-	}) or { panic(err) }
-	assert chat.protocol == 'openai-compatible'
-	assert chat.base_url == opencode_go_openai_base_url
-
-	minimax := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'minimax-m3'
-	}) or { panic(err) }
-	assert minimax.protocol == 'anthropic'
-	assert minimax.base_url == opencode_go_anthropic_base_url
-
-	qwen_max := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'qwen3.8-max'
-	}) or { panic(err) }
-	assert qwen_max.protocol == 'anthropic'
-	assert qwen_max.base_url == opencode_go_anthropic_base_url
-
-	responses := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'gpt-6-luna'
-	}) or { panic(err) }
-	assert responses.protocol == 'openai-responses'
-	assert responses.base_url == opencode_go_openai_base_url
-
-	claude := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'claude-haiku-5-5'
-	}) or { panic(err) }
-	assert claude.protocol == 'anthropic'
-	assert claude.base_url == opencode_go_anthropic_base_url
-
-	gemini := model_provider_route(ModelConfig{
-		provider: 'opencode-go'
-		base_url: opencode_go_chat_base_url
-		model:    'gemini-4-argon-contributor'
-	}) or { panic(err) }
-	assert gemini.protocol == 'gemini'
-	assert gemini.base_url == opencode_go_google_base_url
+	assert available.map(it.id) == model_ids
+	assert_opencode_go_routes([
+		'glm-5.3-flash',
+		'glm-5.3',
+		'glm-5.2',
+		'kimi-k3.1-pro',
+		'kimi-k3',
+		'kimi-k2.7-code',
+		'longcat-2.0',
+		'deepseek-v4.1-flash',
+		'deepseek-v4-pro',
+		'mimo-v2.6-flash',
+		'mimo-v2.6-pro',
+		'mimo-v2.5',
+		'mimo-v2.5-pro',
+		'minimax-m3.1-flash',
+		'hy4-preview',
+		'hy3',
+		'longcat-2.5-preview-free',
+		'step-5-preview',
+		'beam-free',
+	], 'openai-compatible', opencode_go_openai_base_url)
+	assert_opencode_go_routes([
+		'grok-4.7',
+		'gpt-6-luna',
+		'gpt-5.6-luna',
+		'muse-spark-1.3-contributor',
+		'muse-spark-1.2-contributor',
+	], 'openai-responses', opencode_go_openai_base_url)
+	assert_opencode_go_routes([
+		'claude-haiku-5-5',
+		'minimax-m3',
+		'qwen3.8-max',
+		'qwen3.8-flash',
+		'qwen3.7-plus',
+	], 'anthropic', opencode_go_anthropic_base_url)
+	assert_opencode_go_routes(['gemini-4-argon-contributor'], 'gemini', opencode_go_google_base_url)
 
 	unknown := model_provider_route(ModelConfig{
 		provider: 'opencode-go'
@@ -175,6 +169,18 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		return
 	}
 	assert unknown.protocol == ''
+}
+
+fn assert_opencode_go_routes(models []string, protocol string, base_url string) {
+	for model in models {
+		route := model_provider_route(ModelConfig{
+			provider: 'opencode-go'
+			base_url: opencode_go_chat_base_url
+			model:    model
+		}) or { panic(err) }
+		assert route.protocol == protocol
+		assert route.base_url == base_url
+	}
 }
 
 fn test_opencode_go_invalid_key_error_explains_how_to_recover() {

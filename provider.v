@@ -736,7 +736,7 @@ fn opencode_go_model_protocol(model string) string {
 		'claude-haiku-5-5', 'minimax-m3', 'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus' {
 			'anthropic'
 		}
-		'gemini-4-argon-contributor' { 'gemini' }
+		'gemini-4-argon' { 'gemini' }
 		'glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3.1-pro', 'kimi-k3', 'kimi-k2.7-code',
 		'longcat-2.0',
 		'deepseek-v4.1-flash', 'deepseek-v4-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro',

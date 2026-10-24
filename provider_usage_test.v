@@ -88,7 +88,7 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		'gpt-6-luna',
 		'gpt-5.6-luna',
 		'claude-haiku-5-5',
-		'gemini-4-argon-contributor',
+		'gemini-4-argon',
 		'kimi-k3.1-pro',
 		'kimi-k3',
 		'kimi-k2.7-code',
@@ -158,7 +158,7 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		'qwen3.8-flash',
 		'qwen3.7-plus',
 	], 'anthropic', opencode_go_anthropic_base_url)
-	assert_opencode_go_routes(['gemini-4-argon-contributor'], 'gemini', opencode_go_google_base_url)
+	assert_opencode_go_routes(['gemini-4-argon'], 'gemini', opencode_go_google_base_url)
 
 	unknown := model_provider_route(ModelConfig{
 		provider: 'opencode-go'
@@ -169,6 +169,15 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		return
 	}
 	assert unknown.protocol == ''
+	deprecated := model_provider_route(ModelConfig{
+		provider: 'opencode-go'
+		base_url: opencode_go_chat_base_url
+		model:    'gemini-4-argon-contributor'
+	}) or {
+		assert err.msg().contains('no supported API mapping')
+		return
+	}
+	assert deprecated.protocol == ''
 }
 
 fn assert_opencode_go_routes(models []string, protocol string, base_url string) {

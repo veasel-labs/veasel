@@ -2,6 +2,7 @@
 import { For, Show } from "solid-js"
 import stringWidth from "string-width"
 import { type Theme } from "../../themes"
+import { useTerminalDimensions } from "@opentui/solid"
 import {
   VEASEL_PORTRAIT_ROWS,
   portraitRowCells,
@@ -48,16 +49,22 @@ export function compactDirectory(path: string, maxWidth: number): string {
   return `…${tail}`
 }
 
+export function homeSplashCompact(width: number, height: number): boolean {
+  return width < 76 || height < 36
+}
+
 /**
  * Empty-home composition: original pixel companion + brand + one clear CTA path.
  */
 export function HomeSplash(props: HomeSplashProps) {
   const colors = useSolidTheme()
+  const dimensions = useTerminalDimensions()
   const theme = () => props.theme ?? colors
   const directory = () => props.directory ?? "~/your-project"
   const visibleDirectory = () =>
     compactDirectory(directory(), props.directoryMaxWidth ?? 64)
-  const compact = () => props.compact ?? true
+  const compact = () =>
+    props.compact ?? homeSplashCompact(dimensions().width, dimensions().height)
   const connectLine = `/connect · ${paletteShortcut.label} commands · /theme`
   const reviewLine = `${activityToggleShortcut.label} activity · ${reviewShortcut.label} reviews`
   const portraitPairs = Array.from(

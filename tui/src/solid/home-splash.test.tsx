@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "./app"
-import { compactDirectory, HomeSplash } from "./component/home-splash"
+import { compactDirectory, HomeSplash, homeSplashCompact } from "./component/home-splash"
 import {
   VEASEL_PORTRAIT_ROWS,
   VEASEL_PORTRAIT_WIDTH,
@@ -26,6 +26,12 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(compactDirectory("C:\\Users\\name\\project", 12)).toBe("…\\project")
     expect(compactDirectory("~/short", 12)).toBe("~/short")
     expect(compactDirectory("/tmp/long-project-name", 6)).toBe("…-name")
+  })
+
+  test("splash becomes compact only when the terminal cannot fit the full composition", () => {
+    expect(homeSplashCompact(80, 30)).toBe(true)
+    expect(homeSplashCompact(80, 36)).toBe(false)
+    expect(homeSplashCompact(75, 40)).toBe(true)
   })
 
   test("portrait row pairs render square pixel art in half-block cells", () => {
@@ -59,6 +65,19 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(frame).toContain("Ctrl+R reviews")
     // Block pixels from the portrait should appear.
     expect(frame).toContain("▀")
+  })
+
+  test("HomeSplash uses the full welcome composition when space allows", async () => {
+    const setup = await testRender(
+      () => <HomeSplash directory="~/veasel" />,
+      { width: 80, height: 40, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("your local V-powered workspace")
+    expect(frame).toContain("Ask anything to begin — or set up once")
+    expect(frame).toContain("PIXEL VEASEL")
   })
 
   test("empty App session shows the splash instead of transcript hint", async () => {

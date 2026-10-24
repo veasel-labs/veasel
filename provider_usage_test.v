@@ -289,6 +289,91 @@ fn test_openai_chat_usage_parses_reasoning_tokens() {
 	assert usage.reasoning_tokens == 55
 }
 
+fn test_openai_chat_usage_keeps_reported_zero_cost_and_opencode_allowance() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 100,
+		"completion_tokens": 20,
+		"cost": 0,
+		"opencode": {"allowance": 0.0042}
+	}') or { panic(err) }
+	assert usage.reported
+	assert (usage.reported_cost_usd or { -1.0 }) == f64(0)
+	assert (usage.allowance_usd or { -1.0 }) == f64(0.0042)
+}
+
+fn test_openai_chat_billing_fields_do_not_claim_token_usage() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"cost": 0,
+		"opencode": {"allowance": 0.0042}
+	}') or { panic(err) }
+	assert !usage.reported
+	assert has_provider_usage_data(usage)
+	assert usage.input_tokens == 0
+	assert usage.output_tokens == 0
+	zero_tokens := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 0,
+		"completion_tokens": 0
+	}') or { panic(err) }
+	assert zero_tokens.reported
+}
+
+fn test_openai_responses_usage_keeps_reported_cost_and_allowance_without_tokens() {
+	usage := provider_usage_from_fixture_json('openai-responses', '{
+		"cost": 0.00125,
+		"opencode": {"allowance": 0.0075}
+	}') or { panic(err) }
+	assert !usage.reported
+	assert (usage.reported_cost_usd or { -1.0 }) == f64(0.00125)
+	assert (usage.allowance_usd or { -1.0 }) == f64(0.0075)
+}
+
+fn test_anthropic_and_gemini_usage_keep_opencode_billing_metadata() {
+	anthropic := provider_usage_from_fixture_json('anthropic', '{
+		"input_tokens": 30,
+		"output_tokens": 5,
+		"cost": 0.0001,
+		"opencode": {"allowance": 0.002}
+	}') or { panic(err) }
+	assert (anthropic.reported_cost_usd or { -1.0 }) == f64(0.0001)
+	assert (anthropic.allowance_usd or { -1.0 }) == f64(0.002)
+	gemini := provider_usage_from_fixture_json('gemini', '{
+		"promptTokenCount": 30,
+		"candidatesTokenCount": 5,
+		"cost": 0,
+		"opencode": {"allowance": 0.003}
+	}') or { panic(err) }
+	assert (gemini.reported_cost_usd or { -1.0 }) == f64(0)
+	assert (gemini.allowance_usd or { -1.0 }) == f64(0.003)
+}
+
+fn test_provider_reported_billing_is_added_across_tool_turns() {
+	first := ProviderUsage{
+		reported_cost_usd: f64(0.001)
+		allowance_usd:     f64(0.002)
+	}
+	second := ProviderUsage{
+		reported_cost_usd: f64(0)
+		allowance_usd:     f64(0.003)
+	}
+	total := add_provider_usage(first, second)
+	assert (total.reported_cost_usd or { -1.0 }) == f64(0.001)
+	assert (total.allowance_usd or { -1.0 }) == f64(0.005)
+	assert !total.reported
+	assert has_provider_usage_data(total)
+}
+
+fn test_invalid_provider_reported_amounts_are_ignored_without_losing_tokens() {
+	usage := provider_usage_from_fixture_json('openai-chat', '{
+		"prompt_tokens": 100,
+		"completion_tokens": 10,
+		"cost": -1,
+		"opencode": {"allowance": "unknown"}
+	}') or { panic(err) }
+	assert usage.reported
+	assert usage.reported_cost_usd == none
+	assert usage.allowance_usd == none
+}
+
 fn test_openai_responses_usage_parses_reasoning_tokens() {
 	usage := provider_usage_from_fixture_json('openai-responses', '{
 		"input_tokens": 200,

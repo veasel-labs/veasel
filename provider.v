@@ -4,6 +4,7 @@ import json2
 import context as vcontext
 import net.http
 import net.urllib
+import math
 import os
 import strconv
 import strings
@@ -105,22 +106,25 @@ pub:
 	cache_reported        bool
 	reasoning_tokens      i64
 	reasoning_reported    bool
+	reported_cost_usd     ?f64
+	allowance_usd         ?f64
 	reported              bool
 }
 
+fn has_provider_usage_data(usage ProviderUsage) bool {
+	return usage.reported || usage.reported_cost_usd != none || usage.allowance_usd != none
+}
+
 fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
-	if !b.reported {
-		return a
-	}
-	if !a.reported {
-		return b
-	}
 	cache_reported := a.cache_reported || b.cache_reported
 	reasoning_reported := a.reasoning_reported || b.reasoning_reported
 	return ProviderUsage{
-		input_tokens:          a.input_tokens + b.input_tokens
-		output_tokens:         a.output_tokens + b.output_tokens
-		total_tokens:          a.total_tokens + b.total_tokens
+		input_tokens:          if a.reported { a.input_tokens } else { i64(0) } +
+			if b.reported { b.input_tokens } else { i64(0) }
+		output_tokens:         if a.reported { a.output_tokens } else { i64(0) } +
+			if b.reported { b.output_tokens } else { i64(0) }
+		total_tokens:          if a.reported { a.total_tokens } else { i64(0) } +
+			if b.reported { b.total_tokens } else { i64(0) }
 		cache_read_tokens:     if cache_reported {
 			a.cache_read_tokens + b.cache_read_tokens
 		} else {
@@ -138,8 +142,44 @@ fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
 			i64(0)
 		}
 		reasoning_reported:    reasoning_reported
-		reported:              true
+		reported_cost_usd:     sum_reported_amount(a.reported_cost_usd, b.reported_cost_usd)
+		allowance_usd:         sum_reported_amount(a.allowance_usd, b.allowance_usd)
+		reported:              a.reported || b.reported
 	}
+}
+
+fn sum_reported_amount(a ?f64, b ?f64) ?f64 {
+	left := a or { return b }
+	right := b or { return left }
+	return left + right
+}
+
+fn provider_usage_amount(value ?json2.Any) ?f64 {
+	any := value or { return none }
+	amount := match any {
+		i8, i16, i32, int, i64, u8, u16, u32, u64, f32, f64 { f64(any) }
+		else { return none }
+	}
+	if amount < 0 || math.is_nan(amount) || math.is_inf(amount, 0) {
+		return none
+	}
+	return amount
+}
+
+fn provider_opencode_allowance(opencode ?json2.Any) ?f64 {
+	metadata := opencode or { return none }
+	if metadata !is map[string]json2.Any {
+		return none
+	}
+	fields := metadata as map[string]json2.Any
+	return provider_usage_amount(fields['allowance'])
+}
+
+fn provider_opencode_allowance_from_map(usage map[string]json2.Any) ?f64 {
+	if opencode := usage['opencode'] {
+		return provider_opencode_allowance(opencode)
+	}
+	return none
 }
 
 fn json_any_nonneg_i64(value json2.Any) i64 {
@@ -151,6 +191,9 @@ fn json_any_nonneg_i64(value json2.Any) i64 {
 }
 
 fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
+	prompt_tokens := usage.prompt_tokens or { i64(0) }
+	completion_tokens := usage.completion_tokens or { i64(0) }
+	total_tokens := usage.total_tokens or { i64(0) }
 	mut cache_read := i64(0)
 	mut cache_reported := false
 	if details := usage.prompt_tokens_details {
@@ -163,21 +206,24 @@ fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
 		reasoning = if details.reasoning_tokens < 0 { i64(0) } else { details.reasoning_tokens }
 		reasoning_reported = true
 	}
-	total := if usage.total_tokens > 0 {
-		usage.total_tokens
+	total := if total_tokens > 0 {
+		total_tokens
 	} else {
-		usage.prompt_tokens + usage.completion_tokens
+		prompt_tokens + completion_tokens
 	}
 	return ProviderUsage{
-		input_tokens:          usage.prompt_tokens
-		output_tokens:         usage.completion_tokens
+		input_tokens:          prompt_tokens
+		output_tokens:         completion_tokens
 		total_tokens:          total
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: 0
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
-		reported:              true
+		reported_cost_usd:     provider_usage_amount(usage.cost)
+		allowance_usd:         provider_opencode_allowance(usage.opencode)
+		reported:              usage.prompt_tokens != none || usage.completion_tokens != none
+			|| usage.total_tokens != none || cache_reported || reasoning_reported
 	}
 }
 
@@ -214,6 +260,8 @@ fn provider_usage_from_openai_responses(usage OpenAIResponsesUsage) ProviderUsag
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
+		reported_cost_usd:     provider_usage_amount(usage.cost)
+		allowance_usd:         provider_opencode_allowance(usage.opencode)
 		reported:              usage.input_tokens > 0 || usage.output_tokens > 0 || cache_reported
 			|| reasoning_reported
 	}
@@ -248,6 +296,16 @@ fn merge_anthropic_stream_usage(prior ProviderUsage, delta ProviderUsage) Provid
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
+		reported_cost_usd:     if delta.reported_cost_usd != none {
+			delta.reported_cost_usd
+		} else {
+			prior.reported_cost_usd
+		}
+		allowance_usd:         if delta.allowance_usd != none {
+			delta.allowance_usd
+		} else {
+			prior.allowance_usd
+		}
 		reported:              prior.reported || delta.reported
 	}
 }
@@ -274,6 +332,8 @@ fn provider_usage_from_anthropic_map(usage map[string]json2.Any) ProviderUsage {
 		cache_creation = json_any_nonneg_i64(v)
 		cache_reported = true
 	}
+	reported_cost_usd := provider_usage_amount(usage['cost'])
+	allowance_usd := provider_opencode_allowance_from_map(usage)
 	return ProviderUsage{
 		input_tokens:          input_tokens
 		output_tokens:         output_tokens
@@ -281,6 +341,8 @@ fn provider_usage_from_anthropic_map(usage map[string]json2.Any) ProviderUsage {
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: cache_creation
 		cache_reported:        cache_reported
+		reported_cost_usd:     reported_cost_usd
+		allowance_usd:         allowance_usd
 		reported:              input_tokens > 0 || output_tokens > 0 || cache_reported
 	}
 }
@@ -312,6 +374,8 @@ fn provider_usage_from_gemini(meta GeminiUsageMetadata) ProviderUsage {
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
+		reported_cost_usd:     provider_usage_amount(meta.cost)
+		allowance_usd:         provider_opencode_allowance(meta.opencode)
 		reported:              meta.total_token_count > 0 || meta.prompt_token_count > 0
 			|| meta.candidates_token_count > 0 || cache_reported || reasoning_reported
 	}
@@ -886,6 +950,8 @@ struct OpenAIResponsesUsage {
 	total_tokens          i64
 	input_tokens_details  ?OpenAIResponsesInputTokensDetails  @[json: 'input_tokens_details']
 	output_tokens_details ?OpenAIResponsesOutputTokensDetails @[json: 'output_tokens_details']
+	cost                  ?json2.Any
+	opencode              ?json2.Any
 }
 
 struct OpenAIResponsesOutputItem {
@@ -939,11 +1005,13 @@ struct OpenAICompletionTokensDetails {
 }
 
 struct OpenAIUsage {
-	prompt_tokens             i64
-	completion_tokens         i64
-	total_tokens              i64
+	prompt_tokens             ?i64
+	completion_tokens         ?i64
+	total_tokens              ?i64
 	prompt_tokens_details     ?OpenAIPromptTokensDetails     @[json: 'prompt_tokens_details']
 	completion_tokens_details ?OpenAICompletionTokensDetails @[json: 'completion_tokens_details']
+	cost                      ?json2.Any
+	opencode                  ?json2.Any
 }
 
 struct OpenAIStreamChoice {
@@ -1015,6 +1083,8 @@ struct AnthropicUsage {
 	output_tokens               i64
 	cache_creation_input_tokens i64 @[json: 'cache_creation_input_tokens']
 	cache_read_input_tokens     i64 @[json: 'cache_read_input_tokens']
+	cost                        ?json2.Any
+	opencode                    ?json2.Any
 }
 
 struct AnthropicStreamDelta {
@@ -1165,6 +1235,8 @@ struct GeminiUsageMetadata {
 	total_token_count          i64  @[json: 'totalTokenCount']
 	cached_content_token_count ?i64 @[json: 'cachedContentTokenCount']
 	thoughts_token_count       ?i64 @[json: 'thoughtsTokenCount']
+	cost                       ?json2.Any
+	opencode                   ?json2.Any
 }
 
 struct GeminiStreamOutput {

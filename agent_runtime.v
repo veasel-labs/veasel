@@ -335,7 +335,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, tools,
 			on_text_delta)!
-		if output.usage.reported {
+		if has_provider_usage_data(output.usage) {
 			trace_usage = add_provider_usage(trace_usage, output.usage)
 		}
 		if output.tool_calls.len == 0 {
@@ -520,7 +520,7 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, ses
 	}
 	summary := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, summary_messages, [],
 		on_text_delta)!
-	if summary.usage.reported {
+	if has_provider_usage_data(summary.usage) {
 		trace_usage = add_provider_usage(trace_usage, summary.usage)
 	}
 	if summary.content.trim_space().len == 0 {

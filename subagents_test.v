@@ -1,7 +1,6 @@
 module main
 
 import os
-import os.filelock
 import uuid
 import crypto.sha256
 import strings
@@ -30,6 +29,7 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	assert retry.child_session_id == first.child_session_id
 	assert first.status == 'queued'
 	assert first.workspace_ready
+	assert os.exists(subagent_preparation_lock_path(root, first.id) or { panic(err) })
 	assert (store.get_session(first.child_session_id) or { panic(err) }).directory == os.join_path(root,
 		'subagent-worktrees', first.id)
 	assert os.is_dir(os.join_path(root, 'subagent-worktrees', first.id))
@@ -256,13 +256,11 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or {
 		panic(err)
 	}
-	lock_path := subagent_preparation_lock_path(root, run.id) or { panic(err) }
-	mut preparation_lock := filelock.new(lock_path)
-	preparation_lock.acquire() or { panic(err) }
+	store.active_subagent_preparations[run.id] = true
 	store.cleanup_unstarted_subagent_workspaces()
 	path := os.join_path(root, 'subagent-worktrees', run.id)
 	assert os.is_dir(path)
-	preparation_lock.release()
+	store.active_subagent_preparations.delete(run.id)
 	store.cleanup_unstarted_subagent_workspaces()
 	assert !os.exists(path)
 }

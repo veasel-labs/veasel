@@ -3,6 +3,7 @@ module main
 import uuid
 import os
 import os.filelock
+import strconv
 
 const max_subagent_depth = 2
 const max_active_subagent_runs_per_parent = 4
@@ -121,7 +122,10 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 		store.db.rollback() or {}
 		return err
 	}
-	mut preparation_lock := filelock.new(preparation_lock_path)
+	mut preparation_lock := new_subagent_preparation_lock(preparation_lock_path) or {
+		store.db.rollback() or {}
+		return err
+	}
 	preparation_lock.acquire() or {
 		store.db.rollback() or {}
 		return error('unable to lock child workspace preparation')
@@ -366,7 +370,10 @@ fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
 			eprintln('veasel: unable to lock interrupted child workspace ${run_id} (${err.msg()})')
 			continue
 		}
-		mut preparation_lock := filelock.new(lock_path)
+		mut preparation_lock := new_subagent_preparation_lock(lock_path) or {
+			eprintln('veasel: unable to open interrupted child workspace lock ${run_id} (${err.msg()})')
+			continue
+		}
 		if !preparation_lock.try_acquire() {
 			continue
 		}
@@ -389,9 +396,31 @@ fn subagent_preparation_lock_path(data_directory string, run_id string) !string 
 	if os.is_link(lock_directory) {
 		return error('child workspace preparation lock directory cannot be a symlink')
 	}
-	lock_path := os.join_path(lock_directory, '${run_id}.lock')
+	// Keep a bounded set of lock files permanently. os.filelock.new removes its
+	// sidecar on release, which can split waiters across old and newly created
+	// inodes. Sharding retains concurrency without that unlink race or one file
+	// per child run.
+	shard := subagent_preparation_lock_shard(run_id)
+	lock_path := os.join_path(lock_directory, '${shard}.lock')
 	if os.is_link(lock_path) {
 		return error('child workspace preparation lock cannot be a symlink')
 	}
 	return lock_path
+}
+
+fn subagent_preparation_lock_shard(run_id string) int {
+	// UUID text is hexadecimal. Use its first byte to spread runs over 256
+	// persistent lock inodes; collisions only serialize unrelated preparations.
+	return int(strconv.parse_int(run_id[0..2], 16, 0) or { 0 })
+}
+
+fn new_subagent_preparation_lock(path string) !filelock.FileLock {
+	// Create the inode once with private permissions. Lock it in place so release
+	// never unlinks an inode that another process may already have opened.
+	mut lock_file := os.open_file(path, 'a', 0o600)!
+	lock_file.close()
+	if os.is_link(path) {
+		return error('child workspace preparation lock cannot be a symlink')
+	}
+	return filelock.new_file(path, filelock.LockOptions{})
 }

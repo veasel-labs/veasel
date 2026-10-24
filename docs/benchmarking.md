@@ -160,8 +160,10 @@ they do not establish agent task success or provider token savings.
 
 One local Linux x86_64 run on Veasel's own checkout, pinned to V commit
 `ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`, scanned 476 files and rendered
-358 symbols. Across seven measured pairs after two warmups, the persistent
-cache reduced p50 from 795.1 ms to 727.2 ms (8.5%) and p95 from 799.5 ms to
-736.2 ms (7.9%), with identical ranked paths and rendered output. The cache
-recorded 512 hits over eight reuse builds. The timings are a single-host
-measurement, not a cross-platform claim.
+359 symbols. Across seven measured pairs after two warmups, the persistent
+cache reduced p50 from 792.2 ms to 721.1 ms (9.0%) and p95 from 806.3 ms to
+729.4 ms (9.5%), with identical ranked paths and rendered output. The cache
+recorded 480 hits over eight reuse builds. Cache admission refreshes stale
+entries when a new ranking arrives while retaining higher-ranked files within
+the current build. The timings are a single-host measurement, not a
+cross-platform claim.

@@ -50,17 +50,40 @@ fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 	defer { os.rmdir_all(root) or {} }
 	os.write_file(os.join_path(root, 'one.txt'), 'alpha\nneedle in one\n') or { panic(err) }
 	os.write_file(os.join_path(root, 'two.txt'), 'needle in two\n') or { panic(err) }
+	os.write_file(os.join_path(root, 'mixed.txt'), 'first\rneedle carriage\r\nneedle windows\nprefix needle unicode🙂\rneedle final') or {
+		panic(err)
+	}
 	os.write_file(os.join_path(root, 'binary.dat'), 'skip\x00needle') or { panic(err) }
 	os.write_file(os.join_path(root, 'invalid-utf8.dat'), '\xff') or { panic(err) }
 	result := workspace_search(root, 'needle') or { panic(err) }
-	assert result.matches.len == 2
+	assert result.matches.len == 6
 	assert result.matches[0] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 2
+		text: 'needle carriage'
+	}
+	assert result.matches[1] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 3
+		text: 'needle windows'
+	}
+	assert result.matches[2] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 4
+		text: 'prefix needle unicode🙂'
+	}
+	assert result.matches[3] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 5
+		text: 'needle final'
+	}
+	assert result.matches[4] == WorkspaceSearchMatch{
 		path: 'one.txt'
 		line: 2
 		text: 'needle in one'
 	}
-	assert result.matches[1].path == 'two.txt'
-	assert result.matches[1].line == 1
+	assert result.matches[5].path == 'two.txt'
+	assert result.matches[5].line == 1
 	assert !result.truncated
 	assert workspace_file_error_contains(root, 'binary.dat', 'binary files')
 	assert workspace_file_error_contains(root, 'invalid-utf8.dat', 'UTF-8')

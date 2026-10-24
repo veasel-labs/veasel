@@ -137,24 +137,62 @@ fn workspace_search(root string, query string) !WorkspaceSearchResult {
 			result.truncated = true
 			break
 		}
-		for line_number, line in content.split_into_lines() {
-			if line.contains(query) {
-				result.matches << WorkspaceSearchMatch{
-					path: relative_path
-					line: line_number + 1
-					text: workspace_excerpt(line, 2_000)
-				}
-				if result.matches.len >= max_workspace_search_results {
-					result.truncated = true
-					return result
-				}
-			}
+		if workspace_search_content(mut result, relative_path, content, query) {
+			return result
 		}
 	}
 	if walker.stopped {
 		result.truncated = true
 	}
 	return result
+}
+
+// workspace_search_content scans newline-delimited views without materializing
+// an allocated string for every line. Only matching excerpts are copied into
+// the result, keeping dense generated files within the existing scan budget.
+fn workspace_search_content(mut result WorkspaceSearchResult, path string, content string,
+	query string) bool {
+	mut line_start := 0
+	mut line_number := 1
+	mut index := 0
+	for index < content.len {
+		if content[index] in [`\r`, `\n`] {
+			line := unsafe { content.substr_unsafe(line_start, index) }
+			if workspace_search_record_match(mut result, path, line_number, line, query) {
+				return true
+			}
+			if content[index] == `\r` && index + 1 < content.len && content[index + 1] == `\n` {
+				index++
+			}
+			line_start = index + 1
+			line_number++
+		}
+		index++
+	}
+	if line_start < content.len {
+		line := unsafe { content.substr_unsafe(line_start, content.len) }
+		if workspace_search_record_match(mut result, path, line_number, line, query) {
+			return true
+		}
+	}
+	return false
+}
+
+fn workspace_search_record_match(mut result WorkspaceSearchResult, path string, line_number int,
+	line string, query string) bool {
+	if !line.contains(query) {
+		return false
+	}
+	result.matches << WorkspaceSearchMatch{
+		path: path
+		line: line_number
+		text: workspace_excerpt(line, 2_000)
+	}
+	if result.matches.len >= max_workspace_search_results {
+		result.truncated = true
+		return true
+	}
+	return false
 }
 
 fn workspace_excerpt(line string, max_bytes int) string {

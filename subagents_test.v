@@ -148,7 +148,8 @@ fn test_subagent_workspace_captures_parent_changes_without_modifying_checkout() 
 	workspace = create_subagent_workspace(repo, data, run_id) or { panic(err) }
 	assert workspace.path != os.real_path(repo)
 	assert workspace.branch == 'veasel/subagents/${run_id}'
-	assert os.read_file(os.join_path(workspace.path, 'README.md')) or { panic(err) } == 'staged and unstaged\n'
+	readme := os.read_file(os.join_path(workspace.path, 'README.md')) or { panic(err) }
+	assert readme.replace('\r\n', '\n') == 'staged and unstaged\n'
 	assert os.read_file(os.join_path(workspace.path, 'scratch', 'notes.v')) or { panic(err) } == 'untracked work\n'
 	assert !os.exists(os.join_path(workspace.path, '.env'))
 	status_after := run_workspace_git_command(repo, ['status', '--porcelain=v1', '--untracked-files=all']) or {

@@ -504,3 +504,17 @@ fn test_repository_map_symbol_cache_reuses_only_exact_file_content() {
 	assert updated[0].name == 'updated_agent_symbol'
 	assert repository_map_symbol_cache_hits(mut cache) == 1
 }
+
+fn test_repository_map_symbol_cache_keeps_earlier_ranked_files_when_full() {
+	mut cache := new_repository_map_symbol_cache()
+	first_path := 'src/first-ranked.v'
+	first_content := 'x'.repeat(repository_map_symbol_cache_max_bytes)
+	_ = repository_map_cached_symbols(mut cache, first_path, first_content)
+	_ = repository_map_cached_symbols(mut cache, 'src/lower-ranked.v', 'pub fn later_symbol() {}')
+	assert cache.entries.len == 1
+	assert cache.retained_bytes == repository_map_symbol_cache_max_bytes
+	_ = repository_map_cached_symbols(mut cache, first_path, first_content)
+	_ = repository_map_cached_symbols(mut cache, 'src/lower-ranked.v', 'pub fn later_symbol() {}')
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+	assert cache.entries.len == 1
+}

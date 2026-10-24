@@ -156,8 +156,6 @@ struct RepositoryMapSymbolCache {
 	mutex &sync.Mutex @[required]
 mut:
 	entries          map[string]RepositoryMapSymbolCacheEntry
-	eviction_order   []string
-	eviction_index   int
 	retained_bytes   int
 	retained_symbols int
 	hits             int
@@ -165,9 +163,8 @@ mut:
 
 fn new_repository_map_symbol_cache() &RepositoryMapSymbolCache {
 	return &RepositoryMapSymbolCache{
-		mutex:          sync.new_mutex()
-		entries:        map[string]RepositoryMapSymbolCacheEntry{}
-		eviction_order: []string{cap: repository_map_symbol_cache_max_entries}
+		mutex:   sync.new_mutex()
+		entries: map[string]RepositoryMapSymbolCacheEntry{}
 	}
 }
 
@@ -193,6 +190,11 @@ fn repository_map_cached_symbols(mut cache &RepositoryMapSymbolCache, path strin
 
 	mutex.lock()
 	if existing := cache.entries[path] {
+		if existing.content == content {
+			cached_symbols := existing.symbols
+			mutex.unlock()
+			return cached_symbols
+		}
 		next_bytes := cache.retained_bytes - existing.content.len + content.len
 		next_symbols := cache.retained_symbols - existing.symbols.len + symbols.len
 		if next_bytes <= repository_map_symbol_cache_max_bytes
@@ -206,45 +208,22 @@ fn repository_map_cached_symbols(mut cache &RepositoryMapSymbolCache, path strin
 			mutex.unlock()
 			return symbols
 		}
-		cache.entries.clear()
-		cache.eviction_order.clear()
-		cache.eviction_index = 0
-		cache.retained_bytes = 0
-		cache.retained_symbols = 0
+		cache.entries.delete(path)
+		cache.retained_bytes -= existing.content.len
+		cache.retained_symbols -= existing.symbols.len
+	}
+	// Entries arrive in repository-map ranking order. Keep the highest-ranked
+	// source files that fit instead of FIFO-evicting them for lower-ranked files
+	// at the tail of every full workspace scan.
+	if cache.retained_bytes + content.len <= repository_map_symbol_cache_max_bytes
+		&& cache.retained_symbols + symbols.len <= repository_map_symbol_cache_max_symbols
+		&& cache.entries.len < repository_map_symbol_cache_max_entries {
 		cache.entries[path] = RepositoryMapSymbolCacheEntry{
 			content: content
 			symbols: symbols
 		}
-		cache.eviction_order << path
-		cache.retained_bytes = content.len
-		cache.retained_symbols = symbols.len
-	} else {
-		for cache.retained_bytes + content.len > repository_map_symbol_cache_max_bytes
-			|| cache.retained_symbols + symbols.len > repository_map_symbol_cache_max_symbols
-			|| cache.entries.len >= repository_map_symbol_cache_max_entries {
-			if cache.eviction_index >= cache.eviction_order.len {
-				cache.eviction_order.clear()
-				cache.eviction_index = 0
-			}
-			oldest_path := cache.eviction_order[cache.eviction_index]
-			cache.eviction_index++
-			if oldest := cache.entries[oldest_path] {
-				cache.retained_bytes -= oldest.content.len
-				cache.retained_symbols -= oldest.symbols.len
-				cache.entries.delete(oldest_path)
-			}
-		}
-		cache.entries[path] = RepositoryMapSymbolCacheEntry{
-			content: content
-			symbols: symbols
-		}
-		cache.eviction_order << path
 		cache.retained_bytes += content.len
 		cache.retained_symbols += symbols.len
-	}
-	if cache.eviction_index > 128 && cache.eviction_index * 2 >= cache.eviction_order.len {
-		cache.eviction_order = cache.eviction_order[cache.eviction_index..].clone()
-		cache.eviction_index = 0
 	}
 	mutex.unlock()
 	return symbols

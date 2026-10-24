@@ -606,6 +606,39 @@ fn repository_map_symbol_part_match(name string, ident string) bool {
 
 fn repository_map_ident_parts(name string) []string {
 	mut parts := []string{}
+	mut start := -1
+	for offset, ch in name {
+		if ch >= 128 {
+			// Preserve the existing rune-aware fallback for non-ASCII names.
+			return repository_map_ident_parts_unicode(name)
+		}
+		if ch == `_` || ch == `-` {
+			if start >= 0 && offset - start >= 3 {
+				part := unsafe { name.substr_unsafe(start, offset) }
+				parts << part.to_lower_ascii()
+			}
+			start = -1
+			continue
+		}
+		if ch >= `A` && ch <= `Z` && start >= 0 {
+			if offset - start >= 3 {
+				part := unsafe { name.substr_unsafe(start, offset) }
+				parts << part.to_lower_ascii()
+			}
+			start = offset
+		} else if start < 0 {
+			start = offset
+		}
+	}
+	if start >= 0 && name.len - start >= 3 {
+		part := unsafe { name.substr_unsafe(start, name.len) }
+		parts << part.to_lower_ascii()
+	}
+	return parts
+}
+
+fn repository_map_ident_parts_unicode(name string) []string {
+	mut parts := []string{}
 	mut current := ''
 	for ch in name {
 		if ch == `_` || ch == `-` {

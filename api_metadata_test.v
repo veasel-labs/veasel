@@ -18,6 +18,17 @@ fn test_model_catalog_error_message_does_not_echo_untrusted_provider_errors() {
 	assert !message.contains('fixture-secret')
 }
 
+fn test_opencode_catalog_expired_key_guidance_survives_provider_error_mapping() {
+	for provider in ['opencode', 'opencode-go'] {
+		provider_error := provider_http_error_message(provider, 401,
+			'model catalog endpoint returned')
+		message := model_catalog_error_message(provider, provider_error)
+		assert message.contains('OpenCode Console')
+		assert message.contains('create a new key')
+		assert message.contains('renew it')
+	}
+}
+
 fn test_opencode_catalog_errors_guide_console_keys_and_go_setup() {
 	expired_key := model_catalog_error_message('opencode-go',
 		'model catalog endpoint returned HTTP 401')

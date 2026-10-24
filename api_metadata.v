@@ -160,6 +160,13 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 }
 
 fn model_catalog_error_message(provider string, provider_error string) string {
+	if provider == 'opencode-go' {
+		for status_code in [401, 403, 429] {
+			if provider_error == provider_http_error_message(provider, status_code, '') {
+				return provider_error
+			}
+		}
+	}
 	match provider_error {
 		'model catalog endpoint returned HTTP 401' {
 			if provider in ['opencode', 'opencode-go'] {

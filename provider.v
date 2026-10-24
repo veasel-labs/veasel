@@ -678,6 +678,9 @@ fn opencode_go_model_protocol(model string) string {
 }
 
 fn provider_http_error_message(provider string, status_code int, operation string) string {
+	if provider == 'opencode' && status_code == 401 && operation.len == 0 {
+		return 'OpenCode rejected the API key (HTTP 401). Check it in OpenCode Console; if it expired, create a new key because signing in again does not renew it.'
+	}
 	if provider == 'opencode-go' {
 		match status_code {
 			401 {

@@ -90,6 +90,15 @@ fn test_workspace_search_scans_mixed_line_endings_without_materializing_lines() 
 	assert bounded.matches.last().line == max_workspace_search_results
 }
 
+fn test_workspace_excerpt_trims_and_crops_once_at_utf8_boundaries() {
+	assert workspace_excerpt('\t  hello\r', 5) == 'hello'
+	assert workspace_excerpt('x'.repeat(4_096), 5) == 'xxxxx'
+	assert workspace_excerpt('aéx', 2) == 'a'
+	assert workspace_excerpt('éx', 2) == 'é'
+	assert workspace_excerpt(' \t\r', 4) == ''
+	assert workspace_excerpt('hello', 0) == ''
+}
+
 fn test_workspace_edit_is_diffed_confined_and_stale_safe() {
 	root := os.join_path(os.temp_dir(), 'veasel-workspace-edit-${uuid.new_v4().str()}')
 	external := os.join_path(os.temp_dir(), 'veasel-workspace-edit-external-${uuid.new_v4().str()}')

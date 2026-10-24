@@ -205,15 +205,37 @@ fn workspace_search_line_contains(content string, query string, start int, end i
 }
 
 fn workspace_excerpt(line string, max_bytes int) string {
-	trimmed := line.trim_space()
-	if trimmed.len <= max_bytes {
-		return trimmed
+	if max_bytes <= 0 {
+		return ''
 	}
-	mut end := max_bytes
-	for end > 0 && end < trimmed.len && (trimmed[end] & 0xc0) == 0x80 {
+	mut start := 0
+	mut end := line.len
+	for start < end && workspace_excerpt_trim_byte(line[start]) {
+		start++
+	}
+	for end > start && workspace_excerpt_trim_byte(line[end - 1]) {
 		end--
 	}
-	return trimmed[..end]
+	if start == end {
+		return ''
+	}
+	if end - start <= max_bytes {
+		return line[start..end]
+	}
+	excerpt_end := utf8_safe_prefix_end(line, start, start + max_bytes)
+	return line[start..excerpt_end]
+}
+
+fn workspace_excerpt_trim_byte(byte u8) bool {
+	return ' \n\t\v\f\r'.contains_u8(byte)
+}
+
+fn utf8_safe_prefix_end(content string, start int, end int) int {
+	mut safe_end := end
+	for safe_end > start && safe_end < content.len && (content[safe_end] & 0xc0) == 0x80 {
+		safe_end--
+	}
+	return safe_end
 }
 
 fn resolve_workspace_file_path(root string, relative_path string) !string {

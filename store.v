@@ -664,10 +664,36 @@ fn open_store(path string) !&Store {
 			return error('unable to commit global operation history migration')
 		}
 	}
+	if current < 18 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child agent run migration')
+		}
+		db.exec("CREATE TABLE subagent_runs (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, parent_operation_id TEXT NOT NULL, child_session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE, agent_id TEXT NOT NULL, requested_title TEXT NOT NULL, requested_directory TEXT NOT NULL, depth INTEGER NOT NULL CHECK (depth BETWEEN 1 AND 2), status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'uncertain')), result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', outcome_claimed INTEGER NOT NULL DEFAULT 0 CHECK (outcome_claimed IN (0, 1)), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (parent_session_id, parent_operation_id, request_id))") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create child agent run ledger')
+		}
+		db.exec('CREATE INDEX subagent_runs_parent_status ON subagent_runs (parent_session_id, status, created_at)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index child agent runs')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (18)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child agent run migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child agent run migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
-	// replayed. Queued jobs never claimed a worker; their request_json is kept
-	// for honest resume after restart.
+	// replayed. Queued parent turns retain their request for resume; child runs
+	// are not replayed independently because their parent owns their lifecycle.
 	db.begin() or {
 		db.close() or {}
 		return error('unable to begin session operation recovery')
@@ -676,6 +702,11 @@ fn open_store(path string) !&Store {
 		db.rollback() or {}
 		db.close() or {}
 		return error('unable to inspect interrupted session operations')
+	}
+	_ = db.exec("UPDATE subagent_runs SET status = 'uncertain', error = 'The server stopped before this child run reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE status = 'running'") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to classify interrupted child agent run')
 	}
 	for row in interrupted_operations {
 		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {
@@ -696,6 +727,11 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to record interrupted session operation')
 		}
+	}
+	_ = db.exec("UPDATE subagent_runs SET status = 'cancelled', error = 'The server restarted before this queued child run started.', updated_at = CURRENT_TIMESTAMP WHERE status = 'queued'") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to cancel queued child agent run')
 	}
 	db.commit() or {
 		db.rollback() or {}
@@ -1768,8 +1804,20 @@ fn (mut store Store) finish_queued_session_operation(session_id string, operatio
 		return 'cancelled'
 	}
 	if status == 'running' {
+		store.db.begin()!
 		store.db.exec_param_many("UPDATE session_operations SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'",
-			[session_id, operation_id])!
+			[session_id, operation_id]) or {
+			store.db.rollback() or {}
+			return error('unable to cancel session operation')
+		}
+		store.cancel_queued_subagent_runs_unlocked(session_id, operation_id, 'Parent operation cancellation was requested.') or {
+			store.db.rollback() or {}
+			return err
+		}
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit session operation cancellation')
+		}
 	}
 	updated := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
@@ -2269,6 +2317,10 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
+		store.cancel_queued_subagent_runs_unlocked(session_id, operation_id, 'Parent operation completed before this child run started.') or {
+			store.db.rollback() or {}
+			return err
+		}
 		completion := if usage.reported {
 			EventData{
 				operation_id:          operation_id
@@ -2396,6 +2448,10 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session operation failure')
+	}
+	store.cancel_queued_subagent_runs_unlocked(session_id, operation_id, 'Parent operation ended before this child run started.') or {
+		store.db.rollback() or {}
+		return err
 	}
 	store.db.commit() or {
 		store.db.rollback() or {}

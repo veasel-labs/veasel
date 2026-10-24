@@ -359,7 +359,8 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 		panic(err)
 	}
 	child := store.get_session(run.child_session_id) or { panic(err) }
-	assert child.directory == os.join_path(root, 'subagent-worktrees', run.id)
+	expected_child_directory := os.join_path(root, 'subagent-worktrees', run.id)
+	assert os.real_path(child.directory) == os.real_path(expected_child_directory)
 	store.active_subagent_preparations[run.id] = true
 	store.cleanup_unstarted_subagent_workspaces()
 	path := os.join_path(root, 'subagent-worktrees', run.id)

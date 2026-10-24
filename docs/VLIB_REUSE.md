@@ -7,7 +7,7 @@ supported V compiler's `vlib/`. Prefer its maintained modules when they cover
 the need. A gap or a required product-specific policy is a valid reason for
 Veasel code or a third-party adapter; importing unrelated libraries is not.
 This map was verified against V
-`407c52edddca9715fb57e6571afeef0d193f2465`, the revision pinned in
+`ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`, the revision pinned in
 `.v-version` and built by the current CI. Recheck the APIs during compiler
 upgrades.
 
@@ -24,6 +24,7 @@ It does not mean importing modules unrelated to a coding agent.
 | JSON | `vlib/json2/` | Use typed `decode[T]` and `encode[T]`; do not use obsolete `encoding.json` imports. |
 | YAML | `vlib/yaml/` | Use the pinned parser for Agent Skills `SKILL.md` frontmatter after isolating the frontmatter block; preserve the Markdown body without normalizing instructions. |
 | Unicode text | `vlib/encoding/utf8/` | Use Unicode letter/number classification when validating Agent Skills names; count names by runes, not UTF-8 bytes. |
+| String normalization | `vlib/builtin/string.v` (`to_lower`, `split`) | `string.to_lower()` allocates an output string; normalize a candidate path once and reuse its lowercase form and segments across repository-map hints. |
 | SQLite | `vlib/db/sqlite/sqlite.c.v`, `orm.v` | Use prepared parameters, WAL, busy timeout, transactions and schema introspection. Migration versions/SQL remain small product-owned code because `vlib` has no general migration runner. |
 | IDs / randomness | `vlib/uuid/`, `vlib/crypto/rand/` | Use UUID v4/v7 and cryptographic random bytes where appropriate; do not substitute timestamps or `math/rand` for security-sensitive values. |
 | Synchronization | `vlib/sync/` | Use mutexes, channels, wait groups and timers for shared state and workers; define ownership, shutdown and cancellation at the application layer. |

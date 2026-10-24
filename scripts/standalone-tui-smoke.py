@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import platform
 import re
 import socket
+import statistics
 import subprocess
 import tempfile
 import time
@@ -38,11 +41,11 @@ def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
     raise TimeoutError("Veasel backend did not become healthy within 15 seconds")
 
 
-def run_tui(tui_path: Path, env: dict[str, str]) -> None:
+def run_tui(tui_path: Path, env: dict[str, str]) -> float:
     if os.name == "nt":
-        run_tui_conpty(tui_path, env)
-        return
+        return run_tui_conpty(tui_path, env)
 
+    started = time.monotonic()
     child, terminal = pty.fork()
     if child == 0:
         os.execve(tui_path, [str(tui_path)], env)
@@ -76,6 +79,7 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
 
     try:
         wait_for_markers((b"connected", b"SESSIONS", b"VEASEL"), 10, "its connected session screen")
+        startup_ms = (time.monotonic() - started) * 1000
 
         os.write(terminal, b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
@@ -121,7 +125,7 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> None:
         if status is not None:
             if os.waitstatus_to_exitcode(status) != 0:
                 raise RuntimeError(f"standalone TUI exited unsuccessfully (status={status})")
-            return
+            return startup_ms
         snippet = visible_output()[-2_500:].decode(errors="replace")
         raise TimeoutError(f"standalone TUI did not exit after the quit key: {snippet}")
     finally:
@@ -163,7 +167,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", required=True, type=Path)
     parser.add_argument("--tui", required=True, type=Path)
+    parser.add_argument("--startup-samples", type=int, default=1)
+    parser.add_argument("--metrics-output", type=Path)
     args = parser.parse_args()
+    if not 1 <= args.startup_samples <= 10:
+        parser.error("--startup-samples must be between 1 and 10")
     server_path = args.server.resolve(strict=True)
     tui_path = args.tui.resolve(strict=True)
 
@@ -193,7 +201,7 @@ def main() -> None:
         )
         try:
             wait_for_server(server, port)
-            run_tui(tui_path, env)
+            samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
         finally:
             if server.poll() is None:
                 if os.name == "nt":
@@ -206,6 +214,31 @@ def main() -> None:
                     server.kill()
                     server.wait(timeout=5)
 
+    ordered = sorted(samples_ms)
+    metrics = {
+        "schema": "veasel.tui-startup.v1",
+        "measuredAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "commit": os.environ.get("GITHUB_SHA"),
+        "host": {
+            "os": platform.system(),
+            "release": platform.release(),
+            "architecture": platform.machine(),
+        },
+        "binaries": {"server": str(server_path), "tui": str(tui_path)},
+        "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+        "startupMs": {
+            "samples": samples_ms,
+            "count": len(samples_ms),
+            "min": min(ordered),
+            "median": statistics.median(ordered),
+            "max": max(ordered),
+        },
+        "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee.",
+    }
+    if args.metrics_output:
+        args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
+        args.metrics_output.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(metrics, indent=2))
     print("Standalone TUI connected to an isolated Veasel backend and exited cleanly.")
 
 

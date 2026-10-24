@@ -621,10 +621,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Validate the packaged interactive TUI smoke on Linux, macOS, and Windows.
   The exact-head Windows ConPTY result and journey are recorded in
   [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
-- [ ] Establish measured TUI performance baselines beyond the existing Linux
-  workstation CLI/PTY baseline, and broaden interactive coverage to approvals,
-  streaming, MCP OAuth browser open, and long diffs. macOS/Windows timing
-  baselines remain open.
+- [ ] Establish stable measured TUI performance baselines beyond the existing
+  Linux workstation CLI/PTY baseline, and broaden interactive coverage to
+  approvals, streaming, MCP OAuth browser open, and long diffs. CI now retains
+  three launch-to-connected-home samples per Linux/macOS/Windows run for
+  platform trend visibility; hosted-runner timing is not yet a stable hardware-
+  controlled baseline or a performance gate.
 
 ## Initial compatibility target
 

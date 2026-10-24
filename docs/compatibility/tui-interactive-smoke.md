@@ -20,11 +20,17 @@ screen, and exercise a short settings path.
 | Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py`; passed on exact head `8dbd00d1` |
 
 The same journey runs through Unix PTY on Linux/macOS and native ConPTY on
-Windows. All three packaged-client smoke paths passed in [CI run
+Windows. Each CI run repeats the complete journey three times and retains a
+JSON startup report as the `tui-startup-<platform>` artifact. The metric starts
+when the packaged TUI process is launched and stops when the connected home
+markers are emitted; the backend is already healthy. These short hosted-runner
+samples are for platform coverage and trend tracking, not a performance gate
+or a stable cross-machine comparison. All three packaged-client smoke paths
+passed in [CI run
 39912654775](https://github.com/veasel-labs/veasel/actions/runs/39912654775)
 for commit `8dbd00d1bb74f08ebc227dac2b07d7026a1e24da`. This verifies the smoke
-journey on the pinned CI runners; measured startup/render baselines and broader
-interactive journeys remain separate work.
+journey on the pinned CI runners. This work adds per-run launch-to-home
+measurements; render FPS and broader interactive journeys remain separate work.
 
 ## Windows acceptance covered by CI
 
@@ -42,7 +48,7 @@ The Python driver uses `CreatePseudoConsole`, Win32 pipes, and
 `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`; WSL/Git Bash are not used as a proxy for
 ConPTY. Record CI failures with the visible terminal tail emitted by the smoke.
 
-## Measured Linux TUI baselines (this host only)
+## Historical Linux TUI baselines (this host only)
 
 Harness: [`benchmarks/tui-startup.mjs`](../../benchmarks/tui-startup.mjs)  
 Report: [`benchmarks/reports/tui-startup-linux-x64-2026-10-15.json`](../../benchmarks/reports/tui-startup-linux-x64-2026-10-15.json)  

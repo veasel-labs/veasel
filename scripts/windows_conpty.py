@@ -154,8 +154,9 @@ def _winerror(operation: str) -> OSError:
     return ctypes.WinError(ctypes.get_last_error(), operation)
 
 
-def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
+def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> float:
     """Run a packaged TUI in a real Windows pseudoconsole and exercise keys."""
+    started = time.monotonic()
     input_read = wintypes.HANDLE()
     input_write = wintypes.HANDLE()
     output_read = wintypes.HANDLE()
@@ -308,6 +309,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         close(output_write)
 
         wait_for_markers((b"connected", b"SESSIONS", b"VEASEL"), 30, "its connected session screen")
+        startup_ms = (time.monotonic() - started) * 1000
         send_keys(b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
         for _ in range(5):
@@ -331,6 +333,7 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> None:
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) or exit_code.value != 0:
             raise RuntimeError(f"standalone TUI exited unsuccessfully (status={exit_code.value})")
+        return startup_ms
     finally:
         if process_created and kernel32.WaitForSingleObject(process.hProcess, 0) == 0x102:
             kernel32.TerminateProcess(process.hProcess, 1)

@@ -595,8 +595,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   only while its parent operation is still running. Workers cannot claim
   unready rows. A durable start marker lets startup remove cancelled/failed
   worktrees only when the child never began; workspaces that may have executed
-  remain preserved. Authorizing parent callers beyond the built-in allowlist,
-  deadlines, cancellation execution, atomic delivery with the parent result,
+  remain preserved. OS-level preparation locks distinguish a crashed preparer
+  from one still creating the workspace, including across store instances.
+  Authorizing parent callers beyond the built-in allowlist, deadlines,
+  cancellation execution, atomic delivery with the parent result,
   API/TUI integration, and task-level benchmark evidence remain required before
   a model-callable tool is exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list

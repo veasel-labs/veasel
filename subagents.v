@@ -2,6 +2,7 @@ module main
 
 import uuid
 import os
+import os.filelock
 
 const max_subagent_depth = 2
 const max_active_subagent_runs_per_parent = 4
@@ -115,6 +116,19 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 		return error('child agent concurrency limit reached')
 	}
 	run_id := uuid.new_v4().str()
+	preparation_lock_path := subagent_preparation_lock_path(os.dir(os.real_path(store.path)),
+		run_id) or {
+		store.db.rollback() or {}
+		return err
+	}
+	mut preparation_lock := filelock.new(preparation_lock_path)
+	preparation_lock.acquire() or {
+		store.db.rollback() or {}
+		return error('unable to lock child workspace preparation')
+	}
+	defer {
+		preparation_lock.release()
+	}
 	child_session_id := uuid.new_v4().str()
 	child_directory := os.join_path(os.dir(os.real_path(store.path)), 'subagent-worktrees', run_id)
 	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)', [
@@ -348,12 +362,36 @@ fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
 	store.mu.unlock()
 	data_directory := os.dir(os.real_path(store.path))
 	for i, run_id in run_ids {
-		path := os.join_path(data_directory, 'subagent-worktrees', run_id)
-		if !os.exists(path) {
+		lock_path := subagent_preparation_lock_path(data_directory, run_id) or {
+			eprintln('veasel: unable to lock interrupted child workspace ${run_id} (${err.msg()})')
 			continue
 		}
-		remove_subagent_workspace(directories[i], data_directory, run_id, true) or {
-			eprintln('veasel: unable to remove interrupted child workspace ${run_id} (${err.msg()})')
+		mut preparation_lock := filelock.new(lock_path)
+		if !preparation_lock.try_acquire() {
+			continue
 		}
+		path := os.join_path(data_directory, 'subagent-worktrees', run_id)
+		if os.exists(path) {
+			remove_subagent_workspace(directories[i], data_directory, run_id, true) or {
+				eprintln('veasel: unable to remove interrupted child workspace ${run_id} (${err.msg()})')
+			}
+		}
+		preparation_lock.release()
 	}
+}
+
+fn subagent_preparation_lock_path(data_directory string, run_id string) !string {
+	if !valid_subagent_run_id(run_id) {
+		return error('child agent run ID is invalid')
+	}
+	lock_directory := os.join_path(data_directory, 'subagent-preparations')
+	os.mkdir_all(lock_directory)!
+	if os.is_link(lock_directory) {
+		return error('child workspace preparation lock directory cannot be a symlink')
+	}
+	lock_path := os.join_path(lock_directory, '${run_id}.lock')
+	if os.is_link(lock_path) {
+		return error('child workspace preparation lock cannot be a symlink')
+	}
+	return lock_path
 }

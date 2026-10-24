@@ -1,6 +1,7 @@
 module main
 
 import os
+import os.filelock
 import uuid
 import crypto.sha256
 import strings
@@ -249,11 +250,13 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or {
 		panic(err)
 	}
-	store.active_subagent_preparations[run.id] = true
+	lock_path := subagent_preparation_lock_path(root, run.id) or { panic(err) }
+	mut preparation_lock := filelock.new(lock_path)
+	preparation_lock.acquire() or { panic(err) }
 	store.cleanup_unstarted_subagent_workspaces()
 	path := os.join_path(root, 'subagent-worktrees', run.id)
 	assert os.is_dir(path)
-	store.active_subagent_preparations.delete(run.id)
+	preparation_lock.release()
 	store.cleanup_unstarted_subagent_workspaces()
 	assert !os.exists(path)
 }

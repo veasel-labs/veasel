@@ -244,13 +244,14 @@ def main() -> None:
             OPENAI_API_KEY="veasel-openai-key",
             TERM="xterm-256color",
         )
-        server = subprocess.Popen(
-            [str(server_path), "serve"],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        server: subprocess.Popen[bytes] | None = None
         try:
+            server = subprocess.Popen(
+                [str(server_path), "serve"],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             wait_for_server(server, port)
             session_title = "TUI round-trip smoke"
             request = Request(
@@ -269,7 +270,7 @@ def main() -> None:
             if ("user", "Say hello") not in persisted or ("assistant", "Provider fixture reply") not in persisted:
                 raise RuntimeError(f"TUI conversation was not persisted correctly: {messages!r}")
         finally:
-            if server.poll() is None:
+            if server is not None and server.poll() is None:
                 if os.name == "nt":
                     server.terminate()
                 else:

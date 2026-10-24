@@ -406,27 +406,61 @@ fn repository_map_path_is_source(path string) bool {
 fn extract_repository_map_symbols(content string) []RepositoryMapSymbol {
 	mut symbols := []RepositoryMapSymbol{cap: 16}
 	mut seen := map[string]bool{}
-	for raw_line in content.split_into_lines() {
-		line := raw_line.trim_space()
-		if line.len == 0 || line.starts_with('//') || line.starts_with('#')
-			|| line.starts_with('*') || line.starts_with('/*') || line.starts_with('@') {
-			continue
+	mut line_start := 0
+	mut index := 0
+	for index < content.len {
+		if content[index] in [`\r`, `\n`] {
+			repository_map_record_symbol(mut symbols, mut seen,
+				unsafe { content.substr_unsafe(line_start, index) })
+			if symbols.len >= repository_map_max_symbols_per_file {
+				return symbols
+			}
+			if content[index] == `\r` && index + 1 < content.len && content[index + 1] == `\n` {
+				index++
+			}
+			line_start = index + 1
 		}
-		kind, name := repository_map_symbol_from_line(line) or { continue }
-		key := '${kind}:${name}'
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		symbols << RepositoryMapSymbol{
-			name: name
-			kind: kind
-		}
-		if symbols.len >= repository_map_max_symbols_per_file {
-			break
-		}
+		index++
+	}
+	if line_start < content.len {
+		repository_map_record_symbol(mut symbols, mut seen,
+			unsafe { content.substr_unsafe(line_start, content.len) })
 	}
 	return symbols
+}
+
+fn repository_map_record_symbol(mut symbols []RepositoryMapSymbol, mut seen map[string]bool,
+	raw_line string) {
+	line := repository_map_trim_space_view(raw_line)
+	if line.len == 0 || line.starts_with('//') || line.starts_with('#') || line.starts_with('*')
+		|| line.starts_with('/*') || line.starts_with('@') {
+		return
+	}
+	kind, name := repository_map_symbol_from_line(line) or { return }
+	key := '${kind}:${name}'
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+	symbols << RepositoryMapSymbol{
+		name: name
+		kind: kind
+	}
+}
+
+// The view remains backed by the source buffer and avoids cloning every line
+// during repository-map extraction. Symbol names stored in the result are
+// copied by take_repository_map_ident before this buffer goes out of scope.
+fn repository_map_trim_space_view(value string) string {
+	mut start := 0
+	mut end := value.len
+	for start < end && value[start] in [` `, `\t`, `\v`, `\f`, `\r`, `\n`] {
+		start++
+	}
+	for end > start && value[end - 1] in [` `, `\t`, `\v`, `\f`, `\r`, `\n`] {
+		end--
+	}
+	return unsafe { value.substr_unsafe(start, end) }
 }
 
 fn repository_map_symbol_from_line(line string) ?(string, string) {

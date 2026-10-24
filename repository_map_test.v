@@ -116,7 +116,7 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 }
 
 fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
-	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\nsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}\n'
+	content := 'package store\r\n\rfunc (s *Store) LoadSession(id string) {}\r\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\r\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\rsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}'
 	symbols := extract_repository_map_symbols(content)
 	mut names := []string{}
 	mut kinds := []string{}

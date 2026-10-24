@@ -86,6 +86,20 @@ export type GlobalUsageSummary = {
   cache_creation_tokens?: number
   cache_reported?: boolean
   cost: string
+  models?: Array<{
+    provider: string
+    model: string
+    completed_turns: number
+    reported_turns: number
+    input_tokens: number
+    output_tokens: number
+    cache_read_tokens: number
+    cache_creation_tokens: number
+    cache_reported: boolean
+    reasoning_tokens: number
+    reasoning_reported: boolean
+    cost: string
+  }>
 }
 
 export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
@@ -118,6 +132,22 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
         : summary.cost
     }`,
   )
+  if (summary.models && summary.models.length > 0) {
+    lines.push("By provider and model:")
+    for (const model of summary.models) {
+      const name = `${model.provider} / ${model.model}`
+      const usage = model.reported_turns > 0
+        ? `${formatReportedUsage(model.input_tokens, model.output_tokens)} · ${model.reported_turns} reported turns`
+        : `${model.completed_turns} completed turns · usage unavailable`
+      lines.push(`- ${name}: ${usage} · cost ${model.cost}`)
+      if (model.cache_reported) {
+        lines.push(`  Cache: ${formatReportedCacheUsage(model.cache_read_tokens, model.cache_creation_tokens)}`)
+      }
+      if (model.reasoning_reported) {
+        lines.push(`  Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens`)
+      }
+    }
+  }
   return lines.join("\n")
 }
 

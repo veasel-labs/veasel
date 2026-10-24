@@ -55,6 +55,7 @@ import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
+import { openUsageDashboardDialog } from "./component/usage-dashboard-dialog"
 import type { ApiGlobalSessionOperation } from "../api-client"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
 import {
@@ -1430,6 +1431,10 @@ function LiveAppShell(props: LiveAppProps) {
       case "status":
         dismissHomeComposer()
         void openLiveStatus()
+        return
+      case "usage":
+        dismissHomeComposer()
+        openUsageDashboardDialog(dialog, props.api)
         return
       case "reviews":
         dismissHomeComposer()

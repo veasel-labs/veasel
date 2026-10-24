@@ -577,6 +577,44 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   workspace; support cancellation; and deliver terminal outcomes once across
   restart. Do not expose a model-callable subagent tool until those lifecycle
   guarantees have focused tests and task-level benchmark evidence.
+  The first storage increment adds an idempotent parent-operation/request key,
+  atomic child-session ownership, a two-level nesting ceiling, four concurrent
+  runs and a 32-run persistence ceiling per parent, a 64 KiB terminal result
+  cap, and durable terminal outcome delivery. Claiming an outcome and recording
+  its parent-session event commit together; retrying after restart returns the
+  same terminal result rather than losing it behind a one-shot claim. The
+  startup recovery transaction also emits one parent-session event for each
+  durable terminal outcome that remains unclaimed, including children
+  classified as `uncertain`; event persistence and the recovered claim commit
+  together. A partial covering SQLite index limits this recovery lookup to
+  terminal runs whose outcomes remain unclaimed instead of scanning the full
+  child-run history at every startup.
+  The event contains only the child run ID and terminal status marked untrusted;
+  the bounded durable run row remains the source of the result text.
+  Replaying the parent turn from these events and fetching the result into model
+  context remain separate work.
+  The storage boundary accepts only the built-in `reviewer` and `explorer` profile
+  IDs; both grant read-only
+  workspace list/read/search tools. Interrupted running children become
+  `uncertain` on restart and are never replayed. This is persistence groundwork
+  only. Parent stop now cancels queued children and persists a
+  cancellation request for running children so a future worker can observe it;
+  a late child result is discarded if that request was committed first. This
+  storage-level signal does not itself terminate a provider request or process.
+  `subagent_worktree.v` now prepares a separate branch/worktree from staged and
+  unstaged tracked changes plus bounded, non-ignored untracked regular files;
+  ignored files are excluded, untracked symlinks are rejected, and the parent
+  checkout stays unchanged. Child-run creation now reserves an unready row,
+  prepares the worktree without holding the SQLite mutex, and marks it ready
+  only while its parent operation is still running. Workers cannot claim
+  unready rows. A durable start marker lets startup remove cancelled/failed
+  worktrees only when the child never began; workspaces that may have executed
+  remain preserved. OS-level preparation locks distinguish a crashed preparer
+  from one still creating the workspace, including across store instances.
+  Authorizing parent callers beyond the built-in allowlist, deadlines,
+  cancellation execution, parent turn replay, API/TUI integration, and
+  task-level benchmark evidence remain required before a model-callable tool is
+  exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

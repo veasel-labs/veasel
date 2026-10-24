@@ -76,8 +76,9 @@ fn (app &App) execute_subagent_run(mut turn_ctx vcontext.Context, root string, p
 	mut store := app.store
 	depth := store.subagent_depth_for_session(parent_session_id)! + 1
 	title := subagent_title(profile, task)
-	run := store.create_subagent_run(parent_session_id, parent_operation_id, call.id, agent_id,
-		depth, title, root)!
+	initial_cancel_reason := turn_context_error(mut turn_ctx) or { '' }
+	run := store.create_subagent_run_with_cancel_reason(parent_session_id, parent_operation_id, call.id, agent_id,
+		depth, title, root, initial_cancel_reason)!
 	if context_error := turn_context_error(mut turn_ctx) {
 		cancelled := store.cancel_queued_subagent_run(run.id, context_error)!
 		claimed := store.claim_subagent_outcome(cancelled.id)!

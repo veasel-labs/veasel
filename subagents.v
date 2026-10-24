@@ -35,6 +35,13 @@ pub:
 // callers or expose model tools.
 fn (mut store Store) create_subagent_run(parent_session_id string, parent_operation_id string,
 	request_id string, agent_id string, depth int, title string, directory string) !SubagentRun {
+	return store.create_subagent_run_with_cancel_reason(parent_session_id, parent_operation_id,
+		request_id, agent_id, depth, title, directory, '')
+}
+
+fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id string, parent_operation_id string,
+	request_id string, agent_id string, depth int, title string, directory string,
+	initial_cancel_reason string) !SubagentRun {
 	if request_id.len == 0 || request_id.len > 128 || request_id.contains('\0') || agent_id.len == 0
 		|| agent_id.len > 128 || agent_id.contains('\0') || parent_operation_id.len == 0
 		|| parent_operation_id.len > 128 {
@@ -158,6 +165,13 @@ fn (mut store Store) create_subagent_run(parent_session_id string, parent_operat
 	store.db.commit() or {
 		store.db.rollback() or {}
 		return error('unable to commit child agent run')
+	}
+	if initial_cancel_reason.len > 0 {
+		_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
+			[initial_cancel_reason.limit(max_subagent_error_bytes), run_id]) or {
+			return error('unable to record pre-start child agent cancellation')
+		}
+		return store.get_subagent_run_unlocked(run_id)
 	}
 	// Keep in-process cleanup from mistaking a live workspace preparation for
 	// an interrupted one after the parent turn is cancelled or completed.

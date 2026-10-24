@@ -289,12 +289,13 @@ fn test_model_callable_subagent_persists_parent_cancellation() {
 	assert tool_result.status == 'cancelled'
 	assert tool_result.error == 'The parent operation cancelled this investigation.'
 	assert fixture.hits == 0
-	child_rows := store.db.exec_param_many('SELECT id, child_session_id, status, outcome_claimed, workspace_started FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ?',
+	child_rows := store.db.exec_param_many('SELECT id, child_session_id, status, outcome_claimed, workspace_started, workspace_ready FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ?',
 		[parent.id, operation_id]) or { panic(err) }
 	assert child_rows.len == 1
 	assert child_rows[0].val(2) == 'cancelled'
 	assert child_rows[0].val(3).int() == 1
 	assert child_rows[0].val(4).int() == 0
+	assert child_rows[0].val(5).int() == 0
 	child_workspace := os.join_path(root, 'data', 'subagent-worktrees', child_rows[0].val(0))
 	assert !os.exists(child_workspace)
 	child_operation := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ?',

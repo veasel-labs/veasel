@@ -82,6 +82,7 @@ test("LiveApp /usage browses durable provider/model data and preserves reported-
     expect(details).toContain("Cache: 1.2k read · 100 written · reported on 2")
     expect(details).toContain("turns")
     expect(details).toContain("Reasoning: 42 tokens · reported on 2 turns")
+    expect(details).toContain("Estimated cost (pinned schedule): $0.12")
   } finally {
     setup.renderer.destroy()
     controller.abort()

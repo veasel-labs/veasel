@@ -128,7 +128,7 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
     lines.push("Prompt cache: unavailable (provider omitted cache fields)")
   }
   lines.push(
-    `Cost: ${
+    `Estimated cost (pinned rates): ${
       summary.cost === "unavailable"
         ? "unavailable (no matching pinned schedule rates)"
         : summary.cost
@@ -141,7 +141,7 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
       const usage = model.reported_turns > 0
         ? `${formatReportedUsage(model.input_tokens, model.output_tokens)} · ${model.reported_turns} reported turns`
         : `${model.completed_turns} completed turns · usage unavailable`
-      lines.push(`- ${name}: ${usage} · cost ${model.cost}`)
+      lines.push(`- ${name}: ${usage} · estimated cost ${model.cost}`)
       if (model.cache_reported) {
         lines.push(`  Cache: ${formatReportedCacheUsage(model.cache_read_tokens, model.cache_creation_tokens)} · reported on ${model.cache_reported_turns} turns`)
       }

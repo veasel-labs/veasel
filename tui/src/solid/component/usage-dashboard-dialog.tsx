@@ -13,7 +13,7 @@ function modelDetails(model: ApiGlobalUsageModelSummary): string {
     `Provider-reported tokens: ${formatTokenCount(model.input_tokens)} input · ${formatTokenCount(model.output_tokens)} output`,
     ...(model.cache_reported ? [`Cache: ${formatTokenCount(model.cache_read_tokens)} read · ${formatTokenCount(model.cache_creation_tokens)} written · reported on ${model.cache_reported_turns} turns`] : []),
     ...(model.reasoning_reported ? [`Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens · reported on ${model.reasoning_reported_turns} turns`] : []),
-    `Cost: ${model.cost}`,
+    `Estimated cost (pinned schedule): ${model.cost}`,
   ]
   return lines.join("\n")
 }
@@ -52,7 +52,7 @@ function UsageDashboardDialog(props: { api: VeaselApiClient }) {
     title="Usage by model"
     options={options()}
     placeholder="Filter provider or model…"
-    footer={loading() ? "Loading durable usage…" : error() ?? `All sessions · ${summary()?.sessions ?? 0} · ${summary()?.completed_turns ?? 0} completed turns · provider-reported totals only`}
+    footer={loading() ? "Loading durable usage…" : error() ?? `All sessions · ${summary()?.sessions ?? 0} · ${summary()?.completed_turns ?? 0} completed turns · provider-reported usage · estimated costs use pinned rates`}
     dismissOnSelect={false}
     onSelect={(option) => {
       const model = summary()?.models.find((item) => `${item.provider}\0${item.model}` === option.value)

@@ -166,13 +166,20 @@ fn provider_usage_amount(value ?json2.Any) ?f64 {
 	return amount
 }
 
+fn provider_usage_amount_from_map(values map[string]json2.Any, key string) ?f64 {
+	if value := values[key] {
+		return provider_usage_amount(value)
+	}
+	return none
+}
+
 fn provider_opencode_allowance(opencode ?json2.Any) ?f64 {
 	metadata := opencode or { return none }
 	if metadata !is map[string]json2.Any {
 		return none
 	}
 	fields := metadata as map[string]json2.Any
-	return provider_usage_amount(fields['allowance'])
+	return provider_usage_amount_from_map(fields, 'allowance')
 }
 
 fn provider_opencode_allowance_from_map(usage map[string]json2.Any) ?f64 {
@@ -332,7 +339,7 @@ fn provider_usage_from_anthropic_map(usage map[string]json2.Any) ProviderUsage {
 		cache_creation = json_any_nonneg_i64(v)
 		cache_reported = true
 	}
-	reported_cost_usd := provider_usage_amount(usage['cost'])
+	reported_cost_usd := provider_usage_amount_from_map(usage, 'cost')
 	allowance_usd := provider_opencode_allowance_from_map(usage)
 	return ProviderUsage{
 		input_tokens:          input_tokens

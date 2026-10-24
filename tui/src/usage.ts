@@ -128,7 +128,7 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
     lines.push("Prompt cache: unavailable (provider omitted cache fields)")
   }
   lines.push(
-    `Estimated cost (pinned rates): ${
+    `Estimated cost for reported usage (pinned rates): ${
       summary.cost === "unavailable"
         ? "unavailable (no matching pinned schedule rates)"
         : summary.cost

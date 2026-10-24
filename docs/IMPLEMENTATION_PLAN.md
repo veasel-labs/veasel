@@ -580,8 +580,11 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   The first storage increment adds an idempotent parent-operation/request key,
   atomic child-session ownership, a two-level nesting ceiling, four concurrent
   runs and a 32-run persistence ceiling per parent, a 64 KiB terminal result
-  cap, and at-most-once terminal outcome claiming. The storage boundary accepts
-  only the built-in `reviewer` and `explorer` profile IDs; both grant read-only
+  cap, and durable terminal outcome delivery. Claiming an outcome and recording
+  its parent-session event commit together; retrying after restart returns the
+  same terminal result rather than losing it behind a one-shot claim. The
+  storage boundary accepts only the built-in `reviewer` and `explorer` profile
+  IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become
   `uncertain` on restart and are never replayed. This is persistence groundwork
   only. Parent stop now cancels queued children and persists a
@@ -599,7 +602,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   remain preserved. OS-level preparation locks distinguish a crashed preparer
   from one still creating the workspace, including across store instances.
   Authorizing parent callers beyond the built-in allowlist, deadlines,
-  cancellation execution, atomic delivery with the parent result,
+  cancellation execution, wiring the durable event into parent turn recovery,
   API/TUI integration, and task-level benchmark evidence remain required before
   a model-callable tool is exposed.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list

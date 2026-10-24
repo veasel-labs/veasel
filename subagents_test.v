@@ -44,10 +44,22 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	outcome := store.claim_subagent_outcome(first.id) or { panic(err) }
 	assert outcome.result == 'review complete'
 	assert outcome.outcome_claimed
-	_ = store.claim_subagent_outcome(first.id) or {
-		assert err.msg().contains('already claimed')
-		SubagentRun{}
+	assert (store.claim_subagent_outcome(first.id) or { panic(err) }).result == 'review complete'
+	delivery_events := store.db.q_int("SELECT COUNT(*) FROM events WHERE type = 'subagent.outcome_delivered' AND session_id = '${parent.id}'") or {
+		panic(err)
 	}
+	assert delivery_events == 1
+	parent_events := store.events_after(0) or { panic(err) }
+	mut delivery_event_found := false
+	for event in parent_events {
+		if event.type == 'subagent.outcome_delivered' && event.data.subagent_run_id == first.id {
+			assert event.data.operation_id == operation_id
+			assert event.data.subagent_status == 'completed'
+			assert event.data.subagent_untrusted
+			delivery_event_found = true
+		}
+	}
+	assert delivery_event_found
 	queued := store.create_subagent_run(parent.id, operation_id, 'request-2', 'reviewer', 1,
 		'Queued child', workspace_root) or { panic(err) }
 	ready_cancelled := store.create_subagent_run(parent.id, operation_id, 'request-ready-cancelled',
@@ -88,6 +100,7 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	restored := recovered.get_subagent_run_unlocked(first.id) or { panic(err) }
 	assert restored.status == 'completed'
 	assert restored.outcome_claimed
+	assert (recovered.claim_subagent_outcome(first.id) or { panic(err) }).result == 'review complete'
 	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
 	assert recovered_running.status == 'cancelled'
 	assert recovered_running.cancel_requested

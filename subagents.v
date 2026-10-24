@@ -162,15 +162,22 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 		store.db.rollback() or {}
 		return error('unable to persist child agent ownership')
 	}
+	if initial_cancel_reason.len > 0 {
+		_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
+			[initial_cancel_reason.limit(max_subagent_error_bytes), run_id]) or {
+			store.db.rollback() or {}
+			return error('unable to record pre-start child agent cancellation')
+		}
+		if store.db.get_affected_rows_count() != 1 {
+			store.db.rollback() or {}
+			return error('unable to record pre-start child agent cancellation')
+		}
+	}
 	store.db.commit() or {
 		store.db.rollback() or {}
 		return error('unable to commit child agent run')
 	}
 	if initial_cancel_reason.len > 0 {
-		_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
-			[initial_cancel_reason.limit(max_subagent_error_bytes), run_id]) or {
-			return error('unable to record pre-start child agent cancellation')
-		}
 		return store.get_subagent_run_unlocked(run_id)
 	}
 	// Keep in-process cleanup from mistaking a live workspace preparation for

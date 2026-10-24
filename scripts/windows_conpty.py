@@ -154,7 +154,7 @@ def _winerror(operation: str) -> OSError:
     return ctypes.WinError(ctypes.get_last_error(), operation)
 
 
-def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> float:
+def run_tui_conpty(tui_path: Path, env: dict[str, str], review_path: bytes | None = None) -> float:
     """Run a packaged TUI in a real Windows pseudoconsole and exercise keys."""
     started = time.monotonic()
     input_read = wintypes.HANDLE()
@@ -326,7 +326,23 @@ def run_tui_conpty(tui_path: Path, env: dict[str, str]) -> float:
         output.clear()
         send_keys(b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
-        send_keys(b"q")
+        if review_path:
+            output.clear()
+            send_keys(b"\r")
+            wait_for_markers((b"TUI review smoke",), 5, "the seeded review session")
+            output.clear()
+            send_keys(b"\x12")
+            wait_for_markers((b"Workspace edit", review_path), 5, "the live workspace edit review")
+            output.clear()
+            send_keys(b"a")
+            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            output.clear()
+            send_keys(b"\x10")
+            send_keys(b"quit")
+            wait_for_markers((b"Quit",), 5, "the command palette quit option")
+            send_keys(b"\r")
+        else:
+            send_keys(b"q")
         if kernel32.WaitForSingleObject(process.hProcess, 3_000) != 0:
             snippet = visible_output()[-2_500:].decode(errors="replace")
             raise TimeoutError(f"standalone TUI did not exit after the quit key: {snippet}")

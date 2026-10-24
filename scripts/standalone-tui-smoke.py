@@ -15,7 +15,8 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
+from urllib.parse import quote
 
 if os.name == "nt":
     from windows_conpty import run_tui_conpty
@@ -42,9 +43,43 @@ def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
     raise TimeoutError("Veasel backend did not become healthy within 15 seconds")
 
 
-def run_tui(tui_path: Path, env: dict[str, str]) -> float:
+def api_json(port: int, method: str, path: str, body: dict[str, str] | None = None) -> dict[str, object]:
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = Request(
+        f"http://127.0.0.1:{port}{path}",
+        data=data,
+        method=method,
+        headers={"content-type": "application/json"} if data is not None else {},
+    )
+    with urlopen(request, timeout=5) as response:
+        return json.load(response)
+
+
+def create_review_fixture(port: int, temporary: Path) -> tuple[str, str, Path, str]:
+    workspace = temporary / "review-workspace"
+    workspace.mkdir()
+    (workspace / "review.txt").write_text("before\n", encoding="utf-8")
+    session = api_json(
+        port,
+        "POST",
+        "/v1/sessions",
+        {"title": "TUI review smoke", "directory": str(workspace)},
+    )
+    session_id = str(session["id"])
+    edit = api_json(
+        port,
+        "POST",
+        f"/v1/sessions/{quote(session_id, safe='')}/workspace/edits",
+        {"path": "review.txt", "content": "before\napproved-by-tui\n"},
+    )
+    if edit.get("status") != "pending" or "+approved-by-tui" not in str(edit.get("diff", "")):
+        raise RuntimeError(f"backend did not create the pending TUI review fixture: {edit}")
+    return session_id, str(edit["id"]), workspace, "before\napproved-by-tui\n"
+
+
+def run_tui(tui_path: Path, env: dict[str, str], review_path: bytes | None = None) -> float:
     if os.name == "nt":
-        return run_tui_conpty(tui_path, env)
+        return run_tui_conpty(tui_path, env, review_path)
 
     started = time.monotonic()
     child, terminal = pty.fork()
@@ -106,7 +141,23 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> float:
         output.clear()
         os.write(terminal, b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
-        os.write(terminal, b"q")
+        if review_path:
+            output.clear()
+            os.write(terminal, b"\r")
+            wait_for_markers((b"TUI review smoke",), 5, "the seeded review session")
+            output.clear()
+            os.write(terminal, b"\x12")
+            wait_for_markers((b"Workspace edit", review_path), 5, "the live workspace edit review")
+            output.clear()
+            os.write(terminal, b"a")
+            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            output.clear()
+            os.write(terminal, b"\x10")
+            os.write(terminal, b"quit")
+            wait_for_markers((b"Quit",), 5, "the command palette quit option")
+            os.write(terminal, b"\r")
+        else:
+            os.write(terminal, b"q")
 
         def wait_exit(timeout: float) -> int | None:
             deadline = time.monotonic() + timeout
@@ -245,6 +296,27 @@ def main() -> None:
         try:
             wait_for_server(server, port)
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
+            session_id, edit_id, review_workspace, expected_content = create_review_fixture(
+                port,
+                Path(temporary),
+            )
+            run_tui(tui_path, env, b"review.txt")
+            review_state = api_json(
+                port,
+                "GET",
+                f"/v1/sessions/{quote(session_id, safe='')}/workspace/edits/{quote(edit_id, safe='')}",
+            )
+            actual_content = (review_workspace / "review.txt").read_text(encoding="utf-8")
+            if review_state.get("status") != "applied" or actual_content != expected_content:
+                raise RuntimeError(
+                    "TUI approval did not apply the pending workspace edit: "
+                    f"status={review_state.get('status')!r}, content={actual_content!r}"
+                )
+            review_coverage = {
+                "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+                "workspaceEditStatus": review_state["status"],
+                "fileContentVerified": actual_content == expected_content,
+            }
         finally:
             if server.poll() is None:
                 if os.name == "nt":
@@ -274,6 +346,7 @@ def main() -> None:
         "binaries": {"server": server_path.name, "tui": tui_path.name},
         "buildProvenance": provenance,
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+        "interactiveCoverage": review_coverage,
         "startupMs": {
             "samples": samples_ms,
             "count": len(samples_ms),

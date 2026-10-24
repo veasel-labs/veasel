@@ -1,6 +1,6 @@
 {
   "schema": "veasel.tui-startup.v1",
-  "measuredAt": "2026-10-24T22:39:11Z",
+  "measuredAt": "2026-10-24T22:43:34Z",
   "commit": "4b014a42ce28468d761069fac8381d02f3b96f37",
   "workflowCommit": null,
   "host": {
@@ -34,16 +34,21 @@
     "binary_hashes_match": true
   },
   "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
   "startupMs": {
     "samples": [
-      99.64778900030069,
-      104.73924099642318,
-      99.75808700255584
+      101.21783601061907,
+      104.5509240066167,
+      103.56111500004772
     ],
     "count": 3,
-    "min": 99.64778900030069,
-    "median": 99.75808700255584,
-    "max": 104.73924099642318
+    "min": 101.21783601061907,
+    "median": 103.56111500004772,
+    "max": 104.5509240066167
   },
   "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee."
 }

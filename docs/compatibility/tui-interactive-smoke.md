@@ -68,13 +68,14 @@ macOS/Windows interactive baselines remain unmeasured here.
 
 ## Linux CI-built binary sample
 
-Report: [`benchmarks/reports/tui-startup-linux-ci-2026-10-24.json`](../../benchmarks/reports/tui-startup-linux-ci-2026-10-24.json). Three complete PTY journeys with the exact CI-built Linux binaries reached the connected home in 99.8 ms median (99.6–104.7 ms) on the local Arch x64 host (24 CPUs). The JSON records source commit `4b014a42`, pinned V compiler commit, runner image, and verified server/TUI SHA-256 hashes. This is a small trend sample measured on one host, not an Ubuntu-runner timing or a general performance claim.
+Report: [`benchmarks/reports/tui-startup-linux-ci-2026-10-24.json`](../../benchmarks/reports/tui-startup-linux-ci-2026-10-24.json). Three complete startup PTY journeys with the exact CI-built Linux binaries reached the connected home in 103.6 ms median (101.2–104.6 ms) on the local Arch x64 host (24 CPUs). A fourth journey opened a real pending workspace edit in the TUI, approved it, and confirmed the backend persisted `applied` plus the expected file content. The JSON records source commit `4b014a42`, pinned V compiler commit, runner image, and verified server/TUI SHA-256 hashes. This is a small trend sample measured on one host, not an Ubuntu-runner timing or a general performance claim.
 
 ## Remaining product gaps
 
 - macOS/Windows measured TUI samples from their own pinned runners; the Linux
   CI-built sample above was measured on a local host.
 - Broader interactive coverage beyond the short standalone smoke path
-  (approvals, streaming, MCP OAuth browser open, long diffs).
+  (streaming, MCP OAuth browser open, long diffs); workspace edit approval is
+  now exercised against the live backend on each CI platform.
 - See also [`../IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md) and
   [`../COMPETITIVE_SOURCE_STUDY.md`](../COMPETITIVE_SOURCE_STUDY.md).

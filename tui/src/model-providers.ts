@@ -21,6 +21,12 @@ export type ModelCatalogEntry = {
   context_tokens?: number
 }
 
+/** Provider-specific setup note shown before a user starts entering credentials. */
+export function providerConnectionGuidance(provider: ModelProvider): string | undefined {
+  if (provider.id !== "opencode-go") return undefined
+  return "Use a fresh OpenCode Console API key (OPENCODE_API_KEY). Veasel cannot reuse the OpenCode CLI login; replace expired keys in Console."
+}
+
 /** Compact context-window badge for the model picker. Empty when unknown. */
 export function formatModelCatalogContextBadge(model: ModelCatalogEntry): string {
   const tokens = model.context_tokens

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, formatModelCatalogContextBadge, moveProviderPickerScope, prioritizeModelProviders, providerPickerScopeLabel, providerPickerScopes, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
+import { filterModelCatalog, filterModelProviders, formatModelCatalogCostBadge, formatModelCatalogContextBadge, moveProviderPickerScope, prioritizeModelProviders, providerConnectionGuidance, providerPickerScopeLabel, providerPickerScopes, safeModelCatalogText, type ModelCatalogEntry, type ModelProvider } from "./model-providers"
 
 const providers: ModelProvider[] = [
   { id: "meta", name: "Meta Model API", description: "Muse Wonder and Muse Spark · OpenAI Responses API", protocol: "openai-responses", base_url: "https://api.meta.ai/v1", environment_key: "MODEL_API_KEY", documentation_url: "https://dev.meta.ai/docs/coding-agents", requires_api_key: true },
@@ -9,6 +9,22 @@ const providers: ModelProvider[] = [
 ]
 
 describe("model provider picker", () => {
+  test("explains OpenCode Go credential requirements without adding noise for other providers", () => {
+    const go: ModelProvider = {
+      id: "opencode-go",
+      name: "OpenCode Go",
+      description: "OpenCode Go",
+      protocol: "openai-compatible",
+      base_url: "https://opencode.ai/inference/go/openai/v1",
+      environment_key: "OPENCODE_API_KEY",
+      documentation_url: "https://opencode.ai/v2/docs/console/go/",
+      requires_api_key: true,
+    }
+    expect(providerConnectionGuidance(go)).toContain("fresh OpenCode Console API key")
+    expect(providerConnectionGuidance(go)).toContain("cannot reuse the OpenCode CLI login")
+    expect(providerConnectionGuidance(providers[0])).toBeUndefined()
+  })
+
   test("shows all options when the query is empty", () => {
     expect(filterModelProviders(providers, " ")).toEqual(providers)
   })

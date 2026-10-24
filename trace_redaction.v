@@ -175,9 +175,9 @@ fn redact_trace_text(text string, secrets []string) string {
 		}
 	}
 	safe := redact_assigned_secrets(redact_prefixed_tokens(redacted))
-	// Internal passes may return borrowed unchanged input; the public boundary
-	// returns an owned string independent of the source trajectory.
-	return safe.clone()
+	// V strings are immutable; return the unchanged input without cloning the
+	// complete message when no sanitization or redaction changed it.
+	return safe
 }
 
 fn strip_trace_nuls(text string) string {

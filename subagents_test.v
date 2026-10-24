@@ -30,8 +30,9 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	assert first.status == 'queued'
 	assert first.workspace_ready
 	assert os.exists(subagent_preparation_lock_path(root, first.id) or { panic(err) })
-	assert (store.get_session(first.child_session_id) or { panic(err) }).directory == os.join_path(root,
-		'subagent-worktrees', first.id)
+	child_directory := (store.get_session(first.child_session_id) or { panic(err) }).directory
+	expected_child_directory := os.join_path(root, 'subagent-worktrees', first.id)
+	assert os.real_path(child_directory) == os.real_path(expected_child_directory)
 	assert os.is_dir(os.join_path(root, 'subagent-worktrees', first.id))
 	_ = store.create_subagent_run(parent.id, operation_id, 'request-1', 'explorer', 1,
 		'Child', workspace_root) or {

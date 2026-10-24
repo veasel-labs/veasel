@@ -678,8 +678,19 @@ fn opencode_go_model_protocol(model string) string {
 }
 
 fn provider_http_error_message(provider string, status_code int, operation string) string {
-	if provider == 'opencode-go' && status_code == 401 {
-		return 'OpenCode Go rejected the API key (HTTP 401). Check it in OpenCode Console; if it expired, create a new key because signing in again does not renew it.'
+	if provider == 'opencode-go' {
+		match status_code {
+			401 {
+				return 'OpenCode Go rejected the API key (HTTP 401). Check it in OpenCode Console; if it expired, create a new key because signing in again does not renew it.'
+			}
+			403 {
+				return 'OpenCode Go denied access (HTTP 403). Check that the Go subscription is active, the model is available to your workspace, and its region or privacy restrictions allow this request.'
+			}
+			429 {
+				return 'OpenCode Go rate-limited the request (HTTP 429). Wait before retrying and check your current Go usage limits.'
+			}
+			else {}
+		}
 	}
 	if operation.len > 0 {
 		return '${operation} HTTP ${status_code}'

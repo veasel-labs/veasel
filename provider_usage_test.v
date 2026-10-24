@@ -161,7 +161,16 @@ fn test_opencode_go_invalid_key_error_explains_how_to_recover() {
 	assert message.contains('OpenCode Console')
 	assert message.contains('create a new key')
 	assert message.contains('signing in again does not renew it')
-	assert provider_http_error_message('opencode-go', 403, 'model catalog endpoint returned') == 'model catalog endpoint returned HTTP 403'
+	access_denied := provider_http_error_message('opencode-go', 403,
+		'model catalog endpoint returned')
+	assert access_denied.contains('HTTP 403')
+	assert access_denied.contains('subscription')
+	assert access_denied.contains('workspace')
+	assert access_denied.contains('region or privacy restrictions')
+	rate_limited := provider_http_error_message('opencode-go', 429, '')
+	assert rate_limited.contains('HTTP 429')
+	assert rate_limited.contains('rate-limited')
+	assert rate_limited.contains('usage limits')
 	assert provider_http_error_message('openai-compatible', 401, '') == 'HTTP 401'
 }
 

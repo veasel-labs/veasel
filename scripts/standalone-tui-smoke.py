@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -163,6 +164,48 @@ def run_tui(tui_path: Path, env: dict[str, str]) -> float:
                         pass
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_build_provenance(server_path: Path, tui_path: Path) -> dict[str, object] | None:
+    manifest = server_path.parent / "build.json"
+    try:
+        build = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(build, dict):
+        return None
+    fields = (
+        "source_commit",
+        "v_compiler_commit",
+        "v_compiler_version",
+        "c_compiler",
+        "c_compiler_version",
+        "build_flags",
+        "target",
+        "binary_sha256",
+        "tui_binary_sha256",
+        "tui_build_target",
+        "tui_bun_version",
+        "runner",
+    )
+    provenance = {field: build[field] for field in fields if field in build}
+    checks = (
+        ("binary_sha256", server_path),
+        ("tui_binary_sha256", tui_path),
+    )
+    expected = [(build[field], path) for field, path in checks if isinstance(build.get(field), str)]
+    provenance["binary_hashes_match"] = len(expected) == len(checks) and all(
+        actual == sha256_file(path) for actual, path in expected
+    )
+    return provenance
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", required=True, type=Path)
@@ -215,16 +258,21 @@ def main() -> None:
                     server.wait(timeout=5)
 
     ordered = sorted(samples_ms)
+    provenance = read_build_provenance(server_path, tui_path)
+    build_commit = provenance.get("source_commit") if provenance and provenance.get("binary_hashes_match") else None
     metrics = {
         "schema": "veasel.tui-startup.v1",
         "measuredAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "commit": os.environ.get("GITHUB_SHA"),
+        "commit": build_commit or os.environ.get("GITHUB_SHA"),
+        "workflowCommit": os.environ.get("GITHUB_SHA"),
         "host": {
             "os": platform.system(),
             "release": platform.release(),
             "architecture": platform.machine(),
+            "cpuCount": os.cpu_count(),
         },
-        "binaries": {"server": str(server_path), "tui": str(tui_path)},
+        "binaries": {"server": server_path.name, "tui": tui_path.name},
+        "buildProvenance": provenance,
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "startupMs": {
             "samples": samples_ms,

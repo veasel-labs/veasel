@@ -1,0 +1,51 @@
+{
+  "benchmark": "repository_map_cross_reference_ranking",
+  "measured_at": "2026-10-25",
+  "platform": "Linux x86_64",
+  "host": {
+    "cpu": "AMD Ryzen 9 5900X 12-Core Processor",
+    "kernel": "7.2.9-arch1-1",
+    "cpu_count": 24
+  },
+  "compiler": {
+    "version": "V 0.5.2 ffc38ad",
+    "revision": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "repository_pin_matches": true,
+    "c_compiler": "GCC 16.2.1"
+  },
+  "build_profile": "gcc -prod",
+  "execution_limits": {
+    "memory_max_bytes": 2147483648,
+    "memory_swap_max_bytes": 0,
+    "vjobs": 1
+  },
+  "fixture": {
+    "file_count": 256,
+    "bytes_per_file": 4096,
+    "total_source_bytes": 1048576,
+    "construction_timed": false,
+    "warmup_runs": 2,
+    "sample_count": 11,
+    "scope": "cross-reference ranking only; excludes walking, symbol extraction, and API/server latency"
+  },
+  "baseline": {
+    "revision": "c1d12b2506a655fea16b4e07591564f55344bcb1",
+    "p50_microseconds": 2256,
+    "p90_microseconds": 2325,
+    "score_checksum": 43016.0,
+    "samples_microseconds": [2647, 2248, 2234, 2256, 2325, 2315, 2318, 2317, 2225, 2227, 2230]
+  },
+  "candidate": {
+    "revision": "3c839df",
+    "p50_microseconds": 2180,
+    "p90_microseconds": 2194,
+    "score_checksum": 43016.0,
+    "samples_microseconds": [2281, 2184, 2180, 2172, 2184, 2177, 2175, 2194, 2178, 2182, 2177]
+  },
+  "comparison": {
+    "p50_reduction_percent": 3.37,
+    "p90_reduction_percent": 5.63,
+    "score_checksum_unchanged": true,
+    "claim_limit": "one synthetic Linux x86_64 workstation measurement; not end-to-end latency or task-success evidence"
+  }
+}

@@ -60,6 +60,14 @@ The earlier 2026-10-24 measurement remains in
 [`reports/repository-map-ranking-linux-x64-2026-10-24.json`](reports/repository-map-ranking-linux-x64-2026-10-24.json).
 These are synthetic Linux x64 measurements, not a general performance claim.
 
+The follow-up lexical-hint cache was measured on the same fixture and host:
+revision `c1d12b2` → `3c839df` reduced p50 2.256 ms → 2.180 ms (3.37%)
+and p90 2.325 ms → 2.194 ms (5.63%), with the same score checksum. It
+precomputes normalized, deduplicated query terms once instead of allocating a
+per-file deduplication map. Raw samples and environment details are in
+[`reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json`](reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json).
+This remains a synthetic ranking-only measurement, not an end-to-end or task-quality claim.
+
 ## Local CLI startup comparison
 
 `cli-startup.mjs` compares process startup and argument handling for Veasel

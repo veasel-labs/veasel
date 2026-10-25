@@ -19,6 +19,8 @@ export type ModelCatalogEntry = {
   cost_unit?: string
   /** Curated context window in tokens when the model is on Veasel's schedule. */
   context_tokens?: number
+  /** Curated provider disclosure shown before model selection. */
+  data_use_notice?: string
 }
 
 /** Compact context-window badge for the model picker. Empty when unknown. */

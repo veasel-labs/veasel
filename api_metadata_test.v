@@ -41,3 +41,29 @@ fn test_opencode_catalog_errors_guide_console_keys_and_go_setup() {
 	assert free_access.contains('OpenCode Go preset')
 	assert free_access.contains('Console API key')
 }
+
+fn test_opencode_go_data_use_notices_are_curated_by_provider_and_model() {
+	models := [
+		ModelCatalogEntry{
+			id:             'iceman-contributor-free'
+			name:           'Iceman'
+			context_tokens: 262144
+		},
+		ModelCatalogEntry{
+			id:   'muse-spark-1.3-contributor'
+			name: 'Muse Spark'
+		},
+		ModelCatalogEntry{
+			id:   'unknown-model'
+			name: 'Unknown'
+		},
+	]
+	annotated := annotate_model_catalog_with_data_use_notice('opencode-go', models)
+	assert annotated[0].data_use_notice or { '' } == 'Prompts may be used to improve this model.'
+	assert annotated[0].context_tokens or { 0 } == 262144
+	assert annotated[1].data_use_notice or { '' } == 'Prompts may be used to train future Meta models.'
+	assert annotated[2].data_use_notice == none
+
+	other_provider := annotate_model_catalog_with_data_use_notice('openai', [models[0]])
+	assert other_provider[0].data_use_notice == none
+}

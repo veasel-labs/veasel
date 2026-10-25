@@ -96,6 +96,7 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		'longcat-2.5-preview-free',
 		'step-5-preview',
 		'beam-free',
+		'iceman-contributor-free',
 		'mimo-v2.6-flash',
 		'mimo-v2.6-pro',
 		'mimo-v2.5',
@@ -143,6 +144,7 @@ fn test_opencode_go_model_catalog_and_requests_follow_model_api_families() {
 		'longcat-2.5-preview-free',
 		'step-5-preview',
 		'beam-free',
+		'iceman-contributor-free',
 	], 'openai-compatible', opencode_go_openai_base_url)
 	assert_opencode_go_routes([
 		'grok-4.7',

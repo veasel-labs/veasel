@@ -436,6 +436,8 @@ pub:
 	// Optional curated context window in tokens. Omitted when the model is
 	// not in the embedded model-context schedule — never invented.
 	context_tokens ?int @[json: 'context_tokens'; omitempty]
+	// Optional provider-specific data-use disclosure shown before model selection.
+	data_use_notice ?string @[json: 'data_use_notice'; omitempty]
 }
 
 struct OpenAIModelCatalog {
@@ -742,7 +744,7 @@ fn opencode_go_model_protocol(model string) string {
 		'deepseek-v4.1-flash', 'deepseek-v4-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro',
 		'mimo-v2.5', 'mimo-v2.5-pro', 'minimax-m3.1-flash',
 		'hy4-preview', 'hy3',
-		'longcat-2.5-preview-free', 'step-5-preview', 'beam-free' {
+		'longcat-2.5-preview-free', 'step-5-preview', 'beam-free', 'iceman-contributor-free' {
 			'openai-compatible'
 		}
 		else { '' }

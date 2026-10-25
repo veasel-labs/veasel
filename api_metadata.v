@@ -132,7 +132,7 @@ pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
 	}
 	return ctx.json(ModelCatalogView{
 		provider: provider
-		models:   annotate_model_catalog_with_context_schedule(provider, annotate_model_catalog_with_cost_schedule(provider, models))
+		models:   annotate_model_catalog_with_data_use_notice(provider, annotate_model_catalog_with_context_schedule(provider, annotate_model_catalog_with_cost_schedule(provider, models)))
 	})
 }
 
@@ -155,7 +155,7 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 	}
 	return ctx.json(ModelCatalogView{
 		provider: config.provider
-		models:   annotate_model_catalog_with_context_schedule(config.provider, annotate_model_catalog_with_cost_schedule(config.provider, models))
+		models:   annotate_model_catalog_with_data_use_notice(config.provider, annotate_model_catalog_with_context_schedule(config.provider, annotate_model_catalog_with_cost_schedule(config.provider, models)))
 	})
 }
 
@@ -196,4 +196,28 @@ struct ModelCatalogView {
 pub:
 	provider string
 	models   []ModelCatalogEntry
+}
+
+// Keep privacy disclosures curated by provider and exact model ID. Provider
+// catalogs are remote input, so they cannot supply or override these notices.
+fn annotate_model_catalog_with_data_use_notice(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
+	return models.map(fn [provider] (model ModelCatalogEntry) ModelCatalogEntry {
+		notice := if provider == 'opencode-go' {
+			match model.id {
+				'iceman-contributor-free' {
+					'Prompts may be used to improve this model.'
+				}
+				'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor' {
+					'Prompts may be used to train future Meta models.'
+				}
+				else { '' }
+			}
+		} else {
+			''
+		}
+		return ModelCatalogEntry{
+			...model
+			data_use_notice: if notice.len > 0 { notice } else { none }
+		}
+	})
 }

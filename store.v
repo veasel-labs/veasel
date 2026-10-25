@@ -1922,20 +1922,35 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	}
 	session_rows := store.db.exec('SELECT COUNT(*) FROM sessions')!
 	sessions := if session_rows.len == 1 { session_rows[0].val(0).int() } else { 0 }
-	rows := store.db.exec("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE status = 'completed'")!
-	if rows.len != 1 {
-		return error('unable to read usage summary')
-	}
 	model_rows := store.db.exec("SELECT provider, model, COUNT(*), SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 THEN cache_read_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), SUM(CASE WHEN usage_reported = 1 AND cache_reported = 1 THEN 1 ELSE 0 END), SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END) FROM session_operations WHERE status = 'completed' GROUP BY provider, model ORDER BY provider, model")!
 	model_schedule := active_cost_schedule()
 	mut models := []GlobalUsageModelSummary{cap: model_rows.len}
 	mut cost_turns := []CostScheduleTurn{cap: model_rows.len}
 	mut invalid_subset_cache := false
+	mut completed_turns_total := 0
+	mut reported_turns_total := 0
+	mut input_tokens_total := i64(0)
+	mut output_tokens_total := i64(0)
+	mut cache_read_tokens_total := i64(0)
+	mut cache_creation_tokens_total := i64(0)
+	mut cache_reported_turns_total := 0
+	mut reasoning_tokens_total := i64(0)
+	mut reasoning_reported_turns_total := 0
+	// Derive dashboard totals from the grouped rows so completed history is scanned once.
 	for model_row in model_rows {
 		provider := model_row.val(0)
 		model := model_row.val(1)
 		reported_turns := model_row.val(3).int()
 		cache_turns := model_row.val(13).int()
+		completed_turns_total += model_row.val(2).int()
+		reported_turns_total += reported_turns
+		input_tokens_total += model_row.val(4).i64()
+		output_tokens_total += model_row.val(5).i64()
+		cache_read_tokens_total += model_row.val(6).i64()
+		cache_creation_tokens_total += model_row.val(7).i64()
+		cache_reported_turns_total += model_row.val(8).int()
+		reasoning_tokens_total += model_row.val(9).i64()
+		reasoning_reported_turns_total += model_row.val(14).int()
 		mut model_cost := cost_unavailable
 		if reported_turns > 0 && model_schedule.entries.len > 0 {
 			mut invalid_model_subset_cache := false
@@ -1977,10 +1992,6 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 			cost:                     model_cost
 		}
 	}
-	row := rows[0]
-	reported_turns := row.val(1).int()
-	cache_turns := row.val(6).int()
-	reasoning_turns := row.val(8).int()
 	mut cost := cost_unavailable
 	if model_schedule.entries.len > 0 {
 		if !invalid_subset_cache {
@@ -1989,16 +2000,16 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	}
 	return GlobalUsageSummary{
 		sessions:              sessions
-		completed_turns:       row.val(0).int()
-		reported_turns:        reported_turns
-		input_tokens:          row.val(2).i64()
-		output_tokens:         row.val(3).i64()
-		usage_reported:        reported_turns > 0
-		cache_read_tokens:     row.val(4).i64()
-		cache_creation_tokens: row.val(5).i64()
-		cache_reported:        cache_turns > 0
-		reasoning_tokens:      row.val(7).i64()
-		reasoning_reported:    reasoning_turns > 0
+		completed_turns:       completed_turns_total
+		reported_turns:        reported_turns_total
+		input_tokens:          input_tokens_total
+		output_tokens:         output_tokens_total
+		usage_reported:        reported_turns_total > 0
+		cache_read_tokens:     cache_read_tokens_total
+		cache_creation_tokens: cache_creation_tokens_total
+		cache_reported:        cache_reported_turns_total > 0
+		reasoning_tokens:      reasoning_tokens_total
+		reasoning_reported:    reasoning_reported_turns_total > 0
 		cost:                  cost
 		models:                models
 	}

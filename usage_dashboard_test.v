@@ -25,6 +25,16 @@ fn test_global_usage_groups_provider_reported_metrics_by_model() {
 	_ = store.append_exchange(session.id, other_turn, 'two', 'b', 'anthropic', 'fixture-2', '',
 		ProviderUsage{}) or { panic(err) }
 	summary := store.usage_summary() or { panic(err) }
+	assert summary.completed_turns == 2
+	assert summary.reported_turns == 1
+	assert summary.usage_reported
+	assert summary.input_tokens == 100
+	assert summary.output_tokens == 20
+	assert summary.cache_read_tokens == 12
+	assert summary.cache_creation_tokens == 4
+	assert summary.cache_reported
+	assert summary.reasoning_tokens == 7
+	assert summary.reasoning_reported
 	assert summary.models.len == 2
 	assert summary.models[0].provider == 'anthropic'
 	assert summary.models[0].model == 'fixture-2'

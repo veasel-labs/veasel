@@ -155,6 +155,9 @@ pub:
 	repository_map_injected        bool   @[omitempty]
 	repository_map_untrusted       bool   @[omitempty]
 	repository_map_preview         string @[omitempty]
+	subagent_run_id                string @[omitempty]
+	subagent_status                string @[omitempty]
+	subagent_untrusted             bool   @[omitempty]
 }
 
 pub struct SessionPluginSkill {
@@ -172,9 +175,10 @@ pub:
 @[heap]
 struct Store {
 mut:
-	mu   sync.Mutex
-	db   sqlite.DB
-	path string
+	mu                           sync.Mutex
+	db                           sqlite.DB
+	path                         string
+	active_subagent_preparations map[string]bool
 	// When > 0, overrides max_retained_terminal_session_operations (tests only).
 	terminal_ops_retention_limit int
 	// When > 0, overrides max_retained_session_events (tests only).
@@ -730,10 +734,125 @@ fn open_store(path string) !&Store {
 			return error('unable to commit queued operation ordering migration')
 		}
 	}
+	if current < 20 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child agent run migration')
+		}
+		db.exec("CREATE TABLE subagent_runs (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, parent_operation_id TEXT NOT NULL, child_session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE, agent_id TEXT NOT NULL, requested_title TEXT NOT NULL, requested_directory TEXT NOT NULL, depth INTEGER NOT NULL CHECK (depth BETWEEN 1 AND 2), status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'uncertain')), result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', outcome_claimed INTEGER NOT NULL DEFAULT 0 CHECK (outcome_claimed IN (0, 1)), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (parent_session_id, parent_operation_id, request_id))") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create child agent run ledger')
+		}
+		db.exec('CREATE INDEX subagent_runs_parent_status ON subagent_runs (parent_session_id, status, created_at)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index child agent runs')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (20)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child agent run migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child agent run migration')
+		}
+	}
+	if current < 21 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child agent cancellation migration')
+		}
+		db.exec('ALTER TABLE subagent_runs ADD COLUMN cancel_requested INTEGER NOT NULL DEFAULT 0 CHECK (cancel_requested IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child agent cancellation state')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (21)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child agent cancellation migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child agent cancellation migration')
+		}
+	}
+	if current < 22 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child workspace readiness migration')
+		}
+		db.exec('ALTER TABLE subagent_runs ADD COLUMN workspace_ready INTEGER NOT NULL DEFAULT 1 CHECK (workspace_ready IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child workspace readiness state')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (22)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child workspace readiness migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child workspace readiness migration')
+		}
+	}
+	if current < 23 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child workspace start migration')
+		}
+		db.exec('ALTER TABLE subagent_runs ADD COLUMN workspace_started INTEGER NOT NULL DEFAULT 1 CHECK (workspace_started IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child workspace start state')
+		}
+		db.exec("UPDATE subagent_runs SET workspace_started = 0 WHERE status = 'queued'") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to initialize queued child workspace start state')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (23)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child workspace start migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child workspace start migration')
+		}
+	}
+	if current < 24 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child outcome recovery index migration')
+		}
+		db.exec("CREATE INDEX subagent_runs_unclaimed_outcome ON subagent_runs (id, parent_session_id, parent_operation_id, status) WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index unclaimed child outcomes')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (24)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child outcome recovery index migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child outcome recovery index migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
-	// replayed. Queued jobs never claimed a worker; their request_json is kept
-	// for honest resume after restart.
+	// replayed. Queued parent turns retain their request for resume; child runs
+	// are not replayed independently because their parent owns their lifecycle.
 	db.begin() or {
 		db.close() or {}
 		return error('unable to begin session operation recovery')
@@ -742,6 +861,11 @@ fn open_store(path string) !&Store {
 		db.rollback() or {}
 		db.close() or {}
 		return error('unable to inspect interrupted session operations')
+	}
+	_ = db.exec("UPDATE subagent_runs SET status = 'uncertain', error = 'The server stopped before this child run reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE status = 'running'") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to classify interrupted child agent run')
 	}
 	for row in interrupted_operations {
 		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {
@@ -762,6 +886,16 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to record interrupted session operation')
 		}
+	}
+	_ = db.exec("UPDATE subagent_runs SET status = 'cancelled', error = 'The server restarted before this queued child run started.', updated_at = CURRENT_TIMESTAMP WHERE status = 'queued'") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to cancel queued child agent run')
+	}
+	recover_unclaimed_subagent_outcomes(mut db) or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to recover child agent outcomes: ${err}')
 	}
 	db.commit() or {
 		db.rollback() or {}
@@ -888,8 +1022,38 @@ fn open_store(path string) !&Store {
 		}
 	}
 	return &Store{
-		db:   db
-		path: path
+		db:                           db
+		path:                         path
+		active_subagent_preparations: map[string]bool{}
+	}
+}
+
+// recover_unclaimed_subagent_outcomes claims terminal child runs and appends
+// their parent-session events within the caller's startup transaction.
+fn recover_unclaimed_subagent_outcomes(mut db sqlite.DB) ! {
+	outcomes := db.exec("SELECT id, parent_session_id, parent_operation_id, status FROM subagent_runs WHERE outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+		return error('unable to inspect unclaimed child agent outcomes: ${err}')
+	}
+	for row in outcomes {
+		_ = db.exec_param_many("UPDATE subagent_runs SET outcome_claimed = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND outcome_claimed = 0 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')",
+			[row.val(0)]) or {
+			return error('unable to claim recovered child agent outcome: ${err}')
+		}
+		if db.get_affected_rows_count() != 1 {
+			continue
+		}
+		_ = db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+			'subagent.outcome_delivered',
+			row.val(1),
+			json2.encode[EventData](EventData{
+				operation_id:       row.val(2)
+				subagent_run_id:    row.val(0)
+				subagent_status:    row.val(3)
+				subagent_untrusted: true
+			}),
+		]) or {
+			return error('unable to record recovered child outcome: ${err}')
+		}
 	}
 }
 
@@ -1849,8 +2013,20 @@ fn (mut store Store) finish_queued_session_operation(session_id string, operatio
 		return 'cancelled'
 	}
 	if status == 'running' {
+		store.db.begin()!
 		store.db.exec_param_many("UPDATE session_operations SET status = 'cancelling', updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'running'",
-			[session_id, operation_id])!
+			[session_id, operation_id]) or {
+			store.db.rollback() or {}
+			return error('unable to cancel session operation')
+		}
+		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation cancellation was requested.') or {
+			store.db.rollback() or {}
+			return err
+		}
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit session operation cancellation')
+		}
 	}
 	updated := store.db.exec_param_many('SELECT status FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
@@ -2377,6 +2553,10 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
+		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation completed before this child run finished.') or {
+			store.db.rollback() or {}
+			return err
+		}
 		completion := if usage.reported {
 			EventData{
 				operation_id:          operation_id
@@ -2504,6 +2684,10 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session operation failure')
+	}
+	store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation ended before this child run finished.') or {
+		store.db.rollback() or {}
+		return err
 	}
 	store.db.commit() or {
 		store.db.rollback() or {}

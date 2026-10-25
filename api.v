@@ -276,6 +276,8 @@ fn new_app(store &Store, plugin_directory string) &App {
 		}
 	}
 	// Queued Prefer: respond-async turns survive store reopen; resume workers now.
+	mut mutable_store := store
+	mutable_store.cleanup_unstarted_subagent_workspaces()
 	app.resume_durable_queued_operations()
 	return app
 }
@@ -1699,6 +1701,7 @@ fn (app &App) record_session_turn_failure(id string, operation_id string, messag
 		visible_failed_turn(streamed, public_error)) or {
 		eprintln('veasel: unable to persist session turn completion (${err.msg()})')
 	}
+	store.cleanup_unstarted_subagent_workspaces()
 }
 
 // visible_failed_turn keeps any text already streamed and puts the public
@@ -1855,6 +1858,10 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 		output.provider, output.model, trace_json, result.usage) or {
 		return error('unable to persist session messages')
 	}
+	mut store := app.store
+	// Finishing a parent turn cancels any queued children; only clean workspaces
+	// that have never been claimed, preserving any child that may have executed.
+	store.cleanup_unstarted_subagent_workspaces()
 	return ChatExchange{
 		messages:              persisted
 		provider:              output.provider

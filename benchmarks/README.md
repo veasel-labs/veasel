@@ -61,10 +61,11 @@ The earlier 2026-10-24 measurement remains in
 These are synthetic Linux x64 measurements, not a general performance claim.
 
 The follow-up lexical-hint cache was measured on the same fixture and host:
-revision `c1d12b2` → `3c839df` reduced p50 2.256 ms → 2.180 ms (3.37%)
-and p90 2.325 ms → 2.194 ms (5.63%), with the same score checksum. It
+revision `c1d12b2` → `ab70e3d` reduced p50 2.256 ms → 2.175 ms (3.59%)
+and p90 2.325 ms → 2.195 ms (5.59%), with the same score checksum. It
 precomputes normalized, deduplicated query terms once instead of allocating a
-per-file deduplication map. Raw samples and environment details are in
+per-file deduplication map, and compares already-normalized path terms without
+creating lowercase copies in the hot loop. Raw samples and environment details are in
 [`reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json`](reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json).
 This remains a synthetic ranking-only measurement, not an end-to-end or task-quality claim.
 

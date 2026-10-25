@@ -33,18 +33,42 @@
     "p50_microseconds": 2256,
     "p90_microseconds": 2325,
     "score_checksum": 43016.0,
-    "samples_microseconds": [2647, 2248, 2234, 2256, 2325, 2315, 2318, 2317, 2225, 2227, 2230]
+    "samples_microseconds": [
+      2647,
+      2248,
+      2234,
+      2256,
+      2325,
+      2315,
+      2318,
+      2317,
+      2225,
+      2227,
+      2230
+    ]
   },
   "candidate": {
-    "revision": "3c839df",
-    "p50_microseconds": 2180,
-    "p90_microseconds": 2194,
+    "revision": "ab70e3dd780c71c5c81890f2806bcb7618759903",
+    "p50_microseconds": 2175,
+    "p90_microseconds": 2195,
     "score_checksum": 43016.0,
-    "samples_microseconds": [2281, 2184, 2180, 2172, 2184, 2177, 2175, 2194, 2178, 2182, 2177]
+    "samples_microseconds": [
+      2168,
+      2174,
+      2171,
+      2189,
+      2195,
+      2204,
+      2174,
+      2185,
+      2175,
+      2183,
+      2173
+    ]
   },
   "comparison": {
-    "p50_reduction_percent": 3.37,
-    "p90_reduction_percent": 5.63,
+    "p50_reduction_percent": 3.59,
+    "p90_reduction_percent": 5.59,
     "score_checksum_unchanged": true,
     "claim_limit": "one synthetic Linux x86_64 workstation measurement; not end-to-end latency or task-success evidence"
   }

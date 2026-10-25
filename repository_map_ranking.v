@@ -136,10 +136,10 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 	if lexical_hints.ordered.len > 1 && (!repository_map_is_test_path(path)
 		|| repository_map_hint_mentions_tests(hints)) {
 		base_parts := repository_map_ident_parts(repository_map_stem(base))
-		if repository_map_path_has_adjacent_hint_pair(base_parts, lexical_hints.ordered) {
-			// Adjacent query concepts in a compound filename ("subagent job" in
-			// subagent-job.ts) identify a more specific destination than separate
-			// hits on generic files such as job.ts and lifecycle.ts.
+		if repository_map_path_has_ordered_hint_pair(base_parts, lexical_hints.ordered) {
+			// Ordered query concepts in a compound filename ("subagent job" in
+			// subagent-job.ts, or "running ... batch" in run_batch.py) identify a
+			// more specific destination than separate hits on generic files.
 			score += 600.0
 		}
 	}
@@ -174,20 +174,21 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 	return score
 }
 
-fn repository_map_path_has_adjacent_hint_pair(name_parts []string, lexical_hints []string) bool {
+fn repository_map_path_has_ordered_hint_pair(name_parts []string, lexical_hints []string) bool {
 	if name_parts.len < 2 {
 		return false
 	}
-	mut previous := ''
-	for current in lexical_hints {
-		if previous.len > 0 {
-			for i in 0 .. name_parts.len - 1 {
-				if name_parts[i] == previous && name_parts[i + 1] == current {
-					return true
+	for i in 0 .. name_parts.len - 1 {
+		mut found_first := false
+		for hint in lexical_hints {
+			if !found_first {
+				if repository_map_lexical_match_weight_normalized(name_parts[i], hint) > 0.0 {
+					found_first = true
 				}
+			} else if repository_map_lexical_match_weight_normalized(name_parts[i + 1], hint) > 0.0 {
+				return true
 			}
 		}
-		previous = current
 	}
 	return false
 }
@@ -256,6 +257,9 @@ fn repository_map_lexical_match_weight_normalized(a string, b string) f64 {
 		// `litellm_model`; whole path-segment matches already scored above.
 		return 45.0
 	}
+	if repository_map_ing_match(b, a) || repository_map_ing_match(a, b) {
+		return 45.0
+	}
 	if a.len > 3 && a.ends_with('s') && a[..a.len - 1] == b {
 		return 45.0
 	}
@@ -281,6 +285,34 @@ fn repository_map_lexical_match_weight_normalized(a string, b string) f64 {
 		return 480.0
 	}
 	return 0.0
+}
+
+fn repository_map_ing_match(stem string, gerund string) bool {
+	if gerund.len <= 6 || !gerund.ends_with('ing') {
+		return false
+	}
+	stem_len := gerund.len - 3
+	mut root_len := stem_len
+	if stem_len > 2 && gerund[stem_len - 1] == gerund[stem_len - 2] {
+		root_len--
+	}
+	if stem.len == root_len {
+		for i in 0 .. root_len {
+			if stem[i] != gerund[i] {
+				return false
+			}
+		}
+		return true
+	}
+	if stem.len != root_len + 1 || stem[root_len] != `e` {
+		return false
+	}
+	for i in 0 .. root_len {
+		if stem[i] != gerund[i] {
+			return false
+		}
+	}
+	return true
 }
 
 fn repository_map_is_test_path(path string) bool {

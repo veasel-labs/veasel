@@ -38,7 +38,8 @@ struct C.VeaselWinMcpStdio {
 
 fn C.veasel_win_sandbox_available() int
 fn C.veasel_win_run_sandboxed_shell(comspec_utf8 &char, command_utf8 &char, workdir_utf8 &char,
-	timeout_ms int, max_output_bytes int, allow_network int, result &C.VeaselWinSandboxResult) int
+	env_utf8 &char, timeout_ms int, max_output_bytes int, allow_network int,
+	result &C.VeaselWinSandboxResult) int
 fn C.veasel_win_sandbox_result_free(result &C.VeaselWinSandboxResult)
 fn C.veasel_win_mcp_stdio_start(exe_utf8 &char, args_utf8 &&char, argc int, workdir_utf8 &char,
 	plugin_root_utf8 &char, plugin_data_utf8 &char, env_utf8 &char, out &C.VeaselWinMcpStdio) int
@@ -65,8 +66,11 @@ mut:
 
 fn windows_mcp_env_block(env map[string]string) string {
 	mut block := ''
-	for key, value in env {
-		block += '${key}=${value}\0'
+	for key in env.keys().sorted() {
+		block += '${key}=${env[key]}\0'
+	}
+	if block.len == 0 {
+		block = '\0'
 	}
 	block += '\0'
 	return block
@@ -187,7 +191,7 @@ struct WindowsShellSandboxOptions {
 // - network denied unless allow_network adds internetClient capability SIDs
 // - Job Object: KILL_ON_JOB_CLOSE, active-process cap, job memory cap
 // - CREATE_SUSPENDED then AssignProcessToJobObject before ResumeThread
-// - inherited environment may still carry credentials; not a VM
+// - shell receives only the platform environment allowlist; not a VM
 fn run_windows_sandboxed_shell_command(root string, cwd string, command ShellCommandSummary,
 	options WindowsShellSandboxOptions) ShellCommandResult {
 	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
@@ -225,8 +229,9 @@ fn run_windows_sandboxed_shell_command(root string, cwd string, command ShellCom
 		}
 	}
 	workdir := os.join_path(root, cwd)
+	env_block := windows_mcp_env_block(autonomous_shell_environment())
 	mut result := C.VeaselWinSandboxResult{}
-	ok := C.veasel_win_run_sandboxed_shell(shell.str, command.command.str, workdir.str,
+	ok := C.veasel_win_run_sandboxed_shell(shell.str, command.command.str, workdir.str, env_block.str,
 		command.timeout_seconds * 1000, max_shell_command_output_bytes, if options.allow_network {
 			1
 		} else {

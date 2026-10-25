@@ -14,8 +14,8 @@
  * - Network capability SIDs always enabled (many MCP servers need outbound HTTPS)
  * - Same Job Object limits; long-lived stdio pipes returned to the caller
  *
- * Residual gaps: inherited environment may carry credentials; system paths that
- * already allow ALL APPLICATION PACKAGES remain readable/executable; not a VM;
+ * Shell environment is an explicit filtered allowlist. Residual gaps: system
+ * paths that already allow ALL APPLICATION PACKAGES remain readable/executable; not a VM;
  * not Codex-level WFP helper-service / private-logon isolation / LPAC.
  */
 #ifndef VEASEL_SHELL_WINDOWS_SANDBOX_H
@@ -58,8 +58,8 @@ typedef struct VeaselWinMcpStdio {
 int veasel_win_sandbox_available(void);
 
 int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
-	const char *workdir_utf8, int timeout_ms, int max_output_bytes, int allow_network,
-	VeaselWinSandboxResult *result);
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, VeaselWinSandboxResult *result);
 
 void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result);
 

@@ -117,6 +117,8 @@ export type ApiGlobalUsageSummary = {
   cache_reported: boolean
   reasoning_tokens: number
   reasoning_reported: boolean
+  allowance_usd: number
+  allowance_reported: boolean
   cost: string
   models: ApiGlobalUsageModelSummary[]
 }
@@ -150,6 +152,8 @@ export type ApiSessionUsageSummary = {
   cache_reported: boolean
   reasoning_tokens: number
   reasoning_reported: boolean
+  allowance_usd: number
+  allowance_reported: boolean
   cost: string
 }
 

@@ -55,6 +55,88 @@ fn test_session_usage_cost_unavailable_when_model_missing() {
 	assert label == cost_unavailable
 }
 
+fn test_provider_reported_cost_takes_precedence_without_a_model_rate() {
+	schedule := CostSchedule{
+		unit:    embedded_cost_schedule_unit
+		entries: map[string]CostScheduleEntry{}
+	}
+	turn := CostScheduleTurn{
+		provider_cost_usd: f64(0)
+	}
+	assert usage_cost_label(schedule, [turn]) == '$0.00'
+}
+
+fn test_provider_reported_billing_persists_and_appears_in_usage_summaries() {
+	prior := os.getenv_opt(cost_schedule_env) or { '' }
+	os.unsetenv(cost_schedule_env)
+	defer {
+		if prior.len == 0 {
+			os.unsetenv(cost_schedule_env)
+		} else {
+			os.setenv(cost_schedule_env, prior, true)
+		}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Provider billing'
+		directory: '/tmp/provider-billing'
+	}) or { panic(err) }
+	operation := 'a1b2c3d4-e5f6-4789-a012-3456789abcde'
+	_ = store.create_session_operation(session.id, operation) or { panic(err) }
+	_ = store.append_exchange(session.id, operation, 'hi', 'there', 'opencode-go',
+		'fixture-model', '', ProviderUsage{
+			reported_cost_usd: f64(0)
+			allowance_usd:     f64(0.0042)
+		}) or { panic(err) }
+	session_summary := store.session_usage_summary(session.id) or { panic(err) }
+	global_summary := store.usage_summary() or { panic(err) }
+	assert session_summary.reported_turns == 0
+	assert session_summary.cost == '$0.00'
+	assert session_summary.allowance_reported
+	assert session_summary.allowance_usd == f64(0.0042)
+	assert global_summary.cost == '$0.00'
+	assert global_summary.allowance_reported
+	assert global_summary.allowance_usd == f64(0.0042)
+}
+
+fn test_reported_cost_precedes_schedule_and_unreported_costs_use_pinned_rates() {
+	prior := os.getenv_opt(cost_schedule_env) or { '' }
+	os.unsetenv(cost_schedule_env)
+	defer {
+		if prior.len == 0 {
+			os.unsetenv(cost_schedule_env)
+		} else {
+			os.setenv(cost_schedule_env, prior, true)
+		}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Reported and scheduled cost'
+		directory: '/tmp/reported-and-scheduled-cost'
+	}) or { panic(err) }
+	first := 'a1b2c3d4-e5f6-4789-a012-3456789abcde'
+	second := 'a1b2c3d4-e5f6-4789-a012-3456789abcdf'
+	_ = store.create_session_operation(session.id, first) or { panic(err) }
+	_ = store.append_exchange(session.id, first, 'hi', 'there', 'anthropic',
+		'claude-sonnet-4-5', '', ProviderUsage{
+			input_tokens:      1_000_000
+			reported:          true
+			reported_cost_usd: f64(0.000123)
+		}) or { panic(err) }
+	_ = store.create_session_operation(session.id, second) or { panic(err) }
+	_ = store.append_exchange(session.id, second, 'hi', 'there', 'anthropic',
+		'claude-sonnet-4-5', '', ProviderUsage{
+			input_tokens: 1_000_000
+			reported:     true
+		}) or { panic(err) }
+	session_summary := store.session_usage_summary(session.id) or { panic(err) }
+	global_summary := store.usage_summary() or { panic(err) }
+	assert session_summary.cost == '$3.000123'
+	assert global_summary.cost == '$3.000123'
+}
+
 fn test_load_cost_schedule_override_and_session_summary() {
 	path := os.join_path(os.temp_dir(), 'veasel-cost-schedule-${uuid.new_v4().str()}.json')
 	defer {

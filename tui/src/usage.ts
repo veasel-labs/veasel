@@ -72,6 +72,8 @@ export type SessionUsageSummary = {
   cache_read_tokens?: number
   cache_creation_tokens?: number
   cache_reported?: boolean
+  allowance_usd?: number
+  allowance_reported?: boolean
   cost: string
 }
 
@@ -85,6 +87,8 @@ export type GlobalUsageSummary = {
   cache_read_tokens?: number
   cache_creation_tokens?: number
   cache_reported?: boolean
+  allowance_usd?: number
+  allowance_reported?: boolean
   cost: string
   models?: Array<{
     provider: string
@@ -149,6 +153,8 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
         lines.push(`  Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens · reported on ${model.reasoning_reported_turns} turns`)
       }
     }
+  if (summary.allowance_reported) {
+    lines.push(`OpenCode Go allowance used: ${formatReportedUsd(summary.allowance_usd ?? 0)}`)
   }
   return lines.join("\n")
 }
@@ -195,5 +201,13 @@ export function formatSessionUsageSummary(summary: SessionUsageSummary): string 
         : summary.cost
     }`,
   )
+  if (summary.allowance_reported) {
+    lines.push(`OpenCode Go allowance used: ${formatReportedUsd(summary.allowance_usd ?? 0)}`)
+  }
   return lines.join("\n")
+}
+
+export function formatReportedUsd(amount: number): string {
+  if (!Number.isFinite(amount) || amount < 0) return "unavailable"
+  return `$${amount.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}`
 }

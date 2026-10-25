@@ -132,7 +132,7 @@ pub fn (app &App) get_provider_models(mut ctx Context) veb.Result {
 	}
 	return ctx.json(ModelCatalogView{
 		provider: provider
-		models:   annotate_model_catalog_with_context_schedule(provider, annotate_model_catalog_with_cost_schedule(provider, models))
+		models:   annotate_model_catalog_with_data_use_notice(provider, annotate_model_catalog_with_context_schedule(provider, annotate_model_catalog_with_cost_schedule(provider, models)))
 	})
 }
 
@@ -155,21 +155,31 @@ pub fn (app &App) discover_provider_models(mut ctx Context) veb.Result {
 	}
 	return ctx.json(ModelCatalogView{
 		provider: config.provider
-		models:   annotate_model_catalog_with_context_schedule(config.provider, annotate_model_catalog_with_cost_schedule(config.provider, models))
+		models:   annotate_model_catalog_with_data_use_notice(config.provider, annotate_model_catalog_with_context_schedule(config.provider, annotate_model_catalog_with_cost_schedule(config.provider, models)))
 	})
 }
 
 fn model_catalog_error_message(provider string, provider_error string) string {
+	if provider == 'opencode-go' {
+		for status_code in [401, 403, 429] {
+			if provider_error == provider_http_error_message(provider, status_code, '') {
+				return provider_error
+			}
+		}
+	}
 	match provider_error {
 		'model catalog endpoint returned HTTP 401' {
 			if provider in ['opencode', 'opencode-go'] {
-				return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; create a new key in OpenCode Console because signing in again will not renew it.'
+				return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; signing in again will not renew it. Veasel does not reuse the OpenCode CLI login; check the key in OpenCode Console and create a new key if it expired.'
 			}
 			return 'Provider rejected the API key (HTTP 401). Check the key and account.'
 		}
 		'model catalog endpoint returned HTTP 403' {
+			if provider == 'opencode-go' {
+				return 'OpenCode Go denied model-list access (HTTP 403). Check Go plan/workspace access and the OpenCode Console API key; enter a model ID manually if catalog access is unavailable.'
+			}
 			if provider == 'opencode' {
-				return 'OpenCode denied model-list access (HTTP 403). Check account and model access; Go subscriptions for coding agents use the OpenCode Go preset and Console API key.'
+				return 'OpenCode denied model-list access (HTTP 403). Check account and model access; OpenCode Go subscriptions for coding agents use the Go preset and Console API key.'
 			}
 			return 'Provider denied model-list access (HTTP 403). Check model access and account permissions.'
 		}
@@ -189,4 +199,28 @@ struct ModelCatalogView {
 pub:
 	provider string
 	models   []ModelCatalogEntry
+}
+
+// Keep privacy disclosures curated by provider and exact model ID. Provider
+// catalogs are remote input, so they cannot supply or override these notices.
+fn annotate_model_catalog_with_data_use_notice(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
+	return models.map(fn [provider] (model ModelCatalogEntry) ModelCatalogEntry {
+		notice := if provider == 'opencode-go' {
+			match model.id {
+				'iceman-contributor-free' {
+					'Prompts may be used to improve this model.'
+				}
+				'muse-spark-1.3-contributor', 'muse-spark-1.2-contributor' {
+					'Prompts may be used to train future Meta models.'
+				}
+				else { '' }
+			}
+		} else {
+			''
+		}
+		return ModelCatalogEntry{
+			...model
+			data_use_notice: if notice.len > 0 { notice } else { none }
+		}
+	})
 }

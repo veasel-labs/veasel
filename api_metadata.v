@@ -175,8 +175,11 @@ fn model_catalog_error_message(provider string, provider_error string) string {
 			return 'Provider rejected the API key (HTTP 401). Check the key and account.'
 		}
 		'model catalog endpoint returned HTTP 403' {
+			if provider == 'opencode-go' {
+				return 'OpenCode Go denied model-list access (HTTP 403). Check Go plan/workspace access and the OpenCode Console API key; enter a model ID manually if catalog access is unavailable.'
+			}
 			if provider == 'opencode' {
-				return 'OpenCode denied model-list access (HTTP 403). Check account and model access; Go subscriptions for coding agents use the OpenCode Go preset and Console API key.'
+				return 'OpenCode denied model-list access (HTTP 403). Check account and model access; OpenCode Go subscriptions for coding agents use the Go preset and Console API key.'
 			}
 			return 'Provider denied model-list access (HTTP 403). Check model access and account permissions.'
 		}

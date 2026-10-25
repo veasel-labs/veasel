@@ -488,3 +488,79 @@ fn test_repository_map_symbol_count_does_not_flood_ranking() {
 	assert result.ranked_paths.len >= 2
 	assert result.ranked_paths[0] == 'src/target.v', 'mentioned definer must outrank a large unrelated file: ${result.ranked_paths}'
 }
+
+fn test_repository_map_symbol_cache_reuses_only_exact_file_content() {
+	mut cache := new_repository_map_symbol_cache()
+	path := '/workspace/src/agent.v'
+	first_content := 'pub fn first_agent_symbol() {}'
+	first_generation := next_repository_map_symbol_cache_generation(mut cache)
+	first := repository_map_cached_symbols(mut cache, path, first_content, first_generation,
+		0)
+	assert first.len == 1
+	assert first[0].name == 'first_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 0
+
+	reuse_generation := next_repository_map_symbol_cache_generation(mut cache)
+	reused := repository_map_cached_symbols(mut cache, path, first_content, reuse_generation,
+		0)
+	assert reused.len == 1
+	assert reused[0].name == 'first_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+
+	updated_generation := next_repository_map_symbol_cache_generation(mut cache)
+	updated := repository_map_cached_symbols(mut cache, path, 'pub fn updated_agent_symbol() {}',
+		updated_generation, 0)
+	assert updated.len == 1
+	assert updated[0].name == 'updated_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+}
+
+fn test_repository_map_symbol_cache_refreshes_for_new_rankings() {
+	mut cache := new_repository_map_symbol_cache()
+	first_generation := next_repository_map_symbol_cache_generation(mut cache)
+	first_path := 'src/first-ranked.v'
+	first_content := 'x'.repeat(repository_map_symbol_cache_max_bytes)
+	_ = repository_map_cached_symbols(mut cache, first_path, first_content, first_generation, 0)
+	_ = repository_map_cached_symbols(mut cache, 'src/lower-ranked.v', 'pub fn later_symbol() {}',
+		first_generation, 1)
+	assert cache.entries.len == 1
+	assert cache.retained_bytes == repository_map_symbol_cache_max_bytes
+
+	new_generation := next_repository_map_symbol_cache_generation(mut cache)
+	new_path := 'src/newly-ranked.v'
+	new_content := 'pub fn newly_relevant_symbol() {}'
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, new_generation, 0)
+	assert cache.entries.len == 1
+	cached_new := cache.entries[new_path] or {
+		panic('newly ranked file should replace stale cached content')
+	}
+	assert cached_new.content == new_content
+	assert cache.retained_bytes == new_content.len
+
+	next_generation := next_repository_map_symbol_cache_generation(mut cache)
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, next_generation, 0)
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+}
+
+fn test_repository_map_symbol_cache_older_build_cannot_replace_newer_entries() {
+	mut cache := new_repository_map_symbol_cache()
+	older_generation := next_repository_map_symbol_cache_generation(mut cache)
+	newer_generation := next_repository_map_symbol_cache_generation(mut cache)
+	new_path := 'src/current.v'
+	new_content := 'x'.repeat(repository_map_symbol_cache_max_bytes)
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, newer_generation, 0)
+
+	// An overlapping old build may observe a hit, but cannot make it stale again.
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, older_generation, 0)
+	cached_current := cache.entries[new_path] or {
+		panic('current build entry should remain cached')
+	}
+	assert cached_current.generation == newer_generation
+
+	// Nor may an older miss evict current entries to admit its own result.
+	_ = repository_map_cached_symbols(mut cache, 'src/obsolete.v', 'pub fn obsolete() {}',
+		older_generation, 1)
+	assert 'src/obsolete.v' !in cache.entries
+	assert cache.entries[new_path].generation == newer_generation
+	assert cache.retained_bytes == new_content.len
+}

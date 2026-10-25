@@ -59,10 +59,12 @@ fn test_benchmark_repository_map_ranking() {
 fn run_repository_map_ranking_sample() (i64, f64) {
 	mut fixture := repository_map_ranking_fixture()
 	stopwatch := time.new_stopwatch()
-	boost_repository_map_cross_references(mut fixture.entries, fixture.contents, RepositoryMapHintSet{
+	hints := RepositoryMapHintSet{
 		paths:  ['src/feature-17']
 		idents: ['shared_handler']
-	})
+	}
+	boost_repository_map_cross_references(mut fixture.entries, fixture.contents, hints,
+		repository_map_lexical_hints(hints))
 	elapsed := stopwatch.elapsed().microseconds()
 	mut checksum := 0.0
 	for entry in fixture.entries {

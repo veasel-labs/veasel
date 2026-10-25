@@ -38,7 +38,25 @@ fn repository_map_path_matches_lower(path_l string, base_l string, mentioned str
 	return path_l.contains(mentioned_l)
 }
 
+fn repository_map_lexical_hints(hints RepositoryMapHintSet) []string {
+	mut lexical_hints := []string{cap: hints.idents.len}
+	for ident in hints.idents {
+		if !repository_map_is_lexical_hint(ident) {
+			continue
+		}
+		normalized := ident.to_lower()
+		if normalized !in lexical_hints {
+			lexical_hints << normalized
+		}
+	}
+	return lexical_hints
+}
+
 fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
+	return score_repository_map_path_with_lexical_hints(path, hints, repository_map_lexical_hints(hints))
+}
+
+fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMapHintSet, lexical_hints []string) f64 {
 	mut score := 1.0
 	// Ranking considers each path against several hints. Normalize and split it
 	// once so those loops reuse the same strings instead of allocating a lower-
@@ -89,18 +107,9 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// Natural-language task terms often differ from path spelling only by
 	// pluralization or a common code abbreviation (argument/args). Keep this
 	// signal weaker than exact mentions, so it helps without replacing them.
-	mut seen_lexical_hints := map[string]bool{}
 	mut exact_path_term_matches := 0
 	mut path_segment_parts_ready := false
-	for ident in hints.idents {
-		if !repository_map_is_lexical_hint(ident) {
-			continue
-		}
-		normalized := ident.to_lower()
-		if normalized in seen_lexical_hints {
-			continue
-		}
-		seen_lexical_hints[normalized] = true
+	for ident in lexical_hints {
 		if !path_segment_parts_ready {
 			path_segments := normalized_path.split('/')
 			path_segment_parts = [][]string{cap: path_segments.len}
@@ -112,11 +121,11 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		mut matched := false
 		for parts in path_segment_parts {
 			for part in parts {
-				match_weight := repository_map_lexical_match_weight_lower(part, normalized)
+				match_weight := repository_map_lexical_match_weight_normalized(part, ident)
 				if match_weight > 0.0 {
 					// An exact word inside a compound filename (subagent-job.ts)
 					// is stronger path evidence than general source-token overlap.
-					if part == normalized {
+					if part == ident {
 						score += 120.0
 						exact_path_term_matches++
 					} else {
@@ -227,14 +236,12 @@ fn repository_map_lexical_candidates(term string) []string {
 }
 
 fn repository_map_lexical_match_weight(left string, right string) f64 {
-	a := left.to_lower()
-	b := right.to_lower()
-	return repository_map_lexical_match_weight_lower(a, b)
+	return repository_map_lexical_match_weight_normalized(left.to_lower(), right.to_lower())
 }
 
-// Both arguments are already lowercase; path ranking prepares the hint once
-// and reuses it across the candidate's path components.
-fn repository_map_lexical_match_weight_lower(a string, b string) f64 {
+// Both arguments are normalized by repository_map_ident_parts and
+// repository_map_lexical_hints in the path-ranking hot loop.
+fn repository_map_lexical_match_weight_normalized(a string, b string) f64 {
 	if a == b {
 		// This also matches a word inside compound names such as
 		// `litellm_model`; whole path-segment matches already scored above.
@@ -743,7 +750,7 @@ const repository_map_cross_reference_min_symbol_len = 3
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
 // are skipped as too generic, and the total boost per file is capped.
-fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet) {
+fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet, lexical_hints []string) {
 	mut definers := map[string][]int{}
 	for index, entry in entries {
 		if entry.path !in contents {
@@ -815,7 +822,8 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		}
 		// Personalization (Aider-style): a reference coming from a file the
 		// hint already points at counts more than one from an unrelated file.
-		referrer_weight := if score_repository_map_path(entry.path, hints) >= repository_map_cross_reference_hint_min_path_score {
+		referrer_weight := if score_repository_map_path_with_lexical_hints(entry.path, hints,
+			lexical_hints) >= repository_map_cross_reference_hint_min_path_score {
 			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
 		} else {
 			repository_map_cross_reference_weight

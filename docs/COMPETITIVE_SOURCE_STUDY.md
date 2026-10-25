@@ -225,8 +225,15 @@ map (heuristic declarations + mention ranking + measured UTF-8 budgets) studied
 against this pin; see
 [`compatibility/aider-repository-map.md`](compatibility/aider-repository-map.md).
 It is not tree-sitter/PageRank parity and does not claim provider token savings.
-Next: measure coding-task success versus grep-only baselines, then consider a
-parser adapter or cache only when measurements justify it.
+The app also reuses extracted symbols in a bounded process-local cache keyed by
+absolute path and exact source content. It still reads each selected file, but
+avoids repeating symbol extraction between sticky and focused maps and across
+unchanged turns. This does not claim an end-to-end latency or task-quality win;
+measure representative workspaces before expanding the cache or changing its
+limits.
+Next: measure coding-task success versus grep-only baselines and this extraction
+cache; consider a parser adapter or persistent cache only when measurements
+justify them.
 
 ### Cline — share orchestration, inject host capabilities
 

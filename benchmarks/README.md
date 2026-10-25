@@ -50,12 +50,24 @@ VEASEL_BENCH_BUILD_PROFILE='gcc -prod' \
 Compare a change with its parent on the same machine using the same pinned V
 compiler. This isolates ranking cost, not filesystem walking, symbol extraction,
 or full API latency; it does not establish task success or end-to-end speed.
-The initial `gcc -prod` comparison of `main` (`38ea5b5`) and the
-lexical-ranking change (`a0b3993`) measured p50 2.952 ms → 2.343 ms (20.63%
-lower) and p90 3.155 ms → 2.785 ms (11.73% lower), with identical score
-checksums. Raw samples and the full compiler pin are in
+The 2026-10-25 `gcc -prod` comparison of the PR base (`38ea5b5`) and code at
+candidate revision (`ebb45d2`) measured p50 3.038 ms → 2.347 ms (22.75%
+lower) and p90 3.229 ms → 2.505 ms (22.42% lower), with identical score
+checksums. Both revisions used the same pinned V compiler, GCC profile, and
+AMD Ryzen 9 5900X host. Raw samples and the full compiler pin are in
+[`reports/repository-map-ranking-linux-x64-2026-10-25.json`](reports/repository-map-ranking-linux-x64-2026-10-25.json).
+The earlier 2026-10-24 measurement remains in
 [`reports/repository-map-ranking-linux-x64-2026-10-24.json`](reports/repository-map-ranking-linux-x64-2026-10-24.json).
-This is one synthetic Linux x64 measurement, not a general performance claim.
+These are synthetic Linux x64 measurements, not a general performance claim.
+
+The follow-up lexical-hint cache was measured on the same fixture and host:
+revision `c1d12b2` → `ab70e3d` reduced p50 2.256 ms → 2.175 ms (3.59%)
+and p90 2.325 ms → 2.195 ms (5.59%), with the same score checksum. It
+precomputes normalized, deduplicated query terms once instead of allocating a
+per-file deduplication map, and compares already-normalized path terms without
+creating lowercase copies in the hot loop. Raw samples and environment details are in
+[`reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json`](reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json).
+This remains a synthetic ranking-only measurement, not an end-to-end or task-quality claim.
 
 ## Local CLI startup comparison
 

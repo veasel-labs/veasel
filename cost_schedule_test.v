@@ -277,6 +277,47 @@ fn test_global_usage_summary_prices_grouped_turns() {
 	summary := store.usage_summary() or { panic(err) }
 	assert summary.reported_turns == 2
 	assert summary.cost == '$6.00'
+	assert summary.models.len == 1
+	assert summary.models[0].provider == 'anthropic'
+	assert summary.models[0].model == 'claude-sonnet-4-5'
+	assert summary.models[0].reported_turns == 2
+	assert summary.models[0].cost == '$6.00'
+}
+
+fn test_global_usage_prices_mixed_cache_reporting_by_model() {
+	prior := os.getenv_opt(cost_schedule_env) or { '' }
+	os.unsetenv(cost_schedule_env)
+	defer {
+		if prior.len == 0 {
+			os.unsetenv(cost_schedule_env)
+		} else {
+			os.setenv(cost_schedule_env, prior, true)
+		}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Mixed cache usage'
+		directory: '/tmp/mixed-cache-usage'
+	}) or { panic(err) }
+	for index in 0 .. 2 {
+		operation := 'c1b2c3d4-e5f6-4789-a012-3456789ab${index:03}'
+		_ = store.create_session_operation(session.id, operation) or { panic(err) }
+		_ = store.append_exchange(session.id, operation, 'hi', 'there', 'openai', 'gpt-4o', '',
+			ProviderUsage{
+				input_tokens:      1_000_000
+				cache_read_tokens: if index == 0 { 500_000 } else { 0 }
+				cache_reported:    index == 0
+				reported:          true
+			}) or { panic(err) }
+	}
+	summary := store.usage_summary() or { panic(err) }
+	assert summary.models.len == 1
+	assert summary.models[0].completed_turns == 2
+	assert summary.models[0].reported_turns == 2
+	assert summary.models[0].cache_read_tokens == 500_000
+	assert summary.cost == '$4.375'
+	assert summary.models[0].cost == summary.cost
 }
 
 fn test_global_usage_cost_preserves_invalid_cached_input_guard_after_grouping() {
@@ -310,4 +351,6 @@ fn test_global_usage_cost_preserves_invalid_cached_input_guard_after_grouping() 
 	}
 	summary := store.usage_summary() or { panic(err) }
 	assert summary.cost == cost_unavailable
+	assert summary.models.len == 1
+	assert summary.models[0].cost == cost_unavailable
 }

@@ -2310,4 +2310,14 @@ fn test_global_usage_summary_aggregates_across_sessions() {
 	assert summary.cache_read_tokens == 30
 	assert summary.cache_creation_tokens == 5
 	assert summary.cost == 'unavailable'
+	assert summary.models.len == 1
+	assert summary.models[0].provider == 'openai-compatible'
+	assert summary.models[0].model == 'fixture'
+	assert summary.models[0].completed_turns == 3
+	assert summary.models[0].reported_turns == 2
+	assert summary.models[0].input_tokens == 150
+	assert summary.models[0].output_tokens == 30
+	assert summary.models[0].cache_read_tokens == 30
+	assert summary.models[0].cache_creation_tokens == 5
+	assert summary.models[0].cost == 'unavailable'
 }

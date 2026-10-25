@@ -2,6 +2,7 @@ module main
 
 import db.sqlite
 import json2
+import math
 import os
 import strings
 import sync
@@ -78,6 +79,8 @@ pub:
 	cache_reported        bool
 	reasoning_tokens      i64
 	reasoning_reported    bool
+	allowance_usd         f64
+	allowance_reported    bool
 	cost                  string = 'unavailable'
 }
 
@@ -94,6 +97,8 @@ pub:
 	cache_reported        bool
 	reasoning_tokens      i64
 	reasoning_reported    bool
+	allowance_usd         f64
+	allowance_reported    bool
 	cost                  string = 'unavailable'
 }
 
@@ -671,6 +676,67 @@ fn open_store(path string) !&Store {
 	if current < 18 {
 		db.begin() or {
 			db.close() or {}
+			return error('unable to begin provider billing migration')
+		}
+		for statement in [
+			'ALTER TABLE session_operations ADD COLUMN provider_cost_usd REAL NOT NULL DEFAULT 0',
+			'ALTER TABLE session_operations ADD COLUMN provider_cost_reported INTEGER NOT NULL DEFAULT 0 CHECK (provider_cost_reported IN (0, 1))',
+			'ALTER TABLE session_operations ADD COLUMN allowance_usd REAL NOT NULL DEFAULT 0',
+			'ALTER TABLE session_operations ADD COLUMN allowance_reported INTEGER NOT NULL DEFAULT 0 CHECK (allowance_reported IN (0, 1))',
+		] {
+			db.exec(statement) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to add provider billing columns')
+			}
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (18)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record provider billing migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit provider billing migration')
+		}
+	}
+	if current < 19 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin queued operation ordering migration')
+		}
+		db.exec('ALTER TABLE session_operations ADD COLUMN queue_order INTEGER NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add queued operation ordering')
+		}
+		// Backfill existing rows once; future queue ordering no longer depends
+		// on second-resolution timestamps, UUIDs, or mutable SQLite rowids.
+		db.exec('UPDATE session_operations SET queue_order = rowid') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to backfill queued operation ordering')
+		}
+		db.exec('CREATE INDEX session_operations_queue_order ON session_operations (session_id, queue_order)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index queued operation ordering')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (19)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record queued operation ordering migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit queued operation ordering migration')
+		}
+	}
+	if current < 20 {
+		db.begin() or {
+			db.close() or {}
 			return error('unable to begin child agent run migration')
 		}
 		db.exec("CREATE TABLE subagent_runs (id TEXT PRIMARY KEY, request_id TEXT NOT NULL, parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, parent_operation_id TEXT NOT NULL, child_session_id TEXT NOT NULL UNIQUE REFERENCES sessions(id) ON DELETE CASCADE, agent_id TEXT NOT NULL, requested_title TEXT NOT NULL, requested_directory TEXT NOT NULL, depth INTEGER NOT NULL CHECK (depth BETWEEN 1 AND 2), status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled', 'uncertain')), result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', outcome_claimed INTEGER NOT NULL DEFAULT 0 CHECK (outcome_claimed IN (0, 1)), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (parent_session_id, parent_operation_id, request_id))") or {
@@ -683,7 +749,7 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to index child agent runs')
 		}
-		db.exec('INSERT INTO schema_migrations (version) VALUES (18)') or {
+		db.exec('INSERT INTO schema_migrations (version) VALUES (20)') or {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to record child agent run migration')
@@ -694,7 +760,7 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child agent run migration')
 		}
 	}
-	if current < 19 {
+	if current < 21 {
 		db.begin() or {
 			db.close() or {}
 			return error('unable to begin child agent cancellation migration')
@@ -704,7 +770,7 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to add child agent cancellation state')
 		}
-		db.exec('INSERT INTO schema_migrations (version) VALUES (19)') or {
+		db.exec('INSERT INTO schema_migrations (version) VALUES (21)') or {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to record child agent cancellation migration')
@@ -715,7 +781,7 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child agent cancellation migration')
 		}
 	}
-	if current < 20 {
+	if current < 22 {
 		db.begin() or {
 			db.close() or {}
 			return error('unable to begin child workspace readiness migration')
@@ -725,7 +791,7 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to add child workspace readiness state')
 		}
-		db.exec('INSERT INTO schema_migrations (version) VALUES (20)') or {
+		db.exec('INSERT INTO schema_migrations (version) VALUES (22)') or {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to record child workspace readiness migration')
@@ -736,7 +802,7 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child workspace readiness migration')
 		}
 	}
-	if current < 21 {
+	if current < 23 {
 		db.begin() or {
 			db.close() or {}
 			return error('unable to begin child workspace start migration')
@@ -751,7 +817,7 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to initialize queued child workspace start state')
 		}
-		db.exec('INSERT INTO schema_migrations (version) VALUES (21)') or {
+		db.exec('INSERT INTO schema_migrations (version) VALUES (23)') or {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to record child workspace start migration')
@@ -762,7 +828,7 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child workspace start migration')
 		}
 	}
-	if current < 22 {
+	if current < 24 {
 		db.begin() or {
 			db.close() or {}
 			return error('unable to begin child outcome recovery index migration')
@@ -772,7 +838,7 @@ fn open_store(path string) !&Store {
 			db.close() or {}
 			return error('unable to index unclaimed child outcomes')
 		}
-		db.exec('INSERT INTO schema_migrations (version) VALUES (22)') or {
+		db.exec('INSERT INTO schema_migrations (version) VALUES (24)') or {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to record child outcome recovery index migration')
@@ -2025,7 +2091,7 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 	if sessions.len != 1 {
 		return error('session not found')
 	}
-	rows := store.db.exec_param("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE session_id = ? AND status = 'completed'",
+	rows := store.db.exec_param("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN allowance_reported = 1 THEN allowance_usd ELSE 0 END), 0), COALESCE(SUM(CASE WHEN allowance_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE session_id = ? AND status = 'completed'",
 		session_id)!
 	if rows.len != 1 {
 		return error('unable to read session usage')
@@ -2034,7 +2100,7 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 	reported_turns := row.val(1).int()
 	cache_turns := row.val(6).int()
 	reasoning_turns := row.val(8).int()
-	turn_rows := store.db.exec_param("SELECT provider, model, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported FROM session_operations WHERE session_id = ? AND status = 'completed' ORDER BY created_at ASC, id ASC",
+	turn_rows := store.db.exec_param("SELECT provider, model, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, provider_cost_usd, provider_cost_reported FROM session_operations WHERE session_id = ? AND status = 'completed' ORDER BY created_at ASC, id ASC",
 		session_id)!
 	mut cost_turns := []CostScheduleTurn{cap: turn_rows.len}
 	for turn_row in turn_rows {
@@ -2047,6 +2113,11 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 			cache_read_tokens:     turn_row.val(5).i64()
 			cache_creation_tokens: turn_row.val(6).i64()
 			cache_reported:        turn_row.val(7).int() == 1
+			provider_cost_usd:     if turn_row.val(9).int() == 1 {
+				turn_row.val(8).f64()
+			} else {
+				none
+			}
 		}
 	}
 	return SessionUsageSummary{
@@ -2061,6 +2132,8 @@ fn (mut store Store) session_usage_summary(session_id string) !SessionUsageSumma
 		cache_reported:        cache_turns > 0
 		reasoning_tokens:      row.val(7).i64()
 		reasoning_reported:    reasoning_turns > 0
+		allowance_usd:         row.val(9).f64()
+		allowance_reported:    row.val(10).int() > 0
 		cost:                  session_usage_cost_label(cost_turns)
 	}
 }
@@ -2076,7 +2149,7 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	}
 	session_rows := store.db.exec('SELECT COUNT(*) FROM sessions')!
 	sessions := if session_rows.len == 1 { session_rows[0].val(0).int() } else { 0 }
-	rows := store.db.exec("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE status = 'completed'")!
+	rows := store.db.exec("SELECT COUNT(*), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN input_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN usage_reported = 1 THEN output_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_read_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN cache_creation_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cache_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN reasoning_tokens ELSE 0 END), 0), COALESCE(SUM(CASE WHEN reasoning_reported = 1 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN allowance_reported = 1 THEN allowance_usd ELSE 0 END), 0), COALESCE(SUM(CASE WHEN allowance_reported = 1 THEN 1 ELSE 0 END), 0) FROM session_operations WHERE status = 'completed'")!
 	if rows.len != 1 {
 		return error('unable to read usage summary')
 	}
@@ -2086,18 +2159,19 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 	reasoning_turns := row.val(8).int()
 	mut cost := cost_unavailable
 	schedule := active_cost_schedule()
-	if schedule.entries.len > 0 {
+	{
 		// Price grouped token totals instead of materializing every historical
 		// operation. Prices are linear per provider/model; keep cache-reporting
 		// groups separate and retain a per-turn invalid-cache guard below.
-		cost_rows := store.db.exec("SELECT provider, model, cache_reported, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), SUM(CASE WHEN cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END) FROM session_operations WHERE status = 'completed' AND usage_reported = 1 GROUP BY provider, model, cache_reported")!
+		cost_rows := store.db.exec("SELECT provider, model, cache_reported, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_creation_tokens), SUM(CASE WHEN cache_reported = 1 AND cache_read_tokens > input_tokens THEN 1 ELSE 0 END), SUM(provider_cost_usd), provider_cost_reported FROM session_operations WHERE status = 'completed' AND (usage_reported = 1 OR provider_cost_reported = 1) GROUP BY provider, model, cache_reported, provider_cost_reported")!
 		mut cost_turns := []CostScheduleTurn{cap: cost_rows.len}
 		mut invalid_subset_cache := false
 		for cost_row in cost_rows {
 			provider := cost_row.val(0)
 			model := cost_row.val(1)
 			if entry := lookup_cost_schedule_entry(schedule, provider, model) {
-				if cost_input_is_subset_provider(entry.provider) && cost_row.val(7).int() > 0 {
+				if cost_row.val(9).int() == 0 && cost_input_is_subset_provider(entry.provider)
+					&& cost_row.val(7).int() > 0 {
 					invalid_subset_cache = true
 				}
 			}
@@ -2110,6 +2184,11 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 				cache_read_tokens:     cost_row.val(5).i64()
 				cache_creation_tokens: cost_row.val(6).i64()
 				cache_reported:        cost_row.val(2).int() == 1
+				provider_cost_usd:     if cost_row.val(9).int() == 1 {
+					cost_row.val(8).f64()
+				} else {
+					none
+				}
 			}
 		}
 		if !invalid_subset_cache {
@@ -2128,6 +2207,8 @@ fn (mut store Store) usage_summary() !GlobalUsageSummary {
 		cache_reported:        cache_turns > 0
 		reasoning_tokens:      row.val(7).i64()
 		reasoning_reported:    reasoning_turns > 0
+		allowance_usd:         row.val(9).f64()
+		allowance_reported:    row.val(10).int() > 0
 		cost:                  cost
 	}
 }
@@ -2394,6 +2475,13 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			|| usage.cache_creation_tokens < 0 || usage.reasoning_tokens < 0) {
 		return error('provider usage token counts must be non-negative')
 	}
+	for amount in [usage.reported_cost_usd, usage.allowance_usd] {
+		if value := amount {
+			if value < 0 || math.is_nan(value) || math.is_inf(value, 0) {
+				return error('provider billing amounts must be finite and non-negative')
+			}
+		}
+	}
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -2438,10 +2526,15 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 		cache_flag := if usage.cache_reported { '1' } else { '0' }
 		reasoning_tokens := if usage.reasoning_reported { usage.reasoning_tokens } else { i64(0) }
 		reasoning_flag := if usage.reasoning_reported { '1' } else { '0' }
-		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', input_tokens = ?, output_tokens = ?, usage_reported = ?, cache_read_tokens = ?, cache_creation_tokens = ?, cache_reported = ?, reasoning_tokens = ?, reasoning_reported = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
+		provider_cost := usage.reported_cost_usd or { 0.0 }
+		provider_cost_flag := if usage.reported_cost_usd != none { '1' } else { '0' }
+		allowance := usage.allowance_usd or { 0.0 }
+		allowance_flag := if usage.allowance_usd != none { '1' } else { '0' }
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'completed', provider = ?, model = ?, error = '', input_tokens = ?, output_tokens = ?, usage_reported = ?, cache_read_tokens = ?, cache_creation_tokens = ?, cache_reported = ?, reasoning_tokens = ?, reasoning_reported = ?, provider_cost_usd = ?, provider_cost_reported = ?, allowance_usd = ?, allowance_reported = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('running', 'cancelling')",
 			[provider, model, input_tokens.str(), output_tokens.str(), usage_flag,
 				cache_read_tokens.str(), cache_creation_tokens.str(), cache_flag,
-				reasoning_tokens.str(), reasoning_flag, operation_id, session_id]) or {
+				reasoning_tokens.str(), reasoning_flag, provider_cost.str(), provider_cost_flag,
+				allowance.str(), allowance_flag, operation_id, session_id]) or {
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}

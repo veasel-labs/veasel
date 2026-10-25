@@ -10,12 +10,14 @@ const trace_redaction_marker = '[REDACTED]'
 // printed by a tool, or returned by an MCP server).
 const trace_secret_prefixes = ['sk-', 'sk_', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_', 'github_pat_',
 	'xoxb-', 'xoxp-', 'xoxa-', 'xoxs-', 'xoxr-', 'AIza', 'AKIA', 'LLM_', 'eyJ']
+const trace_secret_prefix_initial_bytes = 'sgxALe'
 
 // Field names whose values are credentials wherever they appear, in trace text
 // assignments (`token = ...`) and in structured tool-call arguments alike.
 const trace_secret_field_names = ['api_key', 'api-key', 'api key', 'apikey', 'access_token',
 	'access-token', 'access token', 'auth_token', 'auth-token', 'client_secret', 'client-secret',
 	'client secret', 'password', 'passwd', 'secret', 'token', 'authorization']
+const trace_secret_field_initial_bytes = 'aAcCpPsStT'
 
 // redact_trace_steps returns a copy of the steps with credentials removed from
 // messages, tool-call arguments and observations. This is the only form of a
@@ -119,26 +121,46 @@ fn is_trace_value_byte(b u8) bool {
 	return b !in [` `, `\t`, `\n`, `\r`, `"`, `'`, `\``, `,`, `;`, `}`, `]`, `)`]
 }
 
-fn ascii_lower_bytes(text string) []u8 {
-	mut bytes := text.bytes()
-	for i, b in bytes {
-		if b >= `A` && b <= `Z` {
-			bytes[i] = b + 32
-		}
+fn trace_ascii_lower_byte(value u8) u8 {
+	if value >= `A` && value <= `Z` {
+		return value + 32
 	}
-	return bytes
+	return value
 }
 
-fn bytes_start_with(bytes []u8, at int, prefix string) bool {
-	if at + prefix.len > bytes.len {
+fn trace_text_starts_with(text string, at int, prefix string) bool {
+	if at < 0 || at + prefix.len > text.len {
 		return false
 	}
-	for i, p in prefix.bytes() {
-		if bytes[at + i] != p {
+	for i in 0 .. prefix.len {
+		if text[at + i] != prefix[i] {
 			return false
 		}
 	}
 	return true
+}
+
+fn trace_text_starts_with_ascii_ci(text string, at int, prefix string) bool {
+	if at < 0 || at + prefix.len > text.len {
+		return false
+	}
+	for i in 0 .. prefix.len {
+		if trace_ascii_lower_byte(text[at + i]) != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
+fn trace_text_region_equals_ascii_ci(text string, start int, end int, expected string) bool {
+	return end >= start && end - start == expected.len && trace_text_starts_with_ascii_ci(text,
+		start, expected)
+}
+
+fn append_trace_text_range(mut out []u8, text string, start int, end int) {
+	for index in start .. end {
+		out << text[index]
+	}
 }
 
 // redact_trace_text removes credentials from one trace string: exact values of
@@ -147,45 +169,83 @@ fn bytes_start_with(bytes []u8, at int, prefix string) bool {
 // code, paths, ordinary prose) is preserved.
 fn redact_trace_text(text string, secrets []string) string {
 	// Drop binary-unsafe NULs before credential redaction so ATIF JSON stays text-safe.
-	sanitized := text.replace('\0', '')
+	sanitized := strip_trace_nuls(text)
 	mut redacted := redact_pem_blocks(sanitized)
 	for secret in secrets {
 		if secret.len > 0 && redacted.contains(secret) {
 			redacted = redacted.replace(secret, trace_redaction_marker)
 		}
 	}
-	return redact_assigned_secrets(redact_prefixed_tokens(redacted))
+	safe := redact_assigned_secrets(redact_prefixed_tokens(redacted))
+	// V strings are immutable; return the unchanged input without cloning the
+	// complete message when no sanitization or redaction changed it.
+	return safe
+}
+
+fn strip_trace_nuls(text string) string {
+	mut first_nul := -1
+	for index in 0 .. text.len {
+		if text[index] == 0 {
+			first_nul = index
+			break
+		}
+	}
+	if first_nul < 0 {
+		return text
+	}
+	mut out := []u8{cap: text.len}
+	append_trace_text_range(mut out, text, 0, first_nul)
+	for index in first_nul .. text.len {
+		if text[index] != 0 {
+			out << text[index]
+		}
+	}
+	return out.bytestr()
 }
 
 // redact_pem_blocks replaces a complete BEGIN/END block. An opening marker
 // without a matching END is left in place so a mention of the marker cannot
 // erase the rest of the trace.
 fn redact_pem_blocks(text string) string {
-	bytes := text.bytes()
-	mut out := []u8{cap: bytes.len}
+	mut out := []u8{}
+	mut unchanged_start := 0
+	mut changed := false
 	mut i := 0
-	for i < bytes.len {
-		if bytes_start_with(bytes, i, '-----BEGIN') {
-			end_at := index_bytes_from(bytes, '-----END', i + 10)
-			close := if end_at >= 0 { index_bytes_from(bytes, '-----', end_at + 8) } else { -1 }
+	for i < text.len {
+		if text[i] != `-` {
+			i++
+			continue
+		}
+		if trace_text_starts_with(text, i, '-----BEGIN') {
+			end_at := index_trace_text_from(text, '-----END', i + 10)
+			close := if end_at >= 0 { index_trace_text_from(text, '-----', end_at + 8) } else { -1 }
 			if close >= 0 {
-				out << trace_redaction_marker.bytes()
+				if !changed {
+					out = []u8{cap: text.len}
+				}
+				append_trace_text_range(mut out, text, unchanged_start, i)
+				append_trace_text_range(mut out, trace_redaction_marker, 0, trace_redaction_marker.len)
+				changed = true
 				i = close + 5
+				unchanged_start = i
 				continue
 			}
 		}
-		out << bytes[i]
 		i++
 	}
+	if !changed {
+		return text
+	}
+	append_trace_text_range(mut out, text, unchanged_start, text.len)
 	return out.bytestr()
 }
 
-fn index_bytes_from(bytes []u8, needle string, start int) int {
+fn index_trace_text_from(text string, needle string, start int) int {
 	if start < 0 {
 		return -1
 	}
-	for i in start .. bytes.len {
-		if bytes_start_with(bytes, i, needle) {
+	for i in start .. text.len {
+		if trace_text_starts_with(text, i, needle) {
 			return i
 		}
 	}
@@ -193,15 +253,22 @@ fn index_bytes_from(bytes []u8, needle string, start int) int {
 }
 
 fn redact_prefixed_tokens(text string) string {
-	bytes := text.bytes()
-	mut out := []u8{cap: bytes.len}
+	mut out := []u8{}
+	mut unchanged_start := 0
+	mut changed := false
 	mut i := 0
-	for i < bytes.len {
+	for i < text.len {
+		// All recognized token prefixes start with one of these bytes. Most
+		// trace text can skip the prefix table with a single byte comparison.
+		if !trace_secret_prefix_initial_bytes.contains_u8(text[i]) {
+			i++
+			continue
+		}
 		mut consumed := 0
 		for prefix in trace_secret_prefixes {
-			if bytes_start_with(bytes, i, prefix) {
+			if trace_text_starts_with(text, i, prefix) {
 				mut end := i
-				for end < bytes.len && is_trace_token_byte(bytes[end]) {
+				for end < text.len && is_trace_token_byte(text[end]) {
 					end++
 				}
 				// Require a plausible credential tail so ordinary words that
@@ -213,78 +280,99 @@ fn redact_prefixed_tokens(text string) string {
 			}
 		}
 		if consumed > 0 {
-			out << trace_redaction_marker.bytes()
+			if !changed {
+				out = []u8{cap: text.len}
+			}
+			append_trace_text_range(mut out, text, unchanged_start, i)
+			append_trace_text_range(mut out, trace_redaction_marker, 0, trace_redaction_marker.len)
+			changed = true
 			i += consumed
+			unchanged_start = i
 		} else {
-			out << bytes[i]
 			i++
 		}
 	}
+	if !changed {
+		return text
+	}
+	append_trace_text_range(mut out, text, unchanged_start, text.len)
 	return out.bytestr()
 }
 
 fn redact_assigned_secrets(text string) string {
-	bytes := text.bytes()
-	lower := ascii_lower_bytes(text)
-	mut out := []u8{cap: bytes.len}
+	mut out := []u8{}
+	mut unchanged_start := 0
+	mut changed := false
 	mut i := 0
-	for i < bytes.len {
+	for i < text.len {
+		// Secret field names are ASCII case-insensitive and start with only
+		// these letters, so ordinary prose avoids the field-name scan.
+		if !trace_secret_field_initial_bytes.contains_u8(text[i]) {
+			i++
+			continue
+		}
 		mut field_len := 0
-		if i == 0 || !is_trace_token_byte(bytes[i - 1]) {
+		if i == 0 || !is_trace_token_byte(text[i - 1]) {
 			for field in trace_secret_field_names {
-				if bytes_start_with(lower, i, field) {
+				if trace_text_starts_with_ascii_ci(text, i, field) {
 					field_len = field.len
 					break
 				}
 			}
 		}
 		if field_len == 0 {
-			out << bytes[i]
 			i++
 			continue
 		}
 		mut cursor := i + field_len
-		for cursor < bytes.len && bytes[cursor] in [` `, `\t`] {
+		for cursor < text.len && text[cursor] in [` `, `\t`] {
 			cursor++
 		}
-		if cursor >= bytes.len || bytes[cursor] !in [`:`, `=`] {
-			out << bytes[i]
+		if cursor >= text.len || text[cursor] !in [`:`, `=`] {
 			i++
 			continue
 		}
 		cursor++
-		for cursor < bytes.len && bytes[cursor] in [` `, `\t`] {
+		for cursor < text.len && text[cursor] in [` `, `\t`] {
 			cursor++
 		}
-		if cursor < bytes.len && bytes[cursor] in [`"`, `'`, `\``] {
+		if cursor < text.len && text[cursor] in [`"`, `'`, `\``] {
 			cursor++
 		}
 		mut value_end := cursor
-		for value_end < bytes.len && is_trace_value_byte(bytes[value_end]) {
+		for value_end < text.len && is_trace_value_byte(text[value_end]) {
 			value_end++
 		}
 		if value_end == cursor {
-			out << bytes[i]
 			i++
 			continue
 		}
-		value := lower[cursor..value_end].bytestr()
-		if value in ['bearer', 'basic'] {
+		if trace_text_region_equals_ascii_ci(text, cursor, value_end, 'bearer')
+			|| trace_text_region_equals_ascii_ci(text, cursor, value_end, 'basic') {
 			mut token_start := value_end
-			for token_start < bytes.len && bytes[token_start] in [` `, `\t`] {
+			for token_start < text.len && text[token_start] in [` `, `\t`] {
 				token_start++
 			}
 			mut token_end := token_start
-			for token_end < bytes.len && is_trace_token_byte(bytes[token_end]) {
+			for token_end < text.len && is_trace_token_byte(text[token_end]) {
 				token_end++
 			}
 			if token_end > token_start {
 				value_end = token_end
 			}
 		}
-		out << bytes[i..cursor]
-		out << trace_redaction_marker.bytes()
+		if !changed {
+			out = []u8{cap: text.len}
+		}
+		append_trace_text_range(mut out, text, unchanged_start, cursor)
+		append_trace_text_range(mut out, trace_redaction_marker, 0, trace_redaction_marker.len)
+		changed = true
 		i = value_end
+		unchanged_start = i
 	}
+	if !changed {
+		return text
+	}
+	append_trace_text_range(mut out, text, unchanged_start, text.len)
 	return out.bytestr()
 }

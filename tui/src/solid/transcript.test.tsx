@@ -10,6 +10,7 @@ import {
   type ToolAwareMessage,
 } from "./transcript"
 import { assistantLabel, userLabel } from "../transcript"
+import { renderMarkdownFrame } from "./markdown-test-helpers"
 import type { ChatTurn } from "../chat-history"
 
 const setups: Array<Awaited<ReturnType<typeof testRender>>> = []
@@ -37,7 +38,7 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("VEASEL")
@@ -70,9 +71,9 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
     // Sticky bottom needs a layout pass after content mounts.
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("Turn 36")
@@ -105,14 +106,14 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
+    await renderMarkdownFrame(setup)
 
     expect(setup.captureCharFrame()).toContain("partial stream")
 
     setStream("TAIL_MARKER_STREAM_END unique")
-    await setup.renderOnce()
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("TAIL_MARKER_STREAM_END")
@@ -132,7 +133,7 @@ describe("Solid transcript scrollbox", () => {
       { width: 80, height: 20 },
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     expect(setup.captureCharFrame()).toContain("Start with a question")
   })
@@ -155,8 +156,8 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("earlier")
@@ -191,7 +192,7 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("from chat-history")
@@ -225,7 +226,7 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("VEASEL")
@@ -264,12 +265,12 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     expect(setup.captureCharFrame()).not.toContain("unique-expand-marker")
 
     setup.mockInput.pressKey("g", { ctrl: true })
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
 
     const frame = setup.captureCharFrame()
     expect(frame).toContain("unique-expand-marker")
@@ -326,7 +327,7 @@ describe("Solid transcript scrollbox", () => {
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
     const frame = setup.captureCharFrame()
     expect(frame).toContain("quiet-visible-answer")
     expect(frame).not.toContain("quiet-hidden-tool")
@@ -356,7 +357,7 @@ visible-answer-marker`,
       demoSize,
     )
     setups.push(setup)
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
     let frame = setup.captureCharFrame()
     expect(frame).toContain("▸ thinking")
     expect(frame).toContain("visible-answer-marker")

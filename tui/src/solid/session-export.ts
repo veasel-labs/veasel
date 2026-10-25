@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { formatReportedCacheUsage, formatTokenCount } from "../usage"
+import { formatReportedCacheUsage, formatReportedUsd, formatTokenCount } from "../usage"
 
 export type ExportMessage = {
   role: string
@@ -124,26 +124,33 @@ export function formatGlobalUsageLine(summary: {
   reasoning_tokens?: number
   reasoning_reported?: boolean
   cost?: string
+  allowance_usd?: number
+  allowance_reported?: boolean
 }): string | undefined {
-  if (!summary.usage_reported) return undefined
+  if (!summary.usage_reported && !summary.allowance_reported) return undefined
   const parts = [
     `all sessions (${summary.sessions})`,
   ]
   if (typeof summary.completed_turns === "number") {
-    const reported = typeof summary.reported_turns === "number"
+    const reported = typeof summary.reported_turns === "number" && summary.reported_turns > 0
       ? ` · ${summary.reported_turns} metered`
       : ""
     parts.push(`${summary.completed_turns} turns${reported}`)
   }
-  parts.push(`${formatTokenCount(summary.input_tokens)} in`, `${formatTokenCount(summary.output_tokens)} out`)
-  if (summary.cache_reported) {
-    parts.push(formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0))
-  }
-  if (summary.reasoning_reported) {
-    parts.push(`${formatTokenCount(summary.reasoning_tokens ?? 0)} reasoning`)
+  if (summary.usage_reported) {
+    parts.push(`${formatTokenCount(summary.input_tokens)} in`, `${formatTokenCount(summary.output_tokens)} out`)
+    if (summary.cache_reported) {
+      parts.push(formatReportedCacheUsage(summary.cache_read_tokens ?? 0, summary.cache_creation_tokens ?? 0))
+    }
+    if (summary.reasoning_reported) {
+      parts.push(`${formatTokenCount(summary.reasoning_tokens ?? 0)} reasoning`)
+    }
   }
   if (summary.cost) {
     parts.push(summary.cost === "unavailable" ? "cost unavailable" : `cost ${summary.cost}`)
+  }
+  if (summary.allowance_reported && typeof summary.allowance_usd === "number") {
+    parts.push(`Go allowance ${formatReportedUsd(summary.allowance_usd)}`)
   }
   return parts.join(" · ")
 }
@@ -155,15 +162,18 @@ export function formatUsageLine(summary: {
   cache_read_tokens?: number
   cache_reported?: boolean
   cost?: string
+  allowance_usd?: number
+  allowance_reported?: boolean
 }): string | undefined {
-  if (!summary.usage_reported) return undefined
-  const parts = [
-    `${summary.input_tokens} in`,
-    `${summary.output_tokens} out`,
-  ]
+  if (!summary.usage_reported && !summary.allowance_reported) return undefined
+  const parts: string[] = []
+  if (summary.usage_reported) parts.push(`${summary.input_tokens} in`, `${summary.output_tokens} out`)
   if (summary.cache_reported && typeof summary.cache_read_tokens === "number") {
     parts.push(`${summary.cache_read_tokens} cache read`)
   }
   if (summary.cost && summary.cost !== "unavailable") parts.push(`cost ${summary.cost}`)
+  if (summary.allowance_reported && typeof summary.allowance_usd === "number") {
+    parts.push(`Go allowance ${formatReportedUsd(summary.allowance_usd)}`)
+  }
   return parts.join(" · ")
 }

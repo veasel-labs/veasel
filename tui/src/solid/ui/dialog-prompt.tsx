@@ -13,7 +13,8 @@ export type DialogPromptProps = {
   value?: string
   confirmLabel?: string
   secret?: boolean
-  onConfirm?: (value: string) => void
+  /** Return false to keep the prompt open when the value is invalid. */
+  onConfirm?: (value: string) => unknown
   onCancel?: () => void
 }
 
@@ -24,7 +25,7 @@ export function DialogPrompt(props: DialogPromptProps) {
   let input: InputRenderable | undefined
 
   const submit = () => {
-    props.onConfirm?.(draft())
+    if (props.onConfirm?.(draft()) === false) return
     dialog.clear()
   }
 

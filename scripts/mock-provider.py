@@ -3,6 +3,7 @@
 
 import json
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event
@@ -44,6 +45,7 @@ def has_openai_compatible_auth(value):
 
 
 REPLY = "Provider fixture reply"
+STREAM_REPLY = "Streaming fixture reply arrives in two pieces"
 GREETING_EDIT = (
     "module fixture\n\n// workspace-search-sentinel\n"
     "fn greet(name string) string {\n\treturn 'Hello, ${name}!'\n}\n"
@@ -276,7 +278,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 or (provider_kind == "openai-responses" and payload.get("include") != ["reasoning.encrypted_content"])
                 or not input_items
                 or input_items[0].get("role") != "system"
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
@@ -378,7 +380,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -575,7 +577,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     final_text = "Fixed failing test." if is_fix_failing_test and "test-pass" in tool_result else "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                     body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
-                body = {"choices": [{"message": {"role": "assistant", "content": REPLY}}]}
+                response_text = STREAM_REPLY if user_text == "Stream incrementally" else REPLY
+                body = {"choices": [{"message": {"role": "assistant", "content": response_text}}]}
         elif self.headers.get("x-api-key") == API_KEYS["anthropic"]:
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
@@ -820,6 +823,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     self.wfile.flush()
                 except BrokenPipeError:
                     return
+                if user_text == "Stream incrementally" and frame.startswith("data: {\"choices\": [{\"delta\": {\"content\""):
+                    time.sleep(1.0)
             return
 
         encoded = json.dumps(body).encode()

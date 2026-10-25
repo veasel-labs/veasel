@@ -18,12 +18,20 @@ fn repository_map_path_matches_mention(path string, mentioned string) bool {
 	if mentioned.len == 0 {
 		return false
 	}
-	path_l := path.to_lower()
+	normalized_path := path.replace('\\', '/')
+	path_l := normalized_path.to_lower()
+	base_l := os.file_name(path_l)
+	return repository_map_path_matches_lower(path_l, base_l, mentioned)
+}
+
+fn repository_map_path_matches_lower(path_l string, base_l string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
 	mentioned_l := mentioned.to_lower().replace('\\', '/')
 	if path_l == mentioned_l || path_l.ends_with('/' + mentioned_l) {
 		return true
 	}
-	base_l := os.file_name(path).to_lower()
 	if base_l == mentioned_l || base_l == os.file_name(mentioned_l) {
 		return true
 	}
@@ -32,7 +40,15 @@ fn repository_map_path_matches_mention(path string, mentioned string) bool {
 
 fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	mut score := 1.0
+	// Ranking considers each path against several hints. Normalize and split it
+	// once so those loops reuse the same strings instead of allocating a lower-
+	// cased path or a new segment list for every hint.
+	normalized_path := path.replace('\\', '/')
+	path_l := normalized_path.to_lower()
 	base := os.file_name(path)
+	base_l := os.file_name(path_l)
+	lower_segments := if hints.idents.len > 0 { path_l.split('/') } else { []string{} }
+	mut path_segment_parts := [][]string{}
 	if base in repository_map_important_basenames || path in repository_map_important_basenames {
 		// Static importance is a tie-breaker, not a relevance signal: at the
 		// old +1000 every repo root (README, .gitignore, pyproject.toml...)
@@ -41,7 +57,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		score += 120.0
 	}
 	for mentioned in hints.paths {
-		if repository_map_path_matches_mention(path, mentioned) {
+		if repository_map_path_matches_lower(path_l, base_l, mentioned) {
 			score += 500.0
 			break
 		}
@@ -50,14 +66,14 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// children into budget before unrelated deep leaves — extractive, not
 	// tree-sitter/PageRank.
 	for mentioned in hints.paths {
-		if repository_map_path_under_mention(path, mentioned) {
+		if repository_map_path_under_mention_lower(path_l, mentioned) {
 			score += 220.0
 			break
 		}
 	}
 	for ident in hints.idents {
-		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
-			ident) {
+		ident_l := ident.to_lower()
+		if base_l == ident_l || repository_map_stem(base_l) == ident_l {
 			// A queried term used as the filename is stronger than the same
 			// term inferred from declarations or general file contents.
 			score += 500.0
@@ -65,7 +81,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		}
 	}
 	for ident in hints.idents {
-		if repository_map_path_has_segment(path, ident) {
+		if repository_map_path_has_segment_lower(lower_segments, ident.to_lower()) {
 			score += 120.0
 			break
 		}
@@ -75,6 +91,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// signal weaker than exact mentions, so it helps without replacing them.
 	mut seen_lexical_hints := map[string]bool{}
 	mut exact_path_term_matches := 0
+	mut path_segment_parts_ready := false
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
 			continue
@@ -84,15 +101,22 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 			continue
 		}
 		seen_lexical_hints[normalized] = true
+		if !path_segment_parts_ready {
+			path_segments := normalized_path.split('/')
+			path_segment_parts = [][]string{cap: path_segments.len}
+			for segment in path_segments {
+				path_segment_parts << repository_map_ident_parts(repository_map_stem(segment))
+			}
+			path_segment_parts_ready = true
+		}
 		mut matched := false
-		for segment in path.replace('\\', '/').split('/') {
-			name := repository_map_stem(segment)
-			for part in repository_map_ident_parts(name) {
-				match_weight := repository_map_lexical_match_weight(part, ident)
+		for parts in path_segment_parts {
+			for part in parts {
+				match_weight := repository_map_lexical_match_weight_lower(part, normalized)
 				if match_weight > 0.0 {
 					// An exact word inside a compound filename (subagent-job.ts)
 					// is stronger path evidence than general source-token overlap.
-					if part == ident.to_lower() {
+					if part == normalized {
 						score += 120.0
 						exact_path_term_matches++
 					} else {
@@ -117,26 +141,31 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// For behavior questions, prefer implementation files over tests that
 	// merely import the same symbols. A query explicitly about tests keeps them
 	// eligible for the existing exact and source/test-pair signals.
-	if repository_map_is_test_path(path) && !repository_map_hint_mentions_tests(hints) {
+	is_test_path := if hints.idents.len > 0 {
+		repository_map_path_segments_are_test(lower_segments)
+	} else {
+		repository_map_is_test_path(normalized_path)
+	}
+	if is_test_path && !repository_map_hint_mentions_tests(hints) {
 		score -= 240.0
 	}
 	// Test/source pairing: mention of foo.v or stem foo also elevates
 	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
-	if !repository_map_is_test_path(path) || repository_map_hint_mentions_tests(hints) {
+	if !is_test_path || repository_map_hint_mentions_tests(hints) {
 		for mentioned in hints.paths {
-			if repository_map_is_test_pair(path, mentioned) {
+			if repository_map_is_test_pair(normalized_path, mentioned) {
 				score += 280.0
 				break
 			}
 		}
 		for ident in hints.idents {
-			if repository_map_is_test_pair_for_stem(path, ident) {
+			if repository_map_is_test_pair_for_stem(normalized_path, ident) {
 				score += 180.0
 				break
 			}
 		}
 	}
-	depth := path.count('/')
+	depth := normalized_path.count('/')
 	if depth == 0 {
 		score += 25.0
 	} else if depth == 1 {
@@ -200,6 +229,12 @@ fn repository_map_lexical_candidates(term string) []string {
 fn repository_map_lexical_match_weight(left string, right string) f64 {
 	a := left.to_lower()
 	b := right.to_lower()
+	return repository_map_lexical_match_weight_lower(a, b)
+}
+
+// Both arguments are already lowercase; path ranking prepares the hint once
+// and reuses it across the candidate's path components.
+fn repository_map_lexical_match_weight_lower(a string, b string) f64 {
 	if a == b {
 		// This also matches a word inside compound names such as
 		// `litellm_model`; whole path-segment matches already scored above.
@@ -233,7 +268,12 @@ fn repository_map_lexical_match_weight(left string, right string) f64 {
 }
 
 fn repository_map_is_test_path(path string) bool {
-	for segment in path.to_lower().replace('\\', '/').split('/') {
+	normalized_path := path.replace('\\', '/').to_lower()
+	return repository_map_path_segments_are_test(normalized_path.split('/'))
+}
+
+fn repository_map_path_segments_are_test(lower_segments []string) bool {
+	for segment in lower_segments {
 		stem := repository_map_stem(segment)
 		if segment in ['test', 'tests', '__tests__', 'spec', 'specs', '__specs__']
 			|| stem.starts_with('test_') || stem.starts_with('test-') || stem.ends_with('_test')
@@ -382,7 +422,14 @@ fn repository_map_path_under_mention(path string, mentioned string) bool {
 	if mentioned.len == 0 {
 		return false
 	}
-	path_l := path.to_lower()
+	path_l := path.replace('\\', '/').to_lower()
+	return repository_map_path_under_mention_lower(path_l, mentioned)
+}
+
+fn repository_map_path_under_mention_lower(path_l string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
 	mentioned_l := mentioned.to_lower().replace('\\', '/').trim_right('/')
 	if mentioned_l.len < 2 {
 		return false
@@ -401,10 +448,16 @@ fn repository_map_path_has_segment(path string, ident string) bool {
 	if ident.len < 2 {
 		return false
 	}
-	ident_l := ident.to_lower()
-	for segment in path.replace('\\', '/').split('/') {
-		if repository_map_eq_ci(segment, ident_l) || repository_map_eq_ci(repository_map_stem(segment),
-			ident_l) {
+	normalized_path := path.replace('\\', '/').to_lower()
+	return repository_map_path_has_segment_lower(normalized_path.split('/'), ident.to_lower())
+}
+
+fn repository_map_path_has_segment_lower(lower_segments []string, ident_l string) bool {
+	if ident_l.len < 2 {
+		return false
+	}
+	for segment in lower_segments {
+		if segment == ident_l || repository_map_stem(segment) == ident_l {
 			return true
 		}
 	}

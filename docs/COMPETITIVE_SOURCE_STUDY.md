@@ -87,9 +87,9 @@ Rechecked the session runner on 2026-10-15 at
 reaches its step limit, that runner keeps the tool definitions for the cached
 prefix but sets tool choice to none and asks for a text-only status. The rest
 of the 2026-10-12 OpenCode notes above were not re-audited at this commit.
-Veasel executes a multi-tool round concurrently when every call is a workspace
-list/read/search tool, then appends results in provider call order; mixed rounds
-and skill/edit/shell/MCP calls stay sequential. Its own tool-round cap still
+Veasel executes adjacent workspace list/read/search calls concurrently as
+ordered waves; skill/edit/shell/MCP calls stay sequential barriers, and
+duplicate file reads remain suppressed across waves. Its own tool-round cap still
 spends the blocked round on one tools-disabled completion and keeps that text
 when it is non-empty. The pending tool calls are not executed. This does not
 copy OpenCode's prompt, compaction, or permission model.
@@ -198,6 +198,17 @@ turn is covered by the pinned price schedule. Raw source and private
 instructions remain in traces, so they are sensitive artifacts. A general
 telemetry exporter and broader resume/checkpoint UX remain separate gaps. OTel
 is not a substitute for durable session state.
+
+**Scheduler recheck (2026-10-23):** At the refreshed
+[`a713410`](https://github.com/google-gemini/gemini-cli/tree/a713410aba5d594594e20d5c822e3aab8f822089)
+pin, `packages/core/src/scheduler/scheduler.ts` and
+`scheduler_parallel.test.ts` group adjacent parallelizable tool calls into
+concurrent waves and wait at non-parallelizable calls. Tests cover reads after
+writes and ordered batches; the interactive fixture also covers approval
+between waves. Veasel adopts this scheduling shape only for its bounded
+read-only workspace tools. Every other tool remains an ordering and permission
+barrier, even where a competitor permits broader concurrency. No source was
+copied.
 
 ### Aider — repository structure under an explicit token budget
 
@@ -328,18 +339,22 @@ At `f49b28113b3bab3fcfe193676cc3f7fb858d6411`, Crush's Bubble Tea UI under
 `internal/ui/model/status.go` and `internal/ui/chat/` keeps mode badges, help
 hints, and message rendering as separate models with golden/bench tests. Its
 pending-queue tests (`internal/ui/model/pending_queue_test.go`) keep in-flight
-prompts visible above a spinner. Veasel uses OpenTUI Core 0.6.2, surfaces
+prompts visible above a spinner. Veasel uses OpenTUI Core 0.6.8, surfaces
 provider-reported token counts in the footer, and now prefers a compact
 `review needed` footer cue when edits, shell commands, or MCP calls await
-approval. The current client pins OpenTUI Core 0.6.2. At OpenTUI commit
-`a8f27451b09bdd0670ff661525268ae6f97ec0fc` (0.6.7), `packages/core/src/testing/test-renderer.ts`
-provides scheduler-aware `waitForFrame`, `waitForVisualIdle`, and bounded
-`waitFor` helpers with last-frame diagnostics; Veasel's existing rendered tests
-often use hand-written polling loops. The new live MCP configuration journey
-uses the installed 0.6.2 `waitForFrame` and awaited `dispose` APIs; migrating the
-remaining polling tests is a concrete test-reliability opportunity. Richer
-markdown/diff chrome remains open; do not port Crush's Lip Gloss stack into the
-TypeScript client.
+approval. The current client pins OpenTUI Core and Solid 0.6.8. At upstream
+commit [`341d728b40ee2d1b34f1ea1eaaf3ee0ef801ec69`](https://github.com/anomalyco/opentui/commit/341d728b40ee2d1b34f1ea1eaaf3ee0ef801ec69),
+`packages/core/src/Renderable.ts` replaces scene-wide reflective hook scans and
+per-instance accessor installs with a hook record captured at construction and
+published to native once. The upstream hook matrix in
+`packages/core/src/tests/renderable.test.ts` covers class methods, options,
+reflection refresh, and failed refreshes. Veasel uses the upstream renderer
+without subclassing those hooks; its Solid typecheck, `testRender` layout and
+home-splash tests, standalone build, and packaged PTY smoke pass on 0.6.8. The
+earlier 0.6.7 source also added scheduler-aware `waitForFrame`,
+`waitForVisualIdle`, and bounded `waitFor` helpers; the live MCP configuration
+journey uses `waitForFrame` and awaited `dispose`. Richer markdown/diff chrome
+remains open; do not port Crush's Lip Gloss stack into the TypeScript client.
 
 ### Pi — session forks without forcing compaction into the core loop
 

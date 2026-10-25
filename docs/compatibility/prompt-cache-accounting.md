@@ -11,6 +11,9 @@
 
 **Study date:** 2026-10-15
 
+**Provider billing follow-up:** OpenCode [`1873fbe`](https://github.com/anomalyco/opencode/commit/1873fbe)
+and [`f20760b`](https://github.com/anomalyco/opencode/commit/f20760b8bf3bced0fa5620b6afe7b78dd615ee36) (2026-10-24); usage schema and protocol adapters.
+
 ## What was studied
 
 OpenCode normalizes provider usage into `input`, `output`, `reasoning`, and
@@ -42,6 +45,22 @@ still apply; short prompts may return zeros without error.
 `cache_reported` is true only when the adapter saw cache-related keys
 (including explicit zeros). Omitted keys leave `cache_reported` false.
 Capability `sessions.usage.prompt_cache` advertises this accounting only.
+
+### Provider-reported billing and OpenCode Go allowance
+
+OpenCode Go includes `usage.cost` (USD charged for the request) and
+`usage.opencode.allowance` (USD of subscription allowance consumed). Veasel
+preserves each optional amount independently of token counters, including an
+explicit zero. Session and global `/usage` summaries add allowance values only
+when reported. Provider-reported cost takes precedence for its turn; the pinned
+Models.dev schedule prices turns without a provider amount. If any such turn
+cannot be priced, the aggregate remains `unavailable` rather than mixing a
+partial total with an estimate. Anthropic streaming usage uses the newest
+reported request value, while tool/model requests add across turns.
+
+These are provider-reported billing values, not estimates or cache savings.
+Fixture evidence: `provider_usage_test.v`; no live or paid provider request is
+required.
 
 ### Request-side Anthropic markers
 
@@ -123,6 +142,6 @@ hits; hits appear only when the provider reports cache usage fields.
 | OpenAI GPT-5.6+ `prompt_cache_options` / breakpoints | Not implemented |
 | Gemini explicit `cachedContent` reference on generateContent | Shipped when `VEASEL_GEMINI_CACHED_CONTENT` names a resource and `VEASEL_GEMINI_PROMPT_CACHE` is not `off`; create/expire are explicit helpers (not turn path), fixture-tested over loopback HTTP |
 | Legacy Bedrock top-level `cache_control` rejection | Use block markers only if targeting that path; not separately tested here |
-| Models.dev-priced USD cost | Shipped for curated pinned schedule rows (`tools/cost-schedule/schedule.json`, embedded); session `cost` is USD only when every reported turn matches; else `unavailable` |
+| USD cost | Provider-reported request costs take precedence; turns without a provider amount use curated pinned schedule rows (`tools/cost-schedule/schedule.json`, embedded). Session/global `cost` is unavailable if any token-reported turn cannot be priced. |
 | Reasoning-token split | Shipped as provider-reported `reasoning_tokens` / `reasoning_reported` (OpenAI Chat `completion_tokens_details.reasoning_tokens`, OpenAI Responses `output_tokens_details.reasoning_tokens`, Gemini `thoughtsTokenCount`); persisted on operations and session usage; never invented when keys are absent |
 | Claiming dollar savings without price pins | Forbidden |

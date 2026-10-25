@@ -1758,11 +1758,12 @@ fn (mut store Store) insert_session_operation(session_id string, operation_id st
 			return error('queued_operations_full')
 		}
 	}
-	_ = store.db.exec_param_many('INSERT INTO session_operations (id, session_id, status, request_json) VALUES (?, ?, ?, ?)', [
+	_ = store.db.exec_param_many('INSERT INTO session_operations (id, session_id, status, request_json, queue_order) VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(queue_order), 0) + 1 FROM session_operations WHERE session_id = ?))', [
 		operation_id,
 		session_id,
 		status,
 		request_json,
+		session_id,
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session operation')
@@ -1918,7 +1919,21 @@ fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY created_at ASC, id ASC")!
+	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY session_id ASC, queue_order ASC")!
+	mut operations := []SessionOperation{cap: rows.len}
+	for row in rows {
+		operations << store.session_operation_from_row(row)
+	}
+	return operations
+}
+
+fn (mut store Store) first_queued_session_operation(session_id string) ![]SessionOperation {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? AND status = 'queued' ORDER BY queue_order ASC LIMIT 1",
+		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
 		operations << store.session_operation_from_row(row)

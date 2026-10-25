@@ -75,6 +75,9 @@ fn test_repository_map_labeled_recall_hard_cases() {
 		os.rmdir_all(root) or {}
 	}
 	write_recall_fixture(root, 'src/core/engine.v', 'module core\n\npub fn schedule_loop() {}\n\npub fn engine_tick() {}\n')
+	write_recall_fixture(root, 'src/core/job.v', 'module core\n\npub fn resume() {}\n')
+	write_recall_fixture(root, 'src/core/subagent_job.v', 'module core\n\npub fn resume_subagent_job() {}\n')
+	write_recall_fixture(root, 'src/desktop/lifecycle.v', 'module desktop\n\npub fn resume_extension() {}\n')
 	write_recall_fixture(root, 'src/auth/session.v', 'module auth\n\npub fn open_session() { schedule_loop() }\n')
 	write_recall_fixture(root, 'src/billing/invoice.v', 'module billing\n\npub fn invoice_total() { schedule_loop() }\n')
 	write_recall_fixture(root, 'src/report/render.v', 'module report\n\npub fn render_report() { schedule_loop() }\n\npub fn generate_report() {}\n')
@@ -87,6 +90,7 @@ fn test_repository_map_labeled_recall_hard_cases() {
 		RecallCase{'report generation fails for big inputs', 'src/report/render.v'},
 		RecallCase{'generateReport produces empty output', 'src/report/render.v'},
 		RecallCase{'open_session never returns', 'src/auth/session.v'},
+		RecallCase{'subagent job lifecycle resume', 'src/core/subagent_job.v'},
 	]
 	mut hits := 0
 	for c in cases {

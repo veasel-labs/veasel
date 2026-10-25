@@ -11,9 +11,9 @@ not a claim that every source file was re-read at the refreshed pins: findings
 below retain their individual historical revisions and need re-audit before
 they drive compatibility claims.
 
-The 2026-10-24 full source audit records a second shallow clone set, inspected
-source/test paths, and current Veasel gaps in
-[`COMPETITIVE_SOURCE_AUDIT_2026-10-24.md`](COMPETITIVE_SOURCE_AUDIT_2026-10-24.md).
+The 2026-10-25 full source audit refreshes eleven upstream pins and records
+inspected source/test paths plus current Veasel gaps in
+[`COMPETITIVE_SOURCE_AUDIT_2026-10-25.md`](COMPETITIVE_SOURCE_AUDIT_2026-10-25.md).
 
 **Focused subagent recheck:** 2026-10-23 at OpenCode
 `ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e` (MIT), the refreshed revision in

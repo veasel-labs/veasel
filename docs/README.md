@@ -31,7 +31,7 @@ use this index when you need a specific contract or ledger.
 | Prompt-cache accounting + Anthropic/OpenAI request markers | [compatibility/prompt-cache-accounting.md](compatibility/prompt-cache-accounting.md) |
 | Competitive capability matrix | [COMPETITIVE_CAPABILITIES.md](COMPETITIVE_CAPABILITIES.md) |
 | Competitive source study | [COMPETITIVE_SOURCE_STUDY.md](COMPETITIVE_SOURCE_STUDY.md) |
-| Full 2026-10-24 source audit (26 pinned repositories) | [COMPETITIVE_SOURCE_AUDIT_2026-10-24.md](COMPETITIVE_SOURCE_AUDIT_2026-10-24.md) |
+| Full 2026-10-25 source audit (26 pinned repositories) | [COMPETITIVE_SOURCE_AUDIT_2026-10-25.md](COMPETITIVE_SOURCE_AUDIT_2026-10-25.md) |
 | Ecosystem research notes | [RESEARCH.md](RESEARCH.md) |
 | V standard library reuse map | [VLIB_REUSE.md](VLIB_REUSE.md) |
 

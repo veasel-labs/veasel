@@ -607,6 +607,12 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   therefore has no proven upper bound here. Task-level comparative
   evidence remains outstanding; lifecycle coverage alone does not establish
   that delegation improves task success or efficiency.
+  To keep such a worker from occupying every provider slot, delegated workers
+  are limited to one active provider call within the existing shared
+  four-call process-wide pool. A stalled child can therefore leave three slots
+  for ordinary turns; when no child is active, all four slots remain available
+  to ordinary turns. This bounds starvation impact; it does not make the
+  delegated request itself cancellable.
   The storage boundary accepts only the built-in `reviewer` and `explorer` profile
   IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become

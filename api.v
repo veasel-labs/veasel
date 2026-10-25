@@ -10,11 +10,18 @@ import veb
 import veb.sse
 
 const max_provider_concurrency = 4
+// A delegated TLS request may outlive cancellation before its first response byte.
+const max_subagent_provider_concurrency = 1
 const max_active_turn_operations = 32
 const max_active_shell_commands = 2
 const session_turn_lock_stripes = 64
 const max_agent_turn_duration = 2 * time.minute
 const assistant_event_batch_bytes = 16
+
+enum ProviderPool {
+	regular
+	subagent
+}
 
 struct AssistantDeltaBuffer {
 	store        &Store
@@ -224,6 +231,7 @@ pub struct App {
 	session_turn_locks       []&sync.Semaphore
 	operation_registry       &TurnOperationRegistry
 	provider_slots           &sync.Semaphore
+	subagent_provider_slots  &sync.Semaphore
 	plugin_mcp_slots         &sync.Semaphore
 	shell_command_slots      &sync.Semaphore
 	shell_operation_registry &ShellCommandRegistry
@@ -266,6 +274,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 			provider_workers: sync.new_waitgroup()
 		}
 		provider_slots:           sync.new_semaphore_init(max_provider_concurrency)
+		subagent_provider_slots:  sync.new_semaphore_init(max_subagent_provider_concurrency)
 		plugin_mcp_slots:         sync.new_semaphore_init(max_plugin_mcp_concurrency)
 		shell_command_slots:      sync.new_semaphore_init(max_active_shell_commands)
 		shell_operation_registry: &ShellCommandRegistry{
@@ -298,68 +307,97 @@ fn session_can_trust_plugin_mcp_server(active []SessionPluginMCPServer, plugin_n
 }
 
 fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
-	input CompletionInput) !CompletionOutput {
+	input CompletionInput, pool ProviderPool) !CompletionOutput {
 	config := app.model_config()!
-	if !app.try_provider_slot() {
+	if !app.try_provider_slot(pool) {
 		return error('provider_busy')
 	}
 	mut slots := app.provider_slots
+	mut subagent_slots := app.subagent_provider_slots
 	workers := app.begin_provider_worker() or {
 		slots.post()
+		if pool == .subagent {
+			subagent_slots.post()
+		}
 		return error('app_shutting_down')
 	}
 	result_chan := chan ProviderTurnResult{cap: 1}
 	// Keep a worker-local copy of the interface value. Sharing the mutable
 	// interface header with the waiting goroutine races method dispatch.
-	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, turn_ctx vcontext.Context, input CompletionInput,
-		config ModelConfig, result_chan chan ProviderTurnResult) {
+	spawn fn (slots &sync.Semaphore, subagent_slots &sync.Semaphore, pool ProviderPool,
+		workers &sync.WaitGroup, turn_ctx vcontext.Context, input CompletionInput, config ModelConfig,
+		result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
 			provider_slots.post()
+			if pool == .subagent {
+				mut child_slots := subagent_slots
+				child_slots.post()
+			}
 			mut provider_workers := workers
 			provider_workers.done()
 		}
 		mut worker_ctx := turn_ctx
 		result := complete_with_turn_context(mut worker_ctx, input.messages, [], ignore_provider_text_delta, config)
 		result_chan <- result
-	}(slots, workers, turn_ctx, input, config, result_chan)
+	}(slots, subagent_slots, pool, workers, turn_ctx, input, config, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	session_id string, messages []ChatMessage,
-	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, pool ProviderPool) !CompletionOutput {
 	config := app.model_config_for_session(session_id)!
-	if !app.try_provider_slot() {
+	if !app.try_provider_slot(pool) {
 		return error('provider_busy')
 	}
 	mut slots := app.provider_slots
+	mut subagent_slots := app.subagent_provider_slots
 	workers := app.begin_provider_worker() or {
 		slots.post()
+		if pool == .subagent {
+			subagent_slots.post()
+		}
 		return error('app_shutting_down')
 	}
 	result_chan := chan ProviderTurnResult{cap: 1}
 	// As above, pass Context by value so this goroutine owns its interface
 	// header while the caller waits on the operation.
-	spawn fn (slots &sync.Semaphore, workers &sync.WaitGroup, turn_ctx vcontext.Context, messages []ChatMessage,
+	spawn fn (slots &sync.Semaphore, subagent_slots &sync.Semaphore, pool ProviderPool,
+		workers &sync.WaitGroup, turn_ctx vcontext.Context, messages []ChatMessage,
 		tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig,
 		result_chan chan ProviderTurnResult) {
 		defer {
 			mut provider_slots := slots
 			provider_slots.post()
+			if pool == .subagent {
+				mut child_slots := subagent_slots
+				child_slots.post()
+			}
 			mut provider_workers := workers
 			provider_workers.done()
 		}
 		mut worker_ctx := turn_ctx
 		result := complete_with_turn_context(mut worker_ctx, messages, tools, on_text_delta, config)
 		result_chan <- result
-	}(slots, workers, turn_ctx, messages.clone(), tools.clone(), on_text_delta, config, result_chan)
+	}(slots, subagent_slots, pool, workers, turn_ctx, messages.clone(), tools.clone(), on_text_delta,
+		config, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
 }
 
-fn (app &App) try_provider_slot() bool {
-	mut slots := app.provider_slots
-	return slots.try_wait()
+fn (app &App) try_provider_slot(pool ProviderPool) bool {
+	mut subagent_slots := app.subagent_provider_slots
+	if pool == .subagent && !subagent_slots.try_wait() {
+		return false
+	}
+	mut provider_slots := app.provider_slots
+	if !provider_slots.try_wait() {
+		if pool == .subagent {
+			subagent_slots.post()
+		}
+		return false
+	}
+	return true
 }
 
 fn (app &App) try_plugin_mcp_slot() bool {
@@ -383,6 +421,8 @@ fn (mut app App) close() {
 	operation_lock.destroy()
 	mut slots := app.provider_slots
 	slots.destroy()
+	mut subagent_slots := app.subagent_provider_slots
+	subagent_slots.destroy()
 	mut mcp_slots := app.plugin_mcp_slots
 	mcp_slots.destroy()
 	mut shell_slots := app.shell_command_slots
@@ -1225,7 +1265,7 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 		app.finish_turn_operation(operation_id)
 		cancel()
 	}
-	output := app.complete_with_provider_limit(mut turn_ctx, input) or {
+	output := app.complete_with_provider_limit(mut turn_ctx, input, .regular) or {
 		if err.msg() in ['cancelled', 'deadline_exceeded'] {
 			if err.msg() == 'cancelled' {
 				return json_conflict_error(mut ctx, err.msg())
@@ -1794,7 +1834,7 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	mut partial_trace_steps := []ATIFStep{}
 	result := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
 		operation_id, mut skill_context, on_text_delta, mut partial_trace_steps, input.collect_trace,
-		policy) or {
+		policy, .regular) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
 		}

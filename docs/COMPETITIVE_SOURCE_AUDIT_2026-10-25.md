@@ -46,16 +46,20 @@ performance comparison was run, and no benchmark result is claimed.
 
 ## Veasel comparison and remaining work
 
-The audited Veasel `main` is `38ea5b59e1baff1537af77b1c6362703cd8ab171`,
-with release `v0.64.7-next.0`. Its implementation plan and current source
-show these open gaps:
+The audited Veasel `main` snapshot is `38ea5b59e1baff1537af77b1c6362703cd8ab171`,
+with release `v0.64.7-next.0`. At that snapshot, its implementation plan and
+source showed these open gaps:
 
-1. **Model-callable subagents:** the local worktree stack has durable parent /
-   child ownership, read-only profiles, isolated workspaces, recovery, and
-   once-only result delivery. It still has no real child worker/tool path.
-   Cancellation and deadline flags must stop provider/tool work, child
-   environments must not inherit secrets, and end-to-end deterministic tests
-   must pass before exposing delegation to a model.
+1. **Model-callable subagents:** at the audited snapshot, the local worktree
+   stack had durable parent / child ownership, read-only profiles, isolated
+   workspaces, recovery, and once-only result delivery, but no model-callable
+   child worker. Follow-up draft PR [#526](https://github.com/veasel-labs/veasel/pull/526)
+   now adds the `subagent_run` path, restricted `reviewer` / `explorer`
+   profiles, durable outcomes, and isolated child workspaces; its exact-head
+   Linux, macOS, and Windows CI passed. It depends on draft PR #523 and remains
+   gated on bounded cancellation before the first TLS response byte and a
+   comparative coding-task evaluation. It has not yet merged, so the audited
+   `main` snapshot remains unchanged.
 2. **Broader retrieval proof:** the bounded extractive repository map has
    curated recall cases and active allocation/ranking PRs. Semantic retrieval
    or a persistent index remains unproven until task success, prompt bytes,

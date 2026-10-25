@@ -2,6 +2,7 @@ module main
 
 import context as vcontext
 import json2
+import time
 import uuid
 
 struct SubagentToolResult {
@@ -181,7 +182,7 @@ fn (app &App) run_subagent_session(mut turn_ctx vcontext.Context, session Sessio
 	}
 	mut trace_steps := []ATIFStep{}
 	result := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory,
-		session.id, operation_id, mut skill_context, fn (_ string) ! {}, mut trace_steps, false,
+		session.id, operation_id, time.Time{}, mut skill_context, fn (_ string) ! {}, mut trace_steps, false,
 		execution_policy_turn_from_input('', false, false), .subagent)!
 	mut store := app.store
 	bounded_output := truncate_utf8_bytes(result.output.content, max_subagent_result_bytes)

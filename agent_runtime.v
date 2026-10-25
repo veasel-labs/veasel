@@ -525,7 +525,7 @@ fn agent_skill_resource_tools() []AgentToolDefinition {
 fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
 	session_id string, operation_id string, request_deadline time.Time, mut skill_context SessionSkillContext,
 	on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep, collect_trace bool,
-	policy ExecutionPolicyTurn, request_deadline time.Time, provider_pool ProviderPool) !AgentTraceResult {
+	policy ExecutionPolicyTurn, provider_pool ProviderPool) !AgentTraceResult {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}

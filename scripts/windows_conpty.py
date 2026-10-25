@@ -359,7 +359,7 @@ def run_tui_conpty(
             wait_for_markers((b"TUI review smoke",), 5, "the seeded review session")
             output.clear()
             send_keys(b"\x12")
-            wait_for_markers((b"Workspace edit", review_path), 5, "the live workspace edit review")
+            wait_for_markers((b"REVIEW WORKSPACE EDIT", review_path), 5, "the live workspace edit review")
             output.clear()
             send_keys(b"a")
             wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")

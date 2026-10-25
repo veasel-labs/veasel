@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-10-25T05:27:01.035Z",
+  "veasel": {
+    "version": "Veasel Code 0.1.0-dev",
+    "sourceRevision": "40a2a7aa9071052eef8f832db53728a5001b7af3",
+    "sourceDiffSha256": "7b1fd7b7e78a7b49340d02f95996a275c5d05ada289b05254a4e28235bf886ca",
+    "untrackedSourceFiles": [],
+    "binarySha256": "26351b94d20890d02c95fac1de0131b843f074f5de719a6a2e0a3d5cc11d5706",
+    "compilerVersion": null,
+    "buildFlags": null
+  },
+  "platform": {
+    "os": "linux",
+    "arch": "x64"
+  },
+  "repository": {
+    "name": "pi",
+    "revision": "38ff99177fba21e9c57a670f4e95adcf407c99c7"
+  },
+  "summary": {
+    "cases": 3,
+    "recallAt3": 3,
+    "recallAt10": 3
+  },
+  "results": [
+    {
+      "query": "agent loop tool call execution",
+      "expected": "packages/agent/src/agent-loop.ts",
+      "rank": 1,
+      "top3": [
+        "packages/agent/src/agent-loop.ts",
+        "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+        "packages/coding-agent/src/core/nested-tool-calls.ts"
+      ],
+      "rankedPaths": [
+        "packages/agent/src/agent-loop.ts",
+        "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+        "packages/coding-agent/src/core/nested-tool-calls.ts",
+        "packages/coding-agent/src/extensions/codemode/tool.ts",
+        "packages/coding-agent/src/extensions/tool-search/tool.ts",
+        "packages/agent/src/agent.ts",
+        "packages/durable/src/harness/tool.ts",
+        "packages/codemode/src/runtime/execution.ts",
+        "packages/durable/src/harness/agent.ts",
+        "packages/coding-agent/test/tool-execution-component.test.ts",
+        "packages/coding-agent/src/core/export-html/tool-renderer.ts",
+        "packages/agent/src/types.ts",
+        "packages/agent/examples/mcp-codemode/tools.ts",
+        "packages/coding-agent/src/utils/tool-result-images.ts"
+      ],
+      "fileCount": 14,
+      "filesScanned": 2010
+    },
+    {
+      "query": "configure a Pi agent and initialize its state",
+      "expected": "packages/agent/src/agent.ts",
+      "rank": 2,
+      "top3": [
+        "packages/durable/src/harness/agent.ts",
+        "packages/agent/src/agent.ts",
+        "packages/chord/src/state.ts"
+      ],
+      "rankedPaths": [
+        "packages/durable/src/harness/agent.ts",
+        "packages/agent/src/agent.ts",
+        "packages/chord/src/state.ts",
+        "packages/agent/src/agent-loop.ts",
+        "packages/agent/src/types.ts",
+        "packages/agent/examples/mcp-codemode/tools.ts",
+        "packages/coding-agent/src/core/agent-session.ts",
+        "packages/coding-agent/src/core/extensions/loader.ts",
+        "packages/coding-agent/src/core/index.ts",
+        "packages/coding-agent/src/core/sdk.ts",
+        "packages/coding-agent/src/core/agent-session-runtime.ts",
+        "packages/agent/examples/mcp-codemode/main.ts"
+      ],
+      "fileCount": 12,
+      "filesScanned": 2010
+    },
+    {
+      "query": "define agent context and tool execution types",
+      "expected": "packages/agent/src/types.ts",
+      "rank": 3,
+      "top3": [
+        "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+        "packages/coding-agent/src/core/extensions/types.ts",
+        "packages/agent/src/types.ts"
+      ],
+      "rankedPaths": [
+        "packages/coding-agent/src/modes/interactive/components/tool-execution.ts",
+        "packages/coding-agent/src/core/extensions/types.ts",
+        "packages/agent/src/types.ts",
+        "packages/coding-agent/src/extensions/codemode/tool.ts",
+        "packages/coding-agent/src/extensions/tool-search/tool.ts",
+        "packages/durable/src/harness/agent.ts",
+        "packages/durable/src/harness/tool.ts",
+        "packages/durable/src/harness/types.ts",
+        "packages/agent/src/agent.ts",
+        "packages/codemode/src/runtime/execution.ts"
+      ],
+      "fileCount": 10,
+      "filesScanned": 2010
+    }
+  ]
+}

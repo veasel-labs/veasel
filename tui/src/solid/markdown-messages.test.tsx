@@ -3,6 +3,7 @@ import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { SolidTranscript } from "./transcript"
 import { assistantLabel, userLabel } from "../transcript"
+import { renderMarkdownFrame } from "./markdown-test-helpers"
 
 test("assistant messages render markdown structure without raw markup", async () => {
   const setup = await testRender(
@@ -21,13 +22,13 @@ test("assistant messages render markdown structure without raw markup", async ()
     { width: 80, height: 40 },
   )
   try {
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
     // Markdown blocks parse incrementally; wait until the list has rendered.
     await setup.waitFor(() => setup.captureCharFrame().includes("bold steps"))
     // Code fences highlight through tree-sitter asynchronously.
     for (let attempt = 0; attempt < 40 && !setup.captureCharFrame().includes("const answer = 42"); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50))
-      await setup.renderOnce()
+      await renderMarkdownFrame(setup)
     }
     const frame = setup.captureCharFrame()
     expect(frame).toContain(userLabel)
@@ -58,7 +59,7 @@ test("streaming assistant text renders as markdown while it grows", async () => 
     { width: 80, height: 40 },
   )
   try {
-    await setup.renderOnce()
+    await renderMarkdownFrame(setup)
     await setup.waitFor(() => setup.captureCharFrame().includes("step one"))
     const frame = setup.captureCharFrame()
     expect(frame).toContain("Working")

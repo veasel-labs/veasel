@@ -17,7 +17,7 @@ clients use an HTTP API and event stream. This is a direction reference rather
 than a promise of full route compatibility. The pinned comparison and
 route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode.md).
 
-The TUI is TypeScript with OpenTUI + SolidJS (`@opentui/solid` **0.6.2**), kept
+The TUI is TypeScript with OpenTUI + SolidJS (`@opentui/solid` **0.6.8**), kept
 as a separate API client; the agent runtime, tools and persistence remain in V.
 **Solid is the default entry** (`bun run start` → `src/solid/main.tsx` /
 `LiveApp`): loopback HTTP session home, SSE assistant deltas, and MODEL SETTINGS
@@ -144,9 +144,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
-- [x] When a provider returns two or more workspace list/read/search calls in one
-  round, execute them concurrently and append tool results in provider call
-  order; skill load/read, edits, shell, and MCP stay sequential.
+- [x] Execute contiguous workspace list/read/search calls in a provider round
+  concurrently as ordered waves, with skill load/read, edits, shell, and MCP as
+  sequential barriers. Preserve provider result order and suppress duplicate
+  file reads across waves.
 - [x] Generate bounded single-file diffs, persist proposals, require explicit durable approval, reject stale snapshots, and recover interrupted applications without replay.
 - [x] Add permissioned shell execution with explicit, durable approval. The
   TUI requires opening the exact command, working directory, and timeout before
@@ -155,7 +156,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Deliver bounded SSE text streaming for OpenAI-compatible, Anthropic, and Gemini providers through durable API events and the TUI; aggregate complete responses and provider tool calls.
 - [x] Add opt-in `Prefer: respond-async` session turns so long model calls and human MCP approvals do not occupy an HTTP request worker; persist the operation as `queued` with request payload before accepting, claim to `running` in a worker, expose status/list/cancel for reconnect, and commit successful history, operation state, and terminal events atomically. Queued jobs resume after restart; claimed `running`/`cancelling` work is classified as `uncertain` and never replayed.
 - [x] Add `veasel run` for non-interactive session turns using the shared server, provider, and agent runtime; persist and continue sessions, emit machine-readable JSON, and request cancellation on timeout. Default edit, shell, and MCP approvals remain intact.
-- [x] Add an explicitly opt-in autonomous path for isolated benchmark tasks. The running server must opt in separately; ordinary CLI/TUI approval behavior remains unchanged. Autonomous file edits and shell commands retain durable proposal/result records, shell subprocesses receive an allowlisted environment, and MCP sessions are rejected. Autonomous shell is fail-closed OS-sandboxed: Linux Bubblewrap (read-only host, writable workspace, hidden home/removable/runtime, isolated network, allowlisted env), macOS Seatbelt when `/usr/bin/sandbox-exec` is present (allowlisted env, network denied), and Windows AppContainer + Job Object when available (network denied; inherited env filtering remains a known Windows backend limit). Platforms without that backend refuse to start a process. Stdio MCP remains outside this sandbox.
+- [x] Add an explicitly opt-in autonomous path for isolated benchmark tasks. The running server must opt in separately; ordinary CLI/TUI approval behavior remains unchanged. Autonomous file edits and shell commands retain durable proposal/result records, shell subprocesses receive an allowlisted environment, and MCP sessions are rejected. Autonomous shell is fail-closed OS-sandboxed: Linux Bubblewrap (read-only host, writable workspace, hidden home/removable/runtime, isolated network, allowlisted env), macOS Seatbelt when `/usr/bin/sandbox-exec` is present (allowlisted env, network denied), and Windows AppContainer + Job Object when available (network denied, allowlisted env). Platforms without that backend refuse to start a process. Stdio MCP remains outside this sandbox.
 - [x] Add a graduated execution permission policy (`ask` | `auto-edit` | `sandbox-auto`) with allow/deny/ask decisions bound to those OS sandboxes. `autonomous: true` maps to `sandbox-auto`. Non-interactive turns map ask→deny. Auto-edit requires `VEASEL_ALLOW_AUTO_EDIT=1` (or autonomous allow); sandbox-auto still requires `VEASEL_ALLOW_AUTONOMOUS_EXECUTION=1`. MCP stays deny under sandbox-auto and ask/deny otherwise (never auto-apply). Capability `agent.execution_policy` (+ `.auto_edit` / `.sandbox_auto` when server-enabled).
 - [x] Wrap manually approved shell commands in the platform OS sandbox by default (`VEASEL_SHELL_SANDBOX` unset/invalid = `require`; explicit `auto` allows unsandboxed fallback; explicit `off` disables wrapping). Linux uses Bubblewrap, macOS Seatbelt, and Windows AppContainer + Job. Capabilities are true only when the wrap will run; `require` fails closed when the backend is missing. Network is denied by default for shell. Approval remains mandatory.
 - [x] macOS Seatbelt parity for approved shell via `/usr/bin/sandbox-exec` only (`shell.sandbox.seatbelt` when wrap will run; shared `VEASEL_SHELL_SANDBOX` / `VEASEL_SHELL_SANDBOX_NETWORK` knobs; fail-closed `require`).
@@ -468,7 +469,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
-- [x] Make the SolidJS + `@opentui/solid` 0.6.2 LiveApp the standalone TUI
+- [x] Make the SolidJS + `@opentui/solid` 0.6.8 LiveApp the standalone TUI
   default. The default migration is complete. Remaining Solid work is product
   behavior and validation, not a pending migration; audit each journey against
   the production HTTP backend and current OpenCode/OpenTUI sources. See
@@ -682,9 +683,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the strongest 2,000 candidates; source extraction remains capped at 800 files
   and 8 MiB, and ranking uses V's O(n log n) `sort_with_compare`. Curated
   retrieval cases for Aider, mini-swe-agent, SWE-agent, OpenCode, and Pi are
-  recorded in `benchmarks/README.md` (20/22 recall@3, 22/22 recall@10 on this
-  small sample after bounded path-specificity ranking); semantic retrieval and
-  broader task-success evidence remain open gaps.
+  recorded with exact revisions and rankings in `benchmarks/README.md` and its
+  linked reports (22/22 recall@3 and 22/22 recall@10 on this small sample after
+  ordered-compound ranking); semantic retrieval and broader task-success
+  evidence remain open gaps.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in
@@ -698,7 +700,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [ ] Establish measured TUI performance baselines beyond the existing Linux
   workstation CLI/PTY baseline, and broaden interactive coverage to approvals,
   streaming, MCP OAuth browser open, and long diffs. macOS/Windows timing
-  baselines remain open.
+  baselines remain open. The Solid client coalesces rapid SSE assistant deltas
+  into 16 ms batches before updating the reactive transcript; this reduces
+  signal/render churn but is not a substitute for measured cross-platform FPS
+  and latency baselines.
 
 ## Initial compatibility target
 
@@ -712,8 +717,8 @@ honoring its license and attribution.
 
 ## Risks and decisions
 
-- The official V mascot artwork is CC BY-NC 4.0. The terminal client uses an
-  independently drawn geometric pixel companion under MIT; do not add upstream
+- The official V mascot artwork is CC BY-NC 4.0. The terminal client encodes
+  Veasel Labs' original website pixel companion under MIT; do not add upstream
   mascot artwork unless rights for the intended use are established.
 - Session creation records an existing, canonical workspace root. The initial
   list/read/search tools enforce root-bound access on every operation, reject
@@ -726,8 +731,11 @@ honoring its license and attribution.
   exact requirements and evidence in
   [`compatibility/agent-plugins.md`](compatibility/agent-plugins.md); do not
   claim conformance until its release gate passes.
-- The initial tool loop caps in-flight provider calls and tool-loop steps;
-  same-session turns are serialized so provider history cannot race. Opt-in
+- The initial tool loop caps in-flight provider calls and tool-loop steps, warns
+  after three identical consecutive tool calls, and skips calls from number five
+  before dispatch; focused coverage checks canonical JSON arguments and confirms
+  a skipped edit has no workspace effect. Same-session turns are serialized so
+  provider history cannot race. Opt-in
   async turns use a durable queued job row; concurrent agents and their
   resource limits remain open.
 - The organization and repository publication are tracked separately from the

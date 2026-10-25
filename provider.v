@@ -4,6 +4,7 @@ import json2
 import context as vcontext
 import net.http
 import net.urllib
+import math
 import os
 import strconv
 import strings
@@ -39,6 +40,9 @@ const max_provider_model_catalog_bytes = 1_000_000
 const max_provider_model_catalog_entries = 500
 const opencode_go_chat_base_url = 'https://opencode.ai/inference/go/openai/v1'
 const opencode_go_models_url = 'https://opencode.ai/inference/go/v1/models'
+const opencode_go_openai_base_url = 'https://opencode.ai/inference/go/openai/v1'
+const opencode_go_anthropic_base_url = 'https://opencode.ai/inference/go/anthropic/v1'
+const opencode_go_google_base_url = 'https://opencode.ai/inference/go/google/v1beta'
 // Request-side Anthropic prompt caching. Default `auto` emits ephemeral
 // cache_control (top-level automatic + system-block breakpoint). Set to `off`
 // to disable; `1h` requests the extended TTL. This only shapes requests—
@@ -102,22 +106,25 @@ pub:
 	cache_reported        bool
 	reasoning_tokens      i64
 	reasoning_reported    bool
+	reported_cost_usd     ?f64
+	allowance_usd         ?f64
 	reported              bool
 }
 
+fn has_provider_usage_data(usage ProviderUsage) bool {
+	return usage.reported || usage.reported_cost_usd != none || usage.allowance_usd != none
+}
+
 fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
-	if !b.reported {
-		return a
-	}
-	if !a.reported {
-		return b
-	}
 	cache_reported := a.cache_reported || b.cache_reported
 	reasoning_reported := a.reasoning_reported || b.reasoning_reported
 	return ProviderUsage{
-		input_tokens:          a.input_tokens + b.input_tokens
-		output_tokens:         a.output_tokens + b.output_tokens
-		total_tokens:          a.total_tokens + b.total_tokens
+		input_tokens:          if a.reported { a.input_tokens } else { i64(0) } +
+			if b.reported { b.input_tokens } else { i64(0) }
+		output_tokens:         if a.reported { a.output_tokens } else { i64(0) } +
+			if b.reported { b.output_tokens } else { i64(0) }
+		total_tokens:          if a.reported { a.total_tokens } else { i64(0) } +
+			if b.reported { b.total_tokens } else { i64(0) }
 		cache_read_tokens:     if cache_reported {
 			a.cache_read_tokens + b.cache_read_tokens
 		} else {
@@ -135,8 +142,51 @@ fn add_provider_usage(a ProviderUsage, b ProviderUsage) ProviderUsage {
 			i64(0)
 		}
 		reasoning_reported:    reasoning_reported
-		reported:              true
+		reported_cost_usd:     sum_reported_amount(a.reported_cost_usd, b.reported_cost_usd)
+		allowance_usd:         sum_reported_amount(a.allowance_usd, b.allowance_usd)
+		reported:              a.reported || b.reported
 	}
+}
+
+fn sum_reported_amount(a ?f64, b ?f64) ?f64 {
+	left := a or { return b }
+	right := b or { return left }
+	return left + right
+}
+
+fn provider_usage_amount(value ?json2.Any) ?f64 {
+	any := value or { return none }
+	amount := match any {
+		i8, i16, i32, int, i64, u8, u16, u32, u64, f32, f64 { f64(any) }
+		else { return none }
+	}
+	if amount < 0 || math.is_nan(amount) || math.is_inf(amount, 0) {
+		return none
+	}
+	return amount
+}
+
+fn provider_usage_amount_from_map(values map[string]json2.Any, key string) ?f64 {
+	if value := values[key] {
+		return provider_usage_amount(value)
+	}
+	return none
+}
+
+fn provider_opencode_allowance(opencode ?json2.Any) ?f64 {
+	metadata := opencode or { return none }
+	if metadata !is map[string]json2.Any {
+		return none
+	}
+	fields := metadata as map[string]json2.Any
+	return provider_usage_amount_from_map(fields, 'allowance')
+}
+
+fn provider_opencode_allowance_from_map(usage map[string]json2.Any) ?f64 {
+	if opencode := usage['opencode'] {
+		return provider_opencode_allowance(opencode)
+	}
+	return none
 }
 
 fn json_any_nonneg_i64(value json2.Any) i64 {
@@ -148,6 +198,9 @@ fn json_any_nonneg_i64(value json2.Any) i64 {
 }
 
 fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
+	prompt_tokens := usage.prompt_tokens or { i64(0) }
+	completion_tokens := usage.completion_tokens or { i64(0) }
+	total_tokens := usage.total_tokens or { i64(0) }
 	mut cache_read := i64(0)
 	mut cache_reported := false
 	if details := usage.prompt_tokens_details {
@@ -160,21 +213,24 @@ fn provider_usage_from_openai_chat(usage OpenAIUsage) ProviderUsage {
 		reasoning = if details.reasoning_tokens < 0 { i64(0) } else { details.reasoning_tokens }
 		reasoning_reported = true
 	}
-	total := if usage.total_tokens > 0 {
-		usage.total_tokens
+	total := if total_tokens > 0 {
+		total_tokens
 	} else {
-		usage.prompt_tokens + usage.completion_tokens
+		prompt_tokens + completion_tokens
 	}
 	return ProviderUsage{
-		input_tokens:          usage.prompt_tokens
-		output_tokens:         usage.completion_tokens
+		input_tokens:          prompt_tokens
+		output_tokens:         completion_tokens
 		total_tokens:          total
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: 0
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
-		reported:              true
+		reported_cost_usd:     provider_usage_amount(usage.cost)
+		allowance_usd:         provider_opencode_allowance(usage.opencode)
+		reported:              usage.prompt_tokens != none || usage.completion_tokens != none
+			|| usage.total_tokens != none || cache_reported || reasoning_reported
 	}
 }
 
@@ -211,6 +267,8 @@ fn provider_usage_from_openai_responses(usage OpenAIResponsesUsage) ProviderUsag
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
+		reported_cost_usd:     provider_usage_amount(usage.cost)
+		allowance_usd:         provider_opencode_allowance(usage.opencode)
 		reported:              usage.input_tokens > 0 || usage.output_tokens > 0 || cache_reported
 			|| reasoning_reported
 	}
@@ -245,6 +303,16 @@ fn merge_anthropic_stream_usage(prior ProviderUsage, delta ProviderUsage) Provid
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
+		reported_cost_usd:     if delta.reported_cost_usd != none {
+			delta.reported_cost_usd
+		} else {
+			prior.reported_cost_usd
+		}
+		allowance_usd:         if delta.allowance_usd != none {
+			delta.allowance_usd
+		} else {
+			prior.allowance_usd
+		}
 		reported:              prior.reported || delta.reported
 	}
 }
@@ -271,6 +339,8 @@ fn provider_usage_from_anthropic_map(usage map[string]json2.Any) ProviderUsage {
 		cache_creation = json_any_nonneg_i64(v)
 		cache_reported = true
 	}
+	reported_cost_usd := provider_usage_amount_from_map(usage, 'cost')
+	allowance_usd := provider_opencode_allowance_from_map(usage)
 	return ProviderUsage{
 		input_tokens:          input_tokens
 		output_tokens:         output_tokens
@@ -278,6 +348,8 @@ fn provider_usage_from_anthropic_map(usage map[string]json2.Any) ProviderUsage {
 		cache_read_tokens:     cache_read
 		cache_creation_tokens: cache_creation
 		cache_reported:        cache_reported
+		reported_cost_usd:     reported_cost_usd
+		allowance_usd:         allowance_usd
 		reported:              input_tokens > 0 || output_tokens > 0 || cache_reported
 	}
 }
@@ -309,6 +381,8 @@ fn provider_usage_from_gemini(meta GeminiUsageMetadata) ProviderUsage {
 		cache_reported:        cache_reported
 		reasoning_tokens:      reasoning
 		reasoning_reported:    reasoning_reported
+		reported_cost_usd:     provider_usage_amount(meta.cost)
+		allowance_usd:         provider_opencode_allowance(meta.opencode)
 		reported:              meta.total_token_count > 0 || meta.prompt_token_count > 0
 			|| meta.candidates_token_count > 0 || cache_reported || reasoning_reported
 	}
@@ -362,6 +436,8 @@ pub:
 	// Optional curated context window in tokens. Omitted when the model is
 	// not in the embedded model-context schedule — never invented.
 	context_tokens ?int @[json: 'context_tokens'; omitempty]
+	// Optional provider-specific data-use disclosure shown before model selection.
+	data_use_notice ?string @[json: 'data_use_notice'; omitempty]
 }
 
 struct OpenAIModelCatalog {
@@ -611,13 +687,14 @@ fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
 		verify:               verify
 	) or { return error('model catalog request failed') }
 	if response.status_code < 200 || response.status_code >= 300 {
-		return error('model catalog endpoint returned HTTP ${response.status_code}')
+		return error(provider_http_error_message(config.provider, response.status_code,
+			'model catalog endpoint returned'))
 	}
 	if response.body.len > max_provider_model_catalog_bytes {
 		return error('model catalog response is too large')
 	}
 	models := parse_provider_model_catalog(info.protocol, response.body)!
-	return filter_provider_chat_models(config.provider, models)
+	return filter_provider_models(config.provider, models)
 }
 
 fn provider_model_catalog_url(config ModelConfig) !string {
@@ -631,18 +708,100 @@ fn provider_model_catalog_url(config ModelConfig) !string {
 	return '${base_url}/models'
 }
 
-fn filter_provider_chat_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
-	if provider != 'meta' {
-		return models
-	}
+fn filter_provider_models(provider string, models []ModelCatalogEntry) []ModelCatalogEntry {
 	mut compatible := []ModelCatalogEntry{cap: models.len}
 	for model in models {
 		id := model.id.to_lower()
-		if id.starts_with('muse-wonder-') || id.starts_with('muse-spark-') {
+		is_compatible := if provider == 'meta' {
+			id.starts_with('muse-wonder-') || id.starts_with('muse-spark-')
+		} else if provider == 'opencode-go' {
+			opencode_go_model_protocol(id) != ''
+		} else {
+			true
+		}
+		if is_compatible {
 			compatible << model
 		}
 	}
 	return compatible
+}
+
+// OpenCode Go's public model catalog is OpenAI-shaped but omits each model's
+// required inference API family. Keep this mapping aligned with the official
+// endpoint table; unknown IDs stay out of discovery and fail closed at runtime.
+fn opencode_go_model_protocol(model string) string {
+	return match model.to_lower() {
+		'grok-4.7', 'gpt-6-luna', 'gpt-5.6-luna', 'muse-spark-1.3-contributor',
+		'muse-spark-1.2-contributor' {
+			'openai-responses'
+		}
+		'claude-haiku-5-5', 'minimax-m3', 'qwen3.8-max', 'qwen3.8-flash', 'qwen3.7-plus' {
+			'anthropic'
+		}
+		'gemini-4-argon' { 'gemini' }
+		'glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3.1-pro', 'kimi-k3', 'kimi-k2.7-code',
+		'longcat-2.0',
+		'deepseek-v4.1-flash', 'deepseek-v4-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro',
+		'mimo-v2.5', 'mimo-v2.5-pro', 'minimax-m3.1-flash',
+		'hy4-preview', 'hy3',
+		'longcat-2.5-preview-free', 'step-5-preview', 'beam-free', 'iceman-contributor-free' {
+			'openai-compatible'
+		}
+		else { '' }
+	}
+}
+
+fn provider_http_error_message(provider string, status_code int, operation string) string {
+	if provider == 'opencode' && status_code == 401 && operation.len == 0 {
+		return 'OpenCode rejected the API key (HTTP 401). Console keys can expire; signing in again will not renew it. Veasel does not reuse the OpenCode CLI login; check the key in OpenCode Console and create a new key if it expired.'
+	}
+	if provider == 'opencode-go' {
+		match status_code {
+			401 {
+				return 'OpenCode Go rejected the API key (HTTP 401). Console keys can expire; signing in again will not renew it. Veasel does not reuse the OpenCode CLI login; check the key in OpenCode Console and create a new key if it expired.'
+			}
+			403 {
+				return 'OpenCode Go denied access (HTTP 403). Check that the Go subscription is active, the model is available to your workspace, and its region or privacy restrictions allow this request.'
+			}
+			429 {
+				return 'OpenCode Go rate-limited the request (HTTP 429). Wait before retrying and check your current Go usage limits.'
+			}
+			else {}
+		}
+	}
+	if operation.len > 0 {
+		return '${operation} HTTP ${status_code}'
+	}
+	return 'HTTP ${status_code}'
+}
+
+struct ModelProviderRoute {
+	protocol string
+	base_url string
+}
+
+fn model_provider_route(config ModelConfig) !ModelProviderRoute {
+	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
+	if config.provider != 'opencode-go' || secure_endpoint(config.base_url)! != opencode_go_chat_base_url {
+		return ModelProviderRoute{
+			protocol: info.protocol
+			base_url: config.base_url
+		}
+	}
+	protocol := opencode_go_model_protocol(config.model)
+	if protocol == '' {
+		return error('OpenCode Go model has no supported API mapping; choose a model from the discovered list')
+	}
+	base_url := match protocol {
+		'openai-compatible', 'openai-responses' { opencode_go_openai_base_url }
+		'anthropic' { opencode_go_anthropic_base_url }
+		'gemini' { opencode_go_google_base_url }
+		else { return error('unsupported OpenCode Go model API family') }
+	}
+	return ModelProviderRoute{
+		protocol: protocol
+		base_url: base_url
+	}
 }
 
 fn parse_provider_model_catalog(protocol string, body string) ![]ModelCatalogEntry {
@@ -801,6 +960,8 @@ struct OpenAIResponsesUsage {
 	total_tokens          i64
 	input_tokens_details  ?OpenAIResponsesInputTokensDetails  @[json: 'input_tokens_details']
 	output_tokens_details ?OpenAIResponsesOutputTokensDetails @[json: 'output_tokens_details']
+	cost                  ?json2.Any
+	opencode              ?json2.Any
 }
 
 struct OpenAIResponsesOutputItem {
@@ -854,11 +1015,13 @@ struct OpenAICompletionTokensDetails {
 }
 
 struct OpenAIUsage {
-	prompt_tokens             i64
-	completion_tokens         i64
-	total_tokens              i64
+	prompt_tokens             ?i64
+	completion_tokens         ?i64
+	total_tokens              ?i64
 	prompt_tokens_details     ?OpenAIPromptTokensDetails     @[json: 'prompt_tokens_details']
 	completion_tokens_details ?OpenAICompletionTokensDetails @[json: 'completion_tokens_details']
+	cost                      ?json2.Any
+	opencode                  ?json2.Any
 }
 
 struct OpenAIStreamChoice {
@@ -930,6 +1093,8 @@ struct AnthropicUsage {
 	output_tokens               i64
 	cache_creation_input_tokens i64 @[json: 'cache_creation_input_tokens']
 	cache_read_input_tokens     i64 @[json: 'cache_read_input_tokens']
+	cost                        ?json2.Any
+	opencode                    ?json2.Any
 }
 
 struct AnthropicStreamDelta {
@@ -972,7 +1137,7 @@ fn anthropic_stream_apply_usage(mut stream_state AnthropicStreamOutput, event_ty
 	if event_type == 'message_delta' {
 		if usage_any := root['usage'] {
 			delta_usage := provider_usage_from_anthropic_map(usage_any.as_map())
-			if delta_usage.output_tokens > 0 || delta_usage.cache_reported {
+			if has_provider_usage_data(delta_usage) {
 				stream_state.usage = merge_anthropic_stream_usage(stream_state.usage, delta_usage)
 			}
 		}
@@ -1080,6 +1245,8 @@ struct GeminiUsageMetadata {
 	total_token_count          i64  @[json: 'totalTokenCount']
 	cached_content_token_count ?i64 @[json: 'cachedContentTokenCount']
 	thoughts_token_count       ?i64 @[json: 'thoughtsTokenCount']
+	cost                       ?json2.Any
+	opencode                   ?json2.Any
 }
 
 struct GeminiStreamOutput {
@@ -1087,6 +1254,58 @@ mut:
 	content []string
 	tools   []ProviderToolCall
 	usage   ProviderUsage
+}
+
+fn gemini_stream_apply_usage(mut state GeminiStreamOutput, usage ProviderUsage) {
+	if !has_provider_usage_data(usage) {
+		return
+	}
+	previous := state.usage
+	state.usage = ProviderUsage{
+		input_tokens:          if usage.reported {
+			usage.input_tokens
+		} else {
+			previous.input_tokens
+		}
+		output_tokens:         if usage.reported {
+			usage.output_tokens
+		} else {
+			previous.output_tokens
+		}
+		total_tokens:          if usage.reported {
+			usage.total_tokens
+		} else {
+			previous.total_tokens
+		}
+		cache_read_tokens:     if usage.cache_reported {
+			usage.cache_read_tokens
+		} else {
+			previous.cache_read_tokens
+		}
+		cache_creation_tokens: if usage.cache_reported {
+			usage.cache_creation_tokens
+		} else {
+			previous.cache_creation_tokens
+		}
+		cache_reported:        usage.cache_reported || previous.cache_reported
+		reasoning_tokens:      if usage.reasoning_reported {
+			usage.reasoning_tokens
+		} else {
+			previous.reasoning_tokens
+		}
+		reasoning_reported:    usage.reasoning_reported || previous.reasoning_reported
+		reported_cost_usd:     if usage.reported_cost_usd != none {
+			usage.reported_cost_usd
+		} else {
+			previous.reported_cost_usd
+		}
+		allowance_usd:         if usage.allowance_usd != none {
+			usage.allowance_usd
+		} else {
+			previous.allowance_usd
+		}
+		reported:              usage.reported || previous.reported
+	}
 }
 
 struct GeminiCandidate {
@@ -1261,8 +1480,16 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 
 fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) !CompletionOutput {
-	info := model_provider_info(config.provider) or { return error('unsupported model provider') }
-	provider := match info.protocol {
+	route := model_provider_route(config)!
+	routed_config := ModelConfig{
+		provider:          config.provider
+		base_url:          route.base_url
+		model:             config.model
+		api_key:           config.api_key
+		session_id:        config.session_id
+		max_output_tokens: config.max_output_tokens
+	}
+	provider := match route.protocol {
 		'openai-compatible' {
 			ModelProvider(OpenAICompatibleProvider{})
 		}
@@ -1277,7 +1504,7 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 		}
 		else { return error('unsupported model provider') }
 	}
-	return provider.complete(mut turn_ctx, config, messages, tools, on_text_delta)
+	return provider.complete(mut turn_ctx, routed_config, messages, tools, on_text_delta)
 }
 
 fn ignore_provider_text_delta(_ string) ! {}
@@ -1455,7 +1682,7 @@ fn openai_responses_model_supports_reasoning(provider string, model string) bool
 		return true
 	}
 	model_id := model.to_lower()
-	return model_id.starts_with('gpt-5') || model_id.starts_with('o1') || model_id.starts_with('o3')
+	return model_id.starts_with('gpt-5') || model_id.starts_with('gpt-6') || model_id.starts_with('o1') || model_id.starts_with('o3')
 		|| model_id.starts_with('o4') || model_id.starts_with('codex-')
 }
 
@@ -1618,9 +1845,7 @@ fn (provider GeminiProvider) complete(mut turn_ctx vcontext.Context, config Mode
 	callback := fn [mut stream_state, on_text_delta, messages] (data string) ! {
 		decoded := json2.decode[GeminiResponse](data) or { return error('response_parse') }
 		parsed := provider_usage_from_gemini(decoded.usage_metadata)
-		if parsed.reported {
-			stream_state.usage = parsed
-		}
+		gemini_stream_apply_usage(mut stream_state, parsed)
 		for candidate in decoded.candidates {
 			for part in candidate.content.parts {
 				if part.text != '' {
@@ -2302,18 +2527,27 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 		}
 		headers.add_custom('User-Agent', 'Veasel Code/${product_version}')!
 	}
-	match auth {
-		.bearer {
-			if config.api_key.len > 0 {
-				headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
-			}
+	if config.provider == 'opencode-go' {
+		if config.api_key.len > 0 {
+			headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
 		}
-		.anthropic {
-			headers.add_custom('x-api-key', config.api_key)!
+		if auth == .anthropic {
 			headers.add_custom('anthropic-version', '2023-06-01')!
 		}
-		.gemini {
-			headers.add_custom('x-goog-api-key', config.api_key)!
+	} else {
+		match auth {
+			.bearer {
+				if config.api_key.len > 0 {
+					headers.add_custom('Authorization', 'Bearer ${config.api_key}')!
+				}
+			}
+			.anthropic {
+				headers.add_custom('x-api-key', config.api_key)!
+				headers.add_custom('anthropic-version', '2023-06-01')!
+			}
+			.gemini {
+				headers.add_custom('x-goog-api-key', config.api_key)!
+			}
 		}
 	}
 	mut stream_state := &ProviderSSERequestState{
@@ -2347,7 +2581,7 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	}
 	stream_state.decoder.finish()!
 	if response.status_code < 200 || response.status_code >= 300 {
-		return error('HTTP ${response.status_code}')
+		return error(provider_http_error_message(config.provider, response.status_code, ''))
 	}
 	return response
 }

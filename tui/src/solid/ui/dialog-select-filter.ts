@@ -7,6 +7,8 @@ export type DialogSelectOption<T = string> = {
   category?: string
   /** Extra fuzzy haystack (keywords, ids). */
   searchText?: string
+  /** Persistent notice for the highlighted option, including compact layouts. */
+  notice?: string
   disabled?: boolean
   footer?: string
 }

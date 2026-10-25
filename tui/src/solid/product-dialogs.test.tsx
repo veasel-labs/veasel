@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "./app"
-import { buildModelSelectOptions, demoFavoriteModels, demoModels, demoRecentModels } from "./component/model-dialog"
+import { buildModelSelectOptions, catalogEntryToSolidModel, demoFavoriteModels, demoModels, demoRecentModels } from "./component/model-dialog"
 import { demoStashEntries } from "./component/stash-dialog"
 
 const setups: Array<Awaited<ReturnType<typeof testRender>>> = []
@@ -35,6 +35,16 @@ describe("Solid product dialogs", () => {
     expect(options[0]?.title).toBe("Claude Sonnet 4")
     expect(options.some((item) => item.category === "Recent")).toBe(true)
     expect(demoStashEntries().length).toBeGreaterThan(0)
+  })
+
+  test("model catalog privacy disclosures are visible in picker options", () => {
+    const model = catalogEntryToSolidModel("opencode-go", "OpenCode Go", {
+      id: "iceman-contributor-free",
+      name: "Iceman Contributor Free",
+      data_use_notice: "Prompts may be used to improve this model.",
+    })
+    const [option] = buildModelSelectOptions({ models: [model] })
+    expect(option?.footer).toContain("⚠ Prompts may be used to improve this model.")
   })
 
   test("palette opens model picker with favorites section", async () => {

@@ -1,9 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createMemo } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
 import { useSolidTheme } from "../theme"
 import {
   formatSessionTabLabel,
-  visibleSessionTabs,
+  sessionTabsLayout,
   type SessionTab,
 } from "../session-tabs"
 
@@ -19,8 +20,13 @@ export type SessionTabsProps = {
 /** Compact mint session tab rail — switch without leaving the session chrome. */
 export function SessionTabs(props: SessionTabsProps) {
   const colors = useSolidTheme()
+  const dimensions = useTerminalDimensions()
   const windowed = createMemo(() =>
-    visibleSessionTabs(props.tabs, props.activeId, props.maxVisible ?? 6),
+    sessionTabsLayout(props.tabs, props.activeId, dimensions().width, {
+      maxVisible: props.maxVisible,
+      showNew: Boolean(props.onNew),
+      showClose: Boolean(props.onCloseActive && props.activeId),
+    }),
   )
 
   return (
@@ -37,27 +43,28 @@ export function SessionTabs(props: SessionTabsProps) {
       paddingRight={1}
       gap={1}
     >
-      <text fg={colors.muted}>TABS </text>
+      <Show when={windowed().showLabel}>
+        <text fg={colors.muted}>TABS </text>
+      </Show>
       <Show when={windowed().overflowLeft > 0}>
         <text fg={colors.muted}>‹{windowed().overflowLeft}</text>
       </Show>
       <For each={windowed().tabs}>
         {(tab) => {
           const active = () => tab.id === props.activeId
-          const label = () => formatSessionTabLabel(tab)
           return (
-            <box onMouseUp={() => props.onSelect(tab.id)}>
-              <text wrapMode="none">
+            <box width={windowed().titleWidth} flexShrink={0} onMouseUp={() => props.onSelect(tab.id)}>
+              <text width={windowed().titleWidth} wrapMode="none">
                 <Show
                   when={active()}
                   fallback={
                     <span style={{ fg: tab.unread ? colors.brand : colors.muted }}>
-                      {label()}
+                      {formatSessionTabLabel(tab, windowed().titleWidth)}
                     </span>
                   }
                 >
                   <span style={{ fg: colors.brand }}>
-                    <strong>{label()}</strong>
+                    <strong>{formatSessionTabLabel(tab, windowed().titleWidth)}</strong>
                   </span>
                 </Show>
               </text>
@@ -68,12 +75,12 @@ export function SessionTabs(props: SessionTabsProps) {
       <Show when={windowed().overflowRight > 0}>
         <text fg={colors.muted}>{windowed().overflowRight}›</text>
       </Show>
-      <Show when={props.onNew}>
+      <Show when={windowed().showNew}>
         <box onMouseUp={() => props.onNew?.()}>
           <text fg={colors.muted}>+</text>
         </box>
       </Show>
-      <Show when={props.onCloseActive && props.activeId}>
+      <Show when={windowed().showClose && props.activeId}>
         <box onMouseUp={() => props.onCloseActive?.()}>
           <text fg={colors.muted}>✕</text>
         </box>

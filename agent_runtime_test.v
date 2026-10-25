@@ -511,6 +511,35 @@ fn test_agent_skill_load_tool_loads_body_without_session_enable() {
 		}
 	}, mut skill_context, {}, mut mcp_connections)
 	assert read_after_load.contains('Turn-loaded reference.')
+	mut batch_skill_context := SessionSkillContext{}
+	mut batch_connections := []PluginMCPConnection{}
+	mut batch_read_paths := map[string]bool{}
+	mut batch_background := vcontext.background()
+	mut batch_turn, cancel_batch := vcontext.with_timeout(mut batch_background, 2 * time.second)
+	defer { cancel_batch() }
+	batch_results := execute_agent_tool_batch(app, mut batch_turn, project, session.id,
+		'test-skill-resource-barrier', [
+			ProviderToolCall{
+				id:       'load-before-resource'
+				function: ProviderFunctionCall{
+					name:      'agent_skill_load'
+					arguments: '{"plugin_name":"agents","skill_name":"deep-review"}'
+				}
+			},
+			ProviderToolCall{
+				id:       'resource-after-load'
+				function: ProviderFunctionCall{
+					name:      'agent_skill_read_resource'
+					arguments: '{"plugin_name":"agents","skill_name":"deep-review","path":"references/guide.md"}'
+				}
+			},
+		], mut batch_skill_context, {}, mut batch_connections, ExecutionPolicyTurn{
+			mode:        .ask
+			interactive: true
+		}, mut batch_read_paths, {}) or { panic(err) }
+	assert batch_results.len == 2
+	assert batch_results[0].contains('Use the reference guide.')
+	assert batch_results[1].contains('Turn-loaded reference.')
 	mut missing_context := SessionSkillContext{}
 	missing := execute_test_agent_tool(app, project, session.id, ProviderToolCall{
 		id:       'missing-skill'
@@ -580,14 +609,57 @@ fn test_autonomous_shell_environment_does_not_forward_credentials() {
 	environment := autonomous_shell_environment_from({
 		'PATH':                  'tools'
 		'HOME':                  '/tmp/home'
+		'SYSTEMROOT':            'C:\\Windows'
+		'WINDIR':                'C:\\Windows'
+		'COMSPEC':               'C:\\Windows\\System32\\cmd.exe'
+		'PATHEXT':               '.COM;.EXE;.BAT;.CMD'
+		'TEMP':                  'C:\\Temp'
+		'TMP':                   'C:\\Temp'
+		'USERPROFILE':           'C:\\Users\\tester'
+		'LOCALAPPDATA':          'C:\\Users\\tester\\AppData\\Local'
+		'TMPDIR':                '/tmp'
+		'LANG':                  'en_US.UTF-8'
+		'LC_ALL':                'en_US.UTF-8'
+		'LC_CTYPE':              'en_US.UTF-8'
+		'LC_MESSAGES':           'en_US.UTF-8'
+		'TERM':                  'xterm-256color'
 		'VEASEL_MODEL_API_KEY':  'secret'
 		'OPENAI_API_KEY':        'secret'
 		'AWS_SECRET_ACCESS_KEY': 'secret'
 		'GITHUB_TOKEN':          'secret'
 	})
 	assert environment['PATH'] == 'tools'
-	assert environment['HOME'] == '/tmp/home'
+	$if windows {
+		assert environment['SYSTEMROOT'] == 'C:\\Windows'
+		assert environment['COMSPEC'] == 'C:\\Windows\\System32\\cmd.exe'
+		assert environment['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'
+		assert !environment.keys().contains('HOME')
+		assert environment.keys().sorted() == ['COMSPEC', 'LOCALAPPDATA', 'PATH', 'PATHEXT',
+			'SYSTEMROOT', 'TEMP', 'TMP', 'USERPROFILE', 'WINDIR']
+	} $else {
+		assert environment['HOME'] == '/tmp/home'
+		assert environment.keys().sorted() == ['HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES',
+			'PATH', 'TERM', 'TMPDIR']
+	}
 	assert !environment.keys().any(it.ends_with('_API_KEY') || it.contains('TOKEN') || it.contains('SECRET'))
+}
+
+fn test_windows_autonomous_shell_environment_matches_windows_name_casing() {
+	$if !windows {
+		return
+	}
+	environment := autonomous_shell_environment_from({
+		'Path':         'C:\\tools'
+		'PathExt':      '.COM;.EXE;.BAT;.CMD'
+		'SystemRoot':   'C:\\Windows'
+		'ComSpec':      'C:\\Windows\\System32\\cmd.exe'
+		'LocalAppData': 'C:\\Users\\tester\\AppData\\Local'
+	})
+	assert environment['PATH'] == 'C:\\tools'
+	assert environment['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'
+	assert environment['SYSTEMROOT'] == 'C:\\Windows'
+	assert environment['COMSPEC'] == 'C:\\Windows\\System32\\cmd.exe'
+	assert environment['LOCALAPPDATA'] == 'C:\\Users\\tester\\AppData\\Local'
 }
 
 fn test_autonomous_shell_runs_in_fail_closed_os_sandbox() {
@@ -686,25 +758,6 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert !agent_tool_allows_parallel_readonly('subagent_run')
 	assert !agent_tool_allows_parallel_readonly('workspace_propose_file_edit')
 	assert !agent_tool_allows_parallel_readonly('agent_skill_load')
-	assert !agent_tool_batch_allows_parallel_readonly([
-		ProviderToolCall{
-			id:       'solo'
-			function: ProviderFunctionCall{ name: 'workspace_read_file', arguments: '{"path":"src/main.v"}' }
-		},
-	])
-	assert !agent_tool_batch_allows_parallel_readonly([
-		ProviderToolCall{
-			id:       'read'
-			function: ProviderFunctionCall{ name: 'workspace_read_file', arguments: '{"path":"src/main.v"}' }
-		},
-		ProviderToolCall{
-			id:       'edit'
-			function: ProviderFunctionCall{
-				name:      'workspace_propose_file_edit'
-				arguments: '{"path":"src/main.v","content":"x"}'
-			}
-		},
-	])
 	parallel_calls := [
 		ProviderToolCall{
 			id:       'list-p'
@@ -725,15 +778,144 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 			}
 		},
 	]
-	assert agent_tool_batch_allows_parallel_readonly(parallel_calls)
+	assert agent_tool_readonly_run_end(parallel_calls, 0) == parallel_calls.len
 	mut parallel_read_paths := map[string]bool{}
-	parallel_results := execute_parallel_readonly_workspace_tools(app, root, session.id, parallel_calls,
-		AgentToolPolicy{}, mut parallel_read_paths)
+	mut parallel_context := vcontext.background()
+	mut parallel_turn, cancel_parallel := vcontext.with_timeout(mut parallel_context, 2 * time.second)
+	defer { cancel_parallel() }
+	mut parallel_skill_context := SessionSkillContext{}
+	mut parallel_connections := []PluginMCPConnection{}
+	parallel_results := execute_agent_tool_batch(app, mut parallel_turn, root, session.id,
+		'test-parallel-operation', parallel_calls, mut parallel_skill_context, {},
+		mut parallel_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut parallel_read_paths, {}) or { panic(err) }
 	assert parallel_results.len == 3
 	assert parallel_results[0].contains('src/main.v')
 	assert parallel_results[1].contains('workspace-sentinel')
 	assert parallel_results[2].contains('workspace-sentinel')
 	assert parallel_read_paths['src/main.v']
+	mixed_calls := [
+		parallel_calls[0],
+		parallel_calls[1],
+		ProviderToolCall{
+			id:       'edit-between-waves'
+			function: ProviderFunctionCall{
+				name:      'workspace_propose_file_edit'
+				arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\n"}'
+			}
+		},
+		parallel_calls[2],
+		parallel_calls[1],
+	]
+	assert agent_tool_readonly_run_end(mixed_calls, 0) == 2
+	assert agent_tool_readonly_run_end(mixed_calls, 2) == 2
+	assert agent_tool_readonly_run_end(mixed_calls, 3) == 5
+	mut mixed_context := vcontext.background()
+	mut mixed_turn, cancel_mixed := vcontext.with_timeout(mut mixed_context, 2 * time.second)
+	defer { cancel_mixed() }
+	mut mixed_skill_context := SessionSkillContext{}
+	mut mixed_connections := []PluginMCPConnection{}
+	mut mixed_read_paths := map[string]bool{}
+	mixed_results := execute_agent_tool_batch(app, mut mixed_turn, root, session.id,
+		'test-mixed-operation', mixed_calls, mut mixed_skill_context, {}, mut mixed_connections,
+		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut mixed_read_paths, {}) or {
+		panic(err)
+	}
+	assert mixed_results.len == mixed_calls.len
+	assert mixed_results[0].contains('src/main.v')
+	assert mixed_results[1].contains('workspace-sentinel')
+	assert mixed_results[2].contains('Stored for human review')
+	assert mixed_results[3].contains('workspace-sentinel')
+	assert mixed_results[4].contains('workspace-sentinel')
+	assert !mixed_results[4].contains('Already provided this turn')
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
+
+	// A real auto-edit between reads must invalidate prior content for this path.
+	auto_edit_path := os.join_path(root, 'src', 'auto-edit.txt')
+	os.write_file(auto_edit_path, 'before edit') or { panic(err) }
+	auto_edit_calls := [
+		ProviderToolCall{
+			id:       'read-before-edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/auto-edit.txt"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'apply-edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_propose_file_edit'
+				arguments: '{"path":"src/auto-edit.txt","content":"after edit"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'read-after-edit'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/auto-edit.txt"}'
+			}
+		},
+	]
+	mut auto_edit_context := vcontext.background()
+	mut auto_edit_turn, cancel_auto_edit := vcontext.with_timeout(mut auto_edit_context, 2 * time.second)
+	defer { cancel_auto_edit() }
+	mut auto_edit_skill_context := SessionSkillContext{}
+	mut auto_edit_connections := []PluginMCPConnection{}
+	mut auto_edit_read_paths := map[string]bool{}
+	auto_edit_results := execute_agent_tool_batch(app, mut auto_edit_turn, root, session.id,
+		'test-auto-edit-operation', auto_edit_calls, mut auto_edit_skill_context, {},
+		mut auto_edit_connections, ExecutionPolicyTurn{ mode: .auto_edit },
+		mut auto_edit_read_paths, {}) or { panic(err) }
+	assert auto_edit_results[0].contains('before edit')
+	assert auto_edit_results[1].contains('Applied by graduated execution policy')
+	assert auto_edit_results[2].contains('after edit')
+	assert !auto_edit_results[2].contains('Already provided this turn')
+	assert os.read_file(auto_edit_path) or { panic(err) } == 'after edit'
+
+	// A Skill-denied read must leave no stale cache entry that could mask a later grant.
+	mut denied_read_context := vcontext.background()
+	mut denied_read_turn, cancel_denied_read := vcontext.with_timeout(mut denied_read_context,
+		2 * time.second)
+	defer { cancel_denied_read() }
+	mut denied_read_skill_context := SessionSkillContext{
+		tool_policy: agent_tool_policy_for_skills([PluginSkill{
+			name:                   'search-only'
+			allowed_tools:          'workspace_search'
+			allowed_tools_declared: true
+		}])
+	}
+	mut denied_read_connections := []PluginMCPConnection{}
+	mut denied_read_paths := map[string]bool{}
+	denied_read_results := execute_agent_tool_batch(app, mut denied_read_turn, root, session.id,
+		'test-denied-read-operation', [parallel_calls[1]], mut denied_read_skill_context, {},
+		mut denied_read_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut denied_read_paths, {}) or { panic(err) }
+	assert denied_read_results[0].contains('active Agent Skill tool restrictions')
+	assert denied_read_paths.len == 0
+
+	skipped_edit := ProviderToolCall{
+		id:       'loop-skipped-edit'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"src/main.v","content":"loop must not apply"}'
+		}
+	}
+	mut skip_context := vcontext.background()
+	mut skip_turn, cancel_skip := vcontext.with_timeout(mut skip_context, 2 * time.second)
+	defer { cancel_skip() }
+	mut skip_skill_context := SessionSkillContext{}
+	mut skip_connections := []PluginMCPConnection{}
+	mut skip_read_paths := map[string]bool{}
+	edits_before_skipped_call := (store.workspace_edits(session.id) or { panic(err) }).len
+	skipped_results := execute_agent_tool_batch(app, mut skip_turn, root, session.id,
+		'test-loop-skipped-operation', [skipped_edit], mut skip_skill_context, {}, mut skip_connections,
+		ExecutionPolicyTurn{ mode: .ask, interactive: true }, mut skip_read_paths,
+		{
+			'loop-skipped-edit': agent_tool_loop_stop_note(skipped_edit)
+		}) or { panic(err) }
+	assert skipped_results[0].contains('was not run')
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == edits_before_skipped_call
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
 
 	duplicate_batch := [
 		ProviderToolCall{
@@ -753,13 +935,82 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	]
 	mut batch_paths := map[string]bool{}
 	dup_results := execute_parallel_readonly_workspace_tools(app, root, session.id, duplicate_batch,
-		AgentToolPolicy{}, mut batch_paths)
+		AgentToolPolicy{}, mut batch_paths, {})
 	assert dup_results.len == 2
 	assert dup_results[0].contains('workspace-sentinel')
 	assert dup_results[1].contains('Already provided this turn')
 	assert dup_results[1].contains('src/main.v')
 	assert !dup_results[1].contains('workspace-sentinel')
 	assert batch_paths['src/main.v']
+
+	late_path := 'src/late-file.txt'
+	late_read_calls := [
+		ProviderToolCall{
+			id:       'late-read-a'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"${late_path}"}'
+			}
+		},
+		ProviderToolCall{
+			id:       'late-read-b'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"${late_path}"}'
+			}
+		},
+	]
+	mut late_read_paths := map[string]bool{}
+	mut late_read_context := vcontext.background()
+	mut late_read_turn, cancel_late_read := vcontext.with_timeout(mut late_read_context,
+		2 * time.second)
+	defer { cancel_late_read() }
+	mut late_read_skills := SessionSkillContext{}
+	mut late_read_connections := []PluginMCPConnection{}
+	late_read_results := execute_agent_tool_batch(app, mut late_read_turn, root, session.id,
+		'test-late-file-operation', late_read_calls, mut late_read_skills, {},
+		mut late_read_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut late_read_paths, {}) or { panic(err) }
+	assert late_read_results[0].contains('invalid or unavailable')
+	assert late_read_results[1] == late_read_results[0]
+	assert !late_read_results[1].contains('Already provided this turn')
+	assert !late_read_paths[late_path]
+	os.write_file(os.join_path(root, late_path), 'appeared after the failed read') or {
+		panic(err)
+	}
+	mut late_retry_context := vcontext.background()
+	mut late_retry_turn, cancel_late_retry := vcontext.with_timeout(mut late_retry_context,
+		2 * time.second)
+	defer { cancel_late_retry() }
+	mut late_retry_skills := SessionSkillContext{}
+	mut late_retry_connections := []PluginMCPConnection{}
+	late_retry_call := ProviderToolCall{
+		id:       'late-read-retry'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"${late_path}"}'
+		}
+	}
+	late_retry_results := execute_agent_tool_batch(app, mut late_retry_turn, root, session.id,
+		'test-late-file-retry-operation', [late_retry_call], mut late_retry_skills, {},
+		mut late_retry_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
+		mut late_read_paths, {}) or { panic(err) }
+	assert late_retry_results[0].contains('appeared after the failed read')
+	assert late_read_paths[late_path]
+	assert workspace_read_path_from_call(ProviderToolCall{
+		id:       'read-spaced-path'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":" src/main.v "}'
+		}
+	}) or { '' } == ' src/main.v '
+	assert workspace_read_path_from_call(ProviderToolCall{
+		id:       'read-extra-argument'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","extra":true}'
+		}
+	}) == none
 
 	mut turn_paths := map[string]bool{}
 	turn_paths['src/main.v'] = true
@@ -771,7 +1022,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 				arguments: '{"path":"src/main.v"}'
 			}
 		},
-	], AgentToolPolicy{}, mut turn_paths)
+	], AgentToolPolicy{}, mut turn_paths, {})
 	assert skipped.len == 1
 	assert skipped[0].contains('Already provided this turn')
 	assert !skipped[0].contains('workspace-sentinel')
@@ -839,6 +1090,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	})
 	assert unknown.contains('not available')
 
+	edits_before_proposal := (store.workspace_edits(session.id) or { panic(err) }).len
 	proposal_result := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'propose-1'
 		function: ProviderFunctionCall{
@@ -850,7 +1102,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert proposal_result.contains('"id"')
 	assert !proposal_result.contains('module fixture')
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
-	assert (store.workspace_edits(session.id) or { panic(err) }).len == 1
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == edits_before_proposal + 1
 
 	shell_proposal := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'shell-propose-1'
@@ -890,6 +1142,58 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 fn message_validation_error_contains(messages []ChatMessage, expected string) bool {
 	validate_messages(messages) or { return err.msg().contains(expected) }
 	return false
+}
+
+fn test_agent_tool_loop_tracker_warns_then_stops_canonical_repeats() {
+	call := ProviderToolCall{
+		id:       'repeat-1'
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"path":"src","filter":{"z":1,"a":2}}'
+		}
+	}
+	reordered_call := ProviderToolCall{
+		id:       'repeat-2'
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{ "filter": {"a":2,"z":1}, "path":"src" }'
+		}
+	}
+	assert agent_tool_call_signature(call) == agent_tool_call_signature(reordered_call)
+	mut tracker := AgentToolLoopTracker{}
+	assert tracker.inspect(call) == .ok
+	assert tracker.inspect(reordered_call) == .ok
+	assert tracker.inspect(call) == .warning
+	assert tracker.inspect(reordered_call) == .ok
+	assert tracker.inspect(call) == .stop
+	assert tracker.inspect(call) == .stop
+	assert tracker.inspect(ProviderToolCall{
+		id:       'different-tool'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{}'
+		}
+	}) == .ok
+}
+
+fn test_agent_tool_loop_warnings_match_provider_context_in_atif_trace() {
+	warning := 'Repeated workspace_search calls; change approach.'
+	mut messages := []ChatMessage{}
+	mut trace_steps := [ATIFStep{
+		step_id: 1
+		source:  'agent'
+		message: 'Searching the workspace.'
+	}]
+
+	append_agent_tool_loop_warnings(mut messages, mut trace_steps, [warning], true)
+
+	assert messages.len == 1
+	assert messages[0].role == 'user'
+	assert messages[0].content == warning
+	assert trace_steps.len == 2
+	assert trace_steps[1].step_id == 2
+	assert trace_steps[1].source == 'system'
+	assert trace_steps[1].message == warning
 }
 
 fn test_provider_tool_transcripts_preserve_native_context() {

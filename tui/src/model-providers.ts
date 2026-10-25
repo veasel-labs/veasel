@@ -19,6 +19,14 @@ export type ModelCatalogEntry = {
   cost_unit?: string
   /** Curated context window in tokens when the model is on Veasel's schedule. */
   context_tokens?: number
+  /** Curated provider disclosure shown before model selection. */
+  data_use_notice?: string
+}
+
+/** Provider-specific setup note shown before a user starts entering credentials. */
+export function providerConnectionGuidance(provider: ModelProvider): string | undefined {
+  if (provider.id !== "opencode-go") return undefined
+  return "Use a fresh OpenCode Console API key (OPENCODE_API_KEY). Veasel cannot reuse the OpenCode CLI login; replace expired keys in Console."
 }
 
 /** Compact context-window badge for the model picker. Empty when unknown. */

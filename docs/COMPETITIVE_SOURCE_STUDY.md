@@ -87,9 +87,9 @@ Rechecked the session runner on 2026-10-15 at
 reaches its step limit, that runner keeps the tool definitions for the cached
 prefix but sets tool choice to none and asks for a text-only status. The rest
 of the 2026-10-12 OpenCode notes above were not re-audited at this commit.
-Veasel executes a multi-tool round concurrently when every call is a workspace
-list/read/search tool, then appends results in provider call order; mixed rounds
-and skill/edit/shell/MCP calls stay sequential. Its own tool-round cap still
+Veasel executes adjacent workspace list/read/search calls concurrently as
+ordered waves; skill/edit/shell/MCP calls stay sequential barriers, and
+duplicate file reads remain suppressed across waves. Its own tool-round cap still
 spends the blocked round on one tools-disabled completion and keeps that text
 when it is non-empty. The pending tool calls are not executed. This does not
 copy OpenCode's prompt, compaction, or permission model.
@@ -198,6 +198,17 @@ turn is covered by the pinned price schedule. Raw source and private
 instructions remain in traces, so they are sensitive artifacts. A general
 telemetry exporter and broader resume/checkpoint UX remain separate gaps. OTel
 is not a substitute for durable session state.
+
+**Scheduler recheck (2026-10-23):** At the refreshed
+[`a713410`](https://github.com/google-gemini/gemini-cli/tree/a713410aba5d594594e20d5c822e3aab8f822089)
+pin, `packages/core/src/scheduler/scheduler.ts` and
+`scheduler_parallel.test.ts` group adjacent parallelizable tool calls into
+concurrent waves and wait at non-parallelizable calls. Tests cover reads after
+writes and ordered batches; the interactive fixture also covers approval
+between waves. Veasel adopts this scheduling shape only for its bounded
+read-only workspace tools. Every other tool remains an ordering and permission
+barrier, even where a competitor permits broader concurrency. No source was
+copied.
 
 ### Aider — repository structure under an explicit token budget
 

@@ -6,6 +6,8 @@ import time
 
 const max_agent_tool_rounds = 6
 const max_agent_tool_calls = 12
+const agent_tool_loop_warning_threshold = 3
+const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
@@ -24,25 +26,126 @@ fn agent_tool_allows_parallel_readonly(name string) bool {
 	return name in ['workspace_list_files', 'workspace_read_file', 'workspace_search']
 }
 
-fn agent_tool_batch_allows_parallel_readonly(calls []ProviderToolCall) bool {
-	if calls.len < 2 {
-		return false
+fn agent_tool_readonly_run_end(calls []ProviderToolCall, start int) int {
+	mut end := start
+	for end < calls.len && agent_tool_allows_parallel_readonly(calls[end].function.name) {
+		end++
 	}
-	for call in calls {
-		if !agent_tool_allows_parallel_readonly(call.function.name) {
-			return false
-		}
-	}
-	return true
+	return end
 }
 
 struct ParallelReadonlyToolResult {
-	index  int
-	result string
+	index                    int
+	result                   string
+	workspace_read_attempted bool
+	workspace_read_succeeded bool
+}
+
+struct AgentToolExecutionResult {
+	result                   string
+	workspace_read_succeeded bool
 }
 
 struct AgentToolNote {
 	note string
+}
+
+enum AgentToolLoopVerdict {
+	ok
+	warning
+	stop
+}
+
+struct AgentToolLoopTracker {
+mut:
+	last_signature string
+	consecutive    int
+}
+
+fn append_canonical_agent_tool_json(value json2.Any, mut output []u8) {
+	match value {
+		map[string]json2.Any {
+			output << `{`
+			mut keys := value.keys()
+			keys.sort()
+			for index, key in keys {
+				if index > 0 {
+					output << `,`
+				}
+				json2.encode_append(key, mut output)
+				output << `:`
+				append_canonical_agent_tool_json(value[key] or { json2.null }, mut output)
+			}
+			output << `}`
+		}
+		[]json2.Any {
+			output << `[`
+			for index, item in value {
+				if index > 0 {
+					output << `,`
+				}
+				append_canonical_agent_tool_json(item, mut output)
+			}
+			output << `]`
+		}
+		else {
+			json2.encode_append(value, mut output)
+		}
+	}
+}
+
+fn agent_tool_call_signature(call ProviderToolCall) string {
+	mut encoded := []u8{cap: call.function.name.len + call.function.arguments.len + 16}
+	json2.encode_append(call.function.name, mut encoded)
+	encoded << `:`
+	decoded_arguments := json2.decode[json2.Any](call.function.arguments) or {
+		encoded << call.function.arguments.bytes()
+		return workspace_content_hash(encoded.bytestr())
+	}
+	append_canonical_agent_tool_json(decoded_arguments, mut encoded)
+	return workspace_content_hash(encoded.bytestr())
+}
+
+fn (mut tracker AgentToolLoopTracker) inspect(call ProviderToolCall) AgentToolLoopVerdict {
+	signature := agent_tool_call_signature(call)
+	if signature == tracker.last_signature {
+		tracker.consecutive++
+	} else {
+		tracker.last_signature = signature
+		tracker.consecutive = 1
+	}
+	if tracker.consecutive >= agent_tool_loop_stop_threshold {
+		return .stop
+	}
+	if tracker.consecutive == agent_tool_loop_warning_threshold {
+		return .warning
+	}
+	return .ok
+}
+
+fn agent_tool_loop_warning(call ProviderToolCall) string {
+	return 'The last ${agent_tool_loop_warning_threshold} tool calls were identical (${call.function.name}). Change the tool or its arguments to make progress.'
+}
+
+fn agent_tool_loop_stop_note(call ProviderToolCall) string {
+	return encode_agent_tool_note('Repeated identical ${call.function.name} call was not run to prevent an execution loop. Change the tool or its arguments to continue.')
+}
+
+fn append_agent_tool_loop_warnings(mut messages []ChatMessage, mut trace_steps []ATIFStep,
+	warnings []string, collect_trace bool) {
+	for warning in warnings {
+		messages << ChatMessage{
+			role:    'user'
+			content: warning
+		}
+		if collect_trace {
+			trace_steps << ATIFStep{
+				step_id: trace_steps.len + 1
+				source:  'system'
+				message: warning
+			}
+		}
+	}
 }
 
 // encode_agent_tool_note encodes a short advisory object (not a hard tool failure).
@@ -59,33 +162,58 @@ fn workspace_read_path_from_call(call ProviderToolCall) ?string {
 		return none
 	}
 	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or { return none }
-	path := string_tool_argument(tool_arguments, 'path') or { return none }
-	normalized := path.replace('\\', '/').trim_space()
-	if normalized.len == 0 {
+	if tool_arguments.len != 1 {
 		return none
 	}
-	return normalized
+	path := string_tool_argument(tool_arguments, 'path') or { return none }
+	if path.len == 0 {
+		return none
+	}
+	// Preserve the path spelling: whitespace and backslashes can be literal
+	// filename characters on supported platforms, so normalizing them could
+	// suppress a distinct read.
+	return path
 }
 
 fn duplicate_workspace_read_note(path string) string {
 	return encode_agent_tool_note('Already provided this turn for path "${path}". Reuse the earlier workspace_read_file result; do not request it again.')
 }
 
+fn agent_tool_may_mutate_workspace(name string, mcp_bindings map[string]PluginMCPToolBinding) bool {
+	return name in ['workspace_propose_file_edit', 'workspace_propose_shell_command']
+		|| name in mcp_bindings
+}
+
 // execute_parallel_readonly_workspace_tools runs a read-only batch concurrently.
 // Duplicate workspace_read_file paths in the same batch or already seen this turn
 // receive a short note instead of re-injecting file bytes.
 fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id string,
-	calls []ProviderToolCall, tool_policy AgentToolPolicy, mut read_paths map[string]bool) []string {
+	calls []ProviderToolCall, tool_policy AgentToolPolicy, mut read_paths map[string]bool,
+	loop_skip_notes map[string]string) []string {
 	mut ordered := []string{len: calls.len}
 	mut run_indexes := []int{cap: calls.len}
 	mut run_calls := []ProviderToolCall{cap: calls.len}
+	mut pending_read_indexes := map[string]int{}
+	mut duplicate_read_indexes := map[int]int{}
 	for i, call in calls {
-		if path := workspace_read_path_from_call(call) {
-			if read_paths[path] {
-				ordered[i] = duplicate_workspace_read_note(path)
-				continue
+		if note := loop_skip_notes[call.id] {
+			ordered[i] = note
+			continue
+		}
+		// A denied read did not provide any workspace content, so it must not
+		// poison the turn-scoped duplicate-read cache.
+		if tool_policy.allows(call.function.name) {
+			if path := workspace_read_path_from_call(call) {
+				if read_paths[path] {
+					ordered[i] = duplicate_workspace_read_note(path)
+					continue
+				}
+				if primary_index := pending_read_indexes[path] {
+					duplicate_read_indexes[i] = primary_index
+					continue
+				}
+				pending_read_indexes[path] = i
 			}
-			read_paths[path] = true
 		}
 		run_indexes << i
 		run_calls << call
@@ -98,13 +226,34 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 		spawn execute_parallel_readonly_workspace_tool_worker(app, root, session_id, tool_policy,
 			i, call, results_ch)
 	}
-	mut run_results := []string{len: run_calls.len}
+	mut run_results := []ParallelReadonlyToolResult{len: run_calls.len}
 	for _ in 0 .. run_calls.len {
 		item := <-results_ch
-		run_results[item.index] = item.result
+		run_results[item.index] = item
 	}
+	mut successful_reads := map[int]bool{}
 	for i, call_index in run_indexes {
-		ordered[call_index] = run_results[i]
+		read_result := run_results[i]
+		ordered[call_index] = read_result.result
+		if read_result.workspace_read_attempted {
+			if path := workspace_read_path_from_call(run_calls[i]) {
+				if read_result.workspace_read_succeeded {
+					read_paths[path] = true
+					successful_reads[call_index] = true
+				} else {
+					read_paths.delete(path)
+				}
+			}
+		}
+	}
+	for duplicate_index, primary_index in duplicate_read_indexes {
+		if path := workspace_read_path_from_call(calls[duplicate_index]) {
+			ordered[duplicate_index] = if successful_reads[primary_index] {
+				duplicate_workspace_read_note(path)
+			} else {
+				ordered[primary_index]
+			}
+		}
 	}
 	return ordered
 }
@@ -112,16 +261,103 @@ fn execute_parallel_readonly_workspace_tools(app &App, root string, session_id s
 fn execute_parallel_readonly_workspace_tool_worker(app &App, root string, session_id string,
 	tool_policy AgentToolPolicy, index int, call ProviderToolCall, results_ch chan ParallelReadonlyToolResult) {
 	mut result := ''
+	mut workspace_read_attempted := false
+	mut workspace_read_succeeded := false
 	if !tool_policy.allows(call.function.name) {
 		result = encode_agent_tool_error('Tool is not available under the active Agent Skill tool restrictions.')
+	} else if call.function.name == 'workspace_read_file' {
+		workspace_read_attempted = true
+		read_result := execute_workspace_read_file_tool(root, call)
+		result = sanitize_agent_tool_result(read_result.result)
+		workspace_read_succeeded = read_result.workspace_read_succeeded
 	} else {
 		result = sanitize_agent_tool_result(execute_workspace_agent_tool(app, root, session_id,
 			call))
 	}
 	results_ch <- ParallelReadonlyToolResult{
-		index:  index
-		result: result
+		index:                    index
+		result:                   result
+		workspace_read_attempted: workspace_read_attempted
+		workspace_read_succeeded: workspace_read_succeeded
 	}
+}
+
+// execute_agent_tool_batch runs adjacent read-only workspace calls concurrently,
+// with every other tool acting as a sequential barrier. Results always remain in
+// provider call order, and repeated file reads stay deduplicated across waves.
+fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string,
+	session_id string, operation_id string, calls []ProviderToolCall,
+	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
+	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn,
+	mut read_paths map[string]bool, loop_skip_notes map[string]string) ![]string {
+	if calls.len > 1 && agent_tool_readonly_run_end(calls, 0) == calls.len {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		results := execute_parallel_readonly_workspace_tools(app, root, session_id, calls,
+			skill_context.tool_policy, mut read_paths, loop_skip_notes)
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		return results
+	}
+	mut results := []string{len: calls.len}
+	mut index := 0
+	for index < calls.len {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		end := agent_tool_readonly_run_end(calls, index)
+		if end > index {
+			start := index
+			index = end
+			if index - start > 1 {
+				batch_results := execute_parallel_readonly_workspace_tools(app, root, session_id,
+					calls[start..index], skill_context.tool_policy, mut read_paths,
+					loop_skip_notes)
+				for offset, result in batch_results {
+					results[start + offset] = result
+				}
+				if context_error := turn_context_error(mut turn_ctx) {
+					return error(context_error)
+				}
+				continue
+			}
+			index = start
+		}
+		call := calls[index]
+		if note := loop_skip_notes[call.id] {
+			results[index] = note
+			index++
+			continue
+		}
+		if path := workspace_read_path_from_call(call) {
+			if skill_context.tool_policy.allows(call.function.name) {
+				if read_paths[path] {
+					results[index] = duplicate_workspace_read_note(path)
+					index++
+					continue
+				}
+			}
+		}
+		// Edits, shell, and MCP may change workspace contents. A denied Skill
+		// read is handled below without entering the duplicate-read cache.
+		if skill_context.tool_policy.allows(call.function.name)
+			&& agent_tool_may_mutate_workspace(call.function.name, mcp_bindings) {
+			read_paths.clear()
+		}
+		execution_result := execute_agent_tool_if_allowed_with_status(app, mut turn_ctx, root,
+			session_id, operation_id, call, mut skill_context, mcp_bindings,
+			mut mcp_connections, policy)!
+		results[index] = sanitize_agent_tool_result(execution_result.result)
+		if path := workspace_read_path_from_call(call) {
+			if execution_result.workspace_read_succeeded {
+				read_paths[path] = true
+			}
+		}
+		index++
+	}
+	return results
 }
 
 struct AgentToolError {
@@ -309,6 +545,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
 	mut read_paths := map[string]bool{}
+	mut loop_tracker := AgentToolLoopTracker{}
 	if collect_trace {
 		for message in messages {
 			source := match message.role {
@@ -397,36 +634,22 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			provider_context: output.provider_context
 		}
 		tool_calls += output.tool_calls.len
-		mut tool_results := []string{cap: output.tool_calls.len}
-		if agent_tool_batch_allows_parallel_readonly(output.tool_calls) {
-			if context_error := turn_context_error(mut turn_ctx) {
-				return error(context_error)
-			}
-			tool_results = execute_parallel_readonly_workspace_tools(app, root, session_id,
-				output.tool_calls, skill_context.tool_policy, mut read_paths)
-			if context_error := turn_context_error(mut turn_ctx) {
-				return error(context_error)
-			}
-		} else {
-			for call in output.tool_calls {
-				if context_error := turn_context_error(mut turn_ctx) {
-					return error(context_error)
+		mut loop_skip_notes := map[string]string{}
+		mut loop_warnings := []string{cap: output.tool_calls.len}
+		for call in output.tool_calls {
+			match loop_tracker.inspect(call) {
+				.warning {
+					loop_warnings << agent_tool_loop_warning(call)
 				}
-				if path := workspace_read_path_from_call(call) {
-					if read_paths[path] {
-						tool_results << duplicate_workspace_read_note(path)
-						continue
-					}
+				.stop {
+					loop_skip_notes[call.id] = agent_tool_loop_stop_note(call)
 				}
-				result := sanitize_agent_tool_result(execute_agent_tool_if_allowed(app, mut turn_ctx,
-					root, session_id, operation_id, call, mut skill_context, mcp_bindings, mut mcp_connections,
-					policy)!)
-				if path := workspace_read_path_from_call(call) {
-					read_paths[path] = true
-				}
-				tool_results << result
+				.ok {}
 			}
 		}
+		tool_results := execute_agent_tool_batch(app, mut turn_ctx, root, session_id, operation_id,
+			output.tool_calls, mut skill_context, mcp_bindings, mut mcp_connections, policy,
+			mut read_paths, loop_skip_notes)!
 		mut trace_observations := []ATIFObservationResult{}
 		for i, call in output.tool_calls {
 			result := tool_results[i]
@@ -453,6 +676,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				results: trace_observations
 			}
 		}
+		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
+			collect_trace)
 		// Text from the next model round must not stick to this round's
 		// narration. The model-visible message stays unchanged.
 		boundary := tool_round_text_boundary(output.content)
@@ -630,6 +855,24 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 		}
 	}
 	return execute_workspace_agent_tool(app, root, session_id, call)
+}
+
+fn execute_agent_tool_if_allowed_with_status(app &App, mut turn_ctx vcontext.Context, root string,
+	session_id string, operation_id string, call ProviderToolCall,
+	mut skill_context SessionSkillContext, mcp_bindings map[string]PluginMCPToolBinding,
+	mut mcp_connections []PluginMCPConnection, policy ExecutionPolicyTurn) !AgentToolExecutionResult {
+	if call.function.name == 'workspace_read_file' {
+		if !skill_context.tool_policy.allows(call.function.name) {
+			return AgentToolExecutionResult{
+				result: encode_agent_tool_error('Tool is not available under the active Agent Skill tool restrictions.')
+			}
+		}
+		return execute_workspace_read_file_tool(root, call)
+	}
+	return AgentToolExecutionResult{
+		result: execute_agent_tool_if_allowed(app, mut turn_ctx, root, session_id, operation_id,
+			call, mut skill_context, mcp_bindings, mut mcp_connections, policy)!
+	}
 }
 
 fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id string,
@@ -1039,19 +1282,7 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			json2.encode[WorkspaceFileList](files)
 		}
 		'workspace_read_file' {
-			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-				return encode_agent_tool_error('Tool arguments must be a JSON object.')
-			}
-			path := string_tool_argument(tool_arguments, 'path') or {
-				return encode_agent_tool_error('A relative path string is required.')
-			}
-			if tool_arguments.len != 1 {
-				return encode_agent_tool_error('Unexpected tool argument.')
-			}
-			file := workspace_file(root, path) or {
-				return encode_agent_tool_error('The workspace file is invalid or unavailable.')
-			}
-			json2.encode[WorkspaceFileContent](file)
+			execute_workspace_read_file_tool(root, call).result
 		}
 		'workspace_search' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
@@ -1114,6 +1345,33 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 		}
 	}
 	return result
+}
+
+fn execute_workspace_read_file_tool(root string, call ProviderToolCall) AgentToolExecutionResult {
+	tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('Tool arguments must be a JSON object.')
+		}
+	}
+	path := string_tool_argument(tool_arguments, 'path') or {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('A relative path string is required.')
+		}
+	}
+	if tool_arguments.len != 1 {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('Unexpected tool argument.')
+		}
+	}
+	file := workspace_file(root, path) or {
+		return AgentToolExecutionResult{
+			result: encode_agent_tool_error('The workspace file is invalid or unavailable.')
+		}
+	}
+	return AgentToolExecutionResult{
+		result:                   json2.encode[WorkspaceFileContent](file)
+		workspace_read_succeeded: true
+	}
 }
 
 fn string_tool_argument(arguments map[string]json2.Any, key string) !string {

@@ -27,6 +27,7 @@ import struct
 import subprocess
 import fcntl
 import termios
+import sys
 import threading
 import time
 import urllib.parse
@@ -375,6 +376,16 @@ class Handler(BaseHTTPRequestHandler):
             state["sse"] = None
 
 
+class FixtureHTTPServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address) -> None:
+        # A cancelled TUI turn may close an SSE socket while the fixture server
+        # is reading its next request. Treat only that expected disconnect as
+        # quiet; unexpected handler failures still reach stderr and fail the test.
+        if isinstance(sys.exc_info()[1], (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def settings_view():
     return {
         "active_provider": "openai",
@@ -673,7 +684,7 @@ def seed_session_workspace() -> None:
 
 def run_core_suite() -> None:
     seed_session_workspace()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = FixtureHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     rows, cols = 40, 100
@@ -757,7 +768,8 @@ def run_core_suite() -> None:
         screen.wait_for("Check the API key", 4)
         screen.wait_for("MODEL SETTINGS", 4)  # wizard stays open after a rejected save
         screen.send("\r", 0.9)  # retry save from the model step
-        screen.wait_for("/connect · s to manage providers", 6)
+        screen.wait_for("n new", 6)
+        screen.wait_for("/connect", 6)
         saved = state["saved"] or {}
         if saved.get("model") != "gpt-5" or not saved.get("api_key"):
             raise AssertionError("selected model and api key were not saved")
@@ -1286,7 +1298,7 @@ def run_core_suite() -> None:
 
 def run_narrow_suite() -> None:
     seed_session_workspace()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = FixtureHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:

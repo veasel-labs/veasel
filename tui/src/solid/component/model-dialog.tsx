@@ -14,6 +14,7 @@ export type SolidModelRef = {
   name: string
   providerName?: string
   costBadge?: string
+  dataUseNotice?: string
 }
 
 export type ModelDialogProps = {
@@ -80,6 +81,7 @@ export function catalogEntryToSolidModel(
     name: model.name,
     providerName,
     costBadge: [formatModelCatalogCostBadge(model), formatModelCatalogContextBadge(model)].filter(Boolean).join(" · ") || undefined,
+    dataUseNotice: model.data_use_notice,
   }
 }
 
@@ -95,7 +97,8 @@ function toOption(
     value: key,
     category,
     description: favorite && category !== "Favorites" ? "(Favorite)" : model.providerName,
-    footer: model.costBadge,
+    notice: model.dataUseNotice,
+    footer: [model.dataUseNotice ? `⚠ ${model.dataUseNotice}` : undefined, model.costBadge].filter(Boolean).join(" · ") || undefined,
     searchText: `${model.providerID} ${model.modelID} ${model.providerName ?? ""}`,
   }
 }

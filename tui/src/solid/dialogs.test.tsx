@@ -246,6 +246,40 @@ describe("Solid dialog primitives", () => {
     await setup.renderOnce()
     expect(picked).toEqual(["ember"])
   })
+
+  test("DialogSelect keeps the highlighted model notice visible in compact terminals", async () => {
+    function Fixture() {
+      const dialog = useDialog()
+      onMount(() => {
+        dialog.replace(() => (
+          <DialogSelect
+            title="Models"
+            options={[
+              { title: "Iceman", value: "iceman", notice: "Prompts may be used to improve this model." },
+            ]}
+            footer="Enter selects · Favorites / Recent when present"
+          />
+        ))
+      })
+      return <box width="100%" height="100%" />
+    }
+
+    const setup = await testRender(
+      () => (
+        <DialogProvider>
+          <Fixture />
+        </DialogProvider>
+      ),
+      { width: 40, height: 20, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    await setup.renderOnce()
+
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Prompts may be used")
+    expect(frame).toContain("this model.")
+  })
 })
 
 describe("Solid App dialog smoke", () => {

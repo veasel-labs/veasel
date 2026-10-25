@@ -49,6 +49,7 @@ struct CostScheduleTurn {
 	cache_read_tokens     i64
 	cache_creation_tokens i64
 	cache_reported        bool
+	provider_cost_usd     ?f64
 }
 
 fn cost_schedule_key(provider string, model string) string {
@@ -204,6 +205,12 @@ fn price_tokens_usd(tokens i64, rate_per_million f64) f64 {
 }
 
 fn compute_turn_cost_usd(schedule CostSchedule, turn CostScheduleTurn) !f64 {
+	if provider_cost := turn.provider_cost_usd {
+		if provider_cost < 0 || math.is_nan(provider_cost) || math.is_inf(provider_cost, 0) {
+			return error('provider cost is invalid')
+		}
+		return provider_cost
+	}
 	if !turn.usage_reported {
 		return error('usage not reported')
 	}
@@ -249,13 +256,10 @@ fn session_usage_cost_label(turns []CostScheduleTurn) string {
 }
 
 fn usage_cost_label(schedule CostSchedule, turns []CostScheduleTurn) string {
-	if schedule.entries.len == 0 {
-		return cost_unavailable
-	}
 	mut any_reported := false
 	mut total := 0.0
 	for turn in turns {
-		if !turn.usage_reported {
+		if !turn.usage_reported && turn.provider_cost_usd == none {
 			continue
 		}
 		any_reported = true

@@ -135,3 +135,36 @@ fixture tests; before adding context indexes, parallel tool calls, or
 LLM/native summarizers, benchmark fixed fixtures and record both correctness
 and resource use. Every optimization should have a reproducible baseline and
 post-change measurement; never invent token or cost savings.
+
+The opt-in `repository_map_cache_benchmark_test.v` compares uncached and
+persistent symbol-cache builds, including the filesystem walk, source reads,
+extraction, ranking, and rendering. It asserts identical rendered maps and
+ranked paths, then reports p50/p95 latency and cache hits. Pair order alternates
+between baseline-first and cached-first to reduce fixed-order measurement bias.
+By default it uses a deterministic 96-file / 4,608-symbol fixture; point it at
+a local checkout to measure that repository's capped walk and read workload:
+
+```sh
+VEASEL_RUN_REPOSITORY_MAP_BENCHMARK=1 \
+  VEASEL_BENCH_OUTPUT=/tmp/repository-map-benchmark.json v test . \
+  -run-only test_benchmark_repository_map_symbol_cache
+cat /tmp/repository-map-benchmark.json
+VEASEL_RUN_REPOSITORY_MAP_BENCHMARK=1 \
+  VEASEL_BENCH_REPOSITORY_MAP_ROOT="$PWD" \
+  VEASEL_BENCH_OUTPUT=/tmp/repository-map-checkout-benchmark.json v test . \
+  -run-only test_benchmark_repository_map_symbol_cache
+cat /tmp/repository-map-checkout-benchmark.json
+```
+
+The benchmark makes no model calls. Treat results as host/workload-specific;
+they do not establish agent task success or provider token savings.
+
+One local Linux x86_64 run on Veasel's own checkout, pinned to V commit
+`ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`, scanned 478 files and rendered
+349 symbols. Across seven measured pairs after two warmups, with pair order
+alternating, the persistent cache reduced p50 from 720.7 ms to 659.7 ms (8.5%)
+and p95 from 740.3 ms to 676.2 ms (8.7%), with identical ranked paths and
+rendered output. The cache recorded 488 hits over eight reuse builds. Cache
+admission refreshes stale entries when a new ranking arrives while retaining
+higher-ranked files within the current build. The timings are a single-host
+measurement, not a cross-platform claim.

@@ -50,6 +50,8 @@ static const wchar_t *veasel_mcp_appcontainer_name = L"VeaselTrustedMcp";
 static const wchar_t *veasel_mcp_appcontainer_display = L"Veasel Trusted MCP";
 static const wchar_t *veasel_mcp_appcontainer_desc = L"Veasel trusted MCP stdio AppContainer sandbox";
 
+static wchar_t *utf8_env_block_to_wide(const char *env_utf8);
+
 static void set_error(VeaselWinSandboxResult *result, const char *prefix, DWORD err) {
 	if (!result) {
 		return;
@@ -383,11 +385,12 @@ void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result) {
 }
 
 int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
-	const char *workdir_utf8, int timeout_ms, int max_output_bytes, int allow_network,
-	VeaselWinSandboxResult *result) {
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, VeaselWinSandboxResult *result) {
 	wchar_t *comspec = NULL;
 	wchar_t *command = NULL;
 	wchar_t *workdir = NULL;
+	wchar_t *env_block = NULL;
 	wchar_t *cmdline = NULL;
 	wchar_t arg_d[] = L"/D";
 	wchar_t arg_s[] = L"/S";
@@ -428,7 +431,8 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 	ZeroMemory(&security_capabilities, sizeof(security_capabilities));
 	ZeroMemory(&siex, sizeof(siex));
 	ZeroMemory(&pi, sizeof(pi));
-	if (!comspec_utf8 || !command_utf8 || !workdir_utf8 || timeout_ms <= 0 || max_output_bytes <= 0) {
+	if (!comspec_utf8 || !command_utf8 || !workdir_utf8 || !env_utf8 || timeout_ms <= 0
+		|| max_output_bytes <= 0) {
 		result->setup_failed = 1;
 		set_error(result, "Windows AppContainer sandbox received invalid arguments", 0);
 		return 0;
@@ -437,9 +441,16 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 	comspec = utf8_to_wide(comspec_utf8);
 	command = utf8_to_wide(command_utf8);
 	workdir = utf8_to_wide(workdir_utf8);
+	env_block = utf8_env_block_to_wide(env_utf8);
 	if (!comspec || !command || !workdir) {
 		result->setup_failed = 1;
 		set_error(result, "Windows AppContainer sandbox could not convert paths to UTF-16",
+			GetLastError());
+		goto cleanup;
+	}
+	if (!env_block) {
+		result->setup_failed = 1;
+		set_error(result, "Windows AppContainer sandbox could not convert environment",
 			GetLastError());
 		goto cleanup;
 	}
@@ -559,7 +570,7 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 	creation_flags = CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED
 		| CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT;
 
-	created = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, creation_flags, NULL, workdir,
+	created = CreateProcessW(NULL, cmdline, NULL, NULL, TRUE, creation_flags, env_block, workdir,
 		&siex.StartupInfo, &pi);
 	if (!created) {
 		result->setup_failed = 1;
@@ -640,6 +651,7 @@ cleanup_process:
 	}
 
 cleanup:
+	free(env_block);
 	if (attr_list) {
 		DeleteProcThreadAttributeList(attr_list);
 		free(attr_list);
@@ -769,6 +781,11 @@ static wchar_t *utf8_env_block_to_wide(const char *env_utf8) {
 	wide = (wchar_t *)malloc(total * sizeof(wchar_t) * 2);
 	if (!wide) {
 		return NULL;
+	}
+	if (env_utf8[0] == '\0') {
+		wide[0] = L'\0';
+		wide[1] = L'\0';
+		return wide;
 	}
 	out = wide;
 	p = env_utf8;

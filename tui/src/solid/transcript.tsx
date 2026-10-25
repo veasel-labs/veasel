@@ -38,7 +38,7 @@ import {
   windowBlocks,
 } from "./mount-budget"
 import { useSolidTheme, solidToneBold, solidToneFg } from "./theme"
-import { createMarkdownSyntaxStyle } from "../markdown-view"
+import { createMarkdownSyntaxStyle, latestAssistantMarkdown } from "../markdown-view"
 import {
   findAdjacentMessageTarget,
   findLastUserMessageTarget,
@@ -149,7 +149,7 @@ function SegmentLines(props: { segments: TranscriptSegment[] }) {
   )
 }
 
-function AssistantMarkdown(props: { content: string }) {
+function AssistantMarkdown(props: { content: string; streaming: boolean }) {
   const colors = useSolidTheme()
   const renderer = useRenderer()
   const syntaxStyle = createMemo(() => createMarkdownSyntaxStyle(colors, renderer.nativeScene))
@@ -159,7 +159,7 @@ function AssistantMarkdown(props: { content: string }) {
       content={props.content}
       syntaxStyle={syntaxStyle()}
       fg={colors.assistantText}
-      streaming={true}
+      streaming={props.streaming}
       internalBlockMode="top-level"
       conceal={true}
       treeSitterClient={getTreeSitterClient()}
@@ -313,7 +313,7 @@ function MessageBlockView(props: {
                       cols: props.cols,
                     })}
                   />
-                  <AssistantMarkdown content={item.content} />
+                  <AssistantMarkdown content={item.content} streaming={false} />
                 </box>
               )}
             </For>
@@ -351,6 +351,7 @@ function MessageBlockView(props: {
                     >
                       <AssistantMarkdown
                         content={part.type === "text" ? part.text.replace(/^\n+/, "") : ""}
+                        streaming={false}
                       />
                     </Show>
                   </Show>
@@ -569,8 +570,12 @@ export function SolidTranscript(props: SolidTranscriptProps) {
 
   const streamingMarkdown = createMemo(() => {
     if (!props.streamingText) return undefined
-    const cursor = props.streaming ? (props.streamingCursor ?? streamingCursorForMotion(prefersReducedMotion())) : ""
-    return `${props.streamingText}${cursor}`
+    return latestAssistantMarkdown({
+      messages: [],
+      streaming: Boolean(props.streaming),
+      streamingText: props.streamingText,
+      streamingCursor: props.streamingCursor ?? streamingCursorForMotion(prefersReducedMotion()),
+    }) ?? undefined
   })
 
   // Reset message cursor when verbosity changes so geometry matches the new list.
@@ -863,7 +868,7 @@ export function SolidTranscript(props: SolidTranscriptProps) {
                     cols: props.cols,
                   })}
                 />
-                <AssistantMarkdown content={content()} />
+                <AssistantMarkdown content={content().content} streaming={content().streaming} />
               </box>
             )}
           </Show>

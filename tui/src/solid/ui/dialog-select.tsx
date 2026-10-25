@@ -54,6 +54,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   )
   const grouped = createMemo(() => groupSelectOptions(filtered(), flatMode()))
   const flat = createMemo(() => grouped().flatMap(([, options]) => options))
+  const activeNotice = createMemo(() => flat()[selected()]?.notice)
   const visible = () => dialogResultCount(dimensions().width, dimensions().height, props.maxVisible ?? visibleDefault, !flatMode(), Boolean(props.footer))
 
   const windowedGroups = createMemo(() => {
@@ -200,6 +201,9 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
       </Show>
       <Show when={props.footer}>
         <text fg={colors.muted}>{props.footer}</text>
+      </Show>
+      <Show when={activeNotice()}>
+        {(notice) => <text fg={colors.statusWarn}>⚠ {notice()}</text>}
       </Show>
     </box>
   )

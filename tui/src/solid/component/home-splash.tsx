@@ -2,6 +2,7 @@
 import { For, Show } from "solid-js"
 import stringWidth from "string-width"
 import { type Theme } from "../../themes"
+import { useTerminalDimensions } from "@opentui/solid"
 import {
   VEASEL_PORTRAIT_ROWS,
   portraitRowCells,
@@ -48,18 +49,28 @@ export function compactDirectory(path: string, maxWidth: number): string {
   return `…${tail}`
 }
 
+export function homeSplashCompact(width: number, height: number): boolean {
+  return width < 76 || height < 36
+}
+
 /**
  * Empty-home composition: original pixel companion + brand + one clear CTA path.
  */
 export function HomeSplash(props: HomeSplashProps) {
   const colors = useSolidTheme()
+  const dimensions = useTerminalDimensions()
   const theme = () => props.theme ?? colors
   const directory = () => props.directory ?? "~/your-project"
   const visibleDirectory = () =>
     compactDirectory(directory(), props.directoryMaxWidth ?? 64)
-  const compact = () => props.compact ?? true
+  const compact = () =>
+    props.compact ?? homeSplashCompact(dimensions().width, dimensions().height)
   const connectLine = `/connect · ${paletteShortcut.label} commands · /theme`
   const reviewLine = `${activityToggleShortcut.label} activity · ${reviewShortcut.label} reviews`
+  const portraitPairs = Array.from(
+    { length: Math.ceil(VEASEL_PORTRAIT_ROWS.length / 2) },
+    (_, index) => index,
+  )
 
   return (
     <box
@@ -75,18 +86,24 @@ export function HomeSplash(props: HomeSplashProps) {
     >
       <box width="100%" flexDirection="column" alignItems="center" flexShrink={0}>
         <text fg={colors.brand}>VEASEL CODE</text>
-        <Show when={!compact()}>
+        {!compact() && (
           <text fg={colors.muted}>your local V-powered workspace</text>
-        </Show>
+        )}
         <text fg={colors.headerMeta}>{visibleDirectory()}</text>
       </box>
 
       <box flexDirection="column" alignItems="center" flexShrink={0}>
-        <For each={[...VEASEL_PORTRAIT_ROWS]}>
-          {(row) => (
+        <For each={portraitPairs}>
+          {(pair) => (
             <text>
-              <For each={portraitRowCells(theme(), row)}>
-                {(cell) => <span style={{ fg: cell.color }}>{cell.glyph}</span>}
+              <For
+                each={portraitRowCells(
+                  theme(),
+                  VEASEL_PORTRAIT_ROWS[pair * 2] ?? "",
+                  VEASEL_PORTRAIT_ROWS[pair * 2 + 1] ?? "",
+                )}
+              >
+                {(cell) => <span style={{ fg: cell.color, bg: cell.background }}>{cell.glyph}</span>}
               </For>
             </text>
           )}

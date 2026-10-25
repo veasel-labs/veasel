@@ -18,21 +18,72 @@ fn repository_map_path_matches_mention(path string, mentioned string) bool {
 	if mentioned.len == 0 {
 		return false
 	}
-	path_l := path.to_lower()
+	normalized_path := path.replace('\\', '/')
+	path_l := normalized_path.to_lower()
+	base_l := os.file_name(path_l)
+	return repository_map_path_matches_lower(path_l, base_l, mentioned)
+}
+
+fn repository_map_path_matches_lower(path_l string, base_l string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
 	mentioned_l := mentioned.to_lower().replace('\\', '/')
 	if path_l == mentioned_l || path_l.ends_with('/' + mentioned_l) {
 		return true
 	}
-	base_l := os.file_name(path).to_lower()
 	if base_l == mentioned_l || base_l == os.file_name(mentioned_l) {
 		return true
 	}
 	return path_l.contains(mentioned_l)
 }
 
+struct RepositoryMapLexicalHints {
+mut:
+	unique  []string
+	ordered []string
+}
+
+fn repository_map_lexical_hints(hints RepositoryMapHintSet) RepositoryMapLexicalHints {
+	mut lexical_hints := RepositoryMapLexicalHints{
+		unique:  []string{cap: hints.idents.len}
+		ordered: []string{cap: hints.idents.len}
+	}
+	for ident in hints.idents {
+		if !repository_map_is_lexical_hint(ident) {
+			continue
+		}
+		normalized := ident.to_lower()
+		lexical_hints.ordered << normalized
+		if normalized !in lexical_hints.unique {
+			lexical_hints.unique << normalized
+		}
+	}
+	return lexical_hints
+}
+
 fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
+	return score_repository_map_path_with_lexical_hints(path, hints, repository_map_lexical_hints(hints))
+}
+
+fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMapHintSet, lexical_hints RepositoryMapLexicalHints) f64 {
 	mut score := 1.0
+	// Ranking considers each path against several hints. Normalize and split it
+	// once so those loops reuse the same strings instead of allocating a lower-
+	// cased path or a new segment list for every hint.
+	normalized_path := path.replace('\\', '/')
+	path_l := normalized_path.to_lower()
 	base := os.file_name(path)
+	base_l := os.file_name(path_l)
+	lower_segments := if hints.idents.len > 0 { path_l.split('/') } else { []string{} }
+	mut path_ident_parts := []string{}
+	if lexical_hints.unique.len > 0 {
+		path_segments := normalized_path.split('/')
+		path_ident_parts = []string{cap: path_segments.len * 2}
+		for segment in path_segments {
+			path_ident_parts << repository_map_ident_parts(repository_map_stem(segment))
+		}
+	}
 	if base in repository_map_important_basenames || path in repository_map_important_basenames {
 		// Static importance is a tie-breaker, not a relevance signal: at the
 		// old +1000 every repo root (README, .gitignore, pyproject.toml...)
@@ -41,7 +92,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		score += 120.0
 	}
 	for mentioned in hints.paths {
-		if repository_map_path_matches_mention(path, mentioned) {
+		if repository_map_path_matches_lower(path_l, base_l, mentioned) {
 			score += 500.0
 			break
 		}
@@ -50,14 +101,14 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// children into budget before unrelated deep leaves — extractive, not
 	// tree-sitter/PageRank.
 	for mentioned in hints.paths {
-		if repository_map_path_under_mention(path, mentioned) {
+		if repository_map_path_under_mention_lower(path_l, mentioned) {
 			score += 220.0
 			break
 		}
 	}
 	for ident in hints.idents {
-		if repository_map_eq_ci(base, ident) || repository_map_eq_ci(repository_map_stem(base),
-			ident) {
+		ident_l := ident.to_lower()
+		if base_l == ident_l || repository_map_stem(base_l) == ident_l {
 			// A queried term used as the filename is stronger than the same
 			// term inferred from declarations or general file contents.
 			score += 500.0
@@ -65,7 +116,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 		}
 	}
 	for ident in hints.idents {
-		if repository_map_path_has_segment(path, ident) {
+		if repository_map_path_has_segment_lower(lower_segments, ident.to_lower()) {
 			score += 120.0
 			break
 		}
@@ -73,36 +124,19 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	// Natural-language task terms often differ from path spelling only by
 	// pluralization or a common code abbreviation (argument/args). Keep this
 	// signal weaker than exact mentions, so it helps without replacing them.
-	mut seen_lexical_hints := map[string]bool{}
 	mut exact_path_term_matches := 0
-	for ident in hints.idents {
-		if !repository_map_is_lexical_hint(ident) {
-			continue
-		}
-		normalized := ident.to_lower()
-		if normalized in seen_lexical_hints {
-			continue
-		}
-		seen_lexical_hints[normalized] = true
-		mut matched := false
-		for segment in path.replace('\\', '/').split('/') {
-			name := repository_map_stem(segment)
-			for part in repository_map_ident_parts(name) {
-				match_weight := repository_map_lexical_match_weight(part, ident)
-				if match_weight > 0.0 {
-					// An exact word inside a compound filename (subagent-job.ts)
-					// is stronger path evidence than general source-token overlap.
-					if part == ident.to_lower() {
-						score += 120.0
-						exact_path_term_matches++
-					} else {
-						score += match_weight
-					}
-					matched = true
-					break
+	for ident in lexical_hints.unique {
+		for part in path_ident_parts {
+			match_weight := repository_map_lexical_match_weight_normalized(part, ident)
+			if match_weight > 0.0 {
+				// An exact word inside a compound filename (subagent-job.ts)
+				// is stronger path evidence than general source-token overlap.
+				if part == ident {
+					score += 120.0
+					exact_path_term_matches++
+				} else {
+					score += match_weight
 				}
-			}
-			if matched {
 				break
 			}
 		}
@@ -114,35 +148,69 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	if exact_path_term_matches > 1 {
 		score += f64(exact_path_term_matches - 1) * 180.0
 	}
+	if lexical_hints.ordered.len > 1 && (!repository_map_is_test_path(path)
+		|| repository_map_hint_mentions_tests(hints)) {
+		base_parts := repository_map_ident_parts(repository_map_stem(base))
+		if repository_map_path_has_ordered_hint_pair(base_parts, lexical_hints.ordered) {
+			// Ordered query concepts in a compound filename ("subagent job" in
+			// subagent-job.ts, or "running ... batch" in run_batch.py) identify a
+			// more specific destination than separate hits on generic files.
+			score += 600.0
+		}
+	}
 	// For behavior questions, prefer implementation files over tests that
 	// merely import the same symbols. A query explicitly about tests keeps them
 	// eligible for the existing exact and source/test-pair signals.
-	if repository_map_is_test_path(path) && !repository_map_hint_mentions_tests(hints) {
+	is_test_path := if hints.idents.len > 0 {
+		repository_map_path_segments_are_test(lower_segments)
+	} else {
+		repository_map_is_test_path(normalized_path)
+	}
+	if is_test_path && !repository_map_hint_mentions_tests(hints) {
 		score -= 240.0
 	}
 	// Test/source pairing: mention of foo.v or stem foo also elevates
 	// foo_test.v / foo.test.ts / test_foo.py style neighbors.
-	if !repository_map_is_test_path(path) || repository_map_hint_mentions_tests(hints) {
+	if !is_test_path || repository_map_hint_mentions_tests(hints) {
 		for mentioned in hints.paths {
-			if repository_map_is_test_pair(path, mentioned) {
+			if repository_map_is_test_pair(normalized_path, mentioned) {
 				score += 280.0
 				break
 			}
 		}
 		for ident in hints.idents {
-			if repository_map_is_test_pair_for_stem(path, ident) {
+			if repository_map_is_test_pair_for_stem(normalized_path, ident) {
 				score += 180.0
 				break
 			}
 		}
 	}
-	depth := path.count('/')
+	depth := normalized_path.count('/')
 	if depth == 0 {
 		score += 25.0
 	} else if depth == 1 {
 		score += 10.0
 	}
 	return score
+}
+
+fn repository_map_path_has_ordered_hint_pair(name_parts []string, lexical_hints []string) bool {
+	if name_parts.len < 2 {
+		return false
+	}
+	for i in 0 .. name_parts.len - 1 {
+		mut found_first := false
+		for hint in lexical_hints {
+			if !found_first {
+				if repository_map_lexical_match_weight_normalized(name_parts[i], hint) > 0.0 {
+					found_first = true
+				}
+			} else if repository_map_lexical_match_weight_normalized(name_parts[i + 1], hint) > 0.0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 fn repository_map_is_lexical_hint(ident string) bool {
@@ -198,11 +266,18 @@ fn repository_map_lexical_candidates(term string) []string {
 }
 
 fn repository_map_lexical_match_weight(left string, right string) f64 {
-	a := left.to_lower()
-	b := right.to_lower()
+	return repository_map_lexical_match_weight_normalized(left.to_lower(), right.to_lower())
+}
+
+// Both arguments are normalized by repository_map_ident_parts and
+// repository_map_lexical_hints in the path-ranking hot loop.
+fn repository_map_lexical_match_weight_normalized(a string, b string) f64 {
 	if a == b {
 		// This also matches a word inside compound names such as
 		// `litellm_model`; whole path-segment matches already scored above.
+		return 45.0
+	}
+	if repository_map_ing_match(b, a) || repository_map_ing_match(a, b) {
 		return 45.0
 	}
 	if a.len > 3 && a.ends_with('s') && a[..a.len - 1] == b {
@@ -232,8 +307,41 @@ fn repository_map_lexical_match_weight(left string, right string) f64 {
 	return 0.0
 }
 
+fn repository_map_ing_match(stem string, gerund string) bool {
+	if gerund.len <= 6 || !gerund.ends_with('ing') {
+		return false
+	}
+	stem_len := gerund.len - 3
+	mut root_len := stem_len
+	if stem_len > 2 && gerund[stem_len - 1] == gerund[stem_len - 2] {
+		root_len--
+	}
+	if stem.len == root_len {
+		for i in 0 .. root_len {
+			if stem[i] != gerund[i] {
+				return false
+			}
+		}
+		return true
+	}
+	if stem.len != root_len + 1 || stem[root_len] != `e` {
+		return false
+	}
+	for i in 0 .. root_len {
+		if stem[i] != gerund[i] {
+			return false
+		}
+	}
+	return true
+}
+
 fn repository_map_is_test_path(path string) bool {
-	for segment in path.to_lower().replace('\\', '/').split('/') {
+	normalized_path := path.replace('\\', '/').to_lower()
+	return repository_map_path_segments_are_test(normalized_path.split('/'))
+}
+
+fn repository_map_path_segments_are_test(lower_segments []string) bool {
+	for segment in lower_segments {
 		stem := repository_map_stem(segment)
 		if segment in ['test', 'tests', '__tests__', 'spec', 'specs', '__specs__']
 			|| stem.starts_with('test_') || stem.starts_with('test-') || stem.ends_with('_test')
@@ -292,21 +400,13 @@ fn repository_map_content_is_reexport_only(content string) bool {
 	return found_reexport
 }
 
-fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 {
-	// The map already reads bounded source files to extract declarations. Reuse
-	// that text for a small lexical retrieval signal instead of another index or
-	// embedding dependency. Count each query term once and cap total influence.
-	identifiers := repository_map_content_identifiers(content)
-	mut terms := map[string]bool{}
-	for identifier, _ in identifiers {
-		lower := identifier.to_lower()
-		terms[lower] = true
-		for part in repository_map_ident_parts(identifier) {
-			terms[part] = true
-		}
-	}
-	mut matched_terms := 0
-	mut score := 0.0
+struct RepositoryMapContentQueryTerm {
+	ident      string
+	candidates []string
+}
+
+fn repository_map_content_query_terms(hints RepositoryMapHintSet) []RepositoryMapContentQueryTerm {
+	mut query_terms := []RepositoryMapContentQueryTerm{cap: hints.idents.len}
 	mut seen_hints := map[string]bool{}
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
@@ -317,10 +417,47 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 			continue
 		}
 		seen_hints[normalized] = true
-		candidates := repository_map_lexical_candidates(ident)
-		for candidate in candidates {
+		query_terms << RepositoryMapContentQueryTerm{
+			ident:      ident
+			candidates: repository_map_lexical_candidates(ident)
+		}
+	}
+	return query_terms
+}
+
+fn score_repository_map_content(content string, query_terms []RepositoryMapContentQueryTerm) f64 {
+	// The map already reads bounded source files to extract declarations. Reuse
+	// that text for a small lexical retrieval signal instead of another index or
+	// embedding dependency. Count each query term once and cap total influence.
+	mut terms := map[string]bool{}
+	mut start := -1
+	for offset, ch in content {
+		if is_repository_map_ident_byte(ch) {
+			if start < 0 {
+				start = offset
+			}
+			continue
+		}
+		if start >= 0 {
+			if offset - start >= repository_map_cross_reference_min_symbol_len {
+				// The view is inspected only; the map stores owned lowercase keys.
+				token := unsafe { content.substr_unsafe(start, offset) }
+				repository_map_add_content_terms(mut terms, token)
+			}
+		}
+		start = -1
+	}
+	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+		token := unsafe { content.substr_unsafe(start, content.len) }
+		repository_map_add_content_terms(mut terms, token)
+	}
+	mut matched_terms := 0
+	mut score := 0.0
+	for query_term in query_terms {
+		for candidate in query_term.candidates {
 			if candidate in terms {
-				is_alias := ident != candidate && ident in ['arg', 'args', 'argument', 'arguments']
+				is_alias := query_term.ident != candidate
+					&& query_term.ident in ['arg', 'args', 'argument', 'arguments']
 				score += if is_alias { 48.0 } else { 24.0 }
 				matched_terms++
 				break
@@ -333,11 +470,34 @@ fn score_repository_map_content(content string, hints RepositoryMapHintSet) f64 
 	return score
 }
 
+fn repository_map_add_content_terms(mut terms map[string]bool, identifier string) {
+	// The map contains normalized full names and parts. Skip repeated tokens
+	// before lowercasing or splitting so large files do that work once per term.
+	if identifier in terms {
+		return
+	}
+	lower := identifier.to_lower()
+	if lower in terms {
+		return
+	}
+	terms[lower] = true
+	for part in repository_map_ident_parts(identifier) {
+		terms[part] = true
+	}
+}
+
 fn repository_map_path_under_mention(path string, mentioned string) bool {
 	if mentioned.len == 0 {
 		return false
 	}
-	path_l := path.to_lower()
+	path_l := path.replace('\\', '/').to_lower()
+	return repository_map_path_under_mention_lower(path_l, mentioned)
+}
+
+fn repository_map_path_under_mention_lower(path_l string, mentioned string) bool {
+	if mentioned.len == 0 {
+		return false
+	}
 	mentioned_l := mentioned.to_lower().replace('\\', '/').trim_right('/')
 	if mentioned_l.len < 2 {
 		return false
@@ -356,10 +516,16 @@ fn repository_map_path_has_segment(path string, ident string) bool {
 	if ident.len < 2 {
 		return false
 	}
-	ident_l := ident.to_lower()
-	for segment in path.replace('\\', '/').split('/') {
-		if repository_map_eq_ci(segment, ident_l) || repository_map_eq_ci(repository_map_stem(segment),
-			ident_l) {
+	normalized_path := path.replace('\\', '/').to_lower()
+	return repository_map_path_has_segment_lower(normalized_path.split('/'), ident.to_lower())
+}
+
+fn repository_map_path_has_segment_lower(lower_segments []string, ident_l string) bool {
+	if ident_l.len < 2 {
+		return false
+	}
+	for segment in lower_segments {
+		if segment == ident_l || repository_map_stem(segment) == ident_l {
 			return true
 		}
 	}
@@ -577,6 +743,39 @@ fn repository_map_symbol_part_match(name string, ident string) bool {
 
 fn repository_map_ident_parts(name string) []string {
 	mut parts := []string{}
+	mut start := -1
+	for offset, ch in name {
+		if ch >= 128 {
+			// Preserve the existing rune-aware fallback for non-ASCII names.
+			return repository_map_ident_parts_unicode(name)
+		}
+		if ch == `_` || ch == `-` {
+			if start >= 0 && offset - start >= 3 {
+				part := unsafe { name.substr_unsafe(start, offset) }
+				parts << part.to_lower_ascii()
+			}
+			start = -1
+			continue
+		}
+		if ch >= `A` && ch <= `Z` && start >= 0 {
+			if offset - start >= 3 {
+				part := unsafe { name.substr_unsafe(start, offset) }
+				parts << part.to_lower_ascii()
+			}
+			start = offset
+		} else if start < 0 {
+			start = offset
+		}
+	}
+	if start >= 0 && name.len - start >= 3 {
+		part := unsafe { name.substr_unsafe(start, name.len) }
+		parts << part.to_lower_ascii()
+	}
+	return parts
+}
+
+fn repository_map_ident_parts_unicode(name string) []string {
+	mut parts := []string{}
 	mut current := ''
 	for ch in name {
 		if ch == `_` || ch == `-` {
@@ -608,34 +807,11 @@ const repository_map_cross_reference_max_boost = 400.0
 const repository_map_cross_reference_max_definers = 8
 const repository_map_cross_reference_min_symbol_len = 3
 
-fn repository_map_content_identifiers(content string) map[string]bool {
-	mut identifiers := map[string]bool{}
-	mut start := -1
-	for index, ch in content {
-		if is_repository_map_ident_byte(ch) {
-			if start < 0 {
-				start = index
-			}
-			continue
-		}
-		if start >= 0 {
-			if index - start >= repository_map_cross_reference_min_symbol_len {
-				identifiers[content[start..index]] = true
-			}
-			start = -1
-		}
-	}
-	if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
-		identifiers[content[start..]] = true
-	}
-	return identifiers
-}
-
 // boost_repository_map_cross_references raises files whose defined symbols
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
 // are skipped as too generic, and the total boost per file is capped.
-fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet) {
+fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet, lexical_hints RepositoryMapLexicalHints) {
 	mut definers := map[string][]int{}
 	for index, entry in entries {
 		if entry.path !in contents {
@@ -657,31 +833,64 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 			definers[name] << index
 		}
 	}
-	mut boosts := map[int]f64{}
+	// Reuse index buffers instead of building a distinct-string map and a second
+	// per-file map for every candidate. The mark value is the current entry
+	// index, so repeated identifiers and references are deduplicated in O(1).
+	mut seen_referrers := []int{len: entries.len, init: -1}
+	mut referrers := []int{cap: entries.len}
+	mut boosts := []f64{len: entries.len}
 	for index, entry in entries {
 		content := contents[entry.path] or { continue }
-		identifiers := repository_map_content_identifiers(content)
-		mut referrers := map[int]bool{}
-		for token, _ in identifiers {
-			defs := definers[token] or { continue }
-			if defs.len > repository_map_cross_reference_max_definers {
+		referrers.clear()
+		mut start := -1
+		for offset, ch in content {
+			if is_repository_map_ident_byte(ch) {
+				if start < 0 {
+					start = offset
+				}
 				continue
 			}
-			for definer in defs {
-				if definer != index {
-					referrers[definer] = true
+			if start >= 0 {
+				if offset - start >= repository_map_cross_reference_min_symbol_len {
+					// This borrowed token is used only for map lookup, never retained.
+					token := unsafe { content.substr_unsafe(start, offset) }
+					if defs := definers[token] {
+						if defs.len <= repository_map_cross_reference_max_definers {
+							for definer in defs {
+								if definer != index && seen_referrers[definer] != index {
+									seen_referrers[definer] = index
+									referrers << definer
+								}
+							}
+						}
+					}
+				}
+			}
+			start = -1
+		}
+		if start >= 0 && content.len - start >= repository_map_cross_reference_min_symbol_len {
+			token := unsafe { content.substr_unsafe(start, content.len) }
+			if defs := definers[token] {
+				if defs.len <= repository_map_cross_reference_max_definers {
+					for definer in defs {
+						if definer != index && seen_referrers[definer] != index {
+							seen_referrers[definer] = index
+							referrers << definer
+						}
+					}
 				}
 			}
 		}
 		// Personalization (Aider-style): a reference coming from a file the
 		// hint already points at counts more than one from an unrelated file.
-		referrer_weight := if score_repository_map_path(entry.path, hints) >= repository_map_cross_reference_hint_min_path_score {
+		referrer_weight := if score_repository_map_path_with_lexical_hints(entry.path, hints,
+			lexical_hints) >= repository_map_cross_reference_hint_min_path_score {
 			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
 		} else {
 			repository_map_cross_reference_weight
 		}
-		for definer, _ in referrers {
-			boosts[definer] = (boosts[definer] or { 0.0 }) + referrer_weight
+		for definer in referrers {
+			boosts[definer] += referrer_weight
 		}
 	}
 	for index, boost in boosts {

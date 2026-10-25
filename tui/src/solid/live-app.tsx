@@ -56,6 +56,7 @@ import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
+import { openUsageDashboardDialog } from "./component/usage-dashboard-dialog"
 import type { ApiGlobalSessionOperation } from "../api-client"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
 import {
@@ -143,7 +144,7 @@ import {
 } from "./composer-attachments"
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
-const liveFooterHint = `Ctrl+X stop turn · ${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
+const liveFooterHint = `Ctrl+X stop turn · Ctrl+Shift+X cancel queued follow-up · ${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
 const historyPageSize = 100
 import {
   type SolidOpenProject,
@@ -160,6 +161,12 @@ import {
   suggestedLinkedWorktreePath,
   sanitizeWorktreeName,
 } from "./workspace-git"
+
+type QueuedFollowUp = {
+  id: string
+  sessionId: string
+  message: ToolAwareMessage
+}
 
 export type LiveAppProps = {
   api: VeaselApiClient
@@ -274,11 +281,13 @@ function LiveAppShell(props: LiveAppProps) {
     loadHomeSidebarWidth({}, terminalColumns()),
   )
   const [cancelling, setCancelling] = createSignal(false)
+  const [queuedFollowUps, setQueuedFollowUps] = createSignal<QueuedFollowUp[]>([])
   let activeTurnSessionId: string | undefined
   const [activeTurnId, setActiveTurnId] = createSignal<string | undefined>()
   const [executionPolicy, setExecutionPolicy] = createSignal<ExecutionPolicyId>("ask")
   let turnController: AbortController | undefined
   const handledCompletions = new Set<string>()
+  const queuedOperationIds = new Set<string>()
 
   const commitSidebarWidth = (width: number) => {
     const next = clampHomeSidebarWidth(width, terminalColumns())
@@ -1237,7 +1246,10 @@ function LiveAppShell(props: LiveAppProps) {
       setStreamingText("")
       if (activeSessionId() === sessionId) {
         if (completion.status === "completed") {
-          setStatus("● connected  ·  listening for activity")
+          const waiting = queuedFollowUps().length
+          setStatus(waiting > 0
+            ? formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`)
+            : "● connected  ·  listening for activity")
         } else if (completion.status === "cancelled") {
           setStatus(formatWarnStatus("Turn cancelled"))
         } else if (completion.status === "uncertain") {
@@ -1276,6 +1288,61 @@ function LiveAppShell(props: LiveAppProps) {
       if (activeTurnId() !== operationId) return
       setCancelling(false)
       noteError("turns.cancel", error instanceof Error ? error.message : "Cancellation failed", sessionId)
+    }
+  }
+
+  const forgetQueuedFollowUp = (queued: QueuedFollowUp, removeMessage: boolean) => {
+    queuedOperationIds.delete(queued.id)
+    setQueuedFollowUps((current) => current.filter((item) => item.id !== queued.id))
+    if (removeMessage) {
+      setMessages((current) => current.filter((item) => item !== queued.message))
+    }
+  }
+
+  const cancelQueuedFollowUp = async () => {
+    const queued = queuedFollowUps().at(-1)
+    if (!queued) {
+      toast.info("No queued follow-up to cancel", "Turn queue")
+      return
+    }
+    try {
+      const result = await props.api.cancelOperation(queued.sessionId, queued.id)
+      if (result.status === "cancelled") {
+        const remaining = queuedFollowUps().filter((item) => item.id !== queued.id).length
+        forgetQueuedFollowUp(queued, true)
+        setStatus(remaining > 0
+          ? formatBusyStatus(`${remaining} follow-up${remaining === 1 ? "" : "s"} queued`)
+          : activeTurnId()
+            ? formatBusyStatus(streaming() ? "Veasel is working…" : "Veasel is thinking…")
+            : "● connected  ·  listening for activity")
+        toast.success("Removed the most recent follow-up", "Turn queue")
+      } else if (result.status === "cancelling") {
+        forgetQueuedFollowUp(queued, false)
+        setActiveTurnId(queued.id)
+        activeTurnSessionId = queued.sessionId
+        setCancelling(true)
+        turnController = new AbortController()
+        setStreamingText("")
+        setStreaming(true)
+        setSending(true)
+        setStatus(formatBusyStatus("Cancellation requested; waiting for the server…"))
+        toast.info("Follow-up started; stopping that turn", "Turn queue")
+      } else if (["completed", "failed", "uncertain"].includes(result.status ?? "")) {
+        forgetQueuedFollowUp(queued, true)
+        void finishTurn(queued.sessionId, result)
+        void refreshSessions()
+        toast.info("Follow-up already finished; conversation refreshed", "Turn queue")
+      } else {
+        forgetQueuedFollowUp(queued, true)
+        toast.info("Follow-up already finished", "Turn queue")
+      }
+    } catch (error) {
+      noteError(
+        "turns.queue.cancel",
+        `could not cancel queued follow-up · ${error instanceof Error ? error.message : "request failed"}`,
+        queued.sessionId,
+        "Turn queue",
+      )
     }
   }
 
@@ -1440,6 +1507,10 @@ function LiveAppShell(props: LiveAppProps) {
         dismissHomeComposer()
         void openLiveStatus()
         return
+      case "usage":
+        dismissHomeComposer()
+        openUsageDashboardDialog(dialog, props.api)
+        return
       case "reviews":
         dismissHomeComposer()
         void openLiveReviews(action.target)
@@ -1476,7 +1547,50 @@ function LiveAppShell(props: LiveAppProps) {
   const sendMessage = async (text: string) => {
     const content = text.trim()
     const sessionId = activeSessionId()
-    if (!content || !sessionId || sending()) return
+    if (!content || !sessionId) return
+    if (sending() || queuedFollowUps().length > 0) {
+      const queueSessionId = activeTurnSessionId ?? queuedFollowUps().at(-1)?.sessionId
+      if (queueSessionId && queueSessionId !== sessionId) {
+        setRestoreToken({ id: crypto.randomUUID(), text: content })
+        toast.info("Return to the active session to queue a follow-up", "Turn in progress")
+        return
+      }
+      const queuedId = crypto.randomUUID()
+      const queuedMessage: ToolAwareMessage = { role: "user", content }
+      queuedOperationIds.add(queuedId)
+      setQueuedFollowUps((current) => [...current, { id: queuedId, sessionId, message: queuedMessage }])
+      setMessages((current) => [...current, queuedMessage])
+      setStatus(formatBusyStatus(`Queuing follow-up · ${queuedFollowUps().length} waiting`))
+      try {
+        await props.api.sendMessage(
+          sessionId,
+          content,
+          queuedId,
+          undefined,
+          executionPolicyForAgent(executionPolicy()),
+        )
+      } catch (error) {
+        // A replayed start/completion event proves the server accepted it even
+        // if the HTTP response was lost after commit.
+        if (!queuedOperationIds.has(queuedId)) return
+        queuedOperationIds.delete(queuedId)
+        setQueuedFollowUps((current) => current.filter((item) => item.id !== queuedId))
+        setMessages((current) => current.filter((item) => item !== queuedMessage))
+        setRestoreToken({ id: crypto.randomUUID(), text: content })
+        setComposerFocused(true)
+        noteError(
+          "messages.queue",
+          `follow-up could not be queued · ${error instanceof Error ? error.message : "request failed"}`,
+          sessionId,
+          "Queue failed",
+        )
+        return
+      }
+      if (queuedOperationIds.has(queuedId)) {
+        setStatus(formatBusyStatus(`${queuedFollowUps().length} follow-up${queuedFollowUps().length === 1 ? "" : "s"} queued`))
+      }
+      return
+    }
     const operationId = crypto.randomUUID()
     streamDeltaBatch.clear()
     setSending(true)
@@ -2051,7 +2165,27 @@ function LiveAppShell(props: LiveAppProps) {
           streamDeltaBatch.push(delta)
           setStreaming(true)
         },
+        onTurnStarted: (sessionId, operationId) => {
+          if (!queuedOperationIds.has(operationId)) return
+          const queued = queuedFollowUps().find((item) => item.id === operationId)
+          if (queued) forgetQueuedFollowUp(queued, false)
+          setActiveTurnId(operationId)
+          activeTurnSessionId = sessionId
+          setCancelling(false)
+          turnController = new AbortController()
+          setStreamingText("")
+          setStreaming(true)
+          setSending(true)
+          if (sessionId === activeSessionId()) {
+            setStatus(formatBusyStatus("Veasel is working on the queued follow-up…"))
+          }
+        },
         onTurnCompleted: (sessionId, completion) => {
+          const queuedId = completion.operation_id
+          const pending = queuedFollowUps().find((item) => item.id === queuedId)
+          if (queuedId && pending && queuedOperationIds.has(queuedId)) {
+            forgetQueuedFollowUp(pending, true)
+          }
           void finishTurn(sessionId, completion)
           void refreshSessions()
         },
@@ -2190,6 +2324,11 @@ function LiveAppShell(props: LiveAppProps) {
 
   useKeyboard((key: KeyEvent) => {
     if (dialog.open()) return
+    if (key.ctrl && key.shift && key.name === "x" && !key.meta) {
+      key.preventDefault()
+      void cancelQueuedFollowUp()
+      return
+    }
     if (key.ctrl && key.name === "x" && !key.meta) {
       key.preventDefault()
       void cancelActiveTurn()
@@ -2466,7 +2605,11 @@ function LiveAppShell(props: LiveAppProps) {
         <SolidComposer
           placeholder={
             inSession()
-              ? undefined
+              ? (sending()
+                ? activeTurnSessionId === activeSessionId()
+                  ? "Message Veasel…  ·  queued after this turn"
+                  : "Turn in another session · return to queue a follow-up"
+                : undefined)
               : "Type /connect · /skills · /help  (Esc dismisses)"
           }
           onSubmit={(text) => {

@@ -21,6 +21,7 @@ export type LiveSlashAction =
   | { kind: "help"; advanced: boolean }
   | { kind: "theme"; mode: "list" | "cycle" | "id"; id?: string }
   | { kind: "status" }
+  | { kind: "usage" }
   | { kind: "reviews"; target?: { kind: ActiveReviewKind; id: string } }
   | { kind: "export" }
   | { kind: "session-list" }
@@ -179,7 +180,8 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
     return { kind: "theme", mode: "id", id }
   }
 
-  if (content === "/usage" || content === "/status") return { kind: "status" }
+  if (content === "/usage") return { kind: "usage" }
+  if (content === "/status") return { kind: "status" }
   if (content === "/export" || content.startsWith("/export ")) return { kind: "export" }
   if (content === "/sessions" || content === "/session") return { kind: "session-list" }
   if (content === "/fork") return { kind: "fork" }

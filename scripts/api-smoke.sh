@@ -414,11 +414,12 @@ done
 
 printf 'Smoke: checking JSON output when veasel run starts a cold backend\n'
 cold_port="$(free_port)"
-env VEASEL_PORT="$cold_port" VEASEL_DATA_DIR="$work_dir/cold-data" \
-	VEASEL_PLUGIN_DIR="$work_dir/plugins" VEASEL_MODEL_PROVIDER=openai-compatible \
-	VEASEL_MODEL=smoke-model OPENAI_API_KEY=veasel-openai-key \
+timeout --foreground --kill-after=2s 20s env VEASEL_PORT="$cold_port" \
+	VEASEL_DATA_DIR="$work_dir/cold-data" VEASEL_PLUGIN_DIR="$work_dir/plugins" \
+	VEASEL_MODEL_PROVIDER=openai-compatible VEASEL_MODEL=smoke-model \
+	OPENAI_API_KEY=veasel-openai-key \
 	VEASEL_MODEL_BASE_URL="http://127.0.0.1:${provider_port}/v1" \
-	"$work_dir/veasel" run --prompt 'Say hello' --workspace "$work_dir/workspace" --json \
+	"$work_dir/veasel" run --prompt 'Say hello' --workspace "$work_dir/workspace" --timeout 15 --json \
 	>"$work_dir/cold-headless-result" 2>"$work_dir/cold-headless.log" \
 	|| fail 'cold-start headless task command failed'
 python3 - "$work_dir/cold-headless-result" <<'PY'

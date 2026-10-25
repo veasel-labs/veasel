@@ -120,6 +120,24 @@ export type ApiGlobalUsageSummary = {
   allowance_usd: number
   allowance_reported: boolean
   cost: string
+  models: ApiGlobalUsageModelSummary[]
+}
+
+export type ApiGlobalUsageModelSummary = {
+  provider: string
+  model: string
+  completed_turns: number
+  reported_turns: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_creation_tokens: number
+  cache_reported: boolean
+  cache_reported_turns: number
+  reasoning_tokens: number
+  reasoning_reported: boolean
+  reasoning_reported_turns: number
+  cost: string
 }
 
 export type ApiSessionUsageSummary = {
@@ -227,6 +245,8 @@ export type ApiMcpToolCallApproval = ApiMcpToolCallSummary & {
 
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
+  onTurnQueued?: (sessionId: string, operationId: string) => void
+  onTurnStarted?: (sessionId: string, operationId: string) => void
   onTurnCompleted?: (sessionId: string, completion: SessionTurnCompletion) => void
   onEvent?: (eventType: string) => void
   onReconnect?: () => void
@@ -851,12 +871,14 @@ export class VeaselApiClient {
             if (!isAssistantDeltaEvent(eventType)) handlers.onEvent?.(eventType)
             if (
               isAssistantDeltaEvent(eventType)
+              || eventType === "session.turn_queued"
+              || eventType === "session.turn_started"
               || eventType === "session.turn_completed"
             ) {
               try {
                 const event = JSON.parse(parsed.data) as {
                   session_id?: string
-                  data?: SessionTurnCompletion & { delta?: string }
+                  data?: SessionTurnCompletion & { delta?: string; operation_id?: string }
                 }
                 if (isAssistantDeltaEvent(eventType)) {
                   const delta = admitAssistantDelta({
@@ -869,6 +891,12 @@ export class VeaselApiClient {
                   if (delta) handlers.onAssistantDelta?.(delta)
                 } else if (eventType === "session.turn_completed" && event.session_id) {
                   handlers.onTurnCompleted?.(event.session_id, event.data ?? {})
+                } else if (event.session_id && event.data?.operation_id) {
+                  if (eventType === "session.turn_queued") {
+                    handlers.onTurnQueued?.(event.session_id, event.data.operation_id)
+                  } else {
+                    handlers.onTurnStarted?.(event.session_id, event.data.operation_id)
+                  }
                 }
               } catch {
                 // Malformed payloads are ignored; persisted history stays authoritative.

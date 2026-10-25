@@ -310,8 +310,9 @@ fn session_can_trust_plugin_mcp_server(active []SessionPluginMCPServer, plugin_n
 }
 
 fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
-	input CompletionInput, pool ProviderPool) !CompletionOutput {
-	config := app.model_config()!
+	input CompletionInput, request_deadline time.Time, pool ProviderPool) !CompletionOutput {
+	mut config := app.model_config()!
+	config.request_deadline = request_deadline
 	if !app.try_provider_slot(pool) {
 		return error('provider_busy')
 	}
@@ -349,8 +350,10 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 
 fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	session_id string, messages []ChatMessage,
-	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, pool ProviderPool) !CompletionOutput {
-	config := app.model_config_for_session(session_id)!
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn,
+	request_deadline time.Time, pool ProviderPool) !CompletionOutput {
+	mut config := app.model_config_for_session(session_id)!
+	config.request_deadline = request_deadline
 	if !app.try_provider_slot(pool) {
 		return error('provider_busy')
 	}
@@ -1252,7 +1255,7 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 	if !validate_operation_id(requested_id) {
 		return json_request_error(mut ctx, 'X-Veasel-Operation-ID must be a non-nil UUID')
 	}
-	operation_id, mut turn_ctx, cancel := app.begin_turn_operation('', requested_id) or {
+	operation_id, mut turn_ctx, cancel, request_deadline := app.begin_turn_operation('', requested_id) or {
 		if err.msg() == 'operations_busy' {
 			ctx.res.set_status(.service_unavailable)
 			ctx.res.header.add_custom('Retry-After', '1') or {}
@@ -1269,7 +1272,7 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 		app.finish_turn_operation(operation_id)
 		cancel()
 	}
-	output := app.complete_with_provider_limit(mut turn_ctx, input, .regular) or {
+	output := app.complete_with_provider_limit(mut turn_ctx, input, request_deadline, .regular) or {
 		if err.msg() in ['cancelled', 'deadline_exceeded'] {
 			if err.msg() == 'cancelled' {
 				return json_conflict_error(mut ctx, err.msg())
@@ -1462,8 +1465,12 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 	}
 	mut store := app.store
 	operation := store.get_session_operation(id, canonical_id) or {
-		// Synchronous turns may exist only in the process-local registry.
-		if !app.cancel_turn_operation(id, canonical_id) {
+		// Synchronous turns are process-local; async turns may still be persisting
+		// their durable row, so cancellation waits for that write to resolve.
+		cancelled, status := app.cancel_turn_operation(id, canonical_id) or {
+			return json_server_error(mut ctx, 'Unable to persist cancellation state')
+		}
+		if !cancelled {
 			ctx.res.set_status(.not_found)
 			return ctx.json(APIError{
 				error: 'active operation not found'
@@ -1472,7 +1479,7 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 		ctx.res.set_status(.accepted)
 		return ctx.json(CancelTurnResponse{
 			operation_id: canonical_id
-			status:       'cancelling'
+			status:       status
 		})
 	}
 	if operation.status in ['completed', 'failed', 'cancelled', 'uncertain'] {
@@ -1482,14 +1489,20 @@ pub fn (app &App) cancel_session_turn(mut ctx Context, id string, operation_id s
 			status:       operation.status
 		})
 	}
-	status := store.cancel_session_operation(id, canonical_id) or {
+	cancelled, status := app.cancel_turn_operation(id, canonical_id) or {
 		return json_server_error(mut ctx, 'Unable to persist cancellation state')
 	}
-	_ = app.cancel_turn_operation(id, canonical_id)
+	final_status := if cancelled {
+		status
+	} else {
+		store.cancel_session_operation(id, canonical_id) or {
+			return json_server_error(mut ctx, 'Unable to persist cancellation state')
+		}
+	}
 	ctx.res.set_status(.accepted)
 	return ctx.json(CancelTurnResponse{
 		operation_id: canonical_id
-		status:       status
+		status:       final_status
 	})
 }
 
@@ -1498,7 +1511,10 @@ pub fn (app &App) cancel_chat_completion(mut ctx Context, operation_id string) v
 	canonical_id := canonical_operation_id(operation_id) or {
 		return json_request_error(mut ctx, 'Operation identifier must be a non-nil UUID')
 	}
-	if !app.cancel_turn_operation('', canonical_id) {
+	cancelled, status := app.cancel_turn_operation('', canonical_id) or {
+		return json_server_error(mut ctx, 'Unable to persist cancellation state')
+	}
+	if !cancelled {
 		ctx.res.set_status(.not_found)
 		return ctx.json(APIError{
 			error: 'active operation not found'
@@ -1507,7 +1523,7 @@ pub fn (app &App) cancel_chat_completion(mut ctx Context, operation_id string) v
 	ctx.res.set_status(.accepted)
 	return ctx.json(CancelTurnResponse{
 		operation_id: canonical_id
-		status:       'cancelling'
+		status:       status
 	})
 }
 
@@ -1587,7 +1603,9 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	if !validate_operation_id(requested_id) {
 		return json_request_error(mut ctx, 'X-Veasel-Operation-ID must be a non-nil UUID')
 	}
-	operation_id, mut turn_ctx, cancel := app.begin_turn_operation(id, requested_id) or {
+	respond_async := request_prefers_async(mut ctx)
+	operation_id, mut turn_ctx, cancel, request_deadline := app.begin_requested_session_turn(id, requested_id,
+		respond_async) or {
 		if err.msg() == 'operations_busy' {
 			ctx.res.set_status(.service_unavailable)
 			ctx.res.header.add_custom('Retry-After', '1') or {}
@@ -1600,10 +1618,15 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'Operation identifier is already active or invalid'
 		})
 	}
-	if request_prefers_async(mut ctx) {
+	if respond_async {
+		// Capture the cancellation signal before the operation context crosses
+		// into the durable worker. The worker must not dispatch Context.done()
+		// on the shared interface value.
+		turn_done := turn_ctx.done()
 		mut store := app.store
 		request_json := json2.encode(input)
 		store.enqueue_session_operation(id, operation_id, request_json) or {
+			app.mark_turn_operation_persistence_resolved(operation_id)
 			app.finish_turn_operation(operation_id)
 			cancel()
 			if err.msg() == 'session operation already exists' {
@@ -1618,8 +1641,8 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			}
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
-		turn_done := turn_ctx.done()
-		app.schedule_durable_session_operation(operation_id, turn_done, cancel, id, session, input)
+		app.mark_turn_operation_persistence_resolved(operation_id)
+		app.schedule_durable_session_operation(operation_id, cancel, turn_done, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
 		return ctx.json(SessionTurnAccepted{
@@ -1631,7 +1654,8 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 		app.finish_turn_operation(operation_id)
 		cancel()
 	}
-	exchange := app.run_session_message(mut turn_ctx, id, session, input, operation_id) or {
+	exchange := app.run_session_message(mut turn_ctx, id, session, input, operation_id,
+		request_deadline or { return json_server_error(mut ctx, 'Turn deadline was unavailable') }) or {
 		app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
 		if err.msg() == 'session not found' {
 			ctx.res.set_status(.not_found)
@@ -1750,17 +1774,23 @@ fn session_turn_failure(message string) (string, string) {
 }
 
 fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, session Session,
-	input ChatMessageInput, operation_id string) !ChatExchange {
-	user_message := ChatMessage{
-		role:    'user'
-		content: input.content
-	}
+	input ChatMessageInput, operation_id string, request_deadline time.Time) !ChatExchange {
 	mut turn_lock := app.session_turn_lock(id)
 	app.acquire_session_turn(mut turn_ctx, id) or {
 		return err
 	}
 	defer {
 		turn_lock.post()
+	}
+	return app.run_session_message_locked(mut turn_ctx, id, session, input, operation_id,
+		request_deadline)
+}
+
+fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id string, session Session,
+	input ChatMessageInput, operation_id string, request_deadline time.Time) !ChatExchange {
+	user_message := ChatMessage{
+		role:    'user'
+		content: input.content
 	}
 	policy := execution_policy_turn_from_input(input.execution_policy, input.autonomous,
 		input.non_interactive)
@@ -1838,7 +1868,7 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	}
 	mut partial_trace_steps := []ATIFStep{}
 	result := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
-		operation_id, mut skill_context, on_text_delta, mut partial_trace_steps, input.collect_trace,
+		operation_id, request_deadline, mut skill_context, on_text_delta, mut partial_trace_steps, input.collect_trace,
 		policy, .regular) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')

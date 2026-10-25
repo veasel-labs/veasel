@@ -239,9 +239,10 @@ fn test_opencode_go_turn_sends_required_session_and_client_headers() {
 	}
 	session_id := 'f40de9bc-2bce-4b4f-840d-316e2e019570'
 	response := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/chat/completions', ModelConfig{
-		provider:   'opencode-go'
-		api_key:    'fixture-key'
-		session_id: session_id
+		provider:         'opencode-go'
+		api_key:          'fixture-key'
+		session_id:       session_id
+		request_deadline: turn_ctx.deadline() or { panic('expected a provider turn deadline') }
 	}, '{}', .bearer, fn (_ string) ! {}) or { panic(err) }
 	assert response.status_code == 200
 	assert fixture.hits == 1

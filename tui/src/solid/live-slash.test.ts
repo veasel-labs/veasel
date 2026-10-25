@@ -52,7 +52,8 @@ describe("resolveLiveSlash", () => {
   test("routes theme, status, reviews, export, sessions", () => {
     expect(resolveLiveSlash("/theme")).toEqual({ kind: "theme", mode: "list" })
     expect(resolveLiveSlash("/theme ember")).toEqual({ kind: "theme", mode: "id", id: "ember" })
-    expect(resolveLiveSlash("/usage")).toEqual({ kind: "status" })
+    expect(resolveLiveSlash("/usage")).toEqual({ kind: "usage" })
+    expect(resolveLiveSlash("/status")).toEqual({ kind: "status" })
     expect(resolveLiveSlash("/patches")).toEqual({ kind: "reviews" })
     expect(resolveLiveSlash("/commands pending")).toEqual({ kind: "reviews" })
     expect(resolveLiveSlash("/export")).toEqual({ kind: "export" })

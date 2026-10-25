@@ -640,7 +640,7 @@ paths:
   /v1/usage:
     get:
       operationId: getUsage
-      description: Aggregates provider-reported input and output tokens for completed turns across every session, with the same reported-only rules as the per-session summary. Cost is a USD string when every usage-reported turn matches the pinned schedule; otherwise the literal unavailable.
+      description: Aggregates provider-reported input and output tokens for completed turns across every session, with the same reported-only rules as the per-session summary. Includes groups by provider and model. Cost is a USD string when every usage-reported turn matches the pinned schedule; otherwise the literal unavailable.
       responses:
         '200':
           description: Global token usage summary.
@@ -3065,7 +3065,7 @@ components:
           description: SQLite timestamp formatted as YYYY-MM-DD HH:MM:SS.
     GlobalUsageSummary:
       type: object
-      required: [sessions, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, allowance_usd, allowance_reported, cost]
+      required: [sessions, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, allowance_usd, allowance_reported, cost, models]
       properties:
         sessions: { type: integer, minimum: 0 }
         completed_turns: { type: integer, minimum: 0 }
@@ -3083,6 +3083,29 @@ components:
           minimum: 0
           description: Sum of provider-reported subscription allowance usage, when allowance_reported is true.
         allowance_reported: { type: boolean }
+        cost: { type: string }
+        models:
+          type: array
+          description: Completed-operation usage grouped by provider and model, in lexical order.
+          items:
+            $ref: '#/components/schemas/GlobalUsageModelSummary'
+    GlobalUsageModelSummary:
+      type: object
+      required: [provider, model, completed_turns, reported_turns, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cache_reported, cache_reported_turns, reasoning_tokens, reasoning_reported, reasoning_reported_turns, cost]
+      properties:
+        provider: { type: string }
+        model: { type: string }
+        completed_turns: { type: integer, minimum: 0 }
+        reported_turns: { type: integer, minimum: 0 }
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        cache_read_tokens: { type: integer, minimum: 0 }
+        cache_creation_tokens: { type: integer, minimum: 0 }
+        cache_reported: { type: boolean, description: True if any completed operation reported cache fields. }
+        cache_reported_turns: { type: integer, minimum: 0 }
+        reasoning_tokens: { type: integer, minimum: 0 }
+        reasoning_reported: { type: boolean, description: True if any completed operation reported reasoning tokens. }
+        reasoning_reported_turns: { type: integer, minimum: 0 }
         cost: { type: string }
     SessionUsageSummary:
       type: object

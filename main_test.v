@@ -160,18 +160,89 @@ fn test_turn_operation_can_be_cancelled_and_is_session_scoped() {
 	mut app := new_app(store, plugin_directory)
 	defer { app.close() }
 	operation_id := uuid.new_v4().str()
-	actual_id, mut turn_ctx, cancel := app.begin_turn_operation('session-a', operation_id) or {
+	actual_id, mut turn_ctx, cancel, _ := app.begin_turn_operation('session-a', operation_id) or {
 		panic(err)
 	}
 	assert actual_id == operation_id
-	assert !app.cancel_turn_operation('session-b', operation_id)
-	assert app.cancel_turn_operation('session-a', operation_id.to_upper())
+	cancelled_wrong_session, _ := app.cancel_turn_operation('session-b', operation_id) or { false, '' }
+	assert !cancelled_wrong_session
+	cancelled, _ := app.cancel_turn_operation('session-a', operation_id.to_upper()) or { false, '' }
+	assert cancelled
 	ctx_error := turn_ctx.err()
 	assert ctx_error !is none
 	assert ctx_error.msg().contains('canceled')
 	app.finish_turn_operation(operation_id)
-	assert !app.cancel_turn_operation('session-a', operation_id)
+	active, _ := app.cancel_turn_operation('session-a', operation_id) or { false, '' }
+	assert !active
 	cancel()
+}
+
+fn test_durable_cancellation_waits_for_persistence_before_acknowledging() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-durable-cancel-barrier-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	session := store.create_session(SessionInput{
+		title:     'Durable cancel barrier'
+		directory: '/tmp/durable-cancel-barrier'
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_, mut turn_ctx, cancel := app.begin_queued_turn_operation(session.id, operation_id) or { panic(err) }
+	defer { cancel() }
+	defer { app.finish_turn_operation(operation_id) }
+	started := chan int{cap: 1}
+	result := chan bool{cap: 1}
+	spawn fn (app &App, session_id string, operation_id string, started chan int, result chan bool) {
+		started <- 0
+		cancelled, _ := app.cancel_turn_operation(session_id, operation_id) or { false, '' }
+		result <- cancelled
+	}(app, session.id, operation_id, started, result)
+	_ = <-started
+	for _ in 0 .. 100 {
+		if turn_ctx.err() !is none {
+			break
+		}
+		time.sleep(time.millisecond)
+	}
+	assert turn_ctx.err() !is none
+	mut result_value := false
+	assert result.try_pop(mut result_value) == .not_ready
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"must not run"}') or {
+		panic(err)
+	}
+	app.mark_turn_operation_persistence_resolved(operation_id)
+	assert <-result
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_durable_cancellation_is_not_acknowledged_when_enqueue_failed() {
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-durable-cancel-failed-enqueue-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	defer { os.rmdir_all(plugin_directory) or {} }
+	session := store.create_session(SessionInput{
+		title:     'Durable cancel failed enqueue'
+		directory: '/tmp/durable-cancel-failed-enqueue'
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_, _, cancel := app.begin_queued_turn_operation(session.id, operation_id) or { panic(err) }
+	defer { cancel() }
+	defer { app.finish_turn_operation(operation_id) }
+	app.mark_turn_operation_persistence_resolved(operation_id)
+	mut saw_missing_persisted_operation := false
+	_, _ = app.cancel_turn_operation(session.id, operation_id) or {
+		saw_missing_persisted_operation = err.msg() == 'queued session operation was not persisted'
+		false, ''
+	}
+	assert saw_missing_persisted_operation
 }
 
 fn test_turn_cancellation_releases_a_queued_session_turn() {
@@ -186,6 +257,7 @@ fn test_turn_cancellation_releases_a_queued_session_turn() {
 	slot.wait()
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	done := turn_ctx.done()
 	result := chan string{cap: 1}
 	spawn fn (app &App, mut turn_ctx vcontext.Context, result chan string) {
 		app.acquire_session_turn(mut turn_ctx, 'session-queued') or {
@@ -198,6 +270,7 @@ fn test_turn_cancellation_releases_a_queued_session_turn() {
 	}(app, mut turn_ctx, result)
 	time.sleep(25 * time.millisecond)
 	cancel()
+	assert operation_cancelled(done)
 	assert <-result == 'cancelled'
 	slot.post()
 }
@@ -1275,6 +1348,127 @@ fn test_session_operation_survives_restart_and_uncertain_work_is_not_replayed() 
 	assert second_events.filter(it.type == 'session.turn_completed').len == 1
 }
 
+fn test_queued_session_operation_waits_for_active_session_turn_before_claiming() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-queued-lock-plugins-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-test-queued-lock-workspace-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Queued turn lock'
+		directory: workspace
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"wait for the active turn"}') or {
+		panic(err)
+	}
+	mut session_lock := app.session_turn_lock(session.id)
+	session_lock.wait()
+	actual_id, mut turn_ctx, cancel := app.begin_queued_turn_operation(session.id, operation_id) or {
+		panic(err)
+	}
+	assert actual_id == operation_id
+	app.mark_turn_operation_persistence_resolved(operation_id)
+	turn_done := turn_ctx.done()
+	app.schedule_durable_session_operation(operation_id, cancel, turn_done, session.id, session,
+		ChatMessageInput{
+			content: 'wait for the active turn'
+		})
+	time.sleep(50 * time.millisecond)
+	waiting := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert waiting.status == 'queued'
+	session_lock.post()
+	mut started := false
+	for _ in 0 .. 200 {
+		events := store.events_after(0) or { panic(err) }
+		if events.any(it.type == 'session.turn_started' && it.data.operation_id == operation_id) {
+			started = true
+			break
+		}
+		time.sleep(10 * time.millisecond)
+	}
+	assert started
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status in ['running', 'failed']
+}
+
+fn test_queued_session_operations_claim_in_submission_order_when_workers_wake_reversed() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-queued-order-plugins-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-test-queued-order-workspace-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Queued turn FIFO'
+		directory: workspace
+	}) or { panic(err) }
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	first_id := uuid.new_v4().str()
+	second_id := uuid.new_v4().str()
+	_ = store.enqueue_session_operation(session.id, first_id, '{"content":"first"}') or { panic(err) }
+	_ = store.enqueue_session_operation(session.id, second_id, '{"content":"second"}') or { panic(err) }
+	mut session_lock := app.session_turn_lock(session.id)
+	session_lock.wait()
+	second_operation, mut second_ctx, second_cancel := app.begin_queued_turn_operation(session.id,
+		second_id) or { panic(err) }
+	app.mark_turn_operation_persistence_resolved(second_operation)
+	second_done := second_ctx.done()
+	app.schedule_durable_session_operation(second_operation, second_cancel, second_done, session.id,
+		session, ChatMessageInput{
+			content: 'second'
+		})
+	time.sleep(30 * time.millisecond)
+	first_operation, mut first_ctx, first_cancel := app.begin_queued_turn_operation(session.id, first_id) or {
+		panic(err)
+	}
+	app.mark_turn_operation_persistence_resolved(first_operation)
+	first_done := first_ctx.done()
+	app.schedule_durable_session_operation(first_operation, first_cancel, first_done, session.id, session,
+		ChatMessageInput{
+			content: 'first'
+		})
+	time.sleep(30 * time.millisecond)
+	session_lock.post()
+	mut started_ids := []string{}
+	for _ in 0 .. 300 {
+		events := store.events_after(0) or { panic(err) }
+		started_ids = events.filter(it.type == 'session.turn_started').map(it.data.operation_id)
+		if started_ids.len >= 2 {
+			break
+		}
+		time.sleep(10 * time.millisecond)
+	}
+	assert started_ids == [first_id, second_id]
+	app.wait_for_turn_operations()
+	// A worker can hold the session lock just as cancellation removes its last
+	// queued row. The helper must release exactly the permit it acquired and
+	// signal its caller to skip the caller-side unlock defer.
+	mut background := vcontext.background()
+	mut empty_queue_ctx, cancel_empty_queue := vcontext.with_cancel(mut background)
+	defer { cancel_empty_queue() }
+	empty_queue_done := empty_queue_ctx.done()
+	mut saw_empty_queue_error := false
+	app.acquire_queued_session_turn(empty_queue_done, session.id, 'cancelled-operation') or {
+		saw_empty_queue_error = err.msg() == 'queued_operation_no_longer_pending'
+	}
+	assert saw_empty_queue_error
+	mut lock_guard := app.session_turn_lock(session.id)
+	assert lock_guard.try_wait()
+	assert !lock_guard.try_wait()
+	lock_guard.post()
+}
+
 fn test_queued_session_operation_survives_restart_and_claims_to_completion() {
 	database := os.join_path(os.temp_dir(), 'veasel-queued-recovery-${uuid.new_v4().str()}.sqlite')
 	defer {
@@ -1386,6 +1580,43 @@ fn test_queued_session_operation_cancel_before_claim_is_terminal() {
 		SessionOperation{}
 	}
 	assert claim_failed
+	assert store.list_queued_session_operations() or { panic(err) }.len == 0
+}
+
+fn test_cancel_before_enqueue_is_persisted_by_durable_worker() {
+	plugin_directory := os.join_path(os.temp_dir(), 'veasel-test-early-cancel-plugins-${uuid.new_v4().str()}')
+	workspace := os.join_path(os.temp_dir(), 'veasel-test-early-cancel-workspace-${uuid.new_v4().str()}')
+	os.mkdir_all(plugin_directory) or { panic(err) }
+	os.mkdir_all(workspace) or { panic(err) }
+	defer {
+		os.rmdir_all(plugin_directory) or {}
+		os.rmdir_all(workspace) or {}
+	}
+	mut store := open_store(':memory:') or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Cancel before enqueue'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	mut app := new_app(store, plugin_directory)
+	defer { app.close() }
+	actual_id, mut turn_ctx, cancel := app.begin_queued_turn_operation(session.id, operation_id) or {
+		panic(err)
+	}
+	assert actual_id == operation_id
+	turn_done := turn_ctx.done()
+	cancel()
+	_ = store.enqueue_session_operation(session.id, operation_id, '{"content":"cancelled before persistence"}') or {
+		panic(err)
+	}
+	app.mark_turn_operation_persistence_resolved(operation_id)
+	app.schedule_durable_session_operation(operation_id, cancel, turn_done, session.id, session,
+		ChatMessageInput{
+			content: 'cancelled before persistence'
+		})
+	app.wait_for_turn_operations()
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'cancelled'
 	assert store.list_queued_session_operations() or { panic(err) }.len == 0
 }
 
@@ -2098,4 +2329,14 @@ fn test_global_usage_summary_aggregates_across_sessions() {
 	assert summary.cache_read_tokens == 30
 	assert summary.cache_creation_tokens == 5
 	assert summary.cost == 'unavailable'
+	assert summary.models.len == 1
+	assert summary.models[0].provider == 'openai-compatible'
+	assert summary.models[0].model == 'fixture'
+	assert summary.models[0].completed_turns == 3
+	assert summary.models[0].reported_turns == 2
+	assert summary.models[0].input_tokens == 150
+	assert summary.models[0].output_tokens == 30
+	assert summary.models[0].cache_read_tokens == 30
+	assert summary.models[0].cache_creation_tokens == 5
+	assert summary.models[0].cost == 'unavailable'
 }

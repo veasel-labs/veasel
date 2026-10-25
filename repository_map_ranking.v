@@ -110,8 +110,11 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 		ident_l := ident.to_lower()
 		if base_l == ident_l || repository_map_stem(base_l) == ident_l {
 			// A queried term used as the filename is stronger than the same
-			// term inferred from declarations or general file contents.
-			score += 500.0
+			// term inferred from declarations or general file contents. A
+			// generic file name such as job.ts or lifecycle.ts is a weaker
+			// clue when a query also names a specific subsystem; exact path
+			// mentions still receive their stronger weight above.
+			score += if repository_map_is_generic_filename(base) { 140.0 } else { 500.0 }
 			break
 		}
 	}
@@ -146,7 +149,7 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 	// versus tool/plugin/subagent.ts). Keep individual exact-word weight bounded
 	// so generic documentation filenames do not swamp high-confidence aliases.
 	if exact_path_term_matches > 1 {
-		score += f64(exact_path_term_matches - 1) * 180.0
+		score += f64(exact_path_term_matches - 1) * 300.0
 	}
 	if lexical_hints.ordered.len > 1 && (!repository_map_is_test_path(path)
 		|| repository_map_hint_mentions_tests(hints)) {
@@ -211,6 +214,12 @@ fn repository_map_path_has_ordered_hint_pair(name_parts []string, lexical_hints 
 		}
 	}
 	return false
+}
+
+fn repository_map_is_generic_filename(name string) bool {
+	stem := repository_map_stem(name).to_lower()
+	return stem in ['agent', 'context', 'event', 'handler', 'index', 'job', 'lifecycle', 'models',
+		'provider', 'session', 'state', 'tool', 'types']
 }
 
 fn repository_map_is_lexical_hint(ident string) bool {
@@ -883,8 +892,15 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		}
 		// Personalization (Aider-style): a reference coming from a file the
 		// hint already points at counts more than one from an unrelated file.
-		referrer_weight := if score_repository_map_path_with_lexical_hints(entry.path, hints,
-			lexical_hints) >= repository_map_cross_reference_hint_min_path_score {
+		// Keep the path-only relevance computed before content and structural
+		// boosts. Re-scoring here repeats all hint/path matching for each source
+		// file (up to repository_map_max_symbol_files candidates).
+		referrer_score := if entry.path_score != 0.0 {
+			entry.path_score
+		} else {
+			score_repository_map_path_with_lexical_hints(entry.path, hints, lexical_hints)
+		}
+		referrer_weight := if referrer_score >= repository_map_cross_reference_hint_min_path_score {
 			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
 		} else {
 			repository_map_cross_reference_weight

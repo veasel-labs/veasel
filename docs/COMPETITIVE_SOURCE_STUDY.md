@@ -4,22 +4,16 @@
 This document records implementation observations from the pinned upstream
 commits below. It is an engineering input, not a feature or performance claim
 about Veasel. Recheck upstream before using these references to make
-compatibility decisions. The 26 mission reference clones were refreshed on
-2026-10-22 under `research/refs/`; exact fetched revisions are recorded in
-[`refs/REVISIONS.md`](../research/refs/REVISIONS.md). That inventory refresh is
-not a claim that every source file was re-read at the refreshed pins: findings
-below retain their individual historical revisions and need re-audit before
-they drive compatibility claims.
-
-The 2026-10-25 full source audit refreshes eleven upstream pins and records
-inspected source/test paths plus current Veasel gaps in
+compatibility decisions. Findings below retain their individual historical
+revisions and need re-audit before they drive compatibility claims. The full
+2026-10-25 audit records current pins and inspected source/test paths for all
+26 reference repositories in
 [`COMPETITIVE_SOURCE_AUDIT_2026-10-25.md`](COMPETITIVE_SOURCE_AUDIT_2026-10-25.md).
 
 **Focused subagent recheck:** 2026-10-23 at OpenCode
-`ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e` (MIT), the refreshed revision in
-[`refs/REVISIONS.md`](../research/refs/REVISIONS.md). This recheck covers only
-the subagent files and lifecycle tests linked below; earlier runner findings
-remain pinned to their original revisions.
+`ba06ff9e0bf2dcefbbbc3a1d6094f3572d77c84e` (MIT), before the 2026-10-25
+source refresh. This recheck covers only the subagent files and lifecycle tests
+linked below; earlier runner findings remain pinned to their original revisions.
 
 ## Source revisions
 

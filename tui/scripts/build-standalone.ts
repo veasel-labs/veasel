@@ -24,7 +24,7 @@ if (target.startsWith("bun-linux-")) {
 // emergency escape hatch for the imperative shell.
 const entry = useClassic
   ? resolve(import.meta.dir, "../src/classic-main.ts")
-  : resolve(import.meta.dir, "../src/solid/main.tsx")
+  : resolve(import.meta.dir, "../src/entry.ts")
 
 const outfile = resolve(outputPath)
 const result = await Bun.build({

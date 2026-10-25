@@ -8,7 +8,8 @@ backend.
 
 From this directory, install the locked dependencies with `bun install`, then:
 
-- `bun run start` — SolidJS OpenTUI client (`src/solid/main.tsx`, default):
+- `bun run start` — SolidJS OpenTUI client (`src/entry.ts` →
+  `src/solid/main.tsx`, default):
   session home, live loopback HTTP turns, SSE assistant deltas, MODEL SETTINGS
 - `bun run start:classic` — retired imperative OpenTUI shell
   (`src/classic-main.ts`) kept for emergency comparison only

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun run src/solid/main.tsx",
+    "start": "bun run src/entry.ts",
     "start:classic": "bun run src/classic-main.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",

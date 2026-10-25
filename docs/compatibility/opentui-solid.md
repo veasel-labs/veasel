@@ -9,17 +9,17 @@ compatibility and does not authorize copying branding or product chrome.
 | Upstream | Pin | License | Role |
 |----------|-----|---------|------|
 | OpenCode | [`e25b7abf8955a4fa1b02b935964cb47db4c3a02a`](https://github.com/anomalyco/opencode/tree/e25b7abf8955a4fa1b02b935964cb47db4c3a02a) | MIT | Engineering patterns for `packages/tui/` (`render` / `testRender`, `jsxImportSource`, bunfig preload, standalone bun-plugin). Catalog still pins `@opentui/core` + `@opentui/solid` **0.5.17** and `solid-js` **1.9.15** (study reference only). |
-| OpenTUI | [`212eb27da4adf5b907031ad153fc6a5b9f713fbf`](https://github.com/anomalyco/opentui/tree/212eb27da4adf5b907031ad153fc6a5b9f713fbf) (`v0.6.6` tag for study) | MIT | Solid package README and APIs (`render`, `testRender`, `@opentui/solid/preload`, `@opentui/solid/bun-plugin`). Veasel **runtime** packages are on published **0.6.2** (deliberate upgrade; see below). |
+| OpenTUI | [`341d728b40ee2d1b34f1ea1eaaf3ee0ef801ec69`](https://github.com/anomalyco/opentui/tree/341d728b40ee2d1b34f1ea1eaaf3ee0ef801ec69) (`@opentui/core` + `@opentui/solid` **0.6.8**) | MIT | Solid package APIs and the class-owned render-hook implementation. Veasel runtime packages are pinned to published **0.6.8** (see upgrade history below). |
 
 ## Veasel package pins (runtime)
 
-- `@opentui/core` **0.6.2**
-- `@opentui/solid` **0.6.2**
+- `@opentui/core` **0.6.8**
+- `@opentui/solid` **0.6.8**
 - `solid-js` **1.9.17** (1.9.x line matching OpenCode's catalog intent; bumped from
   1.9.15 so transitive `seroval` lands on the CVE-fixed ≥1.6.2 line. Peer of
   `@opentui/solid` remains `1.9.12`.)
 
-### Deliberate upgrade from 0.5.17 → 0.6.2 (2026-10-16)
+### Upgrade history from 0.5.17 → 0.6.8 (2026-10-16 to 2026-10-24)
 
 Dependabot [#404](https://github.com/veasel-labs/veasel/pull/404) landed
 `@opentui/core` + `@opentui/solid` **0.6.2** on `main`. Compatibility docs had
@@ -29,15 +29,27 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   `SyntaxStyle.fromStyles` to the OpenTUI 0.6 `NativeResourceOwner` API.
 - Local proof on tip (`cd tui && bun install && bun test && bun run typecheck`):
   **340** tests pass, `tsc --noEmit` clean.
-- Do **not** re-merge Dependabot bumps past 0.6.2 without repeating that proof.
-  Solid-default cutover is owned separately ([#407](https://github.com/veasel-labs/veasel/pull/407)).
+- Dependabot [#499](https://github.com/veasel-labs/veasel/pull/499) later upgraded
+  both packages from 0.6.2 to **0.6.6**. The merged revision passed the core
+  Linux, macOS, Windows, terminal-client, Harbor, and security jobs. Repeat the
+  platform checks before accepting another OpenTUI update.
+- The 0.6.8 update uses OpenTUI's class-owned hook records. Upstream's
+  `Renderable` now captures hook methods at construction and publishes them to
+  native once, replacing reflective instance scans and repeated accessor
+  installs. The upstream hook matrix tests cover constructor options, class
+  methods, reflection refresh, and failed refreshes. Veasel does not subclass
+  those hook APIs; its `testRender` journey tests, typecheck, standalone build,
+  and PTY smoke passed on this pin (see the PR validation record).
 
 ## Adapted patterns (Veasel-owned code)
 
 - `tui/bunfig.toml` preload `@opentui/solid/preload` (dev + test)
 - `tui/tsconfig.json` `jsx: preserve` + `jsxImportSource: @opentui/solid`
-- **Default entry:** `bun run start` → `src/solid/main.tsx` → `LiveApp`
+- **Default entry:** `bun run start` → `src/entry.ts` →
+  `src/solid/main.tsx` → `LiveApp`
   (loopback `api-client.ts`, session home, SSE deltas, MODEL SETTINGS).
+  The standalone CLI entry handles `--help` and `--version` without loading the
+  API client or Solid UI graph; interactive launches import the application.
   Standalone `build:standalone` defaults to Solid; `--classic` builds the
   retired imperative shell at `src/classic-main.ts`.
 - Solid UI modules under `tui/src/solid/` with Veasel mint chrome (no OpenCode branding)
@@ -90,7 +102,7 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   Reuses `reviewHotkey` / `formatReviewDiff` / `formatShellReview` /
   `formatMcpReview` / `diff-view` helpers. Default body is tone-tagged text
   (DiffRenderable segment patterns via `noticeSegments`); **v** toggles OpenTUI
-  Solid `<diff view="split">` (available on pinned **0.6.2** catalogue).
+  Solid `<diff view="split">` (available on pinned **0.6.8** catalogue).
   **Ctrl+R** opens the panel (same chord as legacy pending jump); a/x/A/X/
   Space/]/[/n/p/{/} match `active-review` docs. Palette
   `veasel.reviews.open`. Demo fixture queue for fixture `App` tests. Engineering

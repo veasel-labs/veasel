@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   admitAssistantDelta,
   appendStreamingDelta,
+  createStreamDeltaBatcher,
   isAssistantDeltaEvent,
   parseSseBlock,
 } from "./stream-events"
@@ -61,5 +62,49 @@ describe("stream event helpers", () => {
     expect(text).toContain("stream line 01")
     expect(text).toContain("stream line 02")
     expect(text.endsWith("STREAM-TAIL\n")).toBe(true)
+  })
+
+  test("batches SSE fragments in order and flushes once", () => {
+    const flushed: string[] = []
+    const scheduled: Array<() => void> = []
+    let cancelled = 0
+    const batcher = createStreamDeltaBatcher(
+      (text) => flushed.push(text),
+      (callback) => {
+        scheduled.push(callback)
+        return scheduled.length
+      },
+      () => { cancelled++ },
+    )
+
+    batcher.push("first ")
+    batcher.push("second")
+    expect(scheduled).toHaveLength(1)
+    expect(flushed).toEqual([])
+    batcher.flush()
+    expect(flushed).toEqual(["first second"])
+    expect(cancelled).toBe(1)
+    scheduled[0]!()
+    expect(flushed).toEqual(["first second"])
+  })
+
+  test("clear drops stale fragments when changing sessions", () => {
+    const flushed: string[] = []
+    const scheduled: Array<() => void> = []
+    let cancelled = 0
+    const batcher = createStreamDeltaBatcher(
+      (text) => flushed.push(text),
+      (callback) => {
+        scheduled.push(callback)
+        return scheduled.length
+      },
+      () => { cancelled++ },
+    )
+
+    batcher.push("old session")
+    batcher.clear()
+    scheduled[0]!()
+    expect(flushed).toEqual([])
+    expect(cancelled).toBe(1)
   })
 })

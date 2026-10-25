@@ -674,7 +674,9 @@ fn read_workspace_text_file_limited(path string, max_bytes int) !string {
 	if count > max_bytes {
 		return error('workspace file exceeds the map read limit')
 	}
-	content := bytes[..count].clone()
+	// bytestr() below allocates the owned string and copies these bytes once;
+	// cloning the slice here would duplicate the same file contents again.
+	content := unsafe { bytes[..count] }
 	if content.contains(0) {
 		return error('binary files are not supported by repository map')
 	}

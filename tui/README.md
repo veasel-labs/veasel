@@ -8,7 +8,8 @@ backend.
 
 From this directory, install the locked dependencies with `bun install`, then:
 
-- `bun run start` — SolidJS OpenTUI client (`src/solid/main.tsx`, default):
+- `bun run start` — SolidJS OpenTUI client (`src/entry.ts` →
+  `src/solid/main.tsx`, default):
   session home, live loopback HTTP turns, SSE assistant deltas, MODEL SETTINGS
 - `bun run start:classic` — retired imperative OpenTUI shell
   (`src/classic-main.ts`) kept for emergency comparison only
@@ -38,7 +39,9 @@ as the next turn; it does not change the prompt the model is currently working
 on. Queued messages appear in the transcript and become cancellable when their
 `session.turn_started` event arrives.
 
-The startup screen uses an original geometric pixel companion drawn for Veasel
-Code. It does not reuse the V language mascot artwork and is covered by this
-repository's MIT license. The upstream mascot's CC BY-NC 4.0 license is recorded
-in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+The startup screen uses a 32×32 pixel portrait of Veasel's companion, rendered
+as 16 rows of Unicode half-blocks. Russet fur, cream, teal accents, and
+highlights follow the active theme. The source art is a 128×128, 14-color
+pixel-art reinterpretation of Veasel's project-owned companion concept and
+does not use the V mascot as an image input; provenance and license notes are in
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).

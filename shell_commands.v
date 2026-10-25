@@ -673,10 +673,13 @@ fn autonomous_shell_environment() map[string]string {
 fn autonomous_shell_environment_from(current map[string]string) map[string]string {
 	mut filtered := map[string]string{}
 	$if windows {
-		allowed := ['PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE']
-		for key in allowed {
-			if value := current[key] {
-				filtered[key] = value
+		// Windows resolves the AppContainer profile under LOCALAPPDATA during child startup.
+		allowed := ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'TEMP', 'TMP', 'USERPROFILE',
+			'LOCALAPPDATA']
+		for key, value in current {
+			normalized_key := key.to_upper()
+			if normalized_key in allowed {
+				filtered[normalized_key] = value
 			}
 		}
 	} $else {

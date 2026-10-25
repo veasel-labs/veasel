@@ -1,20 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import { resolveLoopbackApiBase, VeaselApiClient } from "../api-client"
-import { formatTuiHelp, formatTuiVersion, parseTuiCliAction } from "../cli"
 
-const tuiVersion = process.env.VEASEL_TUI_VERSION ?? "development"
-const tuiCliAction = parseTuiCliAction(process.argv)
-if (tuiCliAction === "help") {
-  console.log(formatTuiHelp(tuiVersion))
-  process.exit(0)
-}
-if (tuiCliAction === "version") {
-  console.log(formatTuiVersion(tuiVersion))
-  process.exit(0)
-}
-
-// Load the renderer and the full UI graph only when a session actually
-// launches, so --version/--help stay fast and light.
+// Load the renderer and full UI graph only after the lightweight CLI entry
+// has selected the interactive path.
 const [{ render }, { LiveApp }] = await Promise.all([
   import("@opentui/solid"),
   import("./live-app"),

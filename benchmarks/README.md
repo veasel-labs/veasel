@@ -87,6 +87,9 @@ Repeat after changes before making broader performance claims.
 `tui-startup.mjs` measures packaged `veasel-tui` `--version`/`--help` wall time
 and Linux RSS, plus PTY time-to-connected against an isolated `veasel serve`
 (visible markers `connected`, `SESSIONS`, `VEASEL`). It makes no model requests.
+The Solid entry handles `--help` and `--version` before importing the UI
+client; [`reports/tui-startup-linux-x64-2026-10-23.json`](reports/tui-startup-linux-x64-2026-10-23.json)
+records a same-host comparison against the published release.
 
 ```sh
 VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \
@@ -246,6 +249,7 @@ and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
 |---|---|---|
 | [`reports/tui-startup-linux-x64-2026-10-15.json`](reports/tui-startup-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples) |
 | [`reports/tui-startup-linux-x64-2026-10-19.json`](reports/tui-startup-linux-x64-2026-10-19.json) | `0.59.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples, per-sample results recorded) |
+| [`reports/tui-startup-linux-x64-2026-10-23.json`](reports/tui-startup-linux-x64-2026-10-23.json) | `0.64.6-next.0` + optimized entry | Same-host published-vs-source comparison: 15 CLI and 15 PTY samples per build |
 
 2026-10-15 medians on one Linux x64 workstation (`7.2.9-arch1-1`):
 
@@ -273,3 +277,13 @@ is not hidden by the summary statistics.
 
 Single-workstation evidence only. See
 [`../docs/compatibility/tui-interactive-smoke.md`](../docs/compatibility/tui-interactive-smoke.md).
+
+On 2026-10-23, the published `0.64.6-next.0` TUI measured 55.2 ms median for
+`--version` and 55.4 ms for `--help`; its locally rebuilt entry measured
+35.3 ms and 34.6 ms with the same Bun 1.4.2, host, backend and harness (15
+samples, 2 warmups). Median RSS fell from 54,568 to 34,308 KiB for `--version`
+and from 54,612 to 34,360 KiB for `--help`. PTY connected-home medians were
+92.7 ms and 92.6 ms (15 samples each), so this change improves the short CLI
+paths without claiming a faster interactive launch. The report records the
+release and optimized binary hashes; it remains a single-host measurement, not
+a render-FPS or coding-task benchmark.

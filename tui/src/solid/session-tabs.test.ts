@@ -4,6 +4,7 @@ import {
   formatSessionTabLabel,
   markSessionUnread,
   moveSessionTabIndex,
+  sessionTabsLayout,
   sessionTabUnreadMarker,
   sessionTabsFromEntries,
   truncateTabTitle,
@@ -37,6 +38,28 @@ describe("session tabs helpers", () => {
 
     const all = visibleSessionTabs(tabs.slice(0, 3), "s1", 6)
     expect(all.overflowLeft + all.overflowRight).toBe(0)
+  })
+
+  test("fits the session rail to narrow terminals and widens titles when space allows", () => {
+    const tabs = sessionTabsFromEntries(
+      Array.from({ length: 20 }, (_, index) => ({ id: `s${index}`, title: `Session ${index} with a long title` })),
+    )
+    const narrow = sessionTabsLayout(tabs, "s10", 32, { showNew: true, showClose: true })
+    const wide = sessionTabsLayout(tabs, "s10", 120, { showNew: true, showClose: true })
+
+    expect(narrow.tabs.some((tab) => tab.id === "s10")).toBe(true)
+    expect(narrow.overflowLeft).toBeGreaterThan(0)
+    expect(narrow.overflowRight).toBeGreaterThan(0)
+    expect(narrow.showNew).toBe(true)
+    expect(narrow.showClose).toBe(true)
+    expect(wide.titleWidth).toBeGreaterThan(narrow.titleWidth)
+    expect(wide.tabs.length).toBe(6)
+  })
+
+  test("truncates session titles by terminal-cell width", () => {
+    expect(formatSessionTabLabel({ id: "wide", title: "你好 Veasel", unread: true }, 7)).toBe("● 你好…")
+    expect(formatSessionTabLabel({ id: "unread", title: "Session", unread: true }, 1)).toBe("●")
+    expect(truncateTabTitle("你好", 1)).toBe("…")
   })
 
   test("marks unread for background sessions only", () => {

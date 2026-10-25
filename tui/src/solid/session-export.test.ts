@@ -78,4 +78,17 @@ describe("session export", () => {
       formatGlobalUsageLine({ sessions: 1, input_tokens: 1, output_tokens: 1, usage_reported: false }),
     ).toBeUndefined()
   })
+
+  test("formats a global OpenCode Go allowance without token counters", () => {
+    expect(formatGlobalUsageLine({
+      sessions: 2,
+      completed_turns: 4,
+      reported_turns: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      usage_reported: false,
+      allowance_reported: true,
+      allowance_usd: 0.0042,
+    })).toBe("all sessions (2) · 4 turns · Go allowance $0.0042")
+  })
 })

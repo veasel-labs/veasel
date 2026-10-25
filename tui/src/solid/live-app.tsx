@@ -1641,12 +1641,64 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const promptForModelID = (
+    providerName: string,
+    description: string,
+    onSubmit: (modelID: string) => void,
+  ) => {
+    openDialogPrompt(dialog, {
+      title: `Model ID · ${providerName}`,
+      description,
+      placeholder: "e.g. kimi-k3",
+      confirmLabel: "Use model",
+      onConfirm: (value) => {
+        const modelID = value.trim()
+        if (!modelID) {
+          toast.info("Enter a model ID to continue", "MODEL SETTINGS")
+          return false
+        }
+        onSubmit(modelID)
+        return true
+      },
+      onCancel: () => setComposerFocused(true),
+    })
+  }
+
   const finishProviderConnect = (
     provider: ModelProvider,
     apiKey: string,
     profileModel: string | undefined,
     profileMaxOut: number | undefined,
   ) => {
+    const saveConnectedModel = (model: string) => {
+      void (async () => {
+        try {
+          const saved = await props.api.updateModelSettings({
+            provider: provider.id,
+            model,
+            base_url: provider.base_url,
+            api_key: apiKey || undefined,
+            max_output_tokens: profileMaxOut,
+          })
+          const label = formatActiveModelLabel(saved) ?? `${provider.id}/${model}`
+          toast.success(`Connected · ${label}`, "MODEL SETTINGS")
+        } catch (error) {
+          toast.info(
+            formatProviderConnectionError(
+              provider.id,
+              error instanceof Error ? error.message : "could not save provider",
+            ),
+            "MODEL SETTINGS",
+          )
+        } finally {
+          setComposerFocused(true)
+        }
+      })()
+    }
+    const enterModelManually = (description: string) => {
+      promptForModelID(provider.name, description, saveConnectedModel)
+    }
+
     void (async () => {
       try {
         toast.info(`Discovering models · ${provider.name}…`, "MODEL SETTINGS")
@@ -1664,18 +1716,10 @@ function LiveAppShell(props: LiveAppProps) {
         )
         if (models.length === 0) {
           if (profileModel) {
-            await props.api.updateModelSettings({
-              provider: provider.id,
-              model: profileModel,
-              base_url: provider.base_url,
-              api_key: apiKey || undefined,
-              max_output_tokens: profileMaxOut,
-            })
-            toast.success(`Connected · ${provider.name} (kept ${profileModel})`, "MODEL SETTINGS")
+            saveConnectedModel(profileModel)
           } else {
-            toast.info("No models returned — paste a key and pick a model with F2", "MODEL SETTINGS")
+            enterModelManually("The provider returned no model IDs. Enter one manually to finish connecting.")
           }
-          setComposerFocused(true)
           return
         }
         const current = profileModel
@@ -1689,43 +1733,17 @@ function LiveAppShell(props: LiveAppProps) {
         openModelDialog(dialog, {
           models,
           current,
-          onSelect: (model) => {
-            void (async () => {
-              try {
-                const saved = await props.api.updateModelSettings({
-                  provider: model.providerID,
-                  model: model.modelID,
-                  base_url: provider.base_url,
-                  api_key: apiKey || undefined,
-                  max_output_tokens: profileMaxOut,
-                })
-                const label =
-                  formatActiveModelLabel(saved) ?? `${model.providerID}/${model.modelID}`
-                toast.success(`Connected · ${label}`, "MODEL SETTINGS")
-              } catch (error) {
-                toast.info(
-                  formatProviderConnectionError(
-                    model.providerID,
-                    error instanceof Error ? error.message : "could not save provider",
-                  ),
-                  "MODEL SETTINGS",
-                )
-              } finally {
-                setComposerFocused(true)
-              }
-            })()
-          },
+          onSelect: (model) => saveConnectedModel(model.modelID),
+          onManual: () => enterModelManually("Enter the model ID exactly as the provider documents it."),
           onCancel: () => setComposerFocused(true),
         })
       } catch (error) {
-        toast.info(
-          formatProviderConnectionError(
+        enterModelManually(
+          `${formatProviderConnectionError(
             provider.id,
             error instanceof Error ? error.message : "model discovery failed",
-          ),
-          "MODEL SETTINGS",
+          )} Enter a model ID manually to continue.`,
         )
-        setComposerFocused(true)
       }
     })()
   }
@@ -1829,6 +1847,30 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const saveLiveModelSelection = (
+    provider: string,
+    model: string,
+    baseUrl: string,
+    maxOutputTokens: number | undefined,
+  ) => {
+    void (async () => {
+      try {
+        const saved = await props.api.updateModelSettings({
+          provider,
+          model,
+          base_url: baseUrl,
+          max_output_tokens: maxOutputTokens,
+        })
+        const label = formatActiveModelLabel(saved) ?? `${provider}/${model}`
+        toast.success(`Model · ${label}`, "Models")
+      } catch (error) {
+        toast.info(error instanceof Error ? error.message : "could not save model", "Models")
+      } finally {
+        setComposerFocused(true)
+      }
+    })()
+  }
+
   const openLiveModelPicker = async () => {
     setComposerFocused(false)
     try {
@@ -1838,6 +1880,7 @@ function LiveAppShell(props: LiveAppProps) {
       const providerName = providerInfo?.name ?? provider
       const profile = settings.profiles[provider]
       let catalogModels: SolidModelRef[] = []
+      let catalogError: string | undefined
       try {
         const catalog = await props.api.listProviderModels(provider)
         catalogModels = catalog.models.map((model) =>
@@ -1848,12 +1891,9 @@ function LiveAppShell(props: LiveAppProps) {
           }),
         )
       } catch (error) {
-        toast.info(
-          error instanceof Error
-            ? error.message
-            : "Model catalog unavailable — configure credentials first",
-          "Models",
-        )
+        catalogError = error instanceof Error
+          ? error.message
+          : "Model catalog unavailable — configure credentials first"
       }
       if (catalogModels.length === 0 && profile?.model) {
         catalogModels = [
@@ -1866,10 +1906,20 @@ function LiveAppShell(props: LiveAppProps) {
         ]
       }
       if (catalogModels.length === 0) {
-        toast.info("No models for the active provider — open Provider settings", "Models")
-        setComposerFocused(true)
+        promptForModelID(
+          providerName,
+          `${catalogError ?? "No model IDs were returned by the provider."} Enter one manually to continue.`,
+          (modelID) =>
+            saveLiveModelSelection(
+              provider,
+              modelID,
+              profile?.base_url || providerInfo?.base_url || "",
+              profile?.max_output_tokens,
+            ),
+        )
         return
       }
+      if (catalogError) toast.info(catalogError, "Models")
       const current: SolidModelRef | undefined = profile?.model
         ? {
             providerID: provider,
@@ -1881,27 +1931,25 @@ function LiveAppShell(props: LiveAppProps) {
       openModelDialog(dialog, {
         models: catalogModels,
         current,
-        onSelect: (model) => {
-          void (async () => {
-            try {
-              const saved = await props.api.updateModelSettings({
-                provider: model.providerID,
-                model: model.modelID,
-                base_url: profile?.base_url || providerInfo?.base_url || "",
-                max_output_tokens: profile?.max_output_tokens,
-              })
-              const label =
-                formatActiveModelLabel(saved) ?? `${model.providerID}/${model.modelID}`
-              toast.success(`Model · ${label}`, "Models")
-            } catch (error) {
-              toast.info(
-                error instanceof Error ? error.message : "could not save model",
-                "Models",
-              )
-            } finally {
-              setComposerFocused(true)
-            }
-          })()
+        onSelect: (model) =>
+          saveLiveModelSelection(
+            model.providerID,
+            model.modelID,
+            profile?.base_url || providerInfo?.base_url || "",
+            profile?.max_output_tokens,
+          ),
+        onManual: () => {
+          promptForModelID(
+            providerName,
+            "Enter the model ID exactly as the provider documents it.",
+            (modelID) =>
+              saveLiveModelSelection(
+                provider,
+                modelID,
+                profile?.base_url || providerInfo?.base_url || "",
+                profile?.max_output_tokens,
+              ),
+          )
         },
         onCancel: () => setComposerFocused(true),
       })

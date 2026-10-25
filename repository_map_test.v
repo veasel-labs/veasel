@@ -57,14 +57,17 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	assert repository_map_lexically_related('args', 'arguments')
 	assert repository_map_path_has_segment('aider/args.py', 'args')
 	assert score_repository_map_path('aider/args.py', arguments) >= 300.0
+	argument_terms := repository_map_content_query_terms(arguments)
 	assert score_repository_map_content('Add an argument to the command line parser options.',
-		arguments) > 0.0
-	assert score_repository_map_content('parse_args parser', RepositoryMapHintSet{
+		argument_terms) > 0.0
+	parsing_terms := repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: ['parsing']
-	}) == 24.0
-	assert score_repository_map_content('run_batch', RepositoryMapHintSet{
+	})
+	assert score_repository_map_content('parse_args parser', parsing_terms) == 24.0
+	running_terms := repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: ['running']
-	}) == 24.0
+	})
+	assert score_repository_map_content('run_batch', running_terms) == 24.0
 	assert score_repository_map_path('aider/args.py', arguments) > score_repository_map_path('tests/test_args.py', arguments)
 	model_behavior := extract_repository_map_hints('litellm model that calls the LLM API')
 	assert repository_map_is_package_index_path('src/minisweagent/models/__init__.py')
@@ -80,25 +83,40 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	args_query := extract_repository_map_hints('command line argument parsing and options')
 	assert score_repository_map_path('aider/args.py', args_query) > score_repository_map_path('aider/io.py', args_query)
 	subagent_query := extract_repository_map_hints('resume the subagent job and notify the parent session')
-	assert score_repository_map_path('packages/core/src/session/subagent-job.ts', subagent_query) > score_repository_map_path('packages/core/src/session/operation.ts', subagent_query)
+	subagent_job_score := score_repository_map_path('packages/core/src/session/subagent-job.ts',
+		subagent_query)
+	assert subagent_job_score > score_repository_map_path('packages/core/src/session/operation.ts',
+		subagent_query)
+	assert subagent_job_score > score_repository_map_path('packages/core/src/job.ts', subagent_query)
+	batch_query := extract_repository_map_hints('running many problem instances in batch mode')
+	assert score_repository_map_path('sweagent/run/run_batch.py', batch_query) > score_repository_map_path('sweagent/run/batch_instances.py', batch_query)
+	assert repository_map_path_has_ordered_hint_pair(['run', 'batch'], ['running', 'many', 'problem',
+		'instances', 'batch', 'mode'])
+	assert !repository_map_path_has_ordered_hint_pair(['run', 'batch'], ['batch', 'running'])
+	assert repository_map_lexical_match_weight('running', 'run') == 45.0
+	assert repository_map_lexical_match_weight('parsing', 'parse') == 45.0
+	agent_loop_query := extract_repository_map_hints('agent loop tool call execution')
+	assert score_repository_map_path('packages/agent/src/agent-loop.ts', agent_loop_query) > score_repository_map_path('packages/agent/src/agent.ts', agent_loop_query)
+	agent_types_query := extract_repository_map_hints('define agent context and tool execution types')
+	assert score_repository_map_path('packages/agent/src/types.ts', agent_types_query) > score_repository_map_path('packages/coding-agent/test/tool-execution-component.test.ts', agent_types_query)
 	spawn_subagent_query := extract_repository_map_hints('spawn a subagent tool for a task')
 	assert score_repository_map_path('packages/core/src/tool/plugin/subagent.ts', spawn_subagent_query) > score_repository_map_path('packages/core/src/tool.ts', spawn_subagent_query)
 	paired := extract_repository_map_hints('Please fix src/agents/default.py')
 	assert score_repository_map_path('tests/agents/test_init.py', paired) < score_repository_map_path('src/agents/default.py', paired)
 	assert repository_map_lexically_related('policy', 'policies')
 	assert repository_map_lexically_related('class', 'classes')
-	assert score_repository_map_content('class policy', RepositoryMapHintSet{
+	assert score_repository_map_content('class policy', repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: [
 			'classes',
 			'policy',
 		]
-	}) == 48.0
-	assert score_repository_map_content('classes policies', RepositoryMapHintSet{
+	})) == 48.0
+	assert score_repository_map_content('classes policies', repository_map_content_query_terms(RepositoryMapHintSet{
 		idents: [
 			'class',
 			'policy',
 		]
-	}) == 48.0
+	})) == 48.0
 	assert score_repository_map_path('src/AuthService.ts', RepositoryMapHintSet{ idents: ['auth'] }) > score_repository_map_path('src/Other.ts', RepositoryMapHintSet{ idents: ['auth'] })
 	assert repository_map_is_test_path('src/auth.spec.ts')
 	assert repository_map_is_test_path('src/__specs__/auth_spec.ts')
@@ -106,7 +124,8 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	case_hints := RepositoryMapHintSet{ idents: ['AGENT', 'agent', 'Agent', 'args'] }
 	assert !repository_map_is_lexical_hint('The')
 	assert !repository_map_is_lexical_hint('For')
-	assert score_repository_map_content('agent argument parser', case_hints) == 72.0
+	assert score_repository_map_content('agent argument parser',
+		repository_map_content_query_terms(case_hints)) == 72.0
 	assert score_repository_map_path('src/agent.py', case_hints) == score_repository_map_path('src/agent.py', RepositoryMapHintSet{
 		idents: [
 			'agent',
@@ -483,4 +502,80 @@ fn test_repository_map_symbol_count_does_not_flood_ranking() {
 	}
 	assert result.ranked_paths.len >= 2
 	assert result.ranked_paths[0] == 'src/target.v', 'mentioned definer must outrank a large unrelated file: ${result.ranked_paths}'
+}
+
+fn test_repository_map_symbol_cache_reuses_only_exact_file_content() {
+	mut cache := new_repository_map_symbol_cache()
+	path := '/workspace/src/agent.v'
+	first_content := 'pub fn first_agent_symbol() {}'
+	first_generation := next_repository_map_symbol_cache_generation(mut cache)
+	first := repository_map_cached_symbols(mut cache, path, first_content, first_generation,
+		0)
+	assert first.len == 1
+	assert first[0].name == 'first_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 0
+
+	reuse_generation := next_repository_map_symbol_cache_generation(mut cache)
+	reused := repository_map_cached_symbols(mut cache, path, first_content, reuse_generation,
+		0)
+	assert reused.len == 1
+	assert reused[0].name == 'first_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+
+	updated_generation := next_repository_map_symbol_cache_generation(mut cache)
+	updated := repository_map_cached_symbols(mut cache, path, 'pub fn updated_agent_symbol() {}',
+		updated_generation, 0)
+	assert updated.len == 1
+	assert updated[0].name == 'updated_agent_symbol'
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+}
+
+fn test_repository_map_symbol_cache_refreshes_for_new_rankings() {
+	mut cache := new_repository_map_symbol_cache()
+	first_generation := next_repository_map_symbol_cache_generation(mut cache)
+	first_path := 'src/first-ranked.v'
+	first_content := 'x'.repeat(repository_map_symbol_cache_max_bytes)
+	_ = repository_map_cached_symbols(mut cache, first_path, first_content, first_generation, 0)
+	_ = repository_map_cached_symbols(mut cache, 'src/lower-ranked.v', 'pub fn later_symbol() {}',
+		first_generation, 1)
+	assert cache.entries.len == 1
+	assert cache.retained_bytes == repository_map_symbol_cache_max_bytes
+
+	new_generation := next_repository_map_symbol_cache_generation(mut cache)
+	new_path := 'src/newly-ranked.v'
+	new_content := 'pub fn newly_relevant_symbol() {}'
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, new_generation, 0)
+	assert cache.entries.len == 1
+	cached_new := cache.entries[new_path] or {
+		panic('newly ranked file should replace stale cached content')
+	}
+	assert cached_new.content == new_content
+	assert cache.retained_bytes == new_content.len
+
+	next_generation := next_repository_map_symbol_cache_generation(mut cache)
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, next_generation, 0)
+	assert repository_map_symbol_cache_hits(mut cache) == 1
+}
+
+fn test_repository_map_symbol_cache_older_build_cannot_replace_newer_entries() {
+	mut cache := new_repository_map_symbol_cache()
+	older_generation := next_repository_map_symbol_cache_generation(mut cache)
+	newer_generation := next_repository_map_symbol_cache_generation(mut cache)
+	new_path := 'src/current.v'
+	new_content := 'x'.repeat(repository_map_symbol_cache_max_bytes)
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, newer_generation, 0)
+
+	// An overlapping old build may observe a hit, but cannot make it stale again.
+	_ = repository_map_cached_symbols(mut cache, new_path, new_content, older_generation, 0)
+	cached_current := cache.entries[new_path] or {
+		panic('current build entry should remain cached')
+	}
+	assert cached_current.generation == newer_generation
+
+	// Nor may an older miss evict current entries to admit its own result.
+	_ = repository_map_cached_symbols(mut cache, 'src/obsolete.v', 'pub fn obsolete() {}',
+		older_generation, 1)
+	assert 'src/obsolete.v' !in cache.entries
+	assert cache.entries[new_path].generation == newer_generation
+	assert cache.retained_bytes == new_content.len
 }

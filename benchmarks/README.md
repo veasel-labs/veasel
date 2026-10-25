@@ -30,6 +30,45 @@ timings are noisy and are reports, not a pass/fail performance promise. The
 benchmark only measures in-memory SQLite session work. It is not evidence of
 agent task success, model efficiency, or end-to-end latency.
 
+## Repository-map ranking microbenchmark
+
+`repository_map_benchmark_test.v` measures cross-reference ranking over a fixed
+256-file, 1 MiB synthetic source corpus. Fixture construction is outside the
+timed region; each result includes 2 warmups, 11 raw samples, p50/p90 elapsed
+time, a score checksum, compiler version, source revision, and host platform.
+It is opt-in and does not add work to ordinary test runs:
+
+```sh
+VEASEL_RUN_REPOSITORY_MAP_BENCHMARK=1 \
+VEASEL_BENCH_COMPILER_VERSION='V <version>' \
+VEASEL_BENCH_SOURCE_REVISION='<git-revision>' \
+VEASEL_BENCH_OUTPUT=/tmp/repository-map-ranking.json \
+VEASEL_BENCH_BUILD_PROFILE='gcc -prod' \
+  v -cc gcc -prod test repository_map_benchmark_test.v
+```
+
+Compare a change with its parent on the same machine using the same pinned V
+compiler. This isolates ranking cost, not filesystem walking, symbol extraction,
+or full API latency; it does not establish task success or end-to-end speed.
+The 2026-10-25 `gcc -prod` comparison of the PR base (`38ea5b5`) and code at
+candidate revision (`ebb45d2`) measured p50 3.038 ms → 2.347 ms (22.75%
+lower) and p90 3.229 ms → 2.505 ms (22.42% lower), with identical score
+checksums. Both revisions used the same pinned V compiler, GCC profile, and
+AMD Ryzen 9 5900X host. Raw samples and the full compiler pin are in
+[`reports/repository-map-ranking-linux-x64-2026-10-25.json`](reports/repository-map-ranking-linux-x64-2026-10-25.json).
+The earlier 2026-10-24 measurement remains in
+[`reports/repository-map-ranking-linux-x64-2026-10-24.json`](reports/repository-map-ranking-linux-x64-2026-10-24.json).
+These are synthetic Linux x64 measurements, not a general performance claim.
+
+The follow-up lexical-hint cache was measured on the same fixture and host:
+revision `c1d12b2` → `ab70e3d` reduced p50 2.256 ms → 2.175 ms (3.59%)
+and p90 2.325 ms → 2.195 ms (5.59%), with the same score checksum. It
+precomputes normalized, deduplicated query terms once instead of allocating a
+per-file deduplication map, and compares already-normalized path terms without
+creating lowercase copies in the hot loop. Raw samples and environment details are in
+[`reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json`](reports/repository-map-ranking-lexical-cache-linux-x64-2026-10-25.json).
+This remains a synthetic ranking-only measurement, not an end-to-end or task-quality claim.
+
 ## Local CLI startup comparison
 
 `cli-startup.mjs` compares process startup and argument handling for Veasel
@@ -242,6 +281,21 @@ Reports include ranked paths, source fingerprints, and upstream revisions for
 [SWE-agent](reports/repo-map-recall-swe-agent-2026-10-23-path-specificity.json),
 [OpenCode](reports/repo-map-recall-opencode-2026-10-23-path-specificity.json),
 and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
+
+An ordered-compound follow-up gives a bounded boost when a basename contains
+two query concepts in the same order, even when natural-language terms sit
+between them (for example, “running many problem instances in batch mode” now
+surfaces `sweagent/run/run_batch.py` above `batch_instances.py`). Matching a
+gerund to its code stem (`running` → `run`) is allocation-free in the ranking
+loop. Re-running the same five pinned checkouts and 22 labeled cases raised
+recall@3 from 21/22 to 22/22; recall@10 remained 22/22. The reports record
+the exact checkout revisions and rankings for [Aider](reports/repo-map-recall-aider-2026-10-25-ordered-compounds.json),
+[mini-SWE-agent](reports/repo-map-recall-mini-swe-agent-2026-10-25-ordered-compounds.json),
+[SWE-agent](reports/repo-map-recall-swe-agent-2026-10-25-ordered-compounds.json),
+[OpenCode](reports/repo-map-recall-opencode-2026-10-25-ordered-compounds.json),
+and [Pi](reports/repo-map-recall-pi-2026-10-25-ordered-compounds.json). This is
+still a small retrieval sample, not evidence of general semantic-search quality
+or end-to-end coding effectiveness.
 
 ### Recorded local TUI baseline
 

@@ -8,7 +8,10 @@ the need. A gap or a required product-specific policy is a valid reason for
 Veasel code or a third-party adapter; importing unrelated libraries is not.
 This map was verified against V
 `ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`, the revision pinned in
-`.v-version` and built by the current CI. Recheck the APIs during compiler
+`.v-version` and built by the current CI. It was initially audited at
+`407c52edddca9715fb57e6571afeef0d193f2465`; the current use sites for
+`context`, `net.http`, `os`, `sqlite`, `veb`, and `json2` were spot-checked
+against the pinned revision on 2026-10-23. Recheck the APIs during compiler
 upgrades.
 
 “Use all libraries” means a complete audit and reuse of every relevant module.

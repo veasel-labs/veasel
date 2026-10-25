@@ -38,8 +38,14 @@ fn test_opencode_catalog_errors_guide_console_keys_and_go_setup() {
 	assert expired_key.contains('does not reuse the OpenCode CLI login')
 	free_access := model_catalog_error_message('opencode',
 		'model catalog endpoint returned HTTP 403')
-	assert free_access.contains('OpenCode Go preset')
+	assert free_access.contains('OpenCode Go subscriptions')
 	assert free_access.contains('Console API key')
+	go_access := model_catalog_error_message('opencode-go',
+		'model catalog endpoint returned HTTP 403')
+	assert go_access.contains('OpenCode Go denied model-list access')
+	assert go_access.contains('Go plan/workspace access')
+	assert go_access.contains('OpenCode Console API key')
+	assert go_access.contains('enter a model ID manually')
 }
 
 fn test_opencode_go_data_use_notices_are_curated_by_provider_and_model() {

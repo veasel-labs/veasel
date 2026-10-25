@@ -2,6 +2,7 @@
 import { expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { SolidTranscript } from "./transcript"
+import { renderMarkdownFrame } from "./markdown-test-helpers"
 
 for (const width of [32, 56, 100]) {
   test(`conversation preserves long message text at ${width} columns`, async () => {
@@ -12,7 +13,7 @@ for (const width of [32, 56, 100]) {
       ]} cols={80} />
     ), { width, height: 36 })
     try {
-      await setup.renderOnce()
+      await renderMarkdownFrame(setup)
       const frame = setup.captureCharFrame()
       expect(frame).toContain("● you")
       expect(frame).toContain("◆ assistant")

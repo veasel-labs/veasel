@@ -20,7 +20,8 @@ screen, and exercise a short settings path.
 | Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py`; passed on exact head `8dbd00d1` |
 
 The same journey runs through Unix PTY on Linux/macOS and native ConPTY on
-Windows. Each CI run repeats the complete journey three times and retains a
+Windows. Each CI run takes three startup samples (each a complete journey),
+then runs one additional review journey, and retains a
 JSON startup report as the `tui-startup-<platform>` artifact. The metric starts
 when the packaged TUI process is launched and stops when the connected home
 markers are emitted; the backend is already healthy. These short hosted-runner

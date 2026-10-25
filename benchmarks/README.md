@@ -282,6 +282,21 @@ Reports include ranked paths, source fingerprints, and upstream revisions for
 [OpenCode](reports/repo-map-recall-opencode-2026-10-23-path-specificity.json),
 and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
 
+An ordered-compound follow-up gives a bounded boost when a basename contains
+two query concepts in the same order, even when natural-language terms sit
+between them (for example, “running many problem instances in batch mode” now
+surfaces `sweagent/run/run_batch.py` above `batch_instances.py`). Matching a
+gerund to its code stem (`running` → `run`) is allocation-free in the ranking
+loop. Re-running the same five pinned checkouts and 22 labeled cases raised
+recall@3 from 21/22 to 22/22; recall@10 remained 22/22. The reports record
+the exact checkout revisions and rankings for [Aider](reports/repo-map-recall-aider-2026-10-25-ordered-compounds.json),
+[mini-SWE-agent](reports/repo-map-recall-mini-swe-agent-2026-10-25-ordered-compounds.json),
+[SWE-agent](reports/repo-map-recall-swe-agent-2026-10-25-ordered-compounds.json),
+[OpenCode](reports/repo-map-recall-opencode-2026-10-25-ordered-compounds.json),
+and [Pi](reports/repo-map-recall-pi-2026-10-25-ordered-compounds.json). This is
+still a small retrieval sample, not evidence of general semantic-search quality
+or end-to-end coding effectiveness.
+
 ### Recorded local TUI baseline
 
 | Report | Binary | Notes |

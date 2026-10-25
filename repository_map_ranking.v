@@ -38,15 +38,25 @@ fn repository_map_path_matches_lower(path_l string, base_l string, mentioned str
 	return path_l.contains(mentioned_l)
 }
 
-fn repository_map_lexical_hints(hints RepositoryMapHintSet) []string {
-	mut lexical_hints := []string{cap: hints.idents.len}
+struct RepositoryMapLexicalHints {
+mut:
+	unique  []string
+	ordered []string
+}
+
+fn repository_map_lexical_hints(hints RepositoryMapHintSet) RepositoryMapLexicalHints {
+	mut lexical_hints := RepositoryMapLexicalHints{
+		unique:  []string{cap: hints.idents.len}
+		ordered: []string{cap: hints.idents.len}
+	}
 	for ident in hints.idents {
 		if !repository_map_is_lexical_hint(ident) {
 			continue
 		}
 		normalized := ident.to_lower()
-		if normalized !in lexical_hints {
-			lexical_hints << normalized
+		lexical_hints.ordered << normalized
+		if normalized !in lexical_hints.unique {
+			lexical_hints.unique << normalized
 		}
 	}
 	return lexical_hints
@@ -56,7 +66,7 @@ fn score_repository_map_path(path string, hints RepositoryMapHintSet) f64 {
 	return score_repository_map_path_with_lexical_hints(path, hints, repository_map_lexical_hints(hints))
 }
 
-fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMapHintSet, lexical_hints []string) f64 {
+fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMapHintSet, lexical_hints RepositoryMapLexicalHints) f64 {
 	mut score := 1.0
 	// Ranking considers each path against several hints. Normalize and split it
 	// once so those loops reuse the same strings instead of allocating a lower-
@@ -66,7 +76,14 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 	base := os.file_name(path)
 	base_l := os.file_name(path_l)
 	lower_segments := if hints.idents.len > 0 { path_l.split('/') } else { []string{} }
-	mut path_segment_parts := [][]string{}
+	mut path_ident_parts := []string{}
+	if lexical_hints.unique.len > 0 {
+		path_segments := normalized_path.split('/')
+		path_ident_parts = []string{cap: path_segments.len * 2}
+		for segment in path_segments {
+			path_ident_parts << repository_map_ident_parts(repository_map_stem(segment))
+		}
+	}
 	if base in repository_map_important_basenames || path in repository_map_important_basenames {
 		// Static importance is a tie-breaker, not a relevance signal: at the
 		// old +1000 every repo root (README, .gitignore, pyproject.toml...)
@@ -108,34 +125,18 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 	// pluralization or a common code abbreviation (argument/args). Keep this
 	// signal weaker than exact mentions, so it helps without replacing them.
 	mut exact_path_term_matches := 0
-	mut path_segment_parts_ready := false
-	for ident in lexical_hints {
-		if !path_segment_parts_ready {
-			path_segments := normalized_path.split('/')
-			path_segment_parts = [][]string{cap: path_segments.len}
-			for segment in path_segments {
-				path_segment_parts << repository_map_ident_parts(repository_map_stem(segment))
-			}
-			path_segment_parts_ready = true
-		}
-		mut matched := false
-		for parts in path_segment_parts {
-			for part in parts {
-				match_weight := repository_map_lexical_match_weight_normalized(part, ident)
-				if match_weight > 0.0 {
-					// An exact word inside a compound filename (subagent-job.ts)
-					// is stronger path evidence than general source-token overlap.
-					if part == ident {
-						score += 120.0
-						exact_path_term_matches++
-					} else {
-						score += match_weight
-					}
-					matched = true
-					break
+	for ident in lexical_hints.unique {
+		for part in path_ident_parts {
+			match_weight := repository_map_lexical_match_weight_normalized(part, ident)
+			if match_weight > 0.0 {
+				// An exact word inside a compound filename (subagent-job.ts)
+				// is stronger path evidence than general source-token overlap.
+				if part == ident {
+					score += 120.0
+					exact_path_term_matches++
+				} else {
+					score += match_weight
 				}
-			}
-			if matched {
 				break
 			}
 		}
@@ -146,6 +147,16 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 	// so generic documentation filenames do not swamp high-confidence aliases.
 	if exact_path_term_matches > 1 {
 		score += f64(exact_path_term_matches - 1) * 180.0
+	}
+	if lexical_hints.ordered.len > 1 && (!repository_map_is_test_path(path)
+		|| repository_map_hint_mentions_tests(hints)) {
+		base_parts := repository_map_ident_parts(repository_map_stem(base))
+		if repository_map_path_has_ordered_hint_pair(base_parts, lexical_hints.ordered) {
+			// Ordered query concepts in a compound filename ("subagent job" in
+			// subagent-job.ts, or "running ... batch" in run_batch.py) identify a
+			// more specific destination than separate hits on generic files.
+			score += 600.0
+		}
 	}
 	// For behavior questions, prefer implementation files over tests that
 	// merely import the same symbols. A query explicitly about tests keeps them
@@ -181,6 +192,25 @@ fn score_repository_map_path_with_lexical_hints(path string, hints RepositoryMap
 		score += 10.0
 	}
 	return score
+}
+
+fn repository_map_path_has_ordered_hint_pair(name_parts []string, lexical_hints []string) bool {
+	if name_parts.len < 2 {
+		return false
+	}
+	for i in 0 .. name_parts.len - 1 {
+		mut found_first := false
+		for hint in lexical_hints {
+			if !found_first {
+				if repository_map_lexical_match_weight_normalized(name_parts[i], hint) > 0.0 {
+					found_first = true
+				}
+			} else if repository_map_lexical_match_weight_normalized(name_parts[i + 1], hint) > 0.0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 fn repository_map_is_lexical_hint(ident string) bool {
@@ -247,6 +277,9 @@ fn repository_map_lexical_match_weight_normalized(a string, b string) f64 {
 		// `litellm_model`; whole path-segment matches already scored above.
 		return 45.0
 	}
+	if repository_map_ing_match(b, a) || repository_map_ing_match(a, b) {
+		return 45.0
+	}
 	if a.len > 3 && a.ends_with('s') && a[..a.len - 1] == b {
 		return 45.0
 	}
@@ -272,6 +305,34 @@ fn repository_map_lexical_match_weight_normalized(a string, b string) f64 {
 		return 480.0
 	}
 	return 0.0
+}
+
+fn repository_map_ing_match(stem string, gerund string) bool {
+	if gerund.len <= 6 || !gerund.ends_with('ing') {
+		return false
+	}
+	stem_len := gerund.len - 3
+	mut root_len := stem_len
+	if stem_len > 2 && gerund[stem_len - 1] == gerund[stem_len - 2] {
+		root_len--
+	}
+	if stem.len == root_len {
+		for i in 0 .. root_len {
+			if stem[i] != gerund[i] {
+				return false
+			}
+		}
+		return true
+	}
+	if stem.len != root_len + 1 || stem[root_len] != `e` {
+		return false
+	}
+	for i in 0 .. root_len {
+		if stem[i] != gerund[i] {
+			return false
+		}
+	}
+	return true
 }
 
 fn repository_map_is_test_path(path string) bool {
@@ -750,7 +811,7 @@ const repository_map_cross_reference_min_symbol_len = 3
 // are mentioned by other files. One distinct referring file contributes one
 // weight unit regardless of mention count, symbols defined in many files
 // are skipped as too generic, and the total boost per file is capped.
-fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet, lexical_hints []string) {
+fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, contents map[string]string, hints RepositoryMapHintSet, lexical_hints RepositoryMapLexicalHints) {
 	mut definers := map[string][]int{}
 	for index, entry in entries {
 		if entry.path !in contents {

@@ -600,8 +600,11 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   usage persistence, safe failure delivery, and that the parent turn returns
   when cancelled while a child provider HTTP response remains pending. The
   cancelled child outcome is durable, but its blocking HTTP worker may remain
-  until the configured read timeout: pinned V `net.http.fetch` has no external
-  socket-cancel handle before response progress. Task-level comparative
+  until the transport returns: pinned V `net.http.fetch` exposes no public
+  handle to cancel a socket before response progress. The pinned V
+  [`Request.read_timeout`](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/request.v#L57-L60)
+  is documented as not implemented for SSL connections. A stalled TLS request
+  therefore has no proven upper bound here. Task-level comparative
   evidence remains outstanding; lifecycle coverage alone does not establish
   that delegation improves task success or efficiency.
   The storage boundary accepts only the built-in `reviewer` and `explorer` profile

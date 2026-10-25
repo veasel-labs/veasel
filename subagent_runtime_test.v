@@ -194,6 +194,8 @@ fn test_model_callable_subagent_reads_in_isolated_workspace_and_persists_usage()
 	assert child_operation.len == 1
 	assert child_operation[0].val(0).int() == 20
 	assert child_operation[0].val(1).int() == 6
+	assert !os.exists(os.join_path(root, 'data', 'subagent-worktrees', child_rows[0].val(0)))
+	assert child_session.directory == workspace
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'marker: BLUE-MOON\n'
 }
 

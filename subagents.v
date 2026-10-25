@@ -14,20 +14,21 @@ const max_subagent_error_bytes = 4 * 1024
 
 pub struct SubagentRun {
 pub:
-	id                  string
-	request_id          string
-	parent_session_id   string
-	parent_operation_id string
-	child_session_id    string
-	agent_id            string
-	depth               int
-	status              string
-	result              string
-	error               string
-	cancel_requested    bool
-	outcome_claimed     bool
-	workspace_ready     bool
-	workspace_started   bool
+	id                    string
+	request_id            string
+	parent_session_id     string
+	parent_operation_id   string
+	child_session_id      string
+	agent_id              string
+	depth                 int
+	status                string
+	result                string
+	error                 string
+	cancel_requested      bool
+	outcome_claimed       bool
+	workspace_ready       bool
+	workspace_started     bool
+	workspace_base_commit string
 }
 
 // create_subagent_run atomically creates a clean child session and its durable
@@ -87,7 +88,9 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 		run := store.get_subagent_run_unlocked(row.val(0))!
 		store.mu.unlock()
 		store_locked = false
-		if !run.workspace_ready {
+		terminal_and_delivered := run.outcome_claimed
+			&& run.status in ['completed', 'failed', 'cancelled', 'uncertain']
+		if !run.workspace_ready && !terminal_and_delivered {
 			return error('child agent workspace preparation is already in progress or was interrupted')
 		}
 		return run
@@ -185,7 +188,7 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 	store.active_subagent_preparations[run_id] = true
 	store.mu.unlock()
 	store_locked = false
-	_ := create_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id) or {
+	workspace := create_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id) or {
 		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
 		store.mu.lock()
 		store_locked = true
@@ -199,8 +202,8 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 	store.mu.lock()
 	store_locked = true
 	store.active_subagent_preparations.delete(run_id)
-	_ = store.db.exec_param_many("UPDATE subagent_runs SET workspace_ready = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND EXISTS (SELECT 1 FROM session_operations WHERE id = ? AND session_id = ? AND status = 'running')",
-		[run_id, parent_operation_id, parent_session_id]) or {
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET workspace_ready = 1, workspace_base_commit = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND EXISTS (SELECT 1 FROM session_operations WHERE id = ? AND session_id = ? AND status = 'running')",
+		[workspace.base_commit, run_id, parent_operation_id, parent_session_id]) or {
 		store.mu.unlock()
 		store_locked = false
 		remove_subagent_workspace(directory, os.dir(os.real_path(store.path)), run_id, true) or {}
@@ -365,27 +368,28 @@ fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 }
 
 fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
-	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed, cancel_requested, workspace_ready, workspace_started FROM subagent_runs WHERE id = ?',
+	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed, cancel_requested, workspace_ready, workspace_started, workspace_base_commit FROM subagent_runs WHERE id = ?',
 		[run_id])!
 	if rows.len != 1 {
 		return error('child agent run not found')
 	}
 	row := rows[0]
 	return SubagentRun{
-		id:                  row.val(0)
-		request_id:          row.val(1)
-		parent_session_id:   row.val(2)
-		parent_operation_id: row.val(3)
-		child_session_id:    row.val(4)
-		agent_id:            row.val(5)
-		depth:               row.val(6).int()
-		status:              row.val(7)
-		result:              row.val(8)
-		error:               row.val(9)
-		outcome_claimed:     row.val(10).int() == 1
-		cancel_requested:    row.val(11).int() == 1
-		workspace_ready:     row.val(12).int() == 1
-		workspace_started:   row.val(13).int() == 1
+		id:                    row.val(0)
+		request_id:            row.val(1)
+		parent_session_id:     row.val(2)
+		parent_operation_id:   row.val(3)
+		child_session_id:      row.val(4)
+		agent_id:              row.val(5)
+		depth:                 row.val(6).int()
+		status:                row.val(7)
+		result:                row.val(8)
+		error:                 row.val(9)
+		outcome_claimed:       row.val(10).int() == 1
+		cancel_requested:      row.val(11).int() == 1
+		workspace_ready:       row.val(12).int() == 1
+		workspace_started:     row.val(13).int() == 1
+		workspace_base_commit: row.val(14)
 	}
 }
 
@@ -471,6 +475,160 @@ fn (mut store Store) cleanup_unstarted_subagent_workspaces() {
 		store.mu.unlock()
 		preparation_lock.release()
 	}
+}
+
+// Delivered child results, usage, and transcripts are durable in SQLite, so
+// their immutable worktrees no longer need to consume the shared Git limit.
+// Restore the child session to the original project directory after removal.
+fn (mut store Store) cleanup_delivered_subagent_workspaces() {
+	store.mu.lock()
+	rows := store.db.exec("SELECT id FROM subagent_runs WHERE workspace_started = 1 AND workspace_ready = 1 AND outcome_claimed = 1 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+		store.mu.unlock()
+		eprintln('veasel: unable to list delivered child workspaces (${err.msg()})')
+		return
+	}
+	mut run_ids := []string{cap: rows.len}
+	for row in rows {
+		run_ids << row.val(0)
+	}
+	store.mu.unlock()
+	for run_id in run_ids {
+		store.cleanup_delivered_subagent_workspace(run_id)
+	}
+}
+
+fn (mut store Store) cleanup_delivered_subagent_workspace(run_id string) {
+	store.mu.lock()
+	rows := store.db.exec_param_many("SELECT requested_directory, child_session_id, workspace_base_commit FROM subagent_runs WHERE id = ? AND workspace_started = 1 AND workspace_ready = 1 AND outcome_claimed = 1 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')",
+		[run_id]) or {
+		store.mu.unlock()
+		eprintln('veasel: unable to inspect delivered child workspace ${run_id} (${err.msg()})')
+		return
+	}
+	if rows.len != 1 {
+		store.mu.unlock()
+		return
+	}
+	directory := rows[0].val(0)
+	child_session_id := rows[0].val(1)
+	base_commit := rows[0].val(2)
+	store.mu.unlock()
+	data_directory := os.dir(os.real_path(store.path))
+	lock_path := subagent_preparation_lock_path(data_directory, run_id) or {
+		eprintln('veasel: unable to lock delivered child workspace ${run_id} (${err.msg()})')
+		return
+	}
+	mut preparation_lock := new_subagent_preparation_lock(lock_path) or {
+		eprintln('veasel: unable to open delivered child workspace lock ${run_id} (${err.msg()})')
+		return
+	}
+	if !preparation_lock.try_acquire() {
+		return
+	}
+	defer {
+		preparation_lock.release()
+	}
+	path := os.join_path(data_directory, 'subagent-worktrees', run_id)
+	if os.exists(path) {
+		if base_commit.len == 0 || !subagent_workspace_is_unchanged(directory, path, run_id,
+			base_commit) {
+			eprintln('veasel: retaining delivered child workspace ${run_id} because it changed after preparation')
+			return
+		}
+		remove_subagent_workspace(directory, data_directory, run_id, false) or {
+			eprintln('veasel: unable to remove delivered child workspace ${run_id} (${err.msg()})')
+			return
+		}
+		checkout := workspace_git_main_checkout(directory) or {
+			eprintln('veasel: unable to locate source checkout for delivered child workspace ${run_id}')
+			return
+		}
+		_ = run_workspace_git_command(checkout, ['branch', '-D', 'veasel/subagents/${run_id}']) or {
+			eprintln('veasel: unable to remove delivered child workspace branch ${run_id} (${err.msg()})')
+			return
+		}
+	}
+	store.mu.lock()
+	store.db.begin() or {
+		store.mu.unlock()
+		eprintln('veasel: unable to record delivered child workspace cleanup ${run_id} (${err.msg()})')
+		return
+	}
+	_ = store.db.exec_param_many('UPDATE sessions SET directory = ? WHERE id = ? AND directory = ?', [
+		directory,
+		child_session_id,
+		path,
+	]) or {
+		store.db.rollback() or {}
+		store.mu.unlock()
+		eprintln('veasel: unable to restore delivered child session directory ${run_id} (${err.msg()})')
+		return
+	}
+	_ = store.db.exec_param_many('UPDATE subagent_runs SET workspace_ready = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND workspace_ready = 1 AND outcome_claimed = 1',
+		[run_id]) or {
+		store.db.rollback() or {}
+		store.mu.unlock()
+		eprintln('veasel: unable to record delivered child workspace cleanup ${run_id} (${err.msg()})')
+		return
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		store.mu.unlock()
+		eprintln('veasel: unable to commit delivered child workspace cleanup ${run_id} (${err.msg()})')
+		return
+	}
+	store.mu.unlock()
+}
+
+// A delivered workspace can be removed only if its tracked snapshot, copied
+// untracked files, and ignored-file set still match the generated baseline.
+// Any inspection error is treated as a change and preserves the user's files.
+fn subagent_workspace_is_unchanged(source string, path string, run_id string,
+	base_commit string) bool {
+	if !valid_git_object_id(base_commit) || !os.is_dir(path) {
+		return false
+	}
+	branch := 'veasel/subagents/${run_id}'
+	worktree := find_workspace_git_worktree(source, path) or { return false }
+	if worktree.is_main || worktree.branch != branch {
+		return false
+	}
+	head := run_workspace_git_command(path, ['rev-parse', '--verify', 'HEAD']) or { return false }
+	if head.trim_space() != base_commit {
+		return false
+	}
+	tracked_changes := run_workspace_git_command_output(path,
+		['status', '--porcelain=v1', '--untracked-files=no'], 1024 * 1024) or { return false }
+	if tracked_changes.len > 0 {
+		return false
+	}
+	index_flags := run_workspace_git_command_output(path, ['ls-files', '-v', '-z'],
+		max_subagent_untracked_list_bytes) or { return false }
+	for entry in index_flags.split('\0') {
+		if entry.len > 0 && ((entry[0] >= `a` && entry[0] <= `z`) || entry[0] == `S`) {
+			return false
+		}
+	}
+	ignored := run_workspace_git_command_output(path,
+		['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], max_subagent_untracked_list_bytes) or {
+		return false
+	}
+	if ignored.len > 0 {
+		return false
+	}
+	baseline_files := subagent_untracked_files(source) or { return false }
+	child_files := subagent_untracked_files(path) or { return false }
+	if baseline_files.len != child_files.len {
+		return false
+	}
+	for i, baseline in baseline_files {
+		child_file := child_files[i]
+		if baseline.path != child_file.path || baseline.sha256 != child_file.sha256
+			|| baseline.byte_count != child_file.byte_count || baseline.mode != child_file.mode {
+			return false
+		}
+	}
+	return true
 }
 
 fn subagent_preparation_lock_path(data_directory string, run_id string) !string {

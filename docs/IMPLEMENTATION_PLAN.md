@@ -596,6 +596,10 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   An unmerged prototype on `feat/subagent-readonly-worker` adds a synchronous,
   model-callable `subagent_run` path for the two built-in read-only profiles,
   using the parent cancellation context and persisting child usage and outcome.
+  After the terminal outcome is durably claimed, it removes the generated
+  worktree only if its tracked snapshot, copied untracked files, permissions,
+  and ignored-file set remain unchanged. Edited workspaces are preserved, while
+  untouched investigations stop consuming the shared 64-worktree limit.
   Local fake-provider end-to-end tests now prove dispatch, child file inspection,
   usage persistence, safe failure delivery, and that the parent turn returns
   when cancelled while a child provider HTTP response remains pending. The
@@ -628,9 +632,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   prepares the worktree without holding the SQLite mutex, and marks it ready
   only while its parent operation is still running. Workers cannot claim
   unready rows. A durable start marker lets startup remove cancelled/failed
-  worktrees only when the child never began; workspaces that may have executed
-  remain preserved. OS-level preparation locks distinguish a crashed preparer
-  from one still creating the workspace, including across store instances.
+  worktrees only when the child never began. After a terminal result and
+  delivery claim are durable, an unchanged generated worktree is removed while
+  the run row, transcript, usage, and outcome remain in SQLite; changed
+  workspaces are preserved. The child session returns to its source project
+  directory only after successful removal. Startup retries cleanup after
+  interrupted delivery. OS-level preparation locks distinguish a crashed
+  preparer from one still creating or cleaning the workspace, including across
+  store instances.
   Authorizing callers beyond the built-in allowlist, enforceable child runtime
   deadlines, cancellation of the underlying in-flight HTTP request/process,
   parent turn replay, API/TUI integration, and task-level benchmark evidence

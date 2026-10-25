@@ -146,6 +146,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	canonical_root := canonical_workspace_root(root)!
 	budget := clamp_repository_map_budget(budget_bytes)
 	hints := extract_repository_map_hints(hint_text)
+	lexical_hints := repository_map_lexical_hints(hints)
 	content_query_terms := repository_map_content_query_terms(hints)
 	mut walker := WorkspaceWalker{
 		root:      canonical_root
@@ -163,7 +164,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 		normalized := relative_path.replace('\\', '/')
 		entries << RepositoryMapEntry{
 			path:  normalized
-			score: score_repository_map_path(normalized, hints)
+			score: score_repository_map_path_with_lexical_hints(normalized, hints, lexical_hints)
 		}
 	}
 	// The score/path comparator establishes the deterministic ranking order, so
@@ -249,7 +250,7 @@ fn build_repository_map(root string, hint_text string, budget_bytes int) !Reposi
 	// Cross-file reference graph (one PageRank-style iteration, still
 	// extractive): files whose symbols are mentioned by many other files are
 	// more central to the workspace than files with many unreferenced symbols.
-	boost_repository_map_cross_references(mut entries, contents, hints)
+	boost_repository_map_cross_references(mut entries, contents, hints, lexical_hints)
 	sort_repository_map_entries(mut entries)
 	text, selected_paths, selected_symbols, map_truncated := render_repository_map(entries,
 		budget)

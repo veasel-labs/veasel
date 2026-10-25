@@ -17,7 +17,7 @@ clients use an HTTP API and event stream. This is a direction reference rather
 than a promise of full route compatibility. The pinned comparison and
 route-by-route gaps live in [`compatibility/opencode.md`](compatibility/opencode.md).
 
-The TUI is TypeScript with OpenTUI + SolidJS (`@opentui/solid` **0.6.2**), kept
+The TUI is TypeScript with OpenTUI + SolidJS (`@opentui/solid` **0.6.8**), kept
 as a separate API client; the agent runtime, tools and persistence remain in V.
 **Solid is the default entry** (`bun run start` → `src/solid/main.tsx` /
 `LiveApp`): loopback HTTP session home, SSE assistant deltas, and MODEL SETTINGS
@@ -468,7 +468,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 
 ### Milestone 5 — competitive experience
 
-- [x] Make the SolidJS + `@opentui/solid` 0.6.2 LiveApp the standalone TUI
+- [x] Make the SolidJS + `@opentui/solid` 0.6.8 LiveApp the standalone TUI
   default. The default migration is complete. Remaining Solid work is product
   behavior and validation, not a pending migration; audit each journey against
   the production HTTP backend and current OpenCode/OpenTUI sources. See

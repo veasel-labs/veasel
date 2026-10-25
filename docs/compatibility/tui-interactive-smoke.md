@@ -14,17 +14,17 @@ mock-provider reply, persist both turns, and exit cleanly.
 
 ## Automated coverage
 
-| Platform | Runner | Standalone PTY smoke | Notes |
+| Platform | Runner | Standalone terminal smoke | Notes |
 |----------|--------|----------------------|-------|
 | Linux x64 | `ubuntu-22.04` (V backend job) | Yes | Existing CI step |
 | macOS arm64 | `macos-latest` (V backend job) | Yes | Same Unix `pty` harness as Linux |
-| Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py`; passed on exact head `8dbd00d1` |
+| Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py` |
 
 The same journey runs through Unix PTY on Linux/macOS and native ConPTY on
 Windows. All three packaged-client smoke paths passed in [CI run
-39912654775](https://github.com/veasel-labs/veasel/actions/runs/39912654775)
-for commit `8dbd00d1bb74f08ebc227dac2b07d7026a1e24da`. This verifies the smoke
-journey on the pinned CI runners; measured startup/render baselines and broader
+40140177406](https://github.com/veasel-labs/veasel/actions/runs/40140177406)
+for commit `6ab4b3915522425cced46c0263c647068c3f097c`. This verifies the smoke
+journey on the pinned CI runners. Measured startup/render baselines and broader
 interactive journeys remain separate work.
 
 ## Windows acceptance covered by CI
@@ -38,7 +38,7 @@ packaged client in a 100×24 pseudoconsole. The shared smoke checks:
 3. Confirm home chrome: connected status, `SESSIONS`, `VEASEL` brand.
 4. Press `s` and confirm `MODEL SETTINGS` opens; Tab cycles provider scopes.
 5. Search for `anthorpic` and confirm typo-tolerant discovery finds Anthropic.
-6. Open the seeded session, send `Say hello`, and render `Provider fixture reply` from the mock provider.
+6. Open the seeded session and send `Stream incrementally`. Confirm the TUI renders the first reply chunk before the mock provider releases the second, then renders the complete reply.
 7. Confirm both turns are persisted by the backend; the command palette's Quit command exits cleanly.
 The mock provider uses a fixture key and makes no external model requests.
 The Python driver uses `CreatePseudoConsole`, Win32 pipes, and

@@ -153,6 +153,7 @@ export function formatGlobalUsageSummary(summary: GlobalUsageSummary): string {
         lines.push(`  Reasoning: ${formatTokenCount(model.reasoning_tokens)} tokens · reported on ${model.reasoning_reported_turns} turns`)
       }
     }
+  }
   if (summary.allowance_reported) {
     lines.push(`OpenCode Go allowance used: ${formatReportedUsd(summary.allowance_usd ?? 0)}`)
   }

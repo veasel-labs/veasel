@@ -2514,7 +2514,9 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
-	deadline := config.request_deadline or { return error('deadline_missing') }
+	deadline := config.request_deadline or {
+		turn_ctx.deadline() or { time.now().add(60 * time.second) }
+	}
 	remaining := deadline - time.now()
 	if remaining <= 0 {
 		return error('deadline_exceeded')

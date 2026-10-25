@@ -171,7 +171,7 @@ fn test_model_callable_subagent_reads_in_isolated_workspace_and_persists_usage()
 	defer { cancel() }
 	exchange := app.run_session_message(mut turn_ctx, parent.id, parent, ChatMessageInput{
 		content: 'Find the README marker. Delegate the focused file inspection.'
-	}, operation_id) or { panic(err) }
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or { panic(err) }
 	assert exchange.messages.len == 2
 	assert exchange.messages[1].content == 'The delegated explorer found BLUE-MOON in README.md.'
 	assert fixture.hits == 4
@@ -235,7 +235,7 @@ fn test_model_callable_subagent_delivers_child_provider_failure_to_parent() {
 	defer { cancel() }
 	exchange := app.run_session_message(mut turn_ctx, parent.id, parent, ChatMessageInput{
 		content: 'Investigate a failure in a delegated read-only investigation.'
-	}, operation_id) or { panic(err) }
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or { panic(err) }
 	assert exchange.messages.len == 2
 	assert exchange.messages[1].content == 'Delegated investigation failed and the error was reported safely.'
 	assert fixture.hits == 3
@@ -353,7 +353,7 @@ fn test_model_callable_subagent_parent_cancellation_returns_while_child_http_is_
 		mut worker_ctx := turn_ctx
 		_ = app.run_session_message(mut worker_ctx, parent.id, parent, ChatMessageInput{
 			content: 'Delegate a focused investigation, then report its result.'
-		}, operation_id) or {
+		}, operation_id, worker_ctx.deadline() or { panic('expected a turn deadline') }) or {
 			result_chan <- err.msg()
 			return
 		}

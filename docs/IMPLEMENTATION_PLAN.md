@@ -611,8 +611,8 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   retrieval cases for Aider, mini-swe-agent, SWE-agent, OpenCode, and Pi are
   recorded with exact revisions and rankings in `benchmarks/README.md` and its
   linked reports (22/22 recall@3 and 22/22 recall@10 on this small sample after
-  ordered-compound ranking); semantic retrieval and broader task-success
-  evidence remain open gaps.
+  generic-basename demotion and ordered-compound ranking); semantic retrieval
+  and broader task-success evidence remain open gaps.
   Built-in muted/meta text now has at least 4.5:1 contrast against shell,
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in

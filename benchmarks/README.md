@@ -282,6 +282,19 @@ Reports include ranked paths, source fingerprints, and upstream revisions for
 [OpenCode](reports/repo-map-recall-opencode-2026-10-23-path-specificity.json),
 and [Pi](reports/repo-map-recall-pi-2026-10-23-path-specificity.json).
 
+Generic basenames such as `job.ts` and `lifecycle.ts` no longer receive the
+same exact-file bonus as specific names. This fixes OpenCode's
+"subagent job lifecycle resume" query: `packages/core/src/session/subagent-job.ts`
+moved from rank 5 to rank 3, taking OpenCode from 2/3 to 3/3 at recall@3.
+On the same five checkouts and case sets, Aider remained 6/6, mini-SWE-agent
+4/4, SWE-agent 6/6, and Pi 2/3; aggregate recall@3 is now 21/22 while recall@10
+remains 22/22. These are small, curated file-retrieval samples, not task-success
+or general semantic-search evidence. Full rankings, source fingerprints, and
+upstream revisions are recorded for [Aider](reports/repo-map-recall-aider-2026-10-23-generic-filename-specificity.json),
+[mini-SWE-agent](reports/repo-map-recall-mini-swe-agent-2026-10-23-generic-filename-specificity.json),
+[SWE-agent](reports/repo-map-recall-swe-agent-2026-10-23-generic-filename-specificity.json),
+[OpenCode](reports/repo-map-recall-opencode-2026-10-23-generic-filename-specificity.json),
+and [Pi](reports/repo-map-recall-pi-2026-10-23-generic-filename-specificity.json).
 An ordered-compound follow-up gives a bounded boost when a basename contains
 two query concepts in the same order, even when natural-language terms sit
 between them (for example, “running many problem instances in batch mode” now

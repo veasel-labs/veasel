@@ -83,7 +83,20 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	args_query := extract_repository_map_hints('command line argument parsing and options')
 	assert score_repository_map_path('aider/args.py', args_query) > score_repository_map_path('aider/io.py', args_query)
 	subagent_query := extract_repository_map_hints('resume the subagent job and notify the parent session')
-	assert score_repository_map_path('packages/core/src/session/subagent-job.ts', subagent_query) > score_repository_map_path('packages/core/src/session/operation.ts', subagent_query)
+	subagent_job_score := score_repository_map_path('packages/core/src/session/subagent-job.ts',
+		subagent_query)
+	assert subagent_job_score > score_repository_map_path('packages/core/src/session/operation.ts',
+		subagent_query)
+	assert subagent_job_score > score_repository_map_path('packages/core/src/job.ts', subagent_query)
+	agent_loop_query := extract_repository_map_hints('agent loop tool call execution')
+	assert score_repository_map_path('packages/agent/src/agent-loop.ts', agent_loop_query) > score_repository_map_path('packages/agent/src/agent.ts', agent_loop_query)
+	agent_types_query := extract_repository_map_hints('define agent context and tool execution types')
+	assert score_repository_map_path('packages/agent/src/types.ts', agent_types_query) > score_repository_map_path('packages/coding-agent/test/tool-execution-component.test.ts', agent_types_query)
+	repeated_hints := RepositoryMapHintSet{
+		idents: ['agent', 'loop', 'AGENT', 'job']
+	}
+	assert !repository_map_path_has_adjacent_hint_pair(repository_map_ident_parts('loop-job'),
+		repository_map_lexical_hints(repeated_hints).ordered)
 	spawn_subagent_query := extract_repository_map_hints('spawn a subagent tool for a task')
 	assert score_repository_map_path('packages/core/src/tool/plugin/subagent.ts', spawn_subagent_query) > score_repository_map_path('packages/core/src/tool.ts', spawn_subagent_query)
 	paired := extract_repository_map_hints('Please fix src/agents/default.py')

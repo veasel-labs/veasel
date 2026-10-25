@@ -9,6 +9,7 @@ import {
   StyledText,
   TextRenderable,
   bold,
+  bg,
   createCliRenderer,
   fg,
   getTreeSitterClient,
@@ -167,7 +168,7 @@ import {
   isMcpManageRest,
   matchesCatalogFilter,
 } from "./catalog-filter"
-import { VEASEL_PORTRAIT_ROWS } from "./veasel-portrait"
+import { VEASEL_PORTRAIT_ROWS, portraitRowCells } from "./veasel-portrait"
 
 import {
   formatGlobalUsageSummary,
@@ -287,10 +288,12 @@ function headerMetaContent(): string {
 }
 
 function buildPortraitText(active: Theme): StyledText {
-  return new StyledText(portrait.flatMap((row) => [
-    ...[...row].map((pixel) => fg(active.portrait[pixel as keyof Theme["portrait"]] ?? active.panelBg)(pixel === " " ? "  " : "██")),
+  const pairs = Math.ceil(portrait.length / 2)
+  return new StyledText(Array.from({ length: pairs }, (_, pair) => [
+    ...portraitRowCells(active, portrait[pair * 2] ?? "", portrait[pair * 2 + 1] ?? "")
+      .map((cell) => bg(cell.background)(fg(cell.color)(cell.glyph))),
     fg(active.panelBg)("\n"),
-  ]))
+  ]).flat())
 }
 
 function buildTranscriptStyles(active: Theme): Record<TranscriptTone, (text: string) => TextChunk> {

@@ -2,12 +2,13 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { App } from "./app"
-import { compactDirectory, HomeSplash } from "./component/home-splash"
+import { compactDirectory, HomeSplash, homeSplashCompact } from "./component/home-splash"
 import {
   VEASEL_PORTRAIT_ROWS,
   VEASEL_PORTRAIT_WIDTH,
-  portraitRowPlain,
+  portraitRowCells,
 } from "../veasel-portrait"
+import { themes } from "../themes"
 
 const setups: Array<Awaited<ReturnType<typeof testRender>>> = []
 
@@ -27,12 +28,29 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(compactDirectory("/tmp/long-project-name", 6)).toBe("…-name")
   })
 
-  test("portrait rows render as double-width blocks", () => {
-    const plain = portraitRowPlain(VEASEL_PORTRAIT_ROWS[0])
-    expect(plain.includes("██")).toBe(true)
-    expect(VEASEL_PORTRAIT_ROWS.length).toBe(17)
-    expect(VEASEL_PORTRAIT_ROWS.every((row) => row.length <= VEASEL_PORTRAIT_WIDTH)).toBe(true)
-    expect(portraitRowPlain(VEASEL_PORTRAIT_ROWS[0]).length).toBe(VEASEL_PORTRAIT_WIDTH * 2)
+  test("splash becomes compact only when the terminal cannot fit the full composition", () => {
+    expect(homeSplashCompact(80, 30)).toBe(true)
+    expect(homeSplashCompact(80, 36)).toBe(false)
+    expect(homeSplashCompact(75, 40)).toBe(true)
+  })
+
+  test("portrait row pairs render square pixel art in half-block cells", () => {
+    const cells = portraitRowCells(
+      themes.mint,
+      VEASEL_PORTRAIT_ROWS[5] ?? "",
+      VEASEL_PORTRAIT_ROWS[6] ?? "",
+    )
+    expect(cells.some((cell) => cell.glyph !== " ")).toBe(true)
+    expect(
+      cells.some(
+        (cell) => cell.color === themes.mint.portrait.R || cell.background === themes.mint.portrait.R,
+      ),
+    ).toBe(true)
+    expect(VEASEL_PORTRAIT_ROWS.length).toBe(32)
+    expect(VEASEL_PORTRAIT_ROWS.every((row) => row.length === VEASEL_PORTRAIT_WIDTH)).toBe(true)
+    expect(VEASEL_PORTRAIT_ROWS.join("")).toContain("W")
+    expect(cells).toHaveLength(VEASEL_PORTRAIT_WIDTH)
+    expect(cells.some((cell) => cell.glyph === "▀" && cell.background !== themes.mint.panelBg)).toBe(true)
   })
 
   test("HomeSplash shows brand and mascot chrome at 80×30", async () => {
@@ -46,7 +64,20 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(frame).toContain("Ctrl+P")
     expect(frame).toContain("Ctrl+R reviews")
     // Block pixels from the portrait should appear.
-    expect(frame).toContain("██")
+    expect(frame).toContain("▀")
+  })
+
+  test("HomeSplash uses the full welcome composition when space allows", async () => {
+    const setup = await testRender(
+      () => <HomeSplash directory="~/veasel" />,
+      { width: 80, height: 40, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("your local V-powered workspace")
+    expect(frame).toContain("Ask anything to begin — or set up once")
+    expect(frame).toContain("PIXEL VEASEL")
   })
 
   test("empty App session shows the splash instead of transcript hint", async () => {
@@ -59,7 +90,7 @@ describe("Veasel home splash + pixel portrait", () => {
     const frame = setup.captureCharFrame()
     expect(frame).toContain("VEASEL CODE")
     expect(frame).toContain("Ctrl+P")
-    expect(frame).toContain("██")
+    expect(frame).toContain("▀")
     expect(frame).not.toContain("Start with a question or describe a coding task.")
   })
 })

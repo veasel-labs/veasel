@@ -198,7 +198,8 @@ fn test_delivered_subagent_cleanup_preserves_workspace_edits() {
 	assert os.is_dir(workspace)
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'user edit\n'
 	assert os.read_file(os.join_path(workspace, 'notes.txt')) or { panic(err) } == 'user note\n'
-	assert (store.get_session(run.child_session_id) or { panic(err) }).directory == workspace
+	child_directory := (store.get_session(run.child_session_id) or { panic(err) }).directory
+	assert os.real_path(child_directory) == os.real_path(workspace)
 	assert (store.get_subagent_run_unlocked(run.id) or { panic(err) }).workspace_ready
 }
 

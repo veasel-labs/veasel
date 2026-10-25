@@ -294,17 +294,31 @@ fn test_approved_shell_uses_windows_appcontainer_sandbox_when_available() {
 	os.mkdir_all(outside) or { panic(err) }
 	defer { os.rmdir_all(parent) or {} }
 	root := canonical_workspace_root(raw_root) or { panic(err) }
+	secret_env_name := 'VEASEL_TEST_INHERITED_SECRET'
+	previous_secret := os.getenv(secret_env_name)
+	os.setenv(secret_env_name, 'must-not-reach-child', true)
+	defer {
+		if previous_secret.len == 0 {
+			os.unsetenv(secret_env_name)
+		} else {
+			os.setenv(secret_env_name, previous_secret, true)
+		}
+	}
 
 	// Prefer workspace-file side effects over stdout: AppContainer stdio pipe
-	// capture is unreliable on some hosts even when the command succeeds.
+	// capture is unreliable on some hosts even when the command succeeds. Also
+	// prove the child does not inherit an unrelated parent-process secret.
 	result := run_approved_shell_command(root, ShellCommandSummary{
-		command:         'echo approved-windows-ac-ok>sandbox-write.txt'
+		command:         'echo approved-windows-ac-ok>sandbox-write.txt & if defined ${secret_env_name} (echo inherited>sandbox-env.txt) else (echo filtered>sandbox-env.txt)'
 		cwd:             '.'
 		timeout_seconds: 5
 	})
 	assert result.status == 'succeeded', result.output
 	written := os.read_file(os.join_path(root, 'sandbox-write.txt')) or { '' }
 	assert written.contains('approved-windows-ac-ok'), written
+	environment_result := os.read_file(os.join_path(root, 'sandbox-env.txt')) or { '' }
+	assert environment_result.contains('filtered'), environment_result
+	assert !environment_result.contains('inherited'), environment_result
 
 	// Sibling path is not ACL-granted; AppContainer write must fail.
 	denied := run_approved_shell_command(root, ShellCommandSummary{

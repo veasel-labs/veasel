@@ -609,14 +609,57 @@ fn test_autonomous_shell_environment_does_not_forward_credentials() {
 	environment := autonomous_shell_environment_from({
 		'PATH':                  'tools'
 		'HOME':                  '/tmp/home'
+		'SYSTEMROOT':            'C:\\Windows'
+		'WINDIR':                'C:\\Windows'
+		'COMSPEC':               'C:\\Windows\\System32\\cmd.exe'
+		'PATHEXT':               '.COM;.EXE;.BAT;.CMD'
+		'TEMP':                  'C:\\Temp'
+		'TMP':                   'C:\\Temp'
+		'USERPROFILE':           'C:\\Users\\tester'
+		'LOCALAPPDATA':          'C:\\Users\\tester\\AppData\\Local'
+		'TMPDIR':                '/tmp'
+		'LANG':                  'en_US.UTF-8'
+		'LC_ALL':                'en_US.UTF-8'
+		'LC_CTYPE':              'en_US.UTF-8'
+		'LC_MESSAGES':           'en_US.UTF-8'
+		'TERM':                  'xterm-256color'
 		'VEASEL_MODEL_API_KEY':  'secret'
 		'OPENAI_API_KEY':        'secret'
 		'AWS_SECRET_ACCESS_KEY': 'secret'
 		'GITHUB_TOKEN':          'secret'
 	})
 	assert environment['PATH'] == 'tools'
-	assert environment['HOME'] == '/tmp/home'
+	$if windows {
+		assert environment['SYSTEMROOT'] == 'C:\\Windows'
+		assert environment['COMSPEC'] == 'C:\\Windows\\System32\\cmd.exe'
+		assert environment['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'
+		assert !environment.keys().contains('HOME')
+		assert environment.keys().sorted() == ['COMSPEC', 'LOCALAPPDATA', 'PATH', 'PATHEXT',
+			'SYSTEMROOT', 'TEMP', 'TMP', 'USERPROFILE', 'WINDIR']
+	} $else {
+		assert environment['HOME'] == '/tmp/home'
+		assert environment.keys().sorted() == ['HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES',
+			'PATH', 'TERM', 'TMPDIR']
+	}
 	assert !environment.keys().any(it.ends_with('_API_KEY') || it.contains('TOKEN') || it.contains('SECRET'))
+}
+
+fn test_windows_autonomous_shell_environment_matches_windows_name_casing() {
+	$if !windows {
+		return
+	}
+	environment := autonomous_shell_environment_from({
+		'Path':         'C:\\tools'
+		'PathExt':      '.COM;.EXE;.BAT;.CMD'
+		'SystemRoot':   'C:\\Windows'
+		'ComSpec':      'C:\\Windows\\System32\\cmd.exe'
+		'LocalAppData': 'C:\\Users\\tester\\AppData\\Local'
+	})
+	assert environment['PATH'] == 'C:\\tools'
+	assert environment['PATHEXT'] == '.COM;.EXE;.BAT;.CMD'
+	assert environment['SYSTEMROOT'] == 'C:\\Windows'
+	assert environment['COMSPEC'] == 'C:\\Windows\\System32\\cmd.exe'
+	assert environment['LOCALAPPDATA'] == 'C:\\Users\\tester\\AppData\\Local'
 }
 
 fn test_autonomous_shell_runs_in_fail_closed_os_sandbox() {

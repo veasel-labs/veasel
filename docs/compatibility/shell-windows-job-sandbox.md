@@ -37,8 +37,12 @@ risks in the field; Veasel therefore avoids that logon pattern.
 - Capability `shell.sandbox.windows` is true only when the AppContainer + Job
   Object wrap will run.
 - Autonomous Windows shell also uses AppContainer + Job fail-closed with
-  network denied; inherited process environment filtering remains a known
-  Windows backend limit (not yet filtered like Linux/macOS autonomous).
+  network denied and receives only the platform environment allowlist
+  (`PATH`, `PATHEXT`, `SYSTEMROOT`, `WINDIR`, `COMSPEC`, `TEMP`, `TMP`,
+  `USERPROFILE`, `LOCALAPPDATA`). `LOCALAPPDATA` is required for Windows to
+  resolve the AppContainer profile during process creation. Environment
+  variable names are matched case-insensitively,
+  then normalized in the child block.
 
 No Codex source was copied. Veasel does **not** claim Codex-level WFP
 helper-service filters, private logon identities, or LPAC.
@@ -62,6 +66,6 @@ permits fallback; `off` disables wrapping). When wrapping:
 |---|---|
 | Filesystem outside workspace | Denied for paths without an AppContainer ACL grant; system paths that already allow ALL APPLICATION PACKAGES may still be readable/executable |
 | Network egress/ingress | Denied by default via missing capability SIDs; allow adds well-known network capability SIDs (not a custom WFP policy) |
-| Inherited environment credentials | Still present on the approved path |
+| Inherited environment credentials | Filtered from approved shell children; only the platform environment allowlist is passed |
 | LPAC / All Application Packages opt-out | Not implemented (would break `%COMSPEC%` without broader grants) |
 | Codex WFP helper-service | Not implemented |

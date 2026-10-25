@@ -5,6 +5,7 @@ import type { InputRenderable, KeyEvent } from "@opentui/core"
 import {
   filterModelProviders,
   moveProviderPickerScope,
+  providerConnectionGuidance,
   providerPickerScopeLabel,
   type ModelProvider,
   type ProviderPickerScope,
@@ -76,6 +77,11 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   const visible = createMemo(() =>
     matches().slice(windowStart(), windowStart() + LIST_PAGE),
   )
+  const selectedProvider = createMemo(() => matches()[selected()])
+  const connectionGuidance = createMemo(() => {
+    const provider = selectedProvider()
+    return provider ? providerConnectionGuidance(provider) : undefined
+  })
 
   const title = () => (mode() === "connect" ? "CONNECT" : "MODEL SETTINGS")
   const hint = () => "Tab · j/k · g/G · 1-9 · Ctrl+L · Esc"
@@ -239,6 +245,16 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
           queueMicrotask(publishStatus)
         }}
       />
+      <Show when={connectionGuidance()}>
+        {(guidance) => (
+          <box width="100%" flexDirection="column">
+            <text fg={colors.body}>{guidance()}</text>
+            <Show when={selectedProvider()?.documentation_url}>
+              {(url) => <text fg={colors.muted}>Docs: {url()}</text>}
+            </Show>
+          </box>
+        )}
+      </Show>
       <Show
         when={matches().length > 0}
         fallback={<text fg={colors.muted}>No providers match</text>}

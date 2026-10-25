@@ -116,3 +116,10 @@ fn test_trace_redaction_strips_nul_bytes() {
 	assert redacted == 'safeunsafe'
 	assert !redacted.contains('\0')
 }
+
+fn test_trace_redaction_preserves_utf8_around_assigned_secrets() {
+	text := 'Hola, café 🔐 — API_KEY = secret-value-123 — 東京'
+	assert redact_trace_text(text, []) == 'Hola, café 🔐 — API_KEY = ${trace_redaction_marker} — 東京'
+	plain := 'café 東京 — no credentials'
+	assert redact_trace_text(plain, []) == plain
+}

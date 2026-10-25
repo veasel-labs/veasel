@@ -8,6 +8,7 @@ import {
   type SessionTurnCompletion,
   type VeaselApiClient,
 } from "../api-client"
+import { createStreamDeltaBatcher } from "../stream-events"
 import {
   formatHomeSessionStatus,
   formatBusyStatus,
@@ -80,6 +81,7 @@ import { liveReleaseHighlights } from "./release-highlights"
 import { shellCommandsWithOutput } from "./shell-output-live"
 import { formatActiveModelLabel } from "../session-model"
 import { safeModelCatalogText, type ModelProvider } from "../model-providers"
+import { exportOpenCodeGoApiKey } from "../opencode-auth"
 import {
   modelVariantIds,
   outputBudgetForVariant,
@@ -214,6 +216,11 @@ function LiveAppShell(props: LiveAppProps) {
   }
   const [streaming, setStreaming] = createSignal(false)
   const [streamingText, setStreamingText] = createSignal("")
+  const streamDeltaBatch = createStreamDeltaBatcher(
+    (delta) => setStreamingText((current) => appendStreamingDelta(current, delta)),
+    (flush) => setTimeout(flush, 16),
+    (timer) => clearTimeout(timer),
+  )
   const [sending, setSending] = createSignal(false)
   const { themeId, setThemeId } = useSolidThemeState()
   /**
@@ -1131,6 +1138,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   const openSession = async (session: SolidSessionEntry) => {
     rememberSessionDraft()
+    streamDeltaBatch.clear()
     setSessionDirectory(session.directory)
     const viewRevision = ++sessionViewRevision
     setActiveSessionId(session.id)
@@ -1199,6 +1207,7 @@ function LiveAppShell(props: LiveAppProps) {
   const finishTurn = async (sessionId: string, completion: SessionTurnCompletion) => {
     const operationId = completion.operation_id
     if (!operationId || handledCompletions.has(operationId)) return
+    if (activeTurnId() === operationId) streamDeltaBatch.flush()
     handledCompletions.add(operationId)
     if (handledCompletions.size > 128) {
       const oldest = handledCompletions.values().next().value
@@ -1469,6 +1478,7 @@ function LiveAppShell(props: LiveAppProps) {
     const sessionId = activeSessionId()
     if (!content || !sessionId || sending()) return
     const operationId = crypto.randomUUID()
+    streamDeltaBatch.clear()
     setSending(true)
     setActiveTurnId(operationId)
     activeTurnSessionId = sessionId
@@ -1487,6 +1497,7 @@ function LiveAppShell(props: LiveAppProps) {
         executionPolicyForAgent(executionPolicy()),
       )
       if (result.kind === "async") return
+      streamDeltaBatch.flush()
       if (!disposed && activeSessionId() === sessionId) {
         applyHistoryPage(result.messages, "replace")
       }
@@ -1500,6 +1511,7 @@ function LiveAppShell(props: LiveAppProps) {
       setStatus("● connected  ·  listening for activity")
       setComposerFocused(true)
     } catch (error) {
+      streamDeltaBatch.flush()
       if (turnController?.signal.aborted) {
         setStatus("▲ response cancelled")
       } else {
@@ -1641,26 +1653,74 @@ function LiveAppShell(props: LiveAppProps) {
         onSelect: (provider) => {
           const profile = view.profiles[provider.id]
           const keySaved = Boolean(profile?.api_key_saved)
-          openDialogPrompt(dialog, {
-            title: `API key · ${provider.name}`,
-            secret: true,
-            description: keySaved
-              ? `Key already saved for ${provider.id}. Leave blank to keep it, or paste a new key.`
-              : `Paste the ${provider.environment_key || "API"} key for ${provider.name}.`,
-            placeholder: keySaved ? "(keep saved key)" : "sk-…",
-            confirmLabel: "Continue",
-            onConfirm: (value) => {
-              finishProviderConnect(
-                provider,
-                value.trim(),
-                profile?.model,
-                profile?.max_output_tokens,
-              )
+          const promptForApiKey = () => {
+            openDialogPrompt(dialog, {
+              title: `API key · ${provider.name}`,
+              secret: true,
+              description: keySaved
+                ? `Key already saved for ${provider.id}. Leave blank to keep it, or paste a new key.`
+                : `Paste the ${provider.environment_key || "API"} key for ${provider.name}.`,
+              placeholder: keySaved ? "(keep saved key)" : "sk-…",
+              confirmLabel: "Continue",
+              onConfirm: (value) => {
+                finishProviderConnect(
+                  provider,
+                  value.trim(),
+                  profile?.model,
+                  profile?.max_output_tokens,
+                )
+              },
+              onCancel: () => {
+                setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
+                setComposerFocused(true)
+              },
+            })
+          }
+          if (provider.id !== "opencode-go") {
+            promptForApiKey()
+            return
+          }
+          openDialogSelect(dialog, {
+            title: "OpenCode Go credentials",
+            placeholder: "Choose a credential source…",
+            dismissOnSelect: false,
+            options: [
+              {
+                title: "Import saved OpenCode CLI credential",
+                value: "import",
+                description: "Uses the active OpenCode Go API key without displaying it",
+              },
+              {
+                title: "Enter OpenCode Console API key",
+                value: "manual",
+                description: keySaved ? "Replace or keep the saved Veasel key" : "Paste a Console API key",
+              },
+            ],
+            onSelect: (option) => {
+              if (option.value === "manual") {
+                promptForApiKey()
+                return
+              }
+              dialog.clear()
+              toast.info("Importing saved OpenCode Go credentials…", "MODEL SETTINGS")
+              void exportOpenCodeGoApiKey()
+                .then((apiKey) =>
+                  finishProviderConnect(
+                    provider,
+                    apiKey,
+                    profile?.model,
+                    profile?.max_output_tokens,
+                  ),
+                )
+                .catch((error) => {
+                  toast.info(
+                    error instanceof Error ? error.message : "OpenCode credential import failed",
+                    "MODEL SETTINGS",
+                  )
+                  setComposerFocused(true)
+                })
             },
-            onCancel: () => {
-              setStatus(formatHomeSessionStatus(selectedIndex(), sessions().length))
-              setComposerFocused(true)
-            },
+            onCancel: () => setComposerFocused(true),
           })
         },
         onCancel: () => {
@@ -1988,7 +2048,7 @@ function LiveAppShell(props: LiveAppProps) {
         },
         onReconnect: () => setStatus(formatBusyStatus("reconnecting to event stream…")),
         onAssistantDelta: (delta) => {
-          setStreamingText((current) => appendStreamingDelta(current, delta))
+          streamDeltaBatch.push(delta)
           setStreaming(true)
         },
         onTurnCompleted: (sessionId, completion) => {
@@ -2298,6 +2358,7 @@ function LiveAppShell(props: LiveAppProps) {
 
   onCleanup(() => {
     disposed = true
+    streamDeltaBatch.clear()
     attention.dispose()
     sessionViewRevision++
     turnController?.abort()

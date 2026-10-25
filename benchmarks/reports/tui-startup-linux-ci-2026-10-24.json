@@ -1,0 +1,54 @@
+{
+  "schema": "veasel.tui-startup.v1",
+  "measuredAt": "2026-10-24T22:43:34Z",
+  "commit": "4b014a42ce28468d761069fac8381d02f3b96f37",
+  "workflowCommit": null,
+  "host": {
+    "os": "Linux",
+    "release": "7.2.9-arch1-1",
+    "architecture": "x86_64",
+    "cpuCount": 24
+  },
+  "binaries": {
+    "server": "veasel",
+    "tui": "veasel-tui"
+  },
+  "buildProvenance": {
+    "source_commit": "4b014a42ce28468d761069fac8381d02f3b96f37",
+    "v_compiler_commit": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "v_compiler_version": "V 0.5.2",
+    "c_compiler": "clang",
+    "c_compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "build_flags": "-cc clang -prod -d veasel_version=0.1.0-dev -o dist/veasel .",
+    "target": "linux-x64",
+    "binary_sha256": "6c2e90a6afc454cfbd763d02a344de8b7596b5df0fbb1c2a1e5bcd685b80fa12",
+    "tui_binary_sha256": "2bbc147f8f0c6569618eadcd57003c35f01bd096dacd9a5b8be92806f26b13a6",
+    "tui_build_target": "bun-linux-x64",
+    "tui_bun_version": "1.4.2",
+    "runner": {
+      "os": "Linux",
+      "architecture": "X64",
+      "image_os": "ubuntu22",
+      "image_version": "20261023.322.3"
+    },
+    "binary_hashes_match": true
+  },
+  "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
+  "startupMs": {
+    "samples": [
+      101.21783601061907,
+      104.5509240066167,
+      103.56111500004772
+    ],
+    "count": 3,
+    "min": 101.21783601061907,
+    "median": 103.56111500004772,
+    "max": 104.5509240066167
+  },
+  "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee."
+}

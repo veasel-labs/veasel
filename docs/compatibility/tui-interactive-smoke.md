@@ -21,11 +21,18 @@ mock-provider reply, persist both turns, and exit cleanly.
 | Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py` |
 
 The same journey runs through Unix PTY on Linux/macOS and native ConPTY on
-Windows. All three packaged-client smoke paths passed in [CI run
+Windows. Each CI run takes three startup samples (each a complete journey),
+then runs the mock-provider round-trip and one additional review journey, and
+retains a JSON startup report as the `tui-startup-<platform>` artifact. The
+metric starts when the packaged TUI process is launched and stops when the
+connected home markers are emitted; the backend is already healthy. These
+short hosted-runner samples are for platform coverage and trend tracking, not
+a performance gate or a stable cross-machine comparison. All three
+packaged-client smoke paths passed in [CI run
 40140177406](https://github.com/veasel-labs/veasel/actions/runs/40140177406)
 for commit `6ab4b3915522425cced46c0263c647068c3f097c`. This verifies the smoke
-journey on the pinned CI runners. Measured startup/render baselines and broader
-interactive journeys remain separate work.
+journey on the pinned CI runners. This work adds per-run launch-to-home
+measurements; render FPS and broader interactive journeys remain separate work.
 
 ## Windows acceptance covered by CI
 
@@ -45,7 +52,7 @@ The Python driver uses `CreatePseudoConsole`, Win32 pipes, and
 `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`; WSL/Git Bash are not used as a proxy for
 ConPTY. Record CI failures with the visible terminal tail emitted by the smoke.
 
-## Measured Linux TUI baselines (this host only)
+## Historical Linux TUI baselines (this host only)
 
 Harness: [`benchmarks/tui-startup.mjs`](../../benchmarks/tui-startup.mjs)  
 Report: [`benchmarks/reports/tui-startup-linux-x64-2026-10-23.json`](../../benchmarks/reports/tui-startup-linux-x64-2026-10-23.json)
@@ -71,10 +78,16 @@ model/token latency, not coding-task quality, not macOS/Windows numbers.
 Repeat with the same harness before publishing broader performance claims.
 macOS/Windows interactive baselines remain unmeasured here.
 
+## Linux CI-built binary sample
+
+Report: [`benchmarks/reports/tui-startup-linux-ci-2026-10-24.json`](../../benchmarks/reports/tui-startup-linux-ci-2026-10-24.json). Three complete startup PTY journeys with the exact CI-built Linux binaries reached the connected home in 103.6 ms median (101.2–104.6 ms) on the local Arch x64 host (24 CPUs). A fourth journey opened a real pending workspace edit in the TUI, approved it, and confirmed the backend persisted `applied` plus the expected file content. The JSON records source commit `4b014a42`, pinned V compiler commit, runner image, and verified server/TUI SHA-256 hashes. This is a small trend sample measured on one host, not an Ubuntu-runner timing or a general performance claim.
+
 ## Remaining product gaps
 
-- macOS/Windows measured TUI baselines (Linux only above).
+- macOS/Windows measured TUI samples from their own pinned runners; the Linux
+  CI-built sample above was measured on a local host.
 - Broader interactive coverage beyond the short standalone smoke path
-  (approvals, streaming, MCP OAuth browser open, long diffs).
+  (streaming, MCP OAuth browser open, long diffs); workspace edit approval is
+  now exercised against the live backend on each CI platform.
 - See also [`../IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md) and
   [`../COMPETITIVE_SOURCE_STUDY.md`](../COMPETITIVE_SOURCE_STUDY.md).

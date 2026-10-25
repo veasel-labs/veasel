@@ -158,11 +158,13 @@ def _winerror(operation: str) -> OSError:
 def run_tui_conpty(
     tui_path: Path,
     env: dict[str, str],
-    session_title: str,
-    session_id: str,
-    wait_for_persisted_reply: Callable[[str, str], None],
-) -> None:
+    session_title: str | None = None,
+    session_id: str | None = None,
+    wait_for_persisted_reply: Callable[[str, str], None] | None = None,
+    review_path: bytes | None = None,
+) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
+    started = time.monotonic()
     input_read = wintypes.HANDLE()
     input_write = wintypes.HANDLE()
     output_read = wintypes.HANDLE()
@@ -329,11 +331,11 @@ def run_tui_conpty(
         close(input_read)
         close(output_write)
 
-        wait_for_markers(
-            (b"connected", b"SESSIONS", b"VEASEL", session_title.encode()),
-            30,
-            "its connected screen with the seeded session",
-        )
+        home_markers = (b"connected", b"SESSIONS", b"VEASEL")
+        if session_title:
+            home_markers = (*home_markers, session_title.encode())
+        wait_for_markers(home_markers, 30, "its connected session screen")
+        startup_ms = (time.monotonic() - started) * 1000
         send_keys(b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
         for _ in range(5):
@@ -351,27 +353,46 @@ def run_tui_conpty(
         send_keys(b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
 
-        output.clear()
-        send_keys(b"\r")
-        wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
-        output.clear()
-        send_keys(b"Stream incrementally\r")
-        wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
-        wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
-        wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
-        output.clear()
-        send_keys(b"\x10")
-        wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
-        output.clear()
-        send_keys(b"quit")
-        wait_for_markers((b"Quit",), 5, "the quit command in the palette")
-        send_keys(b"\r")
+        if review_path:
+            output.clear()
+            send_keys(b"\r")
+            wait_for_markers((b"TUI review smoke",), 5, "the seeded review session")
+            output.clear()
+            send_keys(b"\x12")
+            wait_for_markers((b"Workspace edit", review_path), 5, "the live workspace edit review")
+            output.clear()
+            send_keys(b"a")
+            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            output.clear()
+            send_keys(b"\x10")
+            send_keys(b"quit")
+            wait_for_markers((b"Quit",), 5, "the command palette quit option")
+            send_keys(b"\r")
+        elif not session_id:
+            send_keys(b"q")
+        else:
+            output.clear()
+            send_keys(b"\r")
+            wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
+            output.clear()
+            send_keys(b"Stream incrementally\r")
+            wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
+            wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
+            wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
+            output.clear()
+            send_keys(b"\x10")
+            wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
+            output.clear()
+            send_keys(b"quit")
+            wait_for_markers((b"Quit",), 5, "the quit command in the palette")
+            send_keys(b"\r")
         if kernel32.WaitForSingleObject(process.hProcess, 5_000) != 0:
             snippet = visible_output()[-2_500:].decode(errors="replace")
             raise TimeoutError(f"standalone TUI did not exit through the command palette: {snippet}")
         exit_code = wintypes.DWORD()
         if not kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) or exit_code.value != 0:
             raise RuntimeError(f"standalone TUI exited unsuccessfully (status={exit_code.value})")
+        return startup_ms
     finally:
         if process_created and kernel32.WaitForSingleObject(process.hProcess, 0) == 0x102:
             kernel32.TerminateProcess(process.hProcess, 1)

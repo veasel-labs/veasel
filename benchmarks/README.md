@@ -316,6 +316,7 @@ or end-to-end coding effectiveness.
 |---|---|---|
 | [`reports/tui-startup-linux-x64-2026-10-15.json`](reports/tui-startup-linux-x64-2026-10-15.json) | `0.41.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples) |
 | [`reports/tui-startup-linux-x64-2026-10-19.json`](reports/tui-startup-linux-x64-2026-10-19.json) | `0.59.0-next.0` | Linux x64 workstation: CLI wall+RSS (15 samples) and PTY connected (5 samples, per-sample results recorded) |
+| [`reports/tui-startup-linux-ci-2026-10-24.json`](reports/tui-startup-linux-ci-2026-10-24.json) | source `4b014a42` | Three startup samples plus a live workspace-edit approval journey with the exact Linux CI-built binaries; p50 launch-to-connected-home 103.6 ms on the local Arch x64 host. JSON pins V, C compiler, runner image, and both binary hashes. |
 | [`reports/tui-startup-linux-x64-2026-10-23.json`](reports/tui-startup-linux-x64-2026-10-23.json) | `0.64.6-next.0` + optimized entry | Same-host published-vs-source comparison: 15 CLI and 15 PTY samples per build |
 
 2026-10-15 medians on one Linux x64 workstation (`7.2.9-arch1-1`):

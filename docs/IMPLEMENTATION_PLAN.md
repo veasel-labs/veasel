@@ -698,10 +698,14 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Validate the packaged interactive TUI smoke on Linux, macOS, and Windows.
   The exact-head Windows ConPTY result and journey are recorded in
   [`compatibility/tui-interactive-smoke.md`](compatibility/tui-interactive-smoke.md).
-- [ ] Establish measured TUI performance baselines beyond the existing Linux
-  workstation CLI/PTY baseline, and broaden interactive coverage to approvals,
-  streaming, MCP OAuth browser open, and long diffs. macOS/Windows timing
-  baselines remain open. The Solid client coalesces rapid SSE assistant deltas
+- [ ] Establish stable measured TUI performance baselines beyond the existing
+  Linux workstation CLI/PTY baseline, and broaden interactive coverage to
+  streaming, MCP OAuth browser open, and long diffs. The packaged PTY/ConPTY
+  smoke now also seeds a real workspace edit, opens it through Ctrl+R, approves
+  it, and verifies the backend's applied state and file contents. CI retains
+  three launch-to-connected-home samples per Linux/macOS/Windows run; hosted-
+  runner timing is not yet a stable hardware-controlled baseline or a
+  performance gate. The Solid client coalesces rapid SSE assistant deltas
   into 16 ms batches before updating the reactive transcript; this reduces
   signal/render churn but is not a substitute for measured cross-platform FPS
   and latency baselines.

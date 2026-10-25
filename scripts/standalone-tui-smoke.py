@@ -4,15 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import platform
 import re
 import socket
+import statistics
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import Request
 from urllib.request import urlopen
 
@@ -56,11 +60,51 @@ def wait_for_persisted_reply(api_base: str, session_id: str, expected_reply: str
     raise TimeoutError("mock provider response was rendered but not persisted by the backend")
 
 
-def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id: str) -> None:
-    if os.name == "nt":
-        run_tui_conpty(tui_path, env, session_title, session_id, wait_for_persisted_reply)
-        return
+def api_json(port: int, method: str, path: str, body: dict[str, str] | None = None) -> dict[str, object]:
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = Request(
+        f"http://127.0.0.1:{port}{path}",
+        data=data,
+        method=method,
+        headers={"content-type": "application/json"} if data is not None else {},
+    )
+    with urlopen(request, timeout=5) as response:
+        return json.load(response)
 
+
+def create_review_fixture(port: int, temporary: Path) -> tuple[str, str, Path, str]:
+    workspace = temporary / "review-workspace"
+    workspace.mkdir()
+    (workspace / "review.txt").write_text("before\n", encoding="utf-8")
+    session = api_json(
+        port,
+        "POST",
+        "/v1/sessions",
+        {"title": "TUI review smoke", "directory": str(workspace)},
+    )
+    session_id = str(session["id"])
+    edit = api_json(
+        port,
+        "POST",
+        f"/v1/sessions/{quote(session_id, safe='')}/workspace/edits",
+        {"path": "review.txt", "content": "before\napproved-by-tui\n"},
+    )
+    if edit.get("status") != "pending" or "+approved-by-tui" not in str(edit.get("diff", "")):
+        raise RuntimeError(f"backend did not create the pending TUI review fixture: {edit}")
+    return session_id, str(edit["id"]), workspace, "before\napproved-by-tui\n"
+
+
+def run_tui(
+    tui_path: Path,
+    env: dict[str, str],
+    session_title: str | None = None,
+    session_id: str | None = None,
+    review_path: bytes | None = None,
+) -> float:
+    if os.name == "nt":
+        return run_tui_conpty(tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path)
+
+    started = time.monotonic()
     child, terminal = pty.fork()
     if child == 0:
         os.execve(tui_path, [str(tui_path)], env)
@@ -112,11 +156,11 @@ def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id:
         raise TimeoutError(f"standalone TUI did not render partial streamed text within {timeout} seconds: {snippet}")
 
     try:
-        wait_for_markers(
-            (b"connected", b"SESSIONS", b"VEASEL", session_title.encode()),
-            10,
-            "its connected screen with the seeded session",
-        )
+        home_markers = (b"connected", b"SESSIONS", b"VEASEL")
+        if session_title:
+            home_markers = (*home_markers, session_title.encode())
+        wait_for_markers(home_markers, 10, "its connected session screen")
+        startup_ms = (time.monotonic() - started) * 1000
 
         os.write(terminal, b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
@@ -143,21 +187,39 @@ def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id:
         os.write(terminal, b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
 
-        output.clear()
-        os.write(terminal, b"\r")
-        wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
-        output.clear()
-        os.write(terminal, b"Stream incrementally\r")
-        wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
-        wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
-        wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
-        output.clear()
-        os.write(terminal, b"\x10")
-        wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
-        output.clear()
-        os.write(terminal, b"quit")
-        wait_for_markers((b"Quit",), 5, "the quit command in the palette")
-        os.write(terminal, b"\r")
+        if review_path:
+            output.clear()
+            os.write(terminal, b"\r")
+            wait_for_markers((b"TUI review smoke",), 5, "the seeded review session")
+            output.clear()
+            os.write(terminal, b"\x12")
+            wait_for_markers((b"Workspace edit", review_path), 5, "the live workspace edit review")
+            output.clear()
+            os.write(terminal, b"a")
+            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            output.clear()
+            os.write(terminal, b"\x10")
+            os.write(terminal, b"quit")
+            wait_for_markers((b"Quit",), 5, "the command palette quit option")
+            os.write(terminal, b"\r")
+        elif not session_id:
+            os.write(terminal, b"q")
+        else:
+            output.clear()
+            os.write(terminal, b"\r")
+            wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
+            output.clear()
+            os.write(terminal, b"Stream incrementally\r")
+            wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
+            wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
+            wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
+            output.clear()
+            os.write(terminal, b"\x10")
+            wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
+            output.clear()
+            os.write(terminal, b"quit")
+            wait_for_markers((b"Quit",), 5, "the quit command in the palette")
+            os.write(terminal, b"\r")
 
         def wait_exit(timeout: float) -> int | None:
             deadline = time.monotonic() + timeout
@@ -177,7 +239,7 @@ def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id:
         if status is not None:
             if os.waitstatus_to_exitcode(status) != 0:
                 raise RuntimeError(f"standalone TUI exited unsuccessfully after the Quit command (status={status})")
-            return
+            return startup_ms
         snippet = visible_output()[-2_500:].decode(errors="replace")
         raise TimeoutError(f"standalone TUI did not exit after the Quit command: {snippet}")
     finally:
@@ -215,11 +277,57 @@ def run_tui(tui_path: Path, env: dict[str, str], session_title: str, session_id:
                         pass
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_build_provenance(server_path: Path, tui_path: Path) -> dict[str, object] | None:
+    manifest = server_path.parent / "build.json"
+    try:
+        build = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(build, dict):
+        return None
+    fields = (
+        "source_commit",
+        "v_compiler_commit",
+        "v_compiler_version",
+        "c_compiler",
+        "c_compiler_version",
+        "build_flags",
+        "target",
+        "binary_sha256",
+        "tui_binary_sha256",
+        "tui_build_target",
+        "tui_bun_version",
+        "runner",
+    )
+    provenance = {field: build[field] for field in fields if field in build}
+    checks = (
+        ("binary_sha256", server_path),
+        ("tui_binary_sha256", tui_path),
+    )
+    expected = [(build[field], path) for field, path in checks if isinstance(build.get(field), str)]
+    provenance["binary_hashes_match"] = len(expected) == len(checks) and all(
+        actual == sha256_file(path) for actual, path in expected
+    )
+    return provenance
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", required=True, type=Path)
     parser.add_argument("--tui", required=True, type=Path)
+    parser.add_argument("--startup-samples", type=int, default=1)
+    parser.add_argument("--metrics-output", type=Path)
     args = parser.parse_args()
+    if not 1 <= args.startup_samples <= 10:
+        parser.error("--startup-samples must be between 1 and 10")
     server_path = args.server.resolve(strict=True)
     tui_path = args.tui.resolve(strict=True)
 
@@ -273,6 +381,7 @@ def main() -> None:
                 stderr=subprocess.DEVNULL,
             )
             wait_for_server(server, port)
+            samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
             session_title = "TUI round-trip smoke"
             request = Request(
                 f"http://127.0.0.1:{port}/v1/sessions",
@@ -289,6 +398,27 @@ def main() -> None:
             persisted = {(message.get("role"), message.get("content")) for message in messages}
             if ("user", "Stream incrementally") not in persisted or ("assistant", "Streaming fixture reply arrives in two pieces") not in persisted:
                 raise RuntimeError(f"TUI conversation was not persisted correctly: {messages!r}")
+            review_session_id, review_edit_id, review_workspace, expected_content = create_review_fixture(
+                port,
+                Path(temporary),
+            )
+            run_tui(tui_path, env, review_path=b"review.txt")
+            review_state = api_json(
+                port,
+                "GET",
+                f"/v1/sessions/{quote(review_session_id, safe='')}/workspace/edits/{quote(review_edit_id, safe='')}",
+            )
+            actual_content = (review_workspace / "review.txt").read_text(encoding="utf-8")
+            if review_state.get("status") != "applied" or actual_content != expected_content:
+                raise RuntimeError(
+                    "TUI approval did not apply the pending workspace edit: "
+                    f"status={review_state.get('status')!r}, content={actual_content!r}"
+                )
+            review_coverage = {
+                "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+                "workspaceEditStatus": review_state["status"],
+                "fileContentVerified": actual_content == expected_content,
+            }
         finally:
             if server is not None and server.poll() is None:
                 if os.name == "nt":
@@ -308,6 +438,37 @@ def main() -> None:
                 provider.kill()
                 provider.wait(timeout=5)
 
+    ordered = sorted(samples_ms)
+    provenance = read_build_provenance(server_path, tui_path)
+    build_commit = provenance.get("source_commit") if provenance and provenance.get("binary_hashes_match") else None
+    metrics = {
+        "schema": "veasel.tui-startup.v1",
+        "measuredAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "commit": build_commit or os.environ.get("GITHUB_SHA"),
+        "workflowCommit": os.environ.get("GITHUB_SHA"),
+        "host": {
+            "os": platform.system(),
+            "release": platform.release(),
+            "architecture": platform.machine(),
+            "cpuCount": os.cpu_count(),
+        },
+        "binaries": {"server": server_path.name, "tui": tui_path.name},
+        "buildProvenance": provenance,
+        "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+        "interactiveCoverage": review_coverage,
+        "startupMs": {
+            "samples": samples_ms,
+            "count": len(samples_ms),
+            "min": min(ordered),
+            "median": statistics.median(ordered),
+            "max": max(ordered),
+        },
+        "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee.",
+    }
+    if args.metrics_output:
+        args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
+        args.metrics_output.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(metrics, indent=2))
     print("Standalone TUI completed a mock-provider conversation through the isolated backend.")
 
 

@@ -605,18 +605,25 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   when cancelled while a child provider HTTP response remains pending. The
   cancelled child outcome is durable, but its blocking HTTP worker may remain
   until the transport returns: pinned V `net.http.fetch` exposes no public
-  handle to cancel a socket before response progress. The pinned V
+  handle to close a socket immediately on cancellation. The pinned V
   [`Request.read_timeout`](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/request.v#L57-L60)
-  is documented as not implemented for SSL connections. A stalled TLS request
-  therefore has no proven upper bound here. Task-level comparative
-  evidence remains outstanding; lifecycle coverage alone does not establish
-  that delegation improves task success or efficiency.
+  field comment says SSL is unsupported, but the implementation propagates it
+  to `SSLConn.set_read_timeout` in the
+  [pinned HTTP backend](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/backend.c.v#L46-L50).
+  Veasel sets the timeout to the smaller of the remaining turn deadline and
+  60 seconds; provider progress callbacks also observe cancellation. This
+  bounds an idle TLS read but does not close the active socket immediately or
+  impose an absolute lifetime on the request. A cancelled worker can therefore
+  retain its child provider slot until progress arrives or the idle timeout
+  expires. Task-level comparative evidence remains outstanding; lifecycle
+  coverage alone does not establish that delegation improves task success or
+  efficiency.
   To keep such a worker from occupying every provider slot, delegated workers
   are limited to one active provider call within the existing shared
   four-call process-wide pool. A stalled child can therefore leave three slots
   for ordinary turns; when no child is active, all four slots remain available
   to ordinary turns. This bounds starvation impact; it does not make the
-  delegated request itself cancellable.
+  delegated socket immediately cancellable.
   The storage boundary accepts only the built-in `reviewer` and `explorer` profile
   IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become

@@ -91,7 +91,11 @@ export async function exportOpenCodeGoApiKey(): Promise<string> {
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = true
-    process.kill()
+    try {
+      process.kill()
+    } catch {
+      // The CLI may have exited while its output stream is closing.
+    }
   }, authExportTimeoutMs)
   try {
     const [output, exitCode] = await Promise.all([readBounded(stdout), process.exited])

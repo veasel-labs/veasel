@@ -595,6 +595,37 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   the bounded durable run row remains the source of the result text.
   Replaying the parent turn from these events and fetching the result into model
   context remain separate work.
+  An unmerged prototype on `feat/subagent-readonly-worker` adds a synchronous,
+  model-callable `subagent_run` path for the two built-in read-only profiles,
+  using the parent cancellation context and persisting child usage and outcome.
+  After the terminal outcome is durably claimed, it removes the generated
+  worktree only if its tracked snapshot, copied untracked files, permissions,
+  and ignored-file set remain unchanged. Edited workspaces are preserved, while
+  untouched investigations stop consuming the shared 64-worktree limit.
+  Local fake-provider end-to-end tests now prove dispatch, child file inspection,
+  usage persistence, safe failure delivery, and that the parent turn returns
+  when cancelled while a child provider HTTP response remains pending. The
+  cancelled child outcome is durable, but its blocking HTTP worker may remain
+  until the transport returns: pinned V `net.http.fetch` exposes no public
+  handle to close a socket immediately on cancellation. The pinned V
+  [`Request.read_timeout`](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/request.v#L57-L60)
+  field comment says SSL is unsupported, but the implementation propagates it
+  to `SSLConn.set_read_timeout` in the
+  [pinned HTTP backend](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/backend.c.v#L46-L50).
+  Veasel sets the timeout to the smaller of the remaining turn deadline and
+  60 seconds; provider progress callbacks also observe cancellation. This
+  bounds an idle TLS read but does not close the active socket immediately or
+  impose an absolute lifetime on the request. A cancelled worker can therefore
+  retain its child provider slot until progress arrives or the idle timeout
+  expires. Task-level comparative evidence remains outstanding; lifecycle
+  coverage alone does not establish that delegation improves task success or
+  efficiency.
+  To keep such a worker from occupying every provider slot, delegated workers
+  are limited to one active provider call within the existing shared
+  four-call process-wide pool. A stalled child can therefore leave three slots
+  for ordinary turns; when no child is active, all four slots remain available
+  to ordinary turns. This bounds starvation impact; it does not make the
+  delegated socket immediately cancellable.
   The storage boundary accepts only the built-in `reviewer` and `explorer` profile
   IDs; both grant read-only
   workspace list/read/search tools. Interrupted running children become
@@ -610,13 +641,18 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   prepares the worktree without holding the SQLite mutex, and marks it ready
   only while its parent operation is still running. Workers cannot claim
   unready rows. A durable start marker lets startup remove cancelled/failed
-  worktrees only when the child never began; workspaces that may have executed
-  remain preserved. OS-level preparation locks distinguish a crashed preparer
-  from one still creating the workspace, including across store instances.
-  Authorizing parent callers beyond the built-in allowlist, deadlines,
-  cancellation execution, parent turn replay, API/TUI integration, and
-  task-level benchmark evidence remain required before a model-callable tool is
-  exposed.
+  worktrees only when the child never began. After a terminal result and
+  delivery claim are durable, an unchanged generated worktree is removed while
+  the run row, transcript, usage, and outcome remain in SQLite; changed
+  workspaces are preserved. The child session returns to its source project
+  directory only after successful removal. Startup retries cleanup after
+  interrupted delivery. OS-level preparation locks distinguish a crashed
+  preparer from one still creating or cleaning the workspace, including across
+  store instances.
+  Authorizing callers beyond the built-in allowlist, enforceable child runtime
+  deadlines, cancellation of the underlying in-flight HTTP request/process,
+  parent turn replay, API/TUI integration, and task-level benchmark evidence
+  remain required before a model-callable tool is enabled outside this draft.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

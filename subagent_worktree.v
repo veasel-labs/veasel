@@ -21,6 +21,7 @@ struct SubagentUntrackedFile {
 	path       string
 	sha256     string
 	byte_count i64
+	mode       int
 }
 
 struct SubagentFileDigest {
@@ -197,6 +198,7 @@ fn subagent_untracked_files(root string) ![]SubagentUntrackedFile {
 		validate_subagent_relative_path(relative)!
 		source := subagent_source_file(root, relative)!
 		snapshot := subagent_file_digest(source, max_subagent_untracked_file_bytes)!
+		mode := int(os.stat(source)!.get_mode().bitmask())
 		total_bytes += snapshot.byte_count
 		if total_bytes > max_subagent_untracked_total_bytes {
 			return error('untracked files exceed the child workspace snapshot limit')
@@ -205,6 +207,7 @@ fn subagent_untracked_files(root string) ![]SubagentUntrackedFile {
 			path:       relative
 			sha256:     snapshot.sha256
 			byte_count: snapshot.byte_count
+			mode:       mode
 		}
 	}
 	return files
@@ -229,6 +232,9 @@ fn copy_subagent_untracked_files(root string, worktree string, files []SubagentU
 		}
 		if destination_snapshot.byte_count != file.byte_count || destination_snapshot.sha256 != file.sha256 {
 			return error('untracked source changed while preparing the child workspace')
+		}
+		if int(os.stat(destination)!.get_mode().bitmask()) != file.mode {
+			return error('untracked source permissions changed while preparing the child workspace')
 		}
 	}
 }

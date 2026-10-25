@@ -539,12 +539,31 @@ fn test_app_rejects_provider_work_when_all_slots_are_busy() {
 	defer { app.close() }
 	mut slots := app.provider_slots
 	for _ in 0 .. max_provider_concurrency {
-		assert slots.try_wait()
+		assert app.try_provider_slot(.regular)
 	}
-	assert !app.try_provider_slot()
+	assert !app.try_provider_slot(.regular)
+	for _ in 0 .. max_provider_concurrency {
+		slots.post()
+	}
+	assert app.try_provider_slot(.subagent)
+	for _ in 0 .. max_provider_concurrency - max_subagent_provider_concurrency {
+		assert app.try_provider_slot(.regular)
+	}
+	assert !app.try_provider_slot(.regular)
+	assert !app.try_provider_slot(.subagent)
+	for _ in 0 .. max_provider_concurrency - max_subagent_provider_concurrency {
+		slots.post()
+	}
+	mut subagent_slots := app.subagent_provider_slots
+	subagent_slots.post()
 	slots.post()
-	assert app.try_provider_slot()
-	slots.post()
+	for _ in 0 .. max_provider_concurrency {
+		assert app.try_provider_slot(.regular)
+	}
+	assert !app.try_provider_slot(.regular)
+	for _ in 0 .. max_provider_concurrency {
+		slots.post()
+	}
 }
 
 fn test_tui_backend_output_goes_to_the_server_log() {

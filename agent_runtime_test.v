@@ -750,10 +750,12 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
-		'workspace_search', 'workspace_propose_file_edit', 'workspace_propose_shell_command']
+		'workspace_search', 'subagent_run', 'workspace_propose_file_edit',
+		'workspace_propose_shell_command']
 	assert agent_tool_allows_parallel_readonly('workspace_list_files')
 	assert agent_tool_allows_parallel_readonly('workspace_read_file')
 	assert agent_tool_allows_parallel_readonly('workspace_search')
+	assert !agent_tool_allows_parallel_readonly('subagent_run')
 	assert !agent_tool_allows_parallel_readonly('workspace_propose_file_edit')
 	assert !agent_tool_allows_parallel_readonly('agent_skill_load')
 	parallel_calls := [

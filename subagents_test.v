@@ -41,6 +41,7 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	}
 	_ = store.begin_subagent_run(first.id) or { panic(err) }
 	_ = store.finish_subagent_run(first.id, 'completed', 'review complete', '') or { panic(err) }
+	assert os.is_dir(expected_child_directory)
 	outcome := store.claim_subagent_outcome(first.id) or { panic(err) }
 	assert outcome.result == 'review complete'
 	assert outcome.outcome_claimed
@@ -105,9 +106,18 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	store.close() or { panic(err) }
 
 	mut recovered := open_store(db_path) or { panic(err) }
+	mut app := new_app(recovered, root)
+	assert !os.exists(expected_child_directory)
+	assert (recovered.get_session(first.child_session_id) or { panic(err) }).directory == workspace_root
+	retried := recovered.create_subagent_run(parent.id, operation_id, 'request-1', 'reviewer', 1,
+		'Child', workspace_root) or { panic(err) }
+	assert retried.id == first.id
+	assert retried.outcome_claimed
+	assert retried.result == 'review complete'
 	restored := recovered.get_subagent_run_unlocked(first.id) or { panic(err) }
 	assert restored.status == 'completed'
 	assert restored.outcome_claimed
+	assert !restored.workspace_ready
 	assert (recovered.claim_subagent_outcome(first.id) or { panic(err) }).result == 'review complete'
 	recovered_unclaimed := recovered.get_subagent_run_unlocked(unclaimed.id) or { panic(err) }
 	assert recovered_unclaimed.status == 'completed'
@@ -142,6 +152,7 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
 	assert recovered_running.status == 'cancelled'
 	assert recovered_running.cancel_requested
+	app.close()
 	recovered.close() or { panic(err) }
 
 	mut restarted := open_store(db_path) or { panic(err) }
@@ -163,6 +174,35 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	assert restarted_uncertain_delivery_count == 1
 }
 
+fn test_delivered_subagent_cleanup_preserves_workspace_edits() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-preserve-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	parent := store.create_session(SessionInput{ title: 'Parent', directory: workspace_root }) or {
+		panic(err)
+	}
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	run := store.create_subagent_run(parent.id, operation_id, 'preserve-edit', 'reviewer', 1,
+		'Child', workspace_root) or { panic(err) }
+	workspace := os.join_path(root, 'subagent-worktrees', run.id)
+	_ = store.begin_subagent_run(run.id) or { panic(err) }
+	os.write_file(os.join_path(workspace, 'README.md'), 'user edit\n') or { panic(err) }
+	os.write_file(os.join_path(workspace, 'notes.txt'), 'user note\n') or { panic(err) }
+	_ = store.finish_subagent_run(run.id, 'completed', 'review complete', '') or { panic(err) }
+	_ = store.claim_subagent_outcome(run.id) or { panic(err) }
+	store.cleanup_delivered_subagent_workspace(run.id)
+	assert os.is_dir(workspace)
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'user edit\n'
+	assert os.read_file(os.join_path(workspace, 'notes.txt')) or { panic(err) } == 'user note\n'
+	child_directory := (store.get_session(run.child_session_id) or { panic(err) }).directory
+	assert os.real_path(child_directory) == os.real_path(workspace)
+	assert (store.get_subagent_run_unlocked(run.id) or { panic(err) }).workspace_ready
+}
+
 fn test_builtin_subagent_profiles_grant_only_readonly_tools() {
 	reviewer := builtin_subagent_profile('reviewer') or { panic(err) }
 	explorer := builtin_subagent_profile('explorer') or { panic(err) }
@@ -170,10 +210,13 @@ fn test_builtin_subagent_profiles_grant_only_readonly_tools() {
 	assert reviewer.tool_policy().allows('workspace_search')
 	assert !reviewer.tool_policy().allows('workspace_propose_file_edit')
 	assert !reviewer.tool_policy().allows('workspace_propose_shell_command')
+	assert !reviewer.tool_policy().allows('subagent_run')
+	assert execution_tool_class('subagent_run') == 'read'
 	assert explorer.tool_policy().allowed_tools == reviewer.tool_policy().allowed_tools
 	for name in reviewer.allowed_tools {
 		assert workspace_agent_tools().any(it.name == name)
 	}
+	assert workspace_agent_tools().any(it.name == 'subagent_run')
 	_ = builtin_subagent_profile('project-agent') or {
 		assert err.msg().contains('trusted built-in registry')
 		SubagentProfile{}
@@ -255,13 +298,14 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
 	initial_version := store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert initial_version == 24
+	assert initial_version == 25
 	_ = store.db.exec('DROP TABLE subagent_runs') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 20') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 21') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 22') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 23') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 24') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 25') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(db_path) or { panic(err) }
 	defer { migrated.close() or {} }
@@ -269,8 +313,11 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 		panic(err)
 	} == 1
 	migrated_version := migrated.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert migrated_version == 24
+	assert migrated_version == 25
 	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_unclaimed_outcome'") or {
+		panic(err)
+	} == 1
+	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_delivered_workspace_cleanup'") or {
 		panic(err)
 	} == 1
 	parent := migrated.create_session(SessionInput{

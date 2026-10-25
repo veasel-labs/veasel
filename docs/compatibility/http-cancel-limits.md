@@ -1,6 +1,6 @@
 # HTTP cancel limits under pinned `net.http`
 
-**Pinned V:** `.v-version` (`cbe6ea8bbbc30ff7630eac5f507809182bfa027c`)
+**Pinned V:** `.v-version` (`ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f`, V 0.5.2)
 **Surfaces:** provider SSE (`provider.v`), Agent Plugin / configured MCP
 Streamable HTTP (`plugin_mcp_http_transport.v`)
 
@@ -17,10 +17,12 @@ Stdio MCP still uses `notifications/cancelled` when a turn cancels mid-call.
 
 ## Hard limit (cannot observe true TTFB cancel)
 
-Pinned `net.http.fetch` exposes no external cancel handle and no dial/TTFB
-callback. Between the start of `fetch` and the first progress callback (no
-socket bytes yet — DNS/dial/TLS/server-think), Veasel cannot close the socket
-or interrupt the wait. Cancel remains sticky: the in-flight call aborts on the
+Pinned [`net.http.FetchConfig`](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/http.v)
+exposes a read timeout and response-progress callbacks, but no external cancel
+handle or dial/TTFB callback. [`Request.on_progress`](https://github.com/vlang/v/blob/ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f/vlib/net/http/request.v)
+runs only after socket bytes arrive. Between the start of `fetch` and the first
+progress callback (DNS/dial/TLS/server-think), Veasel cannot close the socket or
+interrupt the wait. Cancel remains sticky: the in-flight call aborts on the
 first progress byte or when the configured read timeout elapses.
 
 This is a stdlib boundary, not a missing Veasel permission check. Replacing it

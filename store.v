@@ -871,6 +871,32 @@ fn open_store(path string) !&Store {
 			return error('unable to commit child outcome recovery index migration')
 		}
 	}
+	if current < 25 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin delivered child workspace cleanup migration')
+		}
+		db.exec("ALTER TABLE subagent_runs ADD COLUMN workspace_base_commit TEXT NOT NULL DEFAULT ''") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add child workspace snapshot')
+		}
+		db.exec("CREATE INDEX subagent_runs_delivered_workspace_cleanup ON subagent_runs (id) WHERE workspace_started = 1 AND workspace_ready = 1 AND outcome_claimed = 1 AND status IN ('completed', 'failed', 'cancelled', 'uncertain')") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index delivered child workspace cleanup')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (25)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record delivered child workspace cleanup migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit delivered child workspace cleanup migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

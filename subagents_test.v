@@ -255,13 +255,13 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
 	initial_version := store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert initial_version == 22
+	assert initial_version == 24
 	_ = store.db.exec('DROP TABLE subagent_runs') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 19') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 20') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 21') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 22') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 18') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 23') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 24') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(db_path) or { panic(err) }
 	defer { migrated.close() or {} }
@@ -269,7 +269,7 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 		panic(err)
 	} == 1
 	migrated_version := migrated.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert migrated_version == 22
+	assert migrated_version == 24
 	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_unclaimed_outcome'") or {
 		panic(err)
 	} == 1

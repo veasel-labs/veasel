@@ -652,6 +652,9 @@ struct ModelConfig {
 mut:
 	session_id        string
 	max_output_tokens int
+	// Captured before the provider worker starts. Cancellation still flows
+	// through Context; the deadline value is immutable for this provider turn.
+	request_deadline ?time.Time
 }
 
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {
@@ -2511,7 +2514,7 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
-	deadline := turn_ctx.deadline() or { return error('deadline_missing') }
+	deadline := config.request_deadline or { return error('deadline_missing') }
 	remaining := deadline - time.now()
 	if remaining <= 0 {
 		return error('deadline_exceeded')

@@ -892,8 +892,15 @@ fn boost_repository_map_cross_references(mut entries []RepositoryMapEntry, conte
 		}
 		// Personalization (Aider-style): a reference coming from a file the
 		// hint already points at counts more than one from an unrelated file.
-		referrer_weight := if score_repository_map_path_with_lexical_hints(entry.path, hints,
-			lexical_hints) >= repository_map_cross_reference_hint_min_path_score {
+		// Keep the path-only relevance computed before content and structural
+		// boosts. Re-scoring here repeats all hint/path matching for each source
+		// file (up to repository_map_max_symbol_files candidates).
+		referrer_score := if entry.path_score != 0.0 {
+			entry.path_score
+		} else {
+			score_repository_map_path_with_lexical_hints(entry.path, hints, lexical_hints)
+		}
+		referrer_weight := if referrer_score >= repository_map_cross_reference_hint_min_path_score {
 			repository_map_cross_reference_weight * repository_map_cross_reference_hint_multiplier
 		} else {
 			repository_map_cross_reference_weight

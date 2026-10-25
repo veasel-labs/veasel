@@ -135,9 +135,10 @@ struct RepositoryMapSymbol {
 
 struct RepositoryMapEntry {
 mut:
-	path    string
-	score   f64
-	symbols []RepositoryMapSymbol
+	path       string
+	path_score f64
+	score      f64
+	symbols    []RepositoryMapSymbol
 }
 
 struct RepositoryMapHintSet {
@@ -337,9 +338,11 @@ fn build_repository_map_with_cache(root string, hint_text string, budget_bytes i
 	mut entries := []RepositoryMapEntry{cap: walker.files.len}
 	for relative_path in walker.files {
 		normalized := relative_path.replace('\\', '/')
+		path_score := score_repository_map_path(normalized, hints)
 		entries << RepositoryMapEntry{
-			path:  normalized
-			score: score_repository_map_path_with_lexical_hints(normalized, hints, lexical_hints)
+			path:       normalized
+			path_score: path_score
+			score:      path_score
 		}
 	}
 	// The score/path comparator establishes the deterministic ranking order, so

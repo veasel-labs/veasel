@@ -2,6 +2,7 @@ module main
 
 import context as vcontext
 import json2
+import time
 
 // Durable Prefer: respond-async turns persist as queued with request_json before a
 // worker claims them. Queued jobs resume after restart. Running/cancelling rows
@@ -103,7 +104,7 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
-		operation_id, mut turn_ctx, cancel := app.begin_turn_operation(operation.session_id,
+		operation_id, mut turn_ctx, cancel := app.begin_queued_turn_operation(operation.session_id,
 			operation.id) or {
 			eprintln('veasel: unable to resume queued operation ${operation.id} (${err.msg()})')
 			continue
@@ -113,33 +114,40 @@ fn (app &App) resume_durable_queued_operations() {
 			cancel()
 			continue
 		}
+		// This row was already durable before the worker was registered.
+		app.mark_turn_operation_persistence_resolved(operation_id)
 		turn_done := turn_ctx.done()
-		app.schedule_durable_session_operation(operation.id, turn_done, cancel, operation.session_id,
+		app.schedule_durable_session_operation(operation.id, cancel, turn_done, operation.session_id,
 			session, input)
 	}
 }
 
-fn (app &App) schedule_durable_session_operation(operation_id string, turn_done chan int,
-	cancel vcontext.CancelFn, id string, session Session, input ChatMessageInput) {
-	spawn fn (app &App, operation_id string, turn_done chan int, cancel vcontext.CancelFn, id string,
+fn (app &App) schedule_durable_session_operation(operation_id string, cancel vcontext.CancelFn,
+	turn_done chan int, id string, session Session, input ChatMessageInput) {
+	spawn fn (app &App, operation_id string, cancel vcontext.CancelFn, turn_done chan int, id string,
 		session Session, input ChatMessageInput) {
-		mut background := vcontext.background()
-		mut turn_ctx, cancel_turn := vcontext.with_timeout(mut background, max_agent_turn_duration)
-		worker_done := chan int{cap: 1}
-		spawn fn (turn_done chan int, worker_done chan int, cancel_turn vcontext.CancelFn) {
-			select {
-				_ := <-turn_done {
-					cancel_turn()
-				}
-				_ := <-worker_done {
-				}
-			}
-		}(turn_done, worker_done, cancel_turn)
 		defer {
-			worker_done <- 0
-			cancel_turn()
 			app.finish_turn_operation(operation_id)
 			cancel()
+		}
+		// Keep the durable row queued while it waits for this session's active turn.
+		// A restart can then safely resume it because no provider or tool effect began.
+		mut turn_lock := app.session_turn_lock(id)
+		app.acquire_queued_session_turn(turn_done, id, operation_id) or {
+			if err.msg() == 'cancelled' {
+				// Cancellation can arrive after the request is registered but before
+				// its durable row is inserted. Persist the terminal state here so
+				// that early cancellation cannot strand a queued row indefinitely.
+				mut store := app.store
+				_ = store.cancel_session_operation(id, operation_id) or {
+					eprintln('veasel: unable to persist queued cancellation (${err.msg()})')
+					''
+				}
+			}
+			return
+		}
+		defer {
+			turn_lock.post()
 		}
 		mut store := app.store
 		_ = store.claim_session_operation(id, operation_id) or {
@@ -152,9 +160,36 @@ fn (app &App) schedule_durable_session_operation(operation_id string, turn_done 
 				input.content)
 			return
 		}
-		_ = app.run_session_message(mut turn_ctx, id, session, input, operation_id) or {
+		// Start the time limit from a fresh background context after the queued
+		// turn owns the session. Forward request cancellation through the channel
+		// captured before the Context interface crossed this worker boundary.
+		mut deadline_parent := vcontext.background()
+		request_deadline := time.now().add(max_agent_turn_duration)
+		mut bounded_turn_ctx, cancel_bounded := vcontext.with_deadline(mut deadline_parent,
+			request_deadline)
+		cancel_watch := chan int{cap: 1}
+		watch_done := chan int{cap: 1}
+		spawn fn (turn_done chan int, stop chan int, watch_done chan int, cancel_bounded vcontext.CancelFn) {
+			select {
+				_ := <-turn_done {
+					cancel_bounded()
+				}
+				_ := <-stop {
+				}
+			}
+			watch_done <- 0
+			watch_done.close()
+		}(turn_done, cancel_watch, watch_done, cancel_bounded)
+		defer {
+			cancel_watch <- 0
+			_ = <-watch_done
+			cancel_watch.close()
+			cancel_bounded()
+		}
+		_ = app.run_session_message_locked(mut bounded_turn_ctx, id, session, input, operation_id,
+			request_deadline) or {
 			app.record_session_turn_failure(id, operation_id, err.msg(), input.content)
 			return
 		}
-	}(app, operation_id, turn_done, cancel, id, session, input)
+	}(app, operation_id, cancel, turn_done, id, session, input)
 }

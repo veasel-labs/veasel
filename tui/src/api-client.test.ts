@@ -168,6 +168,42 @@ describe("VeaselApiClient sendMessage", () => {
   })
 })
 
+describe("VeaselApiClient turn lifecycle events", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("reports queued and started operation IDs from the replayable stream", async () => {
+    const controller = new AbortController()
+    const encoder = new TextEncoder()
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(new ReadableStream<Uint8Array>({
+      start(stream) {
+        for (const [type, id] of [["session.turn_queued", "queued-1"], ["session.turn_started", "queued-1"]]) {
+          stream.enqueue(encoder.encode(
+            `event: ${type}\ndata: ${JSON.stringify({
+              session_id: "sess-1",
+              data: { operation_id: id, status: type.endsWith("queued") ? "queued" : "running" },
+            })}\n\n`,
+          ))
+        }
+        stream.close()
+      },
+    }), { headers: { "content-type": "text/event-stream" } })) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097", controller.signal)
+    const lifecycle: string[] = []
+    await client.consumeEvents({
+      onTurnQueued: (sessionId, id) => lifecycle.push(`queued:${sessionId}:${id}`),
+      onTurnStarted: (sessionId, id) => {
+        lifecycle.push(`started:${sessionId}:${id}`)
+        controller.abort()
+      },
+    }, { activeSessionId: () => "sess-1", activeTurnId: () => undefined })
+    expect(lifecycle).toEqual(["queued:sess-1:queued-1", "started:sess-1:queued-1"])
+  })
+})
+
 describe("VeaselApiClient renameSession", () => {
   const originalFetch = globalThis.fetch
 

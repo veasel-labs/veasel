@@ -528,9 +528,9 @@ fn test_meta_model_discovery_only_offers_coding_chat_families() {
 		'sam-3.1',
 	].map(ModelCatalogEntry{ id: it, name: it })
 
-	meta_models := filter_provider_chat_models('meta', models)
+	meta_models := filter_provider_models('meta', models)
 	assert meta_models.map(it.id) == ['muse-wonder-1.0', 'muse-spark-1.3', 'muse-spark-1.3-contributor']
-	assert filter_provider_chat_models('openai', models) == models
+	assert filter_provider_models('openai', models) == models
 }
 
 fn test_provider_model_discovery_accepts_unsaved_credentials_without_persisting_them() {

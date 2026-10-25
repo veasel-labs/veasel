@@ -1,0 +1,235 @@
+{
+  "kind": "tui-startup-comparison",
+  "measuredAt": "2026-10-23T19:58:03.126Z",
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "release": "7.2.9-arch1-1",
+    "cpus": "24"
+  },
+  "binaries": {
+    "tui": "optimized standalone Veasel Code Terminal 0.64.6-next.0",
+    "server": "official Veasel Code 0.64.6-next.0 Linux archive"
+  },
+  "method": {
+    "cli": "2 warmups + 15 samples per --version/--help; wall via performance.now(); Linux RSS via RUSAGE_CHILDREN.ru_maxrss (kB)",
+    "ptyConnected": "15 samples; Python pty.fork against isolated veasel serve; wall until visible markers connected+SESSIONS+VEASEL",
+    "exclusions": "Not interactive render FPS, not model/token latency, not coding-task quality."
+  },
+  "cli": {
+    "version": {
+      "wall": {
+        "count": 15,
+        "minMs": 33.266287000000005,
+        "medianMs": 35.32133299999998,
+        "p95Ms": 36.65797369999999,
+        "maxMs": 37.58667700000001,
+        "meanMs": 35.25085806666666
+      },
+      "rssKb": {
+        "count": 15,
+        "minKb": 33824,
+        "medianKb": 34308,
+        "p95Kb": 34610,
+        "maxKb": 34652,
+        "meanKb": 34292.53333333333
+      },
+      "failures": 0
+    },
+    "help": {
+      "wall": {
+        "count": 15,
+        "minMs": 33.46699099999978,
+        "medianMs": 34.585757000000285,
+        "p95Ms": 35.26761029999998,
+        "maxMs": 36.003709999999955,
+        "meanMs": 34.50381513333332
+      },
+      "rssKb": {
+        "count": 15,
+        "minKb": 34016,
+        "medianKb": 34360,
+        "p95Kb": 34755.2,
+        "maxKb": 34800,
+        "meanKb": 34347.73333333333
+      },
+      "failures": 0
+    }
+  },
+  "ptyConnectedMs": {
+    "wall": {
+      "count": 15,
+      "minMs": 89.094,
+      "medianMs": 92.555,
+      "p95Ms": 97.1553,
+      "maxMs": 97.163,
+      "meanMs": 92.50120000000001
+    },
+    "failures": 0,
+    "samples": [
+      {
+        "elapsedMs": 93.313
+      },
+      {
+        "elapsedMs": 89.094
+      },
+      {
+        "elapsedMs": 90.647
+      },
+      {
+        "elapsedMs": 97.152
+      },
+      {
+        "elapsedMs": 91.718
+      },
+      {
+        "elapsedMs": 92.616
+      },
+      {
+        "elapsedMs": 90.267
+      },
+      {
+        "elapsedMs": 92.814
+      },
+      {
+        "elapsedMs": 92.688
+      },
+      {
+        "elapsedMs": 97.163
+      },
+      {
+        "elapsedMs": 93.65
+      },
+      {
+        "elapsedMs": 92.555
+      },
+      {
+        "elapsedMs": 90.313
+      },
+      {
+        "elapsedMs": 91.545
+      },
+      {
+        "elapsedMs": 91.983
+      }
+    ]
+  },
+  "reference": {
+    "version": "0.64.6-next.0 published release",
+    "bunVersion": "1.4.2",
+    "releaseArchiveSha256": "42bd9859d1dcd3c861ea28351ea40f59c76a7544943d60b917b976cf1c6eeae4",
+    "tuiBinarySha256": "1242af7cb0cd844ffa2b9c147f929e784d7c0ac5da19b1f9bfa02207d2ea772a",
+    "cli": {
+      "version": {
+        "wall": {
+          "count": 15,
+          "minMs": 54.213015999999925,
+          "medianMs": 55.16305000000011,
+          "p95Ms": 58.59743380000007,
+          "maxMs": 58.61149400000022,
+          "meanMs": 55.81033886666665
+        },
+        "rssKb": {
+          "count": 15,
+          "minKb": 54204,
+          "medianKb": 54568,
+          "p95Kb": 54868.8,
+          "maxKb": 54908,
+          "meanKb": 54550.13333333333
+        },
+        "failures": 0
+      },
+      "help": {
+        "wall": {
+          "count": 15,
+          "minMs": 53.81936599999972,
+          "medianMs": 55.38539300000048,
+          "p95Ms": 58.93085309999992,
+          "maxMs": 59.63211799999999,
+          "meanMs": 56.07283186666673
+        },
+        "rssKb": {
+          "count": 15,
+          "minKb": 54008,
+          "medianKb": 54612,
+          "p95Kb": 55055.6,
+          "maxKb": 55176,
+          "meanKb": 54594.4
+        },
+        "failures": 0
+      }
+    },
+    "ptyConnectedMs": {
+      "wall": {
+        "count": 15,
+        "minMs": 90.49,
+        "medianMs": 92.714,
+        "p95Ms": 94.7747,
+        "maxMs": 94.83,
+        "meanMs": 92.56559999999999
+      },
+      "failures": 0,
+      "samples": [
+        {
+          "elapsedMs": 94.83
+        },
+        {
+          "elapsedMs": 93.824
+        },
+        {
+          "elapsedMs": 91.278
+        },
+        {
+          "elapsedMs": 90.637
+        },
+        {
+          "elapsedMs": 94.751
+        },
+        {
+          "elapsedMs": 92.606
+        },
+        {
+          "elapsedMs": 91.28
+        },
+        {
+          "elapsedMs": 92.924
+        },
+        {
+          "elapsedMs": 92.714
+        },
+        {
+          "elapsedMs": 92.548
+        },
+        {
+          "elapsedMs": 90.49
+        },
+        {
+          "elapsedMs": 93.773
+        },
+        {
+          "elapsedMs": 92.973
+        },
+        {
+          "elapsedMs": 91.115
+        },
+        {
+          "elapsedMs": 92.741
+        }
+      ]
+    }
+  },
+  "optimizedBuild": {
+    "baseCommit": "c682943a66524794ad28e46e62c5a6e66adf6f2a",
+    "bunVersion": "1.4.2",
+    "target": "bun-linux-x64",
+    "binarySha256": "31cdb012acecb1196d05e823fede162de3e67615282c61028df443ce1605cd46"
+  },
+  "comparisonPercent": {
+    "versionWall": -36,
+    "versionRss": -37.1,
+    "helpWall": -37.6,
+    "helpRss": -37.1,
+    "ptyConnectedWall": -0.2
+  },
+  "caveat": "The 15-sample PTY probe measures connected-home readiness, not render FPS; Linux x64 workstation only. Both binaries use Bun 1.4.2 and the same published backend. CLI measurements use 15 samples plus 2 warmups; PTY uses 15 samples for both."
+}

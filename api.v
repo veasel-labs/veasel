@@ -221,12 +221,13 @@ pub fn (mut ctx Context) before_request() {
 }
 
 pub struct App {
-	session_turn_locks       []&sync.Semaphore
-	operation_registry       &TurnOperationRegistry
-	provider_slots           &sync.Semaphore
-	plugin_mcp_slots         &sync.Semaphore
-	shell_command_slots      &sync.Semaphore
-	shell_operation_registry &ShellCommandRegistry
+	session_turn_locks          []&sync.Semaphore
+	repository_map_symbol_cache &RepositoryMapSymbolCache
+	operation_registry          &TurnOperationRegistry
+	provider_slots              &sync.Semaphore
+	plugin_mcp_slots            &sync.Semaphore
+	shell_command_slots         &sync.Semaphore
+	shell_operation_registry    &ShellCommandRegistry
 pub:
 	store                 &Store
 	plugin_directory      string
@@ -247,28 +248,29 @@ fn new_app(store &Store, plugin_directory string) &App {
 		session_turn_locks << sync.new_semaphore_init(1)
 	}
 	app := &App{
-		store:                    store
-		plugin_directory:         plugin_directory
-		plugin_data_directory:    os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
-		model_settings:           new_model_settings_state(store.model_settings_path())
-		configured_mcp:           new_configured_mcp_state(store.configured_mcp_path())
-		plugin_components:        new_plugin_component_state(store.plugin_components_path())
-		mcp_credentials:          new_mcp_credential_state(store.mcp_credentials_path())
-		mcp_oauth_pending:        new_mcp_oauth_pending_state(store.mcp_oauth_pending_path())
-		mcp_oauth_refresh:        new_mcp_oauth_refresh_state(store.mcp_oauth_refresh_path())
-		allow_autonomous:         os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
-		allow_auto_edit:          os.getenv('VEASEL_ALLOW_AUTO_EDIT') == '1'
+		store:                       store
+		plugin_directory:            plugin_directory
+		plugin_data_directory:       os.join_path(os.dir(os.real_path(plugin_directory)), 'plugin-data')
+		model_settings:              new_model_settings_state(store.model_settings_path())
+		configured_mcp:              new_configured_mcp_state(store.configured_mcp_path())
+		plugin_components:           new_plugin_component_state(store.plugin_components_path())
+		mcp_credentials:             new_mcp_credential_state(store.mcp_credentials_path())
+		mcp_oauth_pending:           new_mcp_oauth_pending_state(store.mcp_oauth_pending_path())
+		mcp_oauth_refresh:           new_mcp_oauth_refresh_state(store.mcp_oauth_refresh_path())
+		allow_autonomous:            os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
+		allow_auto_edit:             os.getenv('VEASEL_ALLOW_AUTO_EDIT') == '1'
 			|| os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
-		session_turn_locks:       session_turn_locks
-		operation_registry:       &TurnOperationRegistry{
+		session_turn_locks:          session_turn_locks
+		repository_map_symbol_cache: new_repository_map_symbol_cache()
+		operation_registry:          &TurnOperationRegistry{
 			mutex:            sync.new_mutex()
 			operations:       map[string]ActiveTurnOperation{}
 			provider_workers: sync.new_waitgroup()
 		}
-		provider_slots:           sync.new_semaphore_init(max_provider_concurrency)
-		plugin_mcp_slots:         sync.new_semaphore_init(max_plugin_mcp_concurrency)
-		shell_command_slots:      sync.new_semaphore_init(max_active_shell_commands)
-		shell_operation_registry: &ShellCommandRegistry{
+		provider_slots:              sync.new_semaphore_init(max_provider_concurrency)
+		plugin_mcp_slots:            sync.new_semaphore_init(max_plugin_mcp_concurrency)
+		shell_command_slots:         sync.new_semaphore_init(max_active_shell_commands)
+		shell_operation_registry:    &ShellCommandRegistry{
 			mutex:   sync.new_mutex()
 			workers: sync.new_waitgroup()
 		}
@@ -722,7 +724,8 @@ pub fn (app &App) get_workspace_repository_map(mut ctx Context, id string) veb.R
 		return json_request_error(mut ctx, 'Repository map hint exceeds the size limit')
 	}
 	budget := repository_map_default_budget_bytes
-	result := build_repository_map(session.directory, hint, budget) or {
+	mut map_cache := app.repository_map_symbol_cache
+	result := build_repository_map_with_cache(session.directory, hint, budget, mut map_cache) or {
 		return json_server_error(mut ctx, 'Unable to build the workspace repository map')
 	}
 	return ctx.json(WorkspaceRepositoryMapResponse{
@@ -1749,8 +1752,9 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 	}
 	// Sticky hint-free map on system keeps the prompt-cacheable prefix stable
 	// across turns; mention focus (if any) lands on the user message below.
-	map_result := maybe_attach_repository_map(mut messages, session.directory, input.content,
-		repository_map_default_budget_bytes) or {
+	mut map_cache := app.repository_map_symbol_cache
+	map_result := maybe_attach_repository_map_with_cache(mut messages, session.directory,
+		input.content, repository_map_default_budget_bytes, mut map_cache) or {
 		return error('Unable to build the workspace repository map')
 	}
 	if map_result.measurement.injected {
@@ -1769,8 +1773,8 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 		}
 	}
 	messages << user_message
-	focus_result := maybe_attach_repository_map_focus(mut messages, session.directory, input.content,
-		repository_map_focus_budget_bytes) or {
+	focus_result := maybe_attach_repository_map_focus_with_cache(mut messages, session.directory,
+		input.content, repository_map_focus_budget_bytes, mut map_cache) or {
 		return error('Unable to build the workspace repository map focus')
 	}
 	if focus_result.measurement.injected {

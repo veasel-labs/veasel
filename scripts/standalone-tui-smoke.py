@@ -163,7 +163,7 @@ def run_tui(
         startup_ms = (time.monotonic() - started) * 1000
 
         os.write(terminal, b"s")
-        wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
+        wait_for_markers((b"MODEL SETTINGS", b"All 210/210"), 5, "provider settings")
         for _ in range(5):
             os.write(terminal, b"\t")
             deadline = time.monotonic() + 0.2
@@ -199,6 +199,10 @@ def run_tui(
             wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             output.clear()
             os.write(terminal, b"\x10")
+            wait_for_markers(
+                (b"Commands", b"Filter commands"), 5, "the command palette after the only review was approved",
+            )
+            output.clear()
             os.write(terminal, b"quit")
             wait_for_markers((b"Quit",), 5, "the command palette quit option")
             os.write(terminal, b"\r")
@@ -215,7 +219,9 @@ def run_tui(
             wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
             output.clear()
             os.write(terminal, b"\x10")
-            wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
+            wait_for_markers(
+                (b"Commands", b"Filter commands"), 5, "the command palette after the assistant reply",
+            )
             output.clear()
             os.write(terminal, b"quit")
             wait_for_markers((b"Quit",), 5, "the quit command in the palette")

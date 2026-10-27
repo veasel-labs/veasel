@@ -1248,7 +1248,7 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 	if app.configured_model() == none {
 		ctx.res.set_status(.service_unavailable)
 		return ctx.json(APIError{
-			error: 'Configure a provider, model, and API key in the TUI or through environment variables'
+			error: no_model_configured_message
 		})
 	}
 	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }
@@ -1596,7 +1596,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	if app.configured_model() == none {
 		ctx.res.set_status(.service_unavailable)
 		return ctx.json(APIError{
-			error: 'Configure a provider, model, and API key in the TUI or through environment variables'
+			error: no_model_configured_message
 		})
 	}
 	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }

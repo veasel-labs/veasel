@@ -432,7 +432,12 @@ assert result["provider"] == "openai-compatible", result
 assert result["model"] == "smoke-model", result
 assert result["response"] == "Provider fixture reply", result
 PY
-cold_server_pid="$(pgrep -f -x "$work_dir/veasel serve" | head -n 1 || true)"
+while read -r candidate_pid; do
+	if [[ "$candidate_pid" != "$server_pid" ]]; then
+		cold_server_pid="$candidate_pid"
+		break
+	fi
+done < <(pgrep -f -x "$work_dir/veasel serve" || true)
 [[ -n "$cold_server_pid" ]] || fail 'cold-start backend process was not found for cleanup'
 
 for provider in openai-compatible openai openai-responses anthropic gemini meta dashscope zai 302-ai gmi-cloud minimax scaleway baseten cortecs digitalocean frogbot helicone io-net llmgateway ollama-cloud zenmux; do

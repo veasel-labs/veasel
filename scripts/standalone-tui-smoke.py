@@ -163,7 +163,7 @@ def run_tui(
         startup_ms = (time.monotonic() - started) * 1000
 
         os.write(terminal, b"s")
-        wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
+        wait_for_markers((b"MODEL SETTINGS", b"All 210/210"), 5, "provider settings")
         for _ in range(5):
             os.write(terminal, b"\t")
             deadline = time.monotonic() + 0.2

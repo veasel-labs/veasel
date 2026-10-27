@@ -711,3 +711,9 @@ fn test_model_settings_persistence_failure_does_not_change_active_configuration(
 	assert state.view().active_provider == 'openai-compatible'
 	assert state.view().profiles.len == 0
 }
+
+fn test_no_model_configured_message_names_the_setup_path() {
+	assert no_model_configured_message.contains('veasel config model set --provider')
+	assert no_model_configured_message.contains('VEASEL_MODEL_PROVIDER')
+	assert no_model_configured_message.contains('VEASEL_MODEL_API_KEY')
+}

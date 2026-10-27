@@ -308,6 +308,8 @@ fn valid_max_output_tokens(value int) bool {
 		&& value <= max_configured_output_tokens
 }
 
+const no_model_configured_message = 'No model provider is configured. Run `veasel config model set --provider <id> --model <name> --api-key <key>`, or set VEASEL_MODEL_PROVIDER, VEASEL_MODEL and VEASEL_MODEL_API_KEY, then retry.'
+
 fn (app &App) configured_model() ?string {
 	config := app.model_config() or { return none }
 	return config.model

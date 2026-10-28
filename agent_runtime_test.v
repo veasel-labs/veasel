@@ -1484,3 +1484,311 @@ fn test_approved_shell_command_rejects_replaced_workspace_root() {
 	assert result.output.contains('no process was started')
 	assert !os.exists(os.join_path(other, 'must-not-run'))
 }
+
+struct AgentProviderRetryFixture {
+mut:
+	hits   int
+	script []int
+}
+
+// handle replays a per-hit script: a 0 entry answers with a successful SSE
+// text stream ('retry-fixed'), any other entry is a non-2xx provider status
+// with a JSON error body. Unscripted hits succeed, so the last script entry
+// is usually 0 to finish the turn.
+fn (mut fixture AgentProviderRetryFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	status := if fixture.hits <= fixture.script.len { fixture.script[fixture.hits - 1] } else { 0 }
+	mut response := http.Response{}
+	if status == 0 {
+		response.set_status(.ok)
+		response.header.set(.content_type, 'text/event-stream')
+		chunk := OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					content: 'retry-fixed'
+				}
+			}]
+		}
+		response.body = 'data: ${json2.encode(chunk)}\n\ndata: [DONE]\n\n'
+		return response
+	}
+	response.set_status(match status {
+		401 { .unauthorized }
+		429 { .too_many_requests }
+		else { .internal_server_error }
+	})
+	response.header.set(.content_type, 'application/json')
+	response.body = '{"error":{"message":"provider fixture status"}}'
+	return response
+}
+
+fn start_agent_provider_retry_fixture(mut fixture AgentProviderRetryFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
+fn run_agent_retry_exchange(mut turn_ctx vcontext.Context, app &App, session Session,
+	operation_id string, input ChatMessageInput, deadline time.Time) (ChatExchange, string) {
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, input, operation_id,
+		deadline) or {
+		return ChatExchange{}, err.msg()
+	}
+	return exchange, ''
+}
+
+struct AgentProviderRetryOutcome {
+	hits       int
+	content    string
+	op_status  string
+	op_error   string
+	turn_error string
+}
+
+fn run_agent_provider_retry_turn(script []int) AgentProviderRetryOutcome {
+	root := os.join_path(os.temp_dir(), 'veasel-provider-retry-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(workspace, 'README.md'), 'fixture workspace\n') or { panic(err) }
+	mut fixture := &AgentProviderRetryFixture{ script: script }
+	mut server, server_thread := start_agent_provider_retry_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Provider retry regression'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 20 * time.second)
+	defer { cancel() }
+	exchange, turn_error := run_agent_retry_exchange(mut turn_ctx, app, session, operation_id,
+		ChatMessageInput{
+			content: 'Answer with a short confirmation.'
+		}, turn_ctx.deadline() or { panic('expected a turn deadline') })
+	mut content := ''
+	mut op_status := ''
+	mut op_error := ''
+	if turn_error.len == 0 && exchange.messages.len > 1 {
+		content = exchange.messages[1].content
+		operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+		op_status = operation.status
+		op_error = operation.error
+	}
+	return AgentProviderRetryOutcome{
+		hits:       fixture.hits
+		content:    content
+		op_status:  op_status
+		op_error:   op_error
+		turn_error: turn_error
+	}
+}
+
+fn test_agent_turn_retries_two_transient_failures_then_completes() {
+	outcome := run_agent_provider_retry_turn([500, 500])
+	assert outcome.turn_error == ''
+	assert outcome.hits == 3
+	assert outcome.content == 'retry-fixed'
+	assert outcome.op_status == 'completed'
+	assert outcome.op_error == ''
+}
+
+fn test_agent_turn_retries_one_rate_limit_then_completes() {
+	outcome := run_agent_provider_retry_turn([429])
+	assert outcome.turn_error == ''
+	assert outcome.hits == 2
+	assert outcome.content == 'retry-fixed'
+	assert outcome.op_status == 'completed'
+}
+
+fn test_agent_turn_returns_auth_failure_without_retry() {
+	outcome := run_agent_provider_retry_turn([401])
+	assert outcome.turn_error == 'HTTP 401'
+	assert outcome.hits == 1
+	assert outcome.content == ''
+}
+
+fn test_provider_retryable_failure_classification() {
+	assert provider_retryable_failure('HTTP 500')
+	assert provider_retryable_failure('HTTP 429')
+	assert provider_retryable_failure('OpenCode Go rate-limited the request (HTTP 429). Wait before retrying and check your current Go usage limits.')
+	assert provider_retryable_failure('workspace summary HTTP 502')
+	assert !provider_retryable_failure('HTTP 400')
+	assert !provider_retryable_failure('HTTP 401')
+	assert !provider_retryable_failure('HTTP 403')
+	assert !provider_retryable_failure('OpenCode rejected the API key (HTTP 401). Console keys can expire.')
+	assert !provider_retryable_failure('HTTP 404')
+	assert !provider_retryable_failure('HTTP 050')
+	assert !provider_retryable_failure('provider stream size limit exceeded')
+	assert !provider_retryable_failure('response_parse')
+	assert !provider_retryable_failure('cancelled')
+	assert !provider_retryable_failure('deadline_exceeded')
+	// The pinned net.http backend reports connection failures with numeric
+	// errno text and hard mid-stream closes with an ended-early message.
+	assert provider_retryable_failure('http.request: response body ended early: received 53 of 100000 bytes')
+	assert !provider_retryable_failure('empty_response')
+	$if $linux {
+		assert provider_retryable_failure('dial_tcp failed for address 127.0.0.1:33097\ntried addrs:\n    127.0.0.1:33097: net: socket error: 111; code: 111')
+		assert provider_retryable_failure('net: socket error: 104; code: 104')
+		assert provider_retryable_failure('net: socket error: 110; code: 110')
+		assert !provider_retryable_failure('net: socket error: 13; code: 13')
+	}
+	$if $macos {
+		assert provider_retryable_failure('net: socket error: 61; code: 61')
+		assert provider_retryable_failure('net: socket error: 54; code: 54')
+		assert !provider_retryable_failure('net: socket error: 1; code: 1')
+	}
+	$if $windows {
+		assert provider_retryable_failure('net: socket error: 10061')
+		assert !provider_retryable_failure('net: socket error: 10013')
+	}
+}
+
+fn test_provider_retry_never_replays_after_delivered_text() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 30 * time.second)
+	defer { cancel() }
+	// This V build captures closure variables by value, so the stub counts
+	// through a shared slice cell instead of a captured primitive.
+	mut attempts := []int{len: 1}
+	stub := fn [mut attempts] (mut _ctx vcontext.Context, _ []ChatMessage, _ []AgentToolDefinition,
+		on_text_delta ProviderTextDeltaFn, _ ModelConfig) ProviderTurnResult {
+		attempts[0]++
+		if attempts[0] == 1 {
+			on_text_delta('partial') or { panic('the delta sink must not fail') }
+			return ProviderTurnResult{ error: 'HTTP 500' }
+		}
+		return ProviderTurnResult{ error: 'unreachable second attempt' }
+	}
+	result := complete_with_turn_context_retry_attempts(mut turn_ctx, []ChatMessage{},
+		[]AgentToolDefinition{}, ignore_provider_text_delta, ModelConfig{}, stub)
+	assert result.error == 'HTTP 500'
+	assert attempts[0] == 1
+}
+
+fn test_provider_retry_recovers_transient_failure_without_delivered_text() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 30 * time.second)
+	defer { cancel() }
+	mut attempts := []int{len: 1}
+	stub := fn [mut attempts] (mut _ctx vcontext.Context, _ []ChatMessage, _ []AgentToolDefinition,
+		_on_text_delta ProviderTextDeltaFn, _ ModelConfig) ProviderTurnResult {
+		attempts[0]++
+		if attempts[0] == 1 {
+			return ProviderTurnResult{ error: 'HTTP 502' }
+		}
+		return ProviderTurnResult{ output: CompletionOutput{ content: 'recovered' } }
+	}
+	result := complete_with_turn_context_retry_attempts(mut turn_ctx, []ChatMessage{},
+		[]AgentToolDefinition{}, ignore_provider_text_delta, ModelConfig{}, stub)
+	assert result.error == ''
+	assert result.output.content == 'recovered'
+	assert attempts[0] == 2
+}
+
+fn test_provider_retry_backoff_poll_refuses_tight_deadline() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 1 * time.second)
+	defer { cancel() }
+	deadline := turn_ctx.deadline() or { panic('expected a turn deadline') }
+	start := time.now()
+	assert !provider_retry_backoff_poll(mut turn_ctx, deadline, 250)
+	// The deadline floor is 2s, so a 1s-out deadline must refuse instantly.
+	assert time.now() - start < 100 * time.millisecond
+}
+
+fn test_agent_turn_retries_connection_refused_transport_errors() {
+	root := os.join_path(os.temp_dir(), 'veasel-provider-refused-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(workspace, 'README.md'), 'fixture workspace\n') or { panic(err) }
+	// Reserve a loopback port and release it, so the provider dial is refused
+	// deterministically with the pinned backend's real socket wording.
+	mut dummy := &AgentProviderRetryFixture{}
+	mut server, server_thread := start_agent_provider_retry_fixture(mut dummy) or {
+		panic(err)
+	}
+	refused_addr := server.addr
+	server.stop()
+	server_thread.wait()
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${refused_addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Connection refused retry regression'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 20 * time.second)
+	defer { cancel() }
+	start := time.now()
+	_, turn_error := run_agent_retry_exchange(mut turn_ctx, app, session, operation_id,
+		ChatMessageInput{
+			content: 'Answer with a short confirmation.'
+		}, turn_ctx.deadline() or { panic('expected a turn deadline') })
+	// The failure wording carries the pinned backend's socket error; the
+	// retry window (500ms + 2s) must have run before the turn failed closed.
+	assert turn_error.contains('socket error') || turn_error.to_lower().contains('refused')
+	assert dummy.hits == 0
+	assert time.now() - start >= 2400 * time.millisecond
+}
+
+fn test_provider_retry_backoff_poll_yields_to_cancellation() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	defer { cancel() }
+	cancel()
+	start := time.now()
+	assert !provider_retry_backoff_poll(mut turn_ctx, none, 250)
+	assert time.now() - start < time.second
+}
+
+fn test_provider_retry_backoff_poll_confirms_waited_room() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 30 * time.second)
+	defer { cancel() }
+	start := time.now()
+	assert provider_retry_backoff_poll(mut turn_ctx, none, 120)
+	assert time.now() - start >= 120 * time.millisecond
+	assert time.now() - start < time.second
+}

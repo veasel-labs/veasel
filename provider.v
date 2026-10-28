@@ -37,6 +37,16 @@ const max_configured_output_tokens = 131_072
 const max_provider_response_bytes = 1_000_000
 const max_provider_stream_bytes = 16_000_000
 const max_provider_model_catalog_bytes = 1_000_000
+
+// Bounded retry for transient provider failures (connection-level blips and
+// HTTP 408/425/429/5xx) that produced no streamed output. Attempts stay small
+// and the backoff is deterministic so CI tests and providers under load stay
+// reproducible; every retry yields to cancellation and the request deadline.
+const provider_transient_retry_delays_ms = [500, 2000]
+const provider_retry_poll_step_ms = 50
+// Leave this margin under the request deadline so a retried request still
+// gets bounded read time instead of failing instantly on a deadline race.
+const provider_retry_remaining_floor = 2 * time.second
 const max_provider_model_catalog_entries = 500
 const opencode_go_chat_base_url = 'https://opencode.ai/inference/go/openai/v1'
 const opencode_go_models_url = 'https://opencode.ai/inference/go/v1/models'
@@ -778,6 +788,115 @@ fn provider_http_error_message(provider string, status_code int, operation strin
 	return 'HTTP ${status_code}'
 }
 
+// provider_ascii_digit reports whether a byte is an ASCII decimal digit.
+fn provider_ascii_digit(b u8) bool {
+	return b >= u8(48) && b <= u8(57)
+}
+
+// provider_http_status_from_error pulls the HTTP status out of the error
+// strings this module produces: bare 'HTTP <code>' from the streaming path,
+// '(HTTP <code>)' inside curated provider messages, and '<operation> HTTP
+// <code>' from assorted status paths. Only statuses spelled exactly
+// 'HTTP ###' count, so provider response text can never be mistaken for one.
+fn provider_http_status_from_error(message string) ?int {
+	needle := 'HTTP '
+	if message.len < needle.len + 3 {
+		return none
+	}
+	mut at := 0
+	for at <= message.len - needle.len {
+		mut matched := true
+		for k in 0 .. needle.len {
+			if message[at + k] != needle[k] {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			at++
+			continue
+		}
+		start := at + needle.len
+		mut end := start
+		for end < message.len && provider_ascii_digit(message[end]) {
+			end++
+		}
+		// The scan loop only exits on a non-digit or the message end, so the
+		// remaining boundary check is the length and the leading zero.
+		if end - start == 3 && message[start] != u8(48) {
+			status := message[start..end].int()
+			if status > 0 {
+				return status
+			}
+		}
+		at++
+	}
+	return none
+}
+
+// provider_retryable_http_status classifies statuses a fresh identical
+// request can resolve: client-side request timeouts, rate limiting, and
+// upstream capacity. Auth, permission, and other permanent client errors stay
+// non-retryable because replaying them cannot succeed.
+fn provider_retryable_http_status(status int) bool {
+	return status in [408, 425, 429, 500, 502, 503, 504]
+}
+
+// provider_retryable_network_failure classifies connection-level failures
+// from the pinned net.http backend. POSIX socket wordings carry numeric
+// errno text ('net: socket error: 111; code: 111') instead of strerror prose,
+// and a hard mid-stream close before any data reports 'response body ended
+// early'; both are safe to replay when no text was delivered. Phrase matching
+// keeps unrelated words from leaking through.
+fn provider_retryable_network_failure(message string) bool {
+	if errno := provider_socket_errno_from_error(message) {
+		return provider_retryable_errno(errno)
+	}
+	return message.to_lower().contains('response body ended early')
+}
+
+// provider_socket_errno_from_error parses the numeric errno the pinned
+// net.http backend embeds in socket failures ('net: socket error: 111').
+fn provider_socket_errno_from_error(message string) ?int {
+	needle := 'socket error: '
+	at := message.index(needle) or { return none }
+	start := at + needle.len
+	mut end := start
+	for end < message.len && provider_ascii_digit(message[end]) {
+		end++
+	}
+	if end == start {
+		return none
+	}
+	return message[start..end].int()
+}
+
+// provider_retryable_errno reports whether a socket errno is a transient
+// connection failure: refused, reset, broken pipe, or timed out. The numbers
+// are platform errno values, selected at compile time.
+fn provider_retryable_errno(errno int) bool {
+	$if linux {
+		return errno in [111, 104, 32, 110]
+	} $else $if macos {
+		return errno in [61, 54, 32, 60]
+	} $else $if windows {
+		return errno in [10061, 10054, 10060, 10053]
+	} $else {
+		return false
+	}
+}
+
+// provider_retryable_failure reports whether a provider error is worth one
+// bounded identical retry: a transport-status failure or a connection-level
+// network failure. Everything else (auth, malformed responses, parse
+// failures, cancellation) keeps the exact fail-closed behavior.
+fn provider_retryable_failure(message string) bool {
+	if status := provider_http_status_from_error(message) {
+		return provider_retryable_http_status(status)
+	}
+	return provider_retryable_network_failure(message)
+}
+
 struct ModelProviderRoute {
 	protocol string
 	base_url string
@@ -874,6 +993,14 @@ interface ModelProvider {
 struct ProviderTurnResult {
 	output CompletionOutput
 	error  string
+}
+
+// ProviderDeltaDelivery is a heap cell shared between the retry loop and the
+// streaming callback: this V build captures closure variables by value, so a
+// plain local would hide the flag a failed attempt set.
+struct ProviderDeltaDelivery {
+mut:
+	delivered bool
 }
 
 struct OpenAICompatibleProvider {}
@@ -1478,6 +1605,89 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 	}
 	return ProviderTurnResult{
 		output: output
+	}
+}
+
+// provider_retry_backoff_poll sleeps up to `delay_ms` and polls turn
+// cancellation every `provider_retry_poll_step_ms`. It stops early when the
+// remaining request-deadline margin would leave the next attempt no bounded
+// read time. Returns false when waiting is pointless: the turn got
+// cancelled, the deadline is too close, or the wait was cut short.
+fn provider_retry_backoff_poll(mut turn_ctx vcontext.Context, request_deadline ?time.Time,
+	delay_ms int) bool {
+	deadline := request_deadline or { turn_ctx.deadline() or { time.now().add(60 * time.second) } }
+	mut waited_ms := 0
+	for waited_ms < delay_ms {
+		if context_error := turn_context_error(mut turn_ctx) {
+			_ = context_error
+			return false
+		}
+		if time.now() >= deadline.add(-provider_retry_remaining_floor) {
+			return false
+		}
+		step_ms := if delay_ms - waited_ms < provider_retry_poll_step_ms {
+			delay_ms - waited_ms
+		} else {
+			provider_retry_poll_step_ms
+		}
+		time.sleep(step_ms * time.millisecond)
+		waited_ms += step_ms
+	}
+	// A cancellation that lands while the final tick sleeps must not launch
+	// the next provider attempt.
+	if context_error := turn_context_error(mut turn_ctx) {
+		_ = context_error
+		return false
+	}
+	return time.now() < deadline.add(-provider_retry_remaining_floor)
+}
+
+// complete_with_turn_context_retry wraps complete_with_turn_context with a
+// bounded retry for transient provider failures. A failed attempt is retried
+// only when it was classified transient, delivered no text delta, the turn
+// context is still healthy, and the request deadline leaves a small margin;
+// the backoff is deterministic and cancellation-pollable. The provider
+// caller keeps its slot for the whole window, and text the caller already
+// received is never replayed, so a partial stream keeps failing closed
+// exactly as before.
+fn complete_with_turn_context_retry(mut turn_ctx vcontext.Context, messages []ChatMessage,
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) ProviderTurnResult {
+	return complete_with_turn_context_retry_attempts(mut turn_ctx, messages, tools, on_text_delta,
+		config, complete_with_turn_context)
+}
+
+// ProviderTurnAttemptFn is one provider request inside the retry loop,
+// injectable so tests can script stream-then-fail sequences without a
+// network fixture.
+type ProviderTurnAttemptFn = fn (mut vcontext.Context, []ChatMessage, []AgentToolDefinition, ProviderTextDeltaFn, ModelConfig) ProviderTurnResult
+
+// complete_with_turn_context_retry_attempts is the retry loop behind
+// complete_with_turn_context_retry with the attempt function injected.
+fn complete_with_turn_context_retry_attempts(mut turn_ctx vcontext.Context, messages []ChatMessage,
+	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig,
+	attempt ProviderTurnAttemptFn) ProviderTurnResult {
+	mut delivery := &ProviderDeltaDelivery{}
+	stoppable_delta := fn [mut delivery, on_text_delta] (delta string) ! {
+		delivery.delivered = true
+		on_text_delta(delta)!
+	}
+	mut attempts := 0
+	for {
+		delivery.delivered = false
+		mut attempt_ctx := turn_ctx
+		result := attempt(mut attempt_ctx, messages, tools, stoppable_delta, config)
+		if result.error.len == 0 {
+			return result
+		}
+		if delivery.delivered || attempts >= provider_transient_retry_delays_ms.len
+			|| !provider_retryable_failure(result.error) {
+			return result
+		}
+		if !provider_retry_backoff_poll(mut turn_ctx, config.request_deadline,
+			provider_transient_retry_delays_ms[attempts]) {
+			return result
+		}
+		attempts++
 	}
 }
 

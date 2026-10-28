@@ -780,6 +780,20 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		},
 	]
 	assert agent_tool_readonly_run_end(parallel_calls, 0) == parallel_calls.len
+	assert workspace_read_identity_from_call(ProviderToolCall{
+		id:       'range-a'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","start_line":1,"line_count":2}'
+		}
+	}) or { '' } == '["src/main.v","1","2"]'
+	assert workspace_read_identity_from_call(ProviderToolCall{
+		id:       'range-b'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","start_line":2,"line_count":1}'
+		}
+	}) or { '' } != '["src/main.v","1","2"]'
 	mut parallel_read_paths := map[string]bool{}
 	mut parallel_context := vcontext.background()
 	mut parallel_turn, cancel_parallel := vcontext.with_timeout(mut parallel_context, 2 * time.second)
@@ -794,7 +808,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert parallel_results[0].contains('src/main.v')
 	assert parallel_results[1].contains('workspace-sentinel')
 	assert parallel_results[2].contains('workspace-sentinel')
-	assert parallel_read_paths['src/main.v']
+	assert parallel_read_paths['["src/main.v"]']
 	mixed_calls := [
 		parallel_calls[0],
 		parallel_calls[1],
@@ -917,6 +931,39 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert skipped_results[0].contains('was not run')
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == edits_before_skipped_call
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { '' } == 'module fixture\nworkspace-sentinel\n'
+	mut range_paths := map[string]bool{}
+	range_results := execute_parallel_readonly_workspace_tools(app, root, session.id, [
+		ProviderToolCall{
+			id:       'range-one'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v","start_line":1,"line_count":1}'
+			}
+		},
+		ProviderToolCall{
+			id:       'range-two'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v","start_line":2,"line_count":1}'
+			}
+		},
+	], AgentToolPolicy{}, mut range_paths, {})
+	assert range_results.len == 2
+	assert range_results[0].contains('1: module fixture')
+	assert range_results[1].contains('2: workspace-sentinel')
+	assert !range_paths['["src/main.v"]']
+	assert range_paths['["src/main.v","1","1"]']
+	assert range_paths['["src/main.v","2","1"]']
+	repeated_range := execute_parallel_readonly_workspace_tools(app, root, session.id, [
+		ProviderToolCall{
+			id:       'range-repeat'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v","start_line":2,"line_count":1}'
+			}
+		},
+	], AgentToolPolicy{}, mut range_paths, {})
+	assert repeated_range[0].contains('Already provided this turn')
 
 	duplicate_batch := [
 		ProviderToolCall{
@@ -942,7 +989,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert dup_results[1].contains('Already provided this turn')
 	assert dup_results[1].contains('src/main.v')
 	assert !dup_results[1].contains('workspace-sentinel')
-	assert batch_paths['src/main.v']
+	assert batch_paths['["src/main.v"]']
 
 	late_path := 'src/late-file.txt'
 	late_read_calls := [
@@ -975,7 +1022,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert late_read_results[0].contains('invalid or unavailable')
 	assert late_read_results[1] == late_read_results[0]
 	assert !late_read_results[1].contains('Already provided this turn')
-	assert !late_read_paths[late_path]
+	assert !late_read_paths[json2.encode[[]string]([late_path])]
 	os.write_file(os.join_path(root, late_path), 'appeared after the failed read') or {
 		panic(err)
 	}
@@ -997,7 +1044,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		mut late_retry_connections, ExecutionPolicyTurn{ mode: .ask, interactive: true },
 		mut late_read_paths, {}) or { panic(err) }
 	assert late_retry_results[0].contains('appeared after the failed read')
-	assert late_read_paths[late_path]
+	assert late_read_paths[json2.encode[[]string]([late_path])]
 	assert workspace_read_path_from_call(ProviderToolCall{
 		id:       'read-spaced-path'
 		function: ProviderFunctionCall{
@@ -1014,7 +1061,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	}) == none
 
 	mut turn_paths := map[string]bool{}
-	turn_paths['src/main.v'] = true
+	turn_paths['["src/main.v"]'] = true
 	skipped := execute_parallel_readonly_workspace_tools(app, root, session.id, [
 		ProviderToolCall{
 			id:       'read-again'
@@ -1027,6 +1074,16 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert skipped.len == 1
 	assert skipped[0].contains('Already provided this turn')
 	assert !skipped[0].contains('workspace-sentinel')
+	skipped_range := execute_parallel_readonly_workspace_tools(app, root, session.id, [
+		ProviderToolCall{
+			id:       'range-already-covered'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v","start_line":2,"line_count":1}'
+			}
+		},
+	], AgentToolPolicy{}, mut turn_paths, {})
+	assert skipped_range[0].contains('Already provided this turn')
 	assert workspace_read_path_from_call(duplicate_batch[0]) or { '' } == 'src/main.v'
 	assert workspace_read_path_from_call(ProviderToolCall{
 		id:       'list'
@@ -1053,6 +1110,25 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		}
 	})
 	assert read.contains('workspace-sentinel')
+	ranged_read := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'read-range'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","start_line":2,"line_count":1}'
+		}
+	})
+	assert ranged_read.contains('"start_line":2')
+	assert ranged_read.contains('"end_line":2')
+	assert ranged_read.contains('2: workspace-sentinel')
+	assert !ranged_read.contains('1: module fixture')
+	invalid_range := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'read-invalid-range'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","start_line":2}'
+		}
+	})
+	assert invalid_range.contains('must be provided together')
 
 	search := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'search-1'

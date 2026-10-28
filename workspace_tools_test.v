@@ -2,6 +2,7 @@ module main
 
 import os
 import uuid
+import encoding.utf8
 
 fn test_workspace_file_tools_bound_paths_and_skip_symlinks() {
 	root := os.join_path(os.temp_dir(), 'veasel-workspace-${uuid.new_v4().str()}')
@@ -40,8 +41,52 @@ fn test_workspace_file_tools_bound_paths_and_skip_symlinks() {
 		path:    'src/main.v'
 		content: 'module example\nfn main() {}\n'
 	}
+	range := workspace_file_range(root, 'src/main.v', 2, 1) or { panic(err) }
+	assert range.path == 'src/main.v'
+	assert range.start_line == 2
+	assert range.end_line == 2
+	assert range.total_lines == 2
+	assert range.content == '2: fn main() {}\n'
+	assert !range.truncated
+	assert workspace_file_range_error_contains(root, 'src/main.v', 0, 1, 'line range')
+	assert workspace_file_range_error_contains(root, 'src/main.v', 4, 1, 'line count')
 	assert workspace_file_error_contains(root, '../outside-link/secret.txt', 'must not leave')
 	assert workspace_file_error_contains(root, 'outside-link/secret.txt', 'escapes')
+}
+
+fn test_workspace_file_range_preserves_line_endings_and_bounds_utf8_output() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-range-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'mixed.txt')
+	os.write_file(path, 'α\r\n\nβ\rγ\n') or { panic(err) }
+	first := workspace_file_range(root, 'mixed.txt', 1, 2) or { panic(err) }
+	assert first.total_lines == 4
+	assert first.end_line == 2
+	assert first.content == '1: α\n2: \n'
+	assert first.truncated
+	last := workspace_file_range(root, 'mixed.txt', 3, 2) or { panic(err) }
+	assert last.total_lines == 4
+	assert last.end_line == 4
+	assert last.content == '3: β\n4: γ\n'
+	assert !last.truncated
+
+	os.write_file(path, 'λ'.repeat(max_workspace_read_range_bytes / 2 + 20)) or { panic(err) }
+	long_line := workspace_file_range(root, 'mixed.txt', 1, 1) or { panic(err) }
+	assert long_line.truncated
+	assert long_line.content.len <= max_workspace_read_range_bytes
+	assert long_line.content.len >= max_workspace_read_range_bytes - 1
+	assert utf8.validate(long_line.content.str, long_line.content.len)
+	os.write_file(path, 'x'.repeat(max_workspace_read_range_bytes + 20)) or { panic(err) }
+	max_line := workspace_file_range(root, 'mixed.txt', 1, 1) or { panic(err) }
+	assert max_line.content.len == max_workspace_read_range_bytes
+	first_line := 'x'.repeat(max_workspace_read_range_bytes - 7)
+	os.write_file(path, '${first_line}\nsecond\n') or { panic(err) }
+	near_limit := workspace_file_range(root, 'mixed.txt', 1, 2) or { panic(err) }
+	assert near_limit.end_line == 1
+	assert near_limit.total_lines == 2
+	assert near_limit.truncated
+	assert !near_limit.content.contains('second')
 }
 
 fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
@@ -50,17 +95,40 @@ fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 	defer { os.rmdir_all(root) or {} }
 	os.write_file(os.join_path(root, 'one.txt'), 'alpha\nneedle in one\n') or { panic(err) }
 	os.write_file(os.join_path(root, 'two.txt'), 'needle in two\n') or { panic(err) }
+	os.write_file(os.join_path(root, 'mixed.txt'), 'first\rneedle carriage\r\nneedle windows\nprefix needle unicode🙂\rneedle final') or {
+		panic(err)
+	}
 	os.write_file(os.join_path(root, 'binary.dat'), 'skip\x00needle') or { panic(err) }
 	os.write_file(os.join_path(root, 'invalid-utf8.dat'), '\xff') or { panic(err) }
 	result := workspace_search(root, 'needle') or { panic(err) }
-	assert result.matches.len == 2
+	assert result.matches.len == 6
 	assert result.matches[0] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 2
+		text: 'needle carriage'
+	}
+	assert result.matches[1] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 3
+		text: 'needle windows'
+	}
+	assert result.matches[2] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 4
+		text: 'prefix needle unicode🙂'
+	}
+	assert result.matches[3] == WorkspaceSearchMatch{
+		path: 'mixed.txt'
+		line: 5
+		text: 'needle final'
+	}
+	assert result.matches[4] == WorkspaceSearchMatch{
 		path: 'one.txt'
 		line: 2
 		text: 'needle in one'
 	}
-	assert result.matches[1].path == 'two.txt'
-	assert result.matches[1].line == 1
+	assert result.matches[5].path == 'two.txt'
+	assert result.matches[5].line == 1
 	assert !result.truncated
 	assert workspace_file_error_contains(root, 'binary.dat', 'binary files')
 	assert workspace_file_error_contains(root, 'invalid-utf8.dat', 'UTF-8')
@@ -205,6 +273,12 @@ fn test_workspace_git_directory_resolves_linked_worktree_pointer() {
 
 fn workspace_file_error_contains(root string, path string, expected string) bool {
 	_ := workspace_file(root, path) or { return err.msg().contains(expected) }
+	return false
+}
+
+fn workspace_file_range_error_contains(root string, path string, start_line int, line_count int,
+	expected string) bool {
+	_ := workspace_file_range(root, path, start_line, line_count) or { return err.msg().contains(expected) }
 	return false
 }
 

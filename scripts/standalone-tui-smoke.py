@@ -160,10 +160,13 @@ def run_tui(
         raise TimeoutError(f"standalone TUI did not render partial streamed text within {timeout} seconds: {snippet}")
 
     def quit_via_palette(palette_description: str, quit_description: str) -> None:
-        # The palette focuses its filter input one microtask after the frame renders, so keystrokes
-        # sent in that window are dropped and the list stays unfiltered. Escape unmounts the dialog
-        # and resets the query, so retry from a clean palette state before giving up. A failed
-        # open-wait on attempt 2+ means Escape did not close the previous palette.
+        # The palette focuses its filter input asynchronously after the frame renders
+        # (onMount -> queueMicrotask), so keystrokes sent too early are dropped and the
+        # list stays unfiltered; CI hit this on both Linux and macOS. Give the focus a
+        # moment to land before typing. On a failed quit wait, close the palette with
+        # Escape and let the dialog fully unmount before reopening: an immediate Ctrl+P
+        # is consumed by the palette's own toggle handler while it is still mounted,
+        # which leaves the palette closed and fails the next open wait.
         last_snippet = ""
         for attempt in range(_PALETTE_RETRIES):
             output.clear()
@@ -171,6 +174,7 @@ def run_tui(
             wait_for_markers(
                 (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
             )
+            time.sleep(0.3)
             output.clear()
             os.write(terminal, b"quit")
             try:
@@ -178,6 +182,7 @@ def run_tui(
             except TimeoutError:
                 last_snippet = visible_output()[-2_000:].decode(errors="replace")
                 os.write(terminal, b"\x1b")
+                time.sleep(0.5)
                 continue
             os.write(terminal, b"\r")
             return

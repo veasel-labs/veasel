@@ -20,6 +20,10 @@ from urllib.parse import quote
 from urllib.request import Request
 from urllib.request import urlopen
 
+# Attempts to open the command palette, filter it, and confirm the Quit option
+# before the smoke gives up. Each attempt starts from a clean palette state.
+_PALETTE_RETRIES = 3
+
 if os.name == "nt":
     from windows_conpty import run_tui_conpty
 else:
@@ -155,6 +159,33 @@ def run_tui(
         snippet = visible_output()[-2_000:].decode(errors="replace")
         raise TimeoutError(f"standalone TUI did not render partial streamed text within {timeout} seconds: {snippet}")
 
+    def quit_via_palette(palette_description: str, quit_description: str) -> None:
+        # The palette focuses its filter input one microtask after the frame renders, so keystrokes
+        # sent in that window are dropped and the list stays unfiltered. Escape unmounts the dialog
+        # and resets the query, so retry from a clean palette state before giving up. A failed
+        # open-wait on attempt 2+ means Escape did not close the previous palette.
+        last_snippet = ""
+        for attempt in range(_PALETTE_RETRIES):
+            output.clear()
+            os.write(terminal, b"\x10")
+            wait_for_markers(
+                (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
+            )
+            output.clear()
+            os.write(terminal, b"quit")
+            try:
+                wait_for_markers((b"Quit",), 5, quit_description)
+            except TimeoutError:
+                last_snippet = visible_output()[-2_000:].decode(errors="replace")
+                os.write(terminal, b"\x1b")
+                continue
+            os.write(terminal, b"\r")
+            return
+        raise TimeoutError(
+            f"standalone TUI did not reach {quit_description} after {_PALETTE_RETRIES} attempts; "
+            f"visible terminal output: {last_snippet}"
+        )
+
     try:
         home_markers = (b"connected", b"SESSIONS", b"VEASEL")
         if session_title:
@@ -197,15 +228,9 @@ def run_tui(
             output.clear()
             os.write(terminal, b"a")
             wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
-            output.clear()
-            os.write(terminal, b"\x10")
-            wait_for_markers(
-                (b"Commands", b"Filter commands"), 5, "the command palette after the only review was approved",
+            quit_via_palette(
+                "the command palette after the only review was approved", "the command palette quit option",
             )
-            output.clear()
-            os.write(terminal, b"quit")
-            wait_for_markers((b"Quit",), 5, "the command palette quit option")
-            os.write(terminal, b"\r")
         elif not session_id:
             os.write(terminal, b"q")
         else:
@@ -217,15 +242,9 @@ def run_tui(
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
             wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
             wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
-            output.clear()
-            os.write(terminal, b"\x10")
-            wait_for_markers(
-                (b"Commands", b"Filter commands"), 5, "the command palette after the assistant reply",
+            quit_via_palette(
+                "the command palette after the assistant reply", "the quit command in the palette",
             )
-            output.clear()
-            os.write(terminal, b"quit")
-            wait_for_markers((b"Quit",), 5, "the quit command in the palette")
-            os.write(terminal, b"\r")
 
         def wait_exit(timeout: float) -> int | None:
             deadline = time.monotonic() + timeout

@@ -141,6 +141,22 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   context after `http.fetch` returns. True socket close before any progress
   callback remains limited by the pinned `net.http.fetch` API (no external
   cancel handle).
+- [x] Retry transient provider failures inside the turn with bounded,
+  deterministic backoff so a shared upstream hiccup no longer fails the whole
+  operation: connection-level failures and HTTP 408/425/429/5xx get up to two
+  identical retries (500ms, 2s) while the provider slot stays held. A retry
+  never runs after a request delivered any text delta (no duplicated output),
+  never crosses the request deadline, always yields to cancellation, and
+  never replays `provider_busy`/`app_shutting_down` local slot errors or
+  permanent client errors (401/403/404). Anything not classified transient
+  keeps the exact fail-closed behavior and durable error reporting. Covered
+  by local OpenAI-compatible fixtures (500→500→success, 429→success,
+  401→single attempt, connection-refused dial with the pinned backend's
+  socket-error wording), a classifier unit test with platform errno tables,
+  and retry-loop unit tests proving text already delivered is never replayed.
+- [ ] Parse provider `Retry-After` headers into the transient retry backoff
+  so rate-limit windows are honored exactly instead of using the fixed
+  deterministic delays.
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.

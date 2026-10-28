@@ -342,7 +342,7 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 			provider_workers.done()
 		}
 		mut worker_ctx := turn_ctx
-		result := complete_with_turn_context(mut worker_ctx, input.messages, [], ignore_provider_text_delta, config)
+		result := complete_with_turn_context_retry(mut worker_ctx, input.messages, [], ignore_provider_text_delta, config)
 		result_chan <- result
 	}(slots, subagent_slots, pool, workers, turn_ctx, input, config, result_chan)
 	return wait_for_provider_turn(mut turn_ctx, result_chan)
@@ -384,7 +384,7 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 			provider_workers.done()
 		}
 		mut worker_ctx := turn_ctx
-		result := complete_with_turn_context(mut worker_ctx, messages, tools, on_text_delta, config)
+		result := complete_with_turn_context_retry(mut worker_ctx, messages, tools, on_text_delta, config)
 		result_chan <- result
 	}(slots, subagent_slots, pool, workers, turn_ctx, messages.clone(), tools.clone(), on_text_delta,
 		config, result_chan)

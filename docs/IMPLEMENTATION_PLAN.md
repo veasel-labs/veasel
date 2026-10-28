@@ -154,9 +154,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   401→single attempt, connection-refused dial with the pinned backend's
   socket-error wording), a classifier unit test with platform errno tables,
   and retry-loop unit tests proving text already delivered is never replayed.
-- [ ] Parse provider `Retry-After` headers into the transient retry backoff
-  so rate-limit windows are honored exactly instead of using the fixed
-  deterministic delays.
+- [x] Honor provider `Retry-After` delta-seconds and HTTP-date headers on the
+  shared streaming path. Typed internal error metadata carries the delay
+  without exposing the raw header in durable errors. Use the longer of the
+  server delay and deterministic backoff, reject retry windows beyond the
+  turn deadline immediately, and preserve cancellation, attempt limits,
+  no-replay-after-text, and permanent-error exclusions. Invalid headers retain
+  deterministic backoff; numeric overflow cannot shorten the wait.
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.

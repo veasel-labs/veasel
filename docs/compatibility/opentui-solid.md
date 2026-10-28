@@ -69,7 +69,14 @@ pinned **0.5.17** until a deliberate upgrade; that upgrade is now accepted:
   the next prompt; **Ctrl+Shift+X** cancels the most recent queued follow-up,
   while **Ctrl+X** still cancels only the active operation. Both actions use
   the backend's durable operation cancellation endpoint, so the UI does not
-  remove a queued prompt before the server confirms its cancellation.
+  remove a queued prompt before the server confirms its cancellation. Opening a
+  session rehydrates queued, running, and cancelling operations through
+  `GET /v1/sessions/{id}/operations`, so pending work remains visible and
+  cancellable after a TUI restart; live events received during the fetch win
+  over a racing initial snapshot, including operations absent from that snapshot.
+  The API preserves submission order when timestamps tie, so the newest queued
+  follow-up remains the newest after recovery.
+  An uncertain latest turn restores the explicit inspect-before-retry warning.
 - Dialog host (`solid/ui/dialog.tsx`): overlay stack with Esc dismiss, restore
   previous focus, mint panel chrome. Command palette
   (`solid/component/command-palette.tsx` + `solid/commands.ts`) opens on

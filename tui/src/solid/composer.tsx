@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Show, batch, createEffect, createMemo, createSignal } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
 import type { KeyEvent, PasteEvent, TextareaRenderable } from "@opentui/core"
 import {
@@ -176,8 +176,12 @@ export function SolidComposer(props: SolidComposerProps) {
     const payload = formatMessageWithAttachments(text, attachments())
     if (!payload.trim()) return
     setReadline((current) => rememberReadlineSubmit(current, payload))
-    props.onSubmit?.(payload)
-    clearComposer()
+    // A synchronous refusal may restore the draft through restoreToken. Flush
+    // that effect after clearing, so the accepted submit path cannot erase it.
+    batch(() => {
+      props.onSubmit?.(payload)
+      clearComposer()
+    })
   }
 
   const accept = (mode: "tab" | "enter"): boolean => {

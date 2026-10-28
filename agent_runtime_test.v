@@ -1,6 +1,5 @@
 module main
 
-import http
 import json2
 import net.http
 import os

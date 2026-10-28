@@ -1655,18 +1655,18 @@ fn test_provider_retryable_failure_classification() {
 	// errno text and hard mid-stream closes with an ended-early message.
 	assert provider_retryable_failure('http.request: response body ended early: received 53 of 100000 bytes')
 	assert !provider_retryable_failure('empty_response')
-	$if $linux {
+	$if linux {
 		assert provider_retryable_failure('dial_tcp failed for address 127.0.0.1:33097\ntried addrs:\n    127.0.0.1:33097: net: socket error: 111; code: 111')
 		assert provider_retryable_failure('net: socket error: 104; code: 104')
 		assert provider_retryable_failure('net: socket error: 110; code: 110')
 		assert !provider_retryable_failure('net: socket error: 13; code: 13')
 	}
-	$if $macos {
+	$if macos {
 		assert provider_retryable_failure('net: socket error: 61; code: 61')
 		assert provider_retryable_failure('net: socket error: 54; code: 54')
 		assert !provider_retryable_failure('net: socket error: 1; code: 1')
 	}
-	$if $windows {
+	$if windows {
 		assert provider_retryable_failure('net: socket error: 10061')
 		assert !provider_retryable_failure('net: socket error: 10013')
 	}

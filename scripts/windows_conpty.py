@@ -12,6 +12,10 @@ from typing import Callable
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
+# Kept in sync with _PALETTE_RETRIES in standalone-tui-smoke.py: attempts to open
+# the command palette, filter it, and confirm the Quit option before giving up.
+_PALETTE_RETRIES = 3
+
 HPCON = wintypes.HANDLE
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
 EXTENDED_STARTUPINFO_PRESENT = 0x00080000
@@ -261,6 +265,38 @@ def run_tui_conpty(
         if written.value != len(keys):
             raise OSError(f"TUI accepted {written.value} of {len(keys)} input bytes")
 
+    def quit_via_palette(palette_description: str, quit_description: str) -> None:
+        # The palette focuses its filter input asynchronously after the frame renders
+        # (onMount -> queueMicrotask), so keystrokes sent too early are dropped and the
+        # list stays unfiltered; CI hit this on both Linux and macOS. Give the focus a
+        # moment to land before typing. On a failed quit wait, close the palette with
+        # Escape and let the dialog fully unmount before reopening: an immediate Ctrl+P
+        # is consumed by the palette's own toggle handler while it is still mounted,
+        # which leaves the palette closed and fails the next open wait.
+        last_snippet = ""
+        for attempt in range(_PALETTE_RETRIES):
+            output.clear()
+            send_keys(b"\x10")
+            wait_for_markers(
+                (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
+            )
+            time.sleep(0.3)
+            output.clear()
+            send_keys(b"quit")
+            try:
+                wait_for_markers((b"Quit",), 5, quit_description)
+            except TimeoutError:
+                last_snippet = visible_output()[-2_000:].decode(errors="replace")
+                send_keys(b"\x1b")
+                time.sleep(0.5)
+                continue
+            send_keys(b"\r")
+            return
+        raise TimeoutError(
+            f"standalone TUI did not reach {quit_description} after {_PALETTE_RETRIES} attempts; "
+            f"visible terminal output: {last_snippet!r}"
+        )
+
     try:
         security = SecurityAttributes(ctypes.sizeof(SecurityAttributes), None, False)
         for read_handle, write_handle in ((ctypes.byref(input_read), ctypes.byref(input_write)),
@@ -363,11 +399,9 @@ def run_tui_conpty(
             output.clear()
             send_keys(b"a")
             wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
-            output.clear()
-            send_keys(b"\x10")
-            send_keys(b"quit")
-            wait_for_markers((b"Quit",), 5, "the command palette quit option")
-            send_keys(b"\r")
+            quit_via_palette(
+                "the command palette after the only review was approved", "the command palette quit option",
+            )
         elif not session_id:
             send_keys(b"q")
         else:
@@ -379,13 +413,9 @@ def run_tui_conpty(
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
             wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
             wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
-            output.clear()
-            send_keys(b"\x10")
-            wait_for_markers((b"Commands",), 5, "the command palette after the assistant reply")
-            output.clear()
-            send_keys(b"quit")
-            wait_for_markers((b"Quit",), 5, "the quit command in the palette")
-            send_keys(b"\r")
+            quit_via_palette(
+                "the command palette after the assistant reply", "the quit command in the palette",
+            )
         if kernel32.WaitForSingleObject(process.hProcess, 5_000) != 0:
             snippet = visible_output()[-2_500:].decode(errors="replace")
             raise TimeoutError(f"standalone TUI did not exit through the command palette: {snippet}")

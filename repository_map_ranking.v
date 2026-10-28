@@ -389,24 +389,38 @@ fn repository_map_hint_mentions_package_indexes(hints RepositoryMapHintSet) bool
 
 fn repository_map_content_is_reexport_only(content string) bool {
 	mut found_reexport := false
-	for raw_line in content.split('\n') {
-		line := raw_line.trim_space()
-		if line.len == 0 || line.starts_with('#') || line.starts_with('//') || line.starts_with('/*')
-			|| line.starts_with('*') {
+	mut line_start := 0
+	for index := 0; index <= content.len; index++ {
+		if index < content.len && content[index] != `\n` {
 			continue
 		}
-		is_python_import := line.starts_with('from ') && line.contains(' import ')
-		is_import := line.starts_with('import ')
-		is_export := line.starts_with('export ') && (line.contains(' from ') || line.starts_with('export *'))
-		is_rust_reexport := line.starts_with('pub use ')
-		is_python_all := line.starts_with('__all__')
-		if is_python_import || is_import || is_export || is_rust_reexport || is_python_all {
-			found_reexport = true
+		is_reexport := repository_map_reexport_line(unsafe {
+			content.substr_unsafe(line_start, index)
+		}) or {
+			line_start = index + 1
 			continue
 		}
-		return false
+		if !is_reexport {
+			return false
+		}
+		found_reexport = true
+		line_start = index + 1
 	}
 	return found_reexport
+}
+
+fn repository_map_reexport_line(raw_line string) ?bool {
+	line := repository_map_trim_space_view(raw_line)
+	if line.len == 0 || line.starts_with('#') || line.starts_with('//') || line.starts_with('/*')
+		|| line.starts_with('*') {
+		return none
+	}
+	is_python_import := line.starts_with('from ') && line.contains(' import ')
+	is_import := line.starts_with('import ')
+	is_export := line.starts_with('export ') && (line.contains(' from ') || line.starts_with('export *'))
+	is_rust_reexport := line.starts_with('pub use ')
+	is_python_all := line.starts_with('__all__')
+	return is_python_import || is_import || is_export || is_rust_reexport || is_python_all
 }
 
 struct RepositoryMapContentQueryTerm {

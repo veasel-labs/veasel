@@ -2735,11 +2735,13 @@ function LiveAppShell(props: LiveAppProps) {
         <SolidComposer
           placeholder={
             inSession()
-              ? (sending()
-                ? activeTurnSessionId === activeSessionId()
-                  ? "Message Veasel…  ·  queued after this turn"
-                  : "Turn in another session · return to queue a follow-up"
-                : undefined)
+              ? (restoringSessionOperations() === activeSessionId()
+                ? "Restoring this session's queued turns…"
+                : sending()
+                  ? activeTurnSessionId === activeSessionId()
+                    ? "Message Veasel…  ·  queued after this turn"
+                    : "Turn in another session · return to queue a follow-up"
+                  : undefined)
               : "Type /connect · /skills · /help  (Esc dismisses)"
           }
           onSubmit={(text) => {

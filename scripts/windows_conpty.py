@@ -407,7 +407,8 @@ def run_tui_conpty(
         else:
             output.clear()
             send_keys(b"\r")
-            wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
+            # Recovery uses a different placeholder until submissions are safe.
+            wait_for_markers((b"Message Veasel",), 5, "the recovered session composer")
             output.clear()
             send_keys(b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)

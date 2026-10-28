@@ -208,6 +208,80 @@ test("warns when the latest durable turn has an uncertain outcome", async () => 
   }
 })
 
+test("preserves an early submission draft until durable recovery is ready", async () => {
+  const posts: string[] = []
+  const directory = `/tmp/veasel-recovery-${crypto.randomUUID()}`
+  const controller = new AbortController()
+  let releaseOperations!: (response: Response) => void
+  let operationsRequested = false
+  const operationsResponse = new Promise<Response>((resolve) => { releaseOperations = resolve })
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const path = new URL(request.url).pathname
+      if (path === "/v1/events") return new Response(new ReadableStream({
+        start(stream) { stream.enqueue(new TextEncoder().encode(": connected\n\n")) },
+      }), { headers: { "content-type": "text/event-stream" } })
+      if (path === "/v1/sessions") {
+        return Response.json([{ id: "s1", title: "Session alpha", directory }])
+      }
+      if (path === "/v1/sessions/s1/operations") {
+        operationsRequested = true
+        return operationsResponse
+      }
+      if (path.endsWith("/messages")) {
+        if (request.method === "POST") {
+          posts.push((await request.json() as { content: string }).content)
+          return Response.json({ operation_id: "after-recovery", status: "running" }, { status: 202 })
+        }
+        return Response.json([])
+      }
+      return Response.json({})
+    },
+  })
+  const setup = await testRender(() => (
+    <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory={directory} />
+  ), { width: 100, height: 32, kittyKeyboard: true })
+  async function until(predicate: () => boolean) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await setup.renderOnce()
+      if (predicate()) return
+      await Bun.sleep(5)
+    }
+    throw new Error(`Expected recovery to preserve and accept the submission draft; posts=${JSON.stringify(posts)}\n${setup.captureCharFrame()}`)
+  }
+  try {
+    await until(() => setup.captureCharFrame().includes("Session alpha"))
+    setup.mockInput.pressEnter()
+    await until(() => operationsRequested)
+    await until(() => setup.captureCharFrame().includes("Restoring this session's queued turns"))
+    expect(setup.captureCharFrame()).not.toContain("Message Veasel")
+    await setup.mockInput.typeText("Typed during recovery")
+    setup.mockInput.pressEnter()
+    await until(() => setup.captureCharFrame().includes("Session recovery"))
+    expect(posts).toEqual([])
+    await until(() => setup.captureCharFrame().includes("Typed during recovery"))
+    // Dismiss the toast through its rendered hit target so it no longer
+    // covers the session status used as the recovery-ready signal below.
+    const lines = setup.captureCharFrame().split("\n")
+    const toastRow = lines.findIndex((line) => line.includes("Session recovery"))
+    const dismissColumn = lines[toastRow]!.indexOf("dismiss")
+    expect(dismissColumn).toBeGreaterThanOrEqual(0)
+    await setup.mockMouse.click(dismissColumn, toastRow)
+    releaseOperations(Response.json([]))
+    await until(() => setup.captureCharFrame().includes("listening for activity"))
+    setup.mockInput.pressEnter()
+    await until(() => posts.length === 1)
+    expect(posts).toEqual(["Typed during recovery"])
+  } finally {
+    releaseOperations(Response.json([]))
+    controller.abort()
+    setup.renderer.destroy()
+    server.stop(true)
+  }
+})
+
 test.each([true, false])("prefers a live start event over a stale snapshot (contains operation: %s)", async (containsOperation) => {
   const operationId = "starts-during-recovery"
   const cancellations: string[] = []

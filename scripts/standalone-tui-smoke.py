@@ -241,7 +241,8 @@ def run_tui(
         else:
             output.clear()
             os.write(terminal, b"\r")
-            wait_for_markers((b"Message Veasel",), 5, "the selected session composer")
+            # Recovery uses a different placeholder until submissions are safe.
+            wait_for_markers((b"Message Veasel",), 5, "the recovered session composer")
             output.clear()
             os.write(terminal, b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)

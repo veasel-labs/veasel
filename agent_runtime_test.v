@@ -1,6 +1,7 @@
 module main
 
 import json2
+import net.http
 import os
 import context as vcontext
 import time
@@ -1308,6 +1309,130 @@ fn test_tool_budget_summary_keeps_history_and_does_not_mutate_the_system_prompt(
 	assert without_system[0].role == 'system'
 	assert without_system[0].content.contains('were not run')
 	assert without_system[1].content == 'Fix the test.'
+}
+
+struct AgentToolBudgetProviderFixture {
+mut:
+	hits           int
+	request_bodies []string
+}
+
+fn agent_tool_budget_chunk(hit int) OpenAIStreamChunk {
+	if hit > 13 {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					content: 'Tool budget reached after 48 searches.'
+				}
+			}]
+		}
+	}
+	wave_size := if hit <= 12 { 4 } else { 1 }
+	mut calls := []OpenAIStreamToolCallDelta{cap: wave_size}
+	for index in 0 .. wave_size {
+		call_number := (hit - 1) * 4 + index + 1
+		calls << OpenAIStreamToolCallDelta{
+			index:    index
+			id:       'call-${call_number}'
+			type:     'function'
+			function: OpenAIStreamFunctionDelta{
+				name:      'workspace_search'
+				arguments: '{"query":"needle-${call_number}"}'
+			}
+		}
+	}
+	return OpenAIStreamChunk{
+		choices: [OpenAIStreamChoice{
+			delta: OpenAIStreamDelta{
+				tool_calls: calls
+			}
+		}]
+	}
+}
+
+fn (mut fixture AgentToolBudgetProviderFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	fixture.request_bodies << request.data
+	mut response := http.Response{}
+	response.set_status(.ok)
+	response.header.set(.content_type, 'text/event-stream')
+	response.body = 'data: ${json2.encode(agent_tool_budget_chunk(fixture.hits))}\n\ndata: [DONE]\n\n'
+	return response
+}
+
+fn start_agent_tool_budget_provider_fixture(mut fixture AgentToolBudgetProviderFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
+fn test_agent_tool_call_budget_returns_durable_summary_instead_of_failing_turn() {
+	root := os.join_path(os.temp_dir(), 'veasel-agent-tool-budget-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(workspace, 'README.md'), 'fixture workspace\n') or { panic(err) }
+	mut fixture := &AgentToolBudgetProviderFixture{}
+	mut server, server_thread := start_agent_tool_budget_provider_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Tool budget regression'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 20 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content: 'Search until the tool budget is exhausted.'
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert exchange.messages.len == 2
+	assert exchange.messages[1].content == 'Tool budget reached after 48 searches.'
+	assert fixture.hits == 14
+	assert fixture.request_bodies.len == 14
+	assert fixture.request_bodies[13].contains('The tool budget for this turn is spent')
+	summary_request := json2.decode[OpenAIRequest](fixture.request_bodies[13]) or { panic(err) }
+	// Session compaction may legally shrink older history, so assert the
+	// transcript boundary rather than a fixed result count: the most recent
+	// executed tool result is call-48, and call-49 was never executed.
+	tool_results := summary_request.messages.filter(it.role == 'tool')
+	assert tool_results.len >= 1
+	assert tool_results.last().tool_call_id == 'call-48'
+	assert !fixture.request_bodies.any(it.contains('"tool_call_id":"call-49"'))
+	assert summary_request.tools.len == 0
+	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
+	assert operation.status == 'completed'
+	assert operation.error == ''
 }
 
 fn test_agent_context_byte_limit_accounts_for_opaque_provider_context() {

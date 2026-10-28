@@ -4,8 +4,8 @@ import context as vcontext
 import json2
 import time
 
-const max_agent_tool_rounds = 6
-const max_agent_tool_calls = 12
+const max_agent_tool_rounds = 24
+const max_agent_tool_calls = 48
 const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
@@ -606,7 +606,11 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			}
 		}
 		if tool_calls + output.tool_calls.len > max_agent_tool_calls {
-			return error('agent tool call limit reached')
+			// Over-budget turns must still produce a durable reply: ask the model
+			// for the budget summary instead of failing the whole operation.
+			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output,
+				on_text_delta, mut trace_steps, mut trace_usage, collect_trace, request_deadline,
+				provider_pool)
 		}
 		if round == max_agent_tool_rounds - 1 {
 			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output, on_text_delta,

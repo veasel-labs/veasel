@@ -144,6 +144,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
+- [x] Size the per-turn budget for real multi-file tasks: 24 provider rounds / 48 tool calls (was 6/12, which failed an end-to-end fixture task with `agent tool call limit reached` before any edit was proposed). Exceeding either budget now ends the turn with the existing durable tool-budget summary instead of failing the operation; the identical-repeat tracker remains the runaway guard.
 - [x] Execute contiguous workspace list/read/search calls in a provider round
   concurrently as ordered waves, with skill load/read, edits, shell, and MCP as
   sequential barriers. Preserve provider result order and suppress duplicate

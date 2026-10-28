@@ -24,8 +24,16 @@ V provider interface does not report authoritative values.
 
 Supported Harbor providers are `openai`, `openai-responses`, `anthropic`,
 `google` (mapped to Veasel's `gemini` provider), `gemini`, `openai-compatible`,
-and Meta Model API as `meta` (Responses API; use `meta/muse-wonder-1.0` or an
-account-enabled Muse Spark model). `--veasel-provider openai-compatible` or
+OpenCode Go as `opencode-go`, and Meta Model API as `meta` (Responses API; use
+`meta/muse-wonder-1.0` or an account-enabled Muse Spark model). For Go, select
+`--model opencode-go/<model-id>` and provide the Console key with Harbor's
+`--ae OPENCODE_API_KEY=...`; Harbor 0.24.0 has no API-key mapping for this
+provider slug. The adapter also accepts `OPENCODE_GO_API_KEY` as a fallback;
+when both names are set at the same configuration scope, the Console name wins.
+`OPENCODE_GO_BASE_URL` takes precedence over the `OPENCODE_BASE_URL` fallback.
+The adapter passes the key to Veasel's
+OpenCode Go provider without placing it in the command line or logs.
+`--veasel-provider openai-compatible` or
 `openai-responses` may override an `openai/...` Harbor model to select that
 Veasel transport without silent remapping of other families. Other Harbor
 providers fail with a clear error instead of being silently translated.

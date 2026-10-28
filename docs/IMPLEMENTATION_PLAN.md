@@ -155,9 +155,13 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   401→single attempt, connection-refused dial with the pinned backend's
   socket-error wording), a classifier unit test with platform errno tables,
   and retry-loop unit tests proving text already delivered is never replayed.
-- [ ] Parse provider `Retry-After` headers into the transient retry backoff
-  so rate-limit windows are honored exactly instead of using the fixed
-  deterministic delays.
+- [x] Honor provider `Retry-After` delta-seconds and HTTP-date headers on the
+  shared streaming path. Typed internal error metadata carries the delay
+  without exposing the raw header in durable errors. Use the longer of the
+  server delay and deterministic backoff, reject retry windows beyond the
+  turn deadline immediately, and preserve cancellation, attempt limits,
+  no-replay-after-text, and permanent-error exclusions. Invalid headers retain
+  deterministic backoff; numeric overflow cannot shorten the wait.
 - [x] Add provider-native tool calls for OpenAI-compatible, Anthropic, and Gemini with a bounded read-only tool loop.
 - [x] Expose bounded read-only workspace list/read/search operations over the API, with canonical-root containment and symlink-safe traversal.
 - [x] Connect read-only workspace tools to provider-native calls; treat file content as untrusted and enforce per-tool, round, call-count, and aggregate-result limits.
@@ -166,6 +170,7 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   concurrently as ordered waves, with skill load/read, edits, shell, and MCP as
   sequential barriers. Preserve provider result order and suppress duplicate
   file reads across waves.
+- [x] Let models request bounded, one-based line ranges from a workspace file, with line-numbered evidence, a 200-line/32 KB result cap, and range-aware duplicate-read suppression. Range and search scans avoid allocating every source line; mixed CR/LF endings and UTF-8 truncation remain covered. Only successful, permitted reads enter the duplicate cache, with collision-safe identities and invalidation at mutation barriers.
 - [x] Generate bounded single-file diffs, persist proposals, require explicit durable approval, reject stale snapshots, and recover interrupted applications without replay.
 - [x] Add permissioned shell execution with explicit, durable approval. The
   TUI requires opening the exact command, working directory, and timeout before
@@ -710,7 +715,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   panel, header, and composer backgrounds. Warning-status text meets the same
   threshold on shell, panel, and composer backgrounds. The regression lives in
   `tui/src/themes.test.ts`; this is a targeted color check, not a complete
-  accessibility review.
+  accessibility review. Transcript role labels and body text now also have
+  focused contrast coverage against their rendered surfaces; the Day theme's
+  amber tool label was darkened to meet the same 4.5:1 threshold.
 - [x] Automate x64 backend and TUI bundle packaging for Linux, macOS, and
   Windows in CI and attach verified artifacts to automated prereleases.
 - [x] Validate the packaged interactive TUI smoke on Linux, macOS, and Windows.

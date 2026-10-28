@@ -49,6 +49,7 @@ _VEASEL_HARBOR_PROVIDERS = frozenset(
         "anthropic",
         "gemini",
         "openai-compatible",
+        "opencode-go",
         "meta",
     }
 )
@@ -234,7 +235,16 @@ class VeaselCode(BaseInstalledAgent):
         access = self.model_connection
         provider_override = self.options.provider_override if self.options else None
         provider, model = _veasel_provider(access.provider, self.model_name, provider_override)
-        if not access.api_key:
+        api_key = access.api_key
+        configured_base_url = access.configured_base_url
+        if provider == "opencode-go":
+            # Harbor 0.24.0 has no API-key mapping for this provider slug.
+            # Resolve the Console name first, with a provider-specific alias.
+            api_key = api_key or self._get_env("OPENCODE_API_KEY", "OPENCODE_GO_API_KEY")
+            configured_base_url = configured_base_url or self._get_env(
+                "OPENCODE_BASE_URL"
+            )
+        if not api_key:
             raise ValueError(f"Harbor did not provide credentials for {provider}")
         timeout = (
             self.options.timeout_seconds
@@ -249,10 +259,10 @@ class VeaselCode(BaseInstalledAgent):
             "VEASEL_DATA_DIR": f"/tmp/veasel-harbor-{uuid.uuid4().hex}",
             "VEASEL_MODEL_PROVIDER": provider,
             "VEASEL_MODEL": model,
-            "VEASEL_MODEL_API_KEY": access.api_key,
+            "VEASEL_MODEL_API_KEY": api_key,
         }
-        if access.configured_base_url:
-            env["VEASEL_MODEL_BASE_URL"] = access.configured_base_url
+        if configured_base_url:
+            env["VEASEL_MODEL_BASE_URL"] = configured_base_url
 
         trace = "/logs/agent/trajectory.json"
         result = "/logs/agent/veasel-result.json"

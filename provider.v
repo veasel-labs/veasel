@@ -991,8 +991,47 @@ interface ModelProvider {
 }
 
 struct ProviderTurnResult {
-	output CompletionOutput
-	error  string
+	output         CompletionOutput
+	error          string
+	retry_after_ms ?int
+}
+
+// Keep provider response metadata typed rather than encoding untrusted header
+// text into the durable error message. All adapters propagate this error.
+struct ProviderHTTPError {
+	Error
+	message        string
+	retry_after_ms ?int
+}
+
+fn (err ProviderHTTPError) msg() string {
+	return err.message
+}
+
+fn provider_retry_after_ms(header string, now time.Time) ?int {
+	value := header.trim_space()
+	if value.len == 0 || value.len > 128 {
+		return none
+	}
+	// Saturation is longer than Veasel's maximum turn duration. An overflow
+	// therefore refuses a retry at the deadline check instead of retrying early.
+	maximum_ms := 2_147_483_647
+	if value.bytes().all(provider_ascii_digit(it)) {
+		mut seconds := i64(0)
+		for digit in value {
+			seconds = seconds * 10 + i64(digit - `0`)
+			if seconds > i64(maximum_ms) / 1_000 {
+				return maximum_ms
+			}
+		}
+		return int(seconds * 1_000)
+	}
+	date := time.parse_http_header_string(value) or { return none }
+	delay := date.unix_milli() - now.unix_milli()
+	if delay <= 0 {
+		return 0
+	}
+	return if delay >= maximum_ms { maximum_ms } else { int(delay) }
 }
 
 // ProviderDeltaDelivery is a heap cell shared between the retry loop and the
@@ -1599,6 +1638,12 @@ fn validate_messages(messages []ChatMessage) ! {
 fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) ProviderTurnResult {
 	output := complete_with_tools(mut turn_ctx, messages, tools, on_text_delta, config) or {
+		if err is ProviderHTTPError {
+			return ProviderTurnResult{
+				error:          err.msg()
+				retry_after_ms: err.retry_after_ms
+			}
+		}
 		return ProviderTurnResult{
 			error: err.msg()
 		}
@@ -1616,6 +1661,9 @@ fn complete_with_turn_context(mut turn_ctx vcontext.Context, messages []ChatMess
 fn provider_retry_backoff_poll(mut turn_ctx vcontext.Context, request_deadline ?time.Time,
 	delay_ms int) bool {
 	deadline := request_deadline or { turn_ctx.deadline() or { time.now().add(60 * time.second) } }
+	if time.now().add(i64(delay_ms) * time.millisecond) >= deadline.add(-provider_retry_remaining_floor) {
+		return false
+	}
 	mut waited_ms := 0
 	for waited_ms < delay_ms {
 		if context_error := turn_context_error(mut turn_ctx) {
@@ -1683,8 +1731,10 @@ fn complete_with_turn_context_retry_attempts(mut turn_ctx vcontext.Context, mess
 			|| !provider_retryable_failure(result.error) {
 			return result
 		}
-		if !provider_retry_backoff_poll(mut turn_ctx, config.request_deadline,
-			provider_transient_retry_delays_ms[attempts]) {
+		base_delay := provider_transient_retry_delays_ms[attempts]
+		requested_delay := result.retry_after_ms or { 0 }
+		delay := if requested_delay > base_delay { requested_delay } else { base_delay }
+		if !provider_retry_backoff_poll(mut turn_ctx, config.request_deadline, delay) {
 			return result
 		}
 		attempts++
@@ -2796,7 +2846,11 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	}
 	stream_state.decoder.finish()!
 	if response.status_code < 200 || response.status_code >= 300 {
-		return error(provider_http_error_message(config.provider, response.status_code, ''))
+		header := response.header.get(.retry_after) or { '' }
+		return ProviderHTTPError{
+			message:        provider_http_error_message(config.provider, response.status_code, '')
+			retry_after_ms: provider_retry_after_ms(header, time.utc())
+		}
 	}
 	return response
 }

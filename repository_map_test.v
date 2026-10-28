@@ -7,6 +7,15 @@ fn write_map_fixture_file(path string, content string) {
 	os.write_file(path, content) or { panic(err) }
 }
 
+fn test_repository_map_compound_filename_beats_terms_split_across_directories() {
+	hints := RepositoryMapHintSet{
+		idents: ['subagent', 'job']
+	}
+	compound := score_repository_map_path('packages/core/src/session/subagent-job.ts', hints)
+	split := score_repository_map_path('packages/core/src/subagent/job/worker.ts', hints)
+	assert compound > split
+}
+
 fn test_repository_map_ranks_mentioned_paths_and_symbols() {
 	root := os.join_path(os.temp_dir(), 'veasel-repo-map-${os.getpid()}-rank')
 	os.rmdir_all(root) or {}
@@ -74,6 +83,7 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 	assert !repository_map_is_package_index_path('src/minisweagent/models/litellm_model.py')
 	assert !repository_map_hint_mentions_package_indexes(model_behavior)
 	assert repository_map_content_is_reexport_only('from .litellm_model import LiteLLMModel\n__all__ = ["LiteLLMModel"]')
+	assert repository_map_content_is_reexport_only('\r\n# module exports\r\n  from .client import Client\r\n')
 	assert repository_map_content_is_reexport_only("export { createClient } from './client.js'\n")
 	assert !repository_map_content_is_reexport_only('export function createClient() {}')
 	export_query := extract_repository_map_hints('show the package exports and entrypoint')
@@ -135,7 +145,7 @@ fn test_repository_map_prefers_production_for_behavior_queries_and_respects_test
 }
 
 fn test_repository_map_extracts_go_methods_and_modified_class_declarations() {
-	content := 'package store\n\nfunc (s *Store) LoadSession(id string) {}\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\nsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}\n'
+	content := 'package store\r\n\rfunc (s *Store) LoadSession(id string) {}\r\nfunc (r *Box[func(int)]) Transform() {}\npublic class SessionController {}\r\nexport default function createSession() {}\npub fn open_session() {}\ndata class SessionState(val id: String)\rsuspend fun loadSession() {}\npublic protocol SessionStore {}\nextension SessionState {}'
 	symbols := extract_repository_map_symbols(content)
 	mut names := []string{}
 	mut kinds := []string{}

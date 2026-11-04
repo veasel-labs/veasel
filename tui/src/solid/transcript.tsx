@@ -156,8 +156,8 @@ function AssistantMarkdown(props: { content: string; streaming: boolean }) {
   onCleanup(() => syntaxStyle().destroy())
   return (
     <markdown
-      content={props.content}
       syntaxStyle={syntaxStyle()}
+      content={props.content}
       fg={colors.assistantText}
       streaming={props.streaming}
       internalBlockMode="top-level"

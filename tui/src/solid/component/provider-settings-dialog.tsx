@@ -83,7 +83,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   })
 
   const title = () => (mode() === "connect" ? "CONNECT" : "MODEL SETTINGS")
-  const hint = () => "Tab scopes · ↑/↓ move · PgUp/PgDn · Ctrl+L clear · Esc"
+  const hint = () => "Tab · ↑/↓ · Ctrl+L · Esc"
 
   const publishStatus = () => {
     props.onStatus?.(statusLine())

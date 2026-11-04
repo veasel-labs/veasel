@@ -61,7 +61,7 @@ describe("Veasel home splash + pixel portrait", () => {
     expect(frame).toContain("VEASEL CODE")
     expect(frame).toContain("~/veasel")
     expect(frame).toContain("/connect")
-    expect(frame).toContain("s connect model · n new session")
+    expect(frame).toContain("/connect model · n new session")
     expect(frame).toContain("Ctrl+P")
     expect(frame).toContain("Ctrl+R reviews")
     // Block pixels from the portrait should appear.
@@ -77,8 +77,8 @@ describe("Veasel home splash + pixel portrait", () => {
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
     expect(frame).toContain("your local V-powered workspace")
-    expect(frame).toContain("1 · s connect a model")
-    expect(frame).toContain("2 · n open a new session")
+    expect(frame).toContain("1 · /connect to choose a model")
+    expect(frame).toContain("2 · n create a new session")
     expect(frame).toContain("PIXEL VEASEL")
   })
 

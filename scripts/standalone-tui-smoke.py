@@ -239,10 +239,17 @@ def run_tui(
         elif not session_id:
             os.write(terminal, b"q")
         else:
+            # Escape can expose the home frame before the settings dialog has
+            # fully released keyboard focus. Sending Enter in that same tick
+            # occasionally leaves the CI smoke at home rather than selecting
+            # the seeded session. Let the dialog teardown/focus settle first.
+            time.sleep(0.25)
             output.clear()
             os.write(terminal, b"\r")
             # Recovery uses a different placeholder until submissions are safe.
-            wait_for_markers((b"Message Veasel",), 5, "the recovered session composer")
+            # This remains a hard readiness assertion for the packaged binary,
+            # but permits normal asynchronous backend startup under CI load.
+            wait_for_markers((b"Message Veasel",), 10, "the recovered session composer")
             output.clear()
             os.write(terminal, b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)

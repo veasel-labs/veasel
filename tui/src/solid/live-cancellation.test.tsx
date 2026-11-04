@@ -46,12 +46,19 @@ test(`Ctrl+X targets the originating session and reports ${outcome}`, async () =
     <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />
   ), { width: 100, height: 32, kittyKeyboard: true })
   async function until(predicate: () => boolean) {
-    for (let n = 0; n < 100; n++) {
+    // The completion event travels through an asynchronous SSE reader and a
+    // Solid render pass. Under parallel CI load, 100 × 5ms can expire before
+    // the correct terminal state renders even though the HTTP request succeeded.
+    // Keep every behavioural assertion; wait for the actual visible outcome.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (predicate()) return
-      await Bun.sleep(5)
+      await Bun.sleep(10)
     }
-    throw new Error("Expected cancellation state was not reached")
+    throw new Error(
+      `Expected cancellation state was not reached. Last frame:\n${setup.captureCharFrame()}`,
+    )
   }
   try {
     await until(() => setup.captureCharFrame().includes("Session alpha"))

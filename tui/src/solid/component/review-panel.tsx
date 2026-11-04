@@ -319,10 +319,10 @@ export function ReviewPanel(props: ReviewPanelProps) {
             </For>
             <Show when={!busy() && hotkeyHint()}>
               {(hint) => (
-                <text fg={colors.muted} wrapMode="word">
-                  {hint()
-                    .replace(" · ]/[ or n/p next/prev", " · ]/[ navigate")
-                    .replace(/ · ([○●]) Space/, "\n$1 Space")}
+                <text fg={colors.muted} wrapMode="none">
+                  {current()?.kind === "patch"
+                    ? `a approve · x reject · A/X · Space · ]/[ · {/} · ${diffSurface() === "split" ? "v word-diff" : "v split view"}`
+                    : hint()}
                 </text>
               )}
             </Show>

@@ -114,7 +114,7 @@ export function HomeSplash(props: HomeSplashProps) {
         when={!compact()}
         fallback={
           <box flexDirection="column" alignItems="center" flexShrink={0}>
-            <text fg={colors.body}>Ask anything to begin</text>
+            <text fg={colors.body}>s connect model · n new session</text>
             <text fg={colors.muted}>{connectLine}</text>
             <text fg={colors.muted}>{reviewLine}</text>
           </box>
@@ -130,7 +130,8 @@ export function HomeSplash(props: HomeSplashProps) {
           borderColor={colors.headerBorder}
           backgroundColor={colors.shellBg}
         >
-          <text fg={colors.body}>Ask anything to begin — or set up once</text>
+          <text fg={colors.body}>1 · s connect a model</text>
+          <text fg={colors.body}>2 · n open a new session</text>
           <text fg={colors.muted}>{connectLine}</text>
           <text fg={colors.muted}>{reviewLine}</text>
         </box>

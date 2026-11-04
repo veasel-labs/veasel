@@ -175,12 +175,12 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           if (props.dismissOnSelect !== false) dialog.clear()
                         }}
                       >
-                        <text fg={active() ? colors.brand : colors.body} flexGrow={1} flexShrink={1} wrapMode="none">
+                        <text fg={active() ? colors.brand : colors.body} flexGrow={1} flexShrink={0} wrapMode="none">
                           {isCurrent() ? "● " : active() ? "▸ " : "  "}
                           {option.title}
                         </text>
                         <Show when={!compact() && (option.description || option.footer || (flatMode() && option.category))}>
-                          <text fg={colors.muted}>
+                          <text fg={colors.muted} flexShrink={1} wrapMode="none">
                             {"  "}
                             {flatMode()
                               ? (option.footer ?? option.category ?? option.description ?? "")

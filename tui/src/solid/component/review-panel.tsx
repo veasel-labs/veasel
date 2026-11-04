@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
-import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { DiffRenderable, KeyEvent } from "@opentui/core"
 import {
   moveActiveReviewIndex,
@@ -12,6 +12,7 @@ import {
 } from "../../active-review"
 import {
   cycleReviewDiffSurface,
+  createDiffSyntaxStyle,
   diffRenderableTheme,
   filetypeFromReviewPath,
   reviewDiffSurfaceHint,
@@ -76,6 +77,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
   const colors = useSolidTheme()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
+  const renderer = useRenderer()
   // Local queue so approve/reject stays responsive without reopening the dialog.
   const [queue, setQueue] = createSignal<SolidReviewItem[]>([...props.reviews])
   const pending = createMemo(() => pendingSolidReviews(queue()))
@@ -86,6 +88,16 @@ export function ReviewPanel(props: ReviewPanelProps) {
   const [diffLineOffset, setDiffLineOffset] = createSignal(0)
   const [selectedKeys, setSelectedKeys] = createSignal<Set<string>>(new Set())
   const [diffSurface, setDiffSurface] = createSignal<ReviewDiffSurface>("segments")
+  const [syntaxStyle, setSyntaxStyle] = createSignal<ReturnType<typeof createDiffSyntaxStyle>>()
+  createEffect(() => {
+    if (diffSurface() !== "split") return
+    // In OpenTUI 0.7, CodeRenderable can attempt syntax highlighting before
+    // DiffRenderable has a usable fallback style. Supply a themed native style
+    // explicitly and keep its ownership scoped to the active split review.
+    const style = createDiffSyntaxStyle(colors, renderer.nativeScene)
+    setSyntaxStyle(style)
+    onCleanup(() => style.destroy())
+  })
   let settledOnce = false
   let disposed = false
   let splitDiffRenderable: DiffRenderable | undefined
@@ -318,7 +330,13 @@ export function ReviewPanel(props: ReviewPanelProps) {
               {(failure) => <text fg={colors.statusWarn}>{failure}</text>}
             </For>
             <Show when={!busy() && hotkeyHint()}>
-              {(hint) => <text fg={colors.muted}>{hint()}</text>}
+              {(hint) => (
+                <text fg={colors.muted} wrapMode="none">
+                  {current()?.kind === "patch"
+                    ? `a approve · x reject · A/X · Space · ]/[ · {/} · ${diffSurface() === "split" ? "v word-diff" : "v split view"}`
+                    : hint()}
+                </text>
+              )}
             </Show>
             <Show when={inspecting()}><text fg={colors.muted}>Loading review details…</text></Show>
             <Show when={inspectionError()}>{(error) => <text fg={colors.statusWarn}>{error()} · r retry</text>}</Show>
@@ -351,6 +369,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   )}
                   diff={(item() as Extract<SolidReviewItem, { kind: "patch" }>).diff}
                   view="split"
+                  syntaxStyle={syntaxStyle()}
                   filetype={filetypeFromReviewPath(
                     (item() as Extract<SolidReviewItem, { kind: "patch" }>).path,
                   )}

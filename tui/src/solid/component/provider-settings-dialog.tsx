@@ -17,7 +17,6 @@ import {
   settingsProviderStepPrompt,
   type SettingsWizardMode,
 } from "../../settings-flow"
-import { sessionDigitIndex } from "../../session-list"
 import { DialogHeader, useDialog, type DialogHost } from "../ui/dialog"
 import { useSolidTheme } from "../theme"
 
@@ -84,7 +83,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   })
 
   const title = () => (mode() === "connect" ? "CONNECT" : "MODEL SETTINGS")
-  const hint = () => "Tab · j/k · g/G · 1-9 · Ctrl+L · Esc"
+  const hint = () => "Tab · ↑/↓ · Ctrl+L · Esc"
 
   const publishStatus = () => {
     props.onStatus?.(statusLine())
@@ -158,34 +157,8 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
       jump("down")
       return
     }
-    // j/k · g/G · 1-9 only when the filter is empty (classic muscle memory).
-    if (query().length === 0 && !key.ctrl && !key.meta) {
-      if (key.name === "j") {
-        key.preventDefault()
-        jump("down")
-        return
-      }
-      if (key.name === "k") {
-        key.preventDefault()
-        jump("up")
-        return
-      }
-      // kitty/`send-key G` may report name "g"+shift or sequence "G" without shift.
-      if (key.name === "g" || key.sequence === "g" || key.sequence === "G") {
-        key.preventDefault()
-        jump(key.shift || key.sequence === "G" ? "end" : "home")
-        return
-      }
-      if (/^[1-9]$/.test(key.sequence)) {
-        const index = sessionDigitIndex(key.sequence, matches().length)
-        if (index !== undefined) {
-          key.preventDefault()
-          setSelected(index)
-          queueMicrotask(publishStatus)
-          return
-        }
-      }
-    }
+    // Printable keys belong to the focused search field, even when it is empty.
+    // Use arrows, Home/End, and PgUp/PgDn to navigate the provider catalog.
     if (
       key.name === "home"
       || key.name === "end"
@@ -232,14 +205,6 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         focusedBackgroundColor={colors.inputFocusBg}
         cursorColor={colors.cursor}
         onInput={(value: string) => {
-          // Swallow nav digits/letters that raced into the input while empty.
-          if (
-            query().length === 0
-            && (value === "j" || value === "k" || value === "g" || value === "G" || /^[1-9]$/.test(value))
-          ) {
-            filterInput?.setText("")
-            return
-          }
           setQuery(value)
           setSelected(0)
           queueMicrotask(publishStatus)
@@ -273,11 +238,11 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
                   paddingRight={1}
                   onMouseUp={() => selectAt(absolute())}
                 >
-                  <text fg={active() ? colors.brand : colors.body}>
+                  <text fg={active() ? colors.brand : colors.body} flexShrink={0} wrapMode="none">
                     {active() ? "▸ " : "  "}
                     {provider.name}
                   </text>
-                  <text fg={colors.muted}>  {provider.id}</text>
+                  <text fg={colors.muted} flexShrink={1} wrapMode="none">  {provider.id}</text>
                 </box>
               )
             }}

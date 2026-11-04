@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { expect, test } from "bun:test"
+import { expect, spyOn, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { SolidTranscript } from "./transcript"
 import { assistantLabel, userLabel } from "../transcript"
@@ -67,5 +67,45 @@ test("streaming assistant text renders as markdown while it grows", async () => 
     expect(frame).not.toContain("**now**")
   } finally {
     setup.renderer.destroy()
+  }
+})
+
+test("supported fenced TypeScript never reports a highlighter fallback", async () => {
+  // Regression for #554: rendered characters alone do not prove syntax highlighting.
+  // OpenTUI may silently fall back to unstyled code while all frame assertions pass.
+  const warnings: string[] = []
+  const originalWarn = console.warn
+  const originalError = console.error
+  const capture = (...args: unknown[]) => {
+    const message = args.map(String).join(" ")
+    warnings.push(message)
+  }
+  const warnSpy = spyOn(console, "warn").mockImplementation((...args) => {
+    capture(...args)
+    originalWarn(...args)
+  })
+  const errorSpy = spyOn(console, "error").mockImplementation((...args) => {
+    capture(...args)
+    originalError(...args)
+  })
+  let setup: Awaited<ReturnType<typeof testRender>> | undefined
+  try {
+    setup = await testRender(
+      () => (
+        <SolidTranscript
+          messages={[{ role: "assistant", content: "```ts\nconst answer: number = 42\n```" }]}
+          followTail={true}
+        />
+      ),
+      { width: 80, height: 30 },
+    )
+    await renderMarkdownFrame(setup)
+    await setup.waitFor(() => setup!.captureCharFrame().includes("const answer"))
+    await renderMarkdownFrame(setup)
+    expect(warnings.filter((line) => /Code highlighting failed|syntaxStyle\.getStyle/i.test(line))).toEqual([])
+  } finally {
+    setup?.renderer.destroy()
+    warnSpy.mockRestore()
+    errorSpy.mockRestore()
   }
 })

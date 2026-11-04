@@ -318,7 +318,13 @@ export function ReviewPanel(props: ReviewPanelProps) {
               {(failure) => <text fg={colors.statusWarn}>{failure}</text>}
             </For>
             <Show when={!busy() && hotkeyHint()}>
-              {(hint) => <text fg={colors.muted}>{hint()}</text>}
+              {(hint) => (
+                <text fg={colors.muted} wrapMode="word">
+                  {hint()
+                    .replace(" · ]/[ or n/p next/prev", " · ]/[ navigate")
+                    .replace(/ · ([○●]) Space/, "\n$1 Space")}
+                </text>
+              )}
             </Show>
             <Show when={inspecting()}><text fg={colors.muted}>Loading review details…</text></Show>
             <Show when={inspectionError()}>{(error) => <text fg={colors.statusWarn}>{error()} · r retry</text>}</Show>

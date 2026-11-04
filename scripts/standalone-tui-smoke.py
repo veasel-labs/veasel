@@ -218,6 +218,22 @@ def run_tui(
         os.write(terminal, b"anthorpic")
         wait_for_markers((b"1/210", b"Anthropic"), 5, "typo-tolerant provider search")
 
+        # Exercise the packaged TUI, not only a mocked component: the filter
+        # previously swallowed leading j/k/g and numeric keys as navigation.
+        # Verify that Ctrl+L resets the query and that both alphabetic and
+        # numeric-prefix providers remain discoverable after a fresh search.
+        for query, result_label in (
+            (b"gemini", b"Google Gemini"),
+            (b"kimi", b"Kimi For Coding"),
+            (b"302", b"302.AI"),
+        ):
+            output.clear()
+            os.write(terminal, b"\x0c")  # Ctrl+L: clear filter
+            wait_for_markers((b"All 210/210",), 5, "the cleared provider filter")
+            output.clear()
+            os.write(terminal, query)
+            wait_for_markers((result_label,), 5, f"provider filter query {query!r}")
+
         # Wait for a new home frame after Escape, never a marker from an older screen.
         output.clear()
         os.write(terminal, b"\x1b")

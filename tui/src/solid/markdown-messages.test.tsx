@@ -70,7 +70,6 @@ test("streaming assistant text renders as markdown while it grows", async () => 
   }
 })
 
-
 test("supported fenced TypeScript never reports a highlighter fallback", async () => {
   // Regression for #554: rendered characters alone do not prove syntax highlighting.
   // OpenTUI may silently fall back to unstyled code while all frame assertions pass.
@@ -94,7 +93,7 @@ test("supported fenced TypeScript never reports a highlighter fallback", async (
     setup = await testRender(
       () => (
         <SolidTranscript
-          messages={[{ role: "assistant", content: "```ts\\nconst answer: number = 42\\n```" }]}
+          messages={[{ role: "assistant", content: "```ts\nconst answer: number = 42\n```" }]}
           followTail={true}
         />
       ),
@@ -103,7 +102,7 @@ test("supported fenced TypeScript never reports a highlighter fallback", async (
     await renderMarkdownFrame(setup)
     await setup.waitFor(() => setup!.captureCharFrame().includes("const answer"))
     await renderMarkdownFrame(setup)
-    expect(warnings.filter((line) => /Code highlighting failed|syntaxStyle\\.getStyle/i.test(line))).toEqual([])
+    expect(warnings.filter((line) => /Code highlighting failed|syntaxStyle\.getStyle/i.test(line))).toEqual([])
   } finally {
     setup?.renderer.destroy()
     warnSpy.mockRestore()

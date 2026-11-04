@@ -19,6 +19,17 @@ afterEach(() => {
 })
 
 describe("provider picker typing", () => {
+  test("keeps MODEL SETTINGS header visible in a 100×24 PTY-sized view", async () => {
+    const setup = await testRender(
+      () => <DialogProvider><ProviderSettingsDialog providers={providers} /></DialogProvider>,
+      { width: 100, height: 24, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("MODEL SETTINGS")
+    expect(setup.captureCharFrame()).toContain("Filter providers")
+  })
+
   for (const [query, expected] of [
     ["gemini", "Gemini"],
     ["jina", "Jina"],

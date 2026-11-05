@@ -38,6 +38,7 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `failed-shell-then-edit` | `Recover after failed check` | A shell `grep` fails (no `greet` yet), the failure is fed back, and the `greet` edit is applied in the same run |
 | `failed-edit-then-retry` | `Recover after failed edit` | A no-change edit is rejected by the edit tool, the error is fed back, and the real `greet` edit is applied in the same run |
 | `fix-failing-test` | `Fix failing test` | A shell check fails, the `greet` edit is applied, and the same check is re-run and passes in the same run |
+| `vendored-project-fix` | `Fix vendored project tests` | Vendored multi-file V project (`fixtures/token-bucket`) with a planted no-refill bug; read → fix → shell-verify, scored by the project's own `v test .` run by the harness (`check_command`) with its test file byte-identical to the seed |
 | `greeting-reply` | `Say hello` | Run completes with the fixture reply |
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |

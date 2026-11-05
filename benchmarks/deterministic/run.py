@@ -302,6 +302,19 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "queue-recovery-order",
+        "prompt": "Wait for cancellation",
+        # API-driven (see run_queue_recovery_task): one running turn blocked
+        # on the provider plus two queued turns, then a backend restart on
+        # the same data dir. A pass proves the running turn surfaces as
+        # uncertain (never replayed) and the queued turns resume and
+        # complete in FIFO order with no duplicated messages.
+        "kind": "queue_recovery",
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "queued turns resume in FIFO order after restart; running turn uncertain; transcript ordered, no duplicates",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -495,6 +508,140 @@ def run_cancel_tool_task(veasel: Path, provider_port: int, task: dict, work: Pat
     }
     if not passed:
         entry["error"] = error or operation.get("error") or f"operation={operation!r}"
+    return entry
+
+
+def run_queue_recovery_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
+    """Restart the backend with one running and two queued turns.
+
+    Pass = the running turn (blocked on the held provider response)
+    surfaces as `uncertain` with an error and is never replayed, while
+    the queued turns resume, complete in FIFO order, and the persisted
+    transcript holds exactly their two exchanges in order.
+    """
+    workspace = work / "workspace"
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+
+    port = free_port()
+    env = dict(
+        os.environ,
+        VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
+        VEASEL_PORT=str(port),
+        VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_PLUGIN_DIR=str(work / "plugins"),
+        VEASEL_MODEL_PROVIDER="openai-compatible",
+        VEASEL_MODEL="smoke-model",
+        VEASEL_MODEL_API_KEY="veasel-openai-key",
+        VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
+    )
+    provider_base = f"http://127.0.0.1:{provider_port}"
+
+    def api(method: str, path: str, body: dict | None = None, headers: dict | None = None,
+            base: str | None = None):
+        request = Request(
+            f"{base or f'http://127.0.0.1:{port}'}{path}",
+            data=json.dumps(body).encode() if body is not None else None,
+            method=method,
+            headers={"content-type": "application/json", **(headers or {})},
+        )
+        with urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read() or b"{}")
+
+    def start_server() -> subprocess.Popen:
+        proc = subprocess.Popen(
+            [str(veasel), "serve"], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        wait_healthy(port, proc)
+        return proc
+
+    contents = [task["prompt"], "Say hello", "Inspect workspace"]
+    expected_messages = [
+        ("user", "Say hello"),
+        ("assistant", "Provider fixture reply"),
+        ("user", "Inspect workspace"),
+        ("assistant", "Found workspace-search-sentinel"),
+    ]
+    finals: dict = {}
+    messages: list = []
+    pre_restart: list = []
+    started = time.monotonic()
+    wall_ms = -1.0
+    error: str | None = None
+    server: subprocess.Popen | None = None
+    try:
+        server = start_server()
+        api("GET", "/hold-slow-response", base=provider_base)
+        _, session = api("POST", "/v1/sessions",
+                         {"title": "queue recovery fixture", "directory": str(workspace)})
+        session_id = session["id"]
+        operation_ids = []
+        for content in contents:
+            _, accepted = api("POST", f"/v1/sessions/{session_id}/messages",
+                              {"content": content}, headers={"Prefer": "respond-async"})
+            operation_ids.append(accepted["operation_id"])
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            _, first = api("GET", f"/v1/sessions/{session_id}/operations/{operation_ids[0]}")
+            if first.get("status") == "running":
+                break
+            time.sleep(0.1)
+        for op_id in operation_ids:
+            _, current = api("GET", f"/v1/sessions/{session_id}/operations/{op_id}")
+            pre_restart.append(current.get("status"))
+
+        server.terminate()
+        server.wait(timeout=10)
+        server = start_server()
+        api("GET", "/release-slow-response", base=provider_base)
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            remaining = False
+            for op_id in operation_ids:
+                _, current = api("GET", f"/v1/sessions/{session_id}/operations/{op_id}")
+                finals[op_id] = current
+                if current.get("status") in ("queued", "running", "cancelling"):
+                    remaining = True
+            if not remaining:
+                break
+            time.sleep(0.25)
+        wall_ms = round((time.monotonic() - started) * 1000, 1)
+        _, raw_messages = api("GET", f"/v1/sessions/{session_id}/messages")
+        messages = [(m.get("role"), m.get("content")) for m in raw_messages]
+    except Exception as exc:  # fixture infrastructure failure must not pass
+        error = f"{type(exc).__name__}: {exc}"
+    finally:
+        if server is not None:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+
+    passed = (
+        error is None
+        and pre_restart == ["running", "queued", "queued"]
+        and len(finals) == 3
+        and finals[operation_ids[0]].get("status") == "uncertain"
+        and bool(finals[operation_ids[0]].get("error"))
+        and finals[operation_ids[1]].get("status") == "completed"
+        and finals[operation_ids[2]].get("status") == "completed"
+        and messages == expected_messages
+        and bool(task["check"](workspace))
+    ) if error is None and len(finals) == 3 else False
+    entry = {
+        "id": task["id"],
+        "prompt": task["prompt"],
+        "check": task["check_description"],
+        "passed": passed,
+        "wall_ms": wall_ms,
+        "status": finals[operation_ids[0]].get("status") if len(finals) == 3 else None,
+        "tool_calls": 1,
+    }
+    if not passed:
+        entry["error"] = error or f"pre_restart={pre_restart!r} finals={finals!r} messages={messages!r}"
     return entry
 
 
@@ -750,6 +897,8 @@ def dispatch_task(args, veasel, provider_port, provider_log, task, task_work) ->
     if args.agent == "veasel":
         if task.get("kind") == "cancel_tool":
             return run_cancel_tool_task(veasel, provider_port, task, task_work)
+        if task.get("kind") == "queue_recovery":
+            return run_queue_recovery_task(veasel, provider_port, task, task_work)
         return run_task(veasel, provider_port, task, task_work)
     if args.agent == "pi":
         return run_pi_task(args.pi, provider_port, provider_log, task, task_work)

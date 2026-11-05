@@ -199,6 +199,18 @@ TASKS = [
         "expect_response": "The path was rejected.",
     },
     {
+        "id": "interrupted-stream-fails",
+        "prompt": "Stream then drop",
+        # The mock provider truncates the response mid-body and drops the
+        # connection (Content-Length promises more than arrives). A pass
+        # proves the run surfaces a failure instead of reporting success
+        # or hanging, and the workspace stays byte-identical.
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "interrupted provider stream fails the run with an error; workspace unchanged",
+        "expect_failure": True,
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -254,7 +266,14 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
             server.kill()
 
     result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
-    passed = completed.returncode == 0 and result.get("status") == "completed"
+    if task.get("expect_failure"):
+        passed = (
+            completed.returncode != 0
+            and result.get("status") == "failed"
+            and bool(result.get("error"))
+        )
+    else:
+        passed = completed.returncode == 0 and result.get("status") == "completed"
     if passed and "expect_response" in task:
         passed = result.get("response") == task["expect_response"]
     if passed:
@@ -560,7 +579,7 @@ def main() -> int:
         return 2
     try:
         results = []
-        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if "expect_response" not in t]
+        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if "expect_response" not in t and not t.get("veasel_only")]
         for index, task in enumerate(tasks):
             task_work = work_root / f"task-{index}"
             task_work.mkdir()

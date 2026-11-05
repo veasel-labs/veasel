@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createMemo, createSignal, onMount } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import {
   filterModelProviders,
@@ -18,9 +18,31 @@ import {
   type SettingsWizardMode,
 } from "../../settings-flow"
 import { DialogHeader, useDialog, type DialogHost } from "../ui/dialog"
+import { dialogGeometry } from "../ui/dialog-layout"
 import { useSolidTheme } from "../theme"
 
 const LIST_PAGE = 12
+
+/**
+ * Rows of providers that fit the dialog at this terminal size. The dialog
+ * chrome (header, status, prompts, filter, guidance, gaps) is charged
+ * against the shared dialog content height; in compact geometry the
+ * descriptive prompt/intro/count/guidance blocks are hidden, which the
+ * smaller chrome charge reflects. One extra row is reserved for the
+ * "Showing x–y of n" line whenever the list overflows the page.
+ */
+export function providerListPageSize(
+  columns: number,
+  rows: number,
+  count: number,
+  guidanceVisible: boolean,
+): number {
+  const geometry = dialogGeometry(columns, rows)
+  const chrome = geometry.compact ? 6 : 13 + (guidanceVisible ? 4 : 0)
+  const budget = geometry.contentHeight - chrome
+  const withShowingRow = count > budget ? budget - 1 : budget
+  return Math.max(1, Math.min(LIST_PAGE, withShowingRow))
+}
 
 /** Visible slice start so the focused row stays on-screen. */
 export function providerListWindowStart(
@@ -65,22 +87,33 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
     filterModelProviders(catalog(), query(), scope(), configured()),
   )
 
+  const dimensions = useTerminalDimensions()
+  const compact = () => dialogGeometry(dimensions().width, dimensions().height).compact
+
   const scopeLabel = () => providerPickerScopeLabel(scope())
   const countLabel = () => `${scopeLabel()} ${matches().length}/${catalog().length}`
   const statusLine = createMemo(() =>
     formatSettingsListStatus(selected(), matches().length, countLabel()),
-  )
-  const windowStart = createMemo(() =>
-    providerListWindowStart(selected(), matches().length, LIST_PAGE),
-  )
-  const visible = createMemo(() =>
-    matches().slice(windowStart(), windowStart() + LIST_PAGE),
   )
   const selectedProvider = createMemo(() => matches()[selected()])
   const connectionGuidance = createMemo(() => {
     const provider = selectedProvider()
     return provider ? providerConnectionGuidance(provider) : undefined
   })
+  const pageSize = createMemo(() =>
+    providerListPageSize(
+      dimensions().width,
+      dimensions().height,
+      matches().length,
+      !compact() && Boolean(connectionGuidance()),
+    ),
+  )
+  const windowStart = createMemo(() =>
+    providerListWindowStart(selected(), matches().length, pageSize()),
+  )
+  const visible = createMemo(() =>
+    matches().slice(windowStart(), windowStart() + pageSize()),
+  )
 
   const title = () => (mode() === "connect" ? "CONNECT" : "MODEL SETTINGS")
   const hint = () => "Tab · ↑/↓ · Ctrl+L · Esc"
@@ -104,7 +137,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   ) => {
     const count = matches().length
     if (count === 0) return
-    setSelected((current) => moveSettingsListIndex(current, count, where, LIST_PAGE))
+    setSelected((current) => moveSettingsListIndex(current, count, where, pageSize()))
     queueMicrotask(publishStatus)
   }
 
@@ -185,11 +218,13 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title={title()} hint={hint()} />
       <text fg={colors.localStatus}>{statusLine()}</text>
-      <text fg={colors.muted}>{settingsProviderStepPrompt(mode())}</text>
-      <text fg={colors.muted}>{settingsModeIntro(mode())}</text>
-      <text fg={colors.muted}>
-        {countLabel()} · type to filter · Tab cycles All / Configured / Local
-      </text>
+      <Show when={!compact()}>
+        <text fg={colors.muted}>{settingsProviderStepPrompt(mode())}</text>
+        <text fg={colors.muted}>{settingsModeIntro(mode())}</text>
+        <text fg={colors.muted}>
+          {countLabel()} · type to filter · Tab cycles All / Configured / Local
+        </text>
+      </Show>
       <input
         ref={(next: InputRenderable) => {
           filterInput = next
@@ -210,7 +245,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
           queueMicrotask(publishStatus)
         }}
       />
-      <Show when={connectionGuidance()}>
+      <Show when={!compact() && connectionGuidance()}>
         {(guidance) => (
           <box width="100%" flexDirection="column">
             <text fg={colors.body}>{guidance()}</text>
@@ -247,9 +282,9 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
               )
             }}
           </For>
-          <Show when={matches().length > LIST_PAGE}>
+          <Show when={matches().length > pageSize()}>
             <text fg={colors.muted}>
-              Showing {windowStart() + 1}–{Math.min(windowStart() + LIST_PAGE, matches().length)} of{" "}
+              Showing {windowStart() + 1}–{Math.min(windowStart() + pageSize(), matches().length)} of{" "}
               {matches().length}
             </text>
           </Show>

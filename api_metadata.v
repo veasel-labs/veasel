@@ -1,5 +1,6 @@
 module main
 
+import os
 import veb
 import json2
 
@@ -7,6 +8,7 @@ struct Health {
 pub:
 	healthy bool
 	version string
+	pid     int
 }
 
 struct Capabilities {
@@ -20,6 +22,7 @@ pub fn (app &App) health(mut ctx Context) veb.Result {
 	return ctx.json(Health{
 		healthy: true
 		version: product_version
+		pid:     os.getpid()
 	})
 }
 

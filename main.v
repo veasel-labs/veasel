@@ -25,18 +25,47 @@ fn serve(port int, data_dir string) ! {
 	veb.run_at[App, Context](mut app, host: '127.0.0.1', family: .ip, port: port)!
 }
 
-fn backend_is_healthy(port int) bool {
+fn backend_health(port int) ?Health {
 	response := http.fetch(
 		url:           'http://127.0.0.1:${port}/v1/health'
 		read_timeout:  500 * time.millisecond
 		write_timeout: 500 * time.millisecond
 		max_retries:   1
-	) or { return false }
+	) or { return none }
 	if response.status_code != 200 {
-		return false
+		return none
 	}
-	health := json2.decode[Health](response.body) or { return false }
-	return health.healthy
+	health := json2.decode[Health](response.body) or { return none }
+	if !health.healthy {
+		return none
+	}
+	return health
+}
+
+fn backend_is_healthy(port int) bool {
+	return backend_health(port) != none
+}
+
+// Empty unless the running server reports a different version than this
+// CLI. Reusing a stale server after an upgrade silently runs the old
+// backend (old tools, permissions, and schema), so name both versions and
+// the server pid; there is no stop command yet, killing the pid is the
+// restart path and the next invocation spawns a fresh server.
+fn stale_server_warning(health Health) string {
+	if health.version.len == 0 || health.version == product_version {
+		return ''
+	}
+	stop := $if windows {
+		'taskkill /PID ${health.pid}'
+	} $else {
+		'kill ${health.pid}'
+	}
+	pid_note := if health.pid > 0 {
+		' To restart it with this version, stop pid ${health.pid} (`${stop}`) and retry.'
+	} else {
+		' Stop the running server and retry to use this version.'
+	}
+	return 'veasel: reusing a running ${health.version} server; this CLI is ${product_version}.${pid_note}'
 }
 
 fn spawn_backend_server(mut process os.Process, log_path string) ! {
@@ -118,7 +147,11 @@ fn backend_log_path(log_path string) string {
 }
 
 fn ensure_backend(port int, log_path string) ! {
-	if backend_is_healthy(port) {
+	if health := backend_health(port) {
+		warning := stale_server_warning(health)
+		if warning.len > 0 {
+			eprintln(warning)
+		}
 		return
 	}
 	effective_log_path := backend_log_path(log_path)

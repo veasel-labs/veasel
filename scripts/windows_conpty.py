@@ -9,6 +9,8 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Callable
 
+from terminal_screen import TerminalScreen
+
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -179,6 +181,7 @@ def run_tui_conpty(
     attribute_list = wintypes.LPVOID()
     attribute_list_initialized = False
     output = bytearray()
+    screen = TerminalScreen(rows=24, cols=100)
     process_created = False
     child_stdin_read = wintypes.HANDLE()
     child_stdin_write = wintypes.HANDLE()
@@ -206,7 +209,9 @@ def run_tui_conpty(
                 if error in (109, 232):
                     return
                 raise _winerror("ReadFile(ConPTY output)")
-            output.extend(buffer.raw[: read.value])
+            chunk = buffer.raw[: read.value]
+            output.extend(chunk)
+            screen.feed(chunk)
             available.value -= read.value
             if read.value == 0:
                 return
@@ -236,6 +241,35 @@ def run_tui_conpty(
             f"standalone TUI did not reach {description} within {timeout} seconds; "
             f"captured {len(output)} terminal bytes; visible output: {snippet!r}; "
             f"raw tail: {raw_tail!r}"
+        )
+
+    def wait_for_screen_markers(
+        markers: tuple[bytes, ...],
+        timeout: float,
+        description: str,
+        absent: tuple[bytes, ...] = (),
+    ) -> None:
+        # Same differential-repaint hazard as the PTY smoke: assert against
+        # the rendered screen, not contiguous raw bytes.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            drain()
+            rendered = screen.text().encode()
+            # output is cleared before the triggering keystroke, so requiring
+            # fresh bytes prevents a stale pre-action frame from passing.
+            if output and all(marker in rendered for marker in markers) and not any(
+                marker in rendered for marker in absent
+            ):
+                return
+            if all(marker in output for marker in markers):
+                return
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
+                raise RuntimeError(f"standalone TUI exited before {description} (status={exit_code.value})")
+            time.sleep(0.025)
+        raise TimeoutError(
+            f"standalone TUI did not reach {description} within {timeout} seconds; "
+            f"rendered screen:\n{screen.text()}"
         )
 
     def wait_for_partial_reply(partial: bytes, complete: bytes, timeout: float) -> None:
@@ -398,7 +432,7 @@ def run_tui_conpty(
             wait_for_markers((b"REVIEW WORKSPACE EDIT", review_path), 5, "the live workspace edit review")
             output.clear()
             send_keys(b"a")
-            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
@@ -408,7 +442,10 @@ def run_tui_conpty(
             output.clear()
             send_keys(b"\r")
             # Recovery uses a different placeholder until submissions are safe.
-            wait_for_markers((b"Message Veasel",), 5, "the recovered session composer")
+            wait_for_screen_markers(
+                (b"Message Veasel",), 5, "the recovered session composer",
+                absent=(b"Restoring this session",),
+            )
             output.clear()
             send_keys(b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)

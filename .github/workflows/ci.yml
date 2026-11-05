@@ -374,6 +374,7 @@ jobs:
         run: |
           python3 scripts/test-meta-mock-provider.py
           python3 scripts/test_mock_provider_session_system.py
+          python3 scripts/test_terminal_screen.py
           mkdir -p benchmark-results
           scripts/api-smoke.sh
       - name: Run standalone TUI integration smoke

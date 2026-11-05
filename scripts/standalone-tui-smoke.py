@@ -20,6 +20,8 @@ from urllib.parse import quote
 from urllib.request import Request
 from urllib.request import urlopen
 
+from terminal_screen import TerminalScreen
+
 # Attempts to open the command palette, filter it, and confirm the Quit option
 # before the smoke gives up. Each attempt starts from a clean palette state.
 _PALETTE_RETRIES = 3
@@ -115,6 +117,11 @@ def run_tui(
 
     fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 100, 0, 0))
     output = bytearray()
+    screen = TerminalScreen(rows=24, cols=100)
+
+    def record(chunk: bytes) -> None:
+        output.extend(chunk)
+        screen.feed(chunk)
 
     def visible_output() -> bytes:
         return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[_PXM][^\x1b]*\x1b\\", b"", output)
@@ -125,7 +132,7 @@ def run_tui(
             readable, _, _ = select.select([terminal], [], [], 0.1)
             if readable:
                 try:
-                    output.extend(os.read(terminal, 65_536))
+                    record(os.read(terminal, 65_536))
                 except OSError:
                     break
                 visible = visible_output()
@@ -140,13 +147,47 @@ def run_tui(
             f"visible terminal output: {snippet}"
         )
 
+    def wait_for_screen_markers(
+        markers: tuple[bytes, ...],
+        timeout: float,
+        description: str,
+        absent: tuple[bytes, ...] = (),
+    ) -> None:
+        # Differential repaints emit only changed cells, so a placeholder
+        # transition (Restoring… -> Message Veasel…) may never appear as a
+        # contiguous raw byte string even though the on-screen composer is
+        # ready (macOS CI run 41923796968). Assert against the rendered
+        # screen instead, and require stale-state text to be gone.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([terminal], [], [], 0.1)
+            if readable:
+                try:
+                    record(os.read(terminal, 65_536))
+                except OSError:
+                    break
+                rendered = screen.text().encode()
+                if all(marker in rendered for marker in markers) and not any(
+                    marker in rendered for marker in absent
+                ):
+                    return
+                if all(marker in visible_output() for marker in markers):
+                    return
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                raise RuntimeError(f"standalone TUI exited before {description} (status={status})")
+        raise TimeoutError(
+            f"standalone TUI did not reach {description} within {timeout} seconds; "
+            f"rendered screen:\n{screen.text()}"
+        )
+
     def wait_for_partial_reply(partial: bytes, complete: bytes, timeout: float) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             readable, _, _ = select.select([terminal], [], [], 0.05)
             if readable:
                 try:
-                    output.extend(os.read(terminal, 65_536))
+                    record(os.read(terminal, 65_536))
                 except OSError:
                     break
                 if partial in output:
@@ -207,7 +248,7 @@ def run_tui(
                 readable, _, _ = select.select([terminal], [], [], 0.05)
                 if readable:
                     try:
-                        output.extend(os.read(terminal, 65_536))
+                        record(os.read(terminal, 65_536))
                     except OSError:
                         break
                 finished, status = os.waitpid(child, os.WNOHANG)
@@ -248,7 +289,7 @@ def run_tui(
             wait_for_markers((b"REVIEW WORKSPACE EDIT", review_path), 5, "the live workspace edit review")
             output.clear()
             os.write(terminal, b"a")
-            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
@@ -265,7 +306,10 @@ def run_tui(
             # Recovery uses a different placeholder until submissions are safe.
             # This remains a hard readiness assertion for the packaged binary,
             # but permits normal asynchronous backend startup under CI load.
-            wait_for_markers((b"Message Veasel",), 10, "the recovered session composer")
+            wait_for_screen_markers(
+                (b"Message Veasel",), 10, "the recovered session composer",
+                absent=(b"Restoring this session",),
+            )
             output.clear()
             os.write(terminal, b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
@@ -284,7 +328,7 @@ def run_tui(
                 readable, _, _ = select.select([terminal], [], [], 0.01)
                 if readable:
                     try:
-                        output.extend(os.read(terminal, 65_536))
+                        record(os.read(terminal, 65_536))
                     except OSError:
                         pass
             return None

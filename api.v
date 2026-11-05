@@ -1773,6 +1773,19 @@ fn session_turn_failure(message string) (string, string) {
 	if message == 'app_shutting_down' {
 		return 'cancelled', 'The server is shutting down.'
 	}
+	// Configuration can change between the submit-time guard and turn
+	// execution (key cleared, profile removed). These internal strings are
+	// generated only by model_settings/provider code, never by provider
+	// response text, so matching them cannot leak anything untrusted.
+	if message == 'model is not configured' || message == no_model_configured_message {
+		return 'failed', 'No model is configured yet. Connect a provider and pick a model, then try again.'
+	}
+	if message.starts_with('model credentials are not configured') {
+		return 'failed', 'Model credentials are not configured. Add the provider API key and try again.'
+	}
+	if message == 'unsupported model provider' {
+		return 'failed', 'The configured model provider is not supported. Pick a different provider and try again.'
+	}
 	// Provider HTTP failures name the status so a wrong key or bad model ID
 	// is diagnosable from the transcript alone. The public text is built
 	// from the numeric status only; provider response text never passes

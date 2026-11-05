@@ -65,3 +65,18 @@ fn test_session_turn_failure_keeps_internal_and_generic_mappings() {
 	_, unknown_error := session_turn_failure('boom')
 	assert unknown_error == 'The assistant turn failed.'
 }
+
+fn test_session_turn_failure_names_missing_model_configuration() {
+	_, no_model := session_turn_failure('model is not configured')
+	assert no_model.contains('No model is configured yet')
+
+	_, cli_message := session_turn_failure(no_model_configured_message)
+	assert cli_message.contains('No model is configured yet')
+
+	_, no_credentials := session_turn_failure('model credentials are not configured for anthropic')
+	assert no_credentials.contains('Model credentials are not configured')
+	assert no_credentials.contains('API key')
+
+	_, unsupported := session_turn_failure('unsupported model provider')
+	assert unsupported.contains('not supported')
+}

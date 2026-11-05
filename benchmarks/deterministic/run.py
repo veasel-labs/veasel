@@ -253,6 +253,34 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "saved-profile-missing-key",
+        "prompt": "Say hello",
+        # A saved Anthropic profile names a model but holds no key, and the
+        # environment provides none either. A pass proves the run is
+        # refused up front with the no-model-configured guidance (never a
+        # generic failure, never a provider call) and the workspace stays
+        # byte-identical.
+        "env": {"VEASEL_MODEL_API_KEY": "", "ANTHROPIC_API_KEY": ""},
+        "seed_data_files": {
+            "model-settings.json": json.dumps({
+                "active_provider": "anthropic",
+                "profiles": {
+                    "anthropic": {
+                        "model": "claude-fixture",
+                        "base_url": "https://api.anthropic.com/v1",
+                        "api_key": "",
+                        "max_output_tokens": 0,
+                    }
+                },
+            }),
+        },
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "saved profile without a key is refused with no-model guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "No model provider is configured",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -273,6 +301,9 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
 
     port = free_port()
     data_dir = work / "data"
+    for name, content in task.get("seed_data_files", {}).items():
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / name).write_text(content, encoding="utf-8")
     env = dict(
         os.environ,
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",

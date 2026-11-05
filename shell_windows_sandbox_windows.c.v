@@ -3,7 +3,6 @@ module main
 import context as vcontext
 import encoding.utf8
 import os
-import time
 
 #flag windows -ladvapi32
 #flag windows -luserenv
@@ -47,6 +46,12 @@ fn C.veasel_win_run_sandboxed_shell_ex(comspec_utf8 &char, command_utf8 &char, w
 	env_utf8 &char, timeout_ms int, max_output_bytes int, allow_network int,
 	cancel_flag &int, result &C.VeaselWinSandboxResult) int
 fn C.veasel_win_sandbox_result_free(result &C.VeaselWinSandboxResult)
+fn C.veasel_win_shell_start(comspec_utf8 &char, command_utf8 &char, workdir_utf8 &char,
+	env_utf8 &char, timeout_ms int, max_output_bytes int, allow_network int,
+	result &C.VeaselWinSandboxResult) voidptr
+fn C.veasel_win_shell_poll(run voidptr, slice_ms int) int
+fn C.veasel_win_shell_terminate(run voidptr)
+fn C.veasel_win_shell_finish(run voidptr, result &C.VeaselWinSandboxResult) int
 fn C.veasel_win_mcp_stdio_start(exe_utf8 &char, args_utf8 &&char, argc int, workdir_utf8 &char,
 	plugin_root_utf8 &char, plugin_data_utf8 &char, env_utf8 &char, out &C.VeaselWinMcpStdio) int
 fn C.veasel_win_mcp_stdio_is_alive(proc &C.VeaselWinMcpStdio) int
@@ -191,32 +196,11 @@ struct WindowsShellSandboxOptions {
 	allow_network bool
 }
 
-// Shared cancel flag read by the C runner's poll loop. Heap-allocated so
-// the watcher thread and the blocked C call observe the same storage;
-// done tells the watcher to stop once the C call returns.
-@[heap]
-struct WindowsShellCancelFlag {
-mut:
-	cancelled int
-	done      int
-}
-
-// The watcher runs as a closure capturing the heap flag by reference
-// (the ProviderDeltaDelivery pattern): a mut value parameter would hand
-// the spawned thread its own copy, and the C poll loop would never see
-// the store.
-fn watch_windows_shell_cancel(mut turn_ctx vcontext.Context, flag &WindowsShellCancelFlag) {
-	mut shared_flag := flag
-	spawn fn [mut turn_ctx, mut shared_flag] () {
-		for shared_flag.done == 0 {
-			if _ := turn_context_error(mut turn_ctx) {
-				shared_flag.cancelled = 1
-				return
-			}
-			time.sleep(20 * time.millisecond)
-		}
-	}()
-}
+// Cancellation is polled on this thread between C poll slices (the
+// collect_shell_process pattern used on Unix): a spawned watcher thread
+// writing a shared flag while this thread blocked inside one long C call
+// proved invisible to the C poll loop on Windows CI, so the run is
+// sliced instead and no cross-thread flag is involved.
 
 // Windows AppContainer + Job Object policy for approved shell (principles adapted
 // from Codex Windows sandbox study; no upstream source copied):
@@ -263,16 +247,24 @@ fn run_windows_sandboxed_shell_command(mut turn_ctx vcontext.Context, root strin
 	}
 	workdir := os.join_path(root, cwd)
 	env_block := windows_mcp_env_block(autonomous_shell_environment())
-	mut flag := &WindowsShellCancelFlag{}
-	watch_windows_shell_cancel(mut turn_ctx, flag)
 	mut result := C.VeaselWinSandboxResult{}
-	ok := C.veasel_win_run_sandboxed_shell_ex(shell.str, command.command.str, workdir.str,
+	run := C.veasel_win_shell_start(shell.str, command.command.str, workdir.str,
 		env_block.str, command.timeout_seconds * 1000, max_shell_command_output_bytes, if options.allow_network {
 			1
 		} else {
 			0
-		}, &flag.cancelled, &result)
-	flag.done = 1
+		}, &result)
+	mut ok := 0
+	if run != unsafe { nil } {
+		for C.veasel_win_shell_poll(run, 20) != 0 {
+			if _ := turn_context_error(mut turn_ctx) {
+				result.cancelled = 1
+				C.veasel_win_shell_terminate(run)
+				break
+			}
+		}
+		ok = C.veasel_win_shell_finish(run, &result)
+	}
 	defer {
 		C.veasel_win_sandbox_result_free(&result)
 	}

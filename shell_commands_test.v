@@ -431,32 +431,6 @@ fn test_shell_command_with_cancelled_context_never_starts() {
 	assert !os.exists(os.join_path(root, 'cancelled-effect.txt'))
 }
 
-// Isolation for the Windows mid-run cancel path: the watcher thread must
-// observe context cancellation and set the shared flag on its own,
-// without the C runner involved.
-fn test_windows_shell_cancel_watcher_sets_flag() {
-	$if windows {
-		mut background := vcontext.background()
-		mut turn_ctx, cancel := vcontext.with_cancel(mut background)
-		mut flag := &WindowsShellCancelFlag{}
-		watch_windows_shell_cancel(mut turn_ctx, flag)
-		spawn fn (cancel vcontext.CancelFn) {
-			time.sleep(200 * time.millisecond)
-			cancel()
-		}(cancel)
-		mut seen := false
-		for _ in 0 .. 500 {
-			if flag.cancelled == 1 {
-				seen = true
-				break
-			}
-			time.sleep(10 * time.millisecond)
-		}
-		flag.done = 1
-		assert seen, 'watcher never set cancelled (ctx err visible on main thread: ${turn_context_error(mut turn_ctx) or { 'none' }})'
-	}
-}
-
 // Isolation for the C bridge: a flag already set before the call must
 // terminate the job as cancelled, without the watcher involved.
 fn test_windows_sandbox_runner_honors_preset_cancel_flag() {
@@ -478,62 +452,6 @@ fn test_windows_sandbox_runner_honors_preset_cancel_flag() {
 		defer { C.veasel_win_sandbox_result_free(&result) }
 		assert ok != 0 && result.setup_failed == 0, 'sandboxed runner failed to start'
 		assert result.cancelled != 0, 'preset cancel flag ignored (timed_out=${result.timed_out} exit=${result.exit_code})'
-	}
-}
-
-// Isolation for the struct-field address: like the preset test, but the
-// C runner receives &flag.cancelled exactly as the production path
-// passes it.
-fn test_windows_sandbox_runner_honors_preset_struct_flag() {
-	$if windows {
-		if !windows_appcontainer_sandbox_available() {
-			return
-		}
-		root := os.join_path(os.temp_dir(), 'veasel-shell-preset-struct-${uuid.new_v4().str()}')
-		os.mkdir_all(root) or { panic(err) }
-		defer { os.rmdir_all(root) or {} }
-		shell := os.getenv('COMSPEC')
-		assert shell.len > 0
-		env_block := windows_mcp_env_block(autonomous_shell_environment())
-		mut flag := &WindowsShellCancelFlag{}
-		flag.cancelled = 1
-		mut result := C.VeaselWinSandboxResult{}
-		ok := C.veasel_win_run_sandboxed_shell_ex(shell.str,
-			c'for /L %i in (1,1,200000000) do @rem veasel-cancel-spin', root.str,
-			env_block.str, 30000, max_shell_command_output_bytes, 0, &flag.cancelled, &result)
-		defer { C.veasel_win_sandbox_result_free(&result) }
-		assert ok != 0 && result.setup_failed == 0, 'sandboxed runner failed to start'
-		assert result.cancelled != 0, 'preset struct cancel flag ignored (timed_out=${result.timed_out} exit=${result.exit_code})'
-	}
-}
-
-// Isolation for concurrent composition: a spawned thread sets the
-// struct flag while the main thread is blocked in the C runner — the
-// production shape minus context cancellation.
-fn test_windows_sandbox_runner_honors_concurrent_struct_flag() {
-	$if windows {
-		if !windows_appcontainer_sandbox_available() {
-			return
-		}
-		root := os.join_path(os.temp_dir(), 'veasel-shell-concurrent-struct-${uuid.new_v4().str()}')
-		os.mkdir_all(root) or { panic(err) }
-		defer { os.rmdir_all(root) or {} }
-		shell := os.getenv('COMSPEC')
-		assert shell.len > 0
-		env_block := windows_mcp_env_block(autonomous_shell_environment())
-		mut flag := &WindowsShellCancelFlag{}
-		mut shared_flag := flag
-		spawn fn [mut shared_flag] () {
-			time.sleep(1500 * time.millisecond)
-			shared_flag.cancelled = 1
-		}()
-		mut result := C.VeaselWinSandboxResult{}
-		ok := C.veasel_win_run_sandboxed_shell_ex(shell.str,
-			c'for /L %i in (1,1,200000000) do @rem veasel-cancel-spin', root.str,
-			env_block.str, 30000, max_shell_command_output_bytes, 0, &flag.cancelled, &result)
-		defer { C.veasel_win_sandbox_result_free(&result) }
-		assert ok != 0 && result.setup_failed == 0, 'sandboxed runner failed to start'
-		assert result.cancelled != 0, 'concurrent struct cancel flag ignored (timed_out=${result.timed_out} exit=${result.exit_code} flag=${flag.cancelled})'
 	}
 }
 

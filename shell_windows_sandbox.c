@@ -384,9 +384,26 @@ void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result) {
 	result->output_len = 0;
 }
 
-int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *command_utf8,
+struct VeaselWinShellRun {
+	HANDLE job;
+	HANDLE process;
+	HANDLE thread;
+	HANDLE stdout_read;
+	HANDLE stderr_read;
+	char *output;
+	int output_len;
+	int limited;
+	int max_output_bytes;
+	int timeout_ms;
+	ULONGLONG start_ms;
+	VeaselWinSandboxResult *result;
+};
+
+VeaselWinShellRun *veasel_win_shell_start(const char *comspec_utf8, const char *command_utf8,
 	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
-	int allow_network, volatile int *cancel_flag, VeaselWinSandboxResult *result) {
+	int allow_network, VeaselWinSandboxResult *result) {
+	VeaselWinShellRun *run = NULL;
+	VeaselWinShellRun *started = NULL;
 	wchar_t *comspec = NULL;
 	wchar_t *command = NULL;
 	wchar_t *workdir = NULL;
@@ -415,17 +432,10 @@ int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *comm
 	PROCESS_INFORMATION pi;
 	DWORD creation_flags;
 	BOOL created = FALSE;
-	DWORD wait_remaining;
-	DWORD slice;
-	DWORD wait_rc;
-	DWORD exit_code = 1;
 	char *output = NULL;
-	int output_len = 0;
-	int limited = 0;
-	ULONGLONG start_ms;
 
 	if (!result) {
-		return 0;
+		return NULL;
 	}
 	ZeroMemory(result, sizeof(*result));
 	ZeroMemory(&security_capabilities, sizeof(security_capabilities));
@@ -435,8 +445,18 @@ int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *comm
 		|| max_output_bytes <= 0) {
 		result->setup_failed = 1;
 		set_error(result, "Windows AppContainer sandbox received invalid arguments", 0);
-		return 0;
+		return NULL;
 	}
+
+	run = (VeaselWinShellRun *)calloc(1, sizeof(*run));
+	if (!run) {
+		result->setup_failed = 1;
+		set_error(result, "Windows AppContainer sandbox out of memory for run state", 0);
+		return NULL;
+	}
+	run->result = result;
+	run->max_output_bytes = max_output_bytes;
+	run->timeout_ms = timeout_ms;
 
 	comspec = utf8_to_wide(comspec_utf8);
 	command = utf8_to_wide(command_utf8);
@@ -601,49 +621,24 @@ int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *comm
 		goto cleanup_process;
 	}
 
-	start_ms = GetTickCount64();
-	for (;;) {
-		ULONGLONG elapsed = GetTickCount64() - start_ms;
-		if (elapsed >= (ULONGLONG)timeout_ms) {
-			result->timed_out = 1;
-			TerminateJobObject(job, 1);
-			break;
-		}
-		if (cancel_flag && *cancel_flag) {
-			result->cancelled = 1;
-			TerminateJobObject(job, 1);
-			break;
-		}
-		wait_remaining = timeout_ms - (DWORD)elapsed;
-		slice = wait_remaining > 20 ? 20 : wait_remaining;
-		wait_rc = WaitForSingleObject(pi.hProcess, slice);
-		if (!read_available(stdout_read, output, max_output_bytes, &output_len, &limited)
-			|| !read_available(stderr_read, output, max_output_bytes, &output_len, &limited)) {
-			/* ignore read races while process exits */
-		}
-		if (limited) {
-			result->output_limited = 1;
-			TerminateJobObject(job, 1);
-			break;
-		}
-		if (wait_rc == WAIT_OBJECT_0) {
-			break;
-		}
-	}
-
-	WaitForSingleObject(pi.hProcess, 5000);
-	GetExitCodeProcess(pi.hProcess, &exit_code);
-	read_available(stdout_read, output, max_output_bytes, &output_len, &limited);
-	read_available(stderr_read, output, max_output_bytes, &output_len, &limited);
-	if (limited) {
-		result->output_limited = 1;
-	}
-	output[output_len] = '\0';
-	result->ok = 1;
-	result->exit_code = (int)exit_code;
-	result->output = output;
-	result->output_len = output_len;
+	/* Setup-only resources are no longer needed once the process is
+	 * created and resumed; the run state keeps what poll/finish use. */
+	run->job = job;
+	job = NULL;
+	run->process = pi.hProcess;
+	pi.hProcess = NULL;
+	run->thread = pi.hThread;
+	pi.hThread = NULL;
+	run->stdout_read = stdout_read;
+	stdout_read = NULL;
+	run->stderr_read = stderr_read;
+	stderr_read = NULL;
+	run->output = output;
 	output = NULL;
+	run->start_ms = GetTickCount64();
+	started = run;
+	run = NULL;
+	goto cleanup;
 
 cleanup_process:
 	if (pi.hThread) {
@@ -656,6 +651,8 @@ cleanup_process:
 	}
 
 cleanup:
+	free(run);
+	run = NULL;
 	free(env_block);
 	if (attr_list) {
 		DeleteProcThreadAttributeList(attr_list);
@@ -691,7 +688,114 @@ cleanup:
 	free(comspec);
 	free(command);
 	free(workdir);
+	return started;
+}
+
+int veasel_win_shell_poll(VeaselWinShellRun *run, int slice_ms) {
+	ULONGLONG elapsed;
+	DWORD wait_remaining;
+	DWORD slice;
+	DWORD wait_rc;
+
+	if (!run) {
+		return 0;
+	}
+	elapsed = GetTickCount64() - run->start_ms;
+	if (elapsed >= (ULONGLONG)run->timeout_ms) {
+		run->result->timed_out = 1;
+		TerminateJobObject(run->job, 1);
+		return 0;
+	}
+	wait_remaining = run->timeout_ms - (DWORD)elapsed;
+	slice = (DWORD)slice_ms;
+	if (slice_ms <= 0 || slice > wait_remaining) {
+		slice = wait_remaining;
+	}
+	wait_rc = WaitForSingleObject(run->process, slice);
+	if (!read_available(run->stdout_read, run->output, run->max_output_bytes,
+			&run->output_len, &run->limited)
+		|| !read_available(run->stderr_read, run->output, run->max_output_bytes,
+			&run->output_len, &run->limited)) {
+		/* ignore read races while process exits */
+	}
+	if (run->limited) {
+		run->result->output_limited = 1;
+		TerminateJobObject(run->job, 1);
+		return 0;
+	}
+	if (wait_rc == WAIT_OBJECT_0) {
+		return 0;
+	}
+	return 1;
+}
+
+void veasel_win_shell_terminate(VeaselWinShellRun *run) {
+	if (run && run->job) {
+		TerminateJobObject(run->job, 1);
+	}
+}
+
+int veasel_win_shell_finish(VeaselWinShellRun *run, VeaselWinSandboxResult *result) {
+	DWORD exit_code = 1;
+
+	if (!run || !result) {
+		free(run);
+		return 0;
+	}
+	WaitForSingleObject(run->process, 5000);
+	GetExitCodeProcess(run->process, &exit_code);
+	read_available(run->stdout_read, run->output, run->max_output_bytes,
+		&run->output_len, &run->limited);
+	read_available(run->stderr_read, run->output, run->max_output_bytes,
+		&run->output_len, &run->limited);
+	if (run->limited) {
+		result->output_limited = 1;
+	}
+	run->output[run->output_len] = '\0';
+	result->ok = 1;
+	result->exit_code = (int)exit_code;
+	result->output = run->output;
+	result->output_len = run->output_len;
+	run->output = NULL;
+
+	if (run->thread) {
+		CloseHandle(run->thread);
+	}
+	if (run->process) {
+		CloseHandle(run->process);
+	}
+	if (run->job) {
+		CloseHandle(run->job);
+	}
+	if (run->stdout_read) {
+		CloseHandle(run->stdout_read);
+	}
+	if (run->stderr_read) {
+		CloseHandle(run->stderr_read);
+	}
+	free(run->output);
+	free(run);
 	return result->ok ? 1 : 0;
+}
+
+int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *command_utf8,
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, volatile int *cancel_flag, VeaselWinSandboxResult *result) {
+	VeaselWinShellRun *run;
+
+	run = veasel_win_shell_start(comspec_utf8, command_utf8, workdir_utf8, env_utf8,
+		timeout_ms, max_output_bytes, allow_network, result);
+	if (!run) {
+		return 0;
+	}
+	while (veasel_win_shell_poll(run, 20)) {
+		if (cancel_flag && *cancel_flag) {
+			result->cancelled = 1;
+			veasel_win_shell_terminate(run);
+			break;
+		}
+	}
+	return veasel_win_shell_finish(run, result);
 }
 
 int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,

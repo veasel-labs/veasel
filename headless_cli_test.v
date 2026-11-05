@@ -207,3 +207,26 @@ fn test_attach_headless_session_usage_skips_empty_session_ids() {
 	assert !result.session_usage_reported
 	assert result.session_completed_turns == 0
 }
+
+fn test_headless_poll_interval_backs_off_to_steady_state() {
+	mut schedule := []time.Duration{}
+	mut interval := headless_poll_initial_interval
+	for _ in 0 .. 8 {
+		schedule << interval
+		interval = headless_next_poll_interval(interval)
+	}
+	assert schedule == [
+		10 * time.millisecond,
+		20 * time.millisecond,
+		40 * time.millisecond,
+		80 * time.millisecond,
+		160 * time.millisecond,
+		250 * time.millisecond,
+		250 * time.millisecond,
+		250 * time.millisecond,
+	]
+	// A zero or negative starting point restarts from the fast interval,
+	// and the steady state never exceeds the historical fixed cadence.
+	assert headless_next_poll_interval(0) == headless_poll_initial_interval
+	assert headless_next_poll_interval(headless_poll_interval) == headless_poll_interval
+}

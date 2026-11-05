@@ -11,6 +11,7 @@ for (const [outcome, message] of [
 ]) {
 test(`Ctrl+X targets the originating session and reports ${outcome}`, async () => {
   let operationId = ""
+  let operationsRequested = false
   const cancellations: string[] = []
   let events!: ReadableStreamDefaultController<Uint8Array>
   const controller = new AbortController()
@@ -28,6 +29,12 @@ test(`Ctrl+X targets the originating session and reports ${outcome}`, async () =
         { id: "a", title: "Session alpha", directory: "/tmp" },
         { id: "b", title: "Session beta", directory: "/tmp" },
       ])
+      if (path.endsWith("/operations")) {
+        // Observe the recovery fetch without changing its response shape:
+        // this mock's fallthrough `{}` is what the client already tolerates.
+        operationsRequested = true
+        return Response.json({})
+      }
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
         return Response.json({ operation_id: operationId, status: "cancelling" }, { status: 202 })
@@ -63,7 +70,12 @@ test(`Ctrl+X targets the originating session and reports ${outcome}`, async () =
   try {
     await until(() => setup.captureCharFrame().includes("Session alpha"))
     setup.mockInput.pressEnter()
-    await setup.renderOnce()
+    // Wait until durable session recovery finishes (operations fetched and
+    // composer placeholder leaves the Restoring state): submitting during
+    // recovery is (correctly) rejected with a "try again shortly" toast,
+    // which under CI load raced this test and left no operation to cancel.
+    await until(() => operationsRequested)
+    await until(() => setup.captureCharFrame().includes("Message Veasel"))
     await setup.mockInput.typeText("Do some work")
     setup.mockInput.pressEnter()
     await until(() => Boolean(operationId))

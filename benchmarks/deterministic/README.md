@@ -43,6 +43,7 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `outside-write-rejected` | `Try to write outside` | Edit of `../outside/evil.txt` is rejected; no outside file created |
 | `wrong-api-key-fails` | `Say hello` (bad key) | Provider returns HTTP 401; run exits non-zero with the status in the error, workspace byte-identical, and the rejected key never appears in result or trace output |
 | `unreachable-endpoint-fails` | `Say hello` (closed port) | Connection refused; run exits non-zero with unreachable-endpoint guidance, workspace byte-identical |
+| `unknown-model-fails` | `Say hello` (bad model ID) | Provider returns HTTP 404 `model_not_found`; run exits non-zero with model/endpoint guidance, workspace byte-identical |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the

@@ -240,6 +240,19 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "unknown-model-fails",
+        "prompt": "Say hello",
+        # The provider answers 404 model_not_found for this model ID. A
+        # pass proves the run fails with copy pointing at the model ID /
+        # base URL, and the workspace stays byte-identical.
+        "env": {"VEASEL_MODEL": "no-such-model"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "unknown model ID fails the run with model/endpoint guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "could not find the model or endpoint (HTTP 404)",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock

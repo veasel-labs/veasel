@@ -359,6 +359,20 @@ class MockProvider(BaseHTTPRequestHandler):
                     {"id": "msg-fixture", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": REPLY}]}
                 ]}
         elif has_openai_compatible_auth(self.headers.get("Authorization")):
+            if payload.get("model") == "no-such-model":
+                # Real OpenAI-compatible providers answer an unknown model
+                # with 404 model_not_found, not a generic 400.
+                encoded = json.dumps({"error": {
+                    "message": "The model 'no-such-model' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }}).encode()
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = fixture_user_prompt(last_message.get("content", ""))

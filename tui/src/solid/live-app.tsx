@@ -81,7 +81,7 @@ import { openShellOutputDialog } from "./component/shell-output-dialog"
 import { openDialogSelect } from "./ui/dialog-select"
 import { liveReleaseHighlights } from "./release-highlights"
 import { shellCommandsWithOutput } from "./shell-output-live"
-import { formatActiveModelLabel } from "../session-model"
+import { formatActiveModelLabel, needsModelSetup, NO_MODEL_SETUP_GUIDANCE } from "../session-model"
 import { safeModelCatalogText, type ModelProvider } from "../model-providers"
 import { exportOpenCodeGoApiKey } from "../opencode-auth"
 import {
@@ -2277,6 +2277,22 @@ function LiveAppShell(props: LiveAppProps) {
 
   onMount(() => {
     void refreshSessions()
+    // Clean-profile first run: say so up front instead of letting the first
+    // prompt fail. Best-effort only; a settings fetch failure stays silent
+    // here because connection errors already surface through the event loop.
+    void (async () => {
+      try {
+        const view = await props.api.getModelSettings()
+        if (needsModelSetup(view)) {
+          toast.warning(NO_MODEL_SETUP_GUIDANCE, "Model setup")
+          if (!activeSessionId() && !dialog.open()) {
+            setStatus(formatWarnStatus("no model configured · type /connect to set one up"))
+          }
+        }
+      } catch {
+        // ignored: see above
+      }
+    })()
     void props.api.consumeEvents(
       {
         onConnected: () => {

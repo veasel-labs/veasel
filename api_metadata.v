@@ -94,8 +94,7 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 
 @['/v1/config/model'; get]
 pub fn (app &App) get_model_settings(mut ctx Context) veb.Result {
-	mut state := app.model_settings
-	return ctx.json(state.view())
+	return ctx.json(app.model_settings_view())
 }
 
 @['/v1/config/model'; post]
@@ -110,7 +109,7 @@ pub fn (app &App) update_model_settings(mut ctx Context) veb.Result {
 	state.update(input) or {
 		return json_request_error(mut ctx, err.msg())
 	}
-	return ctx.json(state.view())
+	return ctx.json(app.model_settings_view())
 }
 
 @['/v1/config/models'; get]

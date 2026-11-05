@@ -2407,6 +2407,9 @@ components:
           type: array
           description: Provider IDs with a saved or environment credential. Secret values are never included.
           items: { type: string }
+        model_ready:
+          type: boolean
+          description: True when a chat turn could run immediately, resolving saved profiles and environment configuration exactly as turn execution does.
     ModelCatalogView:
       type: object
       required: [provider, models]

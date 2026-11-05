@@ -31,6 +31,22 @@ fn test_session_turn_failure_names_provider_http_status() {
 	assert curated_error.contains('rejected the API key (HTTP 401)')
 }
 
+fn test_session_turn_failure_names_unreachable_endpoint() {
+	refused := 'dial_tcp failed for address 127.0.0.1:53731\ntried addrs:\n\t127.0.0.1:53731: net: socket error: 111; code: 111'
+	_, refused_error := session_turn_failure(refused)
+	assert refused_error.contains('Could not reach the model provider endpoint')
+	assert refused_error.contains('base URL')
+	assert !refused_error.contains('127.0.0.1')
+	assert !refused_error.contains('111')
+
+	_, dial_error := session_turn_failure('dial_tcp failed for address provider.invalid:443')
+	assert dial_error.contains('Could not reach the model provider endpoint')
+	assert !dial_error.contains('provider.invalid')
+
+	_, dropped_error := session_turn_failure('response body ended early')
+	assert dropped_error.contains('connection dropped before the response completed')
+}
+
 fn test_session_turn_failure_keeps_internal_and_generic_mappings() {
 	cancelled_status, cancelled_error := session_turn_failure('cancelled')
 	assert cancelled_status == 'cancelled'

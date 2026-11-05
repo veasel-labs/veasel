@@ -226,6 +226,20 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "unreachable-endpoint-fails",
+        "prompt": "Say hello",
+        # The base URL points at a closed local port, so the connection is
+        # refused. A pass proves the run fails fast with copy naming the
+        # unreachable endpoint (not a generic failure), and the workspace
+        # stays byte-identical.
+        "env": {"VEASEL_MODEL_BASE_URL": "http://127.0.0.1:{closed_port}/v1"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "unreachable provider endpoint fails the run with endpoint guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "Could not reach the model provider endpoint",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -257,7 +271,12 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         VEASEL_MODEL_API_KEY="veasel-openai-key",
         VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
     )
-    env.update(task.get("env", {}))
+    # {closed_port} resolves to a port bound and released at task time, so
+    # the provider (already listening) can never be assigned it.
+    env.update({
+        key: value.replace("{closed_port}", str(free_port()))
+        for key, value in task.get("env", {}).items()
+    })
     server = subprocess.Popen(
         [str(veasel), "serve"], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

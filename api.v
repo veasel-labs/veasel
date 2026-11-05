@@ -1780,6 +1780,19 @@ fn session_turn_failure(message string) (string, string) {
 	if status := provider_http_status_from_error(message) {
 		return 'failed', public_provider_http_failure(status)
 	}
+	// Connection-level failures (refused, reset, DNS/dial errors) mean the
+	// endpoint never answered; say so instead of the generic fallback. The
+	// internal message carries socket addresses and errno prose, so only
+	// the classified kind is surfaced, never the raw text.
+	if message.to_lower().contains('response body ended early') {
+		return 'failed', 'Model provider connection dropped before the response completed; retry shortly.'
+	}
+	if _ := provider_socket_errno_from_error(message) {
+		return 'failed', 'Could not reach the model provider endpoint. Check the provider base URL and that the service is running, then try again.'
+	}
+	if message.contains('dial_tcp failed') {
+		return 'failed', 'Could not reach the model provider endpoint. Check the provider base URL and that the service is running, then try again.'
+	}
 	return 'failed', 'The assistant turn failed.'
 }
 

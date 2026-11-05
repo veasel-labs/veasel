@@ -1,8 +1,9 @@
 /** @jsxImportSource @opentui/solid */
-import { For, Show } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { For, Show, createMemo } from "solid-js"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
+import { dialogGeometry } from "../ui/dialog-layout"
 import { useSolidTheme } from "../theme"
 import type { Theme } from "../../themes"
 import type { SolidMcpServer } from "./mcp-dialog"
@@ -17,6 +18,41 @@ export type StatusDialogSnapshot = {
   usageLine?: string
   connection?: string
   mcpServers: SolidMcpServer[]
+}
+
+/**
+ * Like the provider dialog, this dialog's fixed chrome (three optional
+ * detail lines, each followed by a gap row) already exceeds the content
+ * height at 24 rows, so treat 24 rows as compact too: gaps and the MCP
+ * section margin collapse and the list gets the space.
+ */
+export function statusDialogCompact(columns: number, rows: number): boolean {
+  return dialogGeometry(columns, rows).compact || rows <= 24
+}
+
+/**
+ * MCP rows that fit the dialog at this terminal size. Fixed chrome is
+ * charged against the shared dialog content height: DialogLayout header
+ * and footer with their gaps and bottom padding (5), the session and
+ * directory lines (2), each optional detail line present (connection,
+ * model, usage), and the MCP header (1). Outside compact heights each
+ * detail line also carries a gap row, as do the fixed sections, plus
+ * the MCP section margin. One extra row is reserved for the "+N more"
+ * summary whenever the list is truncated, so hidden servers are
+ * acknowledged instead of silently dropped.
+ */
+export function statusMcpVisibleCount(
+  columns: number,
+  rows: number,
+  total: number,
+  detailLines: number,
+): number {
+  const { contentHeight } = dialogGeometry(columns, rows)
+  const compact = statusDialogCompact(columns, rows)
+  const chrome = compact ? 8 + detailLines : 11 + 2 * detailLines
+  const budget = contentHeight - chrome
+  const withSummaryRow = total > budget ? budget - 1 : budget
+  return Math.max(1, Math.min(total, withSummaryRow))
 }
 
 function mcpStatusColor(status: SolidMcpServer["status"], colors: Theme): string {
@@ -69,6 +105,24 @@ export function demoStatusSnapshot(): StatusDialogSnapshot {
 export function StatusDialog(props: StatusDialogSnapshot) {
   const colors = useSolidTheme()
   const dialog = useDialog()
+  const dimensions = useTerminalDimensions()
+  const detailLines = () =>
+    (props.connection ? 1 : 0) +
+    (props.provider && props.model ? 1 : 0) +
+    (props.usageLine ? 1 : 0)
+  const visibleServers = createMemo(() =>
+    props.mcpServers.slice(
+      0,
+      statusMcpVisibleCount(
+        dimensions().width,
+        dimensions().height,
+        props.mcpServers.length,
+        detailLines(),
+      ),
+    ),
+  )
+  const hiddenCount = () => props.mcpServers.length - visibleServers().length
+  const compact = () => statusDialogCompact(dimensions().width, dimensions().height)
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === "return" || key.name === "kpenter") {
@@ -82,7 +136,7 @@ export function StatusDialog(props: StatusDialogSnapshot) {
       header={<DialogHeader title="Status" hint="Enter · Esc" />}
       footer={<text fg={colors.muted}>Usage reflects provider-reported totals · Enter closes</text>}
     >
-      <box flexDirection="column" gap={1}>
+      <box flexDirection="column" gap={compact() ? 0 : 1}>
         <text fg={colors.body}>
           <span style={{ fg: colors.muted }}>Session </span>
           {props.sessionTitle}
@@ -115,17 +169,17 @@ export function StatusDialog(props: StatusDialogSnapshot) {
         <Show when={props.usageLine}>
           {(line) => <text fg={colors.muted}>Usage · {line()}</text>}
         </Show>
-        <box marginTop={1} flexDirection="column" gap={0}>
-          <text fg={colors.headerTitle}>
+        <box marginTop={compact() ? 0 : 1} flexDirection="column" gap={0}>
+          <text fg={colors.headerTitle} flexShrink={0}>
             MCP ({props.mcpServers.length})
           </text>
           <Show
             when={props.mcpServers.length > 0}
             fallback={<text fg={colors.muted}>No MCP servers configured</text>}
           >
-            <For each={props.mcpServers}>
+            <For each={visibleServers()}>
               {(server) => (
-                <box flexDirection="row" gap={1}>
+                <box flexDirection="row" gap={1} flexShrink={0}>
                   <text flexShrink={0} fg={mcpStatusColor(server.status, colors)}>
                     •
                   </text>
@@ -136,6 +190,9 @@ export function StatusDialog(props: StatusDialogSnapshot) {
                 </box>
               )}
             </For>
+            <Show when={hiddenCount() > 0}>
+              <text fg={colors.muted}>+{hiddenCount()} more · open MCP dialog for full list</text>
+            </Show>
           </Show>
         </box>
       </box>

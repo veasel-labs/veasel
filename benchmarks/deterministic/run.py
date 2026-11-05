@@ -93,6 +93,14 @@ TASKS = [
         "prompt": "Autonomous workspace edit",
         "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
         "check_description": "src/main.v contains the applied greet function",
+        # The generic competitor providers (scripted_provider.py,
+        # responses_provider.py) can only drive one unconditional write of
+        # the greet content, so this is the only task whose oracle they can
+        # satisfy non-vacuously. Every other task's check would either fail
+        # for protocol reasons or pass without proving its description
+        # (chaining, recovery, boundaries). Mark eligibility explicitly
+        # instead of filtering on incidental fields.
+        "competitor": True,
     },
     {
         "id": "autonomous-multi-file-edit",
@@ -779,7 +787,19 @@ def main() -> int:
         return 2
     try:
         results = []
-        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if "expect_response" not in t and not t.get("veasel_only")]
+        # Competitor adapters run only tasks explicitly marked competitor:
+        # the generic scripted providers drive a single unconditional write,
+        # so anything else would pass or fail for protocol reasons unrelated
+        # to the task's stated oracle. Skipped tasks are reported, never
+        # silently dropped from the count.
+        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if t.get("competitor")]
+        skipped = [] if args.agent == "veasel" else [
+            t["id"] for t in TASKS if not t.get("competitor")
+        ]
+        if skipped:
+            print(f"SKIPPED {len(skipped)}/{len(TASKS)} tasks for agent={args.agent}: "
+                  f"generic scripted provider drives only competitor-marked tasks: "
+                  f"{', '.join(skipped)}")
         for index, task in enumerate(tasks):
             task_work = work_root / f"task-{index}"
             task_work.mkdir()
@@ -809,6 +829,7 @@ def main() -> int:
         "tasks": results,
         "passed": sum(1 for r in results if r["passed"]),
         "total": len(results),
+        "skipped": skipped,
     }
     if veasel is not None:
         report["binary"] = veasel.name

@@ -17,6 +17,7 @@ import {
   formatStreamingBusyStatus,
   formatWarnStatus,
 } from "../status-a11y"
+import { prefersReducedMotion } from "../reduced-motion"
 import { liveStreamStatusMessage } from "../transcript-scroll"
 import { formatProviderConnectionError } from "../settings-errors"
 import { homeFooterHint, homeFooterHintForWidth } from "../footer-hints"
@@ -205,7 +206,23 @@ function LiveAppShell(props: LiveAppProps) {
   const [lastError, setLastError] = createSignal<LiveLastError | undefined>()
   const [oldestTurnId, setOldestTurnId] = createSignal<number | undefined>()
   const [historyHasOlder, setHistoryHasOlder] = createSignal(false)
-  const [status, setStatus] = createSignal(formatBusyStatus("connecting"))
+  const reducedMotion = prefersReducedMotion()
+  const [status, setStatus] = createSignal(formatBusyStatus("connecting", { reducedMotion }))
+  // Cycle the busy glyph while a busy status is shown, matching the
+  // classic shell. Reduced motion keeps the static glyph and no timer.
+  let busyFrame = 0
+  if (!reducedMotion) {
+    const busyTimer = setInterval(() => {
+      if (disposed) return
+      const match = status().match(/^[◌◍○] (busy(?: {2}· {2}.*| .*)?)$/)
+      if (!match) return
+      busyFrame += 1
+      const rest = match[1]!
+      const message = rest.startsWith("busy  ·  ") ? rest.slice("busy  ·  ".length) : rest
+      setStatus(formatBusyStatus(message, { frame: busyFrame }))
+    }, 400)
+    onCleanup(() => clearInterval(busyTimer))
+  }
   const noteError = (
     source: string,
     message: string,
@@ -2672,14 +2689,14 @@ function LiveAppShell(props: LiveAppProps) {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={colors.headerTitle}>
+        <text fg={colors.headerTitle} wrapMode="none">
           <strong>VEASEL</strong>
           <span style={{ fg: colors.brand }}> / </span>
           <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
         {/* Below 44 columns the full status overlaps the wordmark; keep
             only the connection dot segment (e.g. "● connected"). */}
-        <text fg={colors.localStatus}>
+        <text fg={colors.localStatus} wrapMode="none">
           {terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
         </text>
       </box>

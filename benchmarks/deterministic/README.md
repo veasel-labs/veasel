@@ -96,6 +96,12 @@ OpenAI Responses endpoint, through an isolated `CODEX_HOME`. Its scripted
 tool is `exec_command` (shell), not Codex's freeform apply_patch tool, so it
 measures shell-tool orchestration only.
 
+Competitor adapters run only tasks marked `"competitor": True`. The
+generic scripted providers drive a single unconditional write, so exactly
+one task (`autonomous-workspace-edit`) has an oracle they can satisfy
+non-vacuously; every other task is reported as SKIPPED in the output and
+in the JSON report's `skipped` list, never silently dropped.
+
 First local comparison (2026-10-17, scripted replies, cold CLI runs, same
 external check — all passing):
 
@@ -106,6 +112,15 @@ external check — all passing):
 | Codex 0.163.0 | 4,132 ms |
 | mini-SWE-agent 2.4.6 | 4,281 ms |
 | OpenCode 2.0.27 | 4,588 ms |
+
+Refreshed 2026-11-05 (same single shared task, same machine class):
+
+| Agent | Wall time |
+| --- | --- |
+| Veasel (local build) | 264 ms |
+| Pi 0.85.1 | 481 ms |
+| Codex 0.166.0 | 4,391 ms |
+| OpenCode 2.2.5 | 4,619 ms |
 
 This measures harness/startup orchestration only — scripted replies say
 nothing about model quality, and no superiority claim is supported until

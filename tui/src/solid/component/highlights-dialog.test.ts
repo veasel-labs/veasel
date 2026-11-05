@@ -48,7 +48,10 @@ describe("highlightsVisibleCount", () => {
     expect(highlightsVisibleCount(entries.slice(0, 2), 100, 24)).toBe(2)
   })
 
-  test("always shows at least one entry", () => {
-    expect(highlightsVisibleCount(entries, 40, 12)).toBe(1)
+  test("shows no entry rather than overflow when one entry exceeds the box", () => {
+    // At 40x12 the first entry alone (5 wrapped lines) plus the summary
+    // row exceeds the 5-line budget; forcing one entry overdrew the
+    // footer and border at 32x12.
+    expect(highlightsVisibleCount(entries, 40, 12)).toBe(0)
   })
 })

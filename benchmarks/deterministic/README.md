@@ -18,7 +18,10 @@ Exit status is non-zero when any task fails. Tasks are scored by external
 checks on the resulting workspace (for example, the applied file content),
 never by the agent's own final message. Reports record wall time, ATIF
 step/tool-call counts, provider-reported token usage, and the SHA-256 of the
-binary under test.
+binary under test. For the Veasel agent the report also carries a `startup`
+block: `--startup-runs` (default 5) cold `veasel serve` spawns on fresh data
+dirs, timed to the first healthy `/v1/health` response with idle RSS sampled
+from `/proc` where available (p50/p95/max; `--startup-runs 0` disables).
 
 CI runs the Veasel fixtures on Linux against the freshly built `dist/veasel`
 in the V backend job and uploads the report as `deterministic.json` with the

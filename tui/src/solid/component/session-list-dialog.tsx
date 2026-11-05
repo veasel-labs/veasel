@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createMemo, createSignal, onMount } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import {
   filterSessionList,
@@ -10,6 +10,7 @@ import {
   type SessionListEntry,
 } from "../../session-list"
 import { DialogHeader, useDialog } from "../ui/dialog"
+import { dialogResultCount } from "../ui/dialog-layout"
 import { useSolidTheme } from "../theme"
 import { openSessionRenameDialog } from "./session-rename-dialog"
 
@@ -47,7 +48,14 @@ export function SessionListDialog(props: SessionListDialogProps) {
   let filterInput: InputRenderable | undefined
 
   const filtered = createMemo(() => filterSessionList(sessions(), query()))
-  const visible = () => visibleDefault
+  const dimensions = useTerminalDimensions()
+  // Each row is two lines (title + directory); a fixed 10-row window
+  // needs 20 lines plus chrome and squashes rows into single overdrawn
+  // lines at short terminals. Charge rows against the shared dialog
+  // geometry like the command palette (grouped = 2-line rows, footer
+  // reserves the count line).
+  const visible = () =>
+    dialogResultCount(dimensions().width, dimensions().height, visibleDefault, true, true)
 
   const windowed = createMemo(() => {
     const items = filtered()
@@ -247,6 +255,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
                 <box
                   width="100%"
                   flexDirection="column"
+                  flexShrink={0}
                   backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}

@@ -20,6 +20,8 @@ from urllib.parse import quote
 from urllib.request import Request
 from urllib.request import urlopen
 
+from terminal_screen import TerminalScreen
+
 # Attempts to open the command palette, filter it, and confirm the Quit option
 # before the smoke gives up. Each attempt starts from a clean palette state.
 _PALETTE_RETRIES = 3
@@ -104,9 +106,12 @@ def run_tui(
     session_title: str | None = None,
     session_id: str | None = None,
     review_path: bytes | None = None,
+    recovery_only: bool = False,
 ) -> float:
     if os.name == "nt":
-        return run_tui_conpty(tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path)
+        return run_tui_conpty(
+            tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
+        )
 
     started = time.monotonic()
     child, terminal = pty.fork()
@@ -115,6 +120,11 @@ def run_tui(
 
     fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 100, 0, 0))
     output = bytearray()
+    screen = TerminalScreen(rows=24, cols=100)
+
+    def record(chunk: bytes) -> None:
+        output.extend(chunk)
+        screen.feed(chunk)
 
     def visible_output() -> bytes:
         return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[_PXM][^\x1b]*\x1b\\", b"", output)
@@ -125,7 +135,7 @@ def run_tui(
             readable, _, _ = select.select([terminal], [], [], 0.1)
             if readable:
                 try:
-                    output.extend(os.read(terminal, 65_536))
+                    record(os.read(terminal, 65_536))
                 except OSError:
                     break
                 visible = visible_output()
@@ -140,13 +150,47 @@ def run_tui(
             f"visible terminal output: {snippet}"
         )
 
+    def wait_for_screen_markers(
+        markers: tuple[bytes, ...],
+        timeout: float,
+        description: str,
+        absent: tuple[bytes, ...] = (),
+    ) -> None:
+        # Differential repaints emit only changed cells, so a placeholder
+        # transition (Restoring… -> Message Veasel…) may never appear as a
+        # contiguous raw byte string even though the on-screen composer is
+        # ready (macOS CI run 41923796968). Assert against the rendered
+        # screen instead, and require stale-state text to be gone.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([terminal], [], [], 0.1)
+            if readable:
+                try:
+                    record(os.read(terminal, 65_536))
+                except OSError:
+                    break
+                rendered = screen.text().encode()
+                if all(marker in rendered for marker in markers) and not any(
+                    marker in rendered for marker in absent
+                ):
+                    return
+                if all(marker in visible_output() for marker in markers):
+                    return
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                raise RuntimeError(f"standalone TUI exited before {description} (status={status})")
+        raise TimeoutError(
+            f"standalone TUI did not reach {description} within {timeout} seconds; "
+            f"rendered screen:\n{screen.text()}"
+        )
+
     def wait_for_partial_reply(partial: bytes, complete: bytes, timeout: float) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             readable, _, _ = select.select([terminal], [], [], 0.05)
             if readable:
                 try:
-                    output.extend(os.read(terminal, 65_536))
+                    record(os.read(terminal, 65_536))
                 except OSError:
                     break
                 if partial in output:
@@ -171,9 +215,18 @@ def run_tui(
         for attempt in range(_PALETTE_RETRIES):
             output.clear()
             os.write(terminal, b"\x10")
-            wait_for_markers(
-                (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
-            )
+            try:
+                wait_for_markers(
+                    (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
+                )
+            except TimeoutError as error:
+                # A preceding dialog (e.g. review approval) can still hold
+                # keyboard focus when Ctrl+P lands, swallowing the toggle.
+                # Reset to a clean state and retry like the filter wait below.
+                last_snippet = str(error)
+                os.write(terminal, b"\x1b")
+                time.sleep(0.5)
+                continue
             time.sleep(0.3)
             output.clear()
             os.write(terminal, b"quit")
@@ -207,7 +260,7 @@ def run_tui(
                 readable, _, _ = select.select([terminal], [], [], 0.05)
                 if readable:
                     try:
-                        output.extend(os.read(terminal, 65_536))
+                        record(os.read(terminal, 65_536))
                     except OSError:
                         break
                 finished, status = os.waitpid(child, os.WNOHANG)
@@ -217,6 +270,22 @@ def run_tui(
         output.clear()
         os.write(terminal, b"anthorpic")
         wait_for_markers((b"1/210", b"Anthropic"), 5, "typo-tolerant provider search")
+
+        # Exercise the packaged TUI, not only a mocked component: the filter
+        # previously swallowed leading j/k/g and numeric keys as navigation.
+        # Verify that Ctrl+L resets the query and that both alphabetic and
+        # numeric-prefix providers remain discoverable after a fresh search.
+        for query, result_label in (
+            (b"gemini", b"Google Gemini"),
+            (b"kimi", b"Kimi For Coding"),
+            (b"302", b"302.AI"),
+        ):
+            output.clear()
+            os.write(terminal, b"\x0c")  # Ctrl+L: clear filter
+            wait_for_markers((b"All 210/210",), 5, "the cleared provider filter")
+            output.clear()
+            os.write(terminal, query)
+            wait_for_markers((result_label,), 5, f"provider filter query {query!r}")
 
         # Wait for a new home frame after Escape, never a marker from an older screen.
         output.clear()
@@ -232,17 +301,44 @@ def run_tui(
             wait_for_markers((b"REVIEW WORKSPACE EDIT", review_path), 5, "the live workspace edit review")
             output.clear()
             os.write(terminal, b"a")
-            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
         elif not session_id:
             os.write(terminal, b"q")
+        elif recovery_only:
+            # Reopen the persisted session against the restarted backend:
+            # the prior transcript must render and the session must become
+            # ready again, without sending anything new. Readiness uses the
+            # listening status, not the composer placeholder: a draft typed
+            # during an earlier palette-focus race is persisted and restored
+            # into the composer, hiding the placeholder (seen on Linux CI).
+            time.sleep(0.25)
+            output.clear()
+            os.write(terminal, b"\r")
+            wait_for_screen_markers(
+                (b"two pieces", b"listening for activity"), 10, "the session recovered after backend restart",
+                absent=(b"Restoring this session",),
+            )
+            quit_via_palette(
+                "the command palette after backend restart recovery", "the quit command in the palette",
+            )
         else:
+            # Escape can expose the home frame before the settings dialog has
+            # fully released keyboard focus. Sending Enter in that same tick
+            # occasionally leaves the CI smoke at home rather than selecting
+            # the seeded session. Let the dialog teardown/focus settle first.
+            time.sleep(0.25)
             output.clear()
             os.write(terminal, b"\r")
             # Recovery uses a different placeholder until submissions are safe.
-            wait_for_markers((b"Message Veasel",), 5, "the recovered session composer")
+            # This remains a hard readiness assertion for the packaged binary,
+            # but permits normal asynchronous backend startup under CI load.
+            wait_for_screen_markers(
+                (b"Message Veasel",), 10, "the recovered session composer",
+                absent=(b"Restoring this session",),
+            )
             output.clear()
             os.write(terminal, b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
@@ -261,7 +357,7 @@ def run_tui(
                 readable, _, _ = select.select([terminal], [], [], 0.01)
                 if readable:
                     try:
-                        output.extend(os.read(terminal, 65_536))
+                        record(os.read(terminal, 65_536))
                     except OSError:
                         pass
             return None
@@ -306,6 +402,69 @@ def run_tui(
                         os.waitpid(child, 0)
                     except ProcessLookupError:
                         pass
+
+
+def run_tui_home_at_size(tui_path: Path, env: dict[str, str], rows: int, cols: int) -> None:
+    """Home screen must stay usable at every supported terminal size.
+
+    Asserts on the rendered screen that the session list, connection
+    status, and the new/quit cues are all visible (not clipped), then
+    quits with `q` and requires a clean exit. Windows uses the ConPTY
+    driver's home_only path instead of this PTY helper.
+    """
+    if os.name == "nt":
+        run_tui_conpty(tui_path, env, None, None, None, None, False, True, (rows, cols))
+        return
+    child, terminal = pty.fork()
+    if child == 0:
+        os.execve(tui_path, [str(tui_path)], env)
+    fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    screen = TerminalScreen(rows=rows, cols=cols)
+    markers = (b"SESSIONS", b"connected", b"n new", b"q quit")
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([terminal], [], [], 0.1)
+            if readable:
+                try:
+                    screen.feed(os.read(terminal, 65_536))
+                except OSError:
+                    break
+                if all(marker in screen.text().encode() for marker in markers):
+                    break
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                raise RuntimeError(f"standalone TUI exited before the {cols}x{rows} home screen (status={status})")
+        else:
+            raise TimeoutError(
+                f"standalone TUI home screen at {cols}x{rows} is missing critical controls "
+                f"{markers!r}; rendered screen:\n{screen.text()}"
+            )
+        os.write(terminal, b"q")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                if os.waitstatus_to_exitcode(status) != 0:
+                    raise RuntimeError(f"standalone TUI exited unsuccessfully at {cols}x{rows} (status={status})")
+                return
+            readable, _, _ = select.select([terminal], [], [], 0.05)
+            if readable:
+                try:
+                    screen.feed(os.read(terminal, 65_536))
+                except OSError:
+                    pass
+        raise TimeoutError(f"standalone TUI did not exit on q at {cols}x{rows}; rendered screen:\n{screen.text()}")
+    finally:
+        try:
+            os.close(terminal)
+        except OSError:
+            pass
+        try:
+            os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+        except (ProcessLookupError, ChildProcessError):
+            pass
 
 
 def sha256_file(path: Path) -> str:
@@ -404,15 +563,37 @@ def main() -> None:
             TERM="xterm-256color",
         )
         server: subprocess.Popen[bytes] | None = None
-        try:
-            server = subprocess.Popen(
+
+        def start_server() -> subprocess.Popen[bytes]:
+            process = subprocess.Popen(
                 [str(server_path), "serve"],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            wait_for_server(server, port)
+            wait_for_server(process, port)
+            return process
+
+        def stop_server(process: subprocess.Popen[bytes]) -> None:
+            if process.poll() is not None:
+                return
+            if os.name == "nt":
+                process.terminate()
+            else:
+                process.send_signal(signal.SIGINT)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+        try:
+            server = start_server()
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
+            terminal_sizes: list[str] = []
+            for rows, cols in ((12, 32), (30, 80), (40, 120)):
+                run_tui_home_at_size(tui_path, env, rows, cols)
+                terminal_sizes.append(f"{cols}x{rows}")
             session_title = "TUI round-trip smoke"
             request = Request(
                 f"http://127.0.0.1:{port}/v1/sessions",
@@ -429,6 +610,79 @@ def main() -> None:
             persisted = {(message.get("role"), message.get("content")) for message in messages}
             if ("user", "Stream incrementally") not in persisted or ("assistant", "Streaming fixture reply arrives in two pieces") not in persisted:
                 raise RuntimeError(f"TUI conversation was not persisted correctly: {messages!r}")
+            # Restart the backend on the same data directory: the session
+            # must reopen with its transcript intact and recovery must not
+            # replay or duplicate any persisted message.
+            before_restart = [(message.get("role"), message.get("content")) for message in messages]
+            stop_server(server)
+            server = start_server()
+            run_tui(tui_path, env, session_title, session_id, recovery_only=True)
+            with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
+                after_messages = json.load(response)
+            after_restart = [(message.get("role"), message.get("content")) for message in after_messages]
+            if after_restart != before_restart:
+                raise RuntimeError(
+                    "backend restart changed the persisted conversation: "
+                    f"before={before_restart!r}, after={after_restart!r}"
+                )
+            restart_coverage = {
+                "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+                "messagesBeforeRestart": len(before_restart),
+                "messagesAfterRestart": len(after_restart),
+                "messagesUnchanged": after_restart == before_restart,
+            }
+            # Hard-kill the backend mid-operation (SIGKILL / TerminateProcess
+            # skips every graceful path): after restart the in-flight
+            # operation must surface as uncertain with an error — never stuck
+            # running, never reported completed — and the persisted
+            # conversation must be unchanged.
+            provider_base = env["VEASEL_MODEL_BASE_URL"].removesuffix("/v1")
+            with urlopen(f"{provider_base}/hold-slow-response", timeout=5):
+                pass
+            async_request = Request(
+                f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages",
+                data=json.dumps({"content": "Wait for cancellation"}).encode(),
+                method="POST",
+                headers={"content-type": "application/json", "Prefer": "respond-async"},
+            )
+            with urlopen(async_request, timeout=10) as response:
+                if response.status != 202:
+                    raise RuntimeError(f"async turn for the kill-9 leg was not accepted: HTTP {response.status}")
+                kill_operation_id = str(json.load(response)["operation_id"])
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                operation = api_json(port, "GET", f"/v1/sessions/{session_id}/operations/{kill_operation_id}")
+                if operation.get("status") == "running":
+                    break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError(f"kill-9 leg operation never reached running: {operation!r}")
+            server.kill()
+            server.wait(timeout=5)
+            server = start_server()
+            deadline = time.monotonic() + 15
+            operation = {}
+            while time.monotonic() < deadline:
+                operation = api_json(port, "GET", f"/v1/sessions/{session_id}/operations/{kill_operation_id}")
+                if operation.get("status") == "uncertain":
+                    break
+                time.sleep(0.25)
+            if operation.get("status") != "uncertain" or not operation.get("error"):
+                raise RuntimeError(f"kill-9 leg operation did not surface as uncertain after restart: {operation!r}")
+            with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
+                after_kill = [(message.get("role"), message.get("content")) for message in json.load(response)]
+            if after_kill != before_restart:
+                raise RuntimeError(
+                    "kill-9 changed the persisted conversation: "
+                    f"before={before_restart!r}, after={after_kill!r}"
+                )
+            with urlopen(f"{provider_base}/release-slow-response", timeout=5):
+                pass
+            kill_coverage = {
+                "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+                "operationStatusAfterRestart": operation.get("status"),
+                "messagesUnchanged": after_kill == before_restart,
+            }
             review_session_id, review_edit_id, review_workspace, expected_content = create_review_fixture(
                 port,
                 Path(temporary),
@@ -451,16 +705,8 @@ def main() -> None:
                 "fileContentVerified": actual_content == expected_content,
             }
         finally:
-            if server is not None and server.poll() is None:
-                if os.name == "nt":
-                    server.terminate()
-                else:
-                    server.send_signal(signal.SIGINT)
-                try:
-                    server.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=5)
+            if server is not None:
+                stop_server(server)
             if provider.poll() is None:
                 provider.terminate()
             try:
@@ -487,6 +733,9 @@ def main() -> None:
         "buildProvenance": provenance,
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "interactiveCoverage": review_coverage,
+        "restartCoverage": restart_coverage,
+        "killRecoveryCoverage": kill_coverage,
+        "terminalSizes": terminal_sizes,
         "startupMs": {
             "samples": samples_ms,
             "count": len(samples_ms),

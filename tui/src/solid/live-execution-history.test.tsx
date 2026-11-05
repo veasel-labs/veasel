@@ -65,7 +65,10 @@ test("LiveApp browses durable session executions and inspects a failed run", asy
     { width: 100, height: 35, kittyKeyboard: true },
   )
   async function until(text: string) {
-    for (let i = 0; i < 100; i++) {
+    // Wall-clock budget, as in live-cancellation: 100 attempts can expire
+    // in ~0.5s under CI load before async state renders.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (setup.captureCharFrame().includes(text)) return
       await Bun.sleep(5)

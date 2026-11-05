@@ -11,6 +11,7 @@ for (const [outcome, message] of [
 ]) {
 test(`Ctrl+X targets the originating session and reports ${outcome}`, async () => {
   let operationId = ""
+  let operationsRequested = false
   const cancellations: string[] = []
   let events!: ReadableStreamDefaultController<Uint8Array>
   const controller = new AbortController()
@@ -28,6 +29,12 @@ test(`Ctrl+X targets the originating session and reports ${outcome}`, async () =
         { id: "a", title: "Session alpha", directory: "/tmp" },
         { id: "b", title: "Session beta", directory: "/tmp" },
       ])
+      if (path.endsWith("/operations")) {
+        // Observe the recovery fetch without changing its response shape:
+        // this mock's fallthrough `{}` is what the client already tolerates.
+        operationsRequested = true
+        return Response.json({})
+      }
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
         return Response.json({ operation_id: operationId, status: "cancelling" }, { status: 202 })
@@ -46,17 +53,29 @@ test(`Ctrl+X targets the originating session and reports ${outcome}`, async () =
     <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />
   ), { width: 100, height: 32, kittyKeyboard: true })
   async function until(predicate: () => boolean) {
-    for (let n = 0; n < 100; n++) {
+    // The completion event travels through an asynchronous SSE reader and a
+    // Solid render pass. Under parallel CI load, 100 × 5ms can expire before
+    // the correct terminal state renders even though the HTTP request succeeded.
+    // Keep every behavioural assertion; wait for the actual visible outcome.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (predicate()) return
-      await Bun.sleep(5)
+      await Bun.sleep(10)
     }
-    throw new Error("Expected cancellation state was not reached")
+    throw new Error(
+      `Expected cancellation state was not reached. Last frame:\n${setup.captureCharFrame()}`,
+    )
   }
   try {
     await until(() => setup.captureCharFrame().includes("Session alpha"))
     setup.mockInput.pressEnter()
-    await setup.renderOnce()
+    // Wait until durable session recovery finishes (operations fetched and
+    // composer placeholder leaves the Restoring state): submitting during
+    // recovery is (correctly) rejected with a "try again shortly" toast,
+    // which under CI load raced this test and left no operation to cancel.
+    await until(() => operationsRequested)
+    await until(() => setup.captureCharFrame().includes("Message Veasel"))
     await setup.mockInput.typeText("Do some work")
     setup.mockInput.pressEnter()
     await until(() => Boolean(operationId))

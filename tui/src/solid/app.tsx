@@ -566,12 +566,12 @@ function AppShell(props: SolidAppProps) {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={colors.headerTitle}>
+        <text fg={colors.headerTitle} wrapMode="none">
           <strong>VEASEL</strong>
           <span style={{ fg: colors.brand }}> / </span>
           <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
-        <text fg={colors.localStatus}>● {status()}</text>
+        <text fg={colors.localStatus} wrapMode="none">● {status()}</text>
       </box>
 
       <Show
@@ -582,13 +582,13 @@ function AppShell(props: SolidAppProps) {
               theme={themes[themeId()] ?? themes.mint}
               directory={directory()}
             />
-            <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+            <SolidComposer onSubmit={onSubmit} focused={composerFocused() && !dialog.open()} />
           </box>
         }
       >
         <box
           width="100%"
-          height={2}
+          height={3}
           flexShrink={0}
           flexDirection="row"
           alignItems="center"
@@ -598,9 +598,9 @@ function AppShell(props: SolidAppProps) {
           paddingLeft={1}
           paddingRight={1}
         >
-          <text fg={colors.muted}>SESSION </text>
-          <text fg={colors.body}>{sessionTitle()}</text>
-          <text fg={colors.muted}>
+          <text fg={colors.muted} wrapMode="none">SESSION </text>
+          <text fg={colors.body} wrapMode="none">{sessionTitle()}</text>
+          <text fg={colors.muted} wrapMode="none">
             {" "}
             · {paletteShortcut.label} commands · {activityToggleShortcut.label} activity ·{" "}
             {reviewShortcut.label} reviews
@@ -627,7 +627,7 @@ function AppShell(props: SolidAppProps) {
           cols={80}
         />
 
-        <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+        <SolidComposer onSubmit={onSubmit} focused={composerFocused() && !dialog.open()} />
       </Show>
     </box>
   )

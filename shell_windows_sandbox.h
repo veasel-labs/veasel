@@ -30,6 +30,7 @@ typedef struct VeaselWinSandboxResult {
 	int setup_failed;
 	int timed_out;
 	int output_limited;
+	int cancelled;
 	int exit_code;
 	int used_appcontainer;
 	int used_job_object;
@@ -61,7 +62,35 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
 	int allow_network, VeaselWinSandboxResult *result);
 
+/* Same as veasel_win_run_sandboxed_shell, plus cooperative cancellation:
+ * when cancel_flag is non-NULL and becomes non-zero, the job is terminated
+ * and result->cancelled is set. The flag must outlive the call. */
+int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *command_utf8,
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, volatile int *cancel_flag, VeaselWinSandboxResult *result);
+
 void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result);
+
+/* Sliced shell run for callers that must stay responsive on their own
+ * thread (the V caller polls its turn context between slices instead of
+ * blocking inside one long C call with a cross-thread cancel flag).
+ * start performs all AppContainer/Job setup and resumes the process;
+ * it returns NULL on setup failure with result filled in. poll waits up
+ * to slice_ms, drains output, and enforces timeout/output limits;
+ * it returns 1 while running and 0 once the process is finished or
+ * terminated. terminate kills the job (idempotent). finish reaps the
+ * process, fills result, and frees the run; call it exactly once. */
+typedef struct VeaselWinShellRun VeaselWinShellRun;
+
+VeaselWinShellRun *veasel_win_shell_start(const char *comspec_utf8, const char *command_utf8,
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, VeaselWinSandboxResult *result);
+
+int veasel_win_shell_poll(VeaselWinShellRun *run, int slice_ms);
+
+void veasel_win_shell_terminate(VeaselWinShellRun *run);
+
+int veasel_win_shell_finish(VeaselWinShellRun *run, VeaselWinSandboxResult *result);
 
 /* Start trusted MCP stdio inside AppContainer + Job. env_utf8 is a double-NUL
  * terminated list of KEY=VALUE entries (NULL inherits the parent environment).

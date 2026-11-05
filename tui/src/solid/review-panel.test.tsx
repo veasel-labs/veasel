@@ -51,6 +51,11 @@ describe("Solid review panel", () => {
     expect(frame).toContain("Review")
     expect(frame).toContain("a approve")
     expect(frame).toContain("pending")
+    // The kind label must stay on one horizontal row with the queue
+    // position instead of being squeezed into a vertical letter stack.
+    const kindLine = frame.split("\n").find((line) => line.includes("EDIT"))
+    expect(kindLine).toBeDefined()
+    expect(kindLine!).toContain("pending")
 
     setup.mockInput.pressKey("v")
     await setup.renderOnce()

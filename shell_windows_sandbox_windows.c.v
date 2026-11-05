@@ -1,5 +1,6 @@
 module main
 
+import context as vcontext
 import encoding.utf8
 import os
 
@@ -13,6 +14,7 @@ struct C.VeaselWinSandboxResult {
 	setup_failed      int
 	timed_out         int
 	output_limited    int
+	cancelled         int
 	exit_code         int
 	used_appcontainer int
 	used_job_object   int
@@ -40,7 +42,16 @@ fn C.veasel_win_sandbox_available() int
 fn C.veasel_win_run_sandboxed_shell(comspec_utf8 &char, command_utf8 &char, workdir_utf8 &char,
 	env_utf8 &char, timeout_ms int, max_output_bytes int, allow_network int,
 	result &C.VeaselWinSandboxResult) int
+fn C.veasel_win_run_sandboxed_shell_ex(comspec_utf8 &char, command_utf8 &char, workdir_utf8 &char,
+	env_utf8 &char, timeout_ms int, max_output_bytes int, allow_network int,
+	cancel_flag &int, result &C.VeaselWinSandboxResult) int
 fn C.veasel_win_sandbox_result_free(result &C.VeaselWinSandboxResult)
+fn C.veasel_win_shell_start(comspec_utf8 &char, command_utf8 &char, workdir_utf8 &char,
+	env_utf8 &char, timeout_ms int, max_output_bytes int, allow_network int,
+	result &C.VeaselWinSandboxResult) voidptr
+fn C.veasel_win_shell_poll(run voidptr, slice_ms int) int
+fn C.veasel_win_shell_terminate(run voidptr)
+fn C.veasel_win_shell_finish(run voidptr, result &C.VeaselWinSandboxResult) int
 fn C.veasel_win_mcp_stdio_start(exe_utf8 &char, args_utf8 &&char, argc int, workdir_utf8 &char,
 	plugin_root_utf8 &char, plugin_data_utf8 &char, env_utf8 &char, out &C.VeaselWinMcpStdio) int
 fn C.veasel_win_mcp_stdio_is_alive(proc &C.VeaselWinMcpStdio) int
@@ -185,6 +196,12 @@ struct WindowsShellSandboxOptions {
 	allow_network bool
 }
 
+// Cancellation is polled on this thread between C poll slices (the
+// collect_shell_process pattern used on Unix): a spawned watcher thread
+// writing a shared flag while this thread blocked inside one long C call
+// proved invisible to the C poll loop on Windows CI, so the run is
+// sliced instead and no cross-thread flag is involved.
+
 // Windows AppContainer + Job Object policy for approved shell (principles adapted
 // from Codex Windows sandbox study; no upstream source copied):
 // - AppContainer profile with workspace ACL grant (sibling paths stay denied)
@@ -192,8 +209,8 @@ struct WindowsShellSandboxOptions {
 // - Job Object: KILL_ON_JOB_CLOSE, active-process cap, job memory cap
 // - CREATE_SUSPENDED then AssignProcessToJobObject before ResumeThread
 // - shell receives only the platform environment allowlist; not a VM
-fn run_windows_sandboxed_shell_command(root string, cwd string, command ShellCommandSummary,
-	options WindowsShellSandboxOptions) ShellCommandResult {
+fn run_windows_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string, cwd string,
+	command ShellCommandSummary, options WindowsShellSandboxOptions) ShellCommandResult {
 	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
 	normalized := root.trim_right('\\/').to_lower()
 	for broad_root in ['c:', 'c:\\windows', 'c:\\users', 'c:\\program files', 'c:\\program files (x86)',
@@ -231,12 +248,23 @@ fn run_windows_sandboxed_shell_command(root string, cwd string, command ShellCom
 	workdir := os.join_path(root, cwd)
 	env_block := windows_mcp_env_block(autonomous_shell_environment())
 	mut result := C.VeaselWinSandboxResult{}
-	ok := C.veasel_win_run_sandboxed_shell(shell.str, command.command.str, workdir.str, env_block.str,
-		command.timeout_seconds * 1000, max_shell_command_output_bytes, if options.allow_network {
+	run := C.veasel_win_shell_start(shell.str, command.command.str, workdir.str,
+		env_block.str, command.timeout_seconds * 1000, max_shell_command_output_bytes, if options.allow_network {
 			1
 		} else {
 			0
 		}, &result)
+	mut ok := 0
+	if run != unsafe { nil } {
+		for C.veasel_win_shell_poll(run, 20) != 0 {
+			if _ := turn_context_error(mut turn_ctx) {
+				result.cancelled = 1
+				C.veasel_win_shell_terminate(run)
+				break
+			}
+		}
+		ok = C.veasel_win_shell_finish(run, &result)
+	}
 	defer {
 		C.veasel_win_sandbox_result_free(&result)
 	}
@@ -262,7 +290,9 @@ fn run_windows_sandboxed_shell_command(root string, cwd string, command ShellCom
 	if result.output_limited != 0 {
 		safe_output += shell_output_limited_marker
 	}
-	status := if result.timed_out != 0 {
+	status := if result.cancelled != 0 {
+		'cancelled'
+	} else if result.timed_out != 0 {
 		'timed_out'
 	} else if result.output_limited != 0 {
 		'output_limited'

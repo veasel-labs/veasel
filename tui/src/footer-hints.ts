@@ -59,3 +59,13 @@ export function sessionFooterForMode(mode: SessionFooterMode = {}): string {
 export function homeFooterForFilter(filter: string): string {
   return filter.trim().length > 0 ? homeFilterFooterHint : homeFooterHint
 }
+
+// Narrow terminals truncate the single-line footer from the right, which
+// hid the quit cue entirely below ~64 columns. Keep `n new` and `q quit`
+// (the only way in and out) visible at every width; discovery commands
+// reappear as space allows.
+export function homeFooterHintForWidth(columns: number): string {
+  if (columns >= 72) return homeFooterHint
+  if (columns >= 44) return "n new · j/k · /connect · q quit"
+  return "n new · q quit"
+}

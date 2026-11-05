@@ -12,6 +12,23 @@ const max_headless_timeout = 24 * time.hour
 const default_headless_timeout = 30 * time.minute
 const headless_request_timeout = 5 * time.second
 const headless_poll_interval = 250 * time.millisecond
+const headless_poll_initial_interval = 10 * time.millisecond
+
+// Poll completion is detected on the next tick, so a fixed 250ms interval
+// taxes every fast turn with up to a quarter second of dead time. Start
+// fast and double toward the steady-state interval: sub-second turns are
+// picked up within ~10-30ms while long turns settle at the same 250ms
+// cadence (and request rate) as before.
+fn headless_next_poll_interval(current time.Duration) time.Duration {
+	if current < headless_poll_initial_interval {
+		return headless_poll_initial_interval
+	}
+	next := current * 2
+	if next > headless_poll_interval {
+		return headless_poll_interval
+	}
+	return next
+}
 
 struct HeadlessRunOptions {
 mut:
@@ -276,10 +293,12 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 			'unable to start model turn (HTTP ${response.status_code}): ${message}')
 	}
 	deadline := time.now().add(options.timeout)
+	mut poll_interval := headless_poll_initial_interval
 	for time.now() < deadline {
 		operation_response := headless_json_request(port, .get,
 			'/v1/sessions/${session_id}/operations/${operation_id}', '', false, '') or {
-			time.sleep(headless_poll_interval)
+			time.sleep(poll_interval)
+			poll_interval = headless_next_poll_interval(poll_interval)
 			continue
 		}
 		if operation_response.status_code != 200 {
@@ -300,7 +319,8 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 				return headless_operation_result(port, session_id, operation_id, operation, options.trace_file)
 			}
 			'queued', 'running', 'cancelling' {
-				time.sleep(headless_poll_interval)
+				time.sleep(poll_interval)
+				poll_interval = headless_next_poll_interval(poll_interval)
 			}
 			else {
 				return headless_failed_result(session_id, operation_id,

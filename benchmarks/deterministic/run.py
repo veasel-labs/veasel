@@ -33,7 +33,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MOCK_PROVIDER = REPO_ROOT / "scripts" / "mock-provider.py"
@@ -93,6 +93,14 @@ TASKS = [
         "prompt": "Autonomous workspace edit",
         "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
         "check_description": "src/main.v contains the applied greet function",
+        # The generic competitor providers (scripted_provider.py,
+        # responses_provider.py) can only drive one unconditional write of
+        # the greet content, so this is the only task whose oracle they can
+        # satisfy non-vacuously. Every other task's check would either fail
+        # for protocol reasons or pass without proving its description
+        # (chaining, recovery, boundaries). Mark eligibility explicitly
+        # instead of filtering on incidental fields.
+        "competitor": True,
     },
     {
         "id": "autonomous-multi-file-edit",
@@ -199,6 +207,101 @@ TASKS = [
         "expect_response": "The path was rejected.",
     },
     {
+        "id": "interrupted-stream-fails",
+        "prompt": "Stream then drop",
+        # The mock provider truncates the response mid-body and drops the
+        # connection (Content-Length promises more than arrives). A pass
+        # proves the run surfaces a failure instead of reporting success
+        # or hanging, and the workspace stays byte-identical.
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "interrupted provider stream fails the run with an error; workspace unchanged",
+        "expect_failure": True,
+        "veasel_only": True,
+    },
+    {
+        "id": "wrong-api-key-fails",
+        "prompt": "Say hello",
+        # The mock provider answers 401 for any key it does not know. A
+        # pass proves the run fails fast with the HTTP status in the
+        # error, the workspace stays byte-identical, and the rejected key
+        # is never echoed into the result or trace output.
+        "env": {"VEASEL_MODEL_API_KEY": "wrong-fixture-key"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "wrong API key fails the run with HTTP 401 surfaced; workspace unchanged; key never echoed",
+        "expect_failure": True,
+        "expect_error_contains": "rejected the API key (HTTP 401)",
+        "forbid_in_outputs": ["wrong-fixture-key"],
+        "veasel_only": True,
+    },
+    {
+        "id": "unreachable-endpoint-fails",
+        "prompt": "Say hello",
+        # The base URL points at a closed local port, so the connection is
+        # refused. A pass proves the run fails fast with copy naming the
+        # unreachable endpoint (not a generic failure), and the workspace
+        # stays byte-identical.
+        "env": {"VEASEL_MODEL_BASE_URL": "http://127.0.0.1:{closed_port}/v1"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "unreachable provider endpoint fails the run with endpoint guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "Could not reach the model provider endpoint",
+        "veasel_only": True,
+    },
+    {
+        "id": "unknown-model-fails",
+        "prompt": "Say hello",
+        # The provider answers 404 model_not_found for this model ID. A
+        # pass proves the run fails with copy pointing at the model ID /
+        # base URL, and the workspace stays byte-identical.
+        "env": {"VEASEL_MODEL": "no-such-model"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "unknown model ID fails the run with model/endpoint guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "could not find the model or endpoint (HTTP 404)",
+        "veasel_only": True,
+    },
+    {
+        "id": "saved-profile-missing-key",
+        "prompt": "Say hello",
+        # A saved Anthropic profile names a model but holds no key, and the
+        # environment provides none either. A pass proves the run is
+        # refused up front with the no-model-configured guidance (never a
+        # generic failure, never a provider call) and the workspace stays
+        # byte-identical.
+        "env": {"VEASEL_MODEL_API_KEY": "", "ANTHROPIC_API_KEY": ""},
+        "seed_data_files": {
+            "model-settings.json": json.dumps({
+                "active_provider": "anthropic",
+                "profiles": {
+                    "anthropic": {
+                        "model": "claude-fixture",
+                        "base_url": "https://api.anthropic.com/v1",
+                        "api_key": "",
+                        "max_output_tokens": 0,
+                    }
+                },
+            }),
+        },
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "saved profile without a key is refused with no-model guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "No model provider is configured",
+        "veasel_only": True,
+    },
+    {
+        "id": "cancelled-shell-tool",
+        "prompt": "Run slow shell",
+        # API-driven (see run_cancel_tool_task): the scripted shell sleeps
+        # 5s and only then writes cancel-effect.txt. The turn is cancelled
+        # while the command is running; a pass proves the operation ends
+        # cancelled, ends promptly, and the effect file never appears even
+        # after outwaiting the sleep.
+        "kind": "cancel_tool",
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V and not (ws / "cancel-effect.txt").exists(),
+        "check_description": "cancelling mid-shell kills the command; operation cancelled; no effect file after outwaiting it",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -219,6 +322,9 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
 
     port = free_port()
     data_dir = work / "data"
+    for name, content in task.get("seed_data_files", {}).items():
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / name).write_text(content, encoding="utf-8")
     env = dict(
         os.environ,
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
@@ -230,6 +336,12 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         VEASEL_MODEL_API_KEY="veasel-openai-key",
         VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
     )
+    # {closed_port} resolves to a port bound and released at task time, so
+    # the provider (already listening) can never be assigned it.
+    env.update({
+        key: value.replace("{closed_port}", str(free_port()))
+        for key, value in task.get("env", {}).items()
+    })
     server = subprocess.Popen(
         [str(veasel), "serve"], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -254,9 +366,23 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
             server.kill()
 
     result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
-    passed = completed.returncode == 0 and result.get("status") == "completed"
+    if task.get("expect_failure"):
+        passed = (
+            completed.returncode != 0
+            and result.get("status") == "failed"
+            and bool(result.get("error"))
+        )
+    else:
+        passed = completed.returncode == 0 and result.get("status") == "completed"
     if passed and "expect_response" in task:
         passed = result.get("response") == task["expect_response"]
+    if passed and "expect_error_contains" in task:
+        passed = task["expect_error_contains"] in (result.get("error") or "")
+    if passed and task.get("forbid_in_outputs"):
+        outputs = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
+        if trace_path.exists():
+            outputs += trace_path.read_text(encoding="utf-8")
+        passed = all(secret not in outputs for secret in task["forbid_in_outputs"])
     if passed:
         passed = bool(task["check"](workspace))
     entry = {
@@ -270,6 +396,105 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
     }
     if not passed:
         entry["error"] = result.get("error")
+    return entry
+
+
+def run_cancel_tool_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
+    """Cancel a turn while its shell tool is mid-execution, via the API.
+
+    The scripted command sleeps 5s and only then writes cancel-effect.txt.
+    Pass = the operation reaches `cancelled` promptly (not after the full
+    sleep) and the effect file never appears, even after outwaiting the
+    sleep — i.e. cancellation actually kills the running command instead
+    of merely relabelling the finished operation.
+    """
+    workspace = work / "workspace"
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+
+    port = free_port()
+    env = dict(
+        os.environ,
+        VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
+        VEASEL_PORT=str(port),
+        VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_PLUGIN_DIR=str(work / "plugins"),
+        VEASEL_MODEL_PROVIDER="openai-compatible",
+        VEASEL_MODEL="smoke-model",
+        VEASEL_MODEL_API_KEY="veasel-openai-key",
+        VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
+    )
+    server = subprocess.Popen(
+        [str(veasel), "serve"], env=env,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+    def api(method: str, path: str, body: dict | None = None, headers: dict | None = None):
+        request = Request(
+            f"http://127.0.0.1:{port}{path}",
+            data=json.dumps(body).encode() if body is not None else None,
+            method=method,
+            headers={"content-type": "application/json", **(headers or {})},
+        )
+        with urlopen(request, timeout=10) as response:
+            return response.status, json.loads(response.read() or b"{}")
+
+    operation: dict = {}
+    cancel_sent = False
+    started = time.monotonic()
+    wall_ms = -1.0
+    error: str | None = None
+    try:
+        wait_healthy(port, server)
+        _, session = api("POST", "/v1/sessions",
+                         {"title": "cancel fixture", "directory": str(workspace)})
+        session_id = session["id"]
+        _, accepted = api(
+            "POST", f"/v1/sessions/{session_id}/messages",
+            {"content": task["prompt"], "autonomous": True, "non_interactive": True},
+            headers={"Prefer": "respond-async"},
+        )
+        operation_id = accepted["operation_id"]
+        deadline = started + 30
+        while time.monotonic() < deadline:
+            _, operation = api("GET", f"/v1/sessions/{session_id}/operations/{operation_id}")
+            status = operation.get("status")
+            if status == "running" and not cancel_sent:
+                time.sleep(1.5)  # let the shell tool start its 5s sleep
+                api("POST", f"/v1/sessions/{session_id}/operations/{operation_id}/cancel", {})
+                cancel_sent = True
+            if status not in ("queued", "running", "cancelling"):
+                break
+            time.sleep(0.2)
+        wall_ms = round((time.monotonic() - started) * 1000, 1)
+        # Outwait the 5s command sleep: a leaked process writes its file now.
+        time.sleep(6.5)
+    except Exception as exc:  # fixture infrastructure failure must not pass
+        error = f"{type(exc).__name__}: {exc}"
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+    passed = (
+        error is None
+        and cancel_sent
+        and operation.get("status") == "cancelled"
+        and bool(task["check"](workspace))
+    )
+    entry = {
+        "id": task["id"],
+        "prompt": task["prompt"],
+        "check": task["check_description"],
+        "passed": passed,
+        "wall_ms": wall_ms,
+        "status": operation.get("status"),
+        "tool_calls": 1,
+    }
+    if not passed:
+        entry["error"] = error or operation.get("error") or f"operation={operation!r}"
     return entry
 
 
@@ -523,6 +748,8 @@ def run_mini_task(provider_port: int, provider_log: Path, task: dict, work: Path
 
 def dispatch_task(args, veasel, provider_port, provider_log, task, task_work) -> dict:
     if args.agent == "veasel":
+        if task.get("kind") == "cancel_tool":
+            return run_cancel_tool_task(veasel, provider_port, task, task_work)
         return run_task(veasel, provider_port, task, task_work)
     if args.agent == "pi":
         return run_pi_task(args.pi, provider_port, provider_log, task, task_work)
@@ -560,7 +787,19 @@ def main() -> int:
         return 2
     try:
         results = []
-        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if "expect_response" not in t]
+        # Competitor adapters run only tasks explicitly marked competitor:
+        # the generic scripted providers drive a single unconditional write,
+        # so anything else would pass or fail for protocol reasons unrelated
+        # to the task's stated oracle. Skipped tasks are reported, never
+        # silently dropped from the count.
+        tasks = TASKS if args.agent == "veasel" else [t for t in TASKS if t.get("competitor")]
+        skipped = [] if args.agent == "veasel" else [
+            t["id"] for t in TASKS if not t.get("competitor")
+        ]
+        if skipped:
+            print(f"SKIPPED {len(skipped)}/{len(TASKS)} tasks for agent={args.agent}: "
+                  f"generic scripted provider drives only competitor-marked tasks: "
+                  f"{', '.join(skipped)}")
         for index, task in enumerate(tasks):
             task_work = work_root / f"task-{index}"
             task_work.mkdir()
@@ -590,6 +829,7 @@ def main() -> int:
         "tasks": results,
         "passed": sum(1 for r in results if r["passed"]),
         "total": len(results),
+        "skipped": skipped,
     }
     if veasel is not None:
         report["binary"] = veasel.name

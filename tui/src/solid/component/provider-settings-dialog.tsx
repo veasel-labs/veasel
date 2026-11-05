@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createMemo, createSignal, onMount } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { InputRenderable, KeyEvent } from "@opentui/core"
 import {
   filterModelProviders,
@@ -17,11 +17,45 @@ import {
   settingsProviderStepPrompt,
   type SettingsWizardMode,
 } from "../../settings-flow"
-import { sessionDigitIndex } from "../../session-list"
 import { DialogHeader, useDialog, type DialogHost } from "../ui/dialog"
+import { dialogGeometry } from "../ui/dialog-layout"
 import { useSolidTheme } from "../theme"
 
 const LIST_PAGE = 12
+
+/**
+ * This dialog carries more fixed chrome than the shared compact threshold
+ * (height < 24) accounts for: at 24 rows the wrapped step prompt, intro,
+ * and count lines plus gaps already exceed the content height, so rows
+ * overdraw each other. Treat 24 rows as compact here too — the descriptive
+ * blocks hide and the list gets the space.
+ */
+export function providerDialogCompact(columns: number, rows: number): boolean {
+  return dialogGeometry(columns, rows).compact || rows <= 24
+}
+
+/**
+ * Rows of providers that fit the dialog at this terminal size. Chrome is
+ * charged against the shared dialog content height at the large dialog's
+ * 66-column content width: header 2 (with margin), status 1, wrapped
+ * prompt 2 + intro up to 3 + count 2 (hidden when compact), filter 1,
+ * guidance 3 when visible, plus one gap row between each child. One extra
+ * row is reserved for the "Showing x–y of n" line whenever the list
+ * overflows the page.
+ */
+export function providerListPageSize(
+  columns: number,
+  rows: number,
+  count: number,
+  guidanceVisible: boolean,
+): number {
+  const geometry = dialogGeometry(columns, rows)
+  const compact = providerDialogCompact(columns, rows)
+  const chrome = compact ? 7 : 18 + (guidanceVisible ? 4 : 0)
+  const budget = geometry.contentHeight - chrome
+  const withShowingRow = count > budget ? budget - 1 : budget
+  return Math.max(1, Math.min(LIST_PAGE, withShowingRow))
+}
 
 /** Visible slice start so the focused row stays on-screen. */
 export function providerListWindowStart(
@@ -66,25 +100,36 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
     filterModelProviders(catalog(), query(), scope(), configured()),
   )
 
+  const dimensions = useTerminalDimensions()
+  const compact = () => providerDialogCompact(dimensions().width, dimensions().height)
+
   const scopeLabel = () => providerPickerScopeLabel(scope())
   const countLabel = () => `${scopeLabel()} ${matches().length}/${catalog().length}`
   const statusLine = createMemo(() =>
     formatSettingsListStatus(selected(), matches().length, countLabel()),
-  )
-  const windowStart = createMemo(() =>
-    providerListWindowStart(selected(), matches().length, LIST_PAGE),
-  )
-  const visible = createMemo(() =>
-    matches().slice(windowStart(), windowStart() + LIST_PAGE),
   )
   const selectedProvider = createMemo(() => matches()[selected()])
   const connectionGuidance = createMemo(() => {
     const provider = selectedProvider()
     return provider ? providerConnectionGuidance(provider) : undefined
   })
+  const pageSize = createMemo(() =>
+    providerListPageSize(
+      dimensions().width,
+      dimensions().height,
+      matches().length,
+      !compact() && Boolean(connectionGuidance()),
+    ),
+  )
+  const windowStart = createMemo(() =>
+    providerListWindowStart(selected(), matches().length, pageSize()),
+  )
+  const visible = createMemo(() =>
+    matches().slice(windowStart(), windowStart() + pageSize()),
+  )
 
   const title = () => (mode() === "connect" ? "CONNECT" : "MODEL SETTINGS")
-  const hint = () => "Tab · j/k · g/G · 1-9 · Ctrl+L · Esc"
+  const hint = () => "Tab · ↑/↓ · Ctrl+L · Esc"
 
   const publishStatus = () => {
     props.onStatus?.(statusLine())
@@ -105,7 +150,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   ) => {
     const count = matches().length
     if (count === 0) return
-    setSelected((current) => moveSettingsListIndex(current, count, where, LIST_PAGE))
+    setSelected((current) => moveSettingsListIndex(current, count, where, pageSize()))
     queueMicrotask(publishStatus)
   }
 
@@ -158,34 +203,8 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
       jump("down")
       return
     }
-    // j/k · g/G · 1-9 only when the filter is empty (classic muscle memory).
-    if (query().length === 0 && !key.ctrl && !key.meta) {
-      if (key.name === "j") {
-        key.preventDefault()
-        jump("down")
-        return
-      }
-      if (key.name === "k") {
-        key.preventDefault()
-        jump("up")
-        return
-      }
-      // kitty/`send-key G` may report name "g"+shift or sequence "G" without shift.
-      if (key.name === "g" || key.sequence === "g" || key.sequence === "G") {
-        key.preventDefault()
-        jump(key.shift || key.sequence === "G" ? "end" : "home")
-        return
-      }
-      if (/^[1-9]$/.test(key.sequence)) {
-        const index = sessionDigitIndex(key.sequence, matches().length)
-        if (index !== undefined) {
-          key.preventDefault()
-          setSelected(index)
-          queueMicrotask(publishStatus)
-          return
-        }
-      }
-    }
+    // Printable keys belong to the focused search field, even when it is empty.
+    // Use arrows, Home/End, and PgUp/PgDn to navigate the provider catalog.
     if (
       key.name === "home"
       || key.name === "end"
@@ -211,12 +230,14 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   return (
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title={title()} hint={hint()} />
-      <text fg={colors.localStatus}>{statusLine()}</text>
-      <text fg={colors.muted}>{settingsProviderStepPrompt(mode())}</text>
-      <text fg={colors.muted}>{settingsModeIntro(mode())}</text>
-      <text fg={colors.muted}>
-        {countLabel()} · type to filter · Tab cycles All / Configured / Local
-      </text>
+      <text fg={colors.localStatus} flexShrink={0}>{statusLine()}</text>
+      <Show when={!compact()}>
+        <text fg={colors.muted} flexShrink={0}>{settingsProviderStepPrompt(mode())}</text>
+        <text fg={colors.muted} flexShrink={0}>{settingsModeIntro(mode())}</text>
+        <text fg={colors.muted} flexShrink={0}>
+          {countLabel()} · type to filter · Tab cycles All / Configured / Local
+        </text>
+      </Show>
       <input
         ref={(next: InputRenderable) => {
           filterInput = next
@@ -232,22 +253,14 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
         focusedBackgroundColor={colors.inputFocusBg}
         cursorColor={colors.cursor}
         onInput={(value: string) => {
-          // Swallow nav digits/letters that raced into the input while empty.
-          if (
-            query().length === 0
-            && (value === "j" || value === "k" || value === "g" || value === "G" || /^[1-9]$/.test(value))
-          ) {
-            filterInput?.setText("")
-            return
-          }
           setQuery(value)
           setSelected(0)
           queueMicrotask(publishStatus)
         }}
       />
-      <Show when={connectionGuidance()}>
+      <Show when={!compact() && connectionGuidance()}>
         {(guidance) => (
-          <box width="100%" flexDirection="column">
+          <box width="100%" flexDirection="column" flexShrink={0}>
             <text fg={colors.body}>{guidance()}</text>
             <Show when={selectedProvider()?.documentation_url}>
               {(url) => <text fg={colors.muted}>Docs: {url()}</text>}
@@ -268,23 +281,24 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
                 <box
                   width="100%"
                   flexDirection="row"
+                  flexShrink={0}
                   backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
                   onMouseUp={() => selectAt(absolute())}
                 >
-                  <text fg={active() ? colors.brand : colors.body}>
+                  <text fg={active() ? colors.brand : colors.body} flexShrink={0} wrapMode="none">
                     {active() ? "▸ " : "  "}
                     {provider.name}
                   </text>
-                  <text fg={colors.muted}>  {provider.id}</text>
+                  <text fg={colors.muted} flexShrink={1} wrapMode="none">  {provider.id}</text>
                 </box>
               )
             }}
           </For>
-          <Show when={matches().length > LIST_PAGE}>
-            <text fg={colors.muted}>
-              Showing {windowStart() + 1}–{Math.min(windowStart() + LIST_PAGE, matches().length)} of{" "}
+          <Show when={matches().length > pageSize()}>
+            <text fg={colors.muted} flexShrink={0}>
+              Showing {windowStart() + 1}–{Math.min(windowStart() + pageSize(), matches().length)} of{" "}
               {matches().length}
             </text>
           </Show>

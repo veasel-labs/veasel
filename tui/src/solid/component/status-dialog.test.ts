@@ -36,7 +36,9 @@ describe("statusMcpVisibleCount", () => {
     expect(statusMcpVisibleCount(100, 24, 20, 0)).toBe(7)
   })
 
-  test("never returns less than one row", () => {
-    expect(statusMcpVisibleCount(40, 12, 20, 3)).toBe(1)
+  test("returns zero rows when the fixed chrome alone fills the box", () => {
+    // Forcing one row at 40x12 painted it over the summary/footer; the
+    // MCP (N) header plus "+N more" summary still state the total.
+    expect(statusMcpVisibleCount(40, 12, 20, 3)).toBe(0)
   })
 })

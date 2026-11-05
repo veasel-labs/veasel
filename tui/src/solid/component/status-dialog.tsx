@@ -3,7 +3,7 @@ import { For, Show, createMemo } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { dialogGeometry } from "../ui/dialog-layout"
+import { dialogGeometry, wrappedLineCount } from "../ui/dialog-layout"
 import { useSolidTheme } from "../theme"
 import type { Theme } from "../../themes"
 import type { SolidMcpServer } from "./mcp-dialog"
@@ -27,7 +27,7 @@ export type StatusDialogSnapshot = {
  * section margin collapse and the list gets the space.
  */
 export function statusDialogCompact(columns: number, rows: number): boolean {
-  return dialogGeometry(columns, rows).compact || rows <= 24
+  return dialogGeometry(columns, rows, 72).compact || rows <= 24
 }
 
 /**
@@ -39,20 +39,25 @@ export function statusDialogCompact(columns: number, rows: number): boolean {
  * detail line also carries a gap row, as do the fixed sections, plus
  * the MCP section margin. One extra row is reserved for the "+N more"
  * summary whenever the list is truncated, so hidden servers are
- * acknowledged instead of silently dropped.
+ * acknowledged instead of silently dropped. At tiny heights the fixed
+ * chrome alone fills the box, so zero rows is a valid result — the
+ * "MCP (N)" header plus summary still state the true total.
  */
 export function statusMcpVisibleCount(
   columns: number,
   rows: number,
   total: number,
   detailLines: number,
+  wrappedExtra = 0,
 ): number {
-  const { contentHeight } = dialogGeometry(columns, rows)
+  const { contentHeight } = dialogGeometry(columns, rows, 72)
   const compact = statusDialogCompact(columns, rows)
-  const chrome = compact ? 8 + detailLines : 11 + 2 * detailLines
+  // Wrap-continuation lines (wrappedExtra) cost one row each with no
+  // accompanying gap, unlike detail entries outside compact heights.
+  const chrome = (compact ? 8 + detailLines : 11 + 2 * detailLines) + wrappedExtra
   const budget = contentHeight - chrome
   const withSummaryRow = total > budget ? budget - 1 : budget
-  return Math.max(1, Math.min(total, withSummaryRow))
+  return Math.max(0, Math.min(total, withSummaryRow))
 }
 
 function mcpStatusColor(status: SolidMcpServer["status"], colors: Theme): string {
@@ -106,10 +111,38 @@ export function StatusDialog(props: StatusDialogSnapshot) {
   const colors = useSolidTheme()
   const dialog = useDialog()
   const dimensions = useTerminalDimensions()
+  // At tiny heights (contentHeight <= 10, e.g. 32x12) the fixed lines
+  // alone exceed the box and squash into each other. Drop the two
+  // least essential detail lines and the footer there; session,
+  // directory, model, and the MCP header/summary still fit.
+  const tiny = () =>
+    dialogGeometry(dimensions().width, dimensions().height, 72).contentHeight <= 10
+  const showConnection = () => !!props.connection && !tiny()
+  const showUsage = () => !!props.usageLine && !tiny()
+  // Model and usage lines word-wrap at narrow widths (the usage tail
+  // carries the cost, so truncating it loses information). Charge
+  // their wrap-continuation lines — plus a wrapped footer's — against
+  // the MCP budget instead of assuming one line each. At tiny heights
+  // the model line truncates to one line instead (see render below).
+  const modelLine = () =>
+    props.provider && props.model
+      ? `Model · ${props.provider}/${props.model}` +
+        (props.agent ? ` · agent ${props.agent}` : "") +
+        (props.variant ? ` · variant ${props.variant}` : "")
+      : undefined
   const detailLines = () =>
-    (props.connection ? 1 : 0) +
-    (props.provider && props.model ? 1 : 0) +
-    (props.usageLine ? 1 : 0)
+    (showConnection() ? 1 : 0) + (modelLine() ? 1 : 0) + (showUsage() ? 1 : 0)
+  const wrappedExtra = () => {
+    if (tiny()) return 0
+    const geometry = dialogGeometry(dimensions().width, dimensions().height, 72)
+    const contentWidth = Math.max(1, geometry.width - 2 - geometry.paddingX * 2)
+    const model = modelLine()
+    return (
+      (model ? wrappedLineCount(model, contentWidth) - 1 : 0) +
+      (showUsage() ? wrappedLineCount(`Usage · ${props.usageLine}`, contentWidth) - 1 : 0) +
+      (wrappedLineCount("Usage reflects provider-reported totals · Enter closes", contentWidth) - 1)
+    )
+  }
   const visibleServers = createMemo(() =>
     props.mcpServers.slice(
       0,
@@ -118,6 +151,7 @@ export function StatusDialog(props: StatusDialogSnapshot) {
         dimensions().height,
         props.mcpServers.length,
         detailLines(),
+        wrappedExtra(),
       ),
     ),
   )
@@ -134,19 +168,31 @@ export function StatusDialog(props: StatusDialogSnapshot) {
   return (
     <DialogLayout
       header={<DialogHeader title="Status" hint="Enter · Esc" />}
-      footer={<text fg={colors.muted}>Usage reflects provider-reported totals · Enter closes</text>}
+      footer={
+        tiny() ? undefined : (
+          <text fg={colors.muted} flexShrink={0}>
+            Usage reflects provider-reported totals · Enter closes
+          </text>
+        )
+      }
     >
       <box flexDirection="column" gap={compact() ? 0 : 1}>
-        <text fg={colors.body}>
+        <text fg={colors.body} wrapMode="none" flexShrink={0}>
           <span style={{ fg: colors.muted }}>Session </span>
           {props.sessionTitle}
         </text>
-        <text fg={colors.muted}>Directory · {props.directory}</text>
-        <Show when={props.connection}>
-          {(line) => <text fg={colors.localStatus}>{line()}</text>}
+        <text fg={colors.muted} wrapMode="none" flexShrink={0}>
+          Directory · {props.directory}
+        </text>
+        <Show when={showConnection() ? props.connection : undefined}>
+          {(line) => (
+            <text fg={colors.localStatus} wrapMode="none" flexShrink={0}>
+              {line()}
+            </text>
+          )}
         </Show>
         <Show when={props.provider && props.model}>
-          <text fg={colors.body}>
+          <text fg={colors.body} wrapMode={tiny() ? "none" : "word"} flexShrink={0}>
             Model · {props.provider}/{props.model}
             <Show when={props.agent}>
               {(agent) => (
@@ -166,8 +212,12 @@ export function StatusDialog(props: StatusDialogSnapshot) {
             </Show>
           </text>
         </Show>
-        <Show when={props.usageLine}>
-          {(line) => <text fg={colors.muted}>Usage · {line()}</text>}
+        <Show when={showUsage() ? props.usageLine : undefined}>
+          {(line) => (
+            <text fg={colors.muted} flexShrink={0}>
+              Usage · {line()}
+            </text>
+          )}
         </Show>
         <box marginTop={compact() ? 0 : 1} flexDirection="column" gap={0}>
           <text fg={colors.headerTitle} flexShrink={0}>
@@ -183,7 +233,7 @@ export function StatusDialog(props: StatusDialogSnapshot) {
                   <text flexShrink={0} fg={mcpStatusColor(server.status, colors)}>
                     •
                   </text>
-                  <text fg={colors.body} wrapMode="word">
+                  <text fg={colors.body} wrapMode="none">
                     <strong>{server.name}</strong>{" "}
                     <span style={{ fg: colors.muted }}>{mcpStatusLabel(server)}</span>
                   </text>
@@ -191,7 +241,9 @@ export function StatusDialog(props: StatusDialogSnapshot) {
               )}
             </For>
             <Show when={hiddenCount() > 0}>
-              <text fg={colors.muted}>+{hiddenCount()} more · open MCP dialog for full list</text>
+              <text fg={colors.muted} wrapMode="none" flexShrink={0}>
+                +{hiddenCount()} more · open MCP dialog for full list
+              </text>
             </Show>
           </Show>
         </box>

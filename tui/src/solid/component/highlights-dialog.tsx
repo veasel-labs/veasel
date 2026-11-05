@@ -3,7 +3,7 @@ import { For, Show, createMemo } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
-import { dialogGeometry } from "../ui/dialog-layout"
+import { dialogGeometry, wrappedLineCount } from "../ui/dialog-layout"
 import { useSolidTheme } from "../theme"
 
 export type HighlightEntry = {
@@ -21,34 +21,7 @@ export function highlightsDialogCompact(columns: number, rows: number): boolean 
 }
 
 /** Lines `text` occupies when word-wrapped at `width` columns. */
-export function highlightWrappedLines(text: string, width: number): number {
-  const usable = Math.max(1, Math.floor(width))
-  let lines = 1
-  let column = 0
-  for (const word of text.split(/\s+/)) {
-    if (!word) continue
-    // Words longer than the line wrap mid-word across full lines.
-    let rest = word.length
-    while (rest > usable) {
-      if (column > 0) {
-        lines += 1
-        column = 0
-      }
-      lines += Math.floor(rest / usable)
-      rest %= usable
-      if (rest === 0) break
-    }
-    if (rest === 0) continue
-    const needed = column === 0 ? rest : column + 1 + rest
-    if (needed > usable) {
-      lines += 1
-      column = rest
-    } else {
-      column = needed
-    }
-  }
-  return lines
-}
+export const highlightWrappedLines = wrappedLineCount
 
 /**
  * Entries that fit the dialog at this terminal size, charged by wrapped
@@ -57,7 +30,9 @@ export function highlightWrappedLines(text: string, width: number): number {
  * chrome (header, footer, two gaps, bottom padding = 5). One line is
  * reserved for the "+N more" summary whenever entries are truncated,
  * so hidden highlights are acknowledged instead of silently dropped.
- * At least one entry is always shown.
+ * When even the first entry exceeds the box (32x12), zero entries are
+ * shown and the summary stands alone — forcing one entry painted it
+ * over the footer and the bottom border.
  */
 export function highlightsVisibleCount(
   entries: HighlightEntry[],
@@ -86,7 +61,7 @@ export function highlightsVisibleCount(
   const budget = geometry.contentHeight - 5
   const all = fit(budget)
   if (all >= entries.length) return entries.length
-  return Math.max(1, fit(budget - 1))
+  return fit(budget - 1)
 }
 
 export function demoHighlights(): HighlightEntry[] {
@@ -144,7 +119,9 @@ export function HighlightsDialog(props: { entries: HighlightEntry[] }) {
         )}
       </For>
       <Show when={hiddenCount() > 0}>
-        <text fg={colors.muted}>+{hiddenCount()} more · enlarge the terminal to read</text>
+        <text fg={colors.muted} flexShrink={0}>
+          +{hiddenCount()} more · enlarge the terminal to read
+        </text>
       </Show>
     </DialogLayout>
   )

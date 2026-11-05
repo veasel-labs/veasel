@@ -18,6 +18,36 @@ export function dialogGeometry(columns: number, rows: number, preferredWidth = 5
   }
 }
 
+/** Lines `text` occupies when word-wrapped at `width` columns. */
+export function wrappedLineCount(text: string, width: number): number {
+  const usable = Math.max(1, Math.floor(width))
+  let lines = 1
+  let column = 0
+  for (const word of text.split(/\s+/)) {
+    if (!word) continue
+    // Words longer than the line wrap mid-word across full lines.
+    let rest = word.length
+    while (rest > usable) {
+      if (column > 0) {
+        lines += 1
+        column = 0
+      }
+      lines += Math.floor(rest / usable)
+      rest %= usable
+      if (rest === 0) break
+    }
+    if (rest === 0) continue
+    const needed = column === 0 ? rest : column + 1 + rest
+    if (needed > usable) {
+      lines += 1
+      column = rest
+    } else {
+      column = needed
+    }
+  }
+  return lines
+}
+
 export function dialogResultCount(
   columns: number,
   rows: number,

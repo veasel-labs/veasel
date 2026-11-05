@@ -52,10 +52,24 @@ export function SessionListDialog(props: SessionListDialogProps) {
   // Each row is two lines (title + directory); a fixed 10-row window
   // needs 20 lines plus chrome and squashes rows into single overdrawn
   // lines at short terminals. Charge rows against the shared dialog
-  // geometry like the command palette (grouped = 2-line rows, footer
-  // reserves the count line).
+  // geometry like the command palette (footer reserves the count
+  // line). Rows never collapse to one line here, so request a line
+  // budget (grouped=false) and halve it — dialogResultCount's grouped
+  // mode charges one line per row in compact heights, which let a
+  // fifth row paint over the footer and border at 40x16.
   const visible = () =>
-    dialogResultCount(dimensions().width, dimensions().height, visibleDefault, true, true)
+    Math.max(
+      1,
+      Math.floor(
+        dialogResultCount(
+          dimensions().width,
+          dimensions().height,
+          visibleDefault * 2,
+          false,
+          true,
+        ) / 2,
+      ),
+    )
 
   const windowed = createMemo(() => {
     const items = filtered()
@@ -274,7 +288,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
             }}
           </For>
         </box>
-        <text fg={colors.muted}>
+        <text fg={colors.muted} flexShrink={0}>
           {filtered().length} session{filtered().length === 1 ? "" : "s"} · ↑/↓ · 1-9 jump
         </text>
       </Show>

@@ -329,6 +329,19 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "worktree-isolation",
+        "prompt": "Autonomous workspace edit",
+        # API+git driven (see run_worktree_isolation_task): the edit is
+        # applied in a linked worktree on its own branch. A pass proves
+        # the main checkout stays byte-identical with a clean git status
+        # while the worktree carries the edit as an uncommitted change on
+        # the new branch.
+        "kind": "worktree_isolation",
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "edit lands only in the linked worktree; main checkout byte-identical and git-clean",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -659,6 +672,139 @@ def run_queue_recovery_task(veasel: Path, provider_port: int, task: dict, work: 
     return entry
 
 
+def run_worktree_isolation_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
+    """Apply an autonomous edit in a linked git worktree, not the checkout.
+
+    The workspace is a real git repo with one commit. A worktree is added
+    through the session API on a new branch, then the scripted edit runs
+    against the worktree directory. Pass = the edit is present in the
+    worktree (uncommitted, on the new branch) while the main checkout is
+    byte-identical, on the original branch, and `git status` clean —
+    all judged by external git/file state, before vs after.
+    """
+    workspace = work / "workspace"
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    worktree_path = work / "wt-feature"
+
+    def git(cwd: Path, *args: str) -> str:
+        completed = subprocess.run(
+            ["git", "-c", "user.name=Veasel Fixture",
+             "-c", "user.email=fixture@example.invalid", *args],
+            cwd=cwd, capture_output=True, text=True, timeout=30,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(f"git {' '.join(args)} failed: {completed.stderr.strip()[-300:]}")
+        return completed.stdout.strip()
+
+    port = free_port()
+    env = dict(
+        os.environ,
+        VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
+        VEASEL_PORT=str(port),
+        VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_PLUGIN_DIR=str(work / "plugins"),
+        VEASEL_MODEL_PROVIDER="openai-compatible",
+        VEASEL_MODEL="smoke-model",
+        VEASEL_MODEL_API_KEY="veasel-openai-key",
+        VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
+    )
+    server: subprocess.Popen | None = None
+    started = time.monotonic()
+    wall_ms = -1.0
+    error: str | None = None
+    detail: dict = {}
+    try:
+        if shutil.which("git") is None:
+            raise RuntimeError("git executable is not available")
+        git(workspace, "init", "-b", "main")
+        git(workspace, "add", ".")
+        git(workspace, "commit", "-m", "fixture baseline")
+        before_status = git(workspace, "status", "--porcelain")
+        before_branch = git(workspace, "branch", "--show-current")
+
+        server = subprocess.Popen(
+            [str(veasel), "serve"], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        wait_healthy(port, server)
+
+        def api(method: str, path: str, body: dict | None = None):
+            request = Request(
+                f"http://127.0.0.1:{port}{path}",
+                data=json.dumps(body).encode() if body is not None else None,
+                method=method,
+                headers={"content-type": "application/json"},
+            )
+            with urlopen(request, timeout=15) as response:
+                return response.status, json.loads(response.read() or b"{}")
+
+        _, session = api("POST", "/v1/sessions",
+                         {"title": "worktree fixture", "directory": str(workspace)})
+        session_id = session["id"]
+        _, created = api("POST", f"/v1/sessions/{session_id}/workspace/git/worktrees",
+                         {"path": str(worktree_path), "new_branch": "fixture-feature"})
+        detail["created"] = created
+
+        result_path = work / "result.json"
+        with result_path.open("wb") as out:
+            completed = subprocess.run(
+                [str(veasel), "run", "--autonomous", "--prompt", task["prompt"],
+                 "--workspace", str(worktree_path),
+                 "--trace-file", str(work / "trajectory.json"), "--json"],
+                env=env, stdout=out, stderr=subprocess.DEVNULL, timeout=120,
+            )
+        wall_ms = round((time.monotonic() - started) * 1000, 1)
+        result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.exists() else {}
+        detail["run_status"] = result.get("status")
+        detail["run_error"] = result.get("error")
+        detail["returncode"] = completed.returncode
+
+        detail["main_status_after"] = git(workspace, "status", "--porcelain")
+        detail["main_branch_after"] = git(workspace, "branch", "--show-current")
+        detail["wt_status_after"] = git(worktree_path, "status", "--porcelain")
+        detail["wt_branch_after"] = git(worktree_path, "branch", "--show-current")
+        detail["wt_contains_greet"] = EXPECTED_GREET in (
+            worktree_path / "src" / "main.v").read_text(encoding="utf-8")
+        detail["before_status"] = before_status
+        detail["before_branch"] = before_branch
+    except Exception as exc:  # fixture infrastructure failure must not pass
+        error = f"{type(exc).__name__}: {exc}"
+    finally:
+        if server is not None:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+
+    passed = (
+        error is None
+        and detail.get("before_status") == ""
+        and detail.get("before_branch") == "main"
+        and detail.get("run_status") == "completed"
+        and detail.get("returncode") == 0
+        and detail.get("main_status_after") == ""
+        and detail.get("main_branch_after") == "main"
+        and detail.get("wt_status_after") == "M src/main.v"
+        and detail.get("wt_branch_after") == "fixture-feature"
+        and detail.get("wt_contains_greet") is True
+        and bool(task["check"](workspace))
+    )
+    entry = {
+        "id": task["id"],
+        "prompt": task["prompt"],
+        "check": task["check_description"],
+        "passed": passed,
+        "wall_ms": wall_ms,
+        "status": detail.get("run_status"),
+        "tool_calls": 1,
+    }
+    if not passed:
+        entry["error"] = error or f"detail={detail!r}"
+    return entry
+
+
 SCRIPTED_PROVIDER = Path(__file__).resolve().parent / "scripted_provider.py"
 
 
@@ -913,6 +1059,8 @@ def dispatch_task(args, veasel, provider_port, provider_log, task, task_work) ->
             return run_cancel_tool_task(veasel, provider_port, task, task_work)
         if task.get("kind") == "queue_recovery":
             return run_queue_recovery_task(veasel, provider_port, task, task_work)
+        if task.get("kind") == "worktree_isolation":
+            return run_worktree_isolation_task(veasel, provider_port, task, task_work)
         return run_task(veasel, provider_port, task, task_work)
     if args.agent == "pi":
         return run_pi_task(args.pi, provider_port, provider_log, task, task_work)

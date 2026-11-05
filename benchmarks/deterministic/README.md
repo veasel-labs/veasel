@@ -48,6 +48,7 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `cancelled-shell-tool` | `Run slow shell` (API, cancelled) | Turn cancelled while the shell command sleeps; operation ends `cancelled` promptly and the command's effect file never appears, even after outwaiting the sleep |
 | `queue-recovery-order` | `Wait for cancellation` + 2 queued (API, restart) | Backend restarted with one running and two queued turns; running turn ends `uncertain` (never replayed), queued turns complete in FIFO order, transcript holds exactly their exchanges in order |
 | `missing-sandbox-fails-closed` | `Run shell effect` (no `bwrap` on PATH) | Autonomous shell execution fails closed when the sandbox backend is unavailable: the command never runs, no effect file, and the model is told the sandbox is unavailable |
+| `worktree-isolation` | `Autonomous workspace edit` (linked worktree) | Edit applied in an API-created linked worktree on a new branch; main checkout byte-identical with clean `git status`, worktree shows the edit as an uncommitted change on the new branch |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the

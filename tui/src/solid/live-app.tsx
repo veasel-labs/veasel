@@ -654,6 +654,9 @@ function LiveAppShell(props: LiveAppProps) {
           description: `${item.status}${item.exit_code !== undefined ? ` · ${item.exit_code}` : ""}`,
           searchText: `${item.command} ${item.status} ${item.id}`,
         })),
+        // openOne replaces this picker with the output dialog; keep the
+        // stack intact or dialog-select clears the replacement on select.
+        dismissOnSelect: false,
         onSelect: (option) => {
           const item = withOutput.find((entry) => entry.id === option.value)
           if (item) openOne(item)

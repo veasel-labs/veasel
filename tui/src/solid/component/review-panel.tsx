@@ -314,11 +314,11 @@ export function ReviewPanel(props: ReviewPanelProps) {
         {(item) => (
           <>
             <box width="100%" flexDirection="row" gap={1}>
-              <text fg={colors.statusWarn}>
+              <text fg={colors.statusWarn} flexShrink={0} wrapMode="none">
                 <strong>{reviewKindLabel(item().kind).toUpperCase()}</strong>
               </text>
-              <text fg={colors.body}>{reviewSummaryLine(item())}</text>
-              <text fg={colors.muted}>
+              <text fg={colors.body} flexShrink={1} wrapMode="none">{reviewSummaryLine(item())}</text>
+              <text fg={colors.muted} flexShrink={0} wrapMode="none">
                 {" "}
                 · {moveActiveReviewIndex(index(), 0, pending().length) + 1}/{pending().length} pending
               </text>

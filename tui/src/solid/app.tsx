@@ -582,7 +582,7 @@ function AppShell(props: SolidAppProps) {
               theme={themes[themeId()] ?? themes.mint}
               directory={directory()}
             />
-            <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+            <SolidComposer onSubmit={onSubmit} focused={composerFocused() && !dialog.open()} />
           </box>
         }
       >
@@ -627,7 +627,7 @@ function AppShell(props: SolidAppProps) {
           cols={80}
         />
 
-        <SolidComposer onSubmit={onSubmit} focused={composerFocused()} />
+        <SolidComposer onSubmit={onSubmit} focused={composerFocused() && !dialog.open()} />
       </Show>
     </box>
   )

@@ -78,6 +78,34 @@ describe("Solid dialog host + command palette", () => {
     expect(frame).not.toContain("/connect")
   })
 
+  test("palette filter typing never reaches the composer draft", async () => {
+    // Regression for #564: filter keystrokes typed while the palette was
+    // open could land in the composer behind the dialog (and were then
+    // persisted as the session draft in the live app).
+    const setup = await testRender(() => <App initialMessages={[]} />, demoSize)
+    setups.push(setup)
+    await setup.renderOnce()
+
+    await setup.mockInput.typeText("draftone")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("draftone")
+
+    setup.mockInput.pressKey("p", { ctrl: true })
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Filter commands")
+
+    await setup.mockInput.typeText("theme")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Cycle theme")
+
+    setup.mockInput.pressEscape()
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).not.toContain("Filter commands")
+    expect(frame).toContain("draftone")
+    expect(frame).not.toContain("draftonetheme")
+  })
+
   test("keyboard select runs the highlighted action", async () => {
     const ran: string[] = []
     function Fixture() {

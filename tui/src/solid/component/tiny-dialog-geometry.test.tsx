@@ -6,6 +6,8 @@ import { dialogGeometry } from "../ui/dialog-layout"
 import { SessionListDialog, type SolidSessionEntry } from "./session-list-dialog"
 import { StatusDialog, type StatusDialogSnapshot } from "./status-dialog"
 import { HighlightsDialog } from "./highlights-dialog"
+import { ProviderSettingsDialog } from "./provider-settings-dialog"
+import type { ModelProvider } from "../../model-providers"
 import { liveReleaseHighlights } from "../release-highlights"
 import type { SolidMcpServer } from "./mcp-dialog"
 
@@ -14,7 +16,19 @@ import type { SolidMcpServer } from "./mcp-dialog"
 // session rows are always two lines yet were charged one line in
 // compact mode, status detail lines wrapped/squashed into each other,
 // and highlights forced one entry even when it alone exceeded the box.
-// These render through the real large-dialog geometry at tiny sizes.
+// The provider status line wrapped at 32 columns and pushed its
+// "Showing" line onto the bottom border. These render through the real
+// large-dialog geometry at tiny sizes.
+
+const providers: ModelProvider[] = Array.from({ length: 210 }, (_, i) => ({
+  id: `p${i}`,
+  name: i === 0 ? "Anthropic" : `Provider ${i}`,
+  description: "models",
+  protocol: i === 0 ? "anthropic" : "openai-compatible",
+  base_url: "https://example.test",
+  environment_key: "X_API_KEY",
+  requires_api_key: true,
+}))
 
 const sessions: SolidSessionEntry[] = Array.from({ length: 25 }, (_, i) => ({
   id: `sess-${i}`,
@@ -132,6 +146,25 @@ for (const [w, h] of [[40, 16], [32, 12]] as const) {
         expect(line.includes("Tip") && line.includes("variants")).toBe(false)
         expect(line.includes("Tip") && line.includes("switches")).toBe(false)
       }
+    } finally { setup.renderer.destroy() }
+  }, 30000)
+}
+
+for (const [w, h] of [[40, 16], [32, 12]] as const) {
+  test(`provider dialog at ${w}x${h} keeps Showing and count off the border`, async () => {
+    const setup = await testRender(
+      () => (<Backdrop w={w} h={h}><ProviderSettingsDialog providers={providers} /></Backdrop>),
+      { width: w, height: h, kittyKeyboard: true },
+    )
+    try {
+      await setup.waitFor(() => setup.captureCharFrame().includes("MODEL SETTINGS"))
+      const frame = setup.captureCharFrame()
+      const lines = frame.split("\n")
+      const borderIndex = lines.findIndex((line) => line.includes("└"))
+      expect(borderIndex).toBeGreaterThan(-1)
+      expect(lines[borderIndex]).not.toContain("Showing")
+      expect(frame).toContain("Showing")
+      expect(frame).toContain("All 210/210")
     } finally { setup.renderer.destroy() }
   }, 30000)
 }

@@ -108,6 +108,16 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   const statusLine = createMemo(() =>
     formatSettingsListStatus(selected(), matches().length, countLabel()),
   )
+  // The page-size math charges the status as exactly one line. At tiny
+  // widths the full "… · focus N of M" form wraps to two lines and pushes
+  // the "Showing" line onto the bottom border, so render the count-only
+  // form whenever the full line cannot fit the dialog content width.
+  const displayStatus = createMemo(() => {
+    const full = statusLine()
+    const g = dialogGeometry(dimensions().width, dimensions().height)
+    const contentWidth = g.width - g.paddingX * 2 - 2
+    return full.length <= contentWidth ? full : `● ${countLabel()}`
+  })
   const selectedProvider = createMemo(() => matches()[selected()])
   const connectionGuidance = createMemo(() => {
     const provider = selectedProvider()
@@ -230,7 +240,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   return (
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title={title()} hint={hint()} />
-      <text fg={colors.localStatus} flexShrink={0}>{statusLine()}</text>
+      <text fg={colors.localStatus} flexShrink={0} wrapMode="none">{displayStatus()}</text>
       <Show when={!compact()}>
         <text fg={colors.muted} flexShrink={0}>{settingsProviderStepPrompt(mode())}</text>
         <text fg={colors.muted} flexShrink={0}>{settingsModeIntro(mode())}</text>

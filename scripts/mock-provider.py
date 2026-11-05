@@ -278,7 +278,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 or (provider_kind == "openai-responses" and payload.get("include") != ["reasoning.encrypted_content"])
                 or not input_items
                 or input_items[0].get("role") != "system"
-                or (user_text not in ("Say hello", "Stream incrementally", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
@@ -380,7 +380,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Stream incrementally", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -813,6 +813,18 @@ class MockProvider(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(encoded_stream)))
             self.end_headers()
+            if user_text == "Stream then drop" and frames:
+                # Truncate the stream mid-frame and drop the connection:
+                # Content-Length promises the full body, so a correct
+                # client must surface an error, never a completed reply.
+                first = frames[0].encode()
+                try:
+                    self.wfile.write(first[: max(1, len(first) // 2)])
+                    self.wfile.flush()
+                finally:
+                    self.close_connection = True
+                    self.connection.close()
+                return
             for frame in frames:
                 frame_bytes = frame.encode()
                 midpoint = max(1, len(frame_bytes) // 2)
@@ -831,6 +843,20 @@ class MockProvider(BaseHTTPRequestHandler):
         if user_text == "Wait for cancellation" or is_cancellation_fixture_turn:
             print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
             SLOW_RESPONSE_RELEASE.wait()
+        if user_text == "Stream then drop":
+            # Non-streaming variant: promise the full JSON body, deliver
+            # half of it, then drop the connection.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            try:
+                self.wfile.write(encoded[: max(1, len(encoded) // 2)])
+                self.wfile.flush()
+            finally:
+                self.close_connection = True
+                self.connection.close()
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))

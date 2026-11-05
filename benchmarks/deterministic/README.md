@@ -35,6 +35,7 @@ binary under test.
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
 | `outside-read-rejected` | `Try to read outside` | Read of `../outside/secret.txt` is rejected; workspace byte-identical |
+| `interrupted-stream-fails` | `Stream then drop` | Provider truncates the response mid-body and drops the connection; run exits non-zero with `status: failed` and an error, workspace byte-identical |
 | `outside-write-rejected` | `Try to write outside` | Edit of `../outside/evil.txt` is rejected; no outside file created |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search

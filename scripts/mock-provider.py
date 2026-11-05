@@ -56,6 +56,62 @@ HELPER_EDIT = (
     "pub fn helper() string {\n\treturn 'helper-fixture'\n}\n"
 )
 APPROVED_SHELL_COMMAND = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved"
+# Vendored token-bucket fixture: the repaired token_bucket.v. Keep in sync
+# with benchmarks/deterministic/fixtures/token-bucket/token_bucket.v plus
+# the one-line refill fix in allow(); the harness proves it with `v test`.
+VENDORED_FIX = (
+    "module tokenbucket\n"
+    "\n"
+    "// token-bucket-fixture: a deterministic token bucket. Time is injected by\n"
+    "// the caller as whole seconds so tests never depend on the wall clock.\n"
+    "\n"
+    "pub struct Bucket {\n"
+    "pub:\n"
+    "\tcapacity       int\n"
+    "\trefill_per_sec int\n"
+    "mut:\n"
+    "\ttokens      int\n"
+    "\tlast_refill i64\n"
+    "}\n"
+    "\n"
+    "pub fn new_bucket(capacity int, refill_per_sec int, now i64) Bucket {\n"
+    "\treturn Bucket{\n"
+    "\t\tcapacity:       capacity\n"
+    "\t\trefill_per_sec: refill_per_sec\n"
+    "\t\ttokens:         capacity\n"
+    "\t\tlast_refill:    now\n"
+    "\t}\n"
+    "}\n"
+    "\n"
+    "// refill credits whole seconds elapsed since the last refill, capped at\n"
+    "// capacity, and advances last_refill by the credited whole seconds only.\n"
+    "fn (mut b Bucket) refill(now i64) {\n"
+    "\tif now <= b.last_refill {\n"
+    "\t\treturn\n"
+    "\t}\n"
+    "\telapsed := now - b.last_refill\n"
+    "\tb.tokens += int(elapsed) * b.refill_per_sec\n"
+    "\tif b.tokens > b.capacity {\n"
+    "\t\tb.tokens = b.capacity\n"
+    "\t}\n"
+    "\tb.last_refill = now\n"
+    "}\n"
+    "\n"
+    "// allow reports whether cost tokens may be spent at `now`, spending them\n"
+    "// when the bucket can afford the cost after refilling.\n"
+    "pub fn (mut b Bucket) allow(cost int, now i64) bool {\n"
+    "\tb.refill(now)\n"
+    "\tif b.tokens < cost {\n"
+    "\t\treturn false\n"
+    "\t}\n"
+    "\tb.tokens -= cost\n"
+    "\treturn true\n"
+    "}\n"
+    "\n"
+    "pub fn (b &Bucket) available() int {\n"
+    "\treturn b.tokens\n"
+    "}\n"
+)
 SLOW_RESPONSE_RELEASE = Event()
 SLOW_SHELL_COMMAND = "timeout /T 3 /NOBREAK >NUL" if sys.platform == "win32" else "sleep 2"
 # Sleeps long enough to cancel mid-execution, then writes an effect file:
@@ -401,7 +457,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Fix vendored project tests", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -409,11 +465,11 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Fix vendored project tests", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace", "Fix vendored project tests") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit", "Autonomous multi-file edit", "Edit then verify workspace", "Recover after failed edit", "Try to write outside") else
                     "mcp_review_tools_effect_write" if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
@@ -440,6 +496,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = '{"path":"../outside/secret.txt"}'
                 elif user_text == "Read then edit workspace":
                     arguments = '{"path":"src/main.v"}'
+                elif user_text == "Fix vendored project tests":
+                    arguments = '{"path":"token_bucket.v"}'
                 elif user_text == "Edit then verify workspace":
                     arguments = json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                 elif user_text == "Read skill reference":
@@ -485,10 +543,10 @@ class MockProvider(BaseHTTPRequestHandler):
                     or "Applied by graduated execution policy" in tool_result
                 )
                 is_edit_result = "Stored for human review" in tool_result or applied_edit
-                is_shell_result = "No command was executed" in tool_result or "autonomous-shell-ok" in tool_result or "edit-verified" in tool_result or "test-pass" in tool_result
+                is_shell_result = "No command was executed" in tool_result or "autonomous-shell-ok" in tool_result or "edit-verified" in tool_result or "test-pass" in tool_result or "vendored-fix-applied" in tool_result
                 is_mcp_result = "fixture effect" in tool_result or "fixture tool error" in tool_result or "rejected this MCP tool call" in tool_result
                 is_failed_shell_result = "exit_code" in tool_result and "failed" in tool_result
-                if "workspace-search-sentinel" not in tool_result and "Skill reference smoke sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result and not is_mcp_result and not is_failed_shell_result:
+                if "workspace-search-sentinel" not in tool_result and "token-bucket-fixture" not in tool_result and "Skill reference smoke sentinel" not in tool_result and "error" not in tool_result and not is_edit_result and not is_shell_result and not is_mcp_result and not is_failed_shell_result:
                     self.reject(payload)
                     return
                 assistant_call = next(
@@ -533,6 +591,11 @@ class MockProvider(BaseHTTPRequestHandler):
                 is_fix_failing_test = any(
                     message.get("role") == "user"
                     and fixture_user_prompt(message.get("content", "")) == "Fix failing test"
+                    for message in messages
+                )
+                is_vendored_project = any(
+                    message.get("role") == "user"
+                    and fixture_user_prompt(message.get("content", "")) == "Fix vendored project tests"
                     for message in messages
                 )
                 if is_fix_failing_test and tool_result_count == 1 and is_failed_shell_result and not applied_edit:
@@ -589,6 +652,24 @@ class MockProvider(BaseHTTPRequestHandler):
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
+                elif is_vendored_project and tool_result_count == 1 and "token-bucket-fixture" in tool_result and not applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "token_bucket.v", "content": VENDORED_FIX})
+                        }}]
+                    }}]}
+                elif is_vendored_project and tool_result_count == 2 and applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
+                            "name": "workspace_propose_shell_command",
+                            "arguments": json.dumps({"command": "grep -q \"b.refill(now)\" token_bucket.v && printf vendored-fix-applied", "cwd": ".", "timeout_seconds": 10})
+                        }}]
+                    }}]}
                 elif is_multi_file and applied_edit and tool_result_count == 1:
                     body = {"choices": [{"message": {
                         "role": "assistant",
@@ -599,7 +680,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         }}]
                     }}]}
                 else:
-                    final_text = "Fixed failing test." if is_fix_failing_test and "test-pass" in tool_result else "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Shell sandbox unavailable." if "no unsandboxed fallback was started" in tool_result or "requires a fail-closed OS sandbox" in tool_result else "Shell effect completed." if "shell-effect-ok" in tool_result else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                    final_text = "Vendored project fixed." if is_vendored_project and "vendored-fix-applied" in tool_result else "Fixed failing test." if is_fix_failing_test and "test-pass" in tool_result else "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Shell sandbox unavailable." if "no unsandboxed fallback was started" in tool_result or "requires a fail-closed OS sandbox" in tool_result else "Shell effect completed." if "shell-effect-ok" in tool_result else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                     body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 response_text = STREAM_REPLY if user_text == "Stream incrementally" else REPLY

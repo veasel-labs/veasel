@@ -37,6 +37,7 @@ from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MOCK_PROVIDER = REPO_ROOT / "scripts" / "mock-provider.py"
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 INITIAL_MAIN_V = "module fixture\n\n// workspace-search-sentinel\n"
 EXPECTED_GREET = "fn greet(name string) string {"
@@ -46,6 +47,39 @@ def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def seed_workspace(task: dict, workspace: Path) -> None:
+    """Seed the task workspace: a vendored fixture tree when the task
+    names one (seed_workspace), else the synthetic src/main.v."""
+    seed = task.get("seed_workspace")
+    if seed:
+        shutil.copytree(FIXTURES_DIR / seed, workspace, dirs_exist_ok=True)
+        return
+    (workspace / "src").mkdir(parents=True)
+    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+
+
+def run_check_command(task: dict, workspace: Path) -> bool:
+    """Independent post-run oracle (e.g. the seeded project's own tests).
+    `{v}` in argv resolves to the V compiler on PATH; missing V fails."""
+    argv = []
+    for arg in task["check_command"]:
+        if arg == "{v}":
+            compiler = shutil.which("v")
+            if compiler is None:
+                print("check_command: v compiler not found on PATH", file=sys.stderr)
+                return False
+            argv.append(compiler)
+        else:
+            argv.append(arg)
+    home = workspace.parent / "check-home"
+    home.mkdir(exist_ok=True)
+    env = dict(os.environ, HOME=str(home), VJOBS="1")
+    completed = subprocess.run(argv, cwd=workspace, env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=300)
+    return completed.returncode == 0
 
 
 def wait_healthy(port: int, process: subprocess.Popen, timeout: float = 15.0) -> None:
@@ -245,6 +279,25 @@ TASKS = [
         "expect_response": "Fixed failing test.",
     },
     {
+        "id": "vendored-project-fix",
+        "prompt": "Fix vendored project tests",
+        # A real multi-file V project (fixtures/token-bucket) with a planted
+        # bug: Bucket.allow never refills, so its own test suite fails. The
+        # scripted model reads the implementation, applies the refill fix,
+        # and shell-verifies it. Scoring is independent of all of that: the
+        # harness runs the project's own `v test .` in the resulting
+        # workspace and requires the test file to be byte-identical to the
+        # seed, so weakening tests cannot pass. The seed fails `v test`
+        # (verified when the fixture was added), so the oracle discriminates.
+        "seed_workspace": "token-bucket",
+        "check": lambda ws: (ws / "token_bucket_test.v").read_text(encoding="utf-8")
+            == (FIXTURES_DIR / "token-bucket" / "token_bucket_test.v").read_text(encoding="utf-8"),
+        "check_command": ["{v}", "test", "."],
+        "check_description": "vendored token-bucket project: its own `v test .` passes after the run and its test file is unchanged",
+        "expect_response": "Vendored project fixed.",
+        "veasel_only": True,
+    },
+    {
         "id": "greeting-reply",
         "prompt": "Say hello",
         "check": lambda ws: True,  # scored from the run result below
@@ -431,8 +484,7 @@ TASKS = [
 
 def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
 
     port = free_port()
     data_dir = work / "data"
@@ -499,6 +551,8 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         passed = all(secret not in outputs for secret in task["forbid_in_outputs"])
     if passed:
         passed = bool(task["check"](workspace))
+    if passed and task.get("check_command"):
+        passed = run_check_command(task, workspace)
     entry = {
         "id": task["id"],
         "prompt": task["prompt"],
@@ -523,8 +577,7 @@ def run_cancel_tool_task(veasel: Path, provider_port: int, task: dict, work: Pat
     of merely relabelling the finished operation.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
 
     port = free_port()
     env = dict(
@@ -621,8 +674,7 @@ def run_queue_recovery_task(veasel: Path, provider_port: int, task: dict, work: 
     transcript holds exactly their two exchanges in order.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
 
     port = free_port()
     env = dict(
@@ -757,8 +809,7 @@ def run_worktree_isolation_task(veasel: Path, provider_port: int, task: dict, wo
     all judged by external git/file state, before vs after.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
     worktree_path = work / "wt-feature"
 
     def git(cwd: Path, *args: str) -> str:
@@ -906,8 +957,7 @@ def run_opencode_task(opencode: str, provider_port: int, provider_log: Path, tas
     orchestration only; scripted replies say nothing about model quality.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
     config = {
         "$schema": "https://opencode.ai/config.json",
         "permission": {"edit": "allow", "bash": "allow"},
@@ -983,8 +1033,7 @@ def run_pi_task(pi: str, provider_port: int, provider_log: Path, task: dict, wor
     real Pi configuration is never touched. Same external check as Veasel.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
     agent_dir = work / "pi-agent"
     agent_dir.mkdir()
     models = {
@@ -1035,8 +1084,7 @@ def run_codex_task(codex: str, provider_port: int, provider_log: Path, task: dic
     check is identical, but this measures shell-tool orchestration only.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
     codex_home = work / "codex-home"
     codex_home.mkdir()
     config = (
@@ -1087,8 +1135,7 @@ def run_mini_task(provider_port: int, provider_log: Path, task: dict, work: Path
     provider answers with a bash tool call. Isolated MSWEA_GLOBAL_CONFIG_DIR.
     """
     workspace = work / "workspace"
-    (workspace / "src").mkdir(parents=True)
-    (workspace / "src" / "main.v").write_text(INITIAL_MAIN_V, encoding="utf-8")
+    seed_workspace(task, workspace)
     global_dir = work / "mini-global"
     global_dir.mkdir()
     (global_dir / ".env").write_text("OPENAI_API_KEY=fixture-key\n", encoding="utf-8")

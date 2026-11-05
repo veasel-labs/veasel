@@ -62,6 +62,80 @@ def wait_healthy(port: int, process: subprocess.Popen, timeout: float = 15.0) ->
     raise TimeoutError(f"server on port {port} did not become healthy")
 
 
+def rss_kib(pid: int) -> int | None:
+    """Resident set size from /proc (Linux); None where unavailable."""
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1])
+    except OSError:
+        pass
+    return None
+
+
+def percentile(values: list[float], q: float) -> float:
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round(q / 100 * len(ordered)) - 1))
+    return ordered[index]
+
+
+def measure_startup(veasel: Path, runs: int, work_root: Path) -> dict:
+    """Cold-start samples: spawn `veasel serve` on a fresh data dir, time
+    to the first /v1/health body with healthy=true, sample idle RSS."""
+    samples_ms: list[float] = []
+    rss_samples: list[int] = []
+    for index in range(runs):
+        port = free_port()
+        data_dir = work_root / f"startup-{index}"
+        data_dir.mkdir()
+        env = dict(os.environ)
+        env.update(
+            VEASEL_PORT=str(port),
+            VEASEL_DATA_DIR=str(data_dir),
+            VEASEL_MODEL_PROVIDER="openai-compatible",
+            VEASEL_MODEL="smoke-model",
+            VEASEL_MODEL_API_KEY="startup-probe-key",
+            VEASEL_MODEL_BASE_URL="http://127.0.0.1:9/v1",
+        )
+        started = time.monotonic()
+        process = subprocess.Popen(
+            [str(veasel), "serve"], env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        try:
+            deadline = started + 15
+            while time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise RuntimeError(f"startup probe server exited early with {process.returncode}")
+                try:
+                    with urlopen(f"http://127.0.0.1:{port}/v1/health", timeout=0.5) as response:
+                        if json.load(response).get("healthy"):
+                            samples_ms.append(round((time.monotonic() - started) * 1000, 1))
+                            rss = rss_kib(process.pid)
+                            if rss is not None:
+                                rss_samples.append(rss)
+                            break
+                except OSError:
+                    time.sleep(0.002)
+            else:
+                raise TimeoutError("startup probe server did not become healthy")
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+    summary = {
+        "runs": runs,
+        "samples_ms": samples_ms,
+        "p50_ms": percentile(samples_ms, 50),
+        "p95_ms": percentile(samples_ms, 95),
+        "max_ms": max(samples_ms),
+        "rss_kib_p50": int(percentile([float(r) for r in rss_samples], 50)) if rss_samples else None,
+    }
+    return summary
+
+
 def trace_metrics(trace_path: Path) -> dict:
     """Summarize an ATIF trajectory without trusting the agent's prose."""
     if not trace_path.exists():
@@ -1079,6 +1153,8 @@ def main() -> int:
     parser.add_argument("--pi", default="pi", help="pi executable (agent=pi)")
     parser.add_argument("--codex", default="codex", help="codex executable (agent=codex)")
     parser.add_argument("--report", help="write the JSON report to this path")
+    parser.add_argument("--startup-runs", type=int, default=5,
+                        help="cold `veasel serve` spawns sampled for the report's startup metrics (0 disables; veasel agent only)")
     parser.add_argument("--keep", action="store_true", help="keep the temporary workspace")
     args = parser.parse_args()
 
@@ -1125,6 +1201,17 @@ def main() -> int:
             results.append(entry)
             print(f"{task['id']}: {'PASS' if results[-1]['passed'] else 'FAIL'} "
                   f"({results[-1]['wall_ms']} ms, {results[-1].get('tool_calls', results[-1].get('tool_results'))} tool calls)")
+        startup = None
+        if args.agent == "veasel" and args.startup_runs > 0:
+            try:
+                startup = measure_startup(veasel, args.startup_runs, work_root)
+                print(f"startup: p50 {startup['p50_ms']} ms, p95 {startup['p95_ms']} ms "
+                      f"over {startup['runs']} cold spawns (rss p50 {startup['rss_kib_p50']} KiB)")
+            except (RuntimeError, TimeoutError, OSError) as error:
+                # A server that cannot start already failed every task
+                # above; keep the task report instead of masking it.
+                startup = {"error": str(error)}
+                print(f"startup: FAILED ({error})")
     finally:
         provider.terminate()
         if not args.keep:
@@ -1145,6 +1232,8 @@ def main() -> int:
     if veasel is not None:
         report["binary"] = veasel.name
         report["binary_sha256"] = hashlib.sha256(veasel.read_bytes()).hexdigest()
+    if startup is not None:
+        report["startup"] = startup
     if args.report:
         Path(args.report).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"report: {args.report}")

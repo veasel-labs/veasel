@@ -442,15 +442,16 @@ fn test_shell_command_cancelled_mid_run_kills_process_group() {
 	defer { os.rmdir_all(root) or {} }
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
-	// Windows: cmd has no sleep builtin and loopback ping is unavailable
-	// inside the AppContainer, so sleep via PowerShell (encoded to keep
-	// quotes out of the cmdline). Its cold start needs a later cancel.
+	// Windows: cmd has no sleep builtin, loopback ping is unavailable
+	// inside the AppContainer, and PowerShell dies on the filtered
+	// environment, so burn time in a pure-cmd loop that only writes
+	// the effect file if it ever finishes (it cannot: the iteration
+	// count holds it far past the 30s command timeout).
 	mut command := 'sleep 5 && echo cancel-survived > cancelled-effect.txt'
 	mut cancel_after := 400 * time.millisecond
 	mut elapsed_limit := u64(4000)
 	$if windows {
-		// Start-Sleep -Seconds 10; Set-Content -LiteralPath cancelled-effect.txt -Value cancel-survived
-		command = 'powershell -NoProfile -EncodedCommand UwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBTAGUAYwBvAG4AZABzACAAMQAwADsAIABTAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgAGMAYQBuAGMAZQBsAGwAZQBkAC0AZQBmAGYAZQBjAHQALgB0AHgAdAAgAC0AVgBhAGwAdQBlACAAYwBhAG4AYwBlAGwALQBzAHUAcgB2AGkAdgBlAGQA'
+		command = 'for /L %i in (1,1,200000000) do @rem veasel-cancel-spin & echo cancel-survived > cancelled-effect.txt'
 		cancel_after = 2500 * time.millisecond
 		elapsed_limit = 9000
 	}

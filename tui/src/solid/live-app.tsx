@@ -17,9 +17,10 @@ import {
   formatStreamingBusyStatus,
   formatWarnStatus,
 } from "../status-a11y"
+import { prefersReducedMotion } from "../reduced-motion"
 import { liveStreamStatusMessage } from "../transcript-scroll"
 import { formatProviderConnectionError } from "../settings-errors"
-import { homeFooterHint } from "../footer-hints"
+import { homeFooterHint, homeFooterHintForWidth } from "../footer-hints"
 import {
   isBuiltinThemeId,
   saveThemeId,
@@ -81,7 +82,7 @@ import { openShellOutputDialog } from "./component/shell-output-dialog"
 import { openDialogSelect } from "./ui/dialog-select"
 import { liveReleaseHighlights } from "./release-highlights"
 import { shellCommandsWithOutput } from "./shell-output-live"
-import { formatActiveModelLabel } from "../session-model"
+import { formatActiveModelLabel, needsModelSetup, NO_MODEL_SETUP_GUIDANCE } from "../session-model"
 import { safeModelCatalogText, type ModelProvider } from "../model-providers"
 import { exportOpenCodeGoApiKey } from "../opencode-auth"
 import {
@@ -205,7 +206,23 @@ function LiveAppShell(props: LiveAppProps) {
   const [lastError, setLastError] = createSignal<LiveLastError | undefined>()
   const [oldestTurnId, setOldestTurnId] = createSignal<number | undefined>()
   const [historyHasOlder, setHistoryHasOlder] = createSignal(false)
-  const [status, setStatus] = createSignal(formatBusyStatus("connecting"))
+  const reducedMotion = prefersReducedMotion()
+  const [status, setStatus] = createSignal(formatBusyStatus("connecting", { reducedMotion }))
+  // Cycle the busy glyph while a busy status is shown, matching the
+  // classic shell. Reduced motion keeps the static glyph and no timer.
+  let busyFrame = 0
+  if (!reducedMotion) {
+    const busyTimer = setInterval(() => {
+      if (disposed) return
+      const match = status().match(/^[◌◍○] (busy(?: {2}· {2}.*| .*)?)$/)
+      if (!match) return
+      busyFrame += 1
+      const rest = match[1]!
+      const message = rest.startsWith("busy  ·  ") ? rest.slice("busy  ·  ".length) : rest
+      setStatus(formatBusyStatus(message, { frame: busyFrame }))
+    }, 400)
+    onCleanup(() => clearInterval(busyTimer))
+  }
   const noteError = (
     source: string,
     message: string,
@@ -654,6 +671,9 @@ function LiveAppShell(props: LiveAppProps) {
           description: `${item.status}${item.exit_code !== undefined ? ` · ${item.exit_code}` : ""}`,
           searchText: `${item.command} ${item.status} ${item.id}`,
         })),
+        // openOne replaces this picker with the output dialog; keep the
+        // stack intact or dialog-select clears the replacement on select.
+        dismissOnSelect: false,
         onSelect: (option) => {
           const item = withOutput.find((entry) => entry.id === option.value)
           if (item) openOne(item)
@@ -2274,6 +2294,22 @@ function LiveAppShell(props: LiveAppProps) {
 
   onMount(() => {
     void refreshSessions()
+    // Clean-profile first run: say so up front instead of letting the first
+    // prompt fail. Best-effort only; a settings fetch failure stays silent
+    // here because connection errors already surface through the event loop.
+    void (async () => {
+      try {
+        const view = await props.api.getModelSettings()
+        if (needsModelSetup(view)) {
+          toast.warning(NO_MODEL_SETUP_GUIDANCE, "Model setup")
+          if (!activeSessionId() && !dialog.open()) {
+            setStatus(formatWarnStatus("no model configured · type /connect to set one up"))
+          }
+        }
+      } catch {
+        // ignored: see above
+      }
+    })()
     void props.api.consumeEvents(
       {
         onConnected: () => {
@@ -2653,12 +2689,16 @@ function LiveAppShell(props: LiveAppProps) {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={colors.headerTitle}>
+        <text fg={colors.headerTitle} wrapMode="none">
           <strong>VEASEL</strong>
           <span style={{ fg: colors.brand }}> / </span>
           <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
-        <text fg={colors.localStatus}>{status()}</text>
+        {/* Below 44 columns the full status overlaps the wordmark; keep
+            only the connection dot segment (e.g. "● connected"). */}
+        <text fg={colors.localStatus} wrapMode="none">
+          {terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
+        </text>
       </box>
 
       <Show
@@ -2748,7 +2788,11 @@ function LiveAppShell(props: LiveAppProps) {
             setAttachments([])
             handleComposerSubmit(text)
           }}
-          focused={composerFocused()}
+          // Structural guard for #564: never keep the composer textarea
+          // focused while a modal dialog is open, regardless of which of
+          // the many focus setters raced last. Palette filter keystrokes
+          // once leaked into the (persisted) session draft this way.
+          focused={composerFocused() && !dialog.open()}
           restoreToken={restoreToken()}
           onDraftChange={setComposerDraft}
           skills={composerSkills()}
@@ -2783,7 +2827,7 @@ function LiveAppShell(props: LiveAppProps) {
           <text fg={colors.muted}>
             <Show
               when={inSession()}
-              fallback={`${homeFooterHint} · Esc dismiss slash · drag │ · Alt+←/→ resize`}
+              fallback={homeFooterHintForWidth(terminalColumns())}
             >
               {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
             </Show>

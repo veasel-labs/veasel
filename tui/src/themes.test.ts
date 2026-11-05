@@ -83,6 +83,55 @@ describe("TUI themes", () => {
     }
   })
 
+  test("every text token meets WCAG AA contrast on the surfaces it renders on", () => {
+    // Full token/surface matrix (WCAG 2.2 SC 1.4.3, normal text >= 4.5:1).
+    // Decorative border tokens are excluded on purpose: panel boundaries
+    // are conveyed by border glyphs plus labeled content, not by fill
+    // contrast alone; the dedicated contrast theme clears 3:1 there too.
+    const pairs: Array<[string, string[]]> = [
+      ["body", ["shellBg", "panelBg"]],
+      ["muted", ["shellBg", "panelBg"]],
+      ["brand", ["shellBg", "panelBg", "headerBg", "inputFocusBg"]],
+      ["headerTitle", ["headerBg"]],
+      ["headerMeta", ["headerBg"]],
+      ["localStatus", ["headerBg", "shellBg"]],
+      ["sidebarLabel", ["panelBg"]],
+      ["sidebarFg", ["panelBg"]],
+      ["sessionSelectedFg", ["inputFocusBg", "panelBg"]],
+      ["statusWarn", ["shellBg", "panelBg"]],
+      ["statusOk", ["shellBg", "panelBg"]],
+      ["statusError", ["shellBg", "panelBg"]],
+      ["inputText", ["inputBg", "inputFocusBg"]],
+      ["title", ["shellBg", "panelBg"]],
+      ["meta", ["shellBg", "panelBg"]],
+      ["notice", ["shellBg", "panelBg"]],
+      ["userLabel", ["shellBg"]],
+      ["userText", ["shellBg"]],
+      ["assistantLabel", ["shellBg"]],
+      ["assistantText", ["shellBg"]],
+      ["systemLabel", ["shellBg"]],
+      ["systemText", ["shellBg"]],
+      ["toolLabel", ["shellBg"]],
+      ["toolText", ["shellBg"]],
+      ["status", ["shellBg", "panelBg"]],
+      ["hint", ["shellBg", "panelBg"]],
+      ["diffAdd", ["shellBg", "panelBg"]],
+      ["diffRemove", ["shellBg", "panelBg"]],
+      ["diffMeta", ["shellBg", "panelBg"]],
+    ]
+    const failures: string[] = []
+    for (const theme of Object.values(themes)) {
+      const record = theme as unknown as Record<string, string>
+      for (const [foreground, surfaces] of pairs) {
+        for (const surface of surfaces) {
+          const ratio = contrastRatio(record[foreground]!, record[surface]!)
+          if (ratio < 4.5) failures.push(`${theme.id}:${foreground} on ${surface}=${ratio.toFixed(2)}`)
+        }
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
   test("ships the mint product look as the default theme", () => {
     expect(defaultThemeId).toBe("mint")
     expect(themes.mint.brand).toBe("#9af7c9")

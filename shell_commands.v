@@ -1,5 +1,6 @@
 module main
 
+import context as vcontext
 import encoding.utf8
 import json2
 import os
@@ -314,6 +315,23 @@ fn run_approved_shell_command(root string, command ShellCommandSummary) ShellCom
 
 fn run_approved_shell_command_with_policy(root string, command ShellCommandSummary,
 	sanitize_environment bool) ShellCommandResult {
+	mut background := vcontext.background()
+	return run_approved_shell_command_with_context(mut background, root, command,
+		sanitize_environment)
+}
+
+// Turn-scoped variant: cancelling the turn (or hitting its deadline) kills
+// the running command's process group instead of letting it finish after
+// the operation already reported itself cancelled.
+fn run_approved_shell_command_with_context(mut turn_ctx vcontext.Context, root string,
+	command ShellCommandSummary, sanitize_environment bool) ShellCommandResult {
+	if _ := turn_context_error(mut turn_ctx) {
+		return ShellCommandResult{
+			status:    'cancelled'
+			exit_code: -1
+			output:    'Cancelled before the command started; no process was started.'
+		}
+	}
 	// Sessions store a real_path workspace root. If that path is later replaced
 	// by a symlink (or otherwise re-bound), refuse before starting a process.
 	// Non-canonical reviewer inputs still resolve through real_path below so
@@ -356,7 +374,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 	}
 	if sanitize_environment {
 		$if linux {
-			return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command,
+			return run_linux_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 				LinuxShellSandboxOptions{
 					purpose:            'Autonomous shell execution'
 					fail_closed:        true
@@ -364,7 +382,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 					allow_network:      false
 				})
 		} $else $if macos {
-			return run_macos_sandboxed_shell_command(canonical_root, verified.cwd, command,
+			return run_macos_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 				MacosShellSandboxOptions{
 					purpose:            'Autonomous shell execution'
 					fail_closed:        true
@@ -372,7 +390,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 					allow_network:      false
 				})
 		} $else $if windows {
-			return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
+			return run_windows_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 				WindowsShellSandboxOptions{
 					purpose:       'Autonomous shell execution'
 					fail_closed:   true
@@ -390,7 +408,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 	$if linux {
 		if mode != .off {
 			if bubblewrap_available() {
-				return run_linux_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				return run_linux_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 					LinuxShellSandboxOptions{
 						purpose:            'Approved shell execution'
 						fail_closed:        mode == .require
@@ -410,7 +428,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 	} $else $if macos {
 		if mode != .off {
 			if seatbelt_available() {
-				return run_macos_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				return run_macos_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 					MacosShellSandboxOptions{
 						purpose:            'Approved shell execution'
 						fail_closed:        mode == .require
@@ -430,7 +448,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 	} $else $if windows {
 		if mode != .off {
 			if windows_appcontainer_sandbox_available() {
-				return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				return run_windows_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 					WindowsShellSandboxOptions{
 						purpose:       'Approved shell execution'
 						fail_closed:   mode == .require
@@ -469,7 +487,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 		process.set_work_folder(os.join_path(canonical_root, verified.cwd))
 		process.set_redirect_stdio()
 		process.use_pgroup = true
-		return collect_shell_process(mut process, command.timeout_seconds)
+		return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
 	} $else {
 		mut process := os.new_process('/bin/sh')
 		process.set_args(['-c', command.command])
@@ -480,7 +498,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 		process.set_work_folder(os.join_path(canonical_root, verified.cwd))
 		process.set_redirect_stdio()
 		process.use_pgroup = true
-		return collect_shell_process(mut process, command.timeout_seconds)
+		return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
 	}
 }
 
@@ -489,7 +507,7 @@ fn run_approved_shell_command_with_policy(root string, command ShellCommandSumma
 // - /home, /root, /run, /mnt, /media, and /tmp are masked with tmpfs when present
 // - namespaces are unshared; network stays isolated unless allow_network is set
 // - Bubblewrap is a host capability, not a bundled V runtime dependency
-fn run_linux_sandboxed_shell_command(root string, cwd string, command ShellCommandSummary,
+fn run_linux_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string, cwd string, command ShellCommandSummary,
 	options LinuxShellSandboxOptions) ShellCommandResult {
 	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
 	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr', '/etc',
@@ -569,7 +587,7 @@ fn run_linux_sandboxed_shell_command(root string, cwd string, command ShellComma
 	process.set_stdin_path('/dev/null')
 	process.set_redirect_stdio()
 	process.use_pgroup = true
-	return collect_shell_process(mut process, command.timeout_seconds)
+	return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
 }
 
 // macOS Seatbelt policy for approved shell (principles adapted from Codex Seatbelt
@@ -610,7 +628,7 @@ fn macos_seatbelt_profile(allow_network bool) string {
 	return lines.join('\n')
 }
 
-fn run_macos_sandboxed_shell_command(root string, cwd string, command ShellCommandSummary,
+fn run_macos_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string, cwd string, command ShellCommandSummary,
 	options MacosShellSandboxOptions) ShellCommandResult {
 	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
 	for broad_root in ['/', '/Users', '/System', '/Library', '/Applications', '/private', '/var',
@@ -663,7 +681,7 @@ fn run_macos_sandboxed_shell_command(root string, cwd string, command ShellComma
 	process.set_work_folder(os.join_path(root, cwd))
 	process.set_redirect_stdio()
 	process.use_pgroup = true
-	return collect_shell_process(mut process, command.timeout_seconds)
+	return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
 }
 
 fn autonomous_shell_environment() map[string]string {
@@ -693,15 +711,21 @@ fn autonomous_shell_environment_from(current map[string]string) map[string]strin
 	return filtered
 }
 
-fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellCommandResult {
+fn collect_shell_process(mut process os.Process, timeout_seconds int, mut turn_ctx vcontext.Context) ShellCommandResult {
 	process.run()
 	deadline := time.sys_mono_now() + u64(timeout_seconds) * u64(time.second)
 	mut output := []u8{cap: max_shell_command_output_bytes}
 	mut output_limited := false
 	mut timed_out := false
+	mut cancelled := false
 	for process.is_alive() {
 		output_limited = append_shell_output(mut output, process.stdout_read(), output_limited)
 		output_limited = append_shell_output(mut output, process.stderr_read(), output_limited)
+		if _ := turn_context_error(mut turn_ctx) {
+			cancelled = true
+			process.signal_pgkill()
+			break
+		}
 		if output_limited {
 			process.signal_pgkill()
 			break
@@ -726,7 +750,9 @@ fn collect_shell_process(mut process os.Process, timeout_seconds int) ShellComma
 		}
 	}
 	if output_limited { safe_output += shell_output_limited_marker }
-	status := if timed_out {
+	status := if cancelled {
+		'cancelled'
+	} else if timed_out {
 		'timed_out'
 	} else if output_limited {
 		'output_limited'

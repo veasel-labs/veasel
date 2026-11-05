@@ -32,7 +32,7 @@ export function SessionTabs(props: SessionTabsProps) {
   return (
     <box
       width="100%"
-      height={2}
+      height={3}
       flexShrink={0}
       flexDirection="row"
       alignItems="center"
@@ -44,7 +44,7 @@ export function SessionTabs(props: SessionTabsProps) {
       gap={1}
     >
       <Show when={windowed().showLabel}>
-        <text fg={colors.muted}>TABS </text>
+        <text fg={colors.muted} wrapMode="none">TABS </text>
       </Show>
       <Show when={windowed().overflowLeft > 0}>
         <text fg={colors.muted}>‹{windowed().overflowLeft}</text>

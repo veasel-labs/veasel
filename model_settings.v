@@ -43,6 +43,11 @@ pub:
 	profiles             map[string]ModelProfileView
 	providers            []ModelProviderInfo
 	configured_providers []string
+pub mut:
+	// True only when the same resolution a chat turn uses (saved profile,
+	// then environment) yields a usable provider, model, and credential.
+	// Set by App.model_settings_view; state.view alone leaves it false.
+	model_ready bool
 }
 
 pub struct ModelProfileView {
@@ -213,6 +218,17 @@ fn (app &App) model_config() !ModelConfig {
 		return error('model is not configured')
 	}
 	return config
+}
+
+// model_settings_view is the client-facing settings payload: the redacted
+// state view plus whether a chat turn could actually run right now, judged
+// by model_config itself so the answer can never drift from turn behavior.
+fn (app &App) model_settings_view() ModelSettingsView {
+	mut state := app.model_settings
+	mut view := state.view()
+	_ := app.model_config() or { return view }
+	view.model_ready = true
+	return view
 }
 
 fn (app &App) model_config_for_session(session_id string) !ModelConfig {

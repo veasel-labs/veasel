@@ -10,13 +10,16 @@ function markdownCodeBlocks(root: BaseRenderable): CodeRenderable[] {
   const pending = [root]
   while (pending.length > 0) {
     const node = pending.pop()!
-    if (node instanceof CodeRenderable && node.filetype === "markdown") blocks.push(node)
+    // Wait for nested fenced-code blocks too, not only the markdown pass:
+    // their async Tree-sitter highlight is the one that can silently fall
+    // back to plain text after the frame assertions already pass (#554).
+    if (node instanceof CodeRenderable) blocks.push(node)
     pending.push(...node.getChildren())
   }
   return blocks
 }
 
-/** Wait for OpenTUI's asynchronous Markdown syntax pass before capturing a frame. */
+/** Wait for OpenTUI's asynchronous Markdown and fenced-code syntax passes. */
 export async function renderMarkdownFrame(setup: TestRenderer): Promise<void> {
   await setup.renderOnce()
   for (let pass = 0; pass < 8; pass++) {

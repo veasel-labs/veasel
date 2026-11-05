@@ -20,6 +20,10 @@ never by the agent's own final message. Reports record wall time, ATIF
 step/tool-call counts, provider-reported token usage, and the SHA-256 of the
 binary under test.
 
+CI runs the Veasel fixtures on Linux against the freshly built `dist/veasel`
+in the V backend job and uploads the report as `deterministic.json` with the
+session-store benchmark artifact, so harness regressions fail the PR.
+
 ## Fixtures
 
 | Fixture | Prompt | External check |
@@ -35,7 +39,13 @@ binary under test.
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
 | `outside-read-rejected` | `Try to read outside` | Read of `../outside/secret.txt` is rejected; workspace byte-identical |
+| `interrupted-stream-fails` | `Stream then drop` | Provider truncates the response mid-body and drops the connection; run exits non-zero with `status: failed` and an error, workspace byte-identical |
 | `outside-write-rejected` | `Try to write outside` | Edit of `../outside/evil.txt` is rejected; no outside file created |
+| `wrong-api-key-fails` | `Say hello` (bad key) | Provider returns HTTP 401; run exits non-zero with the status in the error, workspace byte-identical, and the rejected key never appears in result or trace output |
+| `unreachable-endpoint-fails` | `Say hello` (closed port) | Connection refused; run exits non-zero with unreachable-endpoint guidance, workspace byte-identical |
+| `unknown-model-fails` | `Say hello` (bad model ID) | Provider returns HTTP 404 `model_not_found`; run exits non-zero with model/endpoint guidance, workspace byte-identical |
+| `saved-profile-missing-key` | `Say hello` (seeded keyless profile) | Saved profile names a model but holds no key and the environment provides none; run is refused up front with no-model-configured guidance, workspace byte-identical |
+| `cancelled-shell-tool` | `Run slow shell` (API, cancelled) | Turn cancelled while the shell command sleeps; operation ends `cancelled` promptly and the command's effect file never appears, even after outwaiting the sleep |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the
@@ -86,6 +96,12 @@ OpenAI Responses endpoint, through an isolated `CODEX_HOME`. Its scripted
 tool is `exec_command` (shell), not Codex's freeform apply_patch tool, so it
 measures shell-tool orchestration only.
 
+Competitor adapters run only tasks marked `"competitor": True`. The
+generic scripted providers drive a single unconditional write, so exactly
+one task (`autonomous-workspace-edit`) has an oracle they can satisfy
+non-vacuously; every other task is reported as SKIPPED in the output and
+in the JSON report's `skipped` list, never silently dropped.
+
 First local comparison (2026-10-17, scripted replies, cold CLI runs, same
 external check — all passing):
 
@@ -96,6 +112,15 @@ external check — all passing):
 | Codex 0.163.0 | 4,132 ms |
 | mini-SWE-agent 2.4.6 | 4,281 ms |
 | OpenCode 2.0.27 | 4,588 ms |
+
+Refreshed 2026-11-05 (same single shared task, same machine class):
+
+| Agent | Wall time |
+| --- | --- |
+| Veasel (local build) | 264 ms |
+| Pi 0.85.1 | 481 ms |
+| Codex 0.166.0 | 4,391 ms |
+| OpenCode 2.2.5 | 4,619 ms |
 
 This measures harness/startup orchestration only — scripted replies say
 nothing about model quality, and no superiority claim is supported until

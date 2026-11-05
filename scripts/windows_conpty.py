@@ -9,6 +9,8 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Callable
 
+from terminal_screen import TerminalScreen
+
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
@@ -166,6 +168,9 @@ def run_tui_conpty(
     session_id: str | None = None,
     wait_for_persisted_reply: Callable[[str, str], None] | None = None,
     review_path: bytes | None = None,
+    recovery_only: bool = False,
+    home_only: bool = False,
+    size: tuple[int, int] = (24, 100),
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -179,6 +184,7 @@ def run_tui_conpty(
     attribute_list = wintypes.LPVOID()
     attribute_list_initialized = False
     output = bytearray()
+    screen = TerminalScreen(rows=size[0], cols=size[1])
     process_created = False
     child_stdin_read = wintypes.HANDLE()
     child_stdin_write = wintypes.HANDLE()
@@ -206,7 +212,9 @@ def run_tui_conpty(
                 if error in (109, 232):
                     return
                 raise _winerror("ReadFile(ConPTY output)")
-            output.extend(buffer.raw[: read.value])
+            chunk = buffer.raw[: read.value]
+            output.extend(chunk)
+            screen.feed(chunk)
             available.value -= read.value
             if read.value == 0:
                 return
@@ -236,6 +244,35 @@ def run_tui_conpty(
             f"standalone TUI did not reach {description} within {timeout} seconds; "
             f"captured {len(output)} terminal bytes; visible output: {snippet!r}; "
             f"raw tail: {raw_tail!r}"
+        )
+
+    def wait_for_screen_markers(
+        markers: tuple[bytes, ...],
+        timeout: float,
+        description: str,
+        absent: tuple[bytes, ...] = (),
+    ) -> None:
+        # Same differential-repaint hazard as the PTY smoke: assert against
+        # the rendered screen, not contiguous raw bytes.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            drain()
+            rendered = screen.text().encode()
+            # output is cleared before the triggering keystroke, so requiring
+            # fresh bytes prevents a stale pre-action frame from passing.
+            if output and all(marker in rendered for marker in markers) and not any(
+                marker in rendered for marker in absent
+            ):
+                return
+            if all(marker in output for marker in markers):
+                return
+            exit_code = wintypes.DWORD()
+            if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
+                raise RuntimeError(f"standalone TUI exited before {description} (status={exit_code.value})")
+            time.sleep(0.025)
+        raise TimeoutError(
+            f"standalone TUI did not reach {description} within {timeout} seconds; "
+            f"rendered screen:\n{screen.text()}"
         )
 
     def wait_for_partial_reply(partial: bytes, complete: bytes, timeout: float) -> None:
@@ -277,9 +314,17 @@ def run_tui_conpty(
         for attempt in range(_PALETTE_RETRIES):
             output.clear()
             send_keys(b"\x10")
-            wait_for_markers(
-                (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
-            )
+            try:
+                wait_for_markers(
+                    (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
+                )
+            except TimeoutError as error:
+                # A preceding dialog can still hold keyboard focus when
+                # Ctrl+P lands, swallowing the toggle; reset and retry.
+                last_snippet = str(error)
+                send_keys(b"\x1b")
+                time.sleep(0.5)
+                continue
             time.sleep(0.3)
             output.clear()
             send_keys(b"quit")
@@ -309,7 +354,7 @@ def run_tui_conpty(
             raise _winerror("CreatePipe(TUI stdin)")
 
         result = kernel32.CreatePseudoConsole(
-            Coord(100, 24), input_read, output_write, 0, ctypes.byref(pseudoconsole)
+            Coord(size[1], size[0]), input_read, output_write, 0, ctypes.byref(pseudoconsole)
         )
         if result != 0:
             raise OSError(f"CreatePseudoConsole failed with HRESULT 0x{result & 0xFFFFFFFF:08X}")
@@ -372,6 +417,23 @@ def run_tui_conpty(
             home_markers = (*home_markers, session_title.encode())
         wait_for_markers(home_markers, 30, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
+        if home_only:
+            # Terminal-size leg: critical home controls must be visible
+            # (not clipped) on the rendered screen, then quit cleanly.
+            wait_for_screen_markers(
+                (b"SESSIONS", b"connected", b"n new", b"q quit"), 10,
+                f"the {size[1]}x{size[0]} home screen",
+            )
+            send_keys(b"q")
+            if kernel32.WaitForSingleObject(process.hProcess, 5_000) != 0:
+                raise TimeoutError(
+                    f"standalone TUI did not exit on q at {size[1]}x{size[0]}; "
+                    f"rendered screen:\n{screen.text()}"
+                )
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) or exit_code.value != 0:
+                raise RuntimeError(f"standalone TUI exited unsuccessfully at {size[1]}x{size[0]} (status={exit_code.value})")
+            return startup_ms
         send_keys(b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
         for _ in range(5):
@@ -398,17 +460,32 @@ def run_tui_conpty(
             wait_for_markers((b"REVIEW WORKSPACE EDIT", review_path), 5, "the live workspace edit review")
             output.clear()
             send_keys(b"a")
-            wait_for_markers((b"Message Veasel",), 5, "the session after its only review was approved")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
         elif not session_id:
             send_keys(b"q")
+        elif recovery_only:
+            # Reopen the persisted session against the restarted backend
+            # without sending anything new (see the PTY driver).
+            output.clear()
+            send_keys(b"\r")
+            wait_for_screen_markers(
+                (b"two pieces", b"listening for activity"), 10, "the session recovered after backend restart",
+                absent=(b"Restoring this session",),
+            )
+            quit_via_palette(
+                "the command palette after backend restart recovery", "the quit command in the palette",
+            )
         else:
             output.clear()
             send_keys(b"\r")
             # Recovery uses a different placeholder until submissions are safe.
-            wait_for_markers((b"Message Veasel",), 5, "the recovered session composer")
+            wait_for_screen_markers(
+                (b"Message Veasel",), 5, "the recovered session composer",
+                absent=(b"Restoring this session",),
+            )
             output.clear()
             send_keys(b"Stream incrementally\r")
             wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)

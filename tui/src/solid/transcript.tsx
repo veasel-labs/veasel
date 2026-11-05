@@ -153,11 +153,19 @@ function AssistantMarkdown(props: { content: string; streaming: boolean }) {
   const colors = useSolidTheme()
   const renderer = useRenderer()
   const syntaxStyle = createMemo(() => createMarkdownSyntaxStyle(colors, renderer.nativeScene))
-  onCleanup(() => syntaxStyle().destroy())
+  // Destroy each superseded native style when the theme recreates it, not
+  // only the latest one at unmount (#554). The cleanup runs in the same
+  // synchronous flush that applies the new style to <markdown>, whose
+  // setter invalidates pending highlights, so no async highlight can read
+  // the destroyed style.
+  createEffect(() => {
+    const style = syntaxStyle()
+    onCleanup(() => style.destroy())
+  })
   return (
     <markdown
-      content={props.content}
       syntaxStyle={syntaxStyle()}
+      content={props.content}
       fg={colors.assistantText}
       streaming={props.streaming}
       internalBlockMode="top-level"

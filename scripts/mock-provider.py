@@ -58,6 +58,13 @@ HELPER_EDIT = (
 APPROVED_SHELL_COMMAND = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved"
 SLOW_RESPONSE_RELEASE = Event()
 SLOW_SHELL_COMMAND = "timeout /T 3 /NOBREAK >NUL" if sys.platform == "win32" else "sleep 2"
+# Sleeps long enough to cancel mid-execution, then writes an effect file:
+# the file must never appear when the turn is cancelled during the sleep.
+CANCEL_SHELL_COMMAND = (
+    "timeout /T 5 /NOBREAK >NUL && echo cancel-survived > cancel-effect.txt"
+    if sys.platform == "win32"
+    else "sleep 5 && echo cancel-survived > cancel-effect.txt"
+)
 # Keep in sync with execution_policy_tool_instructions() + the api.v system wrapper.
 # Smoke rejects drift with HTTP 400.
 SYSTEM_PREFIX = (
@@ -278,7 +285,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 or (provider_kind == "openai-responses" and payload.get("include") != ["reasoning.encrypted_content"])
                 or not input_items
                 or input_items[0].get("role") != "system"
-                or (user_text not in ("Say hello", "Stream incrementally", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_tool_follow_up)
             ):
                 self.reject(payload)
@@ -359,6 +366,20 @@ class MockProvider(BaseHTTPRequestHandler):
                     {"id": "msg-fixture", "type": "message", "role": "assistant", "content": [{"type": "output_text", "text": REPLY}]}
                 ]}
         elif has_openai_compatible_auth(self.headers.get("Authorization")):
+            if payload.get("model") == "no-such-model":
+                # Real OpenAI-compatible providers answer an unknown model
+                # with 404 model_not_found, not a generic 400.
+                encoded = json.dumps({"error": {
+                    "message": "The model 'no-such-model' does not exist",
+                    "type": "invalid_request_error",
+                    "code": "model_not_found",
+                }}).encode()
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = fixture_user_prompt(last_message.get("content", ""))
@@ -380,7 +401,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Stream incrementally", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -388,7 +409,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
@@ -443,6 +464,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = json.dumps({"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Propose slow shell command":
                     arguments = json.dumps({"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1})
+                elif user_text == "Run slow shell":
+                    arguments = json.dumps({"command": CANCEL_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 30})
                 else:
                     arguments = json.dumps({"value": "rejected-effect" if user_text == "Reject MCP effect" else "tool-error" if user_text == "Fail MCP effect" else "approved-effect"})
                 body = {"choices": [{"message": {
@@ -813,6 +836,18 @@ class MockProvider(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(encoded_stream)))
             self.end_headers()
+            if user_text == "Stream then drop" and frames:
+                # Truncate the stream mid-frame and drop the connection:
+                # Content-Length promises the full body, so a correct
+                # client must surface an error, never a completed reply.
+                first = frames[0].encode()
+                try:
+                    self.wfile.write(first[: max(1, len(first) // 2)])
+                    self.wfile.flush()
+                finally:
+                    self.close_connection = True
+                    self.connection.close()
+                return
             for frame in frames:
                 frame_bytes = frame.encode()
                 midpoint = max(1, len(frame_bytes) // 2)
@@ -831,6 +866,20 @@ class MockProvider(BaseHTTPRequestHandler):
         if user_text == "Wait for cancellation" or is_cancellation_fixture_turn:
             print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
             SLOW_RESPONSE_RELEASE.wait()
+        if user_text == "Stream then drop":
+            # Non-streaming variant: promise the full JSON body, deliver
+            # half of it, then drop the connection.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            try:
+                self.wfile.write(encoded[: max(1, len(encoded) // 2)])
+                self.wfile.flush()
+            finally:
+                self.close_connection = True
+                self.connection.close()
+            return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))

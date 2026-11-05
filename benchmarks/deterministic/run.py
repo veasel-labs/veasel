@@ -211,6 +211,76 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "wrong-api-key-fails",
+        "prompt": "Say hello",
+        # The mock provider answers 401 for any key it does not know. A
+        # pass proves the run fails fast with the HTTP status in the
+        # error, the workspace stays byte-identical, and the rejected key
+        # is never echoed into the result or trace output.
+        "env": {"VEASEL_MODEL_API_KEY": "wrong-fixture-key"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "wrong API key fails the run with HTTP 401 surfaced; workspace unchanged; key never echoed",
+        "expect_failure": True,
+        "expect_error_contains": "rejected the API key (HTTP 401)",
+        "forbid_in_outputs": ["wrong-fixture-key"],
+        "veasel_only": True,
+    },
+    {
+        "id": "unreachable-endpoint-fails",
+        "prompt": "Say hello",
+        # The base URL points at a closed local port, so the connection is
+        # refused. A pass proves the run fails fast with copy naming the
+        # unreachable endpoint (not a generic failure), and the workspace
+        # stays byte-identical.
+        "env": {"VEASEL_MODEL_BASE_URL": "http://127.0.0.1:{closed_port}/v1"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "unreachable provider endpoint fails the run with endpoint guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "Could not reach the model provider endpoint",
+        "veasel_only": True,
+    },
+    {
+        "id": "unknown-model-fails",
+        "prompt": "Say hello",
+        # The provider answers 404 model_not_found for this model ID. A
+        # pass proves the run fails with copy pointing at the model ID /
+        # base URL, and the workspace stays byte-identical.
+        "env": {"VEASEL_MODEL": "no-such-model"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "unknown model ID fails the run with model/endpoint guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "could not find the model or endpoint (HTTP 404)",
+        "veasel_only": True,
+    },
+    {
+        "id": "saved-profile-missing-key",
+        "prompt": "Say hello",
+        # A saved Anthropic profile names a model but holds no key, and the
+        # environment provides none either. A pass proves the run is
+        # refused up front with the no-model-configured guidance (never a
+        # generic failure, never a provider call) and the workspace stays
+        # byte-identical.
+        "env": {"VEASEL_MODEL_API_KEY": "", "ANTHROPIC_API_KEY": ""},
+        "seed_data_files": {
+            "model-settings.json": json.dumps({
+                "active_provider": "anthropic",
+                "profiles": {
+                    "anthropic": {
+                        "model": "claude-fixture",
+                        "base_url": "https://api.anthropic.com/v1",
+                        "api_key": "",
+                        "max_output_tokens": 0,
+                    }
+                },
+            }),
+        },
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "saved profile without a key is refused with no-model guidance; workspace unchanged",
+        "expect_failure": True,
+        "expect_error_contains": "No model provider is configured",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -231,6 +301,9 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
 
     port = free_port()
     data_dir = work / "data"
+    for name, content in task.get("seed_data_files", {}).items():
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / name).write_text(content, encoding="utf-8")
     env = dict(
         os.environ,
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
@@ -242,6 +315,12 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         VEASEL_MODEL_API_KEY="veasel-openai-key",
         VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
     )
+    # {closed_port} resolves to a port bound and released at task time, so
+    # the provider (already listening) can never be assigned it.
+    env.update({
+        key: value.replace("{closed_port}", str(free_port()))
+        for key, value in task.get("env", {}).items()
+    })
     server = subprocess.Popen(
         [str(veasel), "serve"], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -276,6 +355,13 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         passed = completed.returncode == 0 and result.get("status") == "completed"
     if passed and "expect_response" in task:
         passed = result.get("response") == task["expect_response"]
+    if passed and "expect_error_contains" in task:
+        passed = task["expect_error_contains"] in (result.get("error") or "")
+    if passed and task.get("forbid_in_outputs"):
+        outputs = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
+        if trace_path.exists():
+            outputs += trace_path.read_text(encoding="utf-8")
+        passed = all(secret not in outputs for secret in task["forbid_in_outputs"])
     if passed:
         passed = bool(task["check"](workspace))
     entry = {

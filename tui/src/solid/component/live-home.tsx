@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show } from "solid-js"
 import type { MouseEvent } from "@opentui/core"
-import { homeFooterHint } from "../../footer-hints"
+import { homeFooterHintForWidth } from "../../footer-hints"
 import { useSolidTheme } from "../theme"
 import { HomeSplash } from "./home-splash"
 import type { SolidSessionEntry } from "./session-list-dialog"
@@ -120,8 +120,10 @@ export function LiveHome(props: LiveHomeProps) {
           paddingRight={1}
           backgroundColor={colors.shellBg}
         >
-          <text fg={colors.muted}>
-            {homeFooterHint} · drag │ · Alt+←/→ resize sidebar
+          <text fg={colors.muted} wrapMode="none">
+            {cols() >= 96
+              ? `${homeFooterHintForWidth(cols())} · drag │ · Alt+←/→ resize sidebar`
+              : homeFooterHintForWidth(cols())}
           </text>
         </box>
       </Show>

@@ -1798,9 +1798,13 @@ fn session_turn_failure(message string) (string, string) {
 
 fn public_provider_http_failure(status int) string {
 	return match status {
-		401 { 'Model provider rejected the API key (HTTP 401). Check the saved provider key and try again.' }
+		401 {
+			'Model provider rejected the API key (HTTP 401). Check the saved provider key and try again.'
+		}
 		403 { 'Model provider denied access (HTTP 403). Check account permissions for this model.' }
-		404 { 'Model provider could not find the model or endpoint (HTTP 404). Check the model ID and provider base URL.' }
+		404 {
+			'Model provider could not find the model or endpoint (HTTP 404). Check the model ID and provider base URL.'
+		}
 		408 { 'Model provider request timed out (HTTP 408); retry shortly.' }
 		429 { 'Model provider rate-limited the request (HTTP 429); retry shortly.' }
 		else {

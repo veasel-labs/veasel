@@ -1,8 +1,8 @@
 /** @jsxImportSource @opentui/solid */
-import { Show, createMemo, createSignal, onMount } from "solid-js"
-import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent } from "@opentui/core"
-import { filetypeFromReviewPath, diffRenderableTheme } from "../../diff-view"
+import { createDiffSyntaxStyle, filetypeFromReviewPath, diffRenderableTheme } from "../../diff-view"
 import { DialogHeader, DialogLayout, useDialog } from "../ui/dialog"
 import { openDialogSelect } from "../ui/dialog-select"
 import { useSolidTheme } from "../theme"
@@ -23,9 +23,18 @@ export type SessionDiffDialogProps = {
 function SessionDiffView(props: { proposal: WorkspaceEditProposal }) {
   const colors = useSolidTheme()
   const dialog = useDialog()
+  const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const stats = createMemo(() => summarizeUnifiedDiff(props.proposal.diff))
   const diffTheme = () => diffRenderableTheme(colors)
+  // Match the review panel: supply the themed native style or DiffRenderable
+  // falls back to an empty default and renders without filetype coloring.
+  // Destroy each superseded generation when the theme recreates it.
+  const syntaxStyle = createMemo(() => createDiffSyntaxStyle(colors, renderer.nativeScene))
+  createEffect(() => {
+    const style = syntaxStyle()
+    onCleanup(() => style.destroy())
+  })
 
   useKeyboard((key: KeyEvent) => {
     if (key.name === "return" || key.name === "kpenter") {
@@ -56,6 +65,7 @@ function SessionDiffView(props: { proposal: WorkspaceEditProposal }) {
           height={Math.max(10, Math.min(22, dimensions().height - 12))}
           diff={props.proposal.diff}
           view="split"
+          syntaxStyle={syntaxStyle()}
           filetype={filetypeFromReviewPath(props.proposal.path)}
           fg={diffTheme().fg}
           addedSignColor={diffTheme().addedSignColor}
@@ -144,6 +154,9 @@ export function openSessionDiffDialog(
       description: `${sessionDiffStatusLabel(row.status)} · ${row.name}`,
       searchText: row.searchText,
     })),
+    // The follow-up diff replaces this picker; without this, dialog-select
+    // clears the stack right after onSelect and the diff never displays.
+    dismissOnSelect: false,
     onSelect: (option) => {
       const row = rows.find((item) => item.id === option.value)
       if (!row) return

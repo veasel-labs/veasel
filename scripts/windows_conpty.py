@@ -311,9 +311,17 @@ def run_tui_conpty(
         for attempt in range(_PALETTE_RETRIES):
             output.clear()
             send_keys(b"\x10")
-            wait_for_markers(
-                (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
-            )
+            try:
+                wait_for_markers(
+                    (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
+                )
+            except TimeoutError as error:
+                # A preceding dialog can still hold keyboard focus when
+                # Ctrl+P lands, swallowing the toggle; reset and retry.
+                last_snippet = str(error)
+                send_keys(b"\x1b")
+                time.sleep(0.5)
+                continue
             time.sleep(0.3)
             output.clear()
             send_keys(b"quit")

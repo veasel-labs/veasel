@@ -212,9 +212,18 @@ def run_tui(
         for attempt in range(_PALETTE_RETRIES):
             output.clear()
             os.write(terminal, b"\x10")
-            wait_for_markers(
-                (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
-            )
+            try:
+                wait_for_markers(
+                    (b"Commands", b"Filter commands"), 5, f"{palette_description} (attempt {attempt + 1})",
+                )
+            except TimeoutError as error:
+                # A preceding dialog (e.g. review approval) can still hold
+                # keyboard focus when Ctrl+P lands, swallowing the toggle.
+                # Reset to a clean state and retry like the filter wait below.
+                last_snippet = str(error)
+                os.write(terminal, b"\x1b")
+                time.sleep(0.5)
+                continue
             time.sleep(0.3)
             output.clear()
             os.write(terminal, b"quit")

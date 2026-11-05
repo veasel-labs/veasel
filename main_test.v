@@ -587,6 +587,28 @@ fn test_tui_backend_output_goes_to_the_server_log() {
 	assert os.fd_dup2(2, 2) == 2
 }
 
+fn test_backend_spawn_never_inherits_cli_descriptors() {
+	// Regression: headless commands passed an empty log path, so the spawned
+	// server inherited the CLI's stderr. A long-lived server holding a pipe
+	// write-end means `veasel run ... | consumer` never sees EOF after the
+	// CLI exits. Spawning without a log path must now fail before running.
+	mut process := os.new_process('/bin/sh')
+	process.set_args(['-c', 'echo should-not-run'])
+	spawn_backend_server(mut process, '') or {
+		assert err.msg().contains('log path is required')
+		assert !process.is_alive()
+		process.close()
+		// Headless callers resolve the standard per-data-directory log.
+		assert backend_log_path('') == server_log_path(default_data_dir())
+		assert backend_log_path('/tmp/custom.log') == '/tmp/custom.log'
+		return
+	}
+	process.signal_kill()
+	process.wait()
+	process.close()
+	assert false, 'spawn_backend_server accepted an empty log path'
+}
+
 struct BackendHealthFixture {}
 
 fn (mut _ BackendHealthFixture) handle(request http.Request) http.Response {

@@ -401,7 +401,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -409,7 +409,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
@@ -466,6 +466,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = json.dumps({"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1})
                 elif user_text == "Run slow shell":
                     arguments = json.dumps({"command": CANCEL_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 30})
+                elif user_text == "Run shell effect":
+                    arguments = json.dumps({"command": "echo shell-effect-ran > shell-effect.txt && printf shell-effect-ok", "cwd": ".", "timeout_seconds": 10})
                 else:
                     arguments = json.dumps({"value": "rejected-effect" if user_text == "Reject MCP effect" else "tool-error" if user_text == "Fail MCP effect" else "approved-effect"})
                 body = {"choices": [{"message": {
@@ -597,7 +599,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         }}]
                     }}]}
                 else:
-                    final_text = "Fixed failing test." if is_fix_failing_test and "test-pass" in tool_result else "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
+                    final_text = "Fixed failing test." if is_fix_failing_test and "test-pass" in tool_result else "Recovered after failed edit." if is_failed_edit_recovery and applied_edit else "Recovered after failed check." if is_failed_shell_recovery and applied_edit else "Edit verified by shell." if is_edit_then_verify and "edit-verified" in tool_result else "Read then edit applied." if is_read_then_edit and applied_edit else "Autonomous multi-file edit applied." if is_multi_file and applied_edit else "Shell sandbox unavailable." if "no unsandboxed fallback was started" in tool_result or "requires a fail-closed OS sandbox" in tool_result else "Shell effect completed." if "shell-effect-ok" in tool_result else "Autonomous shell completed." if "autonomous-shell-ok" in tool_result else "Proposed a shell command for review." if is_shell_result else "Autonomous edit applied." if applied_edit else "Proposed a file edit for review." if is_edit_result else "MCP tool reported an error." if "fixture tool error" in tool_result else "MCP effect completed." if "fixture effect" in tool_result else "MCP request rejected." if "rejected this MCP tool call" in tool_result else "Read skill reference smoke sentinel" if "Skill reference smoke sentinel" in tool_result else "Found workspace-search-sentinel" if "workspace-search-sentinel" in tool_result else "The path was rejected."
                     body = {"choices": [{"message": {"role": "assistant", "content": final_text}}]}
             else:
                 response_text = STREAM_REPLY if user_text == "Stream incrementally" else REPLY

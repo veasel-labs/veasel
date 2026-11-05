@@ -315,6 +315,20 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "missing-sandbox-fails-closed",
+        "prompt": "Run shell effect",
+        # PATH points nowhere, so bubblewrap cannot be located while the
+        # sandbox mode is require. The scripted command would write
+        # shell-effect.txt; a pass proves autonomous shell execution
+        # fails closed (no unsandboxed fallback, no file) and the model is
+        # told the sandbox is unavailable instead of the command running.
+        "env": {"PATH": "/nonexistent-veasel-fixture", "VEASEL_SHELL_SANDBOX": "require"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V and not (ws / "shell-effect.txt").exists(),
+        "check_description": "missing sandbox backend fails closed: command never runs, no effect file, workspace unchanged",
+        "expect_response": "Shell sandbox unavailable.",
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock

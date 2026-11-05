@@ -169,6 +169,8 @@ def run_tui_conpty(
     wait_for_persisted_reply: Callable[[str, str], None] | None = None,
     review_path: bytes | None = None,
     recovery_only: bool = False,
+    home_only: bool = False,
+    size: tuple[int, int] = (24, 100),
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -182,7 +184,7 @@ def run_tui_conpty(
     attribute_list = wintypes.LPVOID()
     attribute_list_initialized = False
     output = bytearray()
-    screen = TerminalScreen(rows=24, cols=100)
+    screen = TerminalScreen(rows=size[0], cols=size[1])
     process_created = False
     child_stdin_read = wintypes.HANDLE()
     child_stdin_write = wintypes.HANDLE()
@@ -352,7 +354,7 @@ def run_tui_conpty(
             raise _winerror("CreatePipe(TUI stdin)")
 
         result = kernel32.CreatePseudoConsole(
-            Coord(100, 24), input_read, output_write, 0, ctypes.byref(pseudoconsole)
+            Coord(size[1], size[0]), input_read, output_write, 0, ctypes.byref(pseudoconsole)
         )
         if result != 0:
             raise OSError(f"CreatePseudoConsole failed with HRESULT 0x{result & 0xFFFFFFFF:08X}")
@@ -415,6 +417,23 @@ def run_tui_conpty(
             home_markers = (*home_markers, session_title.encode())
         wait_for_markers(home_markers, 30, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
+        if home_only:
+            # Terminal-size leg: critical home controls must be visible
+            # (not clipped) on the rendered screen, then quit cleanly.
+            wait_for_screen_markers(
+                (b"SESSIONS", b"connected", b"n new", b"q quit"), 10,
+                f"the {size[1]}x{size[0]} home screen",
+            )
+            send_keys(b"q")
+            if kernel32.WaitForSingleObject(process.hProcess, 5_000) != 0:
+                raise TimeoutError(
+                    f"standalone TUI did not exit on q at {size[1]}x{size[0]}; "
+                    f"rendered screen:\n{screen.text()}"
+                )
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) or exit_code.value != 0:
+                raise RuntimeError(f"standalone TUI exited unsuccessfully at {size[1]}x{size[0]} (status={exit_code.value})")
+            return startup_ms
         send_keys(b"s")
         wait_for_markers((b"MODEL SETTINGS", "● All".encode()), 5, "provider settings")
         for _ in range(5):

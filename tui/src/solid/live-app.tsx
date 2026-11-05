@@ -2751,7 +2751,11 @@ function LiveAppShell(props: LiveAppProps) {
             setAttachments([])
             handleComposerSubmit(text)
           }}
-          focused={composerFocused()}
+          // Structural guard for #564: never keep the composer textarea
+          // focused while a modal dialog is open, regardless of which of
+          // the many focus setters raced last. Palette filter keystrokes
+          // once leaked into the (persisted) session draft this way.
+          focused={composerFocused() && !dialog.open()}
           restoreToken={restoreToken()}
           onDraftChange={setComposerDraft}
           skills={composerSkills()}

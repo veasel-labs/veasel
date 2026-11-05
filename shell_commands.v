@@ -390,7 +390,7 @@ fn run_approved_shell_command_with_context(mut turn_ctx vcontext.Context, root s
 					allow_network:      false
 				})
 		} $else $if windows {
-			return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
+			return run_windows_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 				WindowsShellSandboxOptions{
 					purpose:       'Autonomous shell execution'
 					fail_closed:   true
@@ -448,7 +448,7 @@ fn run_approved_shell_command_with_context(mut turn_ctx vcontext.Context, root s
 	} $else $if windows {
 		if mode != .off {
 			if windows_appcontainer_sandbox_available() {
-				return run_windows_sandboxed_shell_command(canonical_root, verified.cwd, command,
+				return run_windows_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
 					WindowsShellSandboxOptions{
 						purpose:       'Approved shell execution'
 						fail_closed:   mode == .require

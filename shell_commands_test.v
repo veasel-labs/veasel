@@ -433,28 +433,40 @@ fn test_shell_command_with_cancelled_context_never_starts() {
 
 fn test_shell_command_cancelled_mid_run_kills_process_group() {
 	$if windows {
-		// The AppContainer runner waits synchronously in C with only a
-		// timeout; it has no cancellation hook yet.
-		return
+		if !windows_appcontainer_sandbox_available() {
+			return
+		}
 	}
 	root := os.join_path(os.temp_dir(), 'veasel-shell-mid-cancel-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
-	spawn fn (cancel vcontext.CancelFn) {
-		time.sleep(400 * time.millisecond)
+	// Windows: cmd has no sleep builtin and loopback ping is unavailable
+	// inside the AppContainer, so sleep via PowerShell (encoded to keep
+	// quotes out of the cmdline). Its cold start needs a later cancel.
+	mut command := 'sleep 5 && echo cancel-survived > cancelled-effect.txt'
+	mut cancel_after := 400 * time.millisecond
+	mut elapsed_limit := u64(4000)
+	$if windows {
+		// Start-Sleep -Seconds 10; Set-Content -LiteralPath cancelled-effect.txt -Value cancel-survived
+		command = 'powershell -NoProfile -EncodedCommand UwB0AGEAcgB0AC0AUwBsAGUAZQBwACAALQBTAGUAYwBvAG4AZABzACAAMQAwADsAIABTAGUAdAAtAEMAbwBuAHQAZQBuAHQAIAAtAEwAaQB0AGUAcgBhAGwAUABhAHQAaAAgAGMAYQBuAGMAZQBsAGwAZQBkAC0AZQBmAGYAZQBjAHQALgB0AHgAdAAgAC0AVgBhAGwAdQBlACAAYwBhAG4AYwBlAGwALQBzAHUAcgB2AGkAdgBlAGQA'
+		cancel_after = 2500 * time.millisecond
+		elapsed_limit = 9000
+	}
+	spawn fn (cancel vcontext.CancelFn, delay time.Duration) {
+		time.sleep(delay)
 		cancel()
-	}(cancel)
+	}(cancel, cancel_after)
 	started := time.sys_mono_now()
 	result := run_approved_shell_command_with_context(mut turn_ctx, root, ShellCommandSummary{
-		command:         'sleep 5 && echo cancel-survived > cancelled-effect.txt'
+		command:         command
 		cwd:             '.'
 		timeout_seconds: 30
 	}, true)
 	elapsed_ms := (time.sys_mono_now() - started) / time.millisecond
 	assert result.status == 'cancelled', result.output
-	assert elapsed_ms < 4000
+	assert elapsed_ms < elapsed_limit
 	// Give a leaked process group time to betray itself after the sleep.
 	time.sleep(300 * time.millisecond)
 	assert !os.exists(os.join_path(root, 'cancelled-effect.txt'))

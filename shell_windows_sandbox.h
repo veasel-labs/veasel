@@ -30,6 +30,7 @@ typedef struct VeaselWinSandboxResult {
 	int setup_failed;
 	int timed_out;
 	int output_limited;
+	int cancelled;
 	int exit_code;
 	int used_appcontainer;
 	int used_job_object;
@@ -60,6 +61,13 @@ int veasel_win_sandbox_available(void);
 int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
 	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
 	int allow_network, VeaselWinSandboxResult *result);
+
+/* Same as veasel_win_run_sandboxed_shell, plus cooperative cancellation:
+ * when cancel_flag is non-NULL and becomes non-zero, the job is terminated
+ * and result->cancelled is set. The flag must outlive the call. */
+int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *command_utf8,
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, volatile int *cancel_flag, VeaselWinSandboxResult *result);
 
 void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result);
 

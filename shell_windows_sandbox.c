@@ -384,9 +384,9 @@ void veasel_win_sandbox_result_free(VeaselWinSandboxResult *result) {
 	result->output_len = 0;
 }
 
-int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
+int veasel_win_run_sandboxed_shell_ex(const char *comspec_utf8, const char *command_utf8,
 	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
-	int allow_network, VeaselWinSandboxResult *result) {
+	int allow_network, volatile int *cancel_flag, VeaselWinSandboxResult *result) {
 	wchar_t *comspec = NULL;
 	wchar_t *command = NULL;
 	wchar_t *workdir = NULL;
@@ -609,6 +609,11 @@ int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command
 			TerminateJobObject(job, 1);
 			break;
 		}
+		if (cancel_flag && *cancel_flag) {
+			result->cancelled = 1;
+			TerminateJobObject(job, 1);
+			break;
+		}
 		wait_remaining = timeout_ms - (DWORD)elapsed;
 		slice = wait_remaining > 20 ? 20 : wait_remaining;
 		wait_rc = WaitForSingleObject(pi.hProcess, slice);
@@ -687,6 +692,13 @@ cleanup:
 	free(command);
 	free(workdir);
 	return result->ok ? 1 : 0;
+}
+
+int veasel_win_run_sandboxed_shell(const char *comspec_utf8, const char *command_utf8,
+	const char *workdir_utf8, const char *env_utf8, int timeout_ms, int max_output_bytes,
+	int allow_network, VeaselWinSandboxResult *result) {
+	return veasel_win_run_sandboxed_shell_ex(comspec_utf8, command_utf8, workdir_utf8,
+		env_utf8, timeout_ms, max_output_bytes, allow_network, NULL, result);
 }
 
 static wchar_t *build_mcp_cmdline(const char *exe_utf8, const char *const *args_utf8, int argc) {

@@ -453,7 +453,7 @@ def run_tui_conpty(
             output.clear()
             send_keys(b"\r")
             wait_for_screen_markers(
-                (b"two pieces", b"Message Veasel"), 10, "the session recovered after backend restart",
+                (b"two pieces", b"listening for activity"), 10, "the session recovered after backend restart",
                 absent=(b"Restoring this session",),
             )
             quit_via_palette(

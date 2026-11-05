@@ -309,13 +309,16 @@ def run_tui(
             os.write(terminal, b"q")
         elif recovery_only:
             # Reopen the persisted session against the restarted backend:
-            # the prior transcript must render and the composer must become
-            # ready again, without sending anything new.
+            # the prior transcript must render and the session must become
+            # ready again, without sending anything new. Readiness uses the
+            # listening status, not the composer placeholder: a draft typed
+            # during an earlier palette-focus race is persisted and restored
+            # into the composer, hiding the placeholder (seen on Linux CI).
             time.sleep(0.25)
             output.clear()
             os.write(terminal, b"\r")
             wait_for_screen_markers(
-                (b"two pieces", b"Message Veasel"), 10, "the session recovered after backend restart",
+                (b"two pieces", b"listening for activity"), 10, "the session recovered after backend restart",
                 absent=(b"Restoring this session",),
             )
             quit_via_palette(

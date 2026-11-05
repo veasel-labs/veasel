@@ -45,7 +45,11 @@ test("queues a follow-up and cancels it without affecting the active turn", asyn
   ), { width: 100, height: 32, kittyKeyboard: true })
 
   async function until(predicate: () => boolean) {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    // Wall-clock budget: an attempt count burns out in ~0.5s on a loaded
+    // CI runner before the mock server round-trips complete. Matches the
+    // live-cancellation helper; assertions are unchanged.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (predicate()) return
       await Bun.sleep(5)
@@ -142,7 +146,11 @@ async function mountDurableOperation(status: "queued" | "running" | "uncertain")
   ), { width: 100, height: 32, kittyKeyboard: true })
 
   async function until(predicate: () => boolean) {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    // Wall-clock budget: an attempt count burns out in ~0.5s on a loaded
+    // CI runner before the mock server round-trips complete. Matches the
+    // live-cancellation helper; assertions are unchanged.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (predicate()) return
       await Bun.sleep(5)
@@ -244,7 +252,11 @@ test("preserves an early submission draft until durable recovery is ready", asyn
     <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory={directory} />
   ), { width: 100, height: 32, kittyKeyboard: true })
   async function until(predicate: () => boolean) {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    // Wall-clock budget: an attempt count burns out in ~0.5s on a loaded
+    // CI runner before the mock server round-trips complete. Matches the
+    // live-cancellation helper; assertions are unchanged.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (predicate()) return
       await Bun.sleep(5)
@@ -321,7 +333,11 @@ test.each([true, false])("prefers a live start event over a stale snapshot (cont
   ), { width: 100, height: 32, kittyKeyboard: true })
 
   async function until(predicate: () => boolean) {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    // Wall-clock budget: an attempt count burns out in ~0.5s on a loaded
+    // CI runner before the mock server round-trips complete. Matches the
+    // live-cancellation helper; assertions are unchanged.
+    const deadline = Date.now() + 3_000
+    while (Date.now() < deadline) {
       await setup.renderOnce()
       if (predicate()) return
       await Bun.sleep(5)

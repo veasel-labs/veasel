@@ -1758,18 +1758,45 @@ fn visible_failed_turn(streamed string, public_error string) string {
 }
 
 fn session_turn_failure(message string) (string, string) {
-	return if message == 'cancelled' {
-		'cancelled', 'Turn cancelled.'
-	} else if message == 'deadline_exceeded' {
-		'failed', 'The assistant turn exceeded its time limit.'
-	} else if message == 'provider_busy' {
-		'failed', 'Model provider is at capacity; retry shortly.'
-	} else if message == 'plugin_mcp_busy' {
-		'failed', 'MCP plugin runtime is at capacity; retry shortly.'
-	} else if message == 'app_shutting_down' {
-		'cancelled', 'The server is shutting down.'
-	} else {
-		'failed', 'The assistant turn failed.'
+	if message == 'cancelled' {
+		return 'cancelled', 'Turn cancelled.'
+	}
+	if message == 'deadline_exceeded' {
+		return 'failed', 'The assistant turn exceeded its time limit.'
+	}
+	if message == 'provider_busy' {
+		return 'failed', 'Model provider is at capacity; retry shortly.'
+	}
+	if message == 'plugin_mcp_busy' {
+		return 'failed', 'MCP plugin runtime is at capacity; retry shortly.'
+	}
+	if message == 'app_shutting_down' {
+		return 'cancelled', 'The server is shutting down.'
+	}
+	// Provider HTTP failures name the status so a wrong key or bad model ID
+	// is diagnosable from the transcript alone. The public text is built
+	// from the numeric status only; provider response text never passes
+	// through, so nothing untrusted (or secret) can leak here.
+	if status := provider_http_status_from_error(message) {
+		return 'failed', public_provider_http_failure(status)
+	}
+	return 'failed', 'The assistant turn failed.'
+}
+
+fn public_provider_http_failure(status int) string {
+	return match status {
+		401 { 'Model provider rejected the API key (HTTP 401). Check the saved provider key and try again.' }
+		403 { 'Model provider denied access (HTTP 403). Check account permissions for this model.' }
+		404 { 'Model provider could not find the model or endpoint (HTTP 404). Check the model ID and provider base URL.' }
+		408 { 'Model provider request timed out (HTTP 408); retry shortly.' }
+		429 { 'Model provider rate-limited the request (HTTP 429); retry shortly.' }
+		else {
+			if status >= 500 {
+				'Model provider request failed (HTTP ${status}); retry shortly.'
+			} else {
+				'Model provider request failed (HTTP ${status}).'
+			}
+		}
 	}
 }
 

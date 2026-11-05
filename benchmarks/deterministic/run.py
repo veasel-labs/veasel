@@ -211,6 +211,21 @@ TASKS = [
         "veasel_only": True,
     },
     {
+        "id": "wrong-api-key-fails",
+        "prompt": "Say hello",
+        # The mock provider answers 401 for any key it does not know. A
+        # pass proves the run fails fast with the HTTP status in the
+        # error, the workspace stays byte-identical, and the rejected key
+        # is never echoed into the result or trace output.
+        "env": {"VEASEL_MODEL_API_KEY": "wrong-fixture-key"},
+        "check": lambda ws: (ws / "src" / "main.v").read_text(encoding="utf-8") == INITIAL_MAIN_V,
+        "check_description": "wrong API key fails the run with HTTP 401 surfaced; workspace unchanged; key never echoed",
+        "expect_failure": True,
+        "expect_error_contains": "rejected the API key (HTTP 401)",
+        "forbid_in_outputs": ["wrong-fixture-key"],
+        "veasel_only": True,
+    },
+    {
         "id": "outside-read-rejected",
         "prompt": "Try to read outside",
         # The scripted tool call asks for ../outside/secret.txt. The mock
@@ -242,6 +257,7 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         VEASEL_MODEL_API_KEY="veasel-openai-key",
         VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port}/v1",
     )
+    env.update(task.get("env", {}))
     server = subprocess.Popen(
         [str(veasel), "serve"], env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -276,6 +292,13 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         passed = completed.returncode == 0 and result.get("status") == "completed"
     if passed and "expect_response" in task:
         passed = result.get("response") == task["expect_response"]
+    if passed and "expect_error_contains" in task:
+        passed = task["expect_error_contains"] in (result.get("error") or "")
+    if passed and task.get("forbid_in_outputs"):
+        outputs = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
+        if trace_path.exists():
+            outputs += trace_path.read_text(encoding="utf-8")
+        passed = all(secret not in outputs for secret in task["forbid_in_outputs"])
     if passed:
         passed = bool(task["check"](workspace))
     entry = {

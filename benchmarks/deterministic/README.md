@@ -41,6 +41,7 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `outside-read-rejected` | `Try to read outside` | Read of `../outside/secret.txt` is rejected; workspace byte-identical |
 | `interrupted-stream-fails` | `Stream then drop` | Provider truncates the response mid-body and drops the connection; run exits non-zero with `status: failed` and an error, workspace byte-identical |
 | `outside-write-rejected` | `Try to write outside` | Edit of `../outside/evil.txt` is rejected; no outside file created |
+| `wrong-api-key-fails` | `Say hello` (bad key) | Provider returns HTTP 401; run exits non-zero with the status in the error, workspace byte-identical, and the rejected key never appears in result or trace output |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the

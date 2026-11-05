@@ -201,7 +201,7 @@ mut:
 	done      int
 }
 
-fn watch_windows_shell_cancel(mut turn_ctx vcontext.Context, flag &WindowsShellCancelFlag) {
+fn watch_windows_shell_cancel(mut turn_ctx vcontext.Context, mut flag WindowsShellCancelFlag) {
 	for flag.done == 0 {
 		if _ := turn_context_error(mut turn_ctx) {
 			flag.cancelled = 1
@@ -256,8 +256,8 @@ fn run_windows_sandboxed_shell_command(mut turn_ctx vcontext.Context, root strin
 	}
 	workdir := os.join_path(root, cwd)
 	env_block := windows_mcp_env_block(autonomous_shell_environment())
-	flag := &WindowsShellCancelFlag{}
-	spawn watch_windows_shell_cancel(mut turn_ctx, flag)
+	mut flag := &WindowsShellCancelFlag{}
+	spawn watch_windows_shell_cancel(mut turn_ctx, mut flag)
 	mut result := C.VeaselWinSandboxResult{}
 	ok := C.veasel_win_run_sandboxed_shell_ex(shell.str, command.command.str, workdir.str,
 		env_block.str, command.timeout_seconds * 1000, max_shell_command_output_bytes, if options.allow_network {

@@ -19,7 +19,7 @@ import {
 } from "../status-a11y"
 import { liveStreamStatusMessage } from "../transcript-scroll"
 import { formatProviderConnectionError } from "../settings-errors"
-import { homeFooterHint } from "../footer-hints"
+import { homeFooterHint, homeFooterHintForWidth } from "../footer-hints"
 import {
   isBuiltinThemeId,
   saveThemeId,
@@ -2661,7 +2661,11 @@ function LiveAppShell(props: LiveAppProps) {
           <span style={{ fg: colors.brand }}> / </span>
           <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
-        <text fg={colors.localStatus}>{status()}</text>
+        {/* Below 44 columns the full status overlaps the wordmark; keep
+            only the connection dot segment (e.g. "● connected"). */}
+        <text fg={colors.localStatus}>
+          {terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
+        </text>
       </box>
 
       <Show
@@ -2790,7 +2794,7 @@ function LiveAppShell(props: LiveAppProps) {
           <text fg={colors.muted}>
             <Show
               when={inSession()}
-              fallback={`${homeFooterHint} · Esc dismiss slash · drag │ · Alt+←/→ resize`}
+              fallback={homeFooterHintForWidth(terminalColumns())}
             >
               {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
             </Show>

@@ -404,6 +404,69 @@ def run_tui(
                         pass
 
 
+def run_tui_home_at_size(tui_path: Path, env: dict[str, str], rows: int, cols: int) -> None:
+    """Home screen must stay usable at every supported terminal size.
+
+    Asserts on the rendered screen that the session list, connection
+    status, and the new/quit cues are all visible (not clipped), then
+    quits with `q` and requires a clean exit. Windows uses the ConPTY
+    driver's home_only path instead of this PTY helper.
+    """
+    if os.name == "nt":
+        run_tui_conpty(tui_path, env, None, None, None, None, False, True, (rows, cols))
+        return
+    child, terminal = pty.fork()
+    if child == 0:
+        os.execve(tui_path, [str(tui_path)], env)
+    fcntl.ioctl(terminal, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+    screen = TerminalScreen(rows=rows, cols=cols)
+    markers = (b"SESSIONS", b"connected", b"n new", b"q quit")
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            readable, _, _ = select.select([terminal], [], [], 0.1)
+            if readable:
+                try:
+                    screen.feed(os.read(terminal, 65_536))
+                except OSError:
+                    break
+                if all(marker in screen.text().encode() for marker in markers):
+                    break
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                raise RuntimeError(f"standalone TUI exited before the {cols}x{rows} home screen (status={status})")
+        else:
+            raise TimeoutError(
+                f"standalone TUI home screen at {cols}x{rows} is missing critical controls "
+                f"{markers!r}; rendered screen:\n{screen.text()}"
+            )
+        os.write(terminal, b"q")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                if os.waitstatus_to_exitcode(status) != 0:
+                    raise RuntimeError(f"standalone TUI exited unsuccessfully at {cols}x{rows} (status={status})")
+                return
+            readable, _, _ = select.select([terminal], [], [], 0.05)
+            if readable:
+                try:
+                    screen.feed(os.read(terminal, 65_536))
+                except OSError:
+                    pass
+        raise TimeoutError(f"standalone TUI did not exit on q at {cols}x{rows}; rendered screen:\n{screen.text()}")
+    finally:
+        try:
+            os.close(terminal)
+        except OSError:
+            pass
+        try:
+            os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+        except (ProcessLookupError, ChildProcessError):
+            pass
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as binary:
@@ -527,6 +590,10 @@ def main() -> None:
         try:
             server = start_server()
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
+            terminal_sizes: list[str] = []
+            for rows, cols in ((12, 32), (30, 80), (40, 120)):
+                run_tui_home_at_size(tui_path, env, rows, cols)
+                terminal_sizes.append(f"{cols}x{rows}")
             session_title = "TUI round-trip smoke"
             request = Request(
                 f"http://127.0.0.1:{port}/v1/sessions",
@@ -668,6 +735,7 @@ def main() -> None:
         "interactiveCoverage": review_coverage,
         "restartCoverage": restart_coverage,
         "killRecoveryCoverage": kill_coverage,
+        "terminalSizes": terminal_sizes,
         "startupMs": {
             "samples": samples_ms,
             "count": len(samples_ms),

@@ -3,6 +3,7 @@ import {
   homeFilterFooterHint,
   homeFooterForFilter,
   homeFooterHint,
+  homeFooterHintForWidth,
   sessionFooterForMode,
   sessionFooterHint,
   sessionPathFooterHint,
@@ -25,6 +26,18 @@ test("home footer surfaces the discovery slash commands", () => {
   expect(homeFooterHint).not.toContain("Home/End") // Home/End stays in /help; footer budget prefers type-to-filter
   expect(homeFooterHint).not.toContain("/theme") // /theme stays in /help; footer budget prefers 1-9 jump
   expect(homeFooterHint.length).toBeLessThanOrEqual(72)
+})
+
+test("narrow home footers keep new and quit cues visible", () => {
+  expect(homeFooterHintForWidth(120)).toBe(homeFooterHint)
+  expect(homeFooterHintForWidth(80)).toBe(homeFooterHint)
+  for (const columns of [64, 44, 40, 32]) {
+    const hint = homeFooterHintForWidth(columns)
+    expect(hint).toContain("n new")
+    expect(hint).toContain("q quit")
+    expect(hint.length).toBeLessThanOrEqual(columns - 2)
+  }
+  expect(homeFooterHintForWidth(44)).toContain("/connect")
 })
 
 test("home filter footer names clear keys within the column budget", () => {

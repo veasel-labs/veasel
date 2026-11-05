@@ -631,6 +631,58 @@ def main() -> None:
                 "messagesAfterRestart": len(after_restart),
                 "messagesUnchanged": after_restart == before_restart,
             }
+            # Hard-kill the backend mid-operation (SIGKILL / TerminateProcess
+            # skips every graceful path): after restart the in-flight
+            # operation must surface as uncertain with an error — never stuck
+            # running, never reported completed — and the persisted
+            # conversation must be unchanged.
+            provider_base = env["VEASEL_MODEL_BASE_URL"].removesuffix("/v1")
+            with urlopen(f"{provider_base}/hold-slow-response", timeout=5):
+                pass
+            async_request = Request(
+                f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages",
+                data=json.dumps({"content": "Wait for cancellation"}).encode(),
+                method="POST",
+                headers={"content-type": "application/json", "Prefer": "respond-async"},
+            )
+            with urlopen(async_request, timeout=10) as response:
+                if response.status != 202:
+                    raise RuntimeError(f"async turn for the kill-9 leg was not accepted: HTTP {response.status}")
+                kill_operation_id = str(json.load(response)["operation_id"])
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                operation = api_json(port, "GET", f"/v1/sessions/{session_id}/operations/{kill_operation_id}")
+                if operation.get("status") == "running":
+                    break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError(f"kill-9 leg operation never reached running: {operation!r}")
+            server.kill()
+            server.wait(timeout=5)
+            server = start_server()
+            deadline = time.monotonic() + 15
+            operation = {}
+            while time.monotonic() < deadline:
+                operation = api_json(port, "GET", f"/v1/sessions/{session_id}/operations/{kill_operation_id}")
+                if operation.get("status") == "uncertain":
+                    break
+                time.sleep(0.25)
+            if operation.get("status") != "uncertain" or not operation.get("error"):
+                raise RuntimeError(f"kill-9 leg operation did not surface as uncertain after restart: {operation!r}")
+            with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
+                after_kill = [(message.get("role"), message.get("content")) for message in json.load(response)]
+            if after_kill != before_restart:
+                raise RuntimeError(
+                    "kill-9 changed the persisted conversation: "
+                    f"before={before_restart!r}, after={after_kill!r}"
+                )
+            with urlopen(f"{provider_base}/release-slow-response", timeout=5):
+                pass
+            kill_coverage = {
+                "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+                "operationStatusAfterRestart": operation.get("status"),
+                "messagesUnchanged": after_kill == before_restart,
+            }
             review_session_id, review_edit_id, review_workspace, expected_content = create_review_fixture(
                 port,
                 Path(temporary),
@@ -682,6 +734,7 @@ def main() -> None:
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "interactiveCoverage": review_coverage,
         "restartCoverage": restart_coverage,
+        "killRecoveryCoverage": kill_coverage,
         "terminalSizes": terminal_sizes,
         "startupMs": {
             "samples": samples_ms,

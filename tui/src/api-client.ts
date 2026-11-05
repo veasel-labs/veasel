@@ -276,6 +276,25 @@ export function resolveLoopbackApiBase(
   return apiUrl.origin
 }
 
+// Backend errors are JSON (`{"error": "..."}`); surface that human-readable
+// message instead of dumping raw JSON into toasts. Plain-text bodies keep
+// their text, empty bodies keep the bare status.
+async function httpError(response: Response): Promise<Error> {
+  const text = (await response.text()).trim()
+  if (text) {
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown }
+      if (typeof parsed.error === "string" && parsed.error) {
+        return new Error(`HTTP ${response.status}: ${parsed.error}`)
+      }
+    } catch {
+      // Plain-text body: fall through to the raw text.
+    }
+    return new Error(`HTTP ${response.status}: ${text}`)
+  }
+  return new Error(`HTTP ${response.status}`)
+}
+
 export class VeaselApiClient {
   readonly base: string
   private readonly signal: AbortSignal
@@ -287,7 +306,7 @@ export class VeaselApiClient {
 
   async listSessions(): Promise<ApiSession[]> {
     const response = await fetch(`${this.base}/v1/sessions`, { signal: this.signal })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSession[]
   }
 
@@ -298,7 +317,7 @@ export class VeaselApiClient {
       body: JSON.stringify({ title, directory }),
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSession
   }
 
@@ -312,7 +331,7 @@ export class VeaselApiClient {
         signal: this.signal,
       },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSession
   }
 
@@ -321,7 +340,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/fork`,
       { method: "POST", signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSession
   }
 
@@ -330,7 +349,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}`,
       { method: "DELETE", signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { deleted: string }
   }
 
@@ -346,19 +365,19 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/messages${query}`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ChatTurn[]
   }
 
   async getHealth(): Promise<{ healthy: boolean; version: string }> {
     const response = await fetch(`${this.base}/v1/health`, { signal: this.signal })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { healthy: boolean; version: string }
   }
 
   async getModelSettings(): Promise<ModelSettingsView> {
     const response = await fetch(`${this.base}/v1/config/model`, { signal: this.signal })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ModelSettingsView
   }
 
@@ -376,7 +395,7 @@ export class VeaselApiClient {
       body: JSON.stringify(input),
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ModelSettingsView
   }
 
@@ -388,7 +407,7 @@ export class VeaselApiClient {
     const response = await fetch(`${this.base}/v1/config/models?${query}`, {
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as {
       provider: string
       models: import("./model-providers").ModelCatalogEntry[]
@@ -411,7 +430,7 @@ export class VeaselApiClient {
       body: JSON.stringify(input),
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as {
       provider: string
       models: import("./model-providers").ModelCatalogEntry[]
@@ -422,7 +441,7 @@ export class VeaselApiClient {
     const response = await fetch(`${this.base}/v1/usage`, {
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiGlobalUsageSummary
   }
 
@@ -431,7 +450,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/usage`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSessionUsageSummary
   }
 
@@ -440,7 +459,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/operations`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSessionOperation[]
   }
 
@@ -451,7 +470,7 @@ export class VeaselApiClient {
     if (options.search?.trim()) query.set("search", options.search.trim())
     const suffix = query.size > 0 ? `?${query}` : ""
     const response = await fetch(`${this.base}/v1/operations${suffix}`, { signal: this.signal })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiGlobalOperationsPage
   }
 
@@ -460,7 +479,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSessionPluginMcpServer[]
   }
 
@@ -479,7 +498,7 @@ export class VeaselApiClient {
         signal: this.signal,
       },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSessionPluginMcpServer[]
   }
 
@@ -497,7 +516,7 @@ export class VeaselApiClient {
     const response = await fetch(`${this.base}/v1/mcp-servers?${query}`, {
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as {
       servers: Array<{
         name: string
@@ -525,7 +544,7 @@ export class VeaselApiClient {
       body: JSON.stringify({ ...input, enabled: true }),
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { name: string; transport: string; scope?: string }
   }
 
@@ -546,7 +565,7 @@ export class VeaselApiClient {
       body: JSON.stringify({ enabled: input.enabled }),
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { name: string; enabled: boolean }
   }
 
@@ -561,7 +580,7 @@ export class VeaselApiClient {
       method: "DELETE",
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
   }
 
   async listPlugins(directory: string): Promise<{
@@ -572,7 +591,7 @@ export class VeaselApiClient {
   }> {
     const query = new URLSearchParams({ directory })
     const response = await fetch(`${this.base}/v1/plugins?${query}`, { signal: this.signal })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as {
       plugins: Array<{
         name: string
@@ -586,7 +605,7 @@ export class VeaselApiClient {
     diagnostics?: Array<{ component: string; message: string }>
   }> {
     const response = await fetch(`${this.base}/v1/plugins/links`, { signal: this.signal })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as {
       links: ApiPluginLink[]
       diagnostics?: Array<{ component: string; message: string }>
@@ -600,7 +619,7 @@ export class VeaselApiClient {
       body: JSON.stringify({ path, replace }),
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiPluginLink
   }
 
@@ -609,7 +628,7 @@ export class VeaselApiClient {
       method: "DELETE",
       signal: this.signal,
     })
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
   }
 
   async getWorkspaceMap(sessionId: string, hint = ""): Promise<WorkspaceRepositoryMap> {
@@ -618,7 +637,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/map${query}`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as WorkspaceRepositoryMap
   }
 
@@ -627,7 +646,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/skills`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as Array<{ plugin_name: string; skill_name: string }>
   }
 
@@ -646,7 +665,7 @@ export class VeaselApiClient {
         signal: this.signal,
       },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as Array<{ plugin_name: string; skill_name: string }>
   }
 
@@ -664,7 +683,7 @@ export class VeaselApiClient {
         signal: this.signal,
       },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as {
       plugin_name: string
       skill_name: string
@@ -677,7 +696,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/git/worktrees`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiGitWorktreeCatalog
   }
 
@@ -694,7 +713,7 @@ export class VeaselApiClient {
         signal: this.signal,
       },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiGitWorktree
   }
 
@@ -703,7 +722,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/edits`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiWorkspaceEditSummary[]
   }
 
@@ -712,7 +731,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/edits/${encodeURIComponent(editId)}`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiWorkspaceEditProposal
   }
 
@@ -725,7 +744,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/edits/${encodeURIComponent(editId)}/${decision}`,
       { method: "POST", signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { id: string; status: string }
   }
 
@@ -734,7 +753,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/commands`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiShellCommandSummary[]
   }
 
@@ -746,7 +765,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/commands/${encodeURIComponent(commandId)}`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiShellCommandSummary
   }
 
@@ -759,7 +778,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/workspace/commands/${encodeURIComponent(commandId)}/${decision}`,
       { method: "POST", signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { id: string; status: string }
   }
 
@@ -768,7 +787,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-tool-calls`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiMcpToolCallSummary[]
   }
 
@@ -777,7 +796,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-tool-calls/${encodeURIComponent(callId)}`,
       { signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as ApiMcpToolCallApproval
   }
 
@@ -790,7 +809,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-tool-calls/${encodeURIComponent(callId)}/${decision}`,
       { method: "POST", signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     return await response.json() as { id: string; status: string }
   }
 
@@ -828,7 +847,7 @@ export class VeaselApiClient {
       }
       return { kind: "async", operationId }
     }
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     const messages = await this.listMessages(sessionId)
     return { kind: "sync", messages }
   }
@@ -838,7 +857,7 @@ export class VeaselApiClient {
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/operations/${encodeURIComponent(operationId)}/cancel`,
       { method: "POST", signal: this.signal },
     )
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+    if (!response.ok) throw await httpError(response)
     const result = await response.json() as SessionTurnCompletion
     if (result.operation_id !== operationId
       || !["cancelling", "completed", "failed", "cancelled", "uncertain"].includes(result.status ?? "")) {
@@ -861,7 +880,7 @@ export class VeaselApiClient {
           headers: { "Last-Event-ID": lastEventId, accept: "text/event-stream" },
           signal: this.signal,
         })
-        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
+        if (!response.ok || !response.body) throw await httpError(response)
         handlers.onConnected?.()
         const reader = response.body.getReader()
         const decoder = new TextDecoder()

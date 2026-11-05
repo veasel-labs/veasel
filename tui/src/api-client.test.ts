@@ -570,3 +570,42 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(calls[2]?.url).toContain("/v1/mcp-servers/docs?scope=project&directory=%2Ftmp%2Fproj")
   })
 })
+
+describe("VeaselApiClient error surfacing", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  function failingFetch(body: BodyInit | null, status: number) {
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      new Response(body, { status })) as typeof fetch
+    return new VeaselApiClient("http://127.0.0.1:4097")
+  }
+
+  test("JSON error bodies surface the backend message, not raw JSON", async () => {
+    const client = failingFetch(
+      JSON.stringify({ error: "No model provider is configured. Run `veasel config model set`." }),
+      503,
+    )
+    const failure = client.createSession("t", "/tmp").catch((error: unknown) => error)
+    const error = await failure
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe(
+      "HTTP 503: No model provider is configured. Run `veasel config model set`.",
+    )
+  })
+
+  test("status-only endpoints also surface the backend message", async () => {
+    const client = failingFetch(JSON.stringify({ error: "session store unavailable" }), 503)
+    await expect(client.listSessions()).rejects.toThrow("HTTP 503: session store unavailable")
+  })
+
+  test("plain-text and empty bodies keep a useful message", async () => {
+    await expect(failingFetch("upstream exploded", 502).listSessions()).rejects.toThrow(
+      "HTTP 502: upstream exploded",
+    )
+    await expect(failingFetch(null, 500).listSessions()).rejects.toThrow("HTTP 500")
+  })
+})

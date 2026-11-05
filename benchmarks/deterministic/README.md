@@ -20,6 +20,10 @@ never by the agent's own final message. Reports record wall time, ATIF
 step/tool-call counts, provider-reported token usage, and the SHA-256 of the
 binary under test.
 
+CI runs the Veasel fixtures on Linux against the freshly built `dist/veasel`
+in the V backend job and uploads the report as `deterministic.json` with the
+session-store benchmark artifact, so harness regressions fail the PR.
+
 ## Fixtures
 
 | Fixture | Prompt | External check |

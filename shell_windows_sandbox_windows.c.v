@@ -206,10 +206,11 @@ mut:
 // the spawned thread its own copy, and the C poll loop would never see
 // the store.
 fn watch_windows_shell_cancel(mut turn_ctx vcontext.Context, flag &WindowsShellCancelFlag) {
-	spawn fn [mut turn_ctx, mut flag] () {
-		for flag.done == 0 {
+	mut shared_flag := flag
+	spawn fn [mut turn_ctx, mut shared_flag] () {
+		for shared_flag.done == 0 {
 			if _ := turn_context_error(mut turn_ctx) {
-				flag.cancelled = 1
+				shared_flag.cancelled = 1
 				return
 			}
 			time.sleep(20 * time.millisecond)

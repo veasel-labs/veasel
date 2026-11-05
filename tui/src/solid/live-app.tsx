@@ -2672,14 +2672,14 @@ function LiveAppShell(props: LiveAppProps) {
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={colors.headerTitle}>
+        <text fg={colors.headerTitle} wrapMode="none">
           <strong>VEASEL</strong>
           <span style={{ fg: colors.brand }}> / </span>
           <span style={{ fg: colors.headerMeta }}>CODE</span>
         </text>
         {/* Below 44 columns the full status overlaps the wordmark; keep
             only the connection dot segment (e.g. "● connected"). */}
-        <text fg={colors.localStatus}>
+        <text fg={colors.localStatus} wrapMode="none">
           {terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
         </text>
       </box>

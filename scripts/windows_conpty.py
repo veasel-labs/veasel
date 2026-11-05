@@ -168,6 +168,7 @@ def run_tui_conpty(
     session_id: str | None = None,
     wait_for_persisted_reply: Callable[[str, str], None] | None = None,
     review_path: bytes | None = None,
+    recovery_only: bool = False,
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -446,6 +447,18 @@ def run_tui_conpty(
             )
         elif not session_id:
             send_keys(b"q")
+        elif recovery_only:
+            # Reopen the persisted session against the restarted backend
+            # without sending anything new (see the PTY driver).
+            output.clear()
+            send_keys(b"\r")
+            wait_for_screen_markers(
+                (b"two pieces", b"listening for activity"), 10, "the session recovered after backend restart",
+                absent=(b"Restoring this session",),
+            )
+            quit_via_palette(
+                "the command palette after backend restart recovery", "the quit command in the palette",
+            )
         else:
             output.clear()
             send_keys(b"\r")

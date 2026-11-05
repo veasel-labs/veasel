@@ -106,9 +106,12 @@ def run_tui(
     session_title: str | None = None,
     session_id: str | None = None,
     review_path: bytes | None = None,
+    recovery_only: bool = False,
 ) -> float:
     if os.name == "nt":
-        return run_tui_conpty(tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path)
+        return run_tui_conpty(
+            tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
+        )
 
     started = time.monotonic()
     child, terminal = pty.fork()
@@ -304,6 +307,23 @@ def run_tui(
             )
         elif not session_id:
             os.write(terminal, b"q")
+        elif recovery_only:
+            # Reopen the persisted session against the restarted backend:
+            # the prior transcript must render and the session must become
+            # ready again, without sending anything new. Readiness uses the
+            # listening status, not the composer placeholder: a draft typed
+            # during an earlier palette-focus race is persisted and restored
+            # into the composer, hiding the placeholder (seen on Linux CI).
+            time.sleep(0.25)
+            output.clear()
+            os.write(terminal, b"\r")
+            wait_for_screen_markers(
+                (b"two pieces", b"listening for activity"), 10, "the session recovered after backend restart",
+                absent=(b"Restoring this session",),
+            )
+            quit_via_palette(
+                "the command palette after backend restart recovery", "the quit command in the palette",
+            )
         else:
             # Escape can expose the home frame before the settings dialog has
             # fully released keyboard focus. Sending Enter in that same tick
@@ -480,14 +500,32 @@ def main() -> None:
             TERM="xterm-256color",
         )
         server: subprocess.Popen[bytes] | None = None
-        try:
-            server = subprocess.Popen(
+
+        def start_server() -> subprocess.Popen[bytes]:
+            process = subprocess.Popen(
                 [str(server_path), "serve"],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            wait_for_server(server, port)
+            wait_for_server(process, port)
+            return process
+
+        def stop_server(process: subprocess.Popen[bytes]) -> None:
+            if process.poll() is not None:
+                return
+            if os.name == "nt":
+                process.terminate()
+            else:
+                process.send_signal(signal.SIGINT)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+
+        try:
+            server = start_server()
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
             session_title = "TUI round-trip smoke"
             request = Request(
@@ -505,6 +543,27 @@ def main() -> None:
             persisted = {(message.get("role"), message.get("content")) for message in messages}
             if ("user", "Stream incrementally") not in persisted or ("assistant", "Streaming fixture reply arrives in two pieces") not in persisted:
                 raise RuntimeError(f"TUI conversation was not persisted correctly: {messages!r}")
+            # Restart the backend on the same data directory: the session
+            # must reopen with its transcript intact and recovery must not
+            # replay or duplicate any persisted message.
+            before_restart = [(message.get("role"), message.get("content")) for message in messages]
+            stop_server(server)
+            server = start_server()
+            run_tui(tui_path, env, session_title, session_id, recovery_only=True)
+            with urlopen(f"http://127.0.0.1:{port}/v1/sessions/{session_id}/messages", timeout=5) as response:
+                after_messages = json.load(response)
+            after_restart = [(message.get("role"), message.get("content")) for message in after_messages]
+            if after_restart != before_restart:
+                raise RuntimeError(
+                    "backend restart changed the persisted conversation: "
+                    f"before={before_restart!r}, after={after_restart!r}"
+                )
+            restart_coverage = {
+                "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+                "messagesBeforeRestart": len(before_restart),
+                "messagesAfterRestart": len(after_restart),
+                "messagesUnchanged": after_restart == before_restart,
+            }
             review_session_id, review_edit_id, review_workspace, expected_content = create_review_fixture(
                 port,
                 Path(temporary),
@@ -527,16 +586,8 @@ def main() -> None:
                 "fileContentVerified": actual_content == expected_content,
             }
         finally:
-            if server is not None and server.poll() is None:
-                if os.name == "nt":
-                    server.terminate()
-                else:
-                    server.send_signal(signal.SIGINT)
-                try:
-                    server.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=5)
+            if server is not None:
+                stop_server(server)
             if provider.poll() is None:
                 provider.terminate()
             try:
@@ -563,6 +614,7 @@ def main() -> None:
         "buildProvenance": provenance,
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "interactiveCoverage": review_coverage,
+        "restartCoverage": restart_coverage,
         "startupMs": {
             "samples": samples_ms,
             "count": len(samples_ms),

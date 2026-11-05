@@ -481,6 +481,62 @@ fn test_windows_sandbox_runner_honors_preset_cancel_flag() {
 	}
 }
 
+// Isolation for the struct-field address: like the preset test, but the
+// C runner receives &flag.cancelled exactly as the production path
+// passes it.
+fn test_windows_sandbox_runner_honors_preset_struct_flag() {
+	$if windows {
+		if !windows_appcontainer_sandbox_available() {
+			return
+		}
+		root := os.join_path(os.temp_dir(), 'veasel-shell-preset-struct-${uuid.new_v4().str()}')
+		os.mkdir_all(root) or { panic(err) }
+		defer { os.rmdir_all(root) or {} }
+		shell := os.getenv('COMSPEC')
+		assert shell.len > 0
+		env_block := windows_mcp_env_block(autonomous_shell_environment())
+		mut flag := &WindowsShellCancelFlag{}
+		flag.cancelled = 1
+		mut result := C.VeaselWinSandboxResult{}
+		ok := C.veasel_win_run_sandboxed_shell_ex(shell.str,
+			c'for /L %i in (1,1,200000000) do @rem veasel-cancel-spin', root.str,
+			env_block.str, 30000, max_shell_command_output_bytes, 0, &flag.cancelled, &result)
+		defer { C.veasel_win_sandbox_result_free(&result) }
+		assert ok != 0 && result.setup_failed == 0, 'sandboxed runner failed to start'
+		assert result.cancelled != 0, 'preset struct cancel flag ignored (timed_out=${result.timed_out} exit=${result.exit_code})'
+	}
+}
+
+// Isolation for concurrent composition: a spawned thread sets the
+// struct flag while the main thread is blocked in the C runner — the
+// production shape minus context cancellation.
+fn test_windows_sandbox_runner_honors_concurrent_struct_flag() {
+	$if windows {
+		if !windows_appcontainer_sandbox_available() {
+			return
+		}
+		root := os.join_path(os.temp_dir(), 'veasel-shell-concurrent-struct-${uuid.new_v4().str()}')
+		os.mkdir_all(root) or { panic(err) }
+		defer { os.rmdir_all(root) or {} }
+		shell := os.getenv('COMSPEC')
+		assert shell.len > 0
+		env_block := windows_mcp_env_block(autonomous_shell_environment())
+		mut flag := &WindowsShellCancelFlag{}
+		mut shared_flag := flag
+		spawn fn [mut shared_flag] () {
+			time.sleep(1500 * time.millisecond)
+			shared_flag.cancelled = 1
+		}()
+		mut result := C.VeaselWinSandboxResult{}
+		ok := C.veasel_win_run_sandboxed_shell_ex(shell.str,
+			c'for /L %i in (1,1,200000000) do @rem veasel-cancel-spin', root.str,
+			env_block.str, 30000, max_shell_command_output_bytes, 0, &flag.cancelled, &result)
+		defer { C.veasel_win_sandbox_result_free(&result) }
+		assert ok != 0 && result.setup_failed == 0, 'sandboxed runner failed to start'
+		assert result.cancelled != 0, 'concurrent struct cancel flag ignored (timed_out=${result.timed_out} exit=${result.exit_code} flag=${flag.cancelled})'
+	}
+}
+
 fn test_shell_command_cancelled_mid_run_kills_process_group() {
 	$if windows {
 		if !windows_appcontainer_sandbox_available() {

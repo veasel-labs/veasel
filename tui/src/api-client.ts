@@ -29,6 +29,7 @@ export type ModelSettingsView = {
   profiles: Record<string, ModelProfileView>
   providers: import("./model-providers").ModelProvider[]
   configured_providers?: string[]
+  model_ready?: boolean
 }
 
 export type SessionTurnAccepted = {

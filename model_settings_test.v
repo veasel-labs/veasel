@@ -712,6 +712,58 @@ fn test_model_settings_persistence_failure_does_not_change_active_configuration(
 	assert state.view().profiles.len == 0
 }
 
+fn test_model_settings_view_reports_readiness_from_real_resolution() {
+	// Isolate every environment input model_config consults, then restore.
+	env_names := ['VEASEL_MODEL', 'VEASEL_MODEL_PROVIDER', 'VEASEL_MODEL_API_KEY',
+		'VEASEL_MODEL_BASE_URL', 'MODEL_API_KEY', 'ANTHROPIC_API_KEY']
+	mut prior := map[string]string{}
+	for name in env_names {
+		prior[name] = os.getenv(name)
+		os.unsetenv(name)
+	}
+	defer {
+		for name in env_names {
+			if prior[name] == '' {
+				os.unsetenv(name)
+			} else {
+				os.setenv(name, prior[name], true)
+			}
+		}
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-model-ready-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	// Clean profile: no saved profile, no environment fallback.
+	assert !app.model_settings_view().model_ready
+	// Saved profile with model and key becomes ready.
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'anthropic'
+		model:    'claude-sonnet-4-5'
+		base_url: 'https://api.anthropic.com/v1'
+		api_key:  'fixture-ready-key'
+	}) or { panic(err) }
+	ready_view := app.model_settings_view()
+	assert ready_view.model_ready
+	assert !json2.encode(ready_view).contains('fixture-ready-key')
+	app.close()
+	store.close() or { panic(err) }
+
+	// Environment-only keyless provider (Ollama) must not be flagged either.
+	os.setenv('VEASEL_MODEL_PROVIDER', 'ollama', true)
+	os.setenv('VEASEL_MODEL', 'llama3.1:8b', true)
+	root2 := os.join_path(os.temp_dir(), 'veasel-model-ready-env-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root2, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root2) or {} }
+	mut store2 := open_store(os.join_path(root2, 'veasel.sqlite3')) or { panic(err) }
+	mut app2 := new_app(store2, os.join_path(root2, 'plugins'))
+	assert app2.model_settings.view().profiles.len == 0
+	assert app2.model_settings_view().model_ready
+	app2.close()
+	store2.close() or { panic(err) }
+}
+
 fn test_no_model_configured_message_names_the_setup_path() {
 	assert no_model_configured_message.contains('veasel config model set --provider')
 	assert no_model_configured_message.contains('VEASEL_MODEL_PROVIDER')

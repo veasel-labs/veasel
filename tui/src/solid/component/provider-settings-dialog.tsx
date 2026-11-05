@@ -24,12 +24,24 @@ import { useSolidTheme } from "../theme"
 const LIST_PAGE = 12
 
 /**
- * Rows of providers that fit the dialog at this terminal size. The dialog
- * chrome (header, status, prompts, filter, guidance, gaps) is charged
- * against the shared dialog content height; in compact geometry the
- * descriptive prompt/intro/count/guidance blocks are hidden, which the
- * smaller chrome charge reflects. One extra row is reserved for the
- * "Showing x–y of n" line whenever the list overflows the page.
+ * This dialog carries more fixed chrome than the shared compact threshold
+ * (height < 24) accounts for: at 24 rows the wrapped step prompt, intro,
+ * and count lines plus gaps already exceed the content height, so rows
+ * overdraw each other. Treat 24 rows as compact here too — the descriptive
+ * blocks hide and the list gets the space.
+ */
+export function providerDialogCompact(columns: number, rows: number): boolean {
+  return dialogGeometry(columns, rows).compact || rows <= 24
+}
+
+/**
+ * Rows of providers that fit the dialog at this terminal size. Chrome is
+ * charged against the shared dialog content height at the large dialog's
+ * 66-column content width: header 2 (with margin), status 1, wrapped
+ * prompt 2 + intro up to 3 + count 2 (hidden when compact), filter 1,
+ * guidance 3 when visible, plus one gap row between each child. One extra
+ * row is reserved for the "Showing x–y of n" line whenever the list
+ * overflows the page.
  */
 export function providerListPageSize(
   columns: number,
@@ -38,7 +50,8 @@ export function providerListPageSize(
   guidanceVisible: boolean,
 ): number {
   const geometry = dialogGeometry(columns, rows)
-  const chrome = geometry.compact ? 6 : 13 + (guidanceVisible ? 4 : 0)
+  const compact = providerDialogCompact(columns, rows)
+  const chrome = compact ? 7 : 18 + (guidanceVisible ? 4 : 0)
   const budget = geometry.contentHeight - chrome
   const withShowingRow = count > budget ? budget - 1 : budget
   return Math.max(1, Math.min(LIST_PAGE, withShowingRow))
@@ -88,7 +101,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   )
 
   const dimensions = useTerminalDimensions()
-  const compact = () => dialogGeometry(dimensions().width, dimensions().height).compact
+  const compact = () => providerDialogCompact(dimensions().width, dimensions().height)
 
   const scopeLabel = () => providerPickerScopeLabel(scope())
   const countLabel = () => `${scopeLabel()} ${matches().length}/${catalog().length}`
@@ -217,11 +230,11 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
   return (
     <box width="100%" flexDirection="column" gap={1}>
       <DialogHeader title={title()} hint={hint()} />
-      <text fg={colors.localStatus}>{statusLine()}</text>
+      <text fg={colors.localStatus} flexShrink={0}>{statusLine()}</text>
       <Show when={!compact()}>
-        <text fg={colors.muted}>{settingsProviderStepPrompt(mode())}</text>
-        <text fg={colors.muted}>{settingsModeIntro(mode())}</text>
-        <text fg={colors.muted}>
+        <text fg={colors.muted} flexShrink={0}>{settingsProviderStepPrompt(mode())}</text>
+        <text fg={colors.muted} flexShrink={0}>{settingsModeIntro(mode())}</text>
+        <text fg={colors.muted} flexShrink={0}>
           {countLabel()} · type to filter · Tab cycles All / Configured / Local
         </text>
       </Show>
@@ -247,7 +260,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
       />
       <Show when={!compact() && connectionGuidance()}>
         {(guidance) => (
-          <box width="100%" flexDirection="column">
+          <box width="100%" flexDirection="column" flexShrink={0}>
             <text fg={colors.body}>{guidance()}</text>
             <Show when={selectedProvider()?.documentation_url}>
               {(url) => <text fg={colors.muted}>Docs: {url()}</text>}
@@ -268,6 +281,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
                 <box
                   width="100%"
                   flexDirection="row"
+                  flexShrink={0}
                   backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
                   paddingLeft={1}
                   paddingRight={1}
@@ -283,7 +297,7 @@ export function ProviderSettingsDialog(props: ProviderSettingsDialogProps) {
             }}
           </For>
           <Show when={matches().length > pageSize()}>
-            <text fg={colors.muted}>
+            <text fg={colors.muted} flexShrink={0}>
               Showing {windowStart() + 1}–{Math.min(windowStart() + pageSize(), matches().length)} of{" "}
               {matches().length}
             </text>

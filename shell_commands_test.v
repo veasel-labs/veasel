@@ -1,6 +1,8 @@
 module main
 
+import context as vcontext
 import os
+import time
 import uuid
 
 fn test_approved_shell_sandbox_mode_parses_known_values() {
@@ -411,6 +413,51 @@ fn test_approved_shell_require_mode_uses_windows_appcontainer_or_fails_closed() 
 	assert result.status == 'failed'
 	assert result.output.contains('requires a Windows AppContainer sandbox')
 	assert !result.output.contains('must-not-run')
+}
+
+fn test_shell_command_with_cancelled_context_never_starts() {
+	root := os.join_path(os.temp_dir(), 'veasel-shell-pre-cancelled-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	cancel()
+	result := run_approved_shell_command_with_context(mut turn_ctx, root, ShellCommandSummary{
+		command:         'echo must-not-run > cancelled-effect.txt'
+		cwd:             '.'
+		timeout_seconds: 5
+	}, true)
+	assert result.status == 'cancelled', result.output
+	assert !os.exists(os.join_path(root, 'cancelled-effect.txt'))
+}
+
+fn test_shell_command_cancelled_mid_run_kills_process_group() {
+	$if windows {
+		// The AppContainer runner waits synchronously in C with only a
+		// timeout; it has no cancellation hook yet.
+		return
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-shell-mid-cancel-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
+	spawn fn (cancel vcontext.CancelFn) {
+		time.sleep(400 * time.millisecond)
+		cancel()
+	}(cancel)
+	started := time.sys_mono_now()
+	result := run_approved_shell_command_with_context(mut turn_ctx, root, ShellCommandSummary{
+		command:         'sleep 5 && echo cancel-survived > cancelled-effect.txt'
+		cwd:             '.'
+		timeout_seconds: 30
+	}, true)
+	elapsed_ms := (time.sys_mono_now() - started) / time.millisecond
+	assert result.status == 'cancelled', result.output
+	assert elapsed_ms < 4000
+	// Give a leaked process group time to betray itself after the sleep.
+	time.sleep(300 * time.millisecond)
+	assert !os.exists(os.join_path(root, 'cancelled-effect.txt'))
 }
 
 fn test_macos_seatbelt_profile_denies_network_by_default() {

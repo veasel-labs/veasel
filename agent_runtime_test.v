@@ -576,10 +576,11 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
 	mut app := new_app(store, os.join_path(root, 'plugins'))
 	defer { app.close() }
+	mut background := vcontext.background()
 	session := store.create_session(SessionInput{ title: 'Autonomous fixture', directory: root }) or {
 		panic(err)
 	}
-	edit := execute_autonomous_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+	edit := execute_autonomous_workspace_agent_tool(app, mut background, root, session.id, ProviderToolCall{
 		id:       'edit'
 		function: ProviderFunctionCall{
 			name:      'workspace_propose_file_edit'
@@ -592,7 +593,7 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 	assert edits.len == 1
 	assert edits[0].status == 'applied'
 
-	command := execute_autonomous_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+	command := execute_autonomous_workspace_agent_tool(app, mut background, root, session.id, ProviderToolCall{
 		id:       'command'
 		function: ProviderFunctionCall{
 			name:      'workspace_propose_shell_command'

@@ -896,7 +896,7 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 			fail_closed_shell_sandbox_ready())
 		match decision {
 			.allow {
-				return execute_autonomous_workspace_agent_tool(app, root, session_id, call)
+				return execute_autonomous_workspace_agent_tool(app, mut turn_ctx, root, session_id, call)
 			}
 			.deny {
 				reason := if tool_class == 'shell' && policy.mode == .sandbox_auto
@@ -935,8 +935,8 @@ fn execute_agent_tool_if_allowed_with_status(app &App, mut turn_ctx vcontext.Con
 	}
 }
 
-fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id string,
-	call ProviderToolCall) string {
+fn execute_autonomous_workspace_agent_tool(app &App, mut turn_ctx vcontext.Context,
+	root string, session_id string, call ProviderToolCall) string {
 	if call.function.name == 'workspace_propose_file_edit' {
 		tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 			return encode_agent_tool_error('Tool arguments must be a JSON object.')
@@ -1010,7 +1010,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, root string, session_id str
 		approved := store.begin_shell_command(session_id, proposal.id) or {
 			return encode_agent_tool_error('The shell command could not begin safely.')
 		}
-		result := run_approved_shell_command_with_policy(root, approved, true)
+		result := run_approved_shell_command_with_context(mut turn_ctx, root, approved, true)
 		store.finish_shell_command(session_id, proposal.id, result) or {
 			return encode_agent_tool_error('The command finished but its result could not be recorded.')
 		}

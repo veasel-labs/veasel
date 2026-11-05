@@ -47,6 +47,7 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `saved-profile-missing-key` | `Say hello` (seeded keyless profile) | Saved profile names a model but holds no key and the environment provides none; run is refused up front with no-model-configured guidance, workspace byte-identical |
 | `cancelled-shell-tool` | `Run slow shell` (API, cancelled) | Turn cancelled while the shell command sleeps; operation ends `cancelled` promptly and the command's effect file never appears, even after outwaiting the sleep |
 | `queue-recovery-order` | `Wait for cancellation` + 2 queued (API, restart) | Backend restarted with one running and two queued turns; running turn ends `uncertain` (never replayed), queued turns complete in FIFO order, transcript holds exactly their exchanges in order |
+| `missing-sandbox-fails-closed` | `Run shell effect` (no `bwrap` on PATH) | Autonomous shell execution fails closed when the sandbox backend is unavailable: the command never runs, no effect file, and the model is told the sandbox is unavailable |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the

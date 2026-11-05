@@ -14,7 +14,7 @@ The current implementation surface is declared by `openapi.yaml`, `api.v`,
 
 | Capability | Pinned OpenCode contract | Veasel contract | Status | Gap before claiming compatibility |
 |---|---|---|---|---|
-| Health and version | No equivalent route in the inspected session/event groups. | `GET /v1/health`, response `{ healthy, version }`. | Veasel-specific | None if kept outside a compatibility namespace. |
+| Health and version | No equivalent route in the inspected session/event groups. | `GET /v1/health`, response `{ healthy, version, pid }`. The CLI warns when a reused server reports a different `version` than the CLI, naming `pid` as the restart target. | Veasel-specific | None if kept outside a compatibility namespace. |
 | Capability discovery | No equivalent route in the inspected groups. | `GET /v1/capabilities`, version and feature names. | Veasel-specific | None if kept outside a compatibility namespace. |
 | Session list/create/get | `/session` and `/session/:sessionID`; OpenCode schemas and query fields are richer. | `/v1/sessions`, `/v1/sessions/:id`; Veasel uses its own session fields and JSON schemas. | Partial concept overlap; wire-incompatible | Match route prefix, parameters, schema, filtering, pagination, and status/error behavior. |
 | Session messages | `GET` and `POST /session/:sessionID/message`; messages contain typed `info` and `parts` structures. | `/v1/sessions/:id/messages`; flat persisted `{ role, content }` turns and a single user-content request. | Not compatible | Define and test message/part schemas, request shape, ordering, and response semantics. |

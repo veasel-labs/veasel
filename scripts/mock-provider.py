@@ -58,6 +58,13 @@ HELPER_EDIT = (
 APPROVED_SHELL_COMMAND = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved"
 SLOW_RESPONSE_RELEASE = Event()
 SLOW_SHELL_COMMAND = "timeout /T 3 /NOBREAK >NUL" if sys.platform == "win32" else "sleep 2"
+# Sleeps long enough to cancel mid-execution, then writes an effect file:
+# the file must never appear when the turn is cancelled during the sleep.
+CANCEL_SHELL_COMMAND = (
+    "timeout /T 5 /NOBREAK >NUL && echo cancel-survived > cancel-effect.txt"
+    if sys.platform == "win32"
+    else "sleep 5 && echo cancel-survived > cancel-effect.txt"
+)
 # Keep in sync with execution_policy_tool_instructions() + the api.v system wrapper.
 # Smoke rejects drift with HTTP 400.
 SYSTEM_PREFIX = (
@@ -394,7 +401,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -402,7 +409,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
@@ -457,6 +464,8 @@ class MockProvider(BaseHTTPRequestHandler):
                     arguments = json.dumps({"command": APPROVED_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 10})
                 elif user_text == "Propose slow shell command":
                     arguments = json.dumps({"command": SLOW_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 1})
+                elif user_text == "Run slow shell":
+                    arguments = json.dumps({"command": CANCEL_SHELL_COMMAND, "cwd": ".", "timeout_seconds": 30})
                 else:
                     arguments = json.dumps({"value": "rejected-effect" if user_text == "Reject MCP effect" else "tool-error" if user_text == "Fail MCP effect" else "approved-effect"})
                 body = {"choices": [{"message": {

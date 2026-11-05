@@ -45,6 +45,7 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `unreachable-endpoint-fails` | `Say hello` (closed port) | Connection refused; run exits non-zero with unreachable-endpoint guidance, workspace byte-identical |
 | `unknown-model-fails` | `Say hello` (bad model ID) | Provider returns HTTP 404 `model_not_found`; run exits non-zero with model/endpoint guidance, workspace byte-identical |
 | `saved-profile-missing-key` | `Say hello` (seeded keyless profile) | Saved profile names a model but holds no key and the environment provides none; run is refused up front with no-model-configured guidance, workspace byte-identical |
+| `cancelled-shell-tool` | `Run slow shell` (API, cancelled) | Turn cancelled while the shell command sleeps; operation ends `cancelled` promptly and the command's effect file never appears, even after outwaiting the sleep |
 
 The `inspect-workspace` and `autonomous-shell` fixtures exercise the search
 and shell tool paths (not just file edits), including the guarantee that the

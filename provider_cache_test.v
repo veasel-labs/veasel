@@ -238,6 +238,62 @@ fn test_openai_chat_request_supports_24h_retention_and_custom_key() {
 	assert root['prompt_cache_retention'] or { panic('missing prompt_cache_retention') }.str() == '24h'
 }
 
+fn test_ollama_tool_request_limits_reasoning_without_affecting_other_requests() {
+	tool := AgentToolDefinition{
+		name:        'workspace_read_file'
+		description: 'Read a workspace file.'
+		parameters:  ToolParameters{
+			properties: {
+				'path': ToolParameter{ type: 'string' }
+			}
+			required:   ['path']
+		}
+	}
+	ollama_request := build_openai_chat_request(ModelConfig{
+		provider: 'ollama'
+		model:    'qwen3:8b'
+		base_url: 'http://127.0.0.1:11434/v1'
+	}, [], [tool])
+	ollama_payload := json2.encode[OpenAIRequest](ollama_request)
+	ollama_root := json2.decode[map[string]json2.Any](ollama_payload) or { panic(err) }
+	assert ollama_root['reasoning_effort'] or { panic('missing reasoning_effort') }.str() == 'low'
+
+	no_tools_request := build_openai_chat_request(ModelConfig{
+		provider: 'ollama'
+		model:    'qwen3:8b'
+		base_url: 'http://127.0.0.1:11434/v1'
+	}, [], [])
+	no_tools_payload := json2.encode[OpenAIRequest](no_tools_request)
+	no_tools_root := json2.decode[map[string]json2.Any](no_tools_payload) or { panic(err) }
+	assert 'reasoning_effort' !in no_tools_root
+
+	other_ollama_request := build_openai_chat_request(ModelConfig{
+		provider: 'ollama'
+		model:    'deepseek-r1:8b'
+		base_url: 'http://127.0.0.1:11434/v1'
+	}, [], [tool])
+	other_ollama_payload := json2.encode[OpenAIRequest](other_ollama_request)
+	other_ollama_root := json2.decode[map[string]json2.Any](other_ollama_payload) or { panic(err) }
+	assert 'reasoning_effort' !in other_ollama_root
+
+	other_provider_request := build_openai_chat_request(ModelConfig{
+		provider: 'openai'
+		model:    'gpt-fixture'
+	}, [], [tool])
+	other_provider_payload := json2.encode[OpenAIRequest](other_provider_request)
+	other_provider_root := json2.decode[map[string]json2.Any](other_provider_payload) or { panic(err) }
+	assert 'reasoning_effort' !in other_provider_root
+
+	remote_ollama_request := build_openai_chat_request(ModelConfig{
+		provider: 'ollama'
+		model:    'qwen3:8b'
+		base_url: 'https://ollama.example/v1'
+	}, [], [tool])
+	remote_ollama_payload := json2.encode[OpenAIRequest](remote_ollama_request)
+	remote_ollama_root := json2.decode[map[string]json2.Any](remote_ollama_payload) or { panic(err) }
+	assert 'reasoning_effort' !in remote_ollama_root
+}
+
 fn test_openai_prompt_cache_key_falls_back_when_controls_present() {
 	prior_key := os.getenv_opt(openai_prompt_cache_key_env) or { '' }
 	defer {

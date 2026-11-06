@@ -1052,7 +1052,8 @@ struct GeminiProvider {}
 
 struct OpenAIRequest {
 	model                  string
-	max_tokens             ?int @[json: 'max_tokens'; omitempty]
+	max_tokens             ?int    @[json: 'max_tokens'; omitempty]
+	reasoning_effort       ?string @[json: 'reasoning_effort'; omitempty]
 	messages               []ChatMessage
 	tools                  []OpenAITool @[omitempty]
 	tool_choice            string       @[omitempty]
@@ -2455,6 +2456,11 @@ fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools [
 		} else {
 			none
 		}
+		// Ollama's OpenAI-compatible endpoint defaults Qwen3 to reasoning
+		// output. For tool-bearing turns, that can consume the response budget
+		// without yielding function calls. Keep this setting local to Qwen3 on
+		// loopback Ollama; other models and providers retain their defaults.
+		reasoning_effort:       ollama_tool_reasoning_effort(config, tools.len > 0)
 		messages:               messages
 		tools:                  openai_tools
 		tool_choice:            if tools.len > 0 { 'auto' } else { '' }
@@ -2462,6 +2468,17 @@ fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools [
 		prompt_cache_key:       cache_key
 		prompt_cache_retention: cache_retention
 	}
+}
+
+fn ollama_tool_reasoning_effort(config ModelConfig, has_tools bool) ?string {
+	if config.provider != 'ollama' || !has_tools || !config.model.to_lower().starts_with('qwen3') {
+		return none
+	}
+	endpoint := urllib.parse(config.base_url) or { return none }
+	if endpoint.scheme != 'http' || !is_loopback_host(endpoint.host) {
+		return none
+	}
+	return 'low'
 }
 
 fn build_openai_responses_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !OpenAIResponsesRequest {

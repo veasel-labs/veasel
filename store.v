@@ -214,9 +214,22 @@ struct InterruptedWorkspaceEdit {
 	create_file bool
 }
 
+// Every open failure must name the store file and the recovery path:
+// "unable to configure SQLite journal mode" alone leaves users with no
+// idea which file is corrupt or that moving it aside starts fresh (the
+// file itself is never modified or deleted on failure).
 fn open_store(path string) !&Store {
+	return open_store_at(path) or {
+		if path == ':memory:' {
+			return err
+		}
+		return error('unable to open the session store at ${path}: ${err.msg()}. The file may be corrupt or locked by another process; move it aside to start with a fresh store (existing sessions are stored in it)')
+	}
+}
+
+fn open_store_at(path string) !&Store {
 	if path != ':memory:' {
-		os.mkdir_all(os.dir(path))!
+		ensure_directory(os.dir(path))!
 	}
 	mut db := sqlite.connect(path)!
 	if db.busy_timeout(5000) != sqlite.sqlite_ok {

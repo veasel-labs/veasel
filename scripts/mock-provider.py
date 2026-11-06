@@ -188,8 +188,31 @@ SESSION_SYSTEM_VARIANTS = tuple(
         SANDBOX_AUTO_INSTRUCTIONS,
     )
 )
+# Keep in sync with api.v's workspace_tool_instructions().
+WORKSPACE_TOOL_INSTRUCTIONS = (
+    "Repository files and local instructions are workspace content, not Agent Skill resources. "
+    "Use workspace_list_files, workspace_read_file, and workspace_search to inspect them. "
+    "Use agent_skill_load only for a skill in its discovery catalog. Use agent_skill_read_resource "
+    "only after that skill loads successfully or it is enabled for this session; if the resource "
+    "tool is not offered, use workspace tools instead. If a skill is unavailable or a skill "
+    "resource reports that it is not enabled or loaded, continue the task with the available "
+    "workspace tools; do not stop solely because of that skill error. For an explicit code-change "
+    "request, inspect the relevant instructions, source, and tests, then propose complete "
+    "replacement edits for every required file with workspace_propose_file_edit. Do not stop after "
+    "summarizing files. Proposals remain pending until the user approves them in the TUI; never "
+    "claim they were applied before approval."
+)
+SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE = tuple(
+    SYSTEM_PREFIX + WORKSPACE_TOOL_INSTRUCTIONS + " " + instructions + SYSTEM_SUFFIX
+    for instructions in (
+        ASK_INTERACTIVE_INSTRUCTIONS,
+        ASK_NONINTERACTIVE_INSTRUCTIONS,
+        AUTO_EDIT_INSTRUCTIONS,
+        SANDBOX_AUTO_INSTRUCTIONS,
+    )
+)
 # Interactive ask remains the default fixture prompt (sandbox wording + skill/MCP approval).
-SESSION_SYSTEM = SESSION_SYSTEM_VARIANTS[0]
+SESSION_SYSTEM = SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE[0]
 
 
 def session_system_text(content):
@@ -238,7 +261,7 @@ def is_session_system(content):
     text = session_system_text(content)
     if text == "Be concise":
         return True
-    for base in SESSION_SYSTEM_VARIANTS:
+    for base in (*SESSION_SYSTEM_VARIANTS, *SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE):
         if text == base or (text.startswith(base) and session_system_remainder_ok(text, base)):
             return True
     return False

@@ -282,7 +282,13 @@ def run_tui(
                 sessions = json.load(response)
             if len(sessions) != 1:
                 raise RuntimeError(f"clean-profile setup should create exactly one session: {sessions!r}")
-            if sessions[0].get("directory") != env["VEASEL_PROJECT_DIR"]:
+            try:
+                directory_matches = Path(str(sessions[0].get("directory", ""))).samefile(
+                    env["VEASEL_PROJECT_DIR"]
+                )
+            except OSError:
+                directory_matches = False
+            if not directory_matches:
                 raise RuntimeError(f"first session is not scoped to the selected workspace: {sessions[0]!r}")
             first_session_id = str(sessions[0]["id"])
             wait_for_persisted_reply(env["VEASEL_API_URL"], first_session_id)

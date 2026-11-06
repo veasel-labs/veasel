@@ -2456,10 +2456,10 @@ fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools [
 		} else {
 			none
 		}
-		// Ollama's OpenAI-compatible endpoint defaults Qwen3 to reasoning
-		// output. For tool-bearing turns, that can consume the response budget
-		// without yielding function calls. Keep this setting local to Qwen3 on
-		// loopback Ollama; other models and providers retain their defaults.
+		// Ollama's OpenAI-compatible endpoint can leave Qwen3 thinking enabled
+		// even with low effort, consuming the response budget without yielding
+		// function calls. `none` disables thinking on /v1. Keep this local to
+		// tool-bearing Qwen3 requests on loopback Ollama.
 		reasoning_effort:       ollama_tool_reasoning_effort(config, tools.len > 0)
 		messages:               messages
 		tools:                  openai_tools
@@ -2478,7 +2478,7 @@ fn ollama_tool_reasoning_effort(config ModelConfig, has_tools bool) ?string {
 	if endpoint.scheme != 'http' || !is_loopback_host(endpoint.host) {
 		return none
 	}
-	return 'low'
+	return 'none'
 }
 
 fn build_openai_responses_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !OpenAIResponsesRequest {

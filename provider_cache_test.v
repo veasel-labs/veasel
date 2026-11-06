@@ -238,7 +238,7 @@ fn test_openai_chat_request_supports_24h_retention_and_custom_key() {
 	assert root['prompt_cache_retention'] or { panic('missing prompt_cache_retention') }.str() == '24h'
 }
 
-fn test_ollama_tool_request_limits_reasoning_without_affecting_other_requests() {
+fn test_ollama_tool_request_disables_thinking_only_for_local_qwen3() {
 	tool := AgentToolDefinition{
 		name:        'workspace_read_file'
 		description: 'Read a workspace file.'
@@ -256,7 +256,7 @@ fn test_ollama_tool_request_limits_reasoning_without_affecting_other_requests() 
 	}, [], [tool])
 	ollama_payload := json2.encode[OpenAIRequest](ollama_request)
 	ollama_root := json2.decode[map[string]json2.Any](ollama_payload) or { panic(err) }
-	assert ollama_root['reasoning_effort'] or { panic('missing reasoning_effort') }.str() == 'low'
+	assert ollama_root['reasoning_effort'] or { panic('missing reasoning_effort') }.str() == 'none'
 
 	no_tools_request := build_openai_chat_request(ModelConfig{
 		provider: 'ollama'

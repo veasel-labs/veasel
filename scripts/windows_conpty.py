@@ -433,7 +433,7 @@ def run_tui_conpty(
             send_keys(b"\r")
             wait_for_markers((b"Select model", b"smoke-model"), 15, "local mock model discovery")
             send_keys(b"\r")
-            wait_for_markers((b"Connected", b"ollama/smoke-model"), 15, "the saved local model")
+            wait_for_screen_markers((b"Connected", b"smoke-model"), 15, "the saved local model")
             send_keys(b"\x1b")
             wait_for_markers((b"SESSIONS", b"q quit"), 10, "the clean-profile home after connecting")
             time.sleep(0.2)

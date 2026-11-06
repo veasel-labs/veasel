@@ -7,6 +7,6 @@
     "plan": "node release-plan.mjs"
   },
   "dependencies": {
-    "semver": "^7.7.3"
+    "semver": "^7.8.6"
   }
 }

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * Interactive PTY journey baseline: boots the packaged TUI against an isolated
- * local backend, waits for the connected home screen, opens /help with real
- * keystrokes, verifies the Help dialog renders, closes it with Esc, and checks
- * the home screen returns. Records per-step wall times and the visible screen
- * tail on failure so interactive regressions are diagnosable, not just counted.
+ * local backend with a loopback-only placeholder model profile, waits for the
+ * connected home screen, opens /help with real keystrokes, verifies the Help
+ * dialog renders, closes it with Esc, and checks the home screen returns.
+ * Records per-step wall times and the visible screen tail on failure so
+ * interactive regressions are diagnosable, not just counted.
  *
  * This proves one keyboard journey on this host only. It does not measure
  * model quality, coding-task success, or rendering fidelity beyond the
@@ -126,6 +127,12 @@ async function main() {
 		VEASEL_DATA_DIR: dataDir,
 		VEASEL_PLUGIN_DIR: join(dataDir, "plugins"),
 		VEASEL_API_URL: `http://127.0.0.1:${port}`,
+		// The journey opens no session and sends no prompt. This loopback-only
+		// profile keeps the tested screen in its connected/model-ready state
+		// without contacting a provider or depending on the caller's config.
+		VEASEL_MODEL_PROVIDER: "ollama",
+		VEASEL_MODEL: "tui-journey-placeholder",
+		VEASEL_MODEL_BASE_URL: "http://127.0.0.1:9/v1",
 	}
 	for (const name of Object.keys(env)) if (!env[name]) delete env[name]
 	const server = spawn(serverBin, ["serve"], { env, stdio: "ignore" })
@@ -147,6 +154,7 @@ async function main() {
 			tuiBin,
 			serverBin,
 			journey: "connected -> /help dialog -> Esc -> home",
+			modelProfile: "ollama/tui-journey-placeholder (loopback-only; no model request)",
 			pass: result.status === 0,
 			stepsMs: steps,
 		}

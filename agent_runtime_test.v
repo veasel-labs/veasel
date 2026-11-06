@@ -73,6 +73,38 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	assert denied_mcp.contains('active Agent Skill tool restrictions')
 }
 
+fn test_agent_skill_resource_tool_is_only_advertised_after_skill_access() {
+	base_tools := [AgentToolDefinition{
+		name: 'workspace_read_file'
+	}]
+
+	without_skill := agent_tools_for_skill_context(base_tools, SessionSkillContext{})
+	assert without_skill.map(it.name) == ['workspace_read_file']
+
+	loaded_skill := agent_tools_for_skill_context(base_tools, SessionSkillContext{
+		resource_access: [AgentSkillResourceAccess{
+			plugin_name: 'review-tools'
+			skill_name:  'review'
+			skill_root:  '/tmp/review-tools/skills/review'
+		}]
+	})
+	assert loaded_skill.map(it.name) == ['workspace_read_file', 'agent_skill_read_resource']
+
+	restricted_skill := agent_tools_for_skill_context(base_tools, SessionSkillContext{
+		tool_policy:     agent_tool_policy_for_skills([PluginSkill{
+			name:                   'read-only'
+			allowed_tools:          'workspace_read_file'
+			allowed_tools_declared: true
+		}])
+		resource_access: [AgentSkillResourceAccess{
+			plugin_name: 'review-tools'
+			skill_name:  'review'
+			skill_root:  '/tmp/review-tools/skills/review'
+		}]
+	})
+	assert restricted_skill.map(it.name) == ['workspace_read_file']
+}
+
 fn test_agent_skill_resource_tool_reads_only_resources_from_enabled_skills() {
 	root := os.join_path(os.temp_dir(), 'veasel-skill-resource-${uuid.new_v4().str()}')
 	skill_root := os.join_path(root, 'skills', 'review')

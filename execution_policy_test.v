@@ -11,6 +11,19 @@ fn test_execution_policy_mode_from_maps_autonomous_and_aliases() {
 	assert execution_policy_mode_from('unknown', false) == .ask
 }
 
+fn test_workspace_guidance_routes_repository_instructions_to_workspace_tools() {
+	guidance := workspace_tool_instructions()
+	assert guidance.contains('workspace_list_files')
+	assert guidance.contains('workspace_read_file')
+	assert guidance.contains('workspace_search')
+	assert guidance.contains('workspace_propose_file_edit')
+	assert guidance.contains('not Agent Skill resources')
+	assert guidance.contains('continue the task with the available workspace tools')
+	assert guidance.contains('do not stop solely because of that skill error')
+	assert guidance.contains('Do not stop after summarizing files')
+	assert guidance.contains('Proposals remain pending until the user approves them in the TUI')
+}
+
 fn test_execution_policy_ask_denies_side_effects_when_non_interactive() {
 	assert decide_execution_permission(.ask, 'read', false, true) == .allow
 	assert decide_execution_permission(.ask, 'edit', false, true) == .deny

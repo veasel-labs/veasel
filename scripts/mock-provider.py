@@ -978,6 +978,7 @@ class MockProvider(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("port_file", type=Path)
+    parser.add_argument("log_file", type=Path, nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--allow-no-auth", action="store_true")
     args = parser.parse_args()

@@ -7,10 +7,15 @@
 ## Scope
 
 This track packages the standalone TUI for Linux, macOS, and Windows in CI.
-Interactive PTY smoke is a separate gate from packaging: it proves the bundled
-`veasel-tui` binary can open against a local backend, reach a seeded session,
-navigate provider settings, send a prompt through the backend, render a
-mock-provider reply, persist both turns, and exit cleanly.
+Interactive PTY smoke is a separate gate from packaging. It starts from a clean
+profile and drives `/connect` through the bundled `veasel-tui`, selects the
+local Ollama-compatible fixture, discovers and saves a model without an API
+key, creates the first session, sends a prompt, verifies the persisted reply,
+and exits. It then covers provider search, streamed replies, graceful restart,
+uncertain-operation recovery after a hard kill, and an approved workspace edit.
+All model traffic stays on loopback; no paid provider or external endpoint is
+used. The clean-profile leg binds the Ollama fixture at `127.0.0.1:11434`, so
+that port must be free on the runner.
 
 ## Automated coverage
 
@@ -21,8 +26,9 @@ mock-provider reply, persist both turns, and exit cleanly.
 | Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py` |
 
 The same journey runs through Unix PTY on Linux/macOS and native ConPTY on
-Windows. Each CI run takes three startup samples (each a complete journey),
-then runs the mock-provider round-trip and one additional review journey, and
+Windows. Each CI run first completes the clean-profile `/connect` and first
+session journey, then takes three startup samples, exercises streamed replies,
+restart recovery, and workspace-edit review, and
 retains a JSON startup report as the `tui-startup-<platform>` artifact. The
 metric starts when the packaged TUI process is launched and stops when the
 connected home markers are emitted; the backend is already healthy. These

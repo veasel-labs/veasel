@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic local endpoint fixtures for the provider API smoke test."""
 
+import argparse
 import json
 import sys
 import time
@@ -38,10 +39,11 @@ OPENAI_COMPATIBLE_API_KEYS = {
         "ollama-cloud", "zenmux"
     )
 }
+ALLOW_NO_AUTH = False
 
 
 def has_openai_compatible_auth(value):
-    return value in {f"Bearer {key}" for key in OPENAI_COMPATIBLE_API_KEYS}
+    return value in {f"Bearer {key}" for key in OPENAI_COMPATIBLE_API_KEYS} or (ALLOW_NO_AUTH and value is None)
 
 
 REPLY = "Provider fixture reply"
@@ -974,7 +976,12 @@ class MockProvider(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port_file = Path(sys.argv[1])
-    server = ThreadingHTTPServer(("127.0.0.1", 0), MockProvider)
-    port_file.write_text(str(server.server_address[1]))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("port_file", type=Path)
+    parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--allow-no-auth", action="store_true")
+    args = parser.parse_args()
+    ALLOW_NO_AUTH = args.allow_no_auth
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), MockProvider)
+    args.port_file.write_text(str(server.server_address[1]))
     server.serve_forever()

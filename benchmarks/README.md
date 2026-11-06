@@ -138,8 +138,12 @@ VEASEL_BENCH_SAMPLES=15 VEASEL_BENCH_WARMUPS=2 VEASEL_TUI_PTY_SAMPLES=5 \
 
 `tui-journey.mjs` goes one step further: real keystrokes in the PTY —
 connected home → `/help` Help dialog → `Esc` → home again — with per-step
-wall times and the visible screen tail on failure. It proves one keyboard
-journey on the host that runs it, nothing more.
+wall times and the visible screen tail on failure. It uses an isolated
+loopback-only Ollama placeholder profile so the home screen is model-ready;
+the script opens no session and sends no prompt or provider request. It proves
+one keyboard journey on the host that runs it, nothing more. The packaged
+`/connect` setup and provider-request journey is covered separately by the
+standalone TUI smoke.
 
 ```sh
 VEASEL_TUI_BIN=veasel-tui VEASEL_BIN=veasel \

@@ -246,6 +246,20 @@ def run_tui(
             f"visible terminal output: {last_snippet}"
         )
 
+    def wait_exit(timeout: float) -> int | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                return status
+            readable, _, _ = select.select([terminal], [], [], 0.01)
+            if readable:
+                try:
+                    record(os.read(terminal, 65_536))
+                except OSError:
+                    pass
+        return None
+
     try:
         home_markers = (b"SESSIONS", b"VEASEL") if first_run else (b"connected", b"SESSIONS", b"VEASEL")
         if session_title:
@@ -300,16 +314,12 @@ def run_tui(
             if first_pairs != [("user", "Say hello"), ("assistant", "Provider fixture reply")]:
                 raise RuntimeError(f"first-run conversation was not persisted as expected: {first_pairs!r}")
             quit_via_palette("the command palette after first-run setup", "the first-run quit command")
-            deadline = time.monotonic() + 5
-            status = None
-            while time.monotonic() < deadline:
-                finished, child_status = os.waitpid(child, os.WNOHANG)
-                if finished:
-                    status = child_status
-                    break
-                time.sleep(0.02)
-            if status is None or os.waitstatus_to_exitcode(status) != 0:
-                raise RuntimeError(f"standalone TUI did not exit cleanly after first-run setup: {status!r}")
+            status = wait_exit(5)
+            if status is None:
+                snippet = visible_output()[-2_500:].decode(errors="replace")
+                raise TimeoutError(f"standalone TUI did not exit after first-run setup: {snippet}")
+            if os.waitstatus_to_exitcode(status) != 0:
+                raise RuntimeError(f"standalone TUI exited unsuccessfully after first-run setup (status={status})")
             return startup_ms
 
         os.write(terminal, b"s")
@@ -408,20 +418,6 @@ def run_tui(
             quit_via_palette(
                 "the command palette after the assistant reply", "the quit command in the palette",
             )
-
-        def wait_exit(timeout: float) -> int | None:
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                finished, status = os.waitpid(child, os.WNOHANG)
-                if finished:
-                    return status
-                readable, _, _ = select.select([terminal], [], [], 0.01)
-                if readable:
-                    try:
-                        record(os.read(terminal, 65_536))
-                    except OSError:
-                        pass
-            return None
 
         status = wait_exit(5)
         if status is not None:

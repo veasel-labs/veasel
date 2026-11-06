@@ -107,10 +107,12 @@ def run_tui(
     session_id: str | None = None,
     review_path: bytes | None = None,
     recovery_only: bool = False,
+    first_run: bool = False,
 ) -> float:
     if os.name == "nt":
         return run_tui_conpty(
             tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
+            first_run=first_run,
         )
 
     started = time.monotonic()
@@ -244,12 +246,81 @@ def run_tui(
             f"visible terminal output: {last_snippet}"
         )
 
+    def wait_exit(timeout: float) -> int | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            finished, status = os.waitpid(child, os.WNOHANG)
+            if finished:
+                return status
+            readable, _, _ = select.select([terminal], [], [], 0.01)
+            if readable:
+                try:
+                    record(os.read(terminal, 65_536))
+                except OSError:
+                    pass
+        return None
+
     try:
-        home_markers = (b"connected", b"SESSIONS", b"VEASEL")
+        home_markers = (b"SESSIONS", b"VEASEL") if first_run else (b"connected", b"SESSIONS", b"VEASEL")
         if session_title:
             home_markers = (*home_markers, session_title.encode())
         wait_for_markers(home_markers, 10, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
+
+        if first_run:
+            # Connect from a clean profile through the packaged TUI. The
+            # Ollama catalog entry targets its documented loopback port; the
+            # fixture is local and deliberately accepts no API key.
+            output.clear()
+            os.write(terminal, b"/connect\r")
+            wait_for_markers((b"CONNECT",), 5, "the clean-profile provider picker")
+            time.sleep(0.2)
+            output.clear()
+            os.write(terminal, b"ollama")
+            wait_for_markers((b"Ollama",), 5, "the local Ollama provider filter")
+            os.write(terminal, b"\r")
+            wait_for_markers((b"API key",), 5, "the optional local-provider key prompt")
+            os.write(terminal, b"\r")
+            wait_for_markers((b"Select model", b"smoke-model"), 10, "local mock model discovery")
+            os.write(terminal, b"\r")
+            wait_for_markers((b"Connected", b"ollama/smoke-model"), 10, "the saved local model")
+            os.write(terminal, b"\x1b")
+            wait_for_markers((b"SESSIONS", b"q quit"), 5, "the clean-profile home after connecting")
+            time.sleep(0.2)
+            os.write(terminal, b"n")
+            wait_for_screen_markers((b"Message Veasel",), 10, "the first session composer")
+            output.clear()
+            os.write(terminal, b"Say hello\r")
+            wait_for_markers((b"Provider fixture reply",), 30, "the first mock-provider reply")
+            with urlopen(f"{env['VEASEL_API_URL']}/v1/sessions", timeout=5) as response:
+                sessions = json.load(response)
+            if len(sessions) != 1:
+                raise RuntimeError(f"clean-profile setup should create exactly one session: {sessions!r}")
+            try:
+                directory_matches = Path(str(sessions[0].get("directory", ""))).samefile(
+                    env["VEASEL_PROJECT_DIR"]
+                )
+            except OSError:
+                directory_matches = False
+            if not directory_matches:
+                raise RuntimeError(f"first session is not scoped to the selected workspace: {sessions[0]!r}")
+            first_session_id = str(sessions[0]["id"])
+            wait_for_persisted_reply(env["VEASEL_API_URL"], first_session_id)
+            with urlopen(
+                f"{env['VEASEL_API_URL']}/v1/sessions/{quote(first_session_id, safe='')}/messages", timeout=5,
+            ) as response:
+                first_messages = json.load(response)
+            first_pairs = [(message.get("role"), message.get("content")) for message in first_messages]
+            if first_pairs != [("user", "Say hello"), ("assistant", "Provider fixture reply")]:
+                raise RuntimeError(f"first-run conversation was not persisted as expected: {first_pairs!r}")
+            quit_via_palette("the command palette after first-run setup", "the first-run quit command")
+            status = wait_exit(5)
+            if status is None:
+                snippet = visible_output()[-2_500:].decode(errors="replace")
+                raise TimeoutError(f"standalone TUI did not exit after first-run setup: {snippet}")
+            if os.waitstatus_to_exitcode(status) != 0:
+                raise RuntimeError(f"standalone TUI exited unsuccessfully after first-run setup (status={status})")
+            return startup_ms
 
         os.write(terminal, b"s")
         wait_for_markers((b"MODEL SETTINGS", b"All 210/210"), 5, "provider settings")
@@ -347,20 +418,6 @@ def run_tui(
             quit_via_palette(
                 "the command palette after the assistant reply", "the quit command in the palette",
             )
-
-        def wait_exit(timeout: float) -> int | None:
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                finished, status = os.waitpid(child, os.WNOHANG)
-                if finished:
-                    return status
-                readable, _, _ = select.select([terminal], [], [], 0.01)
-                if readable:
-                    try:
-                        record(os.read(terminal, 65_536))
-                    except OSError:
-                        pass
-            return None
 
         status = wait_exit(5)
         if status is not None:
@@ -524,6 +581,16 @@ def main() -> None:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
+    with socket.socket() as ollama_probe:
+        ollama_probe.settimeout(0.2)
+        try:
+            ollama_probe.connect(("127.0.0.1", 11434))
+        except OSError:
+            pass
+        else:
+            raise RuntimeError(
+                "standalone first-run smoke needs 127.0.0.1:11434 free for its isolated Ollama fixture"
+            )
 
     with tempfile.TemporaryDirectory(prefix="veasel-tui-smoke-") as temporary:
         data_dir = Path(temporary) / "data"
@@ -536,7 +603,14 @@ def main() -> None:
                 env.pop(name)
         provider_port_file = Path(temporary) / "provider.port"
         provider = subprocess.Popen(
-            [sys.executable, str(Path(__file__).with_name("mock-provider.py")), str(provider_port_file)],
+            [
+                sys.executable,
+                str(Path(__file__).with_name("mock-provider.py")),
+                str(provider_port_file),
+                "--port",
+                "11434",
+                "--allow-no-auth",
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             env=env,
@@ -556,12 +630,15 @@ def main() -> None:
             VEASEL_PLUGIN_DIR=str(plugin_dir),
             VEASEL_API_URL=f"http://127.0.0.1:{port}",
             VEASEL_PROJECT_DIR=str(workspace),
-            VEASEL_MODEL_PROVIDER="openai-compatible",
-            VEASEL_MODEL="smoke-model",
-            VEASEL_MODEL_BASE_URL=f"http://127.0.0.1:{provider_port_file.read_text().strip()}/v1",
-            OPENAI_API_KEY="veasel-openai-key",
             TERM="xterm-256color",
         )
+        for name in (
+            "VEASEL_MODEL_PROVIDER",
+            "VEASEL_MODEL",
+            "VEASEL_MODEL_BASE_URL",
+            "VEASEL_MODEL_MAX_OUTPUT_TOKENS",
+        ):
+            env.pop(name, None)
         server: subprocess.Popen[bytes] | None = None
 
         def start_server() -> subprocess.Popen[bytes]:
@@ -589,6 +666,20 @@ def main() -> None:
 
         try:
             server = start_server()
+            run_tui(tui_path, env, first_run=True)
+            settings = api_json(port, "GET", "/v1/config/model")
+            profile = settings.get("profiles", {}).get("ollama", {})
+            if settings.get("active_provider") != "ollama" or profile.get("model") != "smoke-model":
+                raise RuntimeError(f"first-run provider/model selection was not saved: {settings!r}")
+            if profile.get("api_key_saved") or not settings.get("model_ready"):
+                raise RuntimeError(f"local first-run profile should be ready without a saved API key: {settings!r}")
+            first_run_coverage = {
+                "journey": "clean profile -> /connect -> local provider -> model discovery -> new session -> prompt -> persisted reply",
+                "provider": settings["active_provider"],
+                "model": profile["model"],
+                "apiKeySaved": profile.get("api_key_saved", False),
+                "conversationPersisted": True,
+            }
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
             terminal_sizes: list[str] = []
             for rows, cols in ((12, 32), (30, 80), (40, 120)):
@@ -636,7 +727,7 @@ def main() -> None:
             # operation must surface as uncertain with an error — never stuck
             # running, never reported completed — and the persisted
             # conversation must be unchanged.
-            provider_base = env["VEASEL_MODEL_BASE_URL"].removesuffix("/v1")
+            provider_base = str(profile["base_url"]).removesuffix("/v1")
             with urlopen(f"{provider_base}/hold-slow-response", timeout=5):
                 pass
             async_request = Request(
@@ -733,6 +824,7 @@ def main() -> None:
         "buildProvenance": provenance,
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "interactiveCoverage": review_coverage,
+        "firstRunCoverage": first_run_coverage,
         "restartCoverage": restart_coverage,
         "killRecoveryCoverage": kill_coverage,
         "terminalSizes": terminal_sizes,
@@ -749,7 +841,7 @@ def main() -> None:
         args.metrics_output.parent.mkdir(parents=True, exist_ok=True)
         args.metrics_output.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(metrics, indent=2))
-    print("Standalone TUI completed a mock-provider conversation through the isolated backend.")
+    print("Standalone TUI completed clean-profile setup and mock-provider journeys through the isolated backend.")
 
 
 if __name__ == "__main__":

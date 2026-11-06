@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import re
 import time
 from ctypes import wintypes
 from pathlib import Path
 from typing import Callable
+from urllib.request import urlopen
 
 from terminal_screen import TerminalScreen
 
@@ -171,6 +173,7 @@ def run_tui_conpty(
     recovery_only: bool = False,
     home_only: bool = False,
     size: tuple[int, int] = (24, 100),
+    first_run: bool = False,
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -412,11 +415,63 @@ def run_tui_conpty(
         close(input_read)
         close(output_write)
 
-        home_markers = (b"connected", b"SESSIONS", b"VEASEL")
+        home_markers = (b"SESSIONS", b"VEASEL") if first_run else (b"connected", b"SESSIONS", b"VEASEL")
         if session_title:
             home_markers = (*home_markers, session_title.encode())
         wait_for_markers(home_markers, 30, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
+        if first_run:
+            output.clear()
+            send_keys(b"/connect\r")
+            wait_for_markers((b"CONNECT",), 10, "the clean-profile provider picker")
+            time.sleep(0.2)
+            output.clear()
+            send_keys(b"ollama")
+            wait_for_markers((b"Ollama",), 10, "the local Ollama provider filter")
+            send_keys(b"\r")
+            wait_for_markers((b"API key",), 10, "the optional local-provider key prompt")
+            send_keys(b"\r")
+            wait_for_markers((b"Select model", b"smoke-model"), 15, "local mock model discovery")
+            send_keys(b"\r")
+            wait_for_screen_markers((b"Connected", b"smoke-model"), 15, "the saved local model")
+            send_keys(b"\x1b")
+            wait_for_markers((b"SESSIONS", b"q quit"), 10, "the clean-profile home after connecting")
+            time.sleep(0.2)
+            send_keys(b"n")
+            wait_for_screen_markers((b"Message Veasel",), 15, "the first session composer")
+            output.clear()
+            send_keys(b"Say hello\r")
+            wait_for_markers((b"Provider fixture reply",), 30, "the first mock-provider reply")
+            with urlopen(f"{env['VEASEL_API_URL']}/v1/sessions", timeout=5) as response:
+                sessions = json.load(response)
+            if len(sessions) != 1:
+                raise RuntimeError(f"clean-profile setup should create exactly one session: {sessions!r}")
+            try:
+                directory_matches = Path(str(sessions[0].get("directory", ""))).samefile(
+                    env["VEASEL_PROJECT_DIR"]
+                )
+            except OSError:
+                directory_matches = False
+            if not directory_matches:
+                raise RuntimeError(f"first session is not scoped to the selected workspace: {sessions[0]!r}")
+            first_session_id = str(sessions[0]["id"])
+            if wait_for_persisted_reply is None:
+                raise RuntimeError("first-run smoke requires the persistence verifier")
+            wait_for_persisted_reply(env["VEASEL_API_URL"], first_session_id)
+            with urlopen(
+                f"{env['VEASEL_API_URL']}/v1/sessions/{first_session_id}/messages", timeout=5,
+            ) as response:
+                first_messages = json.load(response)
+            first_pairs = [(message.get("role"), message.get("content")) for message in first_messages]
+            if first_pairs != [("user", "Say hello"), ("assistant", "Provider fixture reply")]:
+                raise RuntimeError(f"first-run conversation was not persisted as expected: {first_pairs!r}")
+            quit_via_palette("the command palette after first-run setup", "the first-run quit command")
+            if kernel32.WaitForSingleObject(process.hProcess, 5_000) != 0:
+                raise TimeoutError("standalone TUI did not exit after first-run setup")
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) or exit_code.value != 0:
+                raise RuntimeError(f"standalone TUI exited unsuccessfully after first-run setup (status={exit_code.value})")
+            return startup_ms
         if home_only:
             # Terminal-size leg: critical home controls must be visible
             # (not clipped) on the rendered screen, then quit cleanly.

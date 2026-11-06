@@ -17,8 +17,9 @@ class MetaMockProviderTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory(prefix="veasel-meta-mock-")
         cls.port_file = Path(cls.temp_dir.name) / "provider.port"
+        cls.log_file = Path(cls.temp_dir.name) / "provider.log"
         cls.server = subprocess.Popen(
-            [sys.executable, str(SCRIPT), str(cls.port_file)],
+            [sys.executable, str(SCRIPT), str(cls.port_file), str(cls.log_file)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
         )

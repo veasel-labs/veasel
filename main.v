@@ -12,12 +12,20 @@ const product_version = $d('veasel_version', '0.1.0-dev')
 
 // veb/fasthttp panics inside socket creation when the bind fails, which
 // buries "port in use" under a stack trace (in the server log when
-// spawned). Preflight the bind so the failure is one actionable line.
-// The tiny close-then-bind race is acceptable: worst case the panic path
+// spawned). Preflight so the failure is one actionable line. Occupancy is
+// probed by connecting first: on Windows, SO_REUSEADDR lets a second
+// bind to an occupied port succeed, so listen alone cannot detect it
+// there. The listen probe then covers non-occupancy bind failures. The
+// tiny probe-then-bind race is acceptable: worst case the panic path
 // remains for a port taken in between.
 fn check_port_available(port int) ! {
+	in_use := error('port ${port} on 127.0.0.1 is already in use; stop the process using it or set VEASEL_PORT to a free port')
+	if mut conn := net.dial_tcp('127.0.0.1:${port}') {
+		conn.close() or {}
+		return in_use
+	}
 	mut listener := net.listen_tcp(.ip, '127.0.0.1:${port}', net.ListenOptions{}) or {
-		return error('port ${port} on 127.0.0.1 is already in use; stop the process using it or set VEASEL_PORT to a free port')
+		return in_use
 	}
 	listener.close() or {}
 }

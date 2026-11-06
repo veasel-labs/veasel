@@ -676,6 +676,40 @@ fn test_backend_health_probe_and_ensure_reuses_healthy_listener() {
 	assert backend_is_healthy(port)
 }
 
+fn test_check_port_available_reports_occupied_port() {
+	// Regression: with a non-Veasel process on the backend port, the
+	// spawned server died in a fasthttp bind panic and the CLI only said
+	// "exited before becoming healthy; see server.log". The preflight must
+	// name the port conflict (and the VEASEL_PORT remedy) directly.
+	mut fixture := &BackendHealthFixture{}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	port := server.addr.all_after_last(':').int()
+	assert port > 0
+	check_port_available(port) or {
+		assert err.msg().contains('already in use')
+		assert err.msg().contains('VEASEL_PORT')
+		server.stop()
+		server_thread.wait()
+		// Once the occupant releases the port the preflight passes.
+		check_port_available(port) or { panic(err) }
+		return
+	}
+	server.stop()
+	server_thread.wait()
+	assert false, 'check_port_available accepted an occupied port'
+}
+
 fn test_stale_server_warning_only_on_version_mismatch() {
 	// A healthy server from a different Veasel version is reused silently
 	// today; after an upgrade the user unknowingly runs against the old

@@ -1,6 +1,7 @@
 module main
 
 import os
+import net
 import net.http
 import json2
 import time
@@ -9,7 +10,28 @@ import veb
 const default_port = 4097
 const product_version = $d('veasel_version', '0.1.0-dev')
 
+// veb/fasthttp panics inside socket creation when the bind fails, which
+// buries "port in use" under a stack trace (in the server log when
+// spawned). Preflight so the failure is one actionable line. Occupancy is
+// probed by connecting first: on Windows, SO_REUSEADDR lets a second
+// bind to an occupied port succeed, so listen alone cannot detect it
+// there. The listen probe then covers non-occupancy bind failures. The
+// tiny probe-then-bind race is acceptable: worst case the panic path
+// remains for a port taken in between.
+fn check_port_available(port int) ! {
+	in_use := error('port ${port} on 127.0.0.1 is already in use; stop the process using it or set VEASEL_PORT to a free port')
+	if mut conn := net.dial_tcp('127.0.0.1:${port}') {
+		conn.close() or {}
+		return in_use
+	}
+	mut listener := net.listen_tcp(.ip, '127.0.0.1:${port}', net.ListenOptions{}) or {
+		return in_use
+	}
+	listener.close() or {}
+}
+
 fn serve(port int, data_dir string) ! {
+	check_port_available(port)!
 	mut store := open_store(os.join_path(data_dir, 'veasel.sqlite3'))!
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }
@@ -166,6 +188,14 @@ fn ensure_backend(port int, log_path string) ! {
 			process.wait()
 			message := process.err
 			process.close()
+			// Another CLI may have won the spawn race while our child
+			// lost the bind; that is success, not failure.
+			if backend_is_healthy(port) {
+				return
+			}
+			// Something else holds the port and is not a Veasel server:
+			// say so directly instead of pointing only at the log.
+			check_port_available(port) or { return err }
 			return error('Veasel server exited before becoming healthy${if message.len > 0 {
 				': ${message}'
 			} else {

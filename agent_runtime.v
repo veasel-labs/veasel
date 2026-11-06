@@ -506,6 +506,15 @@ fn restrict_agent_tools(tools []AgentToolDefinition, policy AgentToolPolicy) []A
 	return tools.filter(policy.allows(it.name))
 }
 
+fn agent_tools_for_skill_context(tools []AgentToolDefinition, skill_context SessionSkillContext) []AgentToolDefinition {
+	if skill_context.resource_access.len == 0 {
+		return tools
+	}
+	mut turn_tools := tools.clone()
+	turn_tools << restrict_agent_tools(agent_skill_resource_tools(), skill_context.tool_policy)
+	return turn_tools
+}
+
 fn agent_skill_load_tools(disclosure AvailableSkillsDisclosure) []AgentToolDefinition {
 	if disclosure.entries.len == 0 {
 		return []AgentToolDefinition{}
@@ -590,7 +599,6 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut tools := workspace_agent_tools()
 	tools << agent_skill_load_tools(app.available_skills_for_turn(project_directory_for_skills(root),
 		session_id))
-	tools << agent_skill_resource_tools()
 	tools << mcp_tools
 	tools = restrict_agent_tools(tools, skill_context.tool_policy)
 	mut tool_calls := 0
@@ -623,7 +631,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if agent_context_bytes(messages) > agent_context_byte_limit() {
 			return error('agent context size limit reached')
 		}
-		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, tools,
+		turn_tools := agent_tools_for_skill_context(tools, skill_context)
+		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
 			on_text_delta, request_deadline, provider_pool)!
 		if has_provider_usage_data(output.usage) {
 			trace_usage = add_provider_usage(trace_usage, output.usage)

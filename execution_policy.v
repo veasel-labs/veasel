@@ -153,6 +153,10 @@ fn permission_decision_label(decision PermissionDecision) string {
 	}
 }
 
+fn workspace_tool_instructions() string {
+	return 'Repository files and local instructions are workspace content, not Agent Skill resources. Use workspace_list_files, workspace_read_file, and workspace_search to inspect them. Use agent_skill_load only for a skill in its discovery catalog. Use agent_skill_read_resource only after that skill loads successfully or it is enabled for this session; if the resource tool is not offered, use workspace tools instead. If a skill is unavailable or a skill resource reports that it is not enabled or loaded, continue the task with the available workspace tools; do not stop solely because of that skill error. For an explicit code-change request, inspect the relevant instructions, source, and tests, then propose complete replacement edits for every required file with workspace_propose_file_edit. Do not stop after summarizing files. Proposals remain pending until the user approves them in the TUI; never claim they were applied before approval.'
+}
+
 fn (app &App) execution_policy_forbidden_reason(policy ExecutionPolicyTurn) ?string {
 	match policy.mode {
 		.ask {

@@ -17,7 +17,7 @@ fn serve(port int, data_dir string) ! {
 	plugin_directory := os.getenv_opt('VEASEL_PLUGIN_DIR') or {
 		os.join_path(data_dir, 'plugins')
 	}
-	os.mkdir_all(plugin_directory)!
+	ensure_directory(plugin_directory)!
 	mut app := new_app(store, plugin_directory)
 	defer {
 		app.close()
@@ -106,7 +106,7 @@ fn spawn_backend_with_log(mut process os.Process, log_path string, original_stdo
 		os.fd_close(original_stderr_fd)
 		return error('unable to keep stderr out of the Veasel server process')
 	}
-	os.mkdir_all(os.dir(log_path)) or {
+	ensure_directory(os.dir(log_path)) or {
 		os.fd_close(original_stdout_fd)
 		os.fd_close(original_stderr_fd)
 		return error('unable to create the server log directory: ${err}')
@@ -178,6 +178,27 @@ fn ensure_backend(port int, log_path string) ! {
 	process.wait()
 	process.close()
 	return error('Veasel server did not become healthy on 127.0.0.1:${port} within 15 seconds')
+}
+
+// os.mkdir_all is check-then-create per path segment, so several CLIs
+// cold-starting concurrently race: the losers get "File exists" for a
+// segment a winner just created, possibly before the final directory
+// exists. Retry briefly while the winner finishes; only a path that is
+// still missing (or not a directory) after the retries fails.
+fn ensure_directory(path string) ! {
+	for attempt in 0 .. 50 {
+		os.mkdir_all(path) or {
+			if os.is_dir(path) {
+				return
+			}
+			if attempt == 49 {
+				return err
+			}
+			time.sleep(10 * time.millisecond)
+			continue
+		}
+		return
+	}
 }
 
 fn server_log_path(data_dir string) string {

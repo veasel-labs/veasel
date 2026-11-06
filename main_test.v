@@ -609,6 +609,32 @@ fn test_backend_spawn_never_inherits_cli_descriptors() {
 	assert false, 'spawn_backend_server accepted an empty log path'
 }
 
+fn test_ensure_directory_survives_concurrent_creators() {
+	// Regression: several CLIs cold-starting at once raced on
+	// os.mkdir_all for the server log directory; the losers failed with
+	// "unable to create the server log directory: ... File exists"
+	// instead of proceeding to spawn/reuse the backend.
+	root := os.join_path(os.temp_dir(), 'veasel-mkdir-race-${uuid.new_v4().str()}')
+	defer { os.rmdir_all(root) or {} }
+	target := os.join_path(root, 'share', 'veasel', 'logs')
+	results := chan bool{cap: 8}
+	for _ in 0 .. 8 {
+		spawn fn [results, target] () {
+			ensure_directory(target) or {
+				results <- false
+				return
+			}
+			results <- true
+		}()
+	}
+	for _ in 0 .. 8 {
+		assert <-results
+	}
+	assert os.is_dir(target)
+	// Idempotent once the directory exists.
+	ensure_directory(target) or { panic(err) }
+}
+
 struct BackendHealthFixture {}
 
 fn (mut _ BackendHealthFixture) handle(request http.Request) http.Response {

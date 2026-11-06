@@ -35,9 +35,15 @@ connected home markers are emitted; the backend is already healthy. These
 short hosted-runner samples are for platform coverage and trend tracking, not
 a performance gate or a stable cross-machine comparison. All three
 packaged-client smoke paths passed in [CI run
-40140177406](https://github.com/veasel-labs/veasel/actions/runs/40140177406)
-for commit `6ab4b3915522425cced46c0263c647068c3f097c`. This verifies the smoke
-journey on the pinned CI runners. This work adds per-run launch-to-home
+42190204273](https://github.com/veasel-labs/veasel/actions/runs/42190204273)
+for PR head `ae1178da4f5e1a55cc1cbc27a6276cbcca3e810c`. Its Linux x64,
+macOS arm64, and Windows x64 artifacts each record the clean-profile
+`/connect` → local Ollama model discovery → new session → prompt → persisted
+reply journey, with no API key saved. Binary hashes match build provenance.
+The same run covers restart and SIGKILL recovery, approved workspace edit,
+and 32×12 / 80×30 / 120×40 terminal sizes. This verifies the smoke journey on
+the pinned CI runners; it is not a real-provider coding-task result or a
+physical-device install test. This work adds per-run launch-to-home
 measurements; render FPS and broader interactive journeys remain separate work.
 
 ## Windows acceptance covered by CI

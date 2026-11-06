@@ -650,6 +650,31 @@ fn test_backend_health_probe_and_ensure_reuses_healthy_listener() {
 	assert backend_is_healthy(port)
 }
 
+fn test_stale_server_warning_only_on_version_mismatch() {
+	// A healthy server from a different Veasel version is reused silently
+	// today; after an upgrade the user unknowingly runs against the old
+	// backend. The warning must name both versions and the server pid so
+	// the user can restart it.
+	assert stale_server_warning(Health{
+		healthy: true
+		version: product_version
+		pid:     4242
+	}) == ''
+	// Servers predating the version field report ''; never warn on those.
+	assert stale_server_warning(Health{
+		healthy: true
+		pid:     4242
+	}) == ''
+	warning := stale_server_warning(Health{
+		healthy: true
+		version: '0.0.0-stale-test'
+		pid:     4242
+	})
+	assert warning.contains('0.0.0-stale-test')
+	assert warning.contains(product_version)
+	assert warning.contains('4242')
+}
+
 fn test_tui_directory_is_resolved_next_to_the_executable() {
 	root := os.join_path(os.temp_dir(), 'veasel-bundle-${uuid.new_v4().str()}')
 	defer { os.rmdir_all(root) or {} }

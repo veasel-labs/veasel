@@ -54,17 +54,48 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 
 fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() {
 	deadline := time.now().add(60 * time.second)
+	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]
 	messages := [ChatMessage{
 		role:    'user'
 		content: 'Please update the README.'
 	}]
-	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]
-	assert agent_code_change_followthrough_retry_available(messages, tools, false, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(messages, tools, true, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(messages, tools, false, true, deadline)
-	assert !agent_code_change_followthrough_retry_available(messages, [], false, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(messages, tools, false, false,
+	explicit_request := explicit_agent_code_change_request(messages)
+	assert explicit_request
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+		deadline)
+	mut nudged_messages := messages.clone()
+	nudged_messages << ChatMessage{
+		role:    'user'
+		content: agent_code_change_exploration_nudge
+	}
+	assert !explicit_agent_code_change_request(nudged_messages)
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+		deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, true, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, false, true, deadline)
+	assert !agent_code_change_followthrough_retry_available(false, tools, false, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, [], false, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, false, false,
 		time.now().add(10 * time.second))
+}
+
+fn test_agent_code_change_exploration_nudge_is_bounded_to_explicit_requests() {
+	deadline := time.now().add(60 * time.second)
+	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]
+	assert agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(false, tools,
+		agent_code_change_exploration_nudge_after, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after - 1, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, true, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, false, true, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, [],
+		agent_code_change_exploration_nudge_after, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, false, false, time.now().add(10 * time.second))
 }
 
 fn test_sanitize_agent_tool_result_rejects_nul_bytes() {

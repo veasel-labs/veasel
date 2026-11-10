@@ -10,6 +10,8 @@ const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
 const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. Do not claim the work is complete without proposing the edits.'
+const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. Keep the change scoped to the user request.'
+const agent_code_change_exploration_nudge_after = 8
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 
@@ -56,9 +58,18 @@ fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 	return false
 }
 
-fn agent_code_change_followthrough_retry_available(messages []ChatMessage, tools []AgentToolDefinition,
+fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
 	retried bool, proposal_attempted bool, request_deadline time.Time) bool {
-	if retried || proposal_attempted || !explicit_agent_code_change_request(messages)
+	if retried || proposal_attempted || !explicit_request
+		|| request_deadline - time.now() < 20 * time.second {
+		return false
+	}
+	return tools.any(it.name == 'workspace_propose_file_edit')
+}
+
+fn agent_code_change_exploration_nudge_available(explicit_request bool, tools []AgentToolDefinition,
+	read_only_calls int, nudged bool, proposal_attempted bool, request_deadline time.Time) bool {
+	if !explicit_request || nudged || proposal_attempted || read_only_calls < agent_code_change_exploration_nudge_after
 		|| request_deadline - time.now() < 20 * time.second {
 		return false
 	}
@@ -685,6 +696,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut trace_usage := ProviderUsage{}
 	mut followthrough_retried := false
 	mut edit_proposal_attempted := false
+	code_change_request := explicit_agent_code_change_request(messages)
+	mut read_only_tool_calls := 0
+	mut exploration_nudged := false
 	for round in 0 .. max_agent_tool_rounds {
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
@@ -695,7 +709,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent context size limit reached')
 		}
 		turn_tools := agent_tools_for_skill_context(tools, skill_context)
-		buffer_provider_text := agent_code_change_followthrough_retry_available(messages, turn_tools,
+		buffer_provider_text := agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
 			followthrough_retried, edit_proposal_attempted, request_deadline)
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
@@ -719,7 +733,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
 			}
-			if agent_code_change_followthrough_retry_available(messages, turn_tools, followthrough_retried,
+			if agent_code_change_followthrough_retry_available(code_change_request, turn_tools, followthrough_retried,
 				edit_proposal_attempted, request_deadline) {
 				messages << ChatMessage{
 					role:    'assistant'
@@ -795,6 +809,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				return error('provider returned a duplicate tool call id')
 			}
 			seen_tool_call_ids[call.id] = true
+			if agent_tool_allows_parallel_readonly(call.function.name) {
+				read_only_tool_calls++
+			}
 		}
 		if buffer_provider_text && buffered_text.len > 0 {
 			on_text_delta(buffered_text)!
@@ -863,6 +880,21 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
 			collect_trace)
+		if agent_code_change_exploration_nudge_available(code_change_request, turn_tools,
+			read_only_tool_calls, exploration_nudged, edit_proposal_attempted, request_deadline) {
+			messages << ChatMessage{
+				role:    'user'
+				content: agent_code_change_exploration_nudge
+			}
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id: trace_steps.len + 1
+					source:  'user'
+					message: agent_code_change_exploration_nudge
+				}
+			}
+			exploration_nudged = true
+		}
 		// Text from the next model round must not stick to this round's
 		// narration. The model-visible message stays unchanged.
 		boundary := tool_round_text_boundary(output.content)

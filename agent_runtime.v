@@ -86,6 +86,13 @@ fn agent_tool_allows_parallel_readonly(name string) bool {
 	return name in ['workspace_list_files', 'workspace_read_file', 'workspace_search']
 }
 
+// Count all built-in read-only exploration toward the code-change nudge. This
+// is broader than parallel safety: skill reads and subagent runs stay serial.
+fn agent_tool_is_readonly_exploration(name string) bool {
+	return agent_tool_allows_parallel_readonly(name)
+		|| name in ['subagent_run', 'agent_skill_load', 'agent_skill_read_resource']
+}
+
 fn agent_tool_readonly_run_end(calls []ProviderToolCall, start int) int {
 	mut end := start
 	for end < calls.len && agent_tool_allows_parallel_readonly(calls[end].function.name) {
@@ -809,7 +816,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				return error('provider returned a duplicate tool call id')
 			}
 			seen_tool_call_ids[call.id] = true
-			if agent_tool_allows_parallel_readonly(call.function.name) {
+			if agent_tool_is_readonly_exploration(call.function.name) {
 				read_only_tool_calls++
 			}
 		}

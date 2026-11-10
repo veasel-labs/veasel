@@ -2,6 +2,19 @@ module main
 
 import os
 import time
+import json2
+
+fn test_headless_failure_result_is_machine_readable() {
+	// Regression: with --json, a backend that cannot start (e.g. port
+	// occupied) printed only plain stderr text and left stdout empty,
+	// breaking automation that parses the result. Every pre-turn
+	// failure must produce the same failed-result shape.
+	encoded := json2.encode(headless_failure_result('sess-1', 'port 4097 is already in use'))
+	decoded := json2.decode[HeadlessRunResult](encoded) or { panic(err) }
+	assert decoded.session_id == 'sess-1'
+	assert decoded.status == 'failed'
+	assert decoded.error == 'port 4097 is already in use'
+}
 
 fn test_headless_cli_parses_required_prompt_and_workspace_defaults() {
 	options := parse_headless_run_args(['--prompt', 'Summarize the repository'], '/tmp/workspace') or {

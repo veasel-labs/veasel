@@ -283,7 +283,9 @@ def run_tui(
             os.write(terminal, b"\r")
             wait_for_markers((b"Select model", b"smoke-model"), 10, "local mock model discovery")
             os.write(terminal, b"\r")
-            wait_for_markers((b"Connected", b"ollama/smoke-model"), 10, "the saved local model")
+            wait_for_screen_markers(
+                (b"Connected", b"ollama/smoke-model"), 10, "the saved local model"
+            )
             os.write(terminal, b"\x1b")
             wait_for_markers((b"SESSIONS", b"q quit"), 5, "the clean-profile home after connecting")
             time.sleep(0.2)

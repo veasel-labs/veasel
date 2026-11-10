@@ -184,7 +184,8 @@ fn resolve_headless_worktrees_session(port int, options HeadlessWorktreesOptions
 		title:     'Veasel worktrees'
 		directory: workspace
 	}), false, '')!
-	if response.status_code != 200 {
+	// POST /v1/sessions answers 201 Created (as headless_cli expects).
+	if response.status_code != 201 {
 		return error(headless_worktrees_api_error(response))
 	}
 	session := json2.decode[Session](response.body)!

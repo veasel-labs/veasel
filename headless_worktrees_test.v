@@ -1,5 +1,53 @@
 module main
 
+import net.http
+import time
+
+struct WorktreesSessionFixture {}
+
+fn (mut _ WorktreesSessionFixture) handle(request http.Request) http.Response {
+	mut response := http.Response{}
+	if request.url == '/v1/sessions' {
+		// POST /v1/sessions answers 201 Created, like the real API.
+		response.set_status(.created)
+		response.header.set(.content_type, 'application/json')
+		response.body = '{"id":"sess-created","title":"Veasel worktrees","directory":"/tmp","created_at":""}'
+		return response
+	}
+	response.set_status(.not_found)
+	return response
+}
+
+fn test_headless_worktrees_resolves_session_from_created_response() {
+	// Regression: resolve_headless_worktrees_session required HTTP 200
+	// from POST /v1/sessions, but the API answers 201 Created, so every
+	// `veasel worktrees` invocation without --session failed with the
+	// opaque "HTTP 201" instead of listing worktrees.
+	mut fixture := &WorktreesSessionFixture{}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	port := server.addr.all_after_last(':').int()
+	assert port > 0
+	id := resolve_headless_worktrees_session(port, HeadlessWorktreesOptions{
+		workspace: '/tmp'
+	}) or { panic(err) }
+	assert id == 'sess-created'
+}
+
 fn test_headless_worktrees_parses_list_add_remove() {
 	listed := parse_headless_worktrees_args(['list', '-w', '/tmp/ws', '--json'], '/tmp') or {
 		panic(err)

@@ -513,8 +513,8 @@ const header = new BoxRenderable(renderer, {
   borderStyle: "rounded",
   borderColor: theme.headerBorder,
 })
-const headerTitle = new TextRenderable(renderer, { content: " VEASEL  /  CODE", fg: theme.headerTitle })
-const headerMeta = new TextRenderable(renderer, { content: "● LOCAL", fg: theme.headerMeta })
+const headerTitle = new TextRenderable(renderer, { content: " VEASEL  /  CODE", fg: theme.headerTitle, minHeight: 1 })
+const headerMeta = new TextRenderable(renderer, { content: "● LOCAL", fg: theme.headerMeta, minHeight: 1 })
 header.add(headerTitle)
 header.add(headerMeta)
 
@@ -533,18 +533,20 @@ const sidebar = new BoxRenderable(renderer, {
   borderStyle: "rounded",
   borderColor: theme.panelBorder,
 })
-const sessionsLabel = new TextRenderable(renderer, { content: "SESSIONS", fg: theme.sidebarLabel, wrapMode: "none" })
+const sessionsLabel = new TextRenderable(renderer, { content: "SESSIONS", fg: theme.sidebarLabel, wrapMode: "none", minHeight: 1 })
 sidebar.add(sessionsLabel)
 const sessionList = new TextRenderable(renderer, {
   content: "Connecting to Veasel…",
   fg: theme.sidebarFg,
   wrapMode: "none",
+  minHeight: 1,
 })
 sidebar.add(sessionList)
 const sidebarBrand = new TextRenderable(renderer, {
   content: "VEASEL CODE\nyour local workspace",
   fg: theme.muted,
   wrapMode: "word",
+  minHeight: 1,
 })
 sidebar.add(sidebarBrand)
 const detail = new BoxRenderable(renderer, {
@@ -557,14 +559,18 @@ const detail = new BoxRenderable(renderer, {
   borderColor: theme.panelBorder,
 })
 let portraitText = buildPortraitText(theme)
-const portraitRenderable = new TextRenderable(renderer, { content: portraitText })
+const portraitRenderable = new TextRenderable(renderer, { content: portraitText, minHeight: 1 })
 detail.add(portraitRenderable)
-const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: theme.brand })
+const brandLabel = new TextRenderable(renderer, { content: "VEASEL CODE", fg: theme.brand, minHeight: 1 })
 detail.add(brandLabel)
 const sessionDetail = new TextRenderable(renderer, {
   content: "Your V-powered coding companion.\n\nConnect provider · /connect\nPaste an API key, save it on this machine, then pick a model. Or press s for full provider settings.",
   fg: theme.body,
   wrapMode: "word",
+  // OpenTUI 0.8 no longer paints zero-height renderables; without a floor
+  // Yoga shrinks this node to 0 in short terminals and the settings title
+  // (its first line) disappears entirely.
+  minHeight: 1,
 })
 detail.add(sessionDetail)
 // OpenTUI DiffRenderable split view for patch reviews (toggled with v). Mounted
@@ -626,12 +632,13 @@ const footer = new BoxRenderable(renderer, {
   borderStyle: "rounded",
   borderColor: theme.panelBorder,
 })
-const status = new TextRenderable(renderer, { content: formatBusyStatus("connecting"), fg: theme.statusWarn, wrapMode: "none" })
+const status = new TextRenderable(renderer, { content: formatBusyStatus("connecting"), fg: theme.statusWarn, wrapMode: "none", minHeight: 1 })
 footer.add(status)
 const footerHint = new TextRenderable(renderer, {
   content: homeFooterHint,
   fg: theme.muted,
   wrapMode: "none",
+  minHeight: 1,
 })
 footer.add(footerHint)
 shell.add(header)

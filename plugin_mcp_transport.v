@@ -176,8 +176,8 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	}
 	root := canonical_plugin_root(plugin_root)!
 	data_parent := os.dir(os.real_path(plugin_data))
-	os.mkdir_all(data_parent)!
-	os.mkdir_all(plugin_data)!
+	ensure_directory(data_parent)!
+	ensure_directory(plugin_data)!
 	data := canonical_plugin_root(plugin_data)!
 	$if !windows {
 		os.chmod(data, 0o700)!

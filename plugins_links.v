@@ -111,7 +111,7 @@ fn save_persisted_plugin_links(registry_path string, registry PersistedPluginLin
 	}
 	parent := os.dir(registry_path)
 	if parent.len > 0 {
-		os.mkdir_all(parent) or { return error('unable to create plugin link registry directory') }
+		ensure_directory(parent) or { return error('unable to create plugin link registry directory') }
 	}
 	os.write_file(registry_path, json2.encode(registry)) or {
 		return error('unable to write plugin link registry')

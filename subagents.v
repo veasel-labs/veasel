@@ -636,7 +636,7 @@ fn subagent_preparation_lock_path(data_directory string, run_id string) !string 
 		return error('child agent run ID is invalid')
 	}
 	lock_directory := os.join_path(data_directory, 'subagent-preparations')
-	os.mkdir_all(lock_directory)!
+	ensure_directory(lock_directory)!
 	if os.is_link(lock_directory) {
 		return error('child workspace preparation lock directory cannot be a symlink')
 	}

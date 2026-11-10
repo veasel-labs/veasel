@@ -98,7 +98,7 @@ fn (state &MCPOAuthPendingState) persist(sessions map[string]MCPOAuthAuthorizeSe
 	if state.path == '' {
 		return
 	}
-	os.mkdir_all(os.dir(state.path))!
+	ensure_directory(os.dir(state.path))!
 	temporary_path := '${state.path}.tmp'
 	payload := PersistedMCPOAuthPending{
 		sessions: sessions

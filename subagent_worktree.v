@@ -47,7 +47,7 @@ fn create_subagent_workspace(root string, data_directory string, run_id string) 
 	if os.is_link(worktrees_directory) {
 		return error('child agent worktree directory cannot be a symlink')
 	}
-	os.mkdir_all(worktrees_directory)!
+	ensure_directory(worktrees_directory)!
 	if os.is_link(worktrees_directory) {
 		return error('child agent worktree directory cannot be a symlink')
 	}

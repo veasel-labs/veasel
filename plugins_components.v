@@ -235,7 +235,7 @@ fn (state &PluginComponentState) persist(settings PersistedPluginComponents) ! {
 	if state.path == '' {
 		return
 	}
-	os.mkdir_all(os.dir(state.path))!
+	ensure_directory(os.dir(state.path))!
 	temporary_path := '${state.path}.tmp'
 	write_private_file(temporary_path, json2.encode(settings))!
 	$if !windows {

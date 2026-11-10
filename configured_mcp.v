@@ -354,7 +354,7 @@ fn (state &ConfiguredMCPState) persist(settings PersistedConfiguredMCP) ! {
 	if state.path == '' {
 		return
 	}
-	os.mkdir_all(os.dir(state.path))!
+	ensure_directory(os.dir(state.path))!
 	temporary_path := '${state.path}.tmp'
 	write_private_file(temporary_path, json2.encode(settings))!
 	$if !windows {
@@ -944,7 +944,7 @@ fn find_imported_project_mcp_server(workspace string, server_name string) ?Plugi
 
 fn promote_configured_mcp_stdio_root(app &App, server PluginMCPServer) !(string, PluginMCPServer) {
 	mut root := app.configured_mcp_package_root(server.name)
-	os.mkdir_all(root)!
+	ensure_directory(root)!
 	// Absolute cwd is stored on the spec for display/persistence. The stdio
 	// transport only accepts plugin-relative cwd tokens, so promote the
 	// absolute directory to PLUGIN_ROOT and clear the server cwd.

@@ -33,6 +33,21 @@ fn test_workspace_file_tools_bound_paths_and_skip_symlinks() {
 	files := workspace_files(root, max_workspace_list_results) or { panic(err) }
 	assert files.files == ['README.md', 'src/main.v']
 	assert !files.truncated
+	subdirectory_files := workspace_files_from(root, 'src', max_workspace_list_results) or { panic(err) }
+	assert subdirectory_files.files == ['src/main.v']
+	assert !subdirectory_files.truncated
+	single_file := workspace_files_from(root, 'src/main.v', max_workspace_list_results) or {
+		panic(err)
+	}
+	assert single_file.files == ['src/main.v']
+	assert !single_file.truncated
+	assert workspace_files_from_error_contains(root, '../outside', 'must not leave')
+	assert workspace_files_from_error_contains(root, '../outside/secret.txt', 'must not leave')
+	assert workspace_files_from_error_contains(root, 'outside-link', 'symbolic links')
+	assert workspace_files_from_error_contains(root, 'src-link.v', 'symbolic links')
+	assert workspace_files_from_error_contains(root, '.git', 'ignored')
+	assert workspace_files_from_error_contains(root, '.git/objects/secret', 'ignored')
+	assert workspace_files_from_error_contains(root, 'node_modules', 'ignored')
 	limited_files := workspace_files(root, 1) or { panic(err) }
 	assert limited_files.files == ['README.md']
 	assert limited_files.truncated
@@ -284,6 +299,13 @@ fn workspace_file_range_error_contains(root string, path string, start_line int,
 
 fn workspace_files_error_contains(root string, limit int, expected string) bool {
 	_ := workspace_files(root, limit) or { return err.msg().contains(expected) }
+	return false
+}
+
+fn workspace_files_from_error_contains(root string, relative_directory string, expected string) bool {
+	_ := workspace_files_from(root, relative_directory, max_workspace_list_results) or {
+		return err.msg().contains(expected)
+	}
 	return false
 }
 

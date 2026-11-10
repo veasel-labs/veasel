@@ -90,16 +90,28 @@ fn (mut walker WorkspaceWalker) visit(path string, entry os.WalkDirEntry) os.Wal
 }
 
 fn workspace_files(root string, limit int) !WorkspaceFileList {
+	return workspace_files_from(root, '.', limit)
+}
+
+fn workspace_files_from(root string, relative_directory string, limit int) !WorkspaceFileList {
 	if limit < 1 || limit > max_workspace_list_results {
 		return error('file listing limit must be from 1 to ${max_workspace_list_results}')
 	}
 	canonical_root := canonical_workspace_root(root)!
+	file_candidate := os.join_path(canonical_root, relative_directory)
+	if os.is_file(file_candidate) {
+		file_path := resolve_workspace_listing_file(canonical_root, relative_directory)!
+		return WorkspaceFileList{
+			files: [file_path]
+		}
+	}
+	start_directory := resolve_workspace_directory_path(canonical_root, relative_directory)!
 	mut walker := WorkspaceWalker{
 		root:      canonical_root
 		max_files: max_workspace_file_count + 1
 		files:     []string{cap: 256}
 	}
-	os.walk_dir(canonical_root, walker.visit)!
+	os.walk_dir(start_directory, walker.visit)!
 	walker.files.sort()
 	truncated := walker.stopped || walker.files.len > max_workspace_file_count
 	if walker.files.len > max_workspace_file_count {
@@ -116,6 +128,68 @@ fn workspace_files(root string, limit int) !WorkspaceFileList {
 		files:     walker.files
 		truncated: truncated
 	}
+}
+
+fn resolve_workspace_listing_file(root string, relative_path string) !string {
+	if relative_path.len == 0 || relative_path.len > 4_096 || os.is_abs_path(relative_path)
+		|| relative_path.contains('\x00') {
+		return error('workspace file path must be relative')
+	}
+	mut joined := root
+	for segment in relative_path.replace('\\', '/').split('/') {
+		if segment == '..' {
+			return error('workspace file path must not leave the selected root')
+		}
+		if segment == '' || segment == '.' {
+			continue
+		}
+		if segment in ignored_workspace_directories {
+			return error('workspace file path is ignored')
+		}
+		joined = os.join_path(joined, segment)
+		if os.is_link(joined) {
+			return error('workspace file path must not traverse symbolic links')
+		}
+	}
+	if !os.is_file(joined) {
+		return error('workspace file does not exist')
+	}
+	resolved := os.real_path(joined)
+	if !os.is_abs_path(resolved) || !path_is_within(root, resolved) {
+		return error('workspace file escapes the selected root')
+	}
+	return os.path_rel(root, resolved) or { return error('workspace file path is invalid') }
+}
+
+fn resolve_workspace_directory_path(root string, relative_directory string) !string {
+	if relative_directory.len == 0 || relative_directory.len > 4_096
+		|| os.is_abs_path(relative_directory) || relative_directory.contains('\x00') {
+		return error('workspace directory path must be a relative path')
+	}
+	mut joined := root
+	for segment in relative_directory.replace('\\', '/').split('/') {
+		if segment == '..' {
+			return error('workspace directory path must not leave the selected root')
+		}
+		if segment == '' || segment == '.' {
+			continue
+		}
+		if segment in ignored_workspace_directories {
+			return error('workspace directory is ignored')
+		}
+		joined = os.join_path(joined, segment)
+		if os.is_link(joined) {
+			return error('workspace directory path must not traverse symbolic links')
+		}
+	}
+	if !os.exists(joined) || !os.is_dir(joined) {
+		return error('workspace directory does not exist')
+	}
+	resolved := os.real_path(joined)
+	if !os.is_abs_path(resolved) || !path_is_within(root, resolved) {
+		return error('workspace directory escapes the selected root')
+	}
+	return resolved
 }
 
 fn workspace_file(root string, relative_path string) !WorkspaceFileContent {

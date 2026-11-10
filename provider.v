@@ -44,6 +44,8 @@ const max_provider_model_catalog_bytes = 1_000_000
 // reproducible; every retry yields to cancellation and the request deadline.
 const provider_transient_retry_delays_ms = [500, 2000]
 const provider_retry_poll_step_ms = 50
+const provider_default_stream_read_timeout = 60 * time.second
+const provider_local_model_stream_read_timeout = 180 * time.second
 // Leave this margin under the request deadline so a retried request still
 // gets bounded read time instead of failing instantly on a deadline race.
 const provider_retry_remaining_floor = 2 * time.second
@@ -80,6 +82,15 @@ const gemini_cached_content_prefix = 'cachedContents/'
 const gemini_cached_content_ttl_default = '3600s'
 const max_gemini_cached_content_response_bytes = 256_000
 const gemini_cached_content_http_timeout = 30 * time.second
+
+fn provider_stream_read_timeout(provider string, remaining time.Duration) time.Duration {
+	limit := if provider == 'ollama' {
+		provider_local_model_stream_read_timeout
+	} else {
+		provider_default_stream_read_timeout
+	}
+	return if remaining < limit { remaining } else { limit }
+}
 
 pub struct ChatMessage {
 pub:
@@ -2798,7 +2809,7 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	if remaining <= 0 {
 		return error('deadline_exceeded')
 	}
-	read_timeout := if remaining < 60 * time.second { remaining } else { 60 * time.second }
+	read_timeout := provider_stream_read_timeout(config.provider, remaining)
 	write_timeout := if remaining < 10 * time.second { remaining } else { 10 * time.second }
 	mut headers := http.new_header(key: .content_type, value: 'application/json')
 	headers.add_custom('Accept', 'text/event-stream')!

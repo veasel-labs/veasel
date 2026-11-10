@@ -7,6 +7,97 @@ import context as vcontext
 import time
 import uuid
 
+fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
+	assert explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Please fix the typo in README.md.'
+	}])
+	assert explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Could you add a test for this regression?'
+	}])
+	assert !explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Explain how this code works.'
+	}])
+	assert !explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Review the patch and suggest improvements.'
+	}])
+	assert !explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Do not change any files; tell me what is wrong.'
+	}])
+	assert !explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Please update the README, but ask me before making changes.'
+	}])
+	assert explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Please update the API docs but do not change the public API.'
+	}])
+	assert !explicit_agent_code_change_request([
+		ChatMessage{
+			role:    'user'
+			content: 'Fix the typo in README.md.'
+		},
+		ChatMessage{
+			role:    'assistant'
+			content: 'I will inspect it.'
+		},
+		ChatMessage{
+			role:    'user'
+			content: 'Actually, explain the relevant convention.'
+		},
+	])
+}
+
+fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() {
+	deadline := time.now().add(60 * time.second)
+	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]
+	messages := [ChatMessage{
+		role:    'user'
+		content: 'Please update the README.'
+	}]
+	explicit_request := explicit_agent_code_change_request(messages)
+	assert explicit_request
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+		deadline)
+	mut nudged_messages := messages.clone()
+	nudged_messages << ChatMessage{
+		role:    'user'
+		content: agent_code_change_exploration_nudge
+	}
+	assert !explicit_agent_code_change_request(nudged_messages)
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+		deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, true, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, false, true, deadline)
+	assert !agent_code_change_followthrough_retry_available(false, tools, false, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, [], false, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, false, false,
+		time.now().add(10 * time.second))
+}
+
+fn test_agent_code_change_exploration_nudge_is_bounded_to_explicit_requests() {
+	deadline := time.now().add(60 * time.second)
+	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]
+	assert agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(false, tools,
+		agent_code_change_exploration_nudge_after, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after - 1, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, true, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, false, true, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, [],
+		agent_code_change_exploration_nudge_after, false, false, deadline)
+	assert !agent_code_change_exploration_nudge_available(true, tools,
+		agent_code_change_exploration_nudge_after, false, false, time.now().add(10 * time.second))
+}
+
 fn test_sanitize_agent_tool_result_rejects_nul_bytes() {
 	assert sanitize_agent_tool_result('ok') == 'ok'
 	assert sanitize_agent_tool_result('bad\0data') == 'tool result rejected: contained a NUL byte'
@@ -792,6 +883,14 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert !agent_tool_allows_parallel_readonly('subagent_run')
 	assert !agent_tool_allows_parallel_readonly('workspace_propose_file_edit')
 	assert !agent_tool_allows_parallel_readonly('agent_skill_load')
+	for name in ['workspace_list_files', 'workspace_read_file', 'workspace_search', 'subagent_run',
+		'agent_skill_load', 'agent_skill_read_resource'] {
+		assert agent_tool_is_readonly_exploration(name)
+	}
+	for name in ['workspace_propose_file_edit', 'workspace_propose_shell_command', 'mcp_tool',
+		'unknown_tool'] {
+		assert !agent_tool_is_readonly_exploration(name)
+	}
 	parallel_calls := [
 		ProviderToolCall{
 			id:       'list-p'
@@ -1134,6 +1233,31 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	})
 	assert listing.contains('src/main.v')
 	assert !listing.contains(root)
+	nested_listing := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'list-src'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{"path":"src"}'
+		}
+	})
+	assert nested_listing.contains('src/main.v')
+	assert !nested_listing.contains('README.md')
+	single_file_listing := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'list-file'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{"path":"src/main.v"}'
+		}
+	})
+	assert single_file_listing.contains('src/main.v')
+	assert !single_file_listing.contains('README.md')
+	assert execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'list-escape'
+		function: ProviderFunctionCall{
+			name:      'workspace_list_files'
+			arguments: '{"path":"../outside"}'
+		}
+	}).contains('could not be listed')
 
 	read := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'read-1'
@@ -1161,7 +1285,27 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 			arguments: '{"path":"src/main.v","start_line":2}'
 		}
 	})
-	assert invalid_range.contains('must be provided together')
+	assert invalid_range.contains('paired with either line_count or end_line')
+	ranged_read_to_end := execute_workspace_agent_tool(app, root, session.id,
+		ProviderToolCall{
+			id:       'read-range-end'
+			function: ProviderFunctionCall{
+				name:      'workspace_read_file'
+				arguments: '{"path":"src/main.v","start_line":1,"end_line":2}'
+			}
+		})
+	assert ranged_read_to_end.contains('"start_line":1')
+	assert ranged_read_to_end.contains('"end_line":2')
+	assert ranged_read_to_end.contains('1: module fixture')
+	assert ranged_read_to_end.contains('2: workspace-sentinel')
+	assert !ranged_read_to_end.contains('3:')
+	assert execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
+		id:       'read-range-both-bounds'
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"src/main.v","start_line":1,"line_count":1,"end_line":1}'
+		}
+	}).contains('paired with either line_count or end_line')
 
 	search := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'search-1'
@@ -1542,6 +1686,125 @@ fn test_agent_tool_call_budget_returns_durable_summary_instead_of_failing_turn()
 	operation := store.get_session_operation(session.id, operation_id) or { panic(err) }
 	assert operation.status == 'completed'
 	assert operation.error == ''
+}
+
+struct AgentCodeChangeFollowthroughFixture {
+mut:
+	hits           int
+	request_bodies []string
+}
+
+fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	fixture.request_bodies << request.data
+	chunk := if fixture.hits == 1 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
+			}]
+		}
+	} else if fixture.hits == 2 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'edit-proposal-1'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_propose_file_edit'
+							arguments: '{"path":"README.md","content":"Updated by fixture\\n"}'
+						}
+					}]
+				}
+			}]
+		}
+	} else {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{ content: 'I prepared the README edit for review.' }
+			}]
+		}
+	}
+	mut response := http.Response{}
+	response.set_status(.ok)
+	response.header.set(.content_type, 'text/event-stream')
+	response.body = 'data: ${json2.encode(chunk)}\n\ndata: [DONE]\n\n'
+	return response
+}
+
+fn start_agent_code_change_followthrough_fixture(mut fixture AgentCodeChangeFollowthroughFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
+fn test_agent_retries_explicit_code_request_after_text_only_completion() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-followthrough-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(workspace, 'README.md'), 'Original README\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Code follow-through regression'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please update the README to say the fixture changed.'
+		collect_trace: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 3
+	assert fixture.request_bodies.len == 3
+	assert fixture.request_bodies[1].contains(agent_code_change_retry_prompt)
+	assert !exchange.messages.any(it.content == 'I will take a look.')
+	assert exchange.messages.last().content == 'I prepared the README edit for review.'
+	assert store.assistant_text_for_operation(session.id, operation_id) or {
+		panic(err)
+	} == 'I prepared the README edit for review.'
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
+	edits := store.workspace_edits(session.id) or { panic(err) }
+	assert edits.len == 1
+	assert edits[0].status == 'pending'
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('I will take a look.')
+	assert trace.contains(agent_code_change_retry_prompt)
 }
 
 fn test_agent_context_byte_limit_accounts_for_opaque_provider_context() {

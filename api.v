@@ -15,7 +15,7 @@ const max_subagent_provider_concurrency = 1
 const max_active_turn_operations = 32
 const max_active_shell_commands = 2
 const session_turn_lock_stripes = 64
-const max_agent_turn_duration = 2 * time.minute
+const max_agent_turn_duration = 10 * time.minute
 const assistant_event_batch_bytes = 16
 
 enum ProviderPool {

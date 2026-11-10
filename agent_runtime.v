@@ -9,11 +9,71 @@ const max_agent_tool_calls = 48
 const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
+const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. Do not claim the work is complete without proposing the edits.'
+const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. Keep the change scoped to the user request.'
+const agent_code_change_exploration_nudge_after = 8
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 
 fn agent_context_byte_limit() int {
 	return chat_input_byte_limit() + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
+}
+
+fn explicit_agent_code_change_request(messages []ChatMessage) bool {
+	mut latest_user_message := ''
+	for message in messages.reverse() {
+		if message.role == 'user' {
+			latest_user_message = message.content.trim_space().to_lower()
+			break
+		}
+	}
+	if latest_user_message.len == 0 || latest_user_message.starts_with('do not ')
+		|| latest_user_message.starts_with("don't ") || latest_user_message.starts_with('explain ')
+		|| latest_user_message.starts_with('review ') || latest_user_message.starts_with('summarize ')
+		|| latest_user_message.starts_with('what ') || latest_user_message.starts_with('how ') {
+		return false
+	}
+	for no_edit_instruction in ['do not edit any files', 'do not edit files', "don't edit any files",
+		"don't edit files", 'do not change any files', 'do not change files', "don't change any files",
+		"don't change files", 'ask me before editing', 'ask before editing',
+		'ask me before making changes', 'ask before making changes', 'before you edit files',
+		'before editing files', 'before changing files'] {
+		if latest_user_message.contains(no_edit_instruction) {
+			return false
+		}
+	}
+	mut request := latest_user_message
+	for prefix in ['please ', 'could you ', 'can you ', 'would you ', 'i want you to ', 'help me '] {
+		if request.starts_with(prefix) {
+			request = request[prefix.len..]
+			break
+		}
+	}
+	for verb in ['edit ', 'change ', 'update ', 'fix ', 'implement ', 'add ', 'create ', 'remove ',
+		'delete ', 'rename ', 'refactor ', 'modify ', 'write ', 'replace '] {
+		if request.starts_with(verb) {
+			return true
+		}
+	}
+	return false
+}
+
+fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
+	retried bool, proposal_attempted bool, request_deadline time.Time) bool {
+	if retried || proposal_attempted || !explicit_request
+		|| request_deadline - time.now() < 20 * time.second {
+		return false
+	}
+	return tools.any(it.name == 'workspace_propose_file_edit')
+}
+
+fn agent_code_change_exploration_nudge_available(explicit_request bool, tools []AgentToolDefinition,
+	read_only_calls int, nudged bool, proposal_attempted bool, request_deadline time.Time) bool {
+	if !explicit_request || nudged || proposal_attempted || read_only_calls < agent_code_change_exploration_nudge_after
+		|| request_deadline - time.now() < 20 * time.second {
+		return false
+	}
+	return tools.any(it.name == 'workspace_propose_file_edit')
 }
 
 const plugin_mcp_approval_poll_interval = 250 * time.millisecond
@@ -24,6 +84,13 @@ const plugin_mcp_approval_poll_interval = 250 * time.millisecond
 // parallelize.
 fn agent_tool_allows_parallel_readonly(name string) bool {
 	return name in ['workspace_list_files', 'workspace_read_file', 'workspace_search']
+}
+
+// Count all built-in read-only exploration toward the code-change nudge. This
+// is broader than parallel safety: skill reads and subagent runs stay serial.
+fn agent_tool_is_readonly_exploration(name string) bool {
+	return agent_tool_allows_parallel_readonly(name)
+		|| name in ['subagent_run', 'agent_skill_load', 'agent_skill_read_resource']
 }
 
 fn agent_tool_readonly_run_end(calls []ProviderToolCall, start int) int {
@@ -189,8 +256,9 @@ fn workspace_read_identity_from_call(call ProviderToolCall) ?string {
 fn workspace_read_range_arguments(arguments map[string]json2.Any) !(int, int) {
 	has_start := 'start_line' in arguments
 	has_count := 'line_count' in arguments
-	if has_start != has_count {
-		return error('start_line and line_count must be provided together.')
+	has_end := 'end_line' in arguments
+	if (has_count && has_end) || (has_start != (has_count || has_end)) {
+		return error('start_line must be paired with either line_count or end_line.')
 	}
 	if arguments.len != if has_start { 3 } else { 1 } {
 		return error('Unexpected tool argument.')
@@ -199,17 +267,25 @@ fn workspace_read_range_arguments(arguments map[string]json2.Any) !(int, int) {
 		return 0, 0
 	}
 	start := arguments['start_line'] or { return error('start_line is required.') }
-	count := arguments['line_count'] or { return error('line_count is required.') }
-	if start !is f64 || count !is f64 {
-		return error('start_line and line_count must be integers.')
+	end_or_count := arguments[if has_end { 'end_line' } else { 'line_count' }] or {
+		return error('line_count or end_line is required.')
 	}
-	a := start.f64()
-	b := count.f64()
-	if a < 1 || a > f64(max_workspace_file_bytes) || b < 1 || b > max_workspace_read_range_lines
-		|| a != f64(int(a)) || b != f64(int(b)) {
-		return error('start_line and line_count must be positive whole numbers within the documented limits.')
+	if start !is f64 || end_or_count !is f64 {
+		return error('start_line and range bound must be integers.')
 	}
-	return int(a), int(b)
+	start_value := start.f64()
+	bound_value := end_or_count.f64()
+	if start_value < 1 || start_value > f64(max_workspace_file_bytes)
+		|| bound_value < 1 || bound_value > f64(max_workspace_file_bytes)
+		|| start_value != f64(int(start_value)) || bound_value != f64(int(bound_value)) {
+		return error('start_line and range bound must be positive whole numbers within the documented limits.')
+	}
+	start_line := int(start_value)
+	range_count := if has_end { int(bound_value) - start_line + 1 } else { int(bound_value) }
+	if range_count < 1 || range_count > max_workspace_read_range_lines {
+		return error('line range must contain 1 to ${max_workspace_read_range_lines} lines.')
+	}
+	return start_line, range_count
 }
 
 fn duplicate_workspace_read_note(path string) string {
@@ -422,9 +498,11 @@ fn workspace_agent_tools() []AgentToolDefinition {
 	return [
 		AgentToolDefinition{
 			name:        'workspace_list_files'
-			description: 'List up to 500 regular files in the current workspace. Common generated and dependency directories and symbolic links are skipped.'
+			description: 'List up to 500 regular files in the current workspace or a workspace-relative directory. Provide path to list a subdirectory or a single file; omit path or use . to list the workspace root. Common generated and dependency directories and symbolic links are skipped.'
 			parameters:  ToolParameters{
-				properties: map[string]ToolParameter{}
+				properties: {
+					'path': ToolParameter{ type: 'string', description: 'Optional workspace-relative directory or file to list; omit it or use . for the workspace root.' }
+				}
 				required:   []string{}
 			}
 		},
@@ -437,8 +515,9 @@ fn workspace_agent_tools() []AgentToolDefinition {
 						type:        'string'
 						description: 'Relative file path inside the workspace.'
 					}
-					'start_line': ToolParameter{ type: 'integer', description: 'One-based first line to return. Requires line_count.' }
-					'line_count': ToolParameter{ type: 'integer', description: 'Number of lines to return, from 1 to 200. Requires start_line.' }
+					'start_line': ToolParameter{ type: 'integer', description: 'One-based first line to return. Requires line_count or end_line.' }
+					'line_count': ToolParameter{ type: 'integer', description: 'Number of lines to return, from 1 to 200. Requires start_line; do not combine with end_line.' }
+					'end_line':   ToolParameter{ type: 'integer', description: 'One-based last line to return, inclusive. Requires start_line and may span at most 200 lines; do not combine with line_count.' }
 				}
 				required:   ['path']
 			}
@@ -622,6 +701,11 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 	}
 	mut trace_usage := ProviderUsage{}
+	mut followthrough_retried := false
+	mut edit_proposal_attempted := false
+	code_change_request := explicit_agent_code_change_request(messages)
+	mut read_only_tool_calls := 0
+	mut exploration_nudged := false
 	for round in 0 .. max_agent_tool_rounds {
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
@@ -632,14 +716,58 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent context size limit reached')
 		}
 		turn_tools := agent_tools_for_skill_context(tools, skill_context)
+		buffer_provider_text := agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
+			followthrough_retried, edit_proposal_attempted, request_deadline)
+		mut buffered_text := ''
+		stream_text_delta := if buffer_provider_text {
+			fn [mut buffered_text] (delta string) ! {
+				buffered_text += delta
+			}
+		} else {
+			on_text_delta
+		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
-			on_text_delta, request_deadline, provider_pool)!
+			stream_text_delta, request_deadline, provider_pool) or {
+			if buffer_provider_text && buffered_text.len > 0 {
+				on_text_delta(buffered_text) or { return err }
+			}
+			return err
+		}
 		if has_provider_usage_data(output.usage) {
 			trace_usage = add_provider_usage(trace_usage, output.usage)
 		}
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
+			}
+			if agent_code_change_followthrough_retry_available(code_change_request, turn_tools, followthrough_retried,
+				edit_proposal_attempted, request_deadline) {
+				messages << ChatMessage{
+					role:    'assistant'
+					content: output.content
+				}
+				messages << ChatMessage{
+					role:    'user'
+					content: agent_code_change_retry_prompt
+				}
+				if collect_trace {
+					trace_steps << ATIFStep{
+						step_id:    trace_steps.len + 1
+						source:     'agent'
+						model_name: output.model
+						message:    output.content
+					}
+					trace_steps << ATIFStep{
+						step_id: trace_steps.len + 1
+						source:  'user'
+						message: agent_code_change_retry_prompt
+					}
+				}
+				followthrough_retried = true
+				continue
+			}
+			if buffer_provider_text && buffered_text.len > 0 {
+				on_text_delta(buffered_text)!
 			}
 			if collect_trace {
 				trace_steps << ATIFStep{
@@ -656,6 +784,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			}
 		}
 		if tool_calls + output.tool_calls.len > max_agent_tool_calls {
+			if buffer_provider_text && buffered_text.len > 0 {
+				on_text_delta(buffered_text)!
+			}
 			// Over-budget turns must still produce a durable reply: ask the model
 			// for the budget summary instead of failing the whole operation.
 			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output,
@@ -663,10 +794,16 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				provider_pool)
 		}
 		if round == max_agent_tool_rounds - 1 {
+			if buffer_provider_text && buffered_text.len > 0 {
+				on_text_delta(buffered_text)!
+			}
 			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output, on_text_delta,
 				mut trace_steps, mut trace_usage, collect_trace, request_deadline, provider_pool)
 		}
 		for call in output.tool_calls {
+			if call.function.name == 'workspace_propose_file_edit' {
+				edit_proposal_attempted = true
+			}
 			if context_error := turn_context_error(mut turn_ctx) {
 				return error(context_error)
 			}
@@ -679,6 +816,12 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				return error('provider returned a duplicate tool call id')
 			}
 			seen_tool_call_ids[call.id] = true
+			if agent_tool_is_readonly_exploration(call.function.name) {
+				read_only_tool_calls++
+			}
+		}
+		if buffer_provider_text && buffered_text.len > 0 {
+			on_text_delta(buffered_text)!
 		}
 		mut trace_tool_calls := []ATIFToolCall{}
 		if collect_trace {
@@ -744,6 +887,21 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
 			collect_trace)
+		if agent_code_change_exploration_nudge_available(code_change_request, turn_tools,
+			read_only_tool_calls, exploration_nudged, edit_proposal_attempted, request_deadline) {
+			messages << ChatMessage{
+				role:    'user'
+				content: agent_code_change_exploration_nudge
+			}
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id: trace_steps.len + 1
+					source:  'user'
+					message: agent_code_change_exploration_nudge
+				}
+			}
+			exploration_nudged = true
+		}
 		// Text from the next model round must not stick to this round's
 		// narration. The model-visible message stays unchanged.
 		boundary := tool_round_text_boundary(output.content)
@@ -1342,10 +1500,17 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
-			if tool_arguments.len != 0 {
+			if tool_arguments.len > 1 {
 				return encode_agent_tool_error('This tool does not accept arguments.')
 			}
-			files := workspace_files(root, max_workspace_list_results) or {
+			path := if tool_arguments.len == 0 {
+				'.'
+			} else {
+				string_tool_argument(tool_arguments, 'path') or {
+					return encode_agent_tool_error('The workspace directory path must be a string.')
+				}
+			}
+			files := workspace_files_from(root, path, max_workspace_list_results) or {
 				return encode_agent_tool_error('Workspace files could not be listed.')
 			}
 			json2.encode[WorkspaceFileList](files)

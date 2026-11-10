@@ -68,7 +68,7 @@ export function LiveHome(props: LiveHomeProps) {
           border
           borderColor={colors.panelBorder}
         >
-          <text fg={colors.sidebarLabel}>
+          <text fg={colors.sidebarLabel} minHeight={1}>
             SESSIONS
             <Show when={props.sessions.length > 0}>
               {"  "}
@@ -77,13 +77,13 @@ export function LiveHome(props: LiveHomeProps) {
           </text>
           <Show
             when={visible().length > 0}
-            fallback={<text fg={colors.muted}>No sessions yet · press n</text>}
+            fallback={<text fg={colors.muted} minHeight={1}>No sessions yet · press n</text>}
           >
             <For each={visible()}>
               {(session, index) => {
                 const active = () => index() === props.selectedIndex
                 return (
-                  <text fg={active() ? colors.brand : colors.sidebarFg}>
+                  <text fg={active() ? colors.brand : colors.sidebarFg} minHeight={1}>
                     {active() ? "▸ " : "  "}
                     {session.title}
                   </text>
@@ -91,7 +91,7 @@ export function LiveHome(props: LiveHomeProps) {
               }}
             </For>
           </Show>
-          <text fg={colors.muted}>VEASEL CODE{"\n"}your local workspace</text>
+          <text fg={colors.muted} minHeight={1}>VEASEL CODE{"\n"}your local workspace</text>
         </box>
 
         <PaneResizeHandle resize={resize} />

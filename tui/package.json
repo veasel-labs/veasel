@@ -10,14 +10,14 @@
     "build:standalone": "bun run scripts/build-standalone.ts"
   },
   "dependencies": {
-    "@opentui/core": "0.7.0",
-    "@opentui/solid": "0.7.0",
-    "solid-js": "1.9.17",
+    "@opentui/core": "0.8.1",
+    "@opentui/solid": "0.8.1",
+    "solid-js": "1.9.18",
     "string-width": "8.3.0"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "typescript": "7.0.2"
   }
 }

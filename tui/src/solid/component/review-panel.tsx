@@ -313,7 +313,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
       >
         {(item) => (
           <>
-            <box width="100%" flexDirection="row" gap={1}>
+            <box width="100%" flexDirection="row" gap={1} minHeight={1}>
               <text fg={colors.statusWarn} flexShrink={0} wrapMode="none">
                 <strong>{reviewKindLabel(item().kind).toUpperCase()}</strong>
               </text>
@@ -331,7 +331,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
             </For>
             <Show when={!busy() && hotkeyHint()}>
               {(hint) => (
-                <text fg={colors.muted} wrapMode="none">
+                <text fg={colors.muted} minHeight={1} wrapMode="none">
                   {current()?.kind === "patch"
                     ? `a approve · x reject · A/X · Space · ]/[ · {/} · ${diffSurface() === "split" ? "v word-diff" : "v split view"}`
                     : hint()}
@@ -357,7 +357,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
               }
             >
               <box width="100%" flexDirection="column" gap={1}>
-                <text>
+                <text minHeight={1}>
                   <For each={bodySegments()}>{(segment) => <SegmentSpan segment={segment} />}</For>
                 </text>
                 <diff

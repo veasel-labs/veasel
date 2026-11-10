@@ -221,6 +221,19 @@ fn test_attach_headless_session_usage_skips_empty_session_ids() {
 	assert result.session_completed_turns == 0
 }
 
+fn test_headless_unreachable_cutoff_only_after_grace() {
+	// Regression: when the server died mid-turn and never came back, the
+	// wait loop polled the corpse until the wait limit (30 minutes by
+	// default), turning a crash into a hang. Continuous unreachability
+	// past the grace window must cut the wait; brief blips must not.
+	now := time.now()
+	assert !headless_unreachable_expired(false, now.add(-5 * time.minute), now)
+	assert !headless_unreachable_expired(true, now, now)
+	assert !headless_unreachable_expired(true, now.add(-59 * time.second), now)
+	assert headless_unreachable_expired(true, now.add(-60 * time.second), now)
+	assert headless_unreachable_expired(true, now.add(-5 * time.minute), now)
+}
+
 fn test_headless_poll_interval_backs_off_to_steady_state() {
 	mut schedule := []time.Duration{}
 	mut interval := headless_poll_initial_interval

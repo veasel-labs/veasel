@@ -13,6 +13,15 @@ const default_headless_timeout = 30 * time.minute
 const headless_request_timeout = 5 * time.second
 const headless_poll_interval = 250 * time.millisecond
 const headless_poll_initial_interval = 10 * time.millisecond
+const headless_server_unreachable_grace = 60 * time.second
+
+// True once the server has been continuously unreachable since `since`
+// for the whole grace window. Any answered poll resets the clock, so a
+// server that restarts within the window still recovers the turn; a
+// corpse is not polled until the wait limit.
+fn headless_unreachable_expired(active bool, since time.Time, now time.Time) bool {
+	return active && now - since >= headless_server_unreachable_grace
+}
 
 // Poll completion is detected on the next tick, so a fixed 250ms interval
 // taxes every fast turn with up to a quarter second of dead time. Start
@@ -294,13 +303,24 @@ fn run_headless_task(port int, options HeadlessRunOptions) HeadlessRunResult {
 	}
 	deadline := time.now().add(options.timeout)
 	mut poll_interval := headless_poll_initial_interval
+	mut unreachable_since := time.now()
+	mut unreachable_active := false
 	for time.now() < deadline {
 		operation_response := headless_json_request(port, .get,
 			'/v1/sessions/${session_id}/operations/${operation_id}', '', false, '') or {
+			if !unreachable_active {
+				unreachable_active = true
+				unreachable_since = time.now()
+			}
+			if headless_unreachable_expired(unreachable_active, unreachable_since, time.now()) {
+				return headless_failed_result(session_id, operation_id,
+					'server unreachable while waiting for the model turn; it may have stopped, so inspect operation status before retrying')
+			}
 			time.sleep(poll_interval)
 			poll_interval = headless_next_poll_interval(poll_interval)
 			continue
 		}
+		unreachable_active = false
 		if operation_response.status_code != 200 {
 			return headless_failed_result(session_id, operation_id,
 				'unable to read model turn state (HTTP ${operation_response.status_code})')

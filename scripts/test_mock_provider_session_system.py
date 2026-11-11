@@ -33,15 +33,33 @@ class SessionSystemGuardTests(unittest.TestCase):
 
     def test_workspace_and_interactive_guidance_match_runtime_source(self):
         runtime = (Path(__file__).parents[1] / "execution_policy.v").read_text(encoding="utf-8")
+        api = (Path(__file__).parents[1] / "api.v").read_text(encoding="utf-8")
         workspace = re.search(
             r"fn workspace_tool_instructions\(\) string \{\s*return '([^']*)'\s*\}",
             runtime,
         )
         interactive = re.search(r"ask_base := '([^']*)'", runtime)
+        non_interactive = re.search(r"return '(Execution policy is ask in a non-interactive[^']*)'", runtime)
+        auto_edit = re.search(r"return '(Execution policy auto-edit[^']*)'", runtime)
+        sandbox_auto = re.search(r"return '(Sandbox-auto / autonomous benchmark execution[^']*)'", runtime)
         self.assertIsNotNone(workspace)
         self.assertIsNotNone(interactive)
+        self.assertIsNotNone(non_interactive)
+        self.assertIsNotNone(auto_edit)
+        self.assertIsNotNone(sandbox_auto)
         self.assertEqual(self.mock.WORKSPACE_TOOL_INSTRUCTIONS, workspace.group(1))
         self.assertEqual(self.mock.ASK_INTERACTIVE_INSTRUCTIONS, interactive.group(1))
+        self.assertEqual(self.mock.ASK_NONINTERACTIVE_INSTRUCTIONS, non_interactive.group(1))
+        self.assertEqual(self.mock.AUTO_EDIT_INSTRUCTIONS, auto_edit.group(1))
+        self.assertEqual(self.mock.SANDBOX_AUTO_INSTRUCTIONS, sandbox_auto.group(1))
+        self.assertIn(
+            "${tool_instructions}${optional_code_change_instructions} MCP tool names",
+            api,
+        )
+        self.assertRegex(
+            api,
+            r"optional_code_change_instructions := if code_change_instructions\.len > 0",
+        )
 
     def test_repository_map_suffix_is_accepted(self):
         content = (

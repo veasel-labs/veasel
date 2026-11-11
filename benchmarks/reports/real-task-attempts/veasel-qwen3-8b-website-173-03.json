@@ -1,0 +1,42 @@
+{
+  "schema": "veasel-real-task-run-summary/1",
+  "run": "veasel-qwen3-8b-website-173-03",
+  "product_commit": "aad591e3891351ab08e8eaa5256c313e1ba079db",
+  "working_patch_sha256": "dcfc0761c776cc996540302daf6e4e666a6a3d6795eed507153850b20c41af8a",
+  "candidate_binary_sha256": "161c98915fd552e5d2932778160021780e7bb2fdb56ec1adb52761e51af57edd",
+  "website_base": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "task": "veasel-labs/website#173",
+  "prompt_sha256": "13f41c1dd0d2b33f84765b4ea195499581d0e633e63e15a5b43c1f60711a6e5b",
+  "provider": "ollama",
+  "ollama_version": "0.40.16",
+  "model": "qwen3:8b",
+  "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+  "ollama_context": 8192,
+  "output_budget": 2048,
+  "temperature": "Ollama default; Veasel request omits explicit temperature",
+  "status": "completed",
+  "input_tokens": 91865,
+  "output_tokens": 1342,
+  "usage_reported": true,
+  "trajectory_steps": 20,
+  "read_only_tool_calls": 16,
+  "tool_counts": {
+    "workspace_list_files": 8,
+    "workspace_read_file": 8
+  },
+  "files_read": [
+    "src/layouts/DocsLayout.astro",
+    "src/layouts/DocsLayout.astro",
+    "src/layouts/DocsLayout.astro",
+    "src/layouts/DocsLayout.astro",
+    "src/pages/docs/index.astro",
+    "src/pages/docs/install.astro",
+    "src/pages/docs/quickstart.astro",
+    "src/pages/docs/tui.astro"
+  ],
+  "nudge_fired": true,
+  "workspace_edit_proposals": 0,
+  "shell_proposals": 0,
+  "result": "no_edit",
+  "finding": "The progress nudge fired after eight read-only calls. The model then read DocsLayout.astro four times plus four documentation pages, but made no edit proposal and returned a summary. The no-edit retry was suppressed because explicit-request detection examined the injected nudge as the latest user message; fix is in current working tree."
+}

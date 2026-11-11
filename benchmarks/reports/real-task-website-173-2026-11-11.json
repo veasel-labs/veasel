@@ -30,7 +30,7 @@
       "result": "no_edit_false_completion_claim",
       "oracle_result": "clean worktree; expected change absent",
       "resource_measurements": null,
-      "trace": "/tmp/veasel-phase2-baseline/trace.json",
+      "sanitized_trace_summary": "real-task-attempts/installed-0.67.0-qwen3-8b.json",
       "notes": "Default headless ask policy. This locally installed binary predates the cited latest release and PR #604."
     },
     {
@@ -51,7 +51,7 @@
       "result": "provider_timeout_after_read_only_exploration",
       "oracle_result": "clean worktree; expected change absent",
       "resource_measurements": null,
-      "trace": "/tmp/veasel-phase2-baseline/latest-default-trace.json",
+      "sanitized_trace_summary": "real-task-attempts/release-0.69.13-qwen3-8b.json",
       "failure": "The backend log reports 'assistant turn failed (net: op timed out)'."
     },
     {
@@ -72,7 +72,7 @@
       "result": "no_edit",
       "oracle_result": "expected change absent",
       "resource_measurements": null,
-      "source_report": "~/.cache/veasel-readiness/reports/veasel-qwen3-8b-website-173-04.json",
+      "source_report": "real-task-attempts/veasel-qwen3-8b-website-173-04.json",
       "notes": "The exploration nudge and follow-through retry both fired."
     },
     {
@@ -93,7 +93,7 @@
       "result": "no_edit",
       "oracle_result": "expected change absent",
       "resource_measurements": null,
-      "source_report": "~/.cache/veasel-readiness/reports/veasel-qwen3-8b-website-173-03.json"
+      "source_report": "real-task-attempts/veasel-qwen3-8b-website-173-03.json"
     },
     {
       "runner": "Veasel candidate, run 02",
@@ -113,7 +113,7 @@
       "result": "no_edit",
       "oracle_result": "expected change absent",
       "resource_measurements": null,
-      "source_report": "~/.cache/veasel-readiness/reports/veasel-qwen3-8b-website-173-02.json"
+      "source_report": "real-task-attempts/veasel-qwen3-8b-website-173-02.json"
     },
     {
       "runner": "Veasel PR #604 candidate, run 05",
@@ -135,7 +135,7 @@
       "result": "no_edit",
       "oracle_result": "expected change absent; fixture clean",
       "resource_measurements": null,
-      "source_report": "~/.cache/veasel-readiness/reports/veasel-qwen2.5-coder-7b-website-173-05.json"
+      "source_report": "real-task-attempts/veasel-qwen2.5-coder-7b-website-173-05.json"
     },
     {
       "runner": "OpenCode 2.2.5",
@@ -149,7 +149,7 @@
       "result": "wrong_skill_selection_then_no_implementation",
       "oracle_result": "clean worktree; expected change absent",
       "resource_measurements": null,
-      "source_report": "~/.cache/veasel-readiness/reports/opencode-qwen3-8b-website-173-20261110.json",
+      "source_report": "real-task-attempts/opencode-qwen3-8b-website-173-20261110.json",
       "limitations": ["Different tool policy", "No explicit output-token cap", "One diagnostic sample"]
     }
   ],

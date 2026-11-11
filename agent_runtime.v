@@ -178,6 +178,14 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 	return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file', 'workspace_search'])
 }
 
+fn agent_code_change_tools_after_edit_failures(tools []AgentToolDefinition, explicit_request bool,
+	failed_edit_proposals int) []AgentToolDefinition {
+	if explicit_request && failed_edit_proposals > max_agent_code_change_edit_recovery_attempts {
+		return tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
+	}
+	return tools
+}
+
 fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
 	retries int, proposal_attempted bool, request_deadline time.Time) bool {
 	if retries >= max_agent_code_change_followthrough_retries || proposal_attempted || !explicit_request
@@ -985,8 +993,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			followthrough_retries > 0)
 		if code_change_request && failed_edit_proposals > max_agent_code_change_edit_recovery_attempts {
 			edit_proposal_attempted = true
-			turn_tools = turn_tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
 		}
+		turn_tools = agent_code_change_tools_after_edit_failures(turn_tools, code_change_request,
+			failed_edit_proposals)
 		turn_tools = agent_code_change_verification_tools(turn_tools, verification_required,
 			workspace_effect_applied, verification_succeeded, verification_failed)
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)

@@ -147,6 +147,13 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 	assert !edit_phase.any(it.name == 'workspace_propose_shell_command')
 	complete_phase := agent_code_change_tools_for_progress(tools, true, true, 2, true, true, false)
 	assert complete_phase.len == tools.len
+	assert agent_code_change_tools_after_edit_failures(search_read_phase, true,
+		max_agent_code_change_edit_recovery_attempts).any(it.name == 'workspace_propose_file_edit')
+	exhausted_phase := agent_code_change_tools_after_edit_failures(complete_phase, true,
+		max_agent_code_change_edit_recovery_attempts + 1)
+	assert exhausted_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
+	assert agent_code_change_tools_after_edit_failures(complete_phase, false,
+		max_agent_code_change_edit_recovery_attempts + 1).len == complete_phase.len
 	assert agent_code_change_tools_for_progress(tools, false, false, 0, false, false, false).len == tools.len
 	assert !agent_tool_available_in_turn('workspace_propose_file_edit', read_phase)
 	assert !agent_tool_available_in_turn('workspace_propose_file_edit', search_phase)
@@ -958,6 +965,35 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 	commands := store.shell_commands(session.id) or { panic(err) }
 	assert commands.len == 1
 	assert commands[0].status == 'succeeded'
+}
+
+fn test_invalid_workspace_replacement_is_recoverable_and_leaves_file_unchanged() {
+	root := os.join_path(os.temp_dir(), 'veasel-invalid-replacement-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	file_path := os.join_path(root, 'target.txt')
+	os.write_file(file_path, 'current source text') or { panic(err) }
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	session := store.create_session(SessionInput{ title: 'Invalid replacement fixture', directory: root }) or {
+		panic(err)
+	}
+	mut background := vcontext.background()
+	call := ProviderToolCall{
+		id:       'invalid-replacement'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"target.txt","old_text":"placeholder absent from file","new_text":"requested value"}'
+		}
+	}
+	result := execute_autonomous_workspace_agent_tool(app, mut background, root, session.id, call)
+	assert agent_tool_result_workspace_edit_failed(call, result)
+	assert !agent_tool_result_workspace_edit_proposal_succeeded(call, result)
+	assert os.read_file(file_path) or { panic(err) } == 'current source text'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
 }
 
 fn test_autonomous_shell_environment_does_not_forward_credentials() {

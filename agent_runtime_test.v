@@ -79,6 +79,21 @@ fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() 
 		time.now().add(10 * time.second))
 }
 
+fn test_non_interactive_ask_discards_buffered_code_claims_when_provider_fails() {
+	assert agent_discard_buffered_text_on_provider_error(true, ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: false
+	})
+	assert !agent_discard_buffered_text_on_provider_error(true, ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: true
+	})
+	assert !agent_discard_buffered_text_on_provider_error(false, ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: false
+	})
+}
+
 fn test_agent_code_change_exploration_nudge_is_bounded_to_explicit_requests() {
 	deadline := time.now().add(60 * time.second)
 	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]

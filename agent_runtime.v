@@ -67,6 +67,10 @@ fn agent_code_change_followthrough_retry_available(explicit_request bool, tools 
 	return tools.any(it.name == 'workspace_propose_file_edit')
 }
 
+fn agent_discard_buffered_text_on_provider_error(explicit_request bool, policy ExecutionPolicyTurn) bool {
+	return explicit_request && policy.mode == .ask && !policy.interactive
+}
+
 fn agent_code_change_exploration_nudge_available(explicit_request bool, tools []AgentToolDefinition,
 	read_only_calls int, nudged bool, proposal_attempted bool, request_deadline time.Time) bool {
 	if !explicit_request || nudged || proposal_attempted || read_only_calls < agent_code_change_exploration_nudge_after
@@ -730,7 +734,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
 			stream_text_delta, request_deadline, provider_pool) or {
-			if buffer_provider_text && buffered_text.len > 0 {
+			if buffer_provider_text && buffered_text.len > 0
+				&& !agent_discard_buffered_text_on_provider_error(code_change_request, policy) {
 				on_text_delta(buffered_text) or { return err }
 			}
 			return err

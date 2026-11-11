@@ -213,6 +213,32 @@ SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE = tuple(
         SANDBOX_AUTO_INSTRUCTIONS,
     )
 )
+CODE_CHANGE_SYSTEM_INSTRUCTIONS = (
+    "For an explicit code-change request, use workspace tools to read the complete target file and "
+    "relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. "
+    "For a localized replacement, pass the exact current text as old_text and the requested text as "
+    "new_text; the tool preserves all other bytes and requires a unique match. Use complete file "
+    "content only for broader edits. Never replace a file with a fragment or a description of the "
+    "edit. A file listing or summary is not a completed change. If the request asks for tests, checks, "
+    "or a build, run a relevant verification command after the edit and fix failures before reporting "
+    "completion. Report only checks that actually succeeded. Do not ask for details already present in "
+    "the request. If a necessary detail or permission is missing, identify the concrete blocker."
+)
+SESSION_SYSTEM_WITH_CODE_CHANGE_GUIDANCE = tuple(
+    SYSTEM_PREFIX
+    + WORKSPACE_TOOL_INSTRUCTIONS
+    + " "
+    + instructions
+    + " "
+    + CODE_CHANGE_SYSTEM_INSTRUCTIONS
+    + SYSTEM_SUFFIX
+    for instructions in (
+        ASK_INTERACTIVE_INSTRUCTIONS,
+        ASK_NONINTERACTIVE_INSTRUCTIONS,
+        AUTO_EDIT_INSTRUCTIONS,
+        SANDBOX_AUTO_INSTRUCTIONS,
+    )
+)
 # Interactive ask remains the default fixture prompt (sandbox wording + skill/MCP approval).
 SESSION_SYSTEM = SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE[0]
 
@@ -240,6 +266,14 @@ def fixture_user_prompt(content):
     return content
 
 
+def latest_tool_message(messages):
+    return next((message for message in reversed(messages) if message.get("role") == "tool"), {})
+
+
+def latest_tool_result(messages):
+    return latest_tool_message(messages).get("content", "")
+
+
 def session_system_remainder_ok(text, base):
     remainder = text[len(base) :]
     if remainder == "":
@@ -263,7 +297,11 @@ def is_session_system(content):
     text = session_system_text(content)
     if text == "Be concise":
         return True
-    for base in (*SESSION_SYSTEM_VARIANTS, *SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE):
+    for base in (
+        *SESSION_SYSTEM_VARIANTS,
+        *SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE,
+        *SESSION_SYSTEM_WITH_CODE_CHANGE_GUIDANCE,
+    ):
         if text == base or (text.startswith(base) and session_system_remainder_ok(text, base)):
             return True
     return False
@@ -467,7 +505,10 @@ class MockProvider(BaseHTTPRequestHandler):
             last_message = messages[-1] if messages else {}
             user_text = fixture_user_prompt(last_message.get("content", ""))
             is_cancellation_fixture_turn = user_text.startswith("Wait for cancellation ")
-            is_tool_follow_up = last_message.get("role") == "tool"
+            is_tool_follow_up = last_message.get("role") == "tool" or (
+                user_text.startswith("The requested code edit was applied.")
+                and any(message.get("role") == "tool" for message in messages[:-1])
+            )
             is_mcp_fixture_turn = any(
                 message.get("role") == "user"
                 and fixture_user_prompt(message.get("content", ""))
@@ -496,7 +537,7 @@ class MockProvider(BaseHTTPRequestHandler):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace", "Fix vendored project tests") else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace", "Edit then verify workspace", "Fix failing test", "Fix vendored project tests") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit", "Autonomous multi-file edit", "Edit then verify workspace", "Recover after failed edit", "Try to write outside") else
                     "mcp_review_tools_effect_write" if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
@@ -522,6 +563,8 @@ class MockProvider(BaseHTTPRequestHandler):
                 elif user_text == "Try to read outside":
                     arguments = '{"path":"../outside/secret.txt"}'
                 elif user_text == "Read then edit workspace":
+                    arguments = '{"path":"src/main.v"}'
+                elif user_text in ("Edit then verify workspace", "Fix failing test"):
                     arguments = '{"path":"src/main.v"}'
                 elif user_text == "Fix vendored project tests":
                     arguments = '{"path":"token_bucket.v"}'
@@ -564,7 +607,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     }}]
                 }}]}
             elif is_tool_follow_up:
-                tool_result = last_message.get("content", "")
+                tool_result = latest_tool_result(messages)
                 applied_edit = (
                     "Applied by explicit autonomous benchmark policy" in tool_result
                     or "Applied by graduated execution policy" in tool_result
@@ -582,7 +625,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         for message in messages
                         if message.get("role") == "assistant"
                         for call in message.get("tool_calls", [])
-                        if call.get("id") == last_message.get("tool_call_id")
+                        if call.get("id") == latest_tool_message(messages).get("tool_call_id")
                     ),
                     None,
                 )
@@ -625,7 +668,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     and fixture_user_prompt(message.get("content", "")) == "Fix vendored project tests"
                     for message in messages
                 )
-                if is_fix_failing_test and tool_result_count == 1 and is_failed_shell_result and not applied_edit:
+                if is_fix_failing_test and tool_result_count == 1 and not applied_edit:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
@@ -661,11 +704,20 @@ class MockProvider(BaseHTTPRequestHandler):
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
-                elif is_edit_then_verify and tool_result_count == 1 and applied_edit:
+                elif is_edit_then_verify and tool_result_count == 1 and not applied_edit:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                        }}]
+                    }}]}
+                elif is_edit_then_verify and tool_result_count == 2 and applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
                             "name": "workspace_propose_shell_command",
                             "arguments": json.dumps({"command": "grep -q \"fn greet\" src/main.v && printf edit-verified", "cwd": ".", "timeout_seconds": 10})
                         }}]

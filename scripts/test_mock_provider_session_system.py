@@ -28,12 +28,16 @@ class SessionSystemGuardTests(unittest.TestCase):
         self.assertNotIn("are not sandboxed", self.mock.SESSION_SYSTEM)
         for variant in self.mock.SESSION_SYSTEM_VARIANTS:
             self.assertTrue(self.mock.is_session_system(variant), variant[:80])
+        for variant in self.mock.SESSION_SYSTEM_WITH_CODE_CHANGE_GUIDANCE:
+            self.assertTrue(self.mock.is_session_system(variant), variant[:80])
         self.assertIn("ask maps to deny", self.mock.ASK_NONINTERACTIVE_INSTRUCTIONS)
         self.assertIn("Sandbox-auto / autonomous benchmark execution", self.mock.SANDBOX_AUTO_INSTRUCTIONS)
 
     def test_workspace_and_interactive_guidance_match_runtime_source(self):
-        runtime = (Path(__file__).parents[1] / "execution_policy.v").read_text(encoding="utf-8")
-        api = (Path(__file__).parents[1] / "api.v").read_text(encoding="utf-8")
+        runtime_path = Path(__file__).parents[1]
+        runtime = (runtime_path / "execution_policy.v").read_text(encoding="utf-8")
+        agent_runtime = (runtime_path / "agent_runtime.v").read_text(encoding="utf-8")
+        api = (runtime_path / "api.v").read_text(encoding="utf-8")
         workspace = re.search(
             r"fn workspace_tool_instructions\(\) string \{\s*return '([^']*)'\s*\}",
             runtime,
@@ -42,16 +46,19 @@ class SessionSystemGuardTests(unittest.TestCase):
         non_interactive = re.search(r"return '(Execution policy is ask in a non-interactive[^']*)'", runtime)
         auto_edit = re.search(r"return '(Execution policy auto-edit[^']*)'", runtime)
         sandbox_auto = re.search(r"return '(Sandbox-auto / autonomous benchmark execution[^']*)'", runtime)
+        code_change = re.search(r"const agent_code_change_system_instruction = '([^']*)'", agent_runtime)
         self.assertIsNotNone(workspace)
         self.assertIsNotNone(interactive)
         self.assertIsNotNone(non_interactive)
         self.assertIsNotNone(auto_edit)
         self.assertIsNotNone(sandbox_auto)
+        self.assertIsNotNone(code_change)
         self.assertEqual(self.mock.WORKSPACE_TOOL_INSTRUCTIONS, workspace.group(1))
         self.assertEqual(self.mock.ASK_INTERACTIVE_INSTRUCTIONS, interactive.group(1))
         self.assertEqual(self.mock.ASK_NONINTERACTIVE_INSTRUCTIONS, non_interactive.group(1))
         self.assertEqual(self.mock.AUTO_EDIT_INSTRUCTIONS, auto_edit.group(1))
         self.assertEqual(self.mock.SANDBOX_AUTO_INSTRUCTIONS, sandbox_auto.group(1))
+        self.assertEqual(self.mock.CODE_CHANGE_SYSTEM_INSTRUCTIONS, code_change.group(1))
         self.assertIn(
             "${tool_instructions}${optional_code_change_instructions} MCP tool names",
             api,
@@ -105,6 +112,25 @@ class SessionSystemGuardTests(unittest.TestCase):
         )
         self.assertEqual(self.mock.fixture_user_prompt(focused), "Say hello")
         self.assertEqual(self.mock.fixture_user_prompt("Inspect workspace"), "Inspect workspace")
+
+    def test_fixture_uses_last_tool_result_after_internal_verification_prompt(self):
+        messages = [
+            {"role": "user", "content": "Fix failing test"},
+            {
+                "role": "tool",
+                "tool_call_id": "edit-tool-call",
+                "content": '{"note":"Applied by graduated execution policy"}',
+            },
+            {"role": "user", "content": "The requested code edit was applied. Run the requested check."},
+        ]
+        self.assertEqual(
+            self.mock.latest_tool_result(messages),
+            '{"note":"Applied by graduated execution policy"}',
+        )
+        self.assertEqual(
+            self.mock.latest_tool_message(messages).get("tool_call_id"),
+            "edit-tool-call",
+        )
 
     def test_anthropic_system_blocks_with_cache_control_are_accepted(self):
         concise = [

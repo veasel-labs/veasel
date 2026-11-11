@@ -1762,6 +1762,9 @@ fn session_turn_failure(message string) (string, string) {
 	if message == 'cancelled' {
 		return 'cancelled', 'Turn cancelled.'
 	}
+	if message == 'empty_response' {
+		return 'failed', 'The model returned an empty response. Retry; if this repeats, check provider and model compatibility.'
+	}
 	if message == 'deadline_exceeded' {
 		return 'failed', 'The assistant turn exceeded its time limit.'
 	}

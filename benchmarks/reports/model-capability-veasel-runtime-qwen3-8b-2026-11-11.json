@@ -1,0 +1,62 @@
+{
+  "schema": "veasel-runtime-capability-probe/1",
+  "date": "2026-11-11",
+  "runner": {
+    "name": "Veasel source-build CLI",
+    "version": "0.1.0-dev",
+    "source_commit": "ac690e91e12e05004e2fec405a6dd6e85be3edd1",
+    "binary_sha256": "c089161e10432e4137fc9074a48c42b7c710b7cd6c8dfaabd89bc94852ca0ff9",
+    "compiler": {
+      "name": "V",
+      "version": "0.5.2",
+      "commit": "b0ceb9b"
+    }
+  },
+  "task": {
+    "kind": "read-only full-runtime tool-call diagnostic",
+    "repository": "veasel-labs/website",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "22737f5373a18444a700932aaaccde3ef00a257c926b71deafb7fe6aaaeed1c4",
+    "prompt_text_stored": false,
+    "expected": "Read src/layouts/DocsLayout.astro and identify the docs navigation container; no edits."
+  },
+  "model": {
+    "provider": "Ollama",
+    "version": "0.40.13",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 1024,
+    "runner_backend": "llama.cpp on CPU"
+  },
+  "execution": {
+    "execution_policy": "ask/default; read-only request",
+    "mcp": "disabled",
+    "wall_limit_seconds": 180,
+    "elapsed_seconds": 53
+  },
+  "result": {
+    "status": "failed",
+    "assistant_output": "empty_response",
+    "tool_calls": 0,
+    "edit_proposals": 0,
+    "shell_proposals": 0,
+    "visible_error": "The assistant turn failed.",
+    "oracle_result": "requested read did not occur; isolated checkout remained clean",
+    "provider_reported_usage": false
+  },
+  "resource_observations": {
+    "ollama_reported_model_size_gib": 5.9,
+    "ollama_reported_processor": "100% CPU",
+    "ollama_reported_context_tokens": 4096,
+    "host_available_memory_gib_before_run": 7.7,
+    "host_swap_used_gib_before_run": 7.6,
+    "note": "Model size and processor are Ollama ps observations, not peak RSS or comparative measurements."
+  },
+  "interpretation": "A 4096-context Qwen3:8b request through the full Veasel runtime produced an empty response before any tool call in 53 seconds. This is a capability/orchestration diagnostic, not coding-task success. A minimal direct Ollama tool-call probe succeeded earlier, so the minimal probe does not predict behavior under the full system prompt and tool schema. This result alone does not distinguish model limitations from request/prompt/runtime interaction.",
+  "privacy": {
+    "raw_atif_trace_committed": false,
+    "sanitized_summary_only": true,
+    "report_contains_source_or_credentials": false
+  }
+}

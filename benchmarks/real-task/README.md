@@ -25,13 +25,15 @@ python3 benchmarks/real-task/run.py preflight \
   --data-dir /benchmark/state
 ```
 
-The website CUDA case requires at least 4.5 GiB available host RAM. A
-4096-context CUDA placement probe used 5.6 GB of RTX 3060 VRAM and reduced host
-available RAM by about 0.8 GiB; the 4.5 GiB floor leaves over 1 GiB of measured
-host headroom for the agent and task tools. Swap is recorded, but is not
-required while the pinned model weights and context fit in VRAM. The runner
-continues sampling RAM and swap once per second and aborts below the RAM floor.
-A failed preflight exits with status 2 and lists the unmet checks.
+The website CUDA case requires at least 5.75 GiB available host RAM at
+preflight, after the pinned model is loaded, and keeps a 4.5 GiB runtime floor.
+Two guarded attempts started with 5.60 and 5.62 GB available, then crossed the
+runtime floor within 11–14 seconds; the latest reached 4.39 GiB. The higher
+preflight threshold reserves about 1.25 GiB for agent startup and leaves margin
+over the observed roughly 0.83 GiB decline. Swap is recorded, but is not
+required while the pinned model weights and context fit in VRAM. During a run,
+the runner continues sampling RAM and swap once per second and aborts below the
+4.5 GiB floor. A failed preflight exits with status 2 and lists the unmet checks.
 
 ## Run Veasel
 

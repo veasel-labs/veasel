@@ -294,8 +294,10 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
         except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError, TypeError, ValueError) as exc:
             check("ollama_model_gpu_placement", False, type(exc).__name__, "model loaded on CUDA at pinned context")
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
+    min_startup_memory = case["budgets"].get("minimum_startup_available_memory_bytes", min_memory)
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
     check("available_memory", available >= min_memory, available, min_memory)
+    check("startup_memory_headroom", available >= min_startup_memory, available, min_startup_memory)
     check("free_swap", swap >= min_swap, swap, min_swap)
     return {
         "schema": "veasel.real-task-preflight.v1",

@@ -214,15 +214,17 @@ SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE = tuple(
     )
 )
 CODE_CHANGE_SYSTEM_INSTRUCTIONS = (
-    "For an explicit code-change request, use workspace tools to read the complete target file and "
-    "relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. "
-    "For a localized replacement, pass the exact current text as old_text and the requested text as "
-    "new_text; the tool preserves all other bytes and requires a unique match. Use complete file "
-    "content only for broader edits. Never replace a file with a fragment or a description of the "
-    "edit. A file listing or summary is not a completed change. If the request asks for tests, checks, "
-    "or a build, run a relevant verification command after the edit and fix failures before reporting "
-    "completion. Report only checks that actually succeeded. Do not ask for details already present in "
-    "the request. If a necessary detail or permission is missing, identify the concrete blocker."
+    "For an explicit code-change request, start with a workspace tool call immediately. Do not send an "
+    "acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, "
+    "read it; otherwise search for a distinctive term from the requested behavior. Then read the complete "
+    "target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before "
+    "answering. For a localized replacement, pass the exact current text as old_text and the requested text "
+    "as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content "
+    "only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing "
+    "or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant "
+    "verification command after the edit and fix failures before reporting completion. Report only checks that "
+    "actually succeeded. Do not ask for details already present in the request. If a necessary detail or "
+    "permission is missing, identify the concrete blocker."
 )
 SESSION_SYSTEM_WITH_CODE_CHANGE_GUIDANCE = tuple(
     SYSTEM_PREFIX

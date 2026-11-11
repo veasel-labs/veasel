@@ -68,6 +68,9 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 
 fn test_code_change_system_instruction_is_conditional_and_actionable() {
 	instruction := agent_system_code_change_instruction(true)
+	assert instruction.contains('start with a workspace tool call immediately')
+	assert instruction.contains('Do not send an acknowledgement, plan, or promise')
+	assert instruction.contains('If the request names a file, read it')
 	assert instruction.contains('read the complete target file and relevant tests')
 	assert instruction.contains('workspace_propose_file_edit')
 	assert instruction.contains('old_text')

@@ -396,12 +396,13 @@ fn agent_workspace_file_was_read(path string, reads map[string]bool) bool {
 }
 
 fn agent_workspace_read_call_allowed(call ProviderToolCall, explicit_request bool,
-	workspace_read_count int, search_performed bool, search_match_paths map[string]bool) bool {
+	workspace_read_count int, search_performed bool, search_match_paths map[string]bool,
+	prior_initial_read_in_batch bool) bool {
 	if !explicit_request {
 		return true
 	}
 	if workspace_read_count == 0 && !search_performed {
-		return true
+		return !prior_initial_read_in_batch
 	}
 	path := workspace_read_path_from_call(call) or { return false }
 	return search_performed && path in search_match_paths
@@ -1150,6 +1151,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		tool_calls += output.tool_calls.len
 		mut loop_skip_notes := map[string]string{}
 		mut loop_warnings := []string{cap: output.tool_calls.len}
+		mut initial_read_allowed_in_batch := false
 		for call in output.tool_calls {
 			if !agent_tool_available_in_turn(call.function.name, turn_tools) {
 				loop_skip_notes[call.id] = encode_agent_tool_error('Tool is not available in the current progress phase.')
@@ -1175,9 +1177,14 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			}
 			if call.function.name == 'workspace_read_file'
 				&& !agent_workspace_read_call_allowed(call, code_change_request, read_paths.len,
-					workspace_search_performed, workspace_search_match_paths) {
+					workspace_search_performed, workspace_search_match_paths,
+					initial_read_allowed_in_batch) {
 				loop_skip_notes[call.id] = encode_agent_tool_error('After the first file read, use a request-relevant search and read a path returned by it before opening another file.')
 				continue
+			}
+			if call.function.name == 'workspace_read_file' && code_change_request
+				&& read_paths.len == 0 && !workspace_search_performed {
+				initial_read_allowed_in_batch = true
 			}
 		}
 		read_paths_before_tool_batch := read_paths.clone()

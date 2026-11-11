@@ -186,12 +186,13 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 			arguments: '{"path":"CONTRIBUTING.md","start_line":1,"line_count":1}'
 		}
 	}
-	assert agent_workspace_read_call_allowed(matching_read, true, 0, false, map[string]bool{})
-	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, false, map[string]bool{})
+	assert agent_workspace_read_call_allowed(matching_read, true, 0, false, map[string]bool{}, false)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 0, false, map[string]bool{}, true)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, false, map[string]bool{}, false)
 	mut matched_paths := map[string]bool{}
 	matched_paths['README.md'] = true
-	assert agent_workspace_read_call_allowed(matching_read, true, 1, true, matched_paths)
-	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, true, matched_paths)
+	assert agent_workspace_read_call_allowed(matching_read, true, 1, true, matched_paths, false)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, true, matched_paths, false)
 	unrelated_search := ProviderToolCall{
 		function: ProviderFunctionCall{
 			name:      'workspace_search'

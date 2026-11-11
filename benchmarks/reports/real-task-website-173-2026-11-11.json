@@ -64,7 +64,7 @@
       "elapsed_seconds": null,
       "status": "completed",
       "tool_calls": 16,
-      "tool_names": ["workspace_list_files", "workspace_read_file"],
+      "tool_names": ["workspace_list_files","workspace_read_file"],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 91965,
@@ -85,7 +85,7 @@
       "elapsed_seconds": null,
       "status": "completed",
       "tool_calls": 16,
-      "tool_names": ["workspace_list_files", "workspace_read_file"],
+      "tool_names": ["workspace_list_files","workspace_read_file"],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 91865,
@@ -105,7 +105,7 @@
       "elapsed_seconds": null,
       "status": "completed",
       "tool_calls": 22,
-      "tool_names": ["workspace_list_files", "workspace_read_file"],
+      "tool_names": ["workspace_list_files","workspace_read_file"],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 122769,
@@ -150,7 +150,7 @@
       "oracle_result": "clean worktree; expected change absent",
       "resource_measurements": null,
       "source_report": "real-task-attempts/opencode-qwen3-8b-website-173-20261110.json",
-      "limitations": ["Different tool policy", "No explicit output-token cap", "One diagnostic sample"]
+      "limitations": ["Different tool policy","No explicit output-token cap","One diagnostic sample"]
     },
     {
       "runner": "Veasel packaged TUI",
@@ -174,13 +174,31 @@
       "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
       "prompt_note": "Public issue scope; differs from the earlier diagnostic prompt and is not a controlled repeat.",
       "source_report": "real-task-attempts/official-tui-qwen3-8b-website-173-2026-11-11.json"
+    },
+    {
+      "runner": "OpenCode 2.2.5 packaged TUI",
+      "context_tokens": 4096,
+      "output_budget_tokens": 2048,
+      "elapsed_seconds": 180,
+      "status": "timed_out",
+      "tool_calls": 0,
+      "edit_proposals": 0,
+      "result": "external_180_second_cutoff_before_assistant_output",
+      "oracle_result": "clean worktree; expected change absent",
+      "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+      "source_report": "real-task-comparison-website-173-2026-11-11.json",
+      "limitations": [
+        "single paired diagnostic",
+        "OpenCode run externally interrupted at the shared 180-second wall limit",
+        "no comparative performance claim"
+      ]
     }
   ],
   "score": {
     "task_successes": 0,
-    "attempts_in_snapshot": 8,
+    "attempts_in_snapshot": 9,
     "controlled_comparison": false,
-    "claim": "No competitive performance claim is supported. These are diagnostic failures with non-identical binary versions, prompts, tool permissions, and budgets."
+    "claim": "No coding-task success or competitive performance claim is supported. One matched diagnostic pair used the same task, prompt hash, base commit, local model digest, context and output limits, permissions, and 180-second wall limit; both produced zero edits. Veasel ended on its provider timeout; OpenCode was externally interrupted at the wall limit. One pair is insufficient for comparative conclusions."
   },
   "privacy": {
     "raw_traces_contain_workspace_content": true,

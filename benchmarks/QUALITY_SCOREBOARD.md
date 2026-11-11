@@ -7,13 +7,15 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
-| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 8 diagnostic attempts | 0 | No run produced the expected patch. The latest packaged TUI attempt made no tool call and timed out after 180 s; the earlier headless release attempt timed out after one read-only file listing. The installed 0.67 binary returned unsupported completion claims without tools. |
+| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 9 diagnostic attempts | 0 | No run produced the expected patch. The latest packaged Veasel TUI timed out before a tool call; one matched OpenCode TUI run was externally stopped at the same 180 s limit. Both worktrees stayed clean. |
 
-The attempts use local Qwen models and one OpenCode run. They are not a controlled
-Veasel-versus-OpenCode score: binary versions, execution permissions, and output
-budgets differ. Do not infer comparative quality or speed from them. The
-[snapshot report](reports/real-task-website-173-2026-11-11.json) records
-fingerprints, outcomes, available token counts, and missing measurements.
+The attempts use local Qwen models. One Veasel packaged TUI run and one OpenCode
+2.2.5 TUI run now form a matched diagnostic pair: same task, exact prompt hash,
+base commit, model digest, context/output budgets, edit/bash permissions, disabled
+MCP, and 180 s wall limit. Both produced zero edits. Veasel reported its provider
+timeout; OpenCode was externally interrupted at the wall limit. One pair is not
+enough to claim comparative quality or speed. The [pair report](reports/real-task-comparison-website-173-2026-11-11.json)
+and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidence.
 
 ## Current acceptance status
 

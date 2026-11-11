@@ -1,0 +1,57 @@
+{
+  "schema": "veasel-paired-real-task-diagnostic/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+    "oracle": "Independent clean-clone diff for the expected accessible responsive docs sidebar change."
+  },
+  "shared_conditions": {
+    "provider": "local Ollama 0.40.16",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "tool_permissions": {
+      "edit": "ask",
+      "bash": "ask"
+    },
+    "mcp": "disabled",
+    "wall_limit_seconds": 180,
+    "repository_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44"
+  },
+  "runs": [
+    {
+      "runner": "Veasel official packaged TUI",
+      "version": "0.69.13-next.0",
+      "binary_sha256": "9ff6aa31ec21b646aa49c1a6037883d079e61c39b9d27f596acacaaec9d2d3a9",
+      "elapsed_seconds": 180,
+      "status": "provider_timeout",
+      "assistant_tool_calls": 0,
+      "edit_proposals": 0,
+      "oracle_result": "clean worktree; expected change absent",
+      "evidence": "real-task-attempts/official-tui-qwen3-8b-website-173-2026-11-11.json"
+    },
+    {
+      "runner": "OpenCode packaged TUI",
+      "version": "2.2.5",
+      "elapsed_seconds": 180,
+      "status": "externally_interrupted_at_wall_limit",
+      "assistant_tool_calls": 0,
+      "edit_proposals": 0,
+      "oracle_result": "clean worktree; expected change absent",
+      "evidence": {
+        "isolated_session_database": "session contains user input and compaction record only; zero assistant messages and zero tool parts",
+        "worktree": "clean after timeout",
+        "model_completion_tokens": "not available from persisted OpenCode session"
+      }
+    }
+  ],
+  "interpretation": "This is one matched diagnostic pair, not a statistically meaningful benchmark. Task, repository commit, exact prompt hash, model digest, context/output limits, permissions, local provider, and wall limit match. Veasel reported its provider read timeout at 180 seconds; OpenCode was externally interrupted at 180 seconds. Both yielded zero edits. Product-specific system prompts and request serialization differ, and the OpenCode completion count was not persisted; do not infer relative quality or speed.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  }
+}

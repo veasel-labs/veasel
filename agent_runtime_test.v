@@ -1966,9 +1966,74 @@ fn test_agent_tool_call_budget_returns_durable_summary_instead_of_failing_turn()
 
 struct AgentCodeChangeFollowthroughFixture {
 mut:
-	hits           int
-	request_bodies []string
-	reply_text     string
+	hits                 int
+	request_bodies       []string
+	reply_text           string
+	recover_invalid_edit bool
+}
+
+fn agent_code_change_recovery_chunk(hit int) OpenAIStreamChunk {
+	if hit == 1 {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'sidebar-search'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_search'
+							arguments: '{"query":"sidebar"}'
+						}
+					}]
+				}
+			}]
+		}
+	}
+	if hit in [2, 4] {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'sidebar-read-${hit}'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_read_file'
+							arguments: '{"path":"README.md"}'
+						}
+					}]
+				}
+			}]
+		}
+	}
+	if hit in [3, 5] {
+		arguments := if hit == 3 {
+			'{"path":"README.md","old_text":"text not present in file","new_text":"Browse documentation"}'
+		} else {
+			'{"path":"README.md","old_text":"Browse sections","new_text":"Browse documentation"}'
+		}
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'sidebar-edit-${hit}'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_propose_file_edit'
+							arguments: arguments
+						}
+					}]
+				}
+			}]
+		}
+	}
+	return OpenAIStreamChunk{
+		choices: [OpenAIStreamChoice{
+			delta: OpenAIStreamDelta{ content: 'I prepared the corrected sidebar edit for review.' }
+		}]
+	}
 }
 
 fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request) http.Response {
@@ -1980,6 +2045,8 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 				delta: OpenAIStreamDelta{ content: fixture.reply_text }
 			}]
 		}
+	} else if fixture.recover_invalid_edit {
+		agent_code_change_recovery_chunk(fixture.hits)
 	} else if fixture.hits == 1 {
 		OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
@@ -2127,6 +2194,70 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('I will take a look.')
 	assert trace.contains(agent_code_change_retry_after_read_prompt)
+}
+
+fn test_agent_recovers_once_from_invalid_exact_replacement() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-edit-recovery-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'sidebar menu: Browse sections\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		recover_invalid_edit: true
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Invalid exact replacement recovery'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please change the mobile sidebar label to Browse documentation.'
+		collect_trace: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 6
+	assert fixture.request_bodies.len == 6
+	assert fixture.request_bodies[3].contains(agent_code_change_edit_recovery_prompt)
+	recovery_request := json2.decode[OpenAIRequest](fixture.request_bodies[3]) or { panic(err) }
+	assert recovery_request.tools.any(it.function.name == 'workspace_read_file')
+	assert !recovery_request.tools.any(it.function.name == 'workspace_propose_file_edit')
+	corrected_edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[4]) or { panic(err) }
+	assert corrected_edit_request.tools.any(it.function.name == 'workspace_propose_file_edit'), 'available tools: ${corrected_edit_request.tools.map(it.function.name)}; prior tool result: ${corrected_edit_request.messages.filter(it.role == 'tool').map(it.content)}'
+	assert exchange.messages.last().content.contains('pending human review')
+	assert !exchange.messages.last().content.contains('I prepared the corrected sidebar edit for review.')
+	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse sections\n'
+	edits := store.workspace_edits(session.id) or { panic(err) }
+	assert edits.len == 1
+	assert edits[0].status == 'pending'
+	assert edits[0].path == 'README.md'
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('replacement text must match exactly once; found 0 occurrences')
+	assert trace.contains(agent_code_change_edit_recovery_prompt)
 }
 
 fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effect() {

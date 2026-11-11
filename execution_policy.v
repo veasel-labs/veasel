@@ -73,6 +73,22 @@ fn execution_tool_class(name string) string {
 	}
 }
 
+fn restrict_agent_tools_for_execution_policy(tools []AgentToolDefinition,
+	policy ExecutionPolicyTurn) []AgentToolDefinition {
+	if policy.mode == .ask && !policy.interactive {
+		return tools.filter(execution_tool_class(it.name) == 'read')
+	}
+	return tools
+}
+
+fn agent_final_response_for_execution_policy(response string, code_change_request bool,
+	policy ExecutionPolicyTurn) string {
+	if code_change_request && policy.mode == .ask && !policy.interactive {
+		return 'The requested code change was not completed. This non-interactive ask run only has read access; edits, shell commands, and MCP actions require interactive approval. Continue in the TUI to review an edit proposal.'
+	}
+	return response
+}
+
 // fail_closed_shell_sandbox_ready is true when the platform backend that
 // autonomous/sandbox-auto shell uses is present. Independent of VEASEL_SHELL_SANDBOX=auto
 // fallback: missing backend means shell auto-apply must deny.

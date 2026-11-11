@@ -680,6 +680,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		session_id))
 	tools << mcp_tools
 	tools = restrict_agent_tools(tools, skill_context.tool_policy)
+	tools = restrict_agent_tools_for_execution_policy(tools, policy)
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
@@ -716,8 +717,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent context size limit reached')
 		}
 		turn_tools := agent_tools_for_skill_context(tools, skill_context)
-		buffer_provider_text := agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
-			followthrough_retried, edit_proposal_attempted, request_deadline)
+		buffer_provider_text := (code_change_request && policy.mode == .ask && !policy.interactive)
+			|| agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
+				followthrough_retried, edit_proposal_attempted, request_deadline)
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
 			fn [mut buffered_text] (delta string) ! {
@@ -766,19 +768,27 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				followthrough_retried = true
 				continue
 			}
-			if buffer_provider_text && buffered_text.len > 0 {
-				on_text_delta(buffered_text)!
+			final_output := CompletionOutput{
+				provider:         output.provider
+				model:            output.model
+				content:          agent_final_response_for_execution_policy(output.content,
+					code_change_request, policy)
+				provider_context: output.provider_context
+				usage:            output.usage
+			}
+			if buffer_provider_text {
+				on_text_delta(final_output.content)!
 			}
 			if collect_trace {
 				trace_steps << ATIFStep{
 					step_id:    trace_steps.len + 1
 					source:     'agent'
-					model_name: output.model
-					message:    output.content
+					model_name: final_output.model
+					message:    final_output.content
 				}
 			}
 			return AgentTraceResult{
-				output: output
+				output: final_output
 				steps:  trace_steps
 				usage:  trace_usage
 			}

@@ -1692,12 +1692,19 @@ struct AgentCodeChangeFollowthroughFixture {
 mut:
 	hits           int
 	request_bodies []string
+	reply_text     string
 }
 
 fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request) http.Response {
 	fixture.hits++
 	fixture.request_bodies << request.data
-	chunk := if fixture.hits == 1 {
+	chunk := if fixture.reply_text.len > 0 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{ content: fixture.reply_text }
+			}]
+		}
+	} else if fixture.hits == 1 {
 		OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
 				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
@@ -1805,6 +1812,64 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('I will take a look.')
 	assert trace.contains(agent_code_change_retry_prompt)
+}
+
+fn test_non_interactive_code_request_reports_no_edit_instead_of_model_claim() {
+	root := os.join_path(os.temp_dir(), 'veasel-headless-no-edit-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(workspace, 'README.md'), 'Original README\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		reply_text: 'I implemented the requested edit and ran every test.'
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Headless no-edit honesty'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 30 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:         'Implement the requested README change.'
+		collect_trace:   true
+		non_interactive: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 1
+	request := json2.decode[OpenAIRequest](fixture.request_bodies[0]) or { panic(err) }
+	assert !request.tools.any(it.function.name in ['workspace_propose_file_edit',
+		'workspace_propose_shell_command'])
+	assert exchange.messages.last().content.contains('was not completed')
+	assert exchange.messages.last().content.contains('Continue in the TUI')
+	assert store.assistant_text_for_operation(session.id, operation_id) or { panic(err) } == exchange.messages.last().content
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('was not completed')
+	assert !trace.contains('I implemented the requested edit')
 }
 
 fn test_agent_context_byte_limit_accounts_for_opaque_provider_context() {

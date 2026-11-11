@@ -34,6 +34,39 @@ fn test_execution_policy_ask_denies_side_effects_when_non_interactive() {
 	assert decide_execution_permission(.ask, 'mcp', true, true) == .ask
 }
 
+fn test_non_interactive_ask_hides_side_effect_tools_from_the_model() {
+	tools := [
+		AgentToolDefinition{ name: 'workspace_read_file' },
+		AgentToolDefinition{ name: 'workspace_propose_file_edit' },
+		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
+		AgentToolDefinition{ name: 'mcp_tool' },
+	]
+	visible := restrict_agent_tools_for_execution_policy(tools, ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: false
+	})
+	assert visible.map(it.name) == ['workspace_read_file']
+	assert restrict_agent_tools_for_execution_policy(tools, ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: true
+	}).len == tools.len
+}
+
+fn test_non_interactive_code_change_final_response_cannot_claim_completion() {
+	policy := ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: false
+	}
+	response := agent_final_response_for_execution_policy('Implemented and tested.', true, policy)
+	assert response.contains('was not completed')
+	assert response.contains('Continue in the TUI')
+	assert agent_final_response_for_execution_policy('Read-only answer.', false, policy) == 'Read-only answer.'
+	assert agent_final_response_for_execution_policy('Implemented and tested.', true, ExecutionPolicyTurn{
+		mode:        .sandbox_auto
+		interactive: false
+	}) == 'Implemented and tested.'
+}
+
 fn test_execution_policy_auto_edit_allows_edits_and_asks_shell() {
 	assert decide_execution_permission(.auto_edit, 'edit', false, false) == .allow
 	assert decide_execution_permission(.auto_edit, 'shell', true, true) == .ask

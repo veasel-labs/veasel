@@ -2,6 +2,7 @@ module main
 
 import context as vcontext
 import json2
+import os
 import time
 
 const max_agent_tool_rounds = 24
@@ -9,9 +10,15 @@ const max_agent_tool_calls = 48
 const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
-const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. Do not claim the work is complete without proposing the edits.'
-const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. Keep the change scoped to the user request.'
-const agent_code_change_exploration_nudge_after = 8
+const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text; this preserves all other file content. Do not claim the work is complete without proposing the edits.'
+const agent_code_change_retry_after_no_read_prompt = 'You still have not read any source file. Do not list the directory again or summarize it. Use workspace_search with a distinctive term from the requested behavior to locate the implementation, then workspace_read_file on the relevant source and test. After reading them, propose the requested focused change with workspace_propose_file_edit. Do not claim completion without an edit proposal.'
+const agent_code_change_retry_after_read_prompt = 'You have inspected a file but have not yet located and changed the implementation requested by the user. Keep inspecting with workspace_search or workspace_read_file until you have the relevant component and test; a directory listing or unrelated file is not enough. Then use workspace_propose_file_edit with the exact current text for a focused change. Do not claim completion without an edit proposal.'
+const agent_code_change_verification_prompt = 'The requested code edit was applied. Before reporting completion, use workspace_propose_shell_command to run a relevant test, typecheck, or build requested by the user. Inspect the command result and fix any failure before finishing. Report only checks that actually ran.'
+const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
+const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
+const agent_code_change_system_instruction = 'For an explicit code-change request, use workspace tools to read the complete target file and relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
+const agent_code_change_exploration_nudge_after = 4
+const max_agent_code_change_followthrough_retries = 2
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 
@@ -19,11 +26,16 @@ fn agent_context_byte_limit() int {
 	return chat_input_byte_limit() + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
 }
 
+fn agent_original_user_request_text(content string) string {
+	focus_start := content.index(repository_map_focus_open) or { return content.trim_space() }
+	return content[..focus_start].trim_space()
+}
+
 fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 	mut latest_user_message := ''
 	for message in messages.reverse() {
 		if message.role == 'user' {
-			latest_user_message = message.content.trim_space().to_lower()
+			latest_user_message = agent_original_user_request_text(message.content).to_lower()
 			break
 		}
 	}
@@ -35,9 +47,10 @@ fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 	}
 	for no_edit_instruction in ['do not edit any files', 'do not edit files', "don't edit any files",
 		"don't edit files", 'do not change any files', 'do not change files', "don't change any files",
-		"don't change files", 'ask me before editing', 'ask before editing',
-		'ask me before making changes', 'ask before making changes', 'before you edit files',
-		'before editing files', 'before changing files'] {
+		"don't change files", 'do not edit the source file', 'do not change the source file',
+		"don't edit the source file", "don't change the source file", 'ask me before editing',
+		'ask before editing', 'ask me before making changes', 'ask before making changes',
+		'before you edit files', 'before editing files', 'before changing files'] {
 		if latest_user_message.contains(no_edit_instruction) {
 			return false
 		}
@@ -54,17 +67,79 @@ fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 		if request.starts_with(verb) {
 			return true
 		}
+		// Common coding requests lead with a file or location: "In X, change Y".
+		// Explanatory questions starting with "how" were excluded above.
+		for separator in [', ', ': ', '\n'] {
+			if request.contains('${separator}${verb}') {
+				return true
+			}
+		}
 	}
 	return false
 }
 
+fn agent_system_code_change_instruction(explicit_request bool) string {
+	return if explicit_request { agent_code_change_system_instruction } else { '' }
+}
+
+fn explicit_agent_verification_request(messages []ChatMessage) bool {
+	mut request := ''
+	for message in messages {
+		if message.role == 'user' {
+			request = agent_original_user_request_text(message.content)
+		}
+	}
+	text := request.to_lower()
+	return text.contains('test') || text.contains('typecheck') || text.contains('type check')
+		|| text.contains('build') || text.contains('verify') || text.contains('run checks')
+}
+
+fn agent_code_change_verification_tools(tools []AgentToolDefinition, required bool,
+	workspace_effect_applied bool, verification_succeeded bool, verification_failed bool) []AgentToolDefinition {
+	if !required || !workspace_effect_applied || verification_succeeded || verification_failed {
+		return tools
+	}
+	return tools.filter(it.name == 'workspace_propose_shell_command')
+}
+
+fn agent_final_response_for_verification(content string, required bool,
+	workspace_effect_applied bool, verification_succeeded bool) string {
+	if required && workspace_effect_applied && !verification_succeeded {
+		return 'The requested code change was applied, but its requested verification did not succeed. This task is not complete. ${content}'
+	}
+	return content
+}
+
+fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_request bool,
+	edit_attempted bool, workspace_read_succeeded bool, followthrough_retried bool) []AgentToolDefinition {
+	if !explicit_request || edit_attempted {
+		return tools
+	}
+	if workspace_read_succeeded {
+		// A first successful read may be an unrelated file or a bounded excerpt.
+		// Keep focused search and read available so the model can locate the target
+		// without reopening broad directory enumeration or gaining shell access.
+		return tools.filter(it.name in ['workspace_read_file', 'workspace_search',
+			'workspace_propose_file_edit'])
+	}
+	if followthrough_retried {
+		return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file',
+			'workspace_search', 'workspace_propose_file_edit'])
+	}
+	return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file', 'workspace_search'])
+}
+
 fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
-	retried bool, proposal_attempted bool, request_deadline time.Time) bool {
-	if retried || proposal_attempted || !explicit_request
+	retries int, proposal_attempted bool, request_deadline time.Time) bool {
+	if retries >= max_agent_code_change_followthrough_retries || proposal_attempted || !explicit_request
 		|| request_deadline - time.now() < 20 * time.second {
 		return false
 	}
 	return tools.any(it.name == 'workspace_propose_file_edit')
+}
+
+fn agent_discard_buffered_text_on_provider_error(explicit_request bool) bool {
+	return explicit_request
 }
 
 fn agent_code_change_exploration_nudge_available(explicit_request bool, tools []AgentToolDefinition,
@@ -494,6 +569,55 @@ struct AgentWorkspaceEditResult {
 	note string
 }
 
+fn prepare_agent_workspace_edit(root string, arguments map[string]json2.Any) !WorkspaceEditDraft {
+	path := string_tool_argument(arguments, 'path')!
+	if 'content' in arguments {
+		if arguments.len != 2 {
+			return error('complete content cannot be combined with replacement arguments')
+		}
+		content := string_tool_argument(arguments, 'content')!
+		return prepare_workspace_edit(root, path, content)
+	}
+	if arguments.len != 3 || 'old_text' !in arguments || 'new_text' !in arguments {
+		return error('provide either complete content or both old_text and new_text')
+	}
+	old_text := string_tool_argument(arguments, 'old_text')!
+	new_text := string_tool_argument(arguments, 'new_text')!
+	return prepare_workspace_replacement_edit(root, path, old_text, new_text)
+}
+
+fn agent_tool_result_applied_workspace_effect(call ProviderToolCall, result string) bool {
+	match call.function.name {
+		'workspace_propose_file_edit' {
+			edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
+			return edit.note.starts_with('Applied by graduated execution policy')
+		}
+		'workspace_propose_shell_command' {
+			command := json2.decode[ShellCommandSummary](result) or { return false }
+			return command.status == 'succeeded' && command.exit_code == 0
+		}
+		else {
+			return false
+		}
+	}
+}
+
+fn agent_tool_result_pending_workspace_effect_review(call ProviderToolCall, result string) bool {
+	match call.function.name {
+		'workspace_propose_file_edit' {
+			edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
+			return edit.note == 'Stored for human review. The file has not been changed.'
+		}
+		'workspace_propose_shell_command' {
+			command := json2.decode[AgentShellCommandResult](result) or { return false }
+			return command.note == 'Stored for human review. No command was executed.'
+		}
+		else {
+			return false
+		}
+	}
+}
+
 fn workspace_agent_tools() []AgentToolDefinition {
 	return [
 		AgentToolDefinition{
@@ -548,19 +672,27 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_propose_file_edit'
-			description: 'Propose a change to one UTF-8 file in the current workspace. This never writes the file. The user must inspect and explicitly approve the stored diff before it is applied.'
+			description: 'Propose a change to one UTF-8 file in the current workspace. Prefer old_text and new_text for a focused replacement; old_text must match the existing file exactly once, and all other file content is preserved. For a broader change, provide the complete file as content instead. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
 			parameters:  ToolParameters{
 				properties: {
-					'path':    ToolParameter{
+					'path':     ToolParameter{
 						type:        'string'
 						description: 'Relative path to an existing file or a new file whose parent directory already exists.'
 					}
-					'content': ToolParameter{
+					'content':  ToolParameter{
 						type:        'string'
-						description: 'Complete proposed UTF-8 text for this one file, at most 512000 bytes.'
+						description: 'Complete proposed UTF-8 file text for a broader edit. Do not use for a focused replacement; use old_text and new_text instead.'
+					}
+					'old_text': ToolParameter{
+						type:        'string'
+						description: 'Exact existing UTF-8 text to replace. Must match exactly once in the current file.'
+					}
+					'new_text': ToolParameter{
+						type:        'string'
+						description: 'UTF-8 replacement text for the exact old_text match. All other file bytes are preserved.'
 					}
 				}
-				required:   ['path', 'content']
+				required:   ['path']
 			}
 		},
 		AgentToolDefinition{
@@ -680,6 +812,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		session_id))
 	tools << mcp_tools
 	tools = restrict_agent_tools(tools, skill_context.tool_policy)
+	tools = restrict_agent_tools_for_execution_policy(tools, policy)
 	mut tool_calls := 0
 	mut result_bytes := 0
 	mut seen_tool_call_ids := map[string]bool{}
@@ -701,9 +834,15 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 	}
 	mut trace_usage := ProviderUsage{}
-	mut followthrough_retried := false
+	mut followthrough_retries := 0
 	mut edit_proposal_attempted := false
+	mut workspace_effect_applied := false
+	mut workspace_effect_pending_review := false
 	code_change_request := explicit_agent_code_change_request(messages)
+	verification_required := explicit_agent_verification_request(messages)
+	mut verification_succeeded := false
+	mut verification_failed := false
+	mut verification_prompt_issued := false
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
 	for round in 0 .. max_agent_tool_rounds {
@@ -715,9 +854,16 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if agent_context_bytes(messages) > agent_context_byte_limit() {
 			return error('agent context size limit reached')
 		}
-		turn_tools := agent_tools_for_skill_context(tools, skill_context)
-		buffer_provider_text := agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
-			followthrough_retried, edit_proposal_attempted, request_deadline)
+		followthrough_tools := agent_tools_for_skill_context(tools, skill_context)
+		mut turn_tools := followthrough_tools.clone()
+		turn_tools = agent_code_change_tools_for_progress(turn_tools, code_change_request,
+			edit_proposal_attempted, read_paths.len > 0, followthrough_retries > 0)
+		turn_tools = agent_code_change_verification_tools(turn_tools, verification_required,
+			workspace_effect_applied, verification_succeeded, verification_failed)
+		buffer_provider_text := (code_change_request && !workspace_effect_applied)
+			|| agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools,
+				followthrough_retries, edit_proposal_attempted, request_deadline)
+			|| (verification_required && workspace_effect_applied && !verification_succeeded)
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
 			fn [mut buffered_text] (delta string) ! {
@@ -727,8 +873,12 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			on_text_delta
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
-			stream_text_delta, request_deadline, provider_pool) or {
-			if buffer_provider_text && buffered_text.len > 0 {
+			code_change_request && (!edit_proposal_attempted || (verification_required
+				&& workspace_effect_applied && !verification_succeeded && !verification_failed)),
+			stream_text_delta, request_deadline,
+			provider_pool) or {
+			if buffer_provider_text && buffered_text.len > 0
+				&& !agent_discard_buffered_text_on_provider_error(code_change_request) {
 				on_text_delta(buffered_text) or { return err }
 			}
 			return err
@@ -740,7 +890,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
 			}
-			if agent_code_change_followthrough_retry_available(code_change_request, turn_tools, followthrough_retried,
+			if agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools, followthrough_retries,
 				edit_proposal_attempted, request_deadline) {
 				messages << ChatMessage{
 					role:    'assistant'
@@ -748,7 +898,13 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				}
 				messages << ChatMessage{
 					role:    'user'
-					content: agent_code_change_retry_prompt
+					content: if followthrough_retries == 0 {
+						agent_code_change_retry_prompt
+					} else if read_paths.len > 0 {
+						agent_code_change_retry_after_read_prompt
+					} else {
+						agent_code_change_retry_after_no_read_prompt
+					}
 				}
 				if collect_trace {
 					trace_steps << ATIFStep{
@@ -760,25 +916,34 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 					trace_steps << ATIFStep{
 						step_id: trace_steps.len + 1
 						source:  'user'
-						message: agent_code_change_retry_prompt
+						message: messages.last().content
 					}
 				}
-				followthrough_retried = true
+				followthrough_retries++
 				continue
 			}
-			if buffer_provider_text && buffered_text.len > 0 {
-				on_text_delta(buffered_text)!
+			final_output := CompletionOutput{
+				provider:         output.provider
+				model:            output.model
+				content:          agent_final_response_for_verification(agent_final_response_for_execution_policy(output.content, code_change_request,
+					policy, workspace_effect_applied, workspace_effect_pending_review),
+					verification_required, workspace_effect_applied, verification_succeeded)
+				provider_context: output.provider_context
+				usage:            output.usage
+			}
+			if buffer_provider_text {
+				on_text_delta(final_output.content)!
 			}
 			if collect_trace {
 				trace_steps << ATIFStep{
 					step_id:    trace_steps.len + 1
 					source:     'agent'
-					model_name: output.model
-					message:    output.content
+					model_name: final_output.model
+					message:    final_output.content
 				}
 			}
 			return AgentTraceResult{
-				output: output
+				output: final_output
 				steps:  trace_steps
 				usage:  trace_usage
 			}
@@ -859,6 +1024,31 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		tool_results := execute_agent_tool_batch(app, mut turn_ctx, root, session_id, operation_id,
 			output.tool_calls, mut skill_context, mcp_bindings, mut mcp_connections, policy,
 			mut read_paths, loop_skip_notes)!
+		for index, call in output.tool_calls {
+			if index < tool_results.len {
+				tool_result := tool_results[index]
+				if verification_required && workspace_effect_applied
+					&& call.function.name == 'workspace_propose_shell_command' {
+					verification := json2.decode[ShellCommandSummary](tool_result) or {
+						ShellCommandSummary{ status: 'failed', exit_code: -1 }
+					}
+					verification_succeeded = verification.status == 'succeeded'
+						&& verification.exit_code == 0
+					verification_failed = !verification_succeeded
+					verification_prompt_issued = false
+				}
+				workspace_effect_applied = workspace_effect_applied
+					|| agent_tool_result_applied_workspace_effect(call, tool_result)
+				if verification_required && call.function.name == 'workspace_propose_file_edit'
+					&& agent_tool_result_applied_workspace_effect(call, tool_result) {
+					verification_succeeded = false
+					verification_failed = false
+					verification_prompt_issued = false
+				}
+				workspace_effect_pending_review = workspace_effect_pending_review
+					|| agent_tool_result_pending_workspace_effect_review(call, tool_result)
+			}
+		}
 		mut trace_observations := []ATIFObservationResult{}
 		for i, call in output.tool_calls {
 			result := tool_results[i]
@@ -887,7 +1077,27 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
 			collect_trace)
-		if agent_code_change_exploration_nudge_available(code_change_request, turn_tools,
+		if verification_required && workspace_effect_applied && !verification_succeeded
+			&& !verification_prompt_issued {
+			verification_prompt := if verification_failed {
+				agent_code_change_verification_failure_prompt
+			} else {
+				agent_code_change_verification_prompt
+			}
+			messages << ChatMessage{
+				role:    'user'
+				content: verification_prompt
+			}
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id: trace_steps.len + 1
+					source:  'user'
+					message: verification_prompt
+				}
+			}
+			verification_prompt_issued = true
+		}
+		if agent_code_change_exploration_nudge_available(code_change_request, followthrough_tools,
 			read_only_tool_calls, exploration_nudged, edit_proposal_attempted, request_deadline) {
 			messages << ChatMessage{
 				role:    'user'
@@ -968,7 +1178,7 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, ses
 		on_text_delta(boundary)!
 	}
 	summary := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, summary_messages, [],
-		on_text_delta, request_deadline, provider_pool)!
+		false, on_text_delta, request_deadline, provider_pool)!
 	if has_provider_usage_data(summary.usage) {
 		trace_usage = add_provider_usage(trace_usage, summary.usage)
 	}
@@ -1108,16 +1318,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, mut turn_ctx vcontext.Conte
 		tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 			return encode_agent_tool_error('Tool arguments must be a JSON object.')
 		}
-		path := string_tool_argument(tool_arguments, 'path') or {
-			return encode_agent_tool_error('A relative file path is required.')
-		}
-		content := string_tool_argument(tool_arguments, 'content') or {
-			return encode_agent_tool_error('Proposed UTF-8 file content is required.')
-		}
-		if tool_arguments.len != 2 {
-			return encode_agent_tool_error('Unexpected tool argument.')
-		}
-		draft := prepare_workspace_edit(root, path, content) or {
+		draft := prepare_agent_workspace_edit(root, tool_arguments) or {
 			return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 		}
 		mut store := app.store
@@ -1409,7 +1610,37 @@ fn agent_context_bytes(messages []ChatMessage) int {
 // models return a zero window so no budget is invented for them.
 fn (app &App) active_model_token_budget() (int, int) {
 	config := app.model_config() or { return 0, 0 }
-	return model_context_tokens(config.provider, config.model) or { 0 }, config.max_output_tokens
+	return active_model_context_window(config), config.max_output_tokens
+}
+
+// active_model_context_window accepts an explicit operator-supplied window for
+// custom/local models whose limit is not in the curated model schedule. This
+// takes precedence because a provider's runtime limit can be lower than the
+// model's advertised maximum (for example, Ollama num_ctx).
+fn active_model_context_window(config ModelConfig) int {
+	if raw := os.getenv_opt('VEASEL_MODEL_CONTEXT_TOKENS') {
+		if configured := parse_model_context_window(raw) {
+			return configured
+		}
+	}
+	return model_context_tokens(config.provider, config.model) or { 0 }
+}
+
+fn parse_model_context_window(raw string) ?int {
+	value := raw.trim_space()
+	if value.len == 0 || value.len > 7 {
+		return none
+	}
+	for digit in value {
+		if digit < `0` || digit > `9` {
+			return none
+		}
+	}
+	tokens := value.int()
+	if tokens < 128 || tokens > 1_048_576 {
+		return none
+	}
+	return tokens
 }
 
 fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut messages []ChatMessage,
@@ -1481,7 +1712,7 @@ fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, sess
 		},
 	]
 	output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, prompt, [],
-		ignore_provider_text_delta, request_deadline, provider_pool)!
+		false, ignore_provider_text_delta, request_deadline, provider_pool)!
 	text := output.content.trim_space()
 	if text.len == 0 {
 		return error('compaction summarizer returned empty content')
@@ -1537,16 +1768,7 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
-			path := string_tool_argument(tool_arguments, 'path') or {
-				return encode_agent_tool_error('A relative file path is required.')
-			}
-			content := string_tool_argument(tool_arguments, 'content') or {
-				return encode_agent_tool_error('Proposed UTF-8 file content is required.')
-			}
-			if tool_arguments.len != 2 {
-				return encode_agent_tool_error('Unexpected tool argument.')
-			}
-			draft := prepare_workspace_edit(root, path, content) or {
+			draft := prepare_agent_workspace_edit(root, tool_arguments) or {
 				return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 			}
 			mut store := app.store

@@ -1,0 +1,53 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "runner": {
+    "name": "Veasel packaged TUI",
+    "version": "0.69.13-next.0",
+    "binary_sha256": "9ff6aa31ec21b646aa49c1a6037883d079e61c39b9d27f596acacaaec9d2d3a9",
+    "archive_checksum_verified": true
+  },
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+    "prompt_note": "Uses the public issue scope; differs from the earlier diagnostic prompt and is not a controlled repeat.",
+    "oracle": "Independent checkout diff for the expected accessible responsive docs sidebar change."
+  },
+  "model": {
+    "provider": "Ollama 0.40.16",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "runner_backend": "llama.cpp on CPU"
+  },
+  "result": {
+    "status": "failed",
+    "elapsed_seconds": 180,
+    "tool_calls": 0,
+    "edit_proposals": 0,
+    "shell_proposals": 0,
+    "classification": "provider_read_timeout_before_first_tool",
+    "visible_error": "The assistant turn failed.",
+    "oracle_result": "clean worktree; expected change absent",
+    "provider_log": "HTTP 500 after 180 seconds; request stopped before any tool call reached Veasel."
+  },
+  "resource_measurements": {
+    "model_rss_kib": 5878848,
+    "generation_rate_tokens_per_second": 3.1,
+    "host_available_memory_gib_at_model_start": 3.9,
+    "note": "Ollama reported 100% CPU; values are a single local run, not comparative performance data."
+  },
+  "workflow_observations": [
+    "Packaged TUI launched and created a session successfully.",
+    "An initial endpoint misconfiguration returned HTTP 404; the TUI explained that the model ID or provider base URL was wrong.",
+    "After correcting the isolated profile to the documented /v1 endpoint, the task turn stayed busy for 180 seconds and ended with a generic failure message.",
+    "The fixture remained unchanged."
+  ],
+  "privacy": {
+    "raw_trace_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  }
+}

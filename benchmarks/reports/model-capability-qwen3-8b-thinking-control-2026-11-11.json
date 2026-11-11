@@ -1,0 +1,50 @@
+{
+  "schema": "veasel-model-capability-control/1",
+  "date": "2026-11-11",
+  "model": {
+    "provider": "Ollama local OpenAI-compatible endpoint",
+    "version": "0.40.13",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "runner_backend": "llama.cpp on CPU",
+    "context_tokens": 4096
+  },
+  "task": "Minimal required structured edit_file tool-call probe; tool was not executed.",
+  "variants": [
+    {
+      "request_sha256": "855b97d93e216dc354af5bf787c6484d3882307fe8fa62f241779bcb2b6dade4",
+      "reasoning_effort": "none",
+      "elapsed_seconds": 24.66,
+      "http_status": 200,
+      "prompt_tokens": 152,
+      "completion_tokens": 27,
+      "reasoning_chars": 0,
+      "tool_calls": 1,
+      "finish_reason": "tool_calls"
+    },
+    {
+      "request_sha256": "7acd947d86344a98d7603db687bb3160cc9621c80549ddf16c442fbffbd4ff88",
+      "reasoning_effort": "omitted",
+      "elapsed_seconds": 36.61,
+      "http_status": 200,
+      "prompt_tokens": 146,
+      "prompt_cache_tokens": 140,
+      "completion_tokens": 130,
+      "reasoning_chars": 461,
+      "tool_calls": 1,
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "resource_measurement": {
+    "model_rss_kib": 5878848,
+    "processor": "100% CPU while loaded",
+    "host_available_memory_gib_after_probe": 4.4,
+    "note": "Single local sample; no comparative system-level claim."
+  },
+  "interpretation": "Both variants returned a structured tool call in a minimal request. The explicit reasoning_effort=none variant used fewer reported completion tokens and finished 11.95 seconds sooner in this pair. This confirms that the currently installed Ollama 0.40.13 accepts the control for this model and request. The small probe does not reproduce a repository task and cannot explain or rule out the 180-second packaged task timeout.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  }
+}

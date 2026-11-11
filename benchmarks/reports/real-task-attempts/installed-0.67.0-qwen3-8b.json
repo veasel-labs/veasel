@@ -1,0 +1,31 @@
+{
+  "schema": "veasel-real-task-sanitized-trace-summary/1",
+  "run": "installed-0.67.0-qwen3-8b",
+  "task": "veasel-labs/website#173",
+  "task_base": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_sha256": "13f41c1dd0d2b33f84765b4ea195499581d0e633e63e15a5b43c1f60711a6e5b",
+  "product_version": "0.67.0-next.0",
+  "binary_sha256": "not captured",
+  "provider": "ollama",
+  "provider_version": "0.40.16",
+  "model": "qwen3:8b",
+  "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+  "context_tokens": 4096,
+  "output_budget_tokens": 2048,
+  "trace_outcome": "completed",
+  "token_usage": {
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "total_completion_tokens": 1092,
+    "total_prompt_tokens": 2050
+  },
+  "events": [
+    {
+      "step_id": 3,
+      "tool_calls": [],
+      "observation": null,
+      "assistant_text_classification": "no_tool_completion_claim"
+    }
+  ],
+  "sanitization": "System and user text omitted; file contents and credentials omitted; paths limited to tool file arguments and listing results."
+}

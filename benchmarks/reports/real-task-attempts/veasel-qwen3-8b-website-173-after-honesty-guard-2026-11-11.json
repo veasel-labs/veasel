@@ -1,0 +1,72 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "runner": {
+    "name": "Veasel headless benchmark build in bubblewrap sandbox, with completion-honesty guard",
+    "product_version": "0.69.13-next.0+pr609.0b1aac9",
+    "source_commit": "0b1aac99bec937418e759b3e89a31c8bd7e9b01c",
+    "binary_sha256": "9a776e9a7db95e29d299d064a01f9594cb21e5a7a2ccd52fbc7c6bbc031a1898"
+  },
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+    "oracle": "Independent clean-clone diff for the expected accessible responsive docs sidebar change."
+  },
+  "model": {
+    "provider": "Ollama local OpenAI-compatible endpoint",
+    "version": "0.40.13",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "quantization": "Q4_K_M",
+    "runner_backend": "llama.cpp on CPU",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048
+  },
+  "execution": {
+    "tool_policy": "autonomous inside bubblewrap; writable mount limited to the disposable task checkout and isolated state directory; host home and credentials were not mounted",
+    "wall_budget_seconds": 1200,
+    "provider_request_read_timeout_seconds": 180,
+    "sandbox_network": "shared host network to reach local Ollama; no model API key was configured"
+  },
+  "result": {
+    "status": "completed_without_edit",
+    "elapsed_seconds": 274,
+    "input_tokens": 49231,
+    "output_tokens": 522,
+    "cache_read_tokens": 42011,
+    "tool_calls": {
+      "workspace_list_files": 9,
+      "workspace_read_file": 2,
+      "workspace_propose_shell_command": 2
+    },
+    "shell_proposal_results": [
+      {
+        "status": "failed",
+        "exit_code": 1
+      },
+      {
+        "status": "failed",
+        "exit_code": 1
+      }
+    ],
+    "edit_proposals": 0,
+    "workspace_edits_applied": 0,
+    "context_observation": "Ollama logged one truncation from a 4282-token input prompt to 2050 tokens under the 4096 context setting.",
+    "final_behavior": "Veasel replaced model intent/clarification text with an explicit incomplete status; the replacement was the persisted final assistant message.",
+    "oracle_result": "clean worktree; expected change absent",
+    "coding_success": false
+  },
+  "resource_measurements": {
+    "model_rss_gib_rounded": 5.9,
+    "model_processor": "100% CPU",
+    "host_available_memory_gib": 4.5,
+    "host_swap_used_gib": 6.8,
+    "host_swap_total_gib": 7.8
+  },
+  "privacy": {
+    "raw_atif_trace_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  }
+}

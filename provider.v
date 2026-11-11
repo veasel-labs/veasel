@@ -673,6 +673,9 @@ struct ModelConfig {
 mut:
 	session_id        string
 	max_output_tokens int
+	// When enabled for local Qwen3, keep the model in tool mode until it
+	// proposes the requested edit. Other providers ignore this local policy.
+	require_tool_choice bool
 	// Captured before the provider worker starts. Cancellation still flows
 	// through Context; the deadline value is immutable for this provider turn.
 	request_deadline ?time.Time
@@ -1757,12 +1760,13 @@ fn complete_with_tools(mut turn_ctx vcontext.Context, messages []ChatMessage,
 	tools []AgentToolDefinition, on_text_delta ProviderTextDeltaFn, config ModelConfig) !CompletionOutput {
 	route := model_provider_route(config)!
 	routed_config := ModelConfig{
-		provider:          config.provider
-		base_url:          route.base_url
-		model:             config.model
-		api_key:           config.api_key
-		session_id:        config.session_id
-		max_output_tokens: config.max_output_tokens
+		provider:            config.provider
+		base_url:            route.base_url
+		model:               config.model
+		api_key:             config.api_key
+		session_id:          config.session_id
+		max_output_tokens:   config.max_output_tokens
+		require_tool_choice: config.require_tool_choice
 	}
 	provider := match route.protocol {
 		'openai-compatible' {
@@ -2474,7 +2478,11 @@ fn build_openai_chat_request(config ModelConfig, messages []ChatMessage, tools [
 		reasoning_effort:       ollama_tool_reasoning_effort(config, tools.len > 0)
 		messages:               messages
 		tools:                  openai_tools
-		tool_choice:            if tools.len > 0 { 'auto' } else { '' }
+		tool_choice:            if tools.len > 0 {
+			if ollama_required_tool_choice(config, true) { 'required' } else { 'auto' }
+		} else {
+			''
+		}
 		stream:                 true
 		prompt_cache_key:       cache_key
 		prompt_cache_retention: cache_retention
@@ -2490,6 +2498,14 @@ fn ollama_tool_reasoning_effort(config ModelConfig, has_tools bool) ?string {
 		return none
 	}
 	return 'none'
+}
+
+fn ollama_required_tool_choice(config ModelConfig, has_tools bool) bool {
+	if !config.require_tool_choice {
+		return false
+	}
+	effort := ollama_tool_reasoning_effort(config, has_tools) or { return false }
+	return effort == 'none'
 }
 
 fn build_openai_responses_request(config ModelConfig, messages []ChatMessage, tools []AgentToolDefinition) !OpenAIResponsesRequest {

@@ -104,6 +104,30 @@ fn test_workspace_file_range_preserves_line_endings_and_bounds_utf8_output() {
 	assert !near_limit.content.contains('second')
 }
 
+fn test_workspace_replacement_edit_preserves_file_and_requires_unique_anchor() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-replacement-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	original := 'before\naria-label="Documentation"\nafter\n'
+	os.write_file(os.join_path(root, 'DocsLayout.astro'), original) or { panic(err) }
+	draft := prepare_workspace_replacement_edit(root, 'DocsLayout.astro', 'aria-label="Documentation"',
+		'aria-label="Documentation navigation"') or { panic(err) }
+	assert draft.content == 'before\naria-label="Documentation navigation"\nafter\n'
+	assert draft.expected_hash == workspace_content_hash(original)
+	assert draft.diff.contains('aria-label="Documentation navigation"')
+	assert workspace_replacement_edit_error_contains(root, 'DocsLayout.astro', 'missing', 'found 0')
+	os.write_file(os.join_path(root, 'DocsLayout.astro'), 'match match') or { panic(err) }
+	assert workspace_replacement_edit_error_contains(root, 'DocsLayout.astro', 'match', 'found at least 2')
+}
+
+fn workspace_replacement_edit_error_contains(root string, path string, old_text string,
+	expected string) bool {
+	_ := prepare_workspace_replacement_edit(root, path, old_text, 'replacement') or {
+		return err.msg().contains(expected)
+	}
+	return false
+}
+
 fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 	root := os.join_path(os.temp_dir(), 'veasel-workspace-search-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

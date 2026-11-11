@@ -1,0 +1,75 @@
+{
+  "schema": "veasel.tui-startup.v1",
+  "measuredAt": "2026-11-11T05:56:58Z",
+  "commit": "1334e48ca09dd06af9acc628c978f19ad2541c75",
+  "workflowCommit": null,
+  "host": {
+    "os": "Linux",
+    "release": "7.2.14-arch1-1",
+    "architecture": "x86_64",
+    "cpuCount": 24
+  },
+  "binaries": {
+    "server": "veasel",
+    "tui": "veasel-tui"
+  },
+  "buildProvenance": {
+    "source_commit": "1334e48ca09dd06af9acc628c978f19ad2541c75",
+    "v_compiler_commit": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "v_compiler_version": "V 0.5.2",
+    "c_compiler": "clang",
+    "c_compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "build_flags": "-cc clang -prod -d veasel_version=0.69.13-next.0 -o dist/veasel .",
+    "target": "linux-x64",
+    "binary_sha256": "9ff6aa31ec21b646aa49c1a6037883d079e61c39b9d27f596acacaaec9d2d3a9",
+    "tui_binary_sha256": "6155c23cf7e227ee20c33395adeef98d4c3ce385146813f0213513f7ef32b5b3",
+    "tui_build_target": "bun-linux-x64",
+    "tui_bun_version": "1.4.2",
+    "runner": {
+      "os": "Linux",
+      "architecture": "X64",
+      "image_os": "ubuntu22",
+      "image_version": "20261101.347.1"
+    },
+    "binary_hashes_match": true
+  },
+  "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
+  "firstRunCoverage": {
+    "journey": "clean profile -> /connect -> local provider -> model discovery -> new session -> prompt -> persisted reply",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "apiKeySaved": false,
+    "conversationPersisted": true
+  },
+  "restartCoverage": {
+    "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+    "messagesBeforeRestart": 2,
+    "messagesAfterRestart": 2,
+    "messagesUnchanged": true
+  },
+  "killRecoveryCoverage": {
+    "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+    "operationStatusAfterRestart": "uncertain",
+    "messagesUnchanged": true
+  },
+  "terminalSizes": [
+    "32x12",
+    "80x30",
+    "120x40"
+  ],
+  "startupMs": {
+    "samples": [
+      101.94994500488974
+    ],
+    "count": 1,
+    "min": 101.94994500488974,
+    "median": 101.94994500488974,
+    "max": 101.94994500488974
+  },
+  "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee."
+}

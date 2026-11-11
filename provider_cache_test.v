@@ -257,6 +257,19 @@ fn test_ollama_tool_request_disables_thinking_only_for_local_qwen3() {
 	ollama_payload := json2.encode[OpenAIRequest](ollama_request)
 	ollama_root := json2.decode[map[string]json2.Any](ollama_payload) or { panic(err) }
 	assert ollama_root['reasoning_effort'] or { panic('missing reasoning_effort') }.str() == 'none'
+	assert ollama_root['tool_choice'] or { panic('missing tool_choice') }.str() == 'auto'
+
+	required_ollama_request := build_openai_chat_request(ModelConfig{
+		provider:            'ollama'
+		model:               'qwen3:8b'
+		base_url:            'http://127.0.0.1:11434/v1'
+		require_tool_choice: true
+	}, [], [tool])
+	required_ollama_payload := json2.encode[OpenAIRequest](required_ollama_request)
+	required_ollama_root := json2.decode[map[string]json2.Any](required_ollama_payload) or {
+		panic(err)
+	}
+	assert required_ollama_root['tool_choice'] or { panic('missing required tool_choice') }.str() == 'required'
 
 	no_tools_request := build_openai_chat_request(ModelConfig{
 		provider: 'ollama'
@@ -283,6 +296,7 @@ fn test_ollama_tool_request_disables_thinking_only_for_local_qwen3() {
 	other_provider_payload := json2.encode[OpenAIRequest](other_provider_request)
 	other_provider_root := json2.decode[map[string]json2.Any](other_provider_payload) or { panic(err) }
 	assert 'reasoning_effort' !in other_provider_root
+	assert other_provider_root['tool_choice'] or { panic('missing other-provider tool_choice') }.str() == 'auto'
 
 	remote_ollama_request := build_openai_chat_request(ModelConfig{
 		provider: 'ollama'
@@ -292,6 +306,7 @@ fn test_ollama_tool_request_disables_thinking_only_for_local_qwen3() {
 	remote_ollama_payload := json2.encode[OpenAIRequest](remote_ollama_request)
 	remote_ollama_root := json2.decode[map[string]json2.Any](remote_ollama_payload) or { panic(err) }
 	assert 'reasoning_effort' !in remote_ollama_root
+	assert remote_ollama_root['tool_choice'] or { panic('missing remote Ollama tool_choice') }.str() == 'auto'
 }
 
 fn test_openai_prompt_cache_key_falls_back_when_controls_present() {

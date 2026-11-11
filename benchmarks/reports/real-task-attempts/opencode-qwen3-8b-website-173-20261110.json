@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-10",
+  "task": "veasel-labs/website#173 mobile documentation navigation",
+  "prompt_sha256": "13f41c1dd0d2b33f84765b4ea195499581d0e633e63e15a5b43c1f60711a6e5b",
+  "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "runner": "OpenCode 2.2.5",
+  "provider": "local Ollama 0.40.16; no remote model provider or paid API",
+  "model": "qwen3:8b Q4_K_M, digest 500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+  "context_tokens": 8192,
+  "elapsed_seconds": 340,
+  "result": "no_edit",
+  "tool_calls": [
+    "skill:web-design-guidelines"
+  ],
+  "failure_category": "wrong_skill_selection_then_no_implementation",
+  "final_behavior": "asked which files to review instead of implementing issue requirements",
+  "fixture_dirty": false,
+  "oracle": "independent expected change was absent; worktree diff empty",
+  "limitations": [
+    "single diagnostic sample",
+    "OpenCode tool policy differs from Veasel",
+    "output token cap was not explicitly set; not controlled G4 benchmark"
+  ]
+}

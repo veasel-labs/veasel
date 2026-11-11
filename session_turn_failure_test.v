@@ -45,12 +45,20 @@ fn test_session_turn_failure_names_unreachable_endpoint() {
 
 	_, dropped_error := session_turn_failure('response body ended early')
 	assert dropped_error.contains('connection dropped before the response completed')
+
+	_, timed_out_error := session_turn_failure('net: op timed out')
+	assert timed_out_error.contains('Model provider timed out before the response completed')
+	assert !timed_out_error.contains('net: op timed out')
 }
 
 fn test_session_turn_failure_keeps_internal_and_generic_mappings() {
 	cancelled_status, cancelled_error := session_turn_failure('cancelled')
 	assert cancelled_status == 'cancelled'
 	assert cancelled_error == 'Turn cancelled.'
+
+	empty_status, empty_error := session_turn_failure('empty_response')
+	assert empty_status == 'failed'
+	assert empty_error == 'The model returned an empty response. Retry; if this repeats, check provider and model compatibility.'
 
 	_, deadline_error := session_turn_failure('deadline_exceeded')
 	assert deadline_error == 'The assistant turn exceeded its time limit.'

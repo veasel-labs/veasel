@@ -1,0 +1,30 @@
+{
+  "schema": "veasel-model-capability-probe/1",
+  "date": "2026-11-11",
+  "probe": "single required edit_file function call through Ollama OpenAI-compatible API; no tool execution or file mutation",
+  "request_sha256": "315e87ac750b2e7b2bc41f0ad0a9f6c678393a0d35dcee50667dba05d2b0f3fd",
+  "model": {
+    "provider": "Ollama 0.40.16",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "runner_backend": "llama.cpp on CPU"
+  },
+  "request": {
+    "context_tokens": 4096,
+    "max_output_tokens": 256,
+    "prompt_tokens": 167,
+    "completion_tokens": 29,
+    "tool_choice": "required",
+    "reasoning_effort": "none"
+  },
+  "result": {
+    "http_status": 200,
+    "elapsed_seconds": 31.38,
+    "generated_tokens_per_second": 3.49,
+    "tool_calls": 1,
+    "tool_name": "edit_file",
+    "finish_reason": "tool_calls",
+    "tool_executed": false
+  },
+  "interpretation": "The model can return a basic structured function call with a minimal prompt. This does not establish real coding-task competence, repository understanding, or Veasel-versus-OpenCode performance."
+}

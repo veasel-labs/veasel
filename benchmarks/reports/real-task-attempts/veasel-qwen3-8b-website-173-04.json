@@ -1,0 +1,41 @@
+{
+  "schema": "veasel-real-task-run-summary/1",
+  "run": "veasel-qwen3-8b-website-173-04",
+  "product_commit": "aad591e3891351ab08e8eaa5256c313e1ba079db",
+  "working_patch_sha256": "163172a0ec3dd488b6310c3dd7c0a2005e90ccf6c5fd5d01dd6663b8e5a35beb7",
+  "candidate_binary_sha256": "dd362385d9abf2f1f1da295405aa90cc82fb1b539d1505d5c0168cee1625dcb3",
+  "website_base": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "task": "veasel-labs/website#173",
+  "prompt_sha256": "13f41c1dd0d2b33f84765b4ea195499581d0e633e63e15a5b43c1f60711a6e5b",
+  "provider": "ollama",
+  "ollama_version": "0.40.16",
+  "model": "qwen3:8b",
+  "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+  "ollama_context": 8192,
+  "output_budget": 2048,
+  "temperature": "Ollama default; Veasel request omits explicit temperature",
+  "status": "completed",
+  "input_tokens": 91965,
+  "output_tokens": 2408,
+  "usage_reported": true,
+  "trajectory_steps": 22,
+  "tool_counts": {
+    "workspace_list_files": 9,
+    "workspace_read_file": 7
+  },
+  "files_read": [
+    "src/layouts/DocsLayout.astro",
+    "src/layouts/SiteLayout.astro",
+    "src/pages/docs/index.astro",
+    "src/pages/docs/install.astro",
+    "src/pages/docs/quickstart.astro",
+    "src/pages/docs/tui.astro",
+    "src/pages/docs/tui.astro"
+  ],
+  "exploration_nudge_fired": true,
+  "followthrough_retry_sent": true,
+  "workspace_edit_proposals": 0,
+  "shell_proposals": 0,
+  "result": "no_edit",
+  "finding": "The exploration nudge and original-task follow-through retry both fired. Qwen3:8B still returned a summary after additional read-only exploration and made no edit or shell proposal. No code correctness claim is supported."
+}

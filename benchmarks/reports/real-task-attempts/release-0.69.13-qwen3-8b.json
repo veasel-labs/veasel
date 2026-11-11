@@ -1,0 +1,37 @@
+{
+  "schema": "veasel-real-task-sanitized-trace-summary/1",
+  "run": "release-0.69.13-qwen3-8b",
+  "task": "veasel-labs/website#173",
+  "task_base": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_sha256": "13f41c1dd0d2b33f84765b4ea195499581d0e633e63e15a5b43c1f60711a6e5b",
+  "product_version": "0.69.13-next.0",
+  "binary_sha256": "9ff6aa31ec21b646aa49c1a6037883d079e61c39b9d27f596acacaaec9d2d3a9",
+  "provider": "ollama",
+  "provider_version": "0.40.16",
+  "model": "qwen3:8b",
+  "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+  "context_tokens": 8192,
+  "output_budget_tokens": 2048,
+  "trace_outcome": "failed",
+  "token_usage": null,
+  "events": [
+    {
+      "step_id": 3,
+      "tool_calls": [
+        {
+          "name": "workspace_list_files",
+          "path": "src/layouts/SiteLayout.astro"
+        }
+      ],
+      "observation": [
+        {
+          "listed_paths": [
+            "src/layouts/SiteLayout.astro"
+          ]
+        }
+      ],
+      "assistant_text_classification": "readonly_listing_then_provider_timeout"
+    }
+  ],
+  "sanitization": "System and user text omitted; file contents and credentials omitted; paths limited to tool file arguments and listing results."
+}

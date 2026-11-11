@@ -16,6 +16,14 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 		role:    'user'
 		content: 'Could you add a test for this regression?'
 	}])
+	assert explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'In src/layouts/DocsLayout.astro, change the docs sidebar label.'
+	}])
+	assert !explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Please do not change the source file; explain the issue.'
+	}])
 	assert !explicit_agent_code_change_request([ChatMessage{
 		role:    'user'
 		content: 'Explain how this code works.'
@@ -50,6 +58,79 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 			content: 'Actually, explain the relevant convention.'
 		},
 	])
+	focused_non_edit_request := ChatMessage{
+		role:    'user'
+		content: 'Autonomous workspace edit\n\n${repository_map_focus_open}\nREADME.md\nsrc/main.v\nsrc/main_test.v\n${repository_map_focus_close}'
+	}
+	assert !explicit_agent_code_change_request([focused_non_edit_request])
+	assert agent_original_user_request_text(focused_non_edit_request.content) == 'Autonomous workspace edit'
+}
+
+fn test_code_change_system_instruction_is_conditional_and_actionable() {
+	instruction := agent_system_code_change_instruction(true)
+	assert instruction.contains('read the complete target file and relevant tests')
+	assert instruction.contains('workspace_propose_file_edit')
+	assert instruction.contains('old_text')
+	assert instruction.contains('A file listing or summary is not a completed change')
+	assert instruction.contains('run a relevant verification command after the edit')
+	assert agent_system_code_change_instruction(false) == ''
+}
+
+fn test_explicit_agent_verification_request_is_detected_from_user_request() {
+	assert explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Implement the change and add or update relevant tests.'
+	}])
+	assert explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Build the package and report the result.'
+	}])
+	assert !explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Explain what the existing check command does.'
+	}])
+	assert !explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Autonomous workspace edit\n\n${repository_map_focus_open}\nsrc/main_test.v\n${repository_map_focus_close}'
+	}])
+}
+
+fn test_verification_gate_requires_success_after_an_applied_edit() {
+	tools := [
+		AgentToolDefinition{ name: 'workspace_read_file' },
+		AgentToolDefinition{ name: 'workspace_propose_file_edit' },
+		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
+	]
+	pending := agent_code_change_verification_tools(tools, true, true, false, false)
+	assert pending.map(it.name) == ['workspace_propose_shell_command']
+	assert agent_code_change_verification_tools(tools, true, true, false, true).len == tools.len
+	assert agent_code_change_verification_tools(tools, true, true, true, false).len == tools.len
+	assert agent_code_change_verification_tools(tools, false, true, false, false).len == tools.len
+	assert agent_final_response_for_verification('Done.', true, true, false).contains('This task is not complete')
+	assert agent_final_response_for_verification('Done.', true, true, true) == 'Done.'
+}
+
+fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read() {
+	tools := [
+		AgentToolDefinition{ name: 'workspace_list_files' },
+		AgentToolDefinition{ name: 'workspace_read_file' },
+		AgentToolDefinition{ name: 'workspace_search' },
+		AgentToolDefinition{ name: 'workspace_propose_file_edit' },
+		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
+	]
+	read_phase := agent_code_change_tools_for_progress(tools, true, false, false, false)
+	assert read_phase.map(it.name) == ['workspace_list_files', 'workspace_read_file', 'workspace_search']
+	retry_phase := agent_code_change_tools_for_progress(tools, true, false, false, true)
+	assert retry_phase.any(it.name == 'workspace_propose_file_edit')
+	assert !retry_phase.any(it.name == 'workspace_propose_shell_command')
+	edit_phase := agent_code_change_tools_for_progress(tools, true, false, true, false)
+	assert edit_phase.map(it.name) == ['workspace_read_file', 'workspace_search',
+		'workspace_propose_file_edit']
+	assert !edit_phase.any(it.name == 'workspace_list_files')
+	assert !edit_phase.any(it.name == 'workspace_propose_shell_command')
+	complete_phase := agent_code_change_tools_for_progress(tools, true, true, true, false)
+	assert complete_phase.len == tools.len
+	assert agent_code_change_tools_for_progress(tools, false, false, false, false).len == tools.len
 }
 
 fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() {
@@ -61,7 +142,7 @@ fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() 
 	}]
 	explicit_request := explicit_agent_code_change_request(messages)
 	assert explicit_request
-	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, 0, false,
 		deadline)
 	mut nudged_messages := messages.clone()
 	nudged_messages << ChatMessage{
@@ -69,14 +150,52 @@ fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() 
 		content: agent_code_change_exploration_nudge
 	}
 	assert !explicit_agent_code_change_request(nudged_messages)
-	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, 1, false,
 		deadline)
-	assert !agent_code_change_followthrough_retry_available(true, tools, true, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(true, tools, false, true, deadline)
-	assert !agent_code_change_followthrough_retry_available(false, tools, false, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(true, [], false, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(true, tools, false, false,
+	assert !agent_code_change_followthrough_retry_available(true, tools,
+		max_agent_code_change_followthrough_retries, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, 0, true, deadline)
+	assert !agent_code_change_followthrough_retry_available(false, tools, 0, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, [], 0, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, 0, false,
 		time.now().add(10 * time.second))
+}
+
+fn test_agent_tool_result_effect_status_requires_applied_effect() {
+	edit_call := ProviderToolCall{
+		function: ProviderFunctionCall{ name: 'workspace_propose_file_edit' }
+	}
+	assert agent_tool_result_applied_workspace_effect(edit_call, json2.encode(AgentWorkspaceEditResult{
+		note: 'Applied by graduated execution policy (auto-edit or sandbox-auto).'
+	}))
+	assert !agent_tool_result_applied_workspace_effect(edit_call, json2.encode(AgentWorkspaceEditResult{
+		note: 'Stored for human review. The file has not been changed.'
+	}))
+	assert agent_tool_result_pending_workspace_effect_review(edit_call,
+		json2.encode(AgentWorkspaceEditResult{
+			note: 'Stored for human review. The file has not been changed.'
+		}))
+
+	shell_call := ProviderToolCall{
+		function: ProviderFunctionCall{ name: 'workspace_propose_shell_command' }
+	}
+	assert agent_tool_result_applied_workspace_effect(shell_call, json2.encode(ShellCommandSummary{
+		status:    'succeeded'
+		exit_code: 0
+	}))
+	assert !agent_tool_result_applied_workspace_effect(shell_call, json2.encode(ShellCommandSummary{
+		status:    'failed'
+		exit_code: 1
+	}))
+	assert agent_tool_result_pending_workspace_effect_review(shell_call,
+		json2.encode(AgentShellCommandResult{
+			note: 'Stored for human review. No command was executed.'
+		}))
+}
+
+fn test_agent_discards_buffered_code_claims_when_provider_fails() {
+	assert agent_discard_buffered_text_on_provider_error(true)
+	assert !agent_discard_buffered_text_on_provider_error(false)
 }
 
 fn test_agent_code_change_exploration_nudge_is_bounded_to_explicit_requests() {
@@ -877,6 +996,16 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
 		'workspace_search', 'subagent_run', 'workspace_propose_file_edit',
 		'workspace_propose_shell_command']
+	edit_definition := definitions.filter(it.name == 'workspace_propose_file_edit')[0]
+	assert edit_definition.description.contains('old_text and new_text')
+	assert 'old_text' in edit_definition.parameters.properties
+	assert 'new_text' in edit_definition.parameters.properties
+	replacement_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v","old_text":"workspace-sentinel","new_text":"updated"}') or {
+		panic(err)
+	}
+	replacement_draft := prepare_agent_workspace_edit(root, replacement_arguments) or { panic(err) }
+	assert replacement_draft.content == 'module fixture\nupdated\n'
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
 	assert agent_tool_allows_parallel_readonly('workspace_list_files')
 	assert agent_tool_allows_parallel_readonly('workspace_read_file')
 	assert agent_tool_allows_parallel_readonly('workspace_search')
@@ -1692,12 +1821,19 @@ struct AgentCodeChangeFollowthroughFixture {
 mut:
 	hits           int
 	request_bodies []string
+	reply_text     string
 }
 
 fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request) http.Response {
 	fixture.hits++
 	fixture.request_bodies << request.data
-	chunk := if fixture.hits == 1 {
+	chunk := if fixture.reply_text.len > 0 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{ content: fixture.reply_text }
+			}]
+		}
+	} else if fixture.hits == 1 {
 		OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
 				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
@@ -1794,10 +1930,9 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	assert fixture.request_bodies.len == 3
 	assert fixture.request_bodies[1].contains(agent_code_change_retry_prompt)
 	assert !exchange.messages.any(it.content == 'I will take a look.')
-	assert exchange.messages.last().content == 'I prepared the README edit for review.'
-	assert store.assistant_text_for_operation(session.id, operation_id) or {
-		panic(err)
-	} == 'I prepared the README edit for review.'
+	assert exchange.messages.last().content.contains('pending human review'), exchange.messages.last().content
+	assert !exchange.messages.last().content.contains('I prepared the README edit for review.')
+	assert store.assistant_text_for_operation(session.id, operation_id) or { panic(err) } == exchange.messages.last().content
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
 	edits := store.workspace_edits(session.id) or { panic(err) }
 	assert edits.len == 1
@@ -1805,6 +1940,120 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('I will take a look.')
 	assert trace.contains(agent_code_change_retry_prompt)
+}
+
+fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effect() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-change-incomplete-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'Original README\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		reply_text: 'I will implement the requested README change now.'
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Explicit change without a workspace effect'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please implement the requested README change.'
+		collect_trace: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 3
+	assert fixture.request_bodies[2].contains(agent_code_change_retry_after_no_read_prompt)
+	assert exchange.messages.last().content.contains('not complete'), exchange.messages.last().content
+	assert exchange.messages.last().content.contains('No workspace edit was applied')
+	assert !exchange.messages.last().content.contains('I will implement the requested README change')
+	assert os.read_file(readme) or { panic(err) } == 'Original README\n'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
+	assert (store.shell_commands(session.id) or { panic(err) }).len == 0
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('not complete')
+}
+
+fn test_non_interactive_code_request_reports_no_edit_instead_of_model_claim() {
+	root := os.join_path(os.temp_dir(), 'veasel-headless-no-edit-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(workspace, 'README.md'), 'Original README\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		reply_text: 'I implemented the requested edit and ran every test.'
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Headless no-edit honesty'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 30 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:         'Implement the requested README change.'
+		collect_trace:   true
+		non_interactive: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 1
+	request := json2.decode[OpenAIRequest](fixture.request_bodies[0]) or { panic(err) }
+	assert !request.tools.any(it.function.name in ['workspace_propose_file_edit',
+		'workspace_propose_shell_command'])
+	assert exchange.messages.last().content.contains('was not completed')
+	assert exchange.messages.last().content.contains('Use the TUI for an interactive turn')
+	assert store.assistant_text_for_operation(session.id, operation_id) or { panic(err) } == exchange.messages.last().content
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('was not completed')
+	assert !trace.contains('I implemented the requested edit')
 }
 
 fn test_agent_context_byte_limit_accounts_for_opaque_provider_context() {

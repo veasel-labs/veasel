@@ -316,35 +316,59 @@ fn workspace_search(root string, query string) !WorkspaceSearchResult {
 	if result.matches.len > 0 {
 		return result
 	}
-	mut terms := query.split_any(agent_search_term_separators).filter(it.len >= 4)
+	mut terms := []string{}
+	mut seen_terms := map[string]bool{}
+	for term in query.split_any(agent_search_term_separators) {
+		if term.len < 4 || term in seen_terms {
+			continue
+		}
+		seen_terms[term] = true
+		terms << term
+	}
 	terms.sort(a.len > b.len)
 	if terms.len > 4 {
 		terms = terms[..4]
 	}
+	return workspace_search_terms(canonical_root, terms)
+}
+
+// A failed literal search falls back to the longest distinct query terms in a
+// single workspace scan. This avoids rereading every file once per term.
+fn workspace_search_terms(root string, terms []string) !WorkspaceSearchResult {
+	if terms.len == 0 {
+		return WorkspaceSearchResult{}
+	}
+	mut walker := WorkspaceWalker{
+		root:      root
+		max_files: max_workspace_file_count + 1
+		files:     []string{cap: 256}
+	}
+	os.walk_dir(root, walker.visit)!
+	walker.files.sort()
 	mut ranked_matches := []WorkspaceRankedSearchMatch{cap: 32}
 	mut match_indexes := map[string]int{}
-	mut truncated := result.truncated
-	for term in terms {
-		if term == query {
+	mut term_match_counts := map[string]int{}
+	mut truncated := false
+	mut bytes_scanned := 0
+	for relative_path in walker.files {
+		path := resolve_workspace_file_path(root, relative_path) or { continue }
+		if os.file_size(path) > max_workspace_file_bytes {
 			continue
 		}
-		fallback := workspace_search_literal(canonical_root, term)!
-		truncated = truncated || fallback.truncated
-		for search_match in fallback.matches {
-			key := search_match.path + '\x00' + search_match.line.str()
-			if key in match_indexes {
-				ranked_matches[match_indexes[key]].score++
-			} else {
-				match_indexes[key] = ranked_matches.len
-				ranked_matches << WorkspaceRankedSearchMatch{
-					match: search_match
-					score: 1
-				}
-			}
+		content := read_workspace_text_file(path) or { continue }
+		bytes_scanned += content.len
+		if bytes_scanned > max_workspace_search_bytes {
+			truncated = true
+			break
 		}
+		workspace_search_content_terms(mut ranked_matches, mut match_indexes, mut term_match_counts,
+			relative_path, content, terms, mut truncated)
+	}
+	if walker.stopped {
+		truncated = true
 	}
 	if ranked_matches.len == 0 {
-		return result
+		return WorkspaceSearchResult{ truncated: truncated }
 	}
 	ranked_matches.sort(a.score > b.score)
 	if ranked_matches.len > max_workspace_search_results {
@@ -354,6 +378,59 @@ fn workspace_search(root string, query string) !WorkspaceSearchResult {
 	return WorkspaceSearchResult{
 		matches:   ranked_matches.map(it.match)
 		truncated: truncated
+	}
+}
+
+fn workspace_search_content_terms(mut ranked_matches []WorkspaceRankedSearchMatch,
+	mut match_indexes map[string]int, mut term_match_counts map[string]int, path string,
+	content string, terms []string, mut truncated bool) {
+	mut line_start := 0
+	mut line_number := 1
+	mut index := 0
+	for index <= content.len {
+		if index == content.len || content[index] in [`\r`, `\n`] {
+			if index > line_start {
+				line := unsafe { content.substr_unsafe(line_start, index) }
+				workspace_search_record_term_matches(mut ranked_matches, mut match_indexes,
+					mut term_match_counts, path, line_number, line, terms, mut truncated)
+			}
+			if index < content.len && content[index] == `\r` && index + 1 < content.len
+				&& content[index + 1] == `\n` {
+				index++
+			}
+			line_start = index + 1
+			line_number++
+		}
+		index++
+	}
+}
+
+fn workspace_search_record_term_matches(mut ranked_matches []WorkspaceRankedSearchMatch,
+	mut match_indexes map[string]int, mut term_match_counts map[string]int, path string,
+	line_number int, line string, terms []string, mut truncated bool) {
+	for term in terms {
+		if !line.contains(term) {
+			continue
+		}
+		if term_match_counts[term] >= max_workspace_search_results {
+			truncated = true
+			continue
+		}
+		term_match_counts[term]++
+		key := path + '\x00' + line_number.str()
+		if key in match_indexes {
+			ranked_matches[match_indexes[key]].score++
+		} else {
+			match_indexes[key] = ranked_matches.len
+			ranked_matches << WorkspaceRankedSearchMatch{
+				match: WorkspaceSearchMatch{
+					path: path
+					line: line_number
+					text: workspace_excerpt(line, 2_000)
+				}
+				score: 1
+			}
+		}
 	}
 }
 

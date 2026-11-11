@@ -136,7 +136,7 @@ class PreflightTests(unittest.TestCase):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",
                                   Path("/tmp/opencode-state"), "opencode", "opencode")
-        self.assertTrue(result["passed"])
+        self.assertTrue(result["passed"], result["checks"])
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")

@@ -18,6 +18,13 @@ timeout; OpenCode was externally interrupted at the wall limit. One pair is not
 enough to claim comparative quality or speed. The [pair report](reports/real-task-comparison-website-173-2026-11-11.json)
 and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidence. A Qwen3:14b attempt in a filesystem-isolated Veasel headless sandbox was stopped after 56 s because it consumed about 10 GiB RSS and drove host memory pressure; the checkout stayed clean and this is recorded as an unscored resource abort in [its report](reports/real-task-attempts/veasel-qwen3-14b-website-173-2026-11-11.json).
 
+The only installed larger model is Qwen3:14b (Q4_K_M, 14.8B parameters). A rerun
+requires at least 12 GiB currently available RAM and 2 GiB free swap before
+launch, providing margin over the previously observed 10 GiB model RSS. The
+latest host snapshot had 8 GiB available RAM and only 102 MiB free swap, so no
+14B attempt was started. This is a resource constraint, not evidence that the
+larger model cannot code.
+
 ## Current acceptance status
 
 | Gate | Status | Evidence / remaining work |

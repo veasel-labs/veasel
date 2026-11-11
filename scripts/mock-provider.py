@@ -136,9 +136,10 @@ SYSTEM_SUFFIX = (
     "are sent to the configured model provider."
 )
 ASK_INTERACTIVE_INSTRUCTIONS = (
-    "You may propose complete text replacements for one file at a time using "
-    "workspace_propose_file_edit. Proposing never changes a file; the user must inspect the saved "
-    "diff and explicitly approve it in the TUI before application. Never say a proposal was applied "
+    "You may propose a focused exact-text replacement or a complete text replacement for one file "
+    "at a time using workspace_propose_file_edit. Exact-text replacements must match once and "
+    "preserve all other file content. Proposing never changes a file; the user must inspect the "
+    "saved diff and explicitly approve it in the TUI before application. Never say a proposal was applied "
     "before approval succeeds. You may propose a single-line shell command only when the task "
     "requires a shell side effect, using workspace_propose_shell_command. This tool never executes "
     "the command; the user must inspect the exact command, working directory, and timeout and "

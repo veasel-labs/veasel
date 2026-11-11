@@ -2,6 +2,7 @@
 """Guard the smoke mock against session-system prompt drift."""
 
 import importlib.util
+import re
 import unittest
 from pathlib import Path
 
@@ -29,6 +30,18 @@ class SessionSystemGuardTests(unittest.TestCase):
             self.assertTrue(self.mock.is_session_system(variant), variant[:80])
         self.assertIn("ask maps to deny", self.mock.ASK_NONINTERACTIVE_INSTRUCTIONS)
         self.assertIn("Sandbox-auto / autonomous benchmark execution", self.mock.SANDBOX_AUTO_INSTRUCTIONS)
+
+    def test_workspace_and_interactive_guidance_match_runtime_source(self):
+        runtime = (Path(__file__).parents[1] / "execution_policy.v").read_text(encoding="utf-8")
+        workspace = re.search(
+            r"fn workspace_tool_instructions\(\) string \{\s*return '([^']*)'\s*\}",
+            runtime,
+        )
+        interactive = re.search(r"ask_base := '([^']*)'", runtime)
+        self.assertIsNotNone(workspace)
+        self.assertIsNotNone(interactive)
+        self.assertEqual(self.mock.WORKSPACE_TOOL_INSTRUCTIONS, workspace.group(1))
+        self.assertEqual(self.mock.ASK_INTERACTIVE_INSTRUCTIONS, interactive.group(1))
 
     def test_repository_map_suffix_is_accepted(self):
         content = (

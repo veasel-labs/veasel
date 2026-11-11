@@ -14,12 +14,14 @@ const tool_budget_summary_note = 'The tool budget for this turn is spent. Pendin
 const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text; this preserves all other file content. Do not claim the work is complete without proposing the edits.'
 const agent_code_change_retry_after_no_read_prompt = 'You still have not read any source file. Do not list the directory again or summarize it. Use workspace_search with a distinctive term from the requested behavior to locate the implementation, then workspace_read_file on the relevant source and test. After reading them, propose the requested focused change with workspace_propose_file_edit. Do not claim completion without an edit proposal.'
 const agent_code_change_retry_after_read_prompt = 'You have inspected source, but no edit proposal was made. Re-check the original request and the files already read; the request still applies, so do not ask the user to repeat details. Search using one or more distinctive terms from the original request to locate the implementation or test that directly matches the requested behavior. Do not make cosmetic or unrelated edits. After confirming the relevant code, propose a focused change that satisfies the request. Never claim completion without an edit proposal.'
+const agent_code_change_edit_recovery_prompt = 'The edit proposal failed validation and no file was changed. Re-read the current matched file, then create a fresh focused proposal using exact text from that current file. Do not reuse the failed old_text or claim the change succeeded. The original request still applies.'
 const agent_code_change_verification_prompt = 'The requested code edit was applied. Before reporting completion, use workspace_propose_shell_command to run a relevant test, typecheck, or build requested by the user. Inspect the command result and fix any failure before finishing. Report only checks that actually ran.'
 const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
 const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
 const agent_code_change_system_instruction = 'For an explicit code-change request, start with a workspace tool call immediately. Do not send an acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, read it; otherwise search for a distinctive term from the requested behavior. Then read the complete target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
 const agent_code_change_exploration_nudge_after = 4
 const max_agent_code_change_followthrough_retries = 2
+const max_agent_code_change_edit_recovery_attempts = 1
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 
@@ -694,6 +696,30 @@ fn agent_tool_result_applied_workspace_effect(call ProviderToolCall, result stri
 	}
 }
 
+fn agent_tool_result_workspace_edit_proposal_succeeded(call ProviderToolCall, result string) bool {
+	if call.function.name != 'workspace_propose_file_edit' {
+		return false
+	}
+	edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
+	return edit.id.len > 0 && edit.path.len > 0 && edit.note.len > 0
+}
+
+fn agent_tool_result_workspace_edit_failed(call ProviderToolCall, result string) bool {
+	if call.function.name != 'workspace_propose_file_edit' {
+		return false
+	}
+	tool_error := json2.decode[AgentToolError](result) or { return false }
+	return tool_error.error.len > 0 && !tool_error.error.contains('edit was applied')
+}
+
+fn agent_tool_result_workspace_edit_effect_uncertain(call ProviderToolCall, result string) bool {
+	if call.function.name != 'workspace_propose_file_edit' {
+		return false
+	}
+	tool_error := json2.decode[AgentToolError](result) or { return false }
+	return tool_error.error.contains('edit was applied')
+}
+
 fn agent_tool_result_pending_workspace_effect_review(call ProviderToolCall, result string) bool {
 	match call.function.name {
 		'workspace_propose_file_edit' {
@@ -931,6 +957,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut trace_usage := ProviderUsage{}
 	mut followthrough_retries := 0
 	mut edit_proposal_attempted := false
+	mut failed_edit_proposals := 0
 	mut workspace_effect_applied := false
 	mut workspace_effect_pending_review := false
 	code_change_request_text := agent_latest_user_request_text(messages)
@@ -956,6 +983,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			edit_proposal_attempted, read_paths.len, workspace_search_performed,
 			workspace_read_after_search,
 			followthrough_retries > 0)
+		if code_change_request && failed_edit_proposals > max_agent_code_change_edit_recovery_attempts {
+			edit_proposal_attempted = true
+			turn_tools = turn_tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
+		}
 		turn_tools = agent_code_change_verification_tools(turn_tools, verification_required,
 			workspace_effect_applied, verification_succeeded, verification_failed)
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)
@@ -1110,9 +1141,6 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				loop_skip_notes[call.id] = encode_agent_tool_error('Tool is not available in the current progress phase.')
 				continue
 			}
-			if call.function.name == 'workspace_propose_file_edit' {
-				edit_proposal_attempted = true
-			}
 			match loop_tracker.inspect(call) {
 				.warning {
 					loop_warnings << agent_tool_loop_warning(call)
@@ -1146,6 +1174,21 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		for index, call in output.tool_calls {
 			if index < tool_results.len {
 				tool_result := tool_results[index]
+				if agent_tool_result_workspace_edit_proposal_succeeded(call, tool_result) {
+					edit_proposal_attempted = true
+				}
+				if agent_tool_result_workspace_edit_failed(call, tool_result) {
+					failed_edit_proposals++
+					if failed_edit_proposals <= max_agent_code_change_edit_recovery_attempts {
+						// Permit one fresh read after a validation failure. Keep the prior
+						// relevant search paths, but require the model to read a match again.
+						read_paths = map[string]bool{}
+						workspace_read_after_search = false
+					}
+				} else if agent_tool_result_workspace_edit_effect_uncertain(call, tool_result) {
+					// Never retry a proposal when the write may already have happened.
+					edit_proposal_attempted = true
+				}
 				if call.function.name == 'workspace_search'
 					&& agent_workspace_search_call_relevant(call, code_change_request,
 						code_change_request_text) {
@@ -1206,6 +1249,20 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				tool_call_id:          call.id
 				provider_tool_call_id: call.provider_call_id
 				content:               result
+			}
+		}
+		if code_change_request && failed_edit_proposals > 0
+			&& failed_edit_proposals <= max_agent_code_change_edit_recovery_attempts {
+			messages << ChatMessage{
+				role:    'user'
+				content: agent_code_change_edit_recovery_prompt
+			}
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id: trace_steps.len + 1
+					source:  'user'
+					message: agent_code_change_edit_recovery_prompt
+				}
 			}
 		}
 		if collect_trace {

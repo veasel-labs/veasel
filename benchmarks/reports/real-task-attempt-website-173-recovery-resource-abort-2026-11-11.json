@@ -1,0 +1,58 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External diff against a clean archived task base. Success requires the accessible responsive docs navigation, the requested checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Veasel PR #610 production-profile headless benchmark build",
+    "source_commit": "uncommitted local recovery changes based on d0ca99d67a78233de61f282f894b00a4525997ea",
+    "binary_sha256": "80e41b242d6985b6e8f23127fa8f9c2f73b624018aa270c21eae7bc0ad5582b2",
+    "compiler": "V 0.5.2 b0ceb9b; gcc -prod",
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "permissions": "Autonomous workspace edits and shell execution enabled only inside an externally isolated Bubblewrap workspace; MCP disabled.",
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 64,
+    "status": "cancelled_for_host_memory_pressure_before_first_model_tool_call",
+    "cli_result": "The provider operation was explicitly cancelled after host available RAM fell to 1.2 GiB and swap free space fell to 6 MiB. Ollama then unloaded the model and available RAM recovered to 6.8 GiB.",
+    "tool_calls_observed": 0,
+    "tool_call_summary": {
+      "workspace_list_files": 0,
+      "workspace_read_file": 0,
+      "workspace_search": 0,
+      "workspace_propose_file_edit": 0,
+      "workspace_propose_shell_command": 0,
+      "context_compaction_events": 0,
+      "paths_and_queries": []
+    },
+    "trace_available": true,
+    "trace_summary": "The private ATIF trace contains the initial task and cancellation outcome but no model response or tool call.",
+    "oracle_result": "Recursive diff against the archived task base was empty outside node_modules. No check or viewport verification ran.",
+    "failure_class": "resource_aborted_host_memory_pressure",
+    "resource_observation": {
+      "model_rss_gib_sample": 5.9,
+      "host_available_memory_gib_sample": 1.2,
+      "swap_used_gib_sample": 7.7,
+      "note": "Samples taken before cancellation, not peaks. Available RAM recovered to 6.8 GiB after the model was unloaded."
+    },
+    "provider_usage": {
+      "reported": false,
+      "input_tokens": null,
+      "output_tokens": null
+    }
+  },
+  "interpretation": "This was not a coding attempt and scores 0/0. It was stopped under the repository's local resource-pressure rule before Qwen3 returned a tool call. No coding-success inference is possible. The new recovery runtime change is not validated by this model run.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "prompt_text_or_source_committed": false,
+    "credentials_committed": false
+  }
+}

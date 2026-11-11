@@ -262,6 +262,26 @@ fn test_agent_tool_result_effect_status_requires_applied_effect() {
 	assert !agent_tool_result_applied_workspace_effect(edit_call, json2.encode(AgentWorkspaceEditResult{
 		note: 'Stored for human review. The file has not been changed.'
 	}))
+	assert agent_tool_result_workspace_edit_proposal_succeeded(edit_call,
+		json2.encode(AgentWorkspaceEditResult{
+			id:   'edit-1'
+			path: 'src/file.v'
+			note: 'Stored for human review. The file has not been changed.'
+		}))
+	assert !agent_tool_result_workspace_edit_proposal_succeeded(edit_call,
+		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'))
+	assert agent_tool_result_workspace_edit_failed(edit_call,
+		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'))
+	assert !agent_tool_result_workspace_edit_failed(edit_call,
+		json2.encode(AgentWorkspaceEditResult{
+			id:   'edit-1'
+			path: 'src/file.v'
+			note: 'Stored for human review. The file has not been changed.'
+		}))
+	assert !agent_tool_result_workspace_edit_failed(edit_call,
+		encode_agent_tool_error('The edit was applied but its outcome could not be recorded; inspect the workspace.'))
+	assert agent_tool_result_workspace_edit_effect_uncertain(edit_call,
+		encode_agent_tool_error('The edit was applied but its outcome could not be recorded; inspect the workspace.'))
 	assert agent_tool_result_pending_workspace_effect_review(edit_call,
 		json2.encode(AgentWorkspaceEditResult{
 			note: 'Stored for human review. The file has not been changed.'

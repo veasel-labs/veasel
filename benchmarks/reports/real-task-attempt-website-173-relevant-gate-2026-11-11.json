@@ -1,0 +1,63 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External diff against a clean archived task base. Success requires the accessible responsive docs navigation, the requested checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Veasel PR #610 production-profile headless benchmark build",
+    "source_commit": "d0ca99d67a78233de61f282f894b00a4525997ea",
+    "binary_sha256": "6109d9e7d8ab408806627a73c8a2fe7c8c05a24447612c4fedd412c8da18f1ca",
+    "compiler": "V 0.5.2 b0ceb9b; gcc -prod",
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "permissions": "Autonomous workspace edits and shell execution enabled only inside an externally isolated Bubblewrap workspace; MCP disabled.",
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 223,
+    "status": "completed_without_edit_after_invalid_replacement",
+    "cli_result": "The model ended the turn after a focused edit proposal failed exact replacement validation. No requested task files were modified.",
+    "tool_calls_observed": 6,
+    "tool_call_summary": {
+      "workspace_list_files": 1,
+      "workspace_read_file": 2,
+      "workspace_search": 2,
+      "workspace_propose_file_edit": 1,
+      "workspace_propose_shell_command": 0,
+      "context_compaction_events": 6,
+      "paths_and_queries": [
+        "Listed and read src/layouts/DocsLayout.astro.",
+        "The search for MCP servers was rejected before execution; the relevant sidebar search returned DocsLayout.astro and global styles.",
+        "A repeated DocsLayout.astro read returned the already-provided response; an exact replacement then failed because old_text matched zero occurrences."
+      ]
+    },
+    "trace_available": true,
+    "trace_summary": "Private ATIF trace was read from the isolated SQLite operation record and reduced to sanitized counts and actions. The relevance gate blocked an unrelated search, enabled a task-relevant search, and withheld no edit access after the matched read. The model then proposed placeholder text absent from the file and did not recover.",
+    "oracle_result": "Recursive diff against the archived task base was empty outside node_modules. No requested check or viewport verification ran.",
+    "failure_class": "invalid_exact_text_replacement_without_retry",
+    "resource_observation": {
+      "model_rss_gib_sample": null,
+      "host_available_memory_gib_sample": null,
+      "swap_used_gib_sample": null,
+      "note": "No reliable memory samples were retained for this attempt."
+    },
+    "provider_usage": {
+      "reported": true,
+      "input_tokens": 21774,
+      "output_tokens": 292,
+      "cache_read_tokens": 13461
+    }
+  },
+  "interpretation": "This attempt scored 0/1. The relevance gate reduced a 20-call timeout to six calls and reached the intended source, but deduplicated reads left the model without a fresh view, and its exact replacement proposal matched zero occurrences. This demonstrates more focused exploration, not task success. The runtime recovery path is being changed to allow one fresh read and one corrected proposal while preserving exact-match validation.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "prompt_text_or_source_committed": false,
+    "credentials_committed": false
+  }
+}

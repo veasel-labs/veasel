@@ -684,7 +684,14 @@ def main() -> None:
             }
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
             terminal_sizes: list[str] = []
-            for rows, cols in ((12, 32), (30, 80), (40, 120)):
+            for rows, cols in (
+                (12, 32),
+                (16, 40),
+                (24, 80),
+                (30, 80),
+                (35, 100),
+                (40, 120),
+            ):
                 run_tui_home_at_size(tui_path, env, rows, cols)
                 terminal_sizes.append(f"{cols}x{rows}")
             session_title = "TUI round-trip smoke"

@@ -197,10 +197,11 @@ WORKSPACE_TOOL_INSTRUCTIONS = (
     "tool is not offered, use workspace tools instead. If a skill is unavailable or a skill "
     "resource reports that it is not enabled or loaded, continue the task with the available "
     "workspace tools; do not stop solely because of that skill error. For an explicit code-change "
-    "request, inspect the relevant instructions, source, and tests, then propose complete "
-    "replacement edits for every required file with workspace_propose_file_edit. Do not stop after "
-    "summarizing files. Proposals remain pending until the user approves them in the TUI; never "
-    "claim they were applied before approval."
+    "request, inspect relevant instructions, source, and tests, then propose focused edits with "
+    "workspace_propose_file_edit. For a localized replacement, provide the exact current text as "
+    "old_text and the requested text as new_text; use complete file content only for broader "
+    "changes. Do not stop after summarizing files. Proposals remain pending until the user approves "
+    "them in the TUI; never claim they were applied before approval."
 )
 SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE = tuple(
     SYSTEM_PREFIX + WORKSPACE_TOOL_INSTRUCTIONS + " " + instructions + SYSTEM_SUFFIX

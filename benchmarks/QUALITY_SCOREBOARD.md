@@ -38,3 +38,14 @@ complete timing. The official-release headless replay took roughly 351 seconds;
 the TUI provider request failed at 180 seconds. Private ATIF traces remain
 outside version control because they may contain workspace source and
 instructions.
+
+## Model capability probe
+
+With the same Qwen3:8b digest, a direct Ollama request with a 167-token prompt,
+one required `edit_file` tool, and a 256-token output cap returned a structured
+tool call in 31.38 seconds (29 output tokens). No tool was executed and no file
+was changed. This confirms basic function-call output, not repository-aware
+coding ability. The contrast with the much larger TUI request suggests prompt
+and orchestration load may contribute to the timeout; that remains an inference
+from non-identical inputs, not an established root cause. See the
+[sanitized capability probe](reports/model-capability-qwen3-8b-tool-call-2026-11-11.json).

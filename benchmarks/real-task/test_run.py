@@ -155,6 +155,21 @@ class PreflightTests(unittest.TestCase):
         self.assertTrue(result["passed"])
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
+    @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")
+    @patch.object(runner, "ollama_version", return_value="0.40.15")
+    @patch.object(runner, "ollama_gpu_placement", return_value={"name": "qwen3:8b", "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41", "size_bytes": 5_054_440_406, "size_vram_bytes": 5_586_592_726, "context_length": 4096, "runner": "llamacpp"})
+    @patch.object(runner, "gpu_info", return_value={"name": "NVIDIA GeForce RTX 3060", "memory_mib": 12288})
+    @patch.object(runner, "configured_model", return_value={"provider": "ollama", "model": "qwen3:8b", "base_url": "http://127.0.0.1:11435/v1", "max_output_tokens": 2048, "api_key_saved": False})
+    @patch.object(runner, "available_resources", return_value=(5 * runner.GIB, 0))
+    def test_preflight_blocks_launch_without_observed_startup_headroom(self, _resources, _config, _gpu_info, _placement, _ollama, _model, _git):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path("/tmp/isolated-veasel"))
+        failed = {check["name"] for check in result["checks"] if not check["passed"]}
+        self.assertEqual(failed, {"startup_memory_headroom"})
+        startup_check = next(check for check in result["checks"] if check["name"] == "startup_memory_headroom")
+        self.assertEqual(startup_check["required"], 6174015488)
+
+    @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="wrong-digest")
     @patch.object(runner, "ollama_version", return_value="0.40.15")
     @patch.object(runner, "ollama_gpu_placement", return_value={"name": "qwen3:8b", "digest": "wrong-digest", "size_bytes": 5_054_440_406, "size_vram_bytes": 0, "context_length": 4096, "runner": "llamacpp"})

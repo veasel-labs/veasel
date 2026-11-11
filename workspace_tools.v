@@ -329,6 +329,9 @@ fn workspace_search(root string, query string) !WorkspaceSearchResult {
 	if terms.len > 4 {
 		terms = terms[..4]
 	}
+	if terms.len == 0 {
+		return result
+	}
 	return workspace_search_terms(canonical_root, terms)
 }
 
@@ -417,6 +420,9 @@ fn workspace_search_record_term_matches(mut ranked_matches []WorkspaceRankedSear
 			continue
 		}
 		term_match_counts[term]++
+		if term_match_counts[term] >= max_workspace_search_results {
+			truncated = true
+		}
 		key := path + '\x00' + line_number.str()
 		if key in match_indexes {
 			ranked_matches[match_indexes[key]].score++

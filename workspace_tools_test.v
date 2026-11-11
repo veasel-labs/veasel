@@ -209,6 +209,10 @@ fn test_workspace_search_fallback_ranks_terms_before_truncating() {
 		line: 102
 		text: 'docs sidebar'
 	}
+	os.write_file(os.join_path(root, 'results.txt'), 'navigation\n'.repeat(100)) or { panic(err) }
+	limited := workspace_search(root, 'docs sidebar navigation') or { panic(err) }
+	assert limited.matches.len == max_workspace_search_results
+	assert limited.truncated
 }
 
 fn test_workspace_excerpt_trims_and_crops_once_at_utf8_boundaries() {

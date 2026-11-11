@@ -1,9 +1,11 @@
 import importlib.util
+import argparse
 import json
 import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 from unittest.mock import patch
 
 
@@ -43,6 +45,11 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(config["model"], "ollama/qwen3:8b")
         self.assertEqual(config["providers"]["ollama"]["settings"]["baseURL"], "http://127.0.0.1:11435/v1")
         self.assertEqual(config["providers"]["ollama"]["models"]["qwen3:8b"]["limit"], {"context": 4096, "output": 2048})
+        permissions = config["agents"]["build"]["permissions"]
+        self.assertEqual(permissions[0], {"action": "*", "resource": "*", "effect": "deny"})
+        self.assertIn({"action": "shell", "resource": "*", "effect": "allow"}, permissions)
+        self.assertIn({"action": "external_directory", "resource": "*", "effect": "deny"}, permissions)
+        self.assertNotIn({"action": "webfetch", "resource": "*", "effect": "allow"}, permissions)
 
     def test_opencode_config_is_private_and_refuses_drift(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
@@ -78,6 +85,44 @@ class PreflightTests(unittest.TestCase):
             "ollama/qwen3:8b", "--agent", "build",
         ])
         self.assertEqual(command[-5:], ["--dir", "/workspace/task", "--format", "json", prompt_path.read_text()])
+
+    @patch.object(runner, "preflight", return_value={"passed": True, "checks": []})
+    @patch.object(runner.shutil, "which", return_value="/usr/bin/opencode")
+    @patch.object(runner.subprocess, "check_output", return_value="opencode v2.2.5")
+    def test_opencode_launcher_records_private_unscored_attempt_without_model_call(self, _version, _which, _preflight):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        _case, _prompt, _digest = runner.load_case(case_path)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            artifacts = root / "artifacts"
+            data_dir = root / "state"
+            process = Mock()
+            process.poll.return_value = 0
+            process.wait.return_value = 0
+            args = argparse.Namespace(
+                case=case_path,
+                workspace=workspace,
+                data_dir=data_dir,
+                ollama_url="http://127.0.0.1:11435",
+                agent="opencode",
+                opencode="opencode",
+                veasel="veasel",
+                artifacts=artifacts,
+                sandbox_confirmed=True,
+            )
+            with patch.dict(runner.os.environ, {"ANTHROPIC_API_KEY": "test-secret"}):
+                with patch.object(runner.subprocess, "Popen", return_value=process) as popen:
+                    self.assertEqual(runner.run_case(args), 0)
+            launched_command = popen.call_args.args[0]
+            launched_env = popen.call_args.kwargs["env"]
+            self.assertIn("--standalone", launched_command)
+            self.assertEqual(launched_env["OPENCODE_CONFIG"], str(data_dir / "benchmark-opencode.json"))
+            self.assertNotIn("ANTHROPIC_API_KEY", launched_env)
+            report = json.loads((artifacts / "attempt.json").read_text())
+            self.assertEqual(report["outcome"], "completed")
+            self.assertEqual(report["score"], "unscored; externally verify the patch and task oracle")
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")

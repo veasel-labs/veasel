@@ -104,6 +104,12 @@ def open_code_version(binary: str) -> str:
 def open_code_config(case: dict[str, Any]) -> dict[str, Any]:
     model_name = case["model"]["name"]
     model_id = case["comparators"]["opencode_model"]
+    permissions = [{"action": "*", "resource": "*", "effect": "deny"}]
+    permissions.extend(
+        {"action": action, "resource": "*", "effect": "allow"}
+        for action in case["permissions"]["tool_allowlist"]
+    )
+    permissions.append({"action": "external_directory", "resource": "*", "effect": "deny"})
     config = {
         "$schema": "https://opencode.ai/config.json",
         "model": model_id,
@@ -121,6 +127,7 @@ def open_code_config(case: dict[str, Any]) -> dict[str, Any]:
                 },
             },
         },
+        "agents": {"build": {"permissions": permissions}},
     }
     if config["model"] != f"ollama/{model_name}":
         raise ValueError("OpenCode model ID must point to the pinned local Ollama model")

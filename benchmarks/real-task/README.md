@@ -59,9 +59,11 @@ diff and task-specific tests against the external oracle.
 Reset the same checkout to the same pinned base commit and use the same local
 Ollama endpoint/model and disposable sandbox. OpenCode is pinned at v2.2.5;
 the runner writes a private provider config with the same endpoint and 4096 / 2048
-context/output limits. The command uses OpenCode's documented standalone, model, directory,
+context/output limits. Its Build agent allows only repository read/edit/search/list
+and shell tools; web, subagents, MCP, and external-directory access are denied.
+The command uses OpenCode's documented standalone, model, directory, agent,
 auto-approval, and JSON event options ([CLI docs](https://opencode.ai/docs/cli/commands),
-[Ollama config](https://opencode.ai/docs/providers/)).
+[permissions](https://opencode.ai/docs/permissions/), [Ollama config](https://opencode.ai/docs/providers/)).
 The preflight rejects repository or system OpenCode config files that could
 override the pinned model/provider setup.
 

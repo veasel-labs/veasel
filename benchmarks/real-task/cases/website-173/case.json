@@ -30,7 +30,10 @@
   "permissions": {
     "edit": "autonomous inside an external disposable sandbox",
     "shell": "autonomous inside an external disposable sandbox",
-    "mcp": "disabled"
+    "mcp": "disabled",
+    "tool_allowlist": ["read", "edit", "glob", "grep", "list", "shell"],
+    "web": false,
+    "subagents": false
   },
   "comparators": {
     "opencode_version": "opencode v2.2.5",

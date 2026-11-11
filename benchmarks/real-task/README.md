@@ -105,6 +105,7 @@ and responsive/accessibility behavior in the issue acceptance criteria.
 | Veasel search-first fix `e836100` built with V `b0ceb9b` | resource-aborted | 1.1 s | no model output or workspace changes | unscored: available RAM fell below the 4.5 GiB safety floor |
 | Veasel PR #614 head `f26b2fd` built with V `b0ceb9b` | completed | 6.1 s | 0 edits; clean workspace | failed: exact multiword search returned no matches and the agent stopped |
 | Veasel multiword-search fallback | resource-aborted | 13.2 s | no scored result; workspace remained clean | unscored: RAM crossed the 4.5 GiB safety floor before a completed turn |
+| Veasel multiword-search fallback retry | resource-aborted | 11.1 s | no scored result; workspace remained clean | unscored: available RAM fell to 4.39 GiB, below the 4.5 GiB safety floor |
 
 The three completed Veasel attempts each count as a verified task failure: the disposable
 workspaces were checked after the run and contained no patch. In the current
@@ -115,8 +116,8 @@ guard after RAM dropped below the case floor, after two exploratory tool calls.
 The first replay after the search-first orchestration change was stopped by the
 guard before model output when available RAM fell to 4.47 GiB. A later PR #614
 head attempt completed in 6.1 seconds, made one literal multiword search, then
-returned without a source read or edit. The replay after the fallback change was
-resource-aborted below the 4.5 GiB floor and remains unscored. Therefore this
+returned without a source read or edit. Two replays after the fallback change were resource-aborted below the 4.5 GiB
+floor (13.2 s and 11.1 s) and remain unscored. Therefore this
 case has **0/3 verified Veasel successes, 0 verified OpenCode successes, and
 no scored head-to-head result**. These are observations from one task and
 one local hardware setup, not a general quality or speed claim.
@@ -124,7 +125,7 @@ one local hardware setup, not a general quality or speed claim.
 Full trajectories and logs remain private under the operator's local benchmark
 artifact directory. No raw traces or workspace source are included here. Sanitized
 summaries record the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json)
-and the [unscored fallback replay](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json).
+and the [unscored fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json), [including the latest guard stop](../reports/real-task-attempt-website-173-post-fallback-resource-abort-retry-2026-11-11.json).
 
 This first version samples host available RAM and swap. It does not yet collect
 CPU, process/GPU peak memory, or provider-reported token usage, so reports are

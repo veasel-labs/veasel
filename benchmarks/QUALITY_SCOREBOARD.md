@@ -7,7 +7,7 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
-| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 9 diagnostic attempts | 0 | No run produced the expected patch. The latest packaged Veasel TUI timed out before a tool call; one matched OpenCode TUI run was externally stopped at the same 180 s limit. Both worktrees stayed clean. |
+| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 10 attempts (1 resource-aborted) | 0 | No run produced the expected patch. The matched Qwen3:8b Veasel/OpenCode pair yielded no edits. A Qwen3:14b Veasel attempt was cancelled before its first tool call when available RAM fell below 0.5 GiB and swap use reached 7.2/7.8 GiB; it is not scored as a coding failure. |
 
 The attempts use local Qwen models. One Veasel packaged TUI run and one OpenCode
 2.2.5 TUI run now form a matched diagnostic pair: same task, exact prompt hash,
@@ -15,7 +15,7 @@ base commit, model digest, context/output budgets, edit/bash permissions, disabl
 MCP, and 180 s wall limit. Both produced zero edits. Veasel reported its provider
 timeout; OpenCode was externally interrupted at the wall limit. One pair is not
 enough to claim comparative quality or speed. The [pair report](reports/real-task-comparison-website-173-2026-11-11.json)
-and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidence.
+and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidence. A Qwen3:14b attempt in a filesystem-isolated Veasel headless sandbox was stopped after 56 s because it consumed about 10 GiB RSS and drove host memory pressure; the checkout stayed clean and this is recorded as an unscored resource abort in [its report](reports/real-task-attempts/veasel-qwen3-14b-website-173-2026-11-11.json).
 
 ## Current acceptance status
 

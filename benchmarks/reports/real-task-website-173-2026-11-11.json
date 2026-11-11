@@ -192,13 +192,40 @@
         "OpenCode run externally interrupted at the shared 180-second wall limit",
         "no comparative performance claim"
       ]
+    },
+    {
+      "runner": "Veasel headless sandbox build from PR #609",
+      "version": "0.69.13-next.0+pr609.7796e51",
+      "product_commit": "7796e51fd22fcfd09f50126816c06269906b2bc4",
+      "binary_sha256": "fca3bad343d04549db682c3f8cfce61e9d74b0654b5deda754dfdc9a8f9312bd",
+      "model": "qwen3:14b",
+      "model_digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+      "provider": "local Ollama 0.40.13",
+      "context_tokens": 8192,
+      "output_budget_tokens": 4096,
+      "elapsed_seconds": 56,
+      "status": "cancelled_for_host_resource_pressure",
+      "tool_calls": 0,
+      "edit_proposals": 0,
+      "provider_input_tokens": 3352,
+      "result": "cancelled_before_first_tool_due_to_host_memory_pressure",
+      "oracle_result": "clean worktree; expected change absent",
+      "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+      "resource_measurements": {
+        "model_rss_gib_rounded": 10,
+        "host_available_memory_gib_after_load": 0.471,
+        "host_swap_used_gib": 7.2,
+        "host_swap_total_gib": 7.8
+      },
+      "scored_as_coding_failure": false,
+      "source_report": "real-task-attempts/veasel-qwen3-14b-website-173-2026-11-11.json"
     }
   ],
   "score": {
     "task_successes": 0,
-    "attempts_in_snapshot": 9,
+    "attempts_in_snapshot": 10,
     "controlled_comparison": false,
-    "claim": "No coding-task success or competitive performance claim is supported. One matched diagnostic pair used the same task, prompt hash, base commit, local model digest, context and output limits, permissions, and 180-second wall limit; both produced zero edits. Veasel ended on its provider timeout; OpenCode was externally interrupted at the wall limit. One pair is insufficient for comparative conclusions."
+    "claim": "No coding-task success or competitive performance claim is supported. One matched Qwen3:8b diagnostic pair used the same task, prompt hash, base commit, model digest, context/output limits, and permissions; both produced zero edits, but only OpenCode was externally cut at the wall limit. A separate Qwen3:14b attempt was cancelled before its first tool call because host RAM and swap were nearly exhausted; it is excluded from scored failures. One pair is insufficient for comparative conclusions."
   },
   "privacy": {
     "raw_traces_contain_workspace_content": true,

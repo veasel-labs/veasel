@@ -1,0 +1,57 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "runner": {
+    "name": "Veasel headless benchmark build in bubblewrap sandbox",
+    "product_version": "0.69.13-next.0+pr609.7796e51",
+    "source_commit": "7796e51fd22fcfd09f50126816c06269906b2bc4",
+    "binary_sha256": "fca3bad343d04549db682c3f8cfce61e9d74b0654b5deda754dfdc9a8f9312bd"
+  },
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+    "oracle": "Independent clean-clone diff for the expected accessible responsive docs sidebar change."
+  },
+  "model": {
+    "provider": "Ollama local OpenAI-compatible endpoint",
+    "version": "0.40.13",
+    "name": "qwen3:14b",
+    "digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+    "quantization": "Q4_K_M",
+    "parameters": "14.8B",
+    "runner_backend": "llama.cpp on CPU",
+    "context_tokens": 8192,
+    "output_budget_tokens": 4096
+  },
+  "execution": {
+    "tool_policy": "autonomous inside bubblewrap; writable mount limited to the disposable task checkout and isolated state directory; no host home or credentials mounted",
+    "wall_budget_seconds": 1200,
+    "model_server_context_environment": 8192
+  },
+  "result": {
+    "status": "cancelled_for_host_resource_pressure",
+    "elapsed_seconds": 56,
+    "provider_http_status_after_cancellation": 500,
+    "provider_input_tokens": 3352,
+    "provider_completion_tokens": null,
+    "tool_calls": 0,
+    "edit_proposals": 0,
+    "oracle_result": "clean worktree; expected change absent",
+    "session_recovery": "operation became uncertain after sandboxed backend stopped; no model retry was issued",
+    "scored_as_coding_failure": false
+  },
+  "resource_measurements": {
+    "model_rss_gib_rounded": 10,
+    "model_processor": "100% CPU",
+    "host_available_memory_gib_after_load": 0.471,
+    "host_swap_used_gib_after_load": 7.2,
+    "host_swap_total_gib": 7.8,
+    "note": "The attempt was stopped because available host memory fell below 0.5 GiB while swap use reached 7.2 GiB. Memory availability recovered to about 10 GiB after stopping Ollama."
+  },
+  "privacy": {
+    "raw_session_database_and_partial_trace_data_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  }
+}

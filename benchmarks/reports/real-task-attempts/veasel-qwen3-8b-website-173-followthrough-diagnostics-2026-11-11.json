@@ -1,0 +1,113 @@
+{
+  "schema": "veasel-real-task-diagnostic-series/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "prompt_note": "Newly authored from the merged issue/PR description; this is not the historical prompt whose hash is bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee.",
+    "oracle": "External worktree diff plus npm run check; success requires the requested responsive accessible navigation behavior, relevant tests, and no introduced diagnostics."
+  },
+  "model": {
+    "provider": "Ollama local OpenAI-compatible endpoint",
+    "version": "0.40.13",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "quantization": "Q4_K_M",
+    "runner_backend": "llama.cpp on CPU",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048
+  },
+  "execution": {
+    "tool_policy": "Autonomous in Bubblewrap; only the disposable task checkout and isolated Veasel state were writable. Host home and credentials were not mounted.",
+    "sandbox_network": "Shared host network to reach local Ollama; no model API key was configured.",
+    "v_compiler": "V 0.5.2 b0ceb9b (user-provided local update)",
+    "trace_policy": "Raw ATIF traces retained under /tmp and not committed."
+  },
+  "runs": [
+    {
+      "runner": {
+        "product_version": "0.1.0-dev",
+        "source_commit": "9b450bf30b1cdbeb75580a11ec24c141868b4d75",
+        "binary_sha256": "08194ffb4317013aa8a03200204be783e7f2653ffe628b3b05932956c566fa8e"
+      },
+      "elapsed_seconds": 156,
+      "input_tokens": 11599,
+      "output_tokens": 257,
+      "cache_read_tokens": 6993,
+      "tool_calls": {
+        "workspace_list_files": 2,
+        "workspace_read_file": 0,
+        "workspace_search": 0,
+        "workspace_propose_file_edit": 0,
+        "workspace_propose_shell_command": 0
+      },
+      "status": "completed_without_edit",
+      "failure_class": "directory_listing_loop_then_no_followthrough",
+      "oracle_result": "clean worktree; expected implementation absent; no automated check run",
+      "coding_success": false
+    },
+    {
+      "runner": {
+        "product_version": "0.1.0-dev",
+        "source_commit": "9b450bf30b1cdbeb75580a11ec24c141868b4d75 plus an uncommitted two-retry follow-through patch",
+        "binary_sha256": "baf8ef630b6667f319ab5011e2156dae9c8c4560b43922348f151f782dc7ee26"
+      },
+      "elapsed_seconds": 406,
+      "input_tokens": 16575,
+      "output_tokens": 981,
+      "cache_read_tokens": 9117,
+      "tool_calls": {
+        "workspace_list_files": 3,
+        "workspace_read_file": 1,
+        "workspace_search": 0,
+        "workspace_propose_file_edit": 0,
+        "workspace_propose_shell_command": 0
+      },
+      "status": "completed_without_edit",
+      "failure_class": "unrelated_partial_read_then_edit_tools_withheld",
+      "oracle_result": "clean worktree; expected implementation absent; no automated check run",
+      "diagnosis": "The model read only lines 1-200 of src/pages/docs/api.astro (530 lines total). The agent runtime treated any successful read as sufficient progress and exposed only the edit tool, preventing further search or inspection.",
+      "coding_success": false
+    },
+    {
+      "runner": {
+        "product_version": "0.1.0-dev",
+        "source_commit": "9b450bf30b1cdbeb75580a11ec24c141868b4d75 plus the focused-inspection and retry-prompt patch (sha256 of git diff: c8b60f9d5168c37aa58b3279b43a934d1cb86f6abd422a970d471d17d0420d1f)",
+        "binary_sha256": "dd83fa55fc0554e2379f3fa0f643df4ea5b2c80e344f9cffbffc9c7d6ee2d60a"
+      },
+      "elapsed_seconds": 268,
+      "input_tokens": 24892,
+      "output_tokens": 631,
+      "cache_read_tokens": 19336,
+      "tool_calls": {
+        "workspace_list_files": 3,
+        "workspace_read_file": 0,
+        "workspace_search": 1,
+        "workspace_propose_file_edit": 1,
+        "workspace_propose_shell_command": 0
+      },
+      "status": "completed_with_incorrect_edit",
+      "failure_class": "false_completion_and_syntax_error",
+      "edit": "Inserted `title=\"Quickstart Guide\"` into an Astro object property in src/layouts/DocsLayout.astro instead of implementing the requested navigation behavior.",
+      "external_check": {
+        "command": "npm run check",
+        "exit_code": 1,
+        "result": "Astro check reported three syntax errors on the inserted title property; four pre-existing hints in src/pages/demo.astro were also reported."
+      },
+      "oracle_result": "incorrect one-line edit; requested behavior and tests absent; Astro check fails",
+      "coding_success": false
+    }
+  ],
+  "aggregate": {
+    "attempts": 3,
+    "coding_successes": 0,
+    "resource_measurements": "Not collected for these runs; no peak RSS or CPU measurements are claimed.",
+    "competitive_comparison": "None. These runs do not compare Veasel with another agent and do not support a speed claim."
+  },
+  "privacy": {
+    "raw_atif_trace_committed": false,
+    "summary_contains_credentials": false,
+    "summary_contains_full_source_or_prompt": false
+  }
+}

@@ -11,9 +11,12 @@ const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
 const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text; this preserves all other file content. Do not claim the work is complete without proposing the edits.'
+const agent_code_change_retry_after_no_read_prompt = 'You still have not read any source file. Do not list the directory again or summarize it. Use workspace_search with a distinctive term from the requested behavior to locate the implementation, then workspace_read_file on the relevant source and test. After reading them, propose the requested focused change with workspace_propose_file_edit. Do not claim completion without an edit proposal.'
+const agent_code_change_retry_after_read_prompt = 'You have inspected a file but have not yet located and changed the implementation requested by the user. Keep inspecting with workspace_search or workspace_read_file until you have the relevant component and test; a directory listing or unrelated file is not enough. Then use workspace_propose_file_edit with the exact current text for a focused change. Do not claim completion without an edit proposal.'
 const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
 const agent_code_change_system_instruction = 'For an explicit code-change request, use workspace tools to read the complete target file and relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
 const agent_code_change_exploration_nudge_after = 4
+const max_agent_code_change_followthrough_retries = 2
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 
@@ -78,7 +81,11 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 		return tools
 	}
 	if workspace_read_succeeded {
-		return tools.filter(it.name == 'workspace_propose_file_edit')
+		// A first successful read may be an unrelated file or a bounded excerpt.
+		// Keep focused search and read available so the model can locate the target
+		// without reopening broad directory enumeration or gaining shell access.
+		return tools.filter(it.name in ['workspace_read_file', 'workspace_search',
+			'workspace_propose_file_edit'])
 	}
 	if followthrough_retried {
 		return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file',
@@ -88,8 +95,8 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 }
 
 fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
-	retried bool, proposal_attempted bool, request_deadline time.Time) bool {
-	if retried || proposal_attempted || !explicit_request
+	retries int, proposal_attempted bool, request_deadline time.Time) bool {
+	if retries >= max_agent_code_change_followthrough_retries || proposal_attempted || !explicit_request
 		|| request_deadline - time.now() < 20 * time.second {
 		return false
 	}
@@ -792,7 +799,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 	}
 	mut trace_usage := ProviderUsage{}
-	mut followthrough_retried := false
+	mut followthrough_retries := 0
 	mut edit_proposal_attempted := false
 	mut workspace_effect_applied := false
 	mut workspace_effect_pending_review := false
@@ -811,10 +818,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		followthrough_tools := agent_tools_for_skill_context(tools, skill_context)
 		mut turn_tools := followthrough_tools.clone()
 		turn_tools = agent_code_change_tools_for_progress(turn_tools, code_change_request,
-			edit_proposal_attempted, read_paths.len > 0, followthrough_retried)
+			edit_proposal_attempted, read_paths.len > 0, followthrough_retries > 0)
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)
 			|| agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools,
-				followthrough_retried, edit_proposal_attempted, request_deadline)
+				followthrough_retries, edit_proposal_attempted, request_deadline)
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
 			fn [mut buffered_text] (delta string) ! {
@@ -839,7 +846,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
 			}
-			if agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools, followthrough_retried,
+			if agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools, followthrough_retries,
 				edit_proposal_attempted, request_deadline) {
 				messages << ChatMessage{
 					role:    'assistant'
@@ -847,7 +854,13 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				}
 				messages << ChatMessage{
 					role:    'user'
-					content: agent_code_change_retry_prompt
+					content: if followthrough_retries == 0 {
+						agent_code_change_retry_prompt
+					} else if read_paths.len > 0 {
+						agent_code_change_retry_after_read_prompt
+					} else {
+						agent_code_change_retry_after_no_read_prompt
+					}
 				}
 				if collect_trace {
 					trace_steps << ATIFStep{
@@ -859,10 +872,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 					trace_steps << ATIFStep{
 						step_id: trace_steps.len + 1
 						source:  'user'
-						message: agent_code_change_retry_prompt
+						message: messages.last().content
 					}
 				}
-				followthrough_retried = true
+				followthrough_retries++
 				continue
 			}
 			final_output := CompletionOutput{

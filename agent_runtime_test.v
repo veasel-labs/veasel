@@ -69,7 +69,7 @@ fn test_code_change_system_instruction_is_conditional_and_actionable() {
 	assert agent_system_code_change_instruction(false) == ''
 }
 
-fn test_code_change_tool_phase_requires_a_read_then_a_file_edit() {
+fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read() {
 	tools := [
 		AgentToolDefinition{ name: 'workspace_list_files' },
 		AgentToolDefinition{ name: 'workspace_read_file' },
@@ -83,7 +83,10 @@ fn test_code_change_tool_phase_requires_a_read_then_a_file_edit() {
 	assert retry_phase.any(it.name == 'workspace_propose_file_edit')
 	assert !retry_phase.any(it.name == 'workspace_propose_shell_command')
 	edit_phase := agent_code_change_tools_for_progress(tools, true, false, true, false)
-	assert edit_phase.map(it.name) == ['workspace_propose_file_edit']
+	assert edit_phase.map(it.name) == ['workspace_read_file', 'workspace_search',
+		'workspace_propose_file_edit']
+	assert !edit_phase.any(it.name == 'workspace_list_files')
+	assert !edit_phase.any(it.name == 'workspace_propose_shell_command')
 	complete_phase := agent_code_change_tools_for_progress(tools, true, true, true, false)
 	assert complete_phase.len == tools.len
 	assert agent_code_change_tools_for_progress(tools, false, false, false, false).len == tools.len
@@ -98,7 +101,7 @@ fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() 
 	}]
 	explicit_request := explicit_agent_code_change_request(messages)
 	assert explicit_request
-	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, 0, false,
 		deadline)
 	mut nudged_messages := messages.clone()
 	nudged_messages << ChatMessage{
@@ -106,13 +109,14 @@ fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() 
 		content: agent_code_change_exploration_nudge
 	}
 	assert !explicit_agent_code_change_request(nudged_messages)
-	assert agent_code_change_followthrough_retry_available(explicit_request, tools, false, false,
+	assert agent_code_change_followthrough_retry_available(explicit_request, tools, 1, false,
 		deadline)
-	assert !agent_code_change_followthrough_retry_available(true, tools, true, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(true, tools, false, true, deadline)
-	assert !agent_code_change_followthrough_retry_available(false, tools, false, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(true, [], false, false, deadline)
-	assert !agent_code_change_followthrough_retry_available(true, tools, false, false,
+	assert !agent_code_change_followthrough_retry_available(true, tools,
+		max_agent_code_change_followthrough_retries, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, 0, true, deadline)
+	assert !agent_code_change_followthrough_retry_available(false, tools, 0, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, [], 0, false, deadline)
+	assert !agent_code_change_followthrough_retry_available(true, tools, 0, false,
 		time.now().add(10 * time.second))
 }
 
@@ -1941,7 +1945,8 @@ fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effec
 	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
 		panic(err)
 	}
-	assert fixture.hits == 2
+	assert fixture.hits == 3
+	assert fixture.request_bodies[2].contains(agent_code_change_retry_after_no_read_prompt)
 	assert exchange.messages.last().content.contains('not complete'), exchange.messages.last().content
 	assert exchange.messages.last().content.contains('No workspace edit was applied')
 	assert !exchange.messages.last().content.contains('I will implement the requested README change')

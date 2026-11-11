@@ -279,6 +279,10 @@ fn test_agent_tool_result_effect_status_requires_applied_effect() {
 		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'))
 	assert agent_tool_result_workspace_edit_failed(edit_call,
 		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'))
+	assert agent_tool_result_workspace_edit_recoverable(edit_call,
+		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'), false)
+	assert !agent_tool_result_workspace_edit_recoverable(edit_call,
+		encode_agent_tool_error('Tool is not available in the current progress phase.'), true)
 	assert !agent_tool_result_workspace_edit_failed(edit_call,
 		json2.encode(AgentWorkspaceEditResult{
 			id:   'edit-1'

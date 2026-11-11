@@ -720,6 +720,11 @@ fn agent_tool_result_workspace_edit_failed(call ProviderToolCall, result string)
 	return tool_error.error.len > 0 && !tool_error.error.contains('edit was applied')
 }
 
+fn agent_tool_result_workspace_edit_recoverable(call ProviderToolCall, result string,
+	tool_was_skipped bool) bool {
+	return !tool_was_skipped && agent_tool_result_workspace_edit_failed(call, result)
+}
+
 fn agent_tool_result_workspace_edit_effect_uncertain(call ProviderToolCall, result string) bool {
 	if call.function.name != 'workspace_propose_file_edit' {
 		return false
@@ -1186,7 +1191,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				if agent_tool_result_workspace_edit_proposal_succeeded(call, tool_result) {
 					edit_proposal_attempted = true
 				}
-				if agent_tool_result_workspace_edit_failed(call, tool_result) {
+				if agent_tool_result_workspace_edit_recoverable(call, tool_result,
+					call.id in loop_skip_notes) {
 					failed_edit_proposals++
 					if failed_edit_proposals <= max_agent_code_change_edit_recovery_attempts {
 						// Permit one fresh read after a validation failure. Keep the prior

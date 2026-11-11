@@ -1,0 +1,139 @@
+{
+  "schema": "veasel-real-task-calibration/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "calibration/docs-sidebar-accessible-label",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "8db283e131e6ebefec94d9c95eb72f14aa73be9516410694f81ee7e5b7096188",
+    "expected_diff": "Exactly one line in src/layouts/DocsLayout.astro changes aria-label=Documentation to aria-label=Documentation navigation; no other file changes.",
+    "oracle": "Independent git status and diff against a clean checkout at base_commit."
+  },
+  "model": {
+    "provider": "Ollama local OpenAI-compatible endpoint",
+    "version": "0.40.13",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "quantization": "Q4_K_M",
+    "runner_backend": "llama.cpp on CPU",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048
+  },
+  "environment": {
+    "tool_policy": "Autonomous execution in Bubblewrap; only disposable task checkout and isolated state were writable.",
+    "sandbox_network": "Shared host network only to reach loopback Ollama; no model API key configured.",
+    "model_context_override": "VEASEL_MODEL_CONTEXT_TOKENS=4096",
+    "raw_traces_committed": false,
+    "resource_peak_measurements": "Not collected."
+  },
+  "attempts": [
+    {
+      "id": "baseline-full-file-tool",
+      "runner_source_commit": "07141f4e9f3b96a09358e08ba82e4432a11ba61d",
+      "prompt_sha256": "8db283e131e6ebefec94d9c95eb72f14aa73be9516410694f81ee7e5b7096188",
+      "status": "provider_timeout_without_tool_call",
+      "elapsed_seconds": 189,
+      "input_tokens_reported": 0,
+      "output_tokens_reported": 0,
+      "ollama_generated_tokens_before_timeout": 490,
+      "tool_calls": [],
+      "oracle_result": "Clean checkout; expected change absent.",
+      "coding_success": false,
+      "failure_classification": "model_did_not_reach_tool_call_with_full_file_edit_interface"
+    },
+    {
+      "id": "classifier-miss-full-file-edit",
+      "runner_source_commit": "b03b450532580e9ed957e649689d5640f10348ba",
+      "runner_worktree_dirty": true,
+      "runner_binary_sha256": "e88abc54f351e3a158fb846b1a6be06ecbfbc9c2b7fc80645d0a138e943fce83",
+      "prompt_sha256": "38e22ba67cdaf22941e61c3acd54e42176b48de32add2268e76f69637dec543b",
+      "prompt_variant_note": "The apostrophe in sidebar's was passed as the literal escape \\u0027.",
+      "elapsed_seconds": 92,
+      "input_tokens": 6295,
+      "output_tokens": 94,
+      "tool_calls": [
+        {
+          "name": "workspace_propose_file_edit",
+          "arguments_summary": "A 74-byte content value replaced the 5,578-byte file; no successful file read occurred first."
+        }
+      ],
+      "final_response_claimed_success": true,
+      "oracle_result": "Disposable checkout was reduced to a 74-byte fragment; task change absent and file content lost. No host workspace data was mounted.",
+      "coding_success": false,
+      "failure_classification": "explicit_change_classifier_miss_caused_destructive_edit_and_false_completion"
+    },
+    {
+      "id": "classifier-fixed-full-file-edit-timeout",
+      "runner_source_commit": "b03b450532580e9ed957e649689d5640f10348ba",
+      "runner_worktree_dirty": true,
+      "runner_binary_sha256": "7ccb7918745eef66203d576b3a081583ba844ec7c066f6d028a32c4e3b0586bf",
+      "prompt_sha256": "38e22ba67cdaf22941e61c3acd54e42176b48de32add2268e76f69637dec543b",
+      "prompt_variant_note": "The apostrophe in sidebar's was passed as the literal escape \\u0027.",
+      "elapsed_seconds": 180,
+      "input_tokens_reported": 0,
+      "output_tokens_reported": 0,
+      "tool_calls_observed_in_persisted_state": 0,
+      "operation_state_at_timeout": "running; cancellation was not confirmed; disposable checkout was clean",
+      "oracle_result": "No workspace effect observed before timeout.",
+      "coding_success": false,
+      "failure_classification": "full_file_edit_proposal_exceeded_headless_wait_budget"
+    },
+    {
+      "id": "literal-replacement-success-escaped-prompt",
+      "runner_source_commit": "b03b450532580e9ed957e649689d5640f10348ba",
+      "runner_worktree_dirty": true,
+      "runner_binary_sha256": "92014bfdac384f3c331d98beeae9a0ef066797741765cf080e36b46445888a2e",
+      "prompt_sha256": "38e22ba67cdaf22941e61c3acd54e42176b48de32add2268e76f69637dec543b",
+      "prompt_variant_note": "The apostrophe in sidebar's was passed as the literal escape \\u0027; intended task and expected diff were unchanged.",
+      "elapsed_seconds": 140,
+      "input_tokens": 10334,
+      "output_tokens": 117,
+      "cache_read_tokens": 3776,
+      "tool_calls": ["workspace_read_file", "workspace_propose_file_edit(old_text,new_text)"],
+      "oracle_result": "Exactly one expected line changed in src/layouts/DocsLayout.astro; clean diff check; no other files changed.",
+      "coding_success": true,
+      "failure_classification": null,
+      "trace_summary": ["read target file", "unique exact-text replacement applied under autonomous policy", "final response"]
+    },
+    {
+      "id": "literal-replacement-success-exact-prompt",
+      "runner_source_commit": "b03b450532580e9ed957e649689d5640f10348ba",
+      "runner_worktree_dirty": true,
+      "runner_binary_sha256": "92014bfdac384f3c331d98beeae9a0ef066797741765cf080e36b46445888a2e",
+      "prompt_sha256": "8db283e131e6ebefec94d9c95eb72f14aa73be9516410694f81ee7e5b7096188",
+      "elapsed_seconds": 100,
+      "input_tokens": 10326,
+      "output_tokens": 118,
+      "cache_read_tokens": 6040,
+      "tool_calls": ["workspace_read_file", "workspace_propose_file_edit(old_text,new_text)"],
+      "oracle_result": "Exactly one expected line changed in src/layouts/DocsLayout.astro; clean diff check; no other files changed.",
+      "coding_success": true,
+      "failure_classification": null,
+      "trace_summary": ["read target file", "unique exact-text replacement applied under autonomous policy", "final response"]
+    },
+    {
+      "id": "expanded-post-read-tools-off-target-edit",
+      "runner_source_commit": "b03b450532580e9ed957e649689d5640f10348ba",
+      "runner_worktree_dirty": true,
+      "runner_binary_sha256": null,
+      "prompt_sha256": "8db283e131e6ebefec94d9c95eb72f14aa73be9516410694f81ee7e5b7096188",
+      "elapsed_seconds": 224,
+      "input_tokens": 10327,
+      "output_tokens": 302,
+      "cache_read_tokens": 1892,
+      "post_read_tools": ["workspace_read_file", "workspace_search", "workspace_propose_file_edit"],
+      "tool_calls": ["workspace_read_file", "workspace_propose_file_edit(old_text,new_text)"],
+      "oracle_result": "Only the search-input placeholder changed; the requested sidebar aria-label was unchanged. No other files changed.",
+      "final_response_claimed_success": true,
+      "coding_success": false,
+      "failure_classification": "off_target_edit_with_false_completion",
+      "trace_summary": ["read target file", "replaced unrelated search placeholder text", "claimed generic successful modification"]
+    }
+  ],
+  "score": {
+    "successful_attempts": 2,
+    "attempts": 6,
+    "exact_prompt_successful_attempts": 1,
+    "exact_prompt_attempts": 3,
+    "claim": "The literal-replacement interface produced externally verified success in two runs, including one exact-prompt run. A temporary wider post-read tool set then made an off-target replacement and falsely claimed success; the two observed successful runs used the narrower post-read edit-only phase. Earlier attempts also exposed classifier bypass, destructive full-file editing, and full-file output timeouts. This is a small calibration, not evidence of success on the full website issue or general competitive performance."
+  }
+}

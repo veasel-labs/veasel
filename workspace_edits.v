@@ -112,6 +112,26 @@ fn prepare_workspace_edit(root string, relative_path string, content string) !Wo
 	}
 }
 
+fn prepare_workspace_replacement_edit(root string, relative_path string, old_text string,
+	new_text string) !WorkspaceEditDraft {
+	if old_text.len == 0 {
+		return error('replacement text must not be empty')
+	}
+	file := workspace_file(root, relative_path)!
+	match_start := file.content.index_after(old_text, 0) or {
+		return error('replacement text must match exactly once; found 0 occurrences')
+	}
+	if file.content.index_after(old_text, match_start + 1) != none {
+		return error('replacement text must match exactly once; found at least 2 occurrences')
+	}
+	updated_content := file.content[..match_start] + new_text + file.content[match_start + old_text.len..]
+	draft := prepare_workspace_edit(root, relative_path, updated_content)!
+	if draft.expected_hash != workspace_content_hash(file.content) {
+		return error('file changed while preparing the replacement; read it again and retry')
+	}
+	return draft
+}
+
 fn workspace_line_ending_diff(old_content string, new_content string) string {
 	old_endings := workspace_line_endings(old_content)
 	new_endings := workspace_line_endings(new_content)

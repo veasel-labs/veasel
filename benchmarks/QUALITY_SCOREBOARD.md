@@ -8,6 +8,7 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
 | [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 13 attempts (1 resource-aborted) | 0 | No run produced the expected patch. An explicit 4096-token context window reduced one guarded Qwen3:8b run to 2 directory listings and 12,836 input tokens (previous guarded run: 13 tool calls and 49,231 input tokens); the model still proposed no edit after follow-through retry. The separate Qwen3:14b run remains unscored due host memory pressure. |
+| Synthetic single-file docs sidebar label calibration | 6 attempts | 2 | Two externally verified exact one-line edits followed the new exact-text replacement path (140 s and 100 s; 10,334/117 and 10,326/118 input/output tokens). A temporary wider post-read tool set made an off-target placeholder edit and falsely claimed success; both successful runs used the narrower post-read edit-only phase. Earlier attempts exposed a missed intent classification, destructive full-file editing, and full-file proposal timeouts. One exact-prompt run succeeded; three exact-prompt attempts produced one success. This calibration does not count as success on website#173. See the [attempt report](reports/calibration-docs-sidebar-label-qwen3-8b-2026-11-11.json). |
 
 The attempts use local Qwen models. One Veasel packaged TUI run and one OpenCode
 2.2.5 TUI run now form a matched diagnostic pair: same task, exact prompt hash,
@@ -21,7 +22,7 @@ and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidenc
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Real task success | **Open** | No externally verified edit yet; expand the small task corpus only after the harness yields repeatable runs. |
+| Real task success | **Open** | The synthetic single-file calibration now has two externally verified successes through exact-text replacement, including one exact-prompt run. The actual website#173 issue remains at 0 successes; repeat the fix on that issue and broaden the task corpus before claiming reliable coding ability. |
 | Same-model competitive benchmark | **Open** | Need identical task, model digest, permissions, context/output budgets, repository, and oracle. |
 | Headless approval honesty | **Fix in progress** | Regression now hides denied effect tools and rejects false completion claims for explicit code changes in non-interactive `ask` mode. |
 | Packaged first-use and TUI journeys | **Partial** | Official `0.69.13-next.0` Linux binaries passed a clean-profile mock-provider walk through `/connect`, model discovery, persisted session/reply, approved edit, restart, and SIGKILL recovery at 32×12, 80×30, and 120×40. One launch-to-home sample was 102 ms. This is deterministic UX evidence, not real-model success; see the [packaged smoke report](reports/tui-package-smoke-v0.69.13-linux-2026-11-11.json). Real-provider task completion and physical-device/macOS/Windows acceptance remain open. |
@@ -31,13 +32,16 @@ and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidenc
 ## Measurement limits
 
 The snapshot does not include CPU, peak memory, or complete timing for every
-attempt. The latest context-window run took 144 seconds versus 274 seconds in
+attempt. The context-window diagnostic took 144 seconds versus 274 seconds in
 the immediately prior guarded run; this is one diagnostic pair and is not a
 general speed claim. It sampled 5.9 GiB model RSS and 4.1 GiB host-available
-memory, not peak values. The official-release replay took roughly 351 seconds;
-the TUI provider request failed at 180 seconds. Other attempts still lack CPU,
-peak-memory, or complete timing data. Private ATIF traces remain outside version
-control because they may contain workspace source and instructions.
+memory, not peak values. The new calibration's two successful runs took 140 and
+100 seconds; a temporary wider tool phase took 224 seconds and edited the wrong
+string. This small sample does not support a general speed claim. The official-
+release replay took roughly 351 seconds; the TUI provider request
+failed at 180 seconds. Private ATIF traces remain outside version control;
+sanitized tool-sequence summaries and outcomes are recorded in the attempt
+report.
 
 ## Model capability probe
 

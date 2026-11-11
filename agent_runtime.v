@@ -10,9 +10,10 @@ const max_agent_tool_calls = 48
 const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
-const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. Do not claim the work is complete without proposing the edits.'
-const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. Keep the change scoped to the user request.'
-const agent_code_change_exploration_nudge_after = 8
+const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text; this preserves all other file content. Do not claim the work is complete without proposing the edits.'
+const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
+const agent_code_change_system_instruction = 'For an explicit code-change request, use workspace tools to read the complete target file and relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
+const agent_code_change_exploration_nudge_after = 4
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
 
@@ -36,9 +37,10 @@ fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 	}
 	for no_edit_instruction in ['do not edit any files', 'do not edit files', "don't edit any files",
 		"don't edit files", 'do not change any files', 'do not change files', "don't change any files",
-		"don't change files", 'ask me before editing', 'ask before editing',
-		'ask me before making changes', 'ask before making changes', 'before you edit files',
-		'before editing files', 'before changing files'] {
+		"don't change files", 'do not edit the source file', 'do not change the source file',
+		"don't edit the source file", "don't change the source file", 'ask me before editing',
+		'ask before editing', 'ask me before making changes', 'ask before making changes',
+		'before you edit files', 'before editing files', 'before changing files'] {
 		if latest_user_message.contains(no_edit_instruction) {
 			return false
 		}
@@ -55,8 +57,34 @@ fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 		if request.starts_with(verb) {
 			return true
 		}
+		// Common coding requests lead with a file or location: "In X, change Y".
+		// Explanatory questions starting with "how" were excluded above.
+		for separator in [', ', ': ', '\n'] {
+			if request.contains('${separator}${verb}') {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+fn agent_system_code_change_instruction(explicit_request bool) string {
+	return if explicit_request { agent_code_change_system_instruction } else { '' }
+}
+
+fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_request bool,
+	edit_attempted bool, workspace_read_succeeded bool, followthrough_retried bool) []AgentToolDefinition {
+	if !explicit_request || edit_attempted {
+		return tools
+	}
+	if workspace_read_succeeded {
+		return tools.filter(it.name == 'workspace_propose_file_edit')
+	}
+	if followthrough_retried {
+		return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file',
+			'workspace_search', 'workspace_propose_file_edit'])
+	}
+	return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file', 'workspace_search'])
 }
 
 fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
@@ -499,6 +527,23 @@ struct AgentWorkspaceEditResult {
 	note string
 }
 
+fn prepare_agent_workspace_edit(root string, arguments map[string]json2.Any) !WorkspaceEditDraft {
+	path := string_tool_argument(arguments, 'path')!
+	if 'content' in arguments {
+		if arguments.len != 2 {
+			return error('complete content cannot be combined with replacement arguments')
+		}
+		content := string_tool_argument(arguments, 'content')!
+		return prepare_workspace_edit(root, path, content)
+	}
+	if arguments.len != 3 || 'old_text' !in arguments || 'new_text' !in arguments {
+		return error('provide either complete content or both old_text and new_text')
+	}
+	old_text := string_tool_argument(arguments, 'old_text')!
+	new_text := string_tool_argument(arguments, 'new_text')!
+	return prepare_workspace_replacement_edit(root, path, old_text, new_text)
+}
+
 fn agent_tool_result_applied_workspace_effect(call ProviderToolCall, result string) bool {
 	match call.function.name {
 		'workspace_propose_file_edit' {
@@ -585,19 +630,27 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_propose_file_edit'
-			description: 'Propose a change to one UTF-8 file in the current workspace. This never writes the file. The user must inspect and explicitly approve the stored diff before it is applied.'
+			description: 'Propose a change to one UTF-8 file in the current workspace. Prefer old_text and new_text for a focused replacement; old_text must match the existing file exactly once, and all other file content is preserved. For a broader change, provide the complete file as content instead. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
 			parameters:  ToolParameters{
 				properties: {
-					'path':    ToolParameter{
+					'path':     ToolParameter{
 						type:        'string'
 						description: 'Relative path to an existing file or a new file whose parent directory already exists.'
 					}
-					'content': ToolParameter{
+					'content':  ToolParameter{
 						type:        'string'
-						description: 'Complete proposed UTF-8 text for this one file, at most 512000 bytes.'
+						description: 'Complete proposed UTF-8 file text for a broader edit. Do not use for a focused replacement; use old_text and new_text instead.'
+					}
+					'old_text': ToolParameter{
+						type:        'string'
+						description: 'Exact existing UTF-8 text to replace. Must match exactly once in the current file.'
+					}
+					'new_text': ToolParameter{
+						type:        'string'
+						description: 'UTF-8 replacement text for the exact old_text match. All other file bytes are preserved.'
 					}
 				}
-				required:   ['path', 'content']
+				required:   ['path']
 			}
 		},
 		AgentToolDefinition{
@@ -755,9 +808,12 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		if agent_context_bytes(messages) > agent_context_byte_limit() {
 			return error('agent context size limit reached')
 		}
-		turn_tools := agent_tools_for_skill_context(tools, skill_context)
+		followthrough_tools := agent_tools_for_skill_context(tools, skill_context)
+		mut turn_tools := followthrough_tools.clone()
+		turn_tools = agent_code_change_tools_for_progress(turn_tools, code_change_request,
+			edit_proposal_attempted, read_paths.len > 0, followthrough_retried)
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)
-			|| agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
+			|| agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools,
 				followthrough_retried, edit_proposal_attempted, request_deadline)
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
@@ -768,7 +824,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			on_text_delta
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
-			stream_text_delta, request_deadline, provider_pool) or {
+			code_change_request && !edit_proposal_attempted, stream_text_delta, request_deadline,
+			provider_pool) or {
 			if buffer_provider_text && buffered_text.len > 0
 				&& !agent_discard_buffered_text_on_provider_error(code_change_request) {
 				on_text_delta(buffered_text) or { return err }
@@ -782,7 +839,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
 			}
-			if agent_code_change_followthrough_retry_available(code_change_request, turn_tools, followthrough_retried,
+			if agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools, followthrough_retried,
 				edit_proposal_attempted, request_deadline) {
 				messages << ChatMessage{
 					role:    'assistant'
@@ -946,7 +1003,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
 			collect_trace)
-		if agent_code_change_exploration_nudge_available(code_change_request, turn_tools,
+		if agent_code_change_exploration_nudge_available(code_change_request, followthrough_tools,
 			read_only_tool_calls, exploration_nudged, edit_proposal_attempted, request_deadline) {
 			messages << ChatMessage{
 				role:    'user'
@@ -1027,7 +1084,7 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, ses
 		on_text_delta(boundary)!
 	}
 	summary := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, summary_messages, [],
-		on_text_delta, request_deadline, provider_pool)!
+		false, on_text_delta, request_deadline, provider_pool)!
 	if has_provider_usage_data(summary.usage) {
 		trace_usage = add_provider_usage(trace_usage, summary.usage)
 	}
@@ -1167,16 +1224,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, mut turn_ctx vcontext.Conte
 		tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 			return encode_agent_tool_error('Tool arguments must be a JSON object.')
 		}
-		path := string_tool_argument(tool_arguments, 'path') or {
-			return encode_agent_tool_error('A relative file path is required.')
-		}
-		content := string_tool_argument(tool_arguments, 'content') or {
-			return encode_agent_tool_error('Proposed UTF-8 file content is required.')
-		}
-		if tool_arguments.len != 2 {
-			return encode_agent_tool_error('Unexpected tool argument.')
-		}
-		draft := prepare_workspace_edit(root, path, content) or {
+		draft := prepare_agent_workspace_edit(root, tool_arguments) or {
 			return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 		}
 		mut store := app.store
@@ -1570,7 +1618,7 @@ fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, sess
 		},
 	]
 	output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, prompt, [],
-		ignore_provider_text_delta, request_deadline, provider_pool)!
+		false, ignore_provider_text_delta, request_deadline, provider_pool)!
 	text := output.content.trim_space()
 	if text.len == 0 {
 		return error('compaction summarizer returned empty content')
@@ -1626,16 +1674,7 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
-			path := string_tool_argument(tool_arguments, 'path') or {
-				return encode_agent_tool_error('A relative file path is required.')
-			}
-			content := string_tool_argument(tool_arguments, 'content') or {
-				return encode_agent_tool_error('Proposed UTF-8 file content is required.')
-			}
-			if tool_arguments.len != 2 {
-				return encode_agent_tool_error('Unexpected tool argument.')
-			}
-			draft := prepare_workspace_edit(root, path, content) or {
+			draft := prepare_agent_workspace_edit(root, tool_arguments) or {
 				return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 			}
 			mut store := app.store

@@ -16,6 +16,14 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 		role:    'user'
 		content: 'Could you add a test for this regression?'
 	}])
+	assert explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'In src/layouts/DocsLayout.astro, change the docs sidebar label.'
+	}])
+	assert !explicit_agent_code_change_request([ChatMessage{
+		role:    'user'
+		content: 'Please do not change the source file; explain the issue.'
+	}])
 	assert !explicit_agent_code_change_request([ChatMessage{
 		role:    'user'
 		content: 'Explain how this code works.'
@@ -50,6 +58,35 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 			content: 'Actually, explain the relevant convention.'
 		},
 	])
+}
+
+fn test_code_change_system_instruction_is_conditional_and_actionable() {
+	instruction := agent_system_code_change_instruction(true)
+	assert instruction.contains('read the complete target file and relevant tests')
+	assert instruction.contains('workspace_propose_file_edit')
+	assert instruction.contains('old_text')
+	assert instruction.contains('A file listing or summary is not a completed change')
+	assert agent_system_code_change_instruction(false) == ''
+}
+
+fn test_code_change_tool_phase_requires_a_read_then_a_file_edit() {
+	tools := [
+		AgentToolDefinition{ name: 'workspace_list_files' },
+		AgentToolDefinition{ name: 'workspace_read_file' },
+		AgentToolDefinition{ name: 'workspace_search' },
+		AgentToolDefinition{ name: 'workspace_propose_file_edit' },
+		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
+	]
+	read_phase := agent_code_change_tools_for_progress(tools, true, false, false, false)
+	assert read_phase.map(it.name) == ['workspace_list_files', 'workspace_read_file', 'workspace_search']
+	retry_phase := agent_code_change_tools_for_progress(tools, true, false, false, true)
+	assert retry_phase.any(it.name == 'workspace_propose_file_edit')
+	assert !retry_phase.any(it.name == 'workspace_propose_shell_command')
+	edit_phase := agent_code_change_tools_for_progress(tools, true, false, true, false)
+	assert edit_phase.map(it.name) == ['workspace_propose_file_edit']
+	complete_phase := agent_code_change_tools_for_progress(tools, true, true, true, false)
+	assert complete_phase.len == tools.len
+	assert agent_code_change_tools_for_progress(tools, false, false, false, false).len == tools.len
 }
 
 fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() {
@@ -914,6 +951,16 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
 		'workspace_search', 'subagent_run', 'workspace_propose_file_edit',
 		'workspace_propose_shell_command']
+	edit_definition := definitions.filter(it.name == 'workspace_propose_file_edit')[0]
+	assert edit_definition.description.contains('old_text and new_text')
+	assert 'old_text' in edit_definition.parameters.properties
+	assert 'new_text' in edit_definition.parameters.properties
+	replacement_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v","old_text":"workspace-sentinel","new_text":"updated"}') or {
+		panic(err)
+	}
+	replacement_draft := prepare_agent_workspace_edit(root, replacement_arguments) or { panic(err) }
+	assert replacement_draft.content == 'module fixture\nupdated\n'
+	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
 	assert agent_tool_allows_parallel_readonly('workspace_list_files')
 	assert agent_tool_allows_parallel_readonly('workspace_read_file')
 	assert agent_tool_allows_parallel_readonly('workspace_search')

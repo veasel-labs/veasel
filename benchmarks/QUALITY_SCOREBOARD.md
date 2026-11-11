@@ -23,7 +23,7 @@ fingerprints, outcomes, available token counts, and missing measurements.
 | Same-model competitive benchmark | **Open** | Need identical task, model digest, permissions, context/output budgets, repository, and oracle. |
 | Headless approval honesty | **Fix in progress** | Regression now hides denied effect tools and rejects false completion claims for explicit code changes in non-interactive `ask` mode. |
 | Packaged first-use and TUI journeys | **Open** | Existing CI coverage does not replace real hardware, PTY/ConPTY, accessibility, and complete workflow acceptance. |
-| Homebrew/AUR parity | **Versions aligned; mirror pending** | Homebrew main references `0.69.13-next.0` (commit `56eb3bf`); macOS install/upgrade/uninstall CI passed. The AUR publisher verified, built, installed, and published `0.69.13.next.0-1`; live AUR RPC now reports that version. Mirror PR [#26](https://github.com/veasel-labs/aur-package/pull/26) is draft and its check requires repository workflow approval. |
+| Homebrew/AUR parity | **Versions aligned; mirror merged** | Homebrew main references `0.69.13-next.0` (commit `56eb3bf`); macOS install/upgrade/uninstall CI passed. The AUR publisher verified, built, installed, and published `0.69.13.next.0-1`; live AUR RPC and merged GitHub mirror PR [#26](https://github.com/veasel-labs/aur-package/pull/26) agree on version and release checksum. |
 | Website release authenticity | **Current snapshot matches** | Website `verified-release.json` references `v0.69.13-next.0` and source commit `1334e48ca09dd06af9acc628c978f19ad2541c75`. |
 
 ## Measurement limits

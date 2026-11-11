@@ -527,7 +527,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
                 )
-                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Fix vendored project tests", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
+                or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
                     and not is_tool_follow_up)
             ):
@@ -535,11 +535,11 @@ class MockProvider(BaseHTTPRequestHandler):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test", "Fix vendored project tests", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
-                    "workspace_search" if user_text == "Inspect workspace" else
-                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace", "Edit then verify workspace", "Fix failing test", "Fix vendored project tests") else
+                    "workspace_search" if user_text in ("Inspect workspace", "Edit then verify workspace", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture") else
+                    "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
                     "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit", "Autonomous multi-file edit", "Edit then verify workspace", "Recover after failed edit", "Try to write outside") else
                     "mcp_review_tools_effect_write" if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
@@ -562,16 +562,14 @@ class MockProvider(BaseHTTPRequestHandler):
                     return
                 if user_text == "Inspect workspace":
                     arguments = '{"query":"workspace-search-sentinel"}'
+                elif user_text in ("Edit then verify workspace", "Fix failing test in the workspace"):
+                    arguments = '{"query":"workspace"}'
+                elif user_text == "Fix vendored project tests in token-bucket-fixture":
+                    arguments = '{"query":"token-bucket-fixture"}'
                 elif user_text == "Try to read outside":
                     arguments = '{"path":"../outside/secret.txt"}'
                 elif user_text == "Read then edit workspace":
                     arguments = '{"path":"src/main.v"}'
-                elif user_text in ("Edit then verify workspace", "Fix failing test"):
-                    arguments = '{"path":"src/main.v"}'
-                elif user_text == "Fix vendored project tests":
-                    arguments = '{"path":"token_bucket.v"}'
-                elif user_text == "Edit then verify workspace":
-                    arguments = json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                 elif user_text == "Read skill reference":
                     arguments = json.dumps({"plugin_name": "review-tools", "skill_name": "review", "path": "references/REFERENCE.md"})
                 elif user_text == "Try to write outside":
@@ -662,28 +660,38 @@ class MockProvider(BaseHTTPRequestHandler):
                 )
                 is_fix_failing_test = any(
                     message.get("role") == "user"
-                    and fixture_user_prompt(message.get("content", "")) == "Fix failing test"
+                    and fixture_user_prompt(message.get("content", "")) == "Fix failing test in the workspace"
                     for message in messages
                 )
                 is_vendored_project = any(
                     message.get("role") == "user"
-                    and fixture_user_prompt(message.get("content", "")) == "Fix vendored project tests"
+                    and fixture_user_prompt(message.get("content", "")) == "Fix vendored project tests in token-bucket-fixture"
                     for message in messages
                 )
-                if is_fix_failing_test and tool_result_count == 1 and not applied_edit:
+                previous_tool_name = assistant_call.get("function", {}).get("name", "")
+                if is_fix_failing_test and tool_result_count == 1 and previous_tool_name == "workspace_search":
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
-                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                            "name": "workspace_read_file",
+                            "arguments": json.dumps({"path": "src/main.v"})
                         }}]
                     }}]}
-                elif is_fix_failing_test and tool_result_count == 2 and applied_edit:
+                elif is_fix_failing_test and tool_result_count == 2 and not applied_edit:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                        }}]
+                    }}]}
+                elif is_fix_failing_test and tool_result_count == 3 and applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-4", "type": "function", "function": {
                             "name": "workspace_propose_shell_command",
                             "arguments": json.dumps({"command": "grep -q \"fn greet\" src/main.v && printf test-pass", "cwd": ".", "timeout_seconds": 10})
                         }}]
@@ -706,20 +714,29 @@ class MockProvider(BaseHTTPRequestHandler):
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
-                elif is_edit_then_verify and tool_result_count == 1 and not applied_edit:
+                elif is_edit_then_verify and tool_result_count == 1 and previous_tool_name == "workspace_search":
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
-                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                            "name": "workspace_read_file",
+                            "arguments": json.dumps({"path": "src/main.v"})
                         }}]
                     }}]}
-                elif is_edit_then_verify and tool_result_count == 2 and applied_edit:
+                elif is_edit_then_verify and tool_result_count == 2 and not applied_edit:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
+                        }}]
+                    }}]}
+                elif is_edit_then_verify and tool_result_count == 3 and applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-4", "type": "function", "function": {
                             "name": "workspace_propose_shell_command",
                             "arguments": json.dumps({"command": "grep -q \"fn greet\" src/main.v && printf edit-verified", "cwd": ".", "timeout_seconds": 10})
                         }}]
@@ -733,20 +750,29 @@ class MockProvider(BaseHTTPRequestHandler):
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
-                elif is_vendored_project and tool_result_count == 1 and "token-bucket-fixture" in tool_result and not applied_edit:
+                elif is_vendored_project and tool_result_count == 1 and previous_tool_name == "workspace_search":
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
-                            "arguments": json.dumps({"path": "token_bucket.v", "content": VENDORED_FIX})
+                            "name": "workspace_read_file",
+                            "arguments": json.dumps({"path": "token_bucket.v"})
                         }}]
                     }}]}
-                elif is_vendored_project and tool_result_count == 2 and applied_edit:
+                elif is_vendored_project and tool_result_count == 2 and not applied_edit:
                     body = {"choices": [{"message": {
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
+                            "name": "workspace_propose_file_edit",
+                            "arguments": json.dumps({"path": "token_bucket.v", "content": VENDORED_FIX})
+                        }}]
+                    }}]}
+                elif is_vendored_project and tool_result_count == 3 and applied_edit:
+                    body = {"choices": [{"message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [{"id": "openai-tool-4", "type": "function", "function": {
                             "name": "workspace_propose_shell_command",
                             "arguments": json.dumps({"command": "grep -q \"b.refill(now)\" token_bucket.v && printf vendored-fix-applied", "cwd": ".", "timeout_seconds": 10})
                         }}]

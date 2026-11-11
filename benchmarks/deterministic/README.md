@@ -34,11 +34,11 @@ session-store benchmark artifact, so harness regressions fail the PR.
 | `autonomous-workspace-edit` | `Autonomous workspace edit` | `src/main.v` contains the applied `greet` function |
 | `autonomous-multi-file-edit` | `Autonomous multi-file edit` | Two sequential edits in one run: `greet` applied to `src/main.v`, then `src/helper.v` created |
 | `read-then-edit` | `Read then edit workspace` | Read of `src/main.v` followed by the applied `greet` edit in the same run |
-| `edit-then-shell-verify` | `Edit then verify workspace` | `greet` edit applied, then verified by a shell `grep` in the same run |
+| `edit-then-shell-verify` | `Edit then verify workspace` | Relevant search and source read, followed by a `greet` edit and shell `grep` verification in the same run |
 | `failed-shell-then-edit` | `Recover after failed check` | A shell `grep` fails (no `greet` yet), the failure is fed back, and the `greet` edit is applied in the same run |
 | `failed-edit-then-retry` | `Recover after failed edit` | A no-change edit is rejected by the edit tool, the error is fed back, and the real `greet` edit is applied in the same run |
-| `fix-failing-test` | `Fix failing test` | A shell check fails, the `greet` edit is applied, and the same check is re-run and passes in the same run |
-| `vendored-project-fix` | `Fix vendored project tests` | Vendored multi-file V project (`fixtures/token-bucket`) with a planted no-refill bug; read → fix → shell-verify, scored by the project's own `v test .` run by the harness (`check_command`) with its test file byte-identical to the seed |
+| `fix-failing-test` | `Fix failing test in the workspace` | The initially failing `greet` grep passes after relevant search/read, a `greet` edit, and in-run shell verification |
+| `vendored-project-fix` | `Fix vendored project tests in token-bucket-fixture` | Vendored multi-file V project (`fixtures/token-bucket`) with a planted no-refill bug; search → read → fix → shell-verify, scored by the project's own `v test .` run by the harness (`check_command`) with its test file byte-identical to the seed |
 | `greeting-reply` | `Say hello` | Run completes with the fixture reply |
 | `inspect-workspace` | `Inspect workspace` | Run completes having found the workspace-search sentinel |
 | `autonomous-shell` | `Autonomous shell` | Shell marker runs with no provider key in its environment; workspace byte-identical |
@@ -72,9 +72,11 @@ are fed back to the model and the loop recovers instead of stopping. The
 `failed-edit-then-retry` fixture does the same for the edit tool itself: a
 proposed edit identical to the current file is rejected as a no-change
 error, and only then does the provider request the real edit. The
-`fix-failing-test` fixture closes the self-correction loop: the check runs
-first and fails, the edit is applied, and the same check is re-run and must
-pass before the run completes. These are
+`fix-failing-test` fixture searches for and reads the request-relevant source,
+applies the edit, and then runs a shell check that must pass before the run
+completes. The `vendored-project-fix` fixture follows the same
+search->read->edit->verify sequence before the harness independently runs the
+vendored project's test suite. These are
 Veasel-only: competitor adapters keep running the shared
 `autonomous-workspace-edit` fixture, which is the cross-agent comparison.
 

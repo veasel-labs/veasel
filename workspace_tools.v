@@ -55,6 +55,12 @@ pub mut:
 	truncated bool
 }
 
+struct WorkspaceRankedSearchMatch {
+mut:
+	match WorkspaceSearchMatch
+	score int
+}
+
 struct WorkspaceWalker {
 mut:
 	root      string
@@ -306,19 +312,67 @@ fn workspace_search(root string, query string) !WorkspaceSearchResult {
 		return error('search query must contain 1 to ${max_workspace_query_bytes} bytes')
 	}
 	canonical_root := canonical_workspace_root(root)!
+	result := workspace_search_literal(canonical_root, query)!
+	if result.matches.len > 0 {
+		return result
+	}
+	mut terms := query.split_any(agent_search_term_separators).filter(it.len >= 4)
+	terms.sort(a.len > b.len)
+	if terms.len > 4 {
+		terms = terms[..4]
+	}
+	mut ranked_matches := []WorkspaceRankedSearchMatch{cap: 32}
+	mut match_indexes := map[string]int{}
+	mut truncated := result.truncated
+	for term in terms {
+		if term == query {
+			continue
+		}
+		fallback := workspace_search_literal(canonical_root, term)!
+		truncated = truncated || fallback.truncated
+		for search_match in fallback.matches {
+			key := search_match.path + '\x00' + search_match.line.str()
+			if key in match_indexes {
+				ranked_matches[match_indexes[key]].score++
+			} else {
+				match_indexes[key] = ranked_matches.len
+				ranked_matches << WorkspaceRankedSearchMatch{
+					match: search_match
+					score: 1
+				}
+			}
+		}
+	}
+	if ranked_matches.len == 0 {
+		return result
+	}
+	ranked_matches.sort(a.score > b.score)
+	if ranked_matches.len > max_workspace_search_results {
+		ranked_matches = ranked_matches[..max_workspace_search_results]
+		truncated = true
+	}
+	return WorkspaceSearchResult{
+		matches:   ranked_matches.map(it.match)
+		truncated: truncated
+	}
+}
+
+// Search the exact phrase first. If a natural-language query has no exact
+// match, search its longest terms and rank lines that match multiple terms.
+fn workspace_search_literal(root string, query string) !WorkspaceSearchResult {
 	mut walker := WorkspaceWalker{
-		root:      canonical_root
+		root:      root
 		max_files: max_workspace_file_count + 1
 		files:     []string{cap: 256}
 	}
-	os.walk_dir(canonical_root, walker.visit)!
+	os.walk_dir(root, walker.visit)!
 	walker.files.sort()
 	mut result := WorkspaceSearchResult{
 		matches: []WorkspaceSearchMatch{cap: 32}
 	}
 	mut bytes_scanned := 0
 	for relative_path in walker.files {
-		path := resolve_workspace_file_path(canonical_root, relative_path) or { continue }
+		path := resolve_workspace_file_path(root, relative_path) or { continue }
 		if os.file_size(path) > max_workspace_file_bytes {
 			continue
 		}

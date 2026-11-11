@@ -783,12 +783,12 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_search'
-			description: 'Search for a literal, case-sensitive text string in bounded workspace files.'
+			description: 'Search bounded workspace files for a case-sensitive literal phrase. If it has no exact matches, the search combines matches from up to four longest query terms and ranks lines matching more terms first.'
 			parameters:  ToolParameters{
 				properties: {
 					'query': ToolParameter{
 						type:        'string'
-						description: 'Literal text to find; maximum 256 UTF-8 bytes.'
+						description: 'Literal phrase or a few distinctive terms; exact phrase is tried first, then up to four longest terms are combined and ranked. Maximum 256 UTF-8 bytes.'
 					}
 				}
 				required:   ['query']

@@ -57,14 +57,25 @@ fn test_non_interactive_code_change_final_response_cannot_claim_completion() {
 		mode:        .ask
 		interactive: false
 	}
-	response := agent_final_response_for_execution_policy('Implemented and tested.', true, policy)
+	response := agent_final_response_for_execution_policy('Implemented and tested.', true, policy,
+		false, false)
 	assert response.contains('was not completed')
 	assert response.contains('Use the TUI for an interactive turn')
-	assert agent_final_response_for_execution_policy('Read-only answer.', false, policy) == 'Read-only answer.'
-	assert agent_final_response_for_execution_policy('Implemented and tested.', true, ExecutionPolicyTurn{
+	assert agent_final_response_for_execution_policy('Read-only answer.', false, policy, false,
+		false) == 'Read-only answer.'
+	assert agent_final_response_for_execution_policy('I will implement this.', true,
+		ExecutionPolicyTurn{
+			mode:        .sandbox_auto
+			interactive: false
+		}, false, false).contains('No workspace edit was applied')
+	assert agent_final_response_for_execution_policy('I implemented this.', true, ExecutionPolicyTurn{
 		mode:        .sandbox_auto
 		interactive: false
-	}) == 'Implemented and tested.'
+	}, true, false) == 'I implemented this.'
+	assert agent_final_response_for_execution_policy('I implemented this.', true, ExecutionPolicyTurn{
+		mode:        .ask
+		interactive: true
+	}, false, true).contains('pending human review')
 }
 
 fn test_execution_policy_auto_edit_allows_edits_and_asks_shell() {

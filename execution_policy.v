@@ -82,11 +82,17 @@ fn restrict_agent_tools_for_execution_policy(tools []AgentToolDefinition,
 }
 
 fn agent_final_response_for_execution_policy(response string, code_change_request bool,
-	policy ExecutionPolicyTurn) string {
-	if code_change_request && policy.mode == .ask && !policy.interactive {
+	policy ExecutionPolicyTurn, effect_applied bool, effect_pending_review bool) string {
+	if !code_change_request || effect_applied {
+		return response
+	}
+	if policy.mode == .ask && !policy.interactive {
 		return 'The requested code change was not completed. This non-interactive ask run only has read access; edits, shell commands, and MCP actions require interactive approval. Use the TUI for an interactive turn if you want Veasel to propose edits.'
 	}
-	return response
+	if effect_pending_review {
+		return 'The requested code change is not complete. A tool proposal is pending human review; no workspace edit or command has been applied. Review the proposal before treating the task as done.'
+	}
+	return 'The requested code change is not complete. No workspace edit was applied and no successful shell command was recorded in this turn. Veasel cannot claim the requested change is done; inspect the workspace and continue with a focused edit.'
 }
 
 // fail_closed_shell_sandbox_ready is true when the platform backend that

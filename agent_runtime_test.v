@@ -79,19 +79,41 @@ fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() 
 		time.now().add(10 * time.second))
 }
 
-fn test_non_interactive_ask_discards_buffered_code_claims_when_provider_fails() {
-	assert agent_discard_buffered_text_on_provider_error(true, ExecutionPolicyTurn{
-		mode:        .ask
-		interactive: false
-	})
-	assert !agent_discard_buffered_text_on_provider_error(true, ExecutionPolicyTurn{
-		mode:        .ask
-		interactive: true
-	})
-	assert !agent_discard_buffered_text_on_provider_error(false, ExecutionPolicyTurn{
-		mode:        .ask
-		interactive: false
-	})
+fn test_agent_tool_result_effect_status_requires_applied_effect() {
+	edit_call := ProviderToolCall{
+		function: ProviderFunctionCall{ name: 'workspace_propose_file_edit' }
+	}
+	assert agent_tool_result_applied_workspace_effect(edit_call, json2.encode(AgentWorkspaceEditResult{
+		note: 'Applied by graduated execution policy (auto-edit or sandbox-auto).'
+	}))
+	assert !agent_tool_result_applied_workspace_effect(edit_call, json2.encode(AgentWorkspaceEditResult{
+		note: 'Stored for human review. The file has not been changed.'
+	}))
+	assert agent_tool_result_pending_workspace_effect_review(edit_call,
+		json2.encode(AgentWorkspaceEditResult{
+			note: 'Stored for human review. The file has not been changed.'
+		}))
+
+	shell_call := ProviderToolCall{
+		function: ProviderFunctionCall{ name: 'workspace_propose_shell_command' }
+	}
+	assert agent_tool_result_applied_workspace_effect(shell_call, json2.encode(ShellCommandSummary{
+		status:    'succeeded'
+		exit_code: 0
+	}))
+	assert !agent_tool_result_applied_workspace_effect(shell_call, json2.encode(ShellCommandSummary{
+		status:    'failed'
+		exit_code: 1
+	}))
+	assert agent_tool_result_pending_workspace_effect_review(shell_call,
+		json2.encode(AgentShellCommandResult{
+			note: 'Stored for human review. No command was executed.'
+		}))
+}
+
+fn test_agent_discards_buffered_code_claims_when_provider_fails() {
+	assert agent_discard_buffered_text_on_provider_error(true)
+	assert !agent_discard_buffered_text_on_provider_error(false)
 }
 
 fn test_agent_code_change_exploration_nudge_is_bounded_to_explicit_requests() {
@@ -1816,10 +1838,9 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	assert fixture.request_bodies.len == 3
 	assert fixture.request_bodies[1].contains(agent_code_change_retry_prompt)
 	assert !exchange.messages.any(it.content == 'I will take a look.')
-	assert exchange.messages.last().content == 'I prepared the README edit for review.'
-	assert store.assistant_text_for_operation(session.id, operation_id) or {
-		panic(err)
-	} == 'I prepared the README edit for review.'
+	assert exchange.messages.last().content.contains('pending human review'), exchange.messages.last().content
+	assert !exchange.messages.last().content.contains('I prepared the README edit for review.')
+	assert store.assistant_text_for_operation(session.id, operation_id) or { panic(err) } == exchange.messages.last().content
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
 	edits := store.workspace_edits(session.id) or { panic(err) }
 	assert edits.len == 1
@@ -1827,6 +1848,61 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('I will take a look.')
 	assert trace.contains(agent_code_change_retry_prompt)
+}
+
+fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effect() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-change-incomplete-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'Original README\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		reply_text: 'I will implement the requested README change now.'
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Explicit change without a workspace effect'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please implement the requested README change.'
+		collect_trace: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 2
+	assert exchange.messages.last().content.contains('not complete'), exchange.messages.last().content
+	assert exchange.messages.last().content.contains('No workspace edit was applied')
+	assert !exchange.messages.last().content.contains('I will implement the requested README change')
+	assert os.read_file(readme) or { panic(err) } == 'Original README\n'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
+	assert (store.shell_commands(session.id) or { panic(err) }).len == 0
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('not complete')
 }
 
 fn test_non_interactive_code_request_reports_no_edit_instead_of_model_claim() {

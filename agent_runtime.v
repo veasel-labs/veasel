@@ -67,8 +67,8 @@ fn agent_code_change_followthrough_retry_available(explicit_request bool, tools 
 	return tools.any(it.name == 'workspace_propose_file_edit')
 }
 
-fn agent_discard_buffered_text_on_provider_error(explicit_request bool, policy ExecutionPolicyTurn) bool {
-	return explicit_request && policy.mode == .ask && !policy.interactive
+fn agent_discard_buffered_text_on_provider_error(explicit_request bool) bool {
+	return explicit_request
 }
 
 fn agent_code_change_exploration_nudge_available(explicit_request bool, tools []AgentToolDefinition,
@@ -498,6 +498,38 @@ struct AgentWorkspaceEditResult {
 	note string
 }
 
+fn agent_tool_result_applied_workspace_effect(call ProviderToolCall, result string) bool {
+	match call.function.name {
+		'workspace_propose_file_edit' {
+			edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
+			return edit.note.starts_with('Applied by graduated execution policy')
+		}
+		'workspace_propose_shell_command' {
+			command := json2.decode[ShellCommandSummary](result) or { return false }
+			return command.status == 'succeeded' && command.exit_code == 0
+		}
+		else {
+			return false
+		}
+	}
+}
+
+fn agent_tool_result_pending_workspace_effect_review(call ProviderToolCall, result string) bool {
+	match call.function.name {
+		'workspace_propose_file_edit' {
+			edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
+			return edit.note == 'Stored for human review. The file has not been changed.'
+		}
+		'workspace_propose_shell_command' {
+			command := json2.decode[AgentShellCommandResult](result) or { return false }
+			return command.note == 'Stored for human review. No command was executed.'
+		}
+		else {
+			return false
+		}
+	}
+}
+
 fn workspace_agent_tools() []AgentToolDefinition {
 	return [
 		AgentToolDefinition{
@@ -708,6 +740,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut trace_usage := ProviderUsage{}
 	mut followthrough_retried := false
 	mut edit_proposal_attempted := false
+	mut workspace_effect_applied := false
+	mut workspace_effect_pending_review := false
 	code_change_request := explicit_agent_code_change_request(messages)
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
@@ -721,7 +755,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error('agent context size limit reached')
 		}
 		turn_tools := agent_tools_for_skill_context(tools, skill_context)
-		buffer_provider_text := (code_change_request && policy.mode == .ask && !policy.interactive)
+		buffer_provider_text := (code_change_request && !workspace_effect_applied)
 			|| agent_code_change_followthrough_retry_available(code_change_request, turn_tools,
 				followthrough_retried, edit_proposal_attempted, request_deadline)
 		mut buffered_text := ''
@@ -735,7 +769,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
 			stream_text_delta, request_deadline, provider_pool) or {
 			if buffer_provider_text && buffered_text.len > 0
-				&& !agent_discard_buffered_text_on_provider_error(code_change_request, policy) {
+				&& !agent_discard_buffered_text_on_provider_error(code_change_request) {
 				on_text_delta(buffered_text) or { return err }
 			}
 			return err
@@ -777,7 +811,8 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				provider:         output.provider
 				model:            output.model
 				content:          agent_final_response_for_execution_policy(output.content,
-					code_change_request, policy)
+					code_change_request, policy, workspace_effect_applied,
+					workspace_effect_pending_review)
 				provider_context: output.provider_context
 				usage:            output.usage
 			}
@@ -874,6 +909,14 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		tool_results := execute_agent_tool_batch(app, mut turn_ctx, root, session_id, operation_id,
 			output.tool_calls, mut skill_context, mcp_bindings, mut mcp_connections, policy,
 			mut read_paths, loop_skip_notes)!
+		for index, call in output.tool_calls {
+			if index < tool_results.len {
+				workspace_effect_applied = workspace_effect_applied
+					|| agent_tool_result_applied_workspace_effect(call, tool_results[index])
+				workspace_effect_pending_review = workspace_effect_pending_review
+					|| agent_tool_result_pending_workspace_effect_review(call, tool_results[index])
+			}
+		}
 		mut trace_observations := []ATIFObservationResult{}
 		for i, call in output.tool_calls {
 			result := tool_results[i]

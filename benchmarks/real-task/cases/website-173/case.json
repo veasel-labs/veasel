@@ -1,0 +1,41 @@
+{
+  "schema": "veasel.real-task-case.v1",
+  "id": "veasel-labs/website#173",
+  "repository": "https://github.com/veasel-labs/website.git",
+  "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_file": "prompt.md",
+  "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+  "model": {
+    "provider": "ollama",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_tokens": 2048
+  },
+  "provider_config": {
+    "provider": "ollama",
+    "model": "qwen3:8b",
+    "base_url": "http://127.0.0.1:11435/v1",
+    "max_output_tokens": 2048,
+    "api_key_saved": false
+  },
+  "runtime": {
+    "ollama_version": "0.40.15",
+    "accelerator": "CUDA",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3060",
+      "memory_mib": 12288
+    }
+  },
+  "permissions": {
+    "edit": "autonomous inside an external disposable sandbox",
+    "shell": "autonomous inside an external disposable sandbox",
+    "mcp": "disabled"
+  },
+  "budgets": {
+    "wall_seconds": 300,
+    "minimum_available_memory_bytes": 9663676416,
+    "minimum_free_swap_bytes": 2147483648
+  },
+  "oracle": "Externally compare the patch with the merged website#173 change, run the repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior. A completed model turn alone is not success."
+}

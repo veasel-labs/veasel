@@ -36,6 +36,15 @@ larger model cannot code.
 
 ## Measurement limits
 
+The versioned local real-task runner in [`real-task/README.md`](real-task/README.md)
+now pins the website#173 prompt, base commit, local model digest, and token
+budgets. It has Veasel and OpenCode launch adapters under the same case; its
+preflight checks checkout cleanliness, exact model/runtime, provider config,
+and minimum host resources. The launcher applies context/output limits and
+classifies resource aborts separately from task failures. No matched pair has
+been completed through the new runner, so this adds no scored attempt and does
+not solve the current task-success gap.
+
 The snapshot does not include CPU, peak memory, or complete timing for every
 attempt. The context-window diagnostic took 144 seconds versus 274 seconds in
 the immediately prior guarded run; this is one diagnostic pair and is not a

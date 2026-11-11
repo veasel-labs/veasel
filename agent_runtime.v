@@ -156,6 +156,13 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 	if !explicit_request || edit_attempted {
 		return tools
 	}
+	if workspace_read_count == 0 && !workspace_search_performed {
+		// Start explicit code changes with a request-directed search. A directory
+		// listing or an arbitrary first file is not evidence that the target was
+		// located, and small local models have repeatedly mistaken those for task
+		// progress.
+		return tools.filter(it.name == 'workspace_search')
+	}
 	if followthrough_retried && workspace_read_count == 0 {
 		return tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
 	}
@@ -172,10 +179,10 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 		return tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
 	}
 	if followthrough_retried {
-		return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file',
-			'workspace_search', 'workspace_propose_file_edit'])
+		return tools.filter(it.name in ['workspace_read_file', 'workspace_search',
+			'workspace_propose_file_edit'])
 	}
-	return tools.filter(it.name in ['workspace_list_files', 'workspace_read_file', 'workspace_search'])
+	return tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
 }
 
 fn agent_code_change_tools_after_edit_failures(tools []AgentToolDefinition, explicit_request bool,
@@ -396,13 +403,9 @@ fn agent_workspace_file_was_read(path string, reads map[string]bool) bool {
 }
 
 fn agent_workspace_read_call_allowed(call ProviderToolCall, explicit_request bool,
-	workspace_read_count int, search_performed bool, search_match_paths map[string]bool,
-	prior_initial_read_in_batch bool) bool {
+	search_performed bool, search_match_paths map[string]bool) bool {
 	if !explicit_request {
 		return true
-	}
-	if workspace_read_count == 0 && !search_performed {
-		return !prior_initial_read_in_batch
 	}
 	path := workspace_read_path_from_call(call) or { return false }
 	return search_performed && path in search_match_paths
@@ -1151,7 +1154,6 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		tool_calls += output.tool_calls.len
 		mut loop_skip_notes := map[string]string{}
 		mut loop_warnings := []string{cap: output.tool_calls.len}
-		mut initial_read_allowed_in_batch := false
 		for call in output.tool_calls {
 			if !agent_tool_available_in_turn(call.function.name, turn_tools) {
 				loop_skip_notes[call.id] = encode_agent_tool_error('Tool is not available in the current progress phase.')
@@ -1176,15 +1178,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				continue
 			}
 			if call.function.name == 'workspace_read_file'
-				&& !agent_workspace_read_call_allowed(call, code_change_request, read_paths.len,
-					workspace_search_performed, workspace_search_match_paths,
-					initial_read_allowed_in_batch) {
-				loop_skip_notes[call.id] = encode_agent_tool_error('After the first file read, use a request-relevant search and read a path returned by it before opening another file.')
+				&& !agent_workspace_read_call_allowed(call, code_change_request,
+					workspace_search_performed, workspace_search_match_paths) {
+				loop_skip_notes[call.id] = encode_agent_tool_error('For explicit code changes, first run a request-relevant search and read a path returned by it before opening files.')
 				continue
-			}
-			if call.function.name == 'workspace_read_file' && code_change_request
-				&& read_paths.len == 0 && !workspace_search_performed {
-				initial_read_allowed_in_batch = true
 			}
 		}
 		read_paths_before_tool_batch := read_paths.clone()

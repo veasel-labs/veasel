@@ -122,10 +122,13 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
 	]
 	read_phase := agent_code_change_tools_for_progress(tools, true, false, 0, false, false, false)
-	assert read_phase.map(it.name) == ['workspace_list_files', 'workspace_read_file', 'workspace_search']
+	assert read_phase.map(it.name) == ['workspace_search']
 	retry_phase := agent_code_change_tools_for_progress(tools, true, false, 0, false, false, true)
-	assert retry_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
+	assert retry_phase.map(it.name) == ['workspace_search']
 	assert !retry_phase.any(it.name == 'workspace_propose_shell_command')
+	search_only_phase := agent_code_change_tools_for_progress(tools, true, false, 0, true, false,
+		false)
+	assert search_only_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
 	read_without_search_phase := agent_code_change_tools_for_progress(tools, true, false, 1, false,
 		false, false)
 	assert read_without_search_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
@@ -156,6 +159,8 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 		max_agent_code_change_edit_recovery_attempts + 1).len == complete_phase.len
 	assert agent_code_change_tools_for_progress(tools, false, false, 0, false, false, false).len == tools.len
 	assert !agent_tool_available_in_turn('workspace_propose_file_edit', read_phase)
+	assert !agent_tool_available_in_turn('workspace_list_files', read_phase)
+	assert !agent_tool_available_in_turn('workspace_read_file', read_phase)
 	assert !agent_tool_available_in_turn('workspace_propose_file_edit', search_phase)
 	assert agent_tool_available_in_turn('workspace_propose_file_edit', search_read_phase)
 	assert agent_tool_result_search_paths('{"matches":[]}').len == 0
@@ -186,13 +191,13 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 			arguments: '{"path":"CONTRIBUTING.md","start_line":1,"line_count":1}'
 		}
 	}
-	assert agent_workspace_read_call_allowed(matching_read, true, 0, false, map[string]bool{}, false)
-	assert !agent_workspace_read_call_allowed(unrelated_read, true, 0, false, map[string]bool{}, true)
-	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, false, map[string]bool{}, false)
+	assert !agent_workspace_read_call_allowed(matching_read, true, false, map[string]bool{})
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, false, map[string]bool{})
 	mut matched_paths := map[string]bool{}
 	matched_paths['README.md'] = true
-	assert agent_workspace_read_call_allowed(matching_read, true, 1, true, matched_paths, false)
-	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, true, matched_paths, false)
+	assert agent_workspace_read_call_allowed(matching_read, true, true, matched_paths)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, true, matched_paths)
+	assert agent_workspace_read_call_allowed(unrelated_read, false, false, map[string]bool{})
 	unrelated_search := ProviderToolCall{
 		function: ProviderFunctionCall{
 			name:      'workspace_search'
@@ -2058,6 +2063,22 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 				delta: OpenAIStreamDelta{
 					tool_calls: [OpenAIStreamToolCallDelta{
 						index:    0
+						id:       'readme-search-1'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_search'
+							arguments: '{"query":"fixture changed"}'
+						}
+					}]
+				}
+			}]
+		}
+	} else if fixture.hits == 2 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
 						id:       'readme-read-1'
 						type:     'function'
 						function: OpenAIStreamFunctionDelta{
@@ -2068,26 +2089,10 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 				}
 			}]
 		}
-	} else if fixture.hits == 2 {
-		OpenAIStreamChunk{
-			choices: [OpenAIStreamChoice{
-				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
-			}]
-		}
 	} else if fixture.hits == 3 {
 		OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
-				delta: OpenAIStreamDelta{
-					tool_calls: [OpenAIStreamToolCallDelta{
-						index:    0
-						id:       'readme-search-1'
-						type:     'function'
-						function: OpenAIStreamFunctionDelta{
-							name:      'workspace_search'
-							arguments: '{"query":"fixture changed"}'
-						}
-					}]
-				}
+				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
 			}]
 		}
 	} else if fixture.hits == 4 {
@@ -2181,10 +2186,10 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	}
 	assert fixture.hits == 5
 	assert fixture.request_bodies.len == 5
-	assert fixture.request_bodies[2].contains(agent_code_change_retry_after_read_prompt)
-	search_request := json2.decode[OpenAIRequest](fixture.request_bodies[2]) or { panic(err) }
-	assert !search_request.tools.any(it.function.name == 'workspace_propose_file_edit')
-	edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[3]) or { panic(err) }
+	assert fixture.request_bodies[3].contains(agent_code_change_retry_after_read_prompt)
+	retry_request := json2.decode[OpenAIRequest](fixture.request_bodies[3]) or { panic(err) }
+	assert retry_request.tools.any(it.function.name == 'workspace_propose_file_edit')
+	edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[4]) or { panic(err) }
 	assert edit_request.tools.any(it.function.name == 'workspace_propose_file_edit')
 	assert !exchange.messages.any(it.content == 'I will take a look.')
 	assert exchange.messages.last().content.contains('pending human review'), exchange.messages.last().content

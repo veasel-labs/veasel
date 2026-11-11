@@ -66,7 +66,38 @@ fn test_code_change_system_instruction_is_conditional_and_actionable() {
 	assert instruction.contains('workspace_propose_file_edit')
 	assert instruction.contains('old_text')
 	assert instruction.contains('A file listing or summary is not a completed change')
+	assert instruction.contains('run a relevant verification command after the edit')
 	assert agent_system_code_change_instruction(false) == ''
+}
+
+fn test_explicit_agent_verification_request_is_detected_from_user_request() {
+	assert explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Implement the change and add or update relevant tests.'
+	}])
+	assert explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Build the package and report the result.'
+	}])
+	assert !explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Explain what the existing check command does.'
+	}])
+}
+
+fn test_verification_gate_requires_success_after_an_applied_edit() {
+	tools := [
+		AgentToolDefinition{ name: 'workspace_read_file' },
+		AgentToolDefinition{ name: 'workspace_propose_file_edit' },
+		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
+	]
+	pending := agent_code_change_verification_tools(tools, true, true, false, false)
+	assert pending.map(it.name) == ['workspace_propose_shell_command']
+	assert agent_code_change_verification_tools(tools, true, true, false, true).len == tools.len
+	assert agent_code_change_verification_tools(tools, true, true, true, false).len == tools.len
+	assert agent_code_change_verification_tools(tools, false, true, false, false).len == tools.len
+	assert agent_final_response_for_verification('Done.', true, true, false).contains('This task is not complete')
+	assert agent_final_response_for_verification('Done.', true, true, true) == 'Done.'
 }
 
 fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read() {

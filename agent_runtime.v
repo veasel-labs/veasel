@@ -13,8 +13,10 @@ const tool_budget_summary_note = 'The tool budget for this turn is spent. Pendin
 const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text; this preserves all other file content. Do not claim the work is complete without proposing the edits.'
 const agent_code_change_retry_after_no_read_prompt = 'You still have not read any source file. Do not list the directory again or summarize it. Use workspace_search with a distinctive term from the requested behavior to locate the implementation, then workspace_read_file on the relevant source and test. After reading them, propose the requested focused change with workspace_propose_file_edit. Do not claim completion without an edit proposal.'
 const agent_code_change_retry_after_read_prompt = 'You have inspected a file but have not yet located and changed the implementation requested by the user. Keep inspecting with workspace_search or workspace_read_file until you have the relevant component and test; a directory listing or unrelated file is not enough. Then use workspace_propose_file_edit with the exact current text for a focused change. Do not claim completion without an edit proposal.'
+const agent_code_change_verification_prompt = 'The requested code edit was applied. Before reporting completion, use workspace_propose_shell_command to run a relevant test, typecheck, or build requested by the user. Inspect the command result and fix any failure before finishing. Report only checks that actually ran.'
+const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
 const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
-const agent_code_change_system_instruction = 'For an explicit code-change request, use workspace tools to read the complete target file and relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
+const agent_code_change_system_instruction = 'For an explicit code-change request, use workspace tools to read the complete target file and relevant tests, then propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
 const agent_code_change_exploration_nudge_after = 4
 const max_agent_code_change_followthrough_retries = 2
 const max_agent_tool_result_bytes = 1_000_000
@@ -73,6 +75,34 @@ fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 
 fn agent_system_code_change_instruction(explicit_request bool) string {
 	return if explicit_request { agent_code_change_system_instruction } else { '' }
+}
+
+fn explicit_agent_verification_request(messages []ChatMessage) bool {
+	mut request := ''
+	for message in messages {
+		if message.role == 'user' {
+			request = message.content
+		}
+	}
+	text := request.to_lower()
+	return text.contains('test') || text.contains('typecheck') || text.contains('type check')
+		|| text.contains('build') || text.contains('verify') || text.contains('run checks')
+}
+
+fn agent_code_change_verification_tools(tools []AgentToolDefinition, required bool,
+	workspace_effect_applied bool, verification_succeeded bool, verification_failed bool) []AgentToolDefinition {
+	if !required || !workspace_effect_applied || verification_succeeded || verification_failed {
+		return tools
+	}
+	return tools.filter(it.name == 'workspace_propose_shell_command')
+}
+
+fn agent_final_response_for_verification(content string, required bool,
+	workspace_effect_applied bool, verification_succeeded bool) string {
+	if required && workspace_effect_applied && !verification_succeeded {
+		return 'The requested code change was applied, but its requested verification did not succeed. This task is not complete. ${content}'
+	}
+	return content
 }
 
 fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_request bool,
@@ -804,6 +834,10 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	mut workspace_effect_applied := false
 	mut workspace_effect_pending_review := false
 	code_change_request := explicit_agent_code_change_request(messages)
+	verification_required := explicit_agent_verification_request(messages)
+	mut verification_succeeded := false
+	mut verification_failed := false
+	mut verification_prompt_issued := false
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
 	for round in 0 .. max_agent_tool_rounds {
@@ -819,9 +853,12 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		mut turn_tools := followthrough_tools.clone()
 		turn_tools = agent_code_change_tools_for_progress(turn_tools, code_change_request,
 			edit_proposal_attempted, read_paths.len > 0, followthrough_retries > 0)
+		turn_tools = agent_code_change_verification_tools(turn_tools, verification_required,
+			workspace_effect_applied, verification_succeeded, verification_failed)
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)
 			|| agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools,
 				followthrough_retries, edit_proposal_attempted, request_deadline)
+			|| (verification_required && workspace_effect_applied && !verification_succeeded)
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
 			fn [mut buffered_text] (delta string) ! {
@@ -831,7 +868,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			on_text_delta
 		}
 		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
-			code_change_request && !edit_proposal_attempted, stream_text_delta, request_deadline,
+			code_change_request && (!edit_proposal_attempted || (verification_required
+				&& workspace_effect_applied && !verification_succeeded && !verification_failed)),
+			stream_text_delta, request_deadline,
 			provider_pool) or {
 			if buffer_provider_text && buffered_text.len > 0
 				&& !agent_discard_buffered_text_on_provider_error(code_change_request) {
@@ -881,9 +920,9 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			final_output := CompletionOutput{
 				provider:         output.provider
 				model:            output.model
-				content:          agent_final_response_for_execution_policy(output.content,
-					code_change_request, policy, workspace_effect_applied,
-					workspace_effect_pending_review)
+				content:          agent_final_response_for_verification(agent_final_response_for_execution_policy(output.content, code_change_request,
+					policy, workspace_effect_applied, workspace_effect_pending_review),
+					verification_required, workspace_effect_applied, verification_succeeded)
 				provider_context: output.provider_context
 				usage:            output.usage
 			}
@@ -982,10 +1021,27 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			mut read_paths, loop_skip_notes)!
 		for index, call in output.tool_calls {
 			if index < tool_results.len {
+				tool_result := tool_results[index]
+				if verification_required && workspace_effect_applied
+					&& call.function.name == 'workspace_propose_shell_command' {
+					verification := json2.decode[ShellCommandSummary](tool_result) or {
+						ShellCommandSummary{ status: 'failed', exit_code: -1 }
+					}
+					verification_succeeded = verification.status == 'succeeded'
+						&& verification.exit_code == 0
+					verification_failed = !verification_succeeded
+					verification_prompt_issued = false
+				}
 				workspace_effect_applied = workspace_effect_applied
-					|| agent_tool_result_applied_workspace_effect(call, tool_results[index])
+					|| agent_tool_result_applied_workspace_effect(call, tool_result)
+				if verification_required && call.function.name == 'workspace_propose_file_edit'
+					&& agent_tool_result_applied_workspace_effect(call, tool_result) {
+					verification_succeeded = false
+					verification_failed = false
+					verification_prompt_issued = false
+				}
 				workspace_effect_pending_review = workspace_effect_pending_review
-					|| agent_tool_result_pending_workspace_effect_review(call, tool_results[index])
+					|| agent_tool_result_pending_workspace_effect_review(call, tool_result)
 			}
 		}
 		mut trace_observations := []ATIFObservationResult{}
@@ -1016,6 +1072,26 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		}
 		append_agent_tool_loop_warnings(mut messages, mut trace_steps, loop_warnings,
 			collect_trace)
+		if verification_required && workspace_effect_applied && !verification_succeeded
+			&& !verification_prompt_issued {
+			verification_prompt := if verification_failed {
+				agent_code_change_verification_failure_prompt
+			} else {
+				agent_code_change_verification_prompt
+			}
+			messages << ChatMessage{
+				role:    'user'
+				content: verification_prompt
+			}
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id: trace_steps.len + 1
+					source:  'user'
+					message: verification_prompt
+				}
+			}
+			verification_prompt_issued = true
+		}
 		if agent_code_change_exploration_nudge_available(code_change_request, followthrough_tools,
 			read_only_tool_calls, exploration_nudged, edit_proposal_attempted, request_deadline) {
 			messages << ChatMessage{

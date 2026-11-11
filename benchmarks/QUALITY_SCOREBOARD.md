@@ -7,7 +7,7 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
-| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 16 attempts (1 resource-aborted) | 0 | Three additional same-model runs used one newly authored prompt (hash differs from the historical prompt). First repeated directory listings; second read an unrelated 200-line excerpt and then stopped; third found a search hit but made an unrelated malformed Astro object edit and falsely claimed completion. External `npm run check` failed on the introduced syntax error. The focused-inspection change improved search/edit tool progression but did not produce a correct task outcome. See the [diagnostic series](reports/real-task-attempts/veasel-qwen3-8b-website-173-followthrough-diagnostics-2026-11-11.json). |
+| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 17 attempts (1 resource-aborted) | 0 | Four additional same-model runs used one newly authored prompt (hash differs from the historical prompt). They repeated listings, read unrelated source, made an unrelated malformed Astro edit (caught by external `npm run check`), or meandered through release files for 8m30s with 58,129 reported input tokens and no edit. Focused inspection and the post-edit verification gate did not yield a correct task outcome; the latest run never reached verification. See the [diagnostic series](reports/real-task-attempts/veasel-qwen3-8b-website-173-followthrough-diagnostics-2026-11-11.json). |
 | Synthetic single-file docs sidebar label calibration | 6 attempts | 2 | Two externally verified exact one-line edits followed the new exact-text replacement path (140 s and 100 s; 10,334/117 and 10,326/118 input/output tokens). A temporary wider post-read tool set made an off-target placeholder edit and falsely claimed success; both successful runs used the narrower post-read edit-only phase. Earlier attempts exposed a missed intent classification, destructive full-file editing, and full-file proposal timeouts. One exact-prompt run succeeded; three exact-prompt attempts produced one success. This calibration does not count as success on website#173. See the [attempt report](reports/calibration-docs-sidebar-label-qwen3-8b-2026-11-11.json). |
 
 The attempts use local Qwen models. One Veasel packaged TUI run and one OpenCode
@@ -22,7 +22,7 @@ and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidenc
 
 | Gate | Status | Evidence / remaining work |
 |---|---|---|
-| Real task success | **Open** | The synthetic single-file calibration has two externally verified successes through exact-text replacement. The actual website#173 issue remains at 0 successes after 16 attempts. The latest edit was incorrect and failed Astro check, so no website task success is credited. Broaden the task corpus only after fixing this model/tool-selection and post-edit verification gap. |
+| Real task success | **Open** | The synthetic single-file calibration has two externally verified successes through exact-text replacement. The actual website#173 issue remains at 0 successes after 17 attempts. The latest two runs produced no edit; one earlier edit was incorrect and failed Astro check. Broaden the task corpus only after fixing model capability/tool selection and getting post-edit verification to run on an actual edit. |
 | Same-model competitive benchmark | **Open** | Need identical task, model digest, permissions, context/output budgets, repository, and oracle. |
 | Headless approval honesty | **Fix in progress** | Regression now hides denied effect tools and rejects false completion claims for explicit code changes in non-interactive `ask` mode. |
 | Packaged first-use and TUI journeys | **Partial** | Official `0.69.13-next.0` Linux binaries passed a clean-profile mock-provider walk through `/connect`, model discovery, persisted session/reply, approved edit, restart, and SIGKILL recovery at 32×12, 80×30, and 120×40. One launch-to-home sample was 102 ms. This is deterministic UX evidence, not real-model success; see the [packaged smoke report](reports/tui-package-smoke-v0.69.13-linux-2026-11-11.json). Real-provider task completion and physical-device/macOS/Windows acceptance remain open. |
@@ -37,7 +37,9 @@ the immediately prior guarded run; this is one diagnostic pair and is not a
 general speed claim. It sampled 5.9 GiB model RSS and 4.1 GiB host-available
 memory, not peak values. The three latest website#173 diagnostic runs took 156,
 406, and 268 seconds; their raw tool traces are local only and no CPU or peak
-memory samples were collected. These timings do not establish a speed claim.
+memory samples were collected. A fourth run with a requested-verification gate
+took 510 seconds and reported 58,129 input tokens, but made no edit; the gate
+was not reached. These timings do not establish a speed claim.
 The new calibration's two successful runs took 140 and
 100 seconds; a temporary wider tool phase took 224 seconds and edited the wrong
 string. This small sample does not support a general speed claim. The official-

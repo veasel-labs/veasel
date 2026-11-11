@@ -97,10 +97,33 @@
       },
       "oracle_result": "incorrect one-line edit; requested behavior and tests absent; Astro check fails",
       "coding_success": false
+    },
+    {
+      "runner": {
+        "product_version": "0.1.0-dev",
+        "source_commit": "9b450bf30b1cdbeb75580a11ec24c141868b4d75 plus focused-inspection and requested-verification gates (sha256 of git diff: 331416d11ec5fb7adafd73ec8ef547eda854deac464375a853418b87812bb501)",
+        "binary_sha256": "124879ddb32e37bce1c7a8414aea39c4d65ecde535618a8b8d38e7d9ff02f4879"
+      },
+      "elapsed_seconds": 510,
+      "input_tokens": 58129,
+      "output_tokens": 921,
+      "cache_read_tokens": 43705,
+      "tool_calls": {
+        "workspace_list_files": 4,
+        "workspace_read_file": 6,
+        "workspace_search": 3,
+        "workspace_propose_file_edit": 0,
+        "workspace_propose_shell_command": 0
+      },
+      "status": "completed_without_edit",
+      "failure_class": "repository_navigation_meander_and_no_implementation",
+      "diagnosis": "The model listed the wrong paths, read release-related source and tests, then stopped without locating the docs navigation implementation. The post-edit verification gate was not reached. The run's reported input-token total was 58,129 across model calls despite the configured 4096 context; per-request context truncation was not independently inspected for this run.",
+      "oracle_result": "clean worktree; expected implementation absent; verification command not run",
+      "coding_success": false
     }
   ],
   "aggregate": {
-    "attempts": 3,
+    "attempts": 4,
     "coding_successes": 0,
     "resource_measurements": "Not collected for these runs; no peak RSS or CPU measurements are claimed.",
     "competitive_comparison": "None. These runs do not compare Veasel with another agent and do not support a speed claim."

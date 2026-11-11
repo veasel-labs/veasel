@@ -102,6 +102,7 @@ and responsive/accessibility behavior in the issue acceptance criteria.
 | Veasel `v0.69.14-next.0` | completed | 34.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
 | Veasel source `986fde4` built with V `b0ceb9b` | completed | 37.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
 | OpenCode `2.2.5` | resource-aborted | 57.4 s | 0 edits; workspace remained clean | unscored: available RAM fell below the 4.5 GiB safety floor |
+| Veasel search-first fix `e836100` built with V `b0ceb9b` | resource-aborted | 1.1 s | no model output or workspace changes | unscored: available RAM fell below the 4.5 GiB safety floor |
 
 The two Veasel attempts each count as a verified task failure: the disposable
 workspaces were checked after the run and contained no patch. In the current
@@ -109,9 +110,11 @@ source run, Qwen3:8b first summarized unrelated TUI controls, then searched
 generic terms and repository guidance instead of the Astro navigation source.
 The OpenCode run is not a quality comparison: it was stopped by the resource
 guard after RAM dropped below the case floor, after two exploratory tool calls.
-Therefore this case has **0/2 verified Veasel successes, 0 verified OpenCode
-successes, and no scored head-to-head result**. These are observations from one
-task and one local hardware setup, not a general quality or speed claim.
+The first replay after the search-first orchestration change was also stopped
+by the guard before model output when available RAM fell to 4.47 GiB. Therefore
+this case has **0/2 verified Veasel successes, 0 verified OpenCode successes,
+and no scored head-to-head result**. These are observations from one task and
+one local hardware setup, not a general quality or speed claim.
 
 Full trajectories and logs remain private under the operator's local benchmark
 artifact directory. No raw traces or workspace source are included here.

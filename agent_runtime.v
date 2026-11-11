@@ -92,6 +92,7 @@ fn agent_search_query_matches_request(query string, request string) bool {
 		'from', 'have', 'implement', 'implementation', 'into', 'please', 'remove', 'request',
 		'requested', 'run', 'search', 'task', 'that', 'the', 'their', 'then', 'test', 'this', 'through',
 		'update', 'verify', 'with', 'work', 'would']
+	single_term_task_concepts := ['mobile', 'sidebar', 'responsive', 'viewport', 'keyboard']
 	query_terms := query.to_lower().split_any(agent_search_term_separators)
 	request_terms := request.to_lower().split_any(agent_search_term_separators)
 	mut matched_terms := map[string]bool{}
@@ -111,7 +112,8 @@ fn agent_search_query_matches_request(query string, request string) bool {
 	}
 	// Two distinct task terms resist generic overlap. A single long term remains
 	// useful for searches built around a distinctive name or concept from the request.
-	return matched_terms.len >= 2 || matched_terms.keys().any(it.len >= 9)
+	return matched_terms.len >= 2 || query_terms.any(it in single_term_task_concepts
+		&& it in request_terms) || matched_terms.keys().any(it.len >= 9)
 }
 
 fn agent_system_code_change_instruction(explicit_request bool) string {
@@ -381,6 +383,30 @@ fn agent_workspace_read_succeeded_since(call ProviderToolCall, previous_reads ma
 
 fn agent_workspace_file_was_read(path string, reads map[string]bool) bool {
 	return reads[json2.encode[[]string]([path])]
+}
+
+fn agent_workspace_read_call_allowed(call ProviderToolCall, explicit_request bool,
+	workspace_read_count int, search_performed bool, search_match_paths map[string]bool) bool {
+	if !explicit_request {
+		return true
+	}
+	if workspace_read_count == 0 && !search_performed {
+		return true
+	}
+	path := workspace_read_path_from_call(call) or { return false }
+	return search_performed && path in search_match_paths
+}
+
+fn agent_workspace_search_call_relevant(call ProviderToolCall, explicit_request bool,
+	request string) bool {
+	if !explicit_request {
+		return true
+	}
+	search_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
+		return false
+	}
+	query := string_tool_argument(search_arguments, 'query') or { return false }
+	return agent_search_query_matches_request(query, request)
 }
 
 fn workspace_read_range_arguments(arguments map[string]json2.Any) !(int, int) {
@@ -1096,6 +1122,21 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 				}
 				.ok {}
 			}
+			if call.id in loop_skip_notes {
+				continue
+			}
+			if call.function.name == 'workspace_search'
+				&& !agent_workspace_search_call_relevant(call, code_change_request,
+					code_change_request_text) {
+				loop_skip_notes[call.id] = encode_agent_tool_error('Search terms do not match the explicit code-change request. Search with a distinctive term from that request, such as mobile or sidebar.')
+				continue
+			}
+			if call.function.name == 'workspace_read_file'
+				&& !agent_workspace_read_call_allowed(call, code_change_request, read_paths.len,
+					workspace_search_performed, workspace_search_match_paths) {
+				loop_skip_notes[call.id] = encode_agent_tool_error('After the first file read, use a request-relevant search and read a path returned by it before opening another file.')
+				continue
+			}
 		}
 		read_paths_before_tool_batch := read_paths.clone()
 		search_performed_before_tool_batch := workspace_search_performed
@@ -1105,18 +1146,14 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		for index, call in output.tool_calls {
 			if index < tool_results.len {
 				tool_result := tool_results[index]
-				if call.function.name == 'workspace_search' && read_paths_before_tool_batch.len > 0 {
-					search_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
-						map[string]json2.Any{}
-					}
-					query := string_tool_argument(search_arguments, 'query') or { '' }
-					if agent_search_query_matches_request(query, code_change_request_text) {
-						for path in agent_tool_result_search_paths(tool_result) {
-							workspace_search_match_paths[path] = true
-							workspace_search_performed = true
-							if agent_workspace_file_was_read(path, read_paths_before_tool_batch) {
-								workspace_read_after_search = true
-							}
+				if call.function.name == 'workspace_search'
+					&& agent_workspace_search_call_relevant(call, code_change_request,
+						code_change_request_text) {
+					for path in agent_tool_result_search_paths(tool_result) {
+						workspace_search_match_paths[path] = true
+						workspace_search_performed = true
+						if agent_workspace_file_was_read(path, read_paths) {
+							workspace_read_after_search = true
 						}
 					}
 				}

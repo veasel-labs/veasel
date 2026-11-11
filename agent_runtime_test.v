@@ -157,6 +157,9 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 	request := 'Please implement mobile docs navigation with a sidebar Browse sections control.'
 	assert !agent_search_query_matches_request('MCP metadata', request)
 	assert agent_search_query_matches_request('mobile navigation', request)
+	assert agent_search_query_matches_request('sidebar', request)
+	assert agent_search_query_matches_request('mobile', request)
+	assert !agent_search_query_matches_request('docs', request)
 	assert !agent_search_query_matches_request('DocsLayout', request)
 	assert !agent_search_query_matches_request('release build', 'Please build the release.')
 	assert agent_search_query_matches_request('navigation', request)
@@ -176,6 +179,26 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 			arguments: '{"path":"CONTRIBUTING.md","start_line":1,"line_count":1}'
 		}
 	}
+	assert agent_workspace_read_call_allowed(matching_read, true, 0, false, map[string]bool{})
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, false, map[string]bool{})
+	mut matched_paths := map[string]bool{}
+	matched_paths['README.md'] = true
+	assert agent_workspace_read_call_allowed(matching_read, true, 1, true, matched_paths)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, true, matched_paths)
+	unrelated_search := ProviderToolCall{
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"query":"function newestPreviewRelease"}'
+		}
+	}
+	matching_search := ProviderToolCall{
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"query":"sidebar"}'
+		}
+	}
+	assert !agent_workspace_search_call_relevant(unrelated_search, true, request)
+	assert agent_workspace_search_call_relevant(matching_search, true, request)
 	matching_identity := workspace_read_identity_from_call(matching_read) or {
 		panic('expected matching read identity')
 	}

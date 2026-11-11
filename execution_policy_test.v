@@ -59,7 +59,7 @@ fn test_non_interactive_code_change_final_response_cannot_claim_completion() {
 	}
 	response := agent_final_response_for_execution_policy('Implemented and tested.', true, policy)
 	assert response.contains('was not completed')
-	assert response.contains('Continue in the TUI')
+	assert response.contains('Use the TUI for an interactive turn')
 	assert agent_final_response_for_execution_policy('Read-only answer.', false, policy) == 'Read-only answer.'
 	assert agent_final_response_for_execution_policy('Implemented and tested.', true, ExecutionPolicyTurn{
 		mode:        .sandbox_auto

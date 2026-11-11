@@ -84,7 +84,7 @@ fn restrict_agent_tools_for_execution_policy(tools []AgentToolDefinition,
 fn agent_final_response_for_execution_policy(response string, code_change_request bool,
 	policy ExecutionPolicyTurn) string {
 	if code_change_request && policy.mode == .ask && !policy.interactive {
-		return 'The requested code change was not completed. This non-interactive ask run only has read access; edits, shell commands, and MCP actions require interactive approval. Continue in the TUI to review an edit proposal.'
+		return 'The requested code change was not completed. This non-interactive ask run only has read access; edits, shell commands, and MCP actions require interactive approval. Use the TUI for an interactive turn if you want Veasel to propose edits.'
 	}
 	return response
 }

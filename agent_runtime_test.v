@@ -1863,7 +1863,7 @@ fn test_non_interactive_code_request_reports_no_edit_instead_of_model_claim() {
 	assert !request.tools.any(it.function.name in ['workspace_propose_file_edit',
 		'workspace_propose_shell_command'])
 	assert exchange.messages.last().content.contains('was not completed')
-	assert exchange.messages.last().content.contains('Continue in the TUI')
+	assert exchange.messages.last().content.contains('Use the TUI for an interactive turn')
 	assert store.assistant_text_for_operation(session.id, operation_id) or { panic(err) } == exchange.messages.last().content
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
 	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0

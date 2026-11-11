@@ -58,6 +58,12 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 			content: 'Actually, explain the relevant convention.'
 		},
 	])
+	focused_non_edit_request := ChatMessage{
+		role:    'user'
+		content: 'Autonomous workspace edit\n\n${repository_map_focus_open}\nREADME.md\nsrc/main.v\nsrc/main_test.v\n${repository_map_focus_close}'
+	}
+	assert !explicit_agent_code_change_request([focused_non_edit_request])
+	assert agent_original_user_request_text(focused_non_edit_request.content) == 'Autonomous workspace edit'
 }
 
 fn test_code_change_system_instruction_is_conditional_and_actionable() {
@@ -82,6 +88,10 @@ fn test_explicit_agent_verification_request_is_detected_from_user_request() {
 	assert !explicit_agent_verification_request([ChatMessage{
 		role:    'user'
 		content: 'Explain what the existing check command does.'
+	}])
+	assert !explicit_agent_verification_request([ChatMessage{
+		role:    'user'
+		content: 'Autonomous workspace edit\n\n${repository_map_focus_open}\nsrc/main_test.v\n${repository_map_focus_close}'
 	}])
 }
 

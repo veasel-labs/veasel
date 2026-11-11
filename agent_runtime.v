@@ -26,11 +26,16 @@ fn agent_context_byte_limit() int {
 	return chat_input_byte_limit() + max_agent_tool_result_bytes + max_agent_tool_calls * max_agent_tool_argument_bytes
 }
 
+fn agent_original_user_request_text(content string) string {
+	focus_start := content.index(repository_map_focus_open) or { return content.trim_space() }
+	return content[..focus_start].trim_space()
+}
+
 fn explicit_agent_code_change_request(messages []ChatMessage) bool {
 	mut latest_user_message := ''
 	for message in messages.reverse() {
 		if message.role == 'user' {
-			latest_user_message = message.content.trim_space().to_lower()
+			latest_user_message = agent_original_user_request_text(message.content).to_lower()
 			break
 		}
 	}
@@ -81,7 +86,7 @@ fn explicit_agent_verification_request(messages []ChatMessage) bool {
 	mut request := ''
 	for message in messages {
 		if message.role == 'user' {
-			request = message.content
+			request = agent_original_user_request_text(message.content)
 		}
 	}
 	text := request.to_lower()

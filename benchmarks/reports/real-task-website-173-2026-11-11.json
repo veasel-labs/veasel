@@ -151,13 +151,36 @@
       "resource_measurements": null,
       "source_report": "real-task-attempts/opencode-qwen3-8b-website-173-20261110.json",
       "limitations": ["Different tool policy", "No explicit output-token cap", "One diagnostic sample"]
+    },
+    {
+      "runner": "Veasel packaged TUI",
+      "version": "0.69.13-next.0",
+      "binary_sha256": "9ff6aa31ec21b646aa49c1a6037883d079e61c39b9d27f596acacaaec9d2d3a9",
+      "context_tokens": 4096,
+      "output_budget_tokens": 2048,
+      "elapsed_seconds": 180,
+      "status": "failed",
+      "tool_calls": 0,
+      "edit_proposals": 0,
+      "shell_proposals": 0,
+      "result": "provider_read_timeout_before_first_tool",
+      "visible_error": "The assistant turn failed.",
+      "oracle_result": "clean worktree; expected change absent",
+      "resource_measurements": {
+        "model_rss_kib": 5878848,
+        "generation_rate_tokens_per_second": 3.1,
+        "host_available_memory_gib_at_model_start": 3.9
+      },
+      "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+      "prompt_note": "Public issue scope; differs from the earlier diagnostic prompt and is not a controlled repeat.",
+      "source_report": "real-task-attempts/official-tui-qwen3-8b-website-173-2026-11-11.json"
     }
   ],
   "score": {
     "task_successes": 0,
-    "attempts_in_snapshot": 7,
+    "attempts_in_snapshot": 8,
     "controlled_comparison": false,
-    "claim": "No competitive performance claim is supported. These are diagnostic failures with non-identical binary versions, tool permissions, and budgets."
+    "claim": "No competitive performance claim is supported. These are diagnostic failures with non-identical binary versions, prompts, tool permissions, and budgets."
   },
   "privacy": {
     "raw_traces_contain_workspace_content": true,

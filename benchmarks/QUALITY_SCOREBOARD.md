@@ -7,7 +7,7 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
-| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 7 diagnostic attempts | 0 | No run produced the expected patch. The latest release attempt timed out after one read-only file listing; the installed 0.67 binary returned unsupported completion claims without tools. |
+| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 8 diagnostic attempts | 0 | No run produced the expected patch. The latest packaged TUI attempt made no tool call and timed out after 180 s; the earlier headless release attempt timed out after one read-only file listing. The installed 0.67 binary returned unsupported completion claims without tools. |
 
 The attempts use local Qwen models and one OpenCode run. They are not a controlled
 Veasel-versus-OpenCode score: binary versions, execution permissions, and output
@@ -32,5 +32,9 @@ The snapshot does not include CPU, peak memory, or complete timing for every
 attempt. The official-release replay's elapsed time is measured from the
 command session at roughly 351 seconds; the other missing metrics remain
 unknown. The historical Qwen3 and Qwen2.5 summaries are sanitized local
-reports. Private ATIF traces remain outside version control because they may
-contain workspace source and instructions.
+reports. The packaged TUI sample measured 5.9 GB model RSS and about 3.1
+generated tokens/second on CPU. Other attempts still lack CPU, peak memory, and
+complete timing. The official-release headless replay took roughly 351 seconds;
+the TUI provider request failed at 180 seconds. Private ATIF traces remain
+outside version control because they may contain workspace source and
+instructions.

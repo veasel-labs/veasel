@@ -1,0 +1,57 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External diff against a clean archive of the task base. Success requires the accessible responsive docs navigation, exact requested checks, and external inspection at the requested viewports."
+  },
+  "runner": {
+    "name": "Veasel headless benchmark build with path-matched search gate, before lexical search relevance check",
+    "source_commit": "81cf2b93164509ada23e83bf635f1806883cd790",
+    "source_state": "Uncommitted retry-prompt and path-matched search-gate changes based on main; this binary predates the later per-read identity and lexical search-relevance refinements.",
+    "binary_sha256": "3e7b1e1651524b6f906fa0f9bef82b37f0b70a8b7b59a7ce250ae1400159a470",
+    "compiler": "V 0.5.2 b0ceb9b",
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 300.0,
+    "status": "timed_out_after_off_target_edit",
+    "cli_result": "--json returned timed_out and said cancellation could not be confirmed. The disposable server exited with its bubblewrap sandbox. The SQLite operation remained marked running at inspection, with one workspace edit applied, zero shell commands, and zero operation-trace rows. The exact Ollama runner started for this attempt was stopped after the client and isolated server had exited; the port no longer accepted connections.",
+    "tool_sequence": null,
+    "trace_available": false,
+    "oracle_result": "The external clean-base diff shows one unrelated semantic edit in src/scripts/releases.js that changes the version-comparison loop. No docs navigation behavior was added. The requested viewport/browser verification was not performed. After the attempt, independent npm run check, npm run build, npm run format:check, and npm test all passed on the disposable task checkout; those checks do not change the failed task outcome.",
+    "failure_class": "off_target_edit_then_timeout_without_completion",
+    "observed_workspace_effects": [
+      {
+        "path": "src/scripts/releases.js",
+        "result": "unrelated semantic change to the version-comparison loop; requested behavior absent"
+      }
+    ],
+    "resource_observation": {
+      "qwen_runner_rss_gib_samples": [
+        5.6,
+        6.2
+      ],
+      "qwen_runner_cpu_percent_sample": 1114,
+      "host_available_memory_gib_sample": null,
+      "note": "Sparse process samples during the run, not peaks. Host available memory was not sampled. The runner was terminated after its requesting client and isolated server exited."
+    },
+    "provider_usage": {
+      "reported": false,
+      "input_tokens": null,
+      "output_tokens": null
+    }
+  },
+  "interpretation": "The stronger progress gate and retry prompt did not produce a correct real-task outcome in this attempt. The run made an off-target edit and timed out without a recoverable trace. It is scored 0/1 and supports no comparative quality or speed claim.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "prompt_text_or_source_committed": false,
+    "credentials_committed": false
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External clean-worktree diff against the requested accessible responsive docs navigation; success requires implementation and the requested checks."
+  },
+  "runner": {
+    "name": "Veasel search-gate experiment",
+    "source_commit": "81cf2b93164509ada23e83bf635f1806883cd790",
+    "source_state": "Uncommitted search-gate experiment based on main.",
+    "binary_sha256": "d203e779e48126b586dafbafac4f92c982f112e4dc59dda01f2c38e0f084a0e2",
+    "compiler": "V 0.5.2 b0ceb9b",
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 300.1,
+    "status": "timed_out_without_observable_result",
+    "cli_wait_result": "The CLI returned timed_out with cancellation unconfirmed. The isolated server stopped with its sandbox; the operation remained running when queried immediately before shutdown.",
+    "tool_calls_observed": null,
+    "trace_available": false,
+    "oracle_result": "The isolated checkout remained clean; the requested behavior was not implemented. No external checks ran.",
+    "failure_class": "no_completion_before_wall_limit",
+    "resource_observation": {
+      "qwen_runner_rss_gib_sample": 6.5,
+      "qwen_runner_cpu_percent_sample": 1115,
+      "host_available_memory_gib_sample": 2.0,
+      "memory_pressure_psi_avg10": 0.0,
+      "note": "Single host samples during this run, not peaks or comparative measurements. The exact Ollama runner process started for this attempt was stopped after the isolated client and server exited."
+    }
+  },
+  "interpretation": "This timed-out attempt supplies no evidence that the search gate improved task success because no trace or tool sequence was recovered. It is recorded as an unsuccessful real-task attempt, not a success or a comparative result.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "prompt_text_or_source_committed": false,
+    "credentials_committed": false
+  }
+}

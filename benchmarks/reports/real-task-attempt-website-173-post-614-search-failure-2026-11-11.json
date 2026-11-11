@@ -1,0 +1,33 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "External diff against a clean archived task base. Success requires the accessible responsive docs navigation, repository checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Veasel real coding task",
+    "source_commit": "f26b2fd38eb33b7bce8b76d09aa9250e8c94514a",
+    "source_state": "PR #614 head, built with V 0.5.2 b0ceb9b",
+    "provider": "Ollama 0.40.15 CUDA",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 6.081,
+    "status": "completed",
+    "tool_calls_observed": 1,
+    "tool_sequence": ["workspace_search: docs sidebar navigation (no matches)"],
+    "token_usage": {
+      "prompt_tokens": 10049,
+      "completion_tokens": 145
+    },
+    "oracle_result": "Disposable checkout remained clean; no source was read or edited. The requested change was not implemented.",
+    "failure_class": "search_query_returned_no_matches_agent_stopped",
+    "trace_available": false
+  },
+  "privacy": "Raw prompts, source excerpts, and provider traces remain private. This summary contains no source contents or credentials."
+}

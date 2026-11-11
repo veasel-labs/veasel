@@ -1,0 +1,29 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "External diff against a clean archived task base. Success requires the accessible responsive docs navigation, repository checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Veasel multiword-search fallback replay",
+    "source_commit": "c2e8daefa4df219491c9710139e94f8415bcec46",
+    "source_state": "Local build with V 0.5.2 b0ceb9b; search fallback not yet merged at replay time",
+    "provider": "Ollama 0.40.15 CUDA",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 13.176,
+    "status": "resource_aborted",
+    "minimum_available_memory_bytes": 4778569728,
+    "required_available_memory_bytes": 4831838208,
+    "oracle_result": "Unscored: the resource guard stopped the attempt below the 4.5 GiB RAM floor. Workspace remained clean.",
+    "failure_class": "resource_safety_floor",
+    "trace_available": false
+  },
+  "privacy": "Raw prompts, source excerpts, and provider traces remain private. This summary contains no source contents or credentials."
+}

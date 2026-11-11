@@ -103,21 +103,28 @@ and responsive/accessibility behavior in the issue acceptance criteria.
 | Veasel source `986fde4` built with V `b0ceb9b` | completed | 37.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
 | OpenCode `2.2.5` | resource-aborted | 57.4 s | 0 edits; workspace remained clean | unscored: available RAM fell below the 4.5 GiB safety floor |
 | Veasel search-first fix `e836100` built with V `b0ceb9b` | resource-aborted | 1.1 s | no model output or workspace changes | unscored: available RAM fell below the 4.5 GiB safety floor |
+| Veasel PR #614 head `f26b2fd` built with V `b0ceb9b` | completed | 6.1 s | 0 edits; clean workspace | failed: exact multiword search returned no matches and the agent stopped |
+| Veasel multiword-search fallback | resource-aborted | 13.2 s | no scored result; workspace remained clean | unscored: RAM crossed the 4.5 GiB safety floor before a completed turn |
 
-The two Veasel attempts each count as a verified task failure: the disposable
+The three completed Veasel attempts each count as a verified task failure: the disposable
 workspaces were checked after the run and contained no patch. In the current
 source run, Qwen3:8b first summarized unrelated TUI controls, then searched
 generic terms and repository guidance instead of the Astro navigation source.
 The OpenCode run is not a quality comparison: it was stopped by the resource
 guard after RAM dropped below the case floor, after two exploratory tool calls.
-The first replay after the search-first orchestration change was also stopped
-by the guard before model output when available RAM fell to 4.47 GiB. Therefore
-this case has **0/2 verified Veasel successes, 0 verified OpenCode successes,
-and no scored head-to-head result**. These are observations from one task and
+The first replay after the search-first orchestration change was stopped by the
+guard before model output when available RAM fell to 4.47 GiB. A later PR #614
+head attempt completed in 6.1 seconds, made one literal multiword search, then
+returned without a source read or edit. The replay after the fallback change was
+resource-aborted below the 4.5 GiB floor and remains unscored. Therefore this
+case has **0/3 verified Veasel successes, 0 verified OpenCode successes, and
+no scored head-to-head result**. These are observations from one task and
 one local hardware setup, not a general quality or speed claim.
 
 Full trajectories and logs remain private under the operator's local benchmark
-artifact directory. No raw traces or workspace source are included here.
+artifact directory. No raw traces or workspace source are included here. Sanitized
+summaries record the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json)
+and the [unscored fallback replay](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json).
 
 This first version samples host available RAM and swap. It does not yet collect
 CPU, process/GPU peak memory, or provider-reported token usage, so reports are
@@ -127,6 +134,6 @@ speed claims.
 All three attempts used the same task, prompt hash, model digest, context, and
 output limits; the Veasel attempts also passed the recorded GPU-placement and
 4.5 GiB host-memory preflight. The corrected OpenCode command was used for the
-resource-aborted result. The runner changes in this PR still need to land before
-others can reproduce these exact invocations from a clean main checkout. Do not
+resource-aborted result. The harness changes have landed; reproduce future attempts from a clean main
+checkout and keep the case revision pinned. Do not
 compare runs produced by a different case revision or prompt hash.

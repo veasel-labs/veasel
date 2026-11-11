@@ -364,8 +364,8 @@ fn workspace_search_terms(root string, terms []string) !WorkspaceSearchResult {
 			truncated = true
 			break
 		}
-		workspace_search_content_terms(mut ranked_matches, mut match_indexes, mut term_match_counts,
-			relative_path, content, terms, mut truncated)
+		truncated = workspace_search_content_terms(mut ranked_matches, mut match_indexes,
+			mut term_match_counts, relative_path, content, terms, truncated)
 	}
 	if walker.stopped {
 		truncated = true
@@ -386,7 +386,7 @@ fn workspace_search_terms(root string, terms []string) !WorkspaceSearchResult {
 
 fn workspace_search_content_terms(mut ranked_matches []WorkspaceRankedSearchMatch,
 	mut match_indexes map[string]int, mut term_match_counts map[string]int, path string,
-	content string, terms []string, mut truncated bool) {
+	content string, terms []string, truncated bool) bool {
 	mut line_start := 0
 	mut line_number := 1
 	mut index := 0
@@ -394,8 +394,8 @@ fn workspace_search_content_terms(mut ranked_matches []WorkspaceRankedSearchMatc
 		if index == content.len || content[index] in [`\r`, `\n`] {
 			if index > line_start {
 				line := unsafe { content.substr_unsafe(line_start, index) }
-				workspace_search_record_term_matches(mut ranked_matches, mut match_indexes,
-					mut term_match_counts, path, line_number, line, terms, mut truncated)
+				truncated = workspace_search_record_term_matches(mut ranked_matches,
+					mut match_indexes, mut term_match_counts, path, line_number, line, terms, truncated)
 			}
 			if index < content.len && content[index] == `\r` && index + 1 < content.len
 				&& content[index + 1] == `\n` {
@@ -406,11 +406,12 @@ fn workspace_search_content_terms(mut ranked_matches []WorkspaceRankedSearchMatc
 		}
 		index++
 	}
+	return truncated
 }
 
 fn workspace_search_record_term_matches(mut ranked_matches []WorkspaceRankedSearchMatch,
 	mut match_indexes map[string]int, mut term_match_counts map[string]int, path string,
-	line_number int, line string, terms []string, mut truncated bool) {
+	line_number int, line string, terms []string, truncated bool) bool {
 	for term in terms {
 		if !line.contains(term) {
 			continue
@@ -438,6 +439,7 @@ fn workspace_search_record_term_matches(mut ranked_matches []WorkspaceRankedSear
 			}
 		}
 	}
+	return truncated
 }
 
 // Search the exact phrase first. If a natural-language query has no exact

@@ -84,7 +84,8 @@ class PreflightTests(unittest.TestCase):
             "/usr/bin/opencode", "run", "--standalone", "--auto", "--model",
             "ollama/qwen3:8b", "--agent", "build",
         ])
-        self.assertEqual(command[-5:], ["--dir", "/workspace/task", "--format", "json", prompt_path.read_text()])
+        self.assertEqual(command[-3:], ["--format", "json", prompt_path.read_text()])
+        self.assertNotIn("--dir", command)
 
     @patch.object(runner, "preflight", return_value={"passed": True, "checks": []})
     @patch.object(runner.shutil, "which", return_value="/usr/bin/opencode")
@@ -120,6 +121,7 @@ class PreflightTests(unittest.TestCase):
             self.assertIn("--standalone", launched_command)
             self.assertEqual(launched_env["OPENCODE_CONFIG"], str(data_dir / "benchmark-opencode.json"))
             self.assertNotIn("ANTHROPIC_API_KEY", launched_env)
+            self.assertEqual(popen.call_args.kwargs["cwd"], workspace)
             report = json.loads((artifacts / "attempt.json").read_text())
             self.assertEqual(report["outcome"], "completed")
             self.assertEqual(report["score"], "unscored; externally verify the patch and task oracle")
@@ -128,12 +130,13 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")
     @patch.object(runner, "ollama_version", return_value="0.40.15")
+    @patch.object(runner, "ollama_gpu_placement", return_value={"name": "qwen3:8b", "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41", "size_bytes": 5_054_440_406, "size_vram_bytes": 5_586_592_726, "context_length": 4096, "runner": "llamacpp"})
     @patch.object(runner, "gpu_info", return_value={"name": "NVIDIA GeForce RTX 3060", "memory_mib": 12288})
     @patch.object(runner, "open_code_version", return_value="opencode v2.2.5")
     @patch.object(runner, "project_open_code_config_paths", return_value=[])
     @patch.object(runner, "managed_open_code_config_paths", return_value=[])
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB))
-    def test_opencode_preflight_uses_same_pinned_case(self, _resources, _managed, _project, _version, _gpu, _ollama, _model, _git, _which):
+    def test_opencode_preflight_uses_same_pinned_case(self, _resources, _managed, _project, _version, _gpu_info, _placement, _ollama, _model, _git, _which):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",
                                   Path("/tmp/opencode-state"), "opencode", "opencode")
@@ -142,10 +145,11 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")
     @patch.object(runner, "ollama_version", return_value="0.40.15")
+    @patch.object(runner, "ollama_gpu_placement", return_value={"name": "qwen3:8b", "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41", "size_bytes": 5_054_440_406, "size_vram_bytes": 5_586_592_726, "context_length": 4096, "runner": "llamacpp"})
     @patch.object(runner, "gpu_info", return_value={"name": "NVIDIA GeForce RTX 3060", "memory_mib": 12288})
     @patch.object(runner, "configured_model", return_value={"provider": "ollama", "model": "qwen3:8b", "base_url": "http://127.0.0.1:11435/v1", "max_output_tokens": 2048, "api_key_saved": False})
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB))
-    def test_preflight_passes_only_when_pins_and_resources_match(self, _resources, _config, _gpu, _ollama, _model, _git):
+    def test_preflight_passes_only_when_pins_and_resources_match(self, _resources, _config, _gpu_info, _placement, _ollama, _model, _git):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path("/tmp/isolated-veasel"))
         self.assertTrue(result["passed"])
@@ -153,14 +157,15 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="wrong-digest")
     @patch.object(runner, "ollama_version", return_value="0.40.15")
+    @patch.object(runner, "ollama_gpu_placement", return_value={"name": "qwen3:8b", "digest": "wrong-digest", "size_bytes": 5_054_440_406, "size_vram_bytes": 0, "context_length": 4096, "runner": "llamacpp"})
     @patch.object(runner, "gpu_info", return_value={"name": "NVIDIA GeForce RTX 3060", "memory_mib": 12288})
     @patch.object(runner, "configured_model", return_value={"provider": "ollama", "model": "qwen3:8b", "base_url": "http://127.0.0.1:11435/v1", "max_output_tokens": 2048, "api_key_saved": False})
     @patch.object(runner, "available_resources", return_value=(8 * runner.GIB, runner.GIB))
-    def test_resource_or_model_mismatch_blocks_attempt(self, _resources, _config, _gpu, _ollama, _model, _git):
+    def test_resource_or_model_mismatch_blocks_attempt(self, _resources, _config, _gpu_info, _placement, _ollama, _model, _git):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11434", Path("/tmp/isolated-veasel"))
         failed = {check["name"] for check in result["checks"] if not check["passed"]}
-        self.assertEqual(failed, {"ollama_endpoint", "model_digest", "available_memory", "free_swap"})
+        self.assertEqual(failed, {"ollama_endpoint", "model_digest", "ollama_model_gpu_placement"})
 
 
 if __name__ == "__main__":

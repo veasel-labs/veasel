@@ -43,8 +43,8 @@
   },
   "budgets": {
     "wall_seconds": 300,
-    "minimum_available_memory_bytes": 9663676416,
-    "minimum_free_swap_bytes": 2147483648
+    "minimum_available_memory_bytes": 4831838208,
+    "minimum_free_swap_bytes": 0
   },
   "oracle": "Externally compare the patch with the merged website#173 change, run the repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior. A completed model turn alone is not success."
 }

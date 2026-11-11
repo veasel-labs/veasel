@@ -12,10 +12,12 @@ scored as coding failures.
 
 Use a disposable checkout at the case's exact base commit. Keep it clean and
 make sure its `origin` URL matches the case. Start the exact Ollama model tag
-locally; the preflight queries `/api/tags` and `/api/version` and compares the
-model digest and Ollama version. This initial case is specific to the RTX 3060
-CUDA run. Other hardware needs a separately versioned case before its results
-can be compared.
+locally; the preflight queries `/api/tags`, `/api/version`, and `/api/ps` and
+compares the model digest and Ollama version. For this CUDA case it also
+requires the pinned model to be loaded at the pinned context with all model
+weights in VRAM; seeing an NVIDIA device alone is insufficient. This initial
+case is specific to the RTX 3060 CUDA run. Other hardware needs a separately
+versioned case before its results can be compared.
 
 ```sh
 python3 benchmarks/real-task/run.py preflight \
@@ -23,10 +25,13 @@ python3 benchmarks/real-task/run.py preflight \
   --data-dir /benchmark/state
 ```
 
-The website case currently requires at least 9 GiB available RAM and 2 GiB
-free swap. These thresholds reflect observed Qwen3:8b memory use on the
-workstation and avoid repeating the recent resource-aborted runs. A failed
-preflight exits with status 2 and lists the unmet checks.
+The website CUDA case requires at least 4.5 GiB available host RAM. A
+4096-context CUDA placement probe used 5.6 GB of RTX 3060 VRAM and reduced host
+available RAM by about 0.8 GiB; the 4.5 GiB floor leaves over 1 GiB of measured
+host headroom for the agent and task tools. Swap is recorded, but is not
+required while the pinned model weights and context fit in VRAM. The runner
+continues sampling RAM and swap once per second and aborts below the RAM floor.
+A failed preflight exits with status 2 and lists the unmet checks.
 
 ## Run Veasel
 
@@ -61,8 +66,8 @@ Ollama endpoint/model and disposable sandbox. OpenCode is pinned at v2.2.5;
 the runner writes a private provider config with the same endpoint and 4096 / 2048
 context/output limits. Its Build agent allows only repository read/edit/search/list
 and shell tools; web, subagents, MCP, and external-directory access are denied.
-The command uses OpenCode's documented standalone, model, directory, agent,
-auto-approval, and JSON event options ([CLI docs](https://opencode.ai/docs/cli/commands),
+The runner starts OpenCode from the pinned checkout and uses the documented
+standalone, model, agent, auto-approval, and JSON event options ([CLI docs](https://opencode.ai/docs/cli/commands),
 [permissions](https://opencode.ai/docs/permissions/), [Ollama config](https://opencode.ai/docs/providers/)).
 The preflight rejects repository or system OpenCode config files that could
 override the pinned model/provider setup.
@@ -83,10 +88,42 @@ them concurrently: they share the same local model and host resource budget.
 The reports pin task/model/settings, but a comparison is valid only after both
 outcomes are externally scored against the same oracle.
 
+## Current quality scoreboard
+
+As of 2026-11-11, the only task in the corpus is website#173 at base
+`184c7d8`, with the pinned Qwen3:8b digest, Ollama 0.40.15, CUDA on an RTX
+3060, and prompt SHA-256
+`5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e`.
+The independent oracle is the merged website#173 patch plus repository checks
+and responsive/accessibility behavior in the issue acceptance criteria.
+
+| Agent/build | Outcome | Time | Independent task result | Classification |
+|---|---|---:|---|---|
+| Veasel `v0.69.14-next.0` | completed | 34.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
+| Veasel source `986fde4` built with V `b0ceb9b` | completed | 37.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
+| OpenCode `2.2.5` | resource-aborted | 57.4 s | 0 edits; workspace remained clean | unscored: available RAM fell below the 4.5 GiB safety floor |
+
+The two Veasel attempts each count as a verified task failure: the disposable
+workspaces were checked after the run and contained no patch. In the current
+source run, Qwen3:8b first summarized unrelated TUI controls, then searched
+generic terms and repository guidance instead of the Astro navigation source.
+The OpenCode run is not a quality comparison: it was stopped by the resource
+guard after RAM dropped below the case floor, after two exploratory tool calls.
+Therefore this case has **0/2 verified Veasel successes, 0 verified OpenCode
+successes, and no scored head-to-head result**. These are observations from one
+task and one local hardware setup, not a general quality or speed claim.
+
+Full trajectories and logs remain private under the operator's local benchmark
+artifact directory. No raw traces or workspace source are included here.
+
 This first version samples host available RAM and swap. It does not yet collect
 CPU, process/GPU peak memory, or provider-reported token usage, so reports are
 not complete comparative benchmark records and cannot support efficiency or
 speed claims.
 
-No matched OpenCode/Veasel attempt has been completed through this runner yet.
-Do not compare runs produced by a different case revision or prompt hash.
+All three attempts used the same task, prompt hash, model digest, context, and
+output limits; the Veasel attempts also passed the recorded GPU-placement and
+4.5 GiB host-memory preflight. The corrected OpenCode command was used for the
+resource-aborted result. The runner changes in this PR still need to land before
+others can reproduce these exact invocations from a clean main checkout. Do not
+compare runs produced by a different case revision or prompt hash.

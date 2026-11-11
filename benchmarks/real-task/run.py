@@ -75,6 +75,24 @@ def ollama_version(base_url: str) -> str:
         return str(json.load(response).get("version", ""))
 
 
+def ollama_gpu_placement(base_url: str, model: str) -> dict[str, Any]:
+    request = urllib.request.Request(base_url.rstrip("/") + "/api/ps")
+    with urllib.request.urlopen(request, timeout=3) as response:
+        models = json.load(response).get("models", [])
+    matches = [item for item in models if item.get("name") == model]
+    if len(matches) != 1:
+        raise RuntimeError(f"Ollama did not report exactly one loaded {model!r} model")
+    item = matches[0]
+    return {
+        "name": str(item.get("name", "")),
+        "digest": str(item.get("digest", "")),
+        "size_bytes": int(item.get("size", 0)),
+        "size_vram_bytes": int(item.get("size_vram", 0)),
+        "context_length": int(item.get("context_length", 0)),
+        "runner": str(item.get("runner", "")),
+    }
+
+
 def gpu_info() -> dict[str, Any]:
     output = subprocess.check_output(
         ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
@@ -168,8 +186,7 @@ def build_command(agent: str, binary: str, case: dict[str, Any], workspace: Path
                 "--workspace", str(workspace), "--timeout", str(case["budgets"]["wall_seconds"]),
                 "--trace-file", str(trace_path), "--json"]
     command = [binary, "run", "--standalone", "--model", case["comparators"]["opencode_model"],
-               "--agent", case["comparators"]["opencode_agent"], "--dir", str(workspace),
-               "--format", "json", prompt]
+               "--agent", case["comparators"]["opencode_agent"], "--format", "json", prompt]
     if case["comparators"]["opencode_auto_approve"]:
         command.insert(3, "--auto")
     return command
@@ -253,6 +270,29 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             check("gpu", actual_gpu == expected_gpu, actual_gpu, expected_gpu)
         except (OSError, subprocess.CalledProcessError, IndexError, ValueError) as exc:
             check("gpu", False, type(exc).__name__, expected_gpu)
+    if case.get("runtime", {}).get("accelerator") == "CUDA":
+        try:
+            placement = ollama_gpu_placement(ollama_url, case["model"]["name"])
+            expected_context = case["model"]["context_tokens"]
+            gpu_loaded = placement["size_vram_bytes"] >= placement["size_bytes"] > 0
+            context_matches = placement["context_length"] >= expected_context
+            expected_placement = {
+                "name": case["model"]["name"],
+                "digest": case["model"]["digest"],
+                "size_vram_bytes_at_least": placement["size_bytes"],
+                "context_length_at_least": expected_context,
+            }
+            check(
+                "ollama_model_gpu_placement",
+                placement["name"] == case["model"]["name"]
+                and placement["digest"] == case["model"]["digest"]
+                and gpu_loaded
+                and context_matches,
+                placement,
+                expected_placement,
+            )
+        except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            check("ollama_model_gpu_placement", False, type(exc).__name__, "model loaded on CUDA at pinned context")
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
     check("available_memory", available >= min_memory, available, min_memory)

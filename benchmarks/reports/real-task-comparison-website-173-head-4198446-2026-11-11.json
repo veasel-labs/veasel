@@ -1,0 +1,99 @@
+{
+  "schema": "veasel-paired-real-task-diagnostic/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External clean-worktree diff against the requested accessible responsive docs navigation; success requires implementation and the requested checks."
+  },
+  "shared_conditions": {
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "tool_permissions": {
+      "edit": "ask, auto-approved in isolated run",
+      "bash": "ask, auto-approved in isolated run",
+      "webfetch": "deny",
+      "external_directory": "deny"
+    },
+    "mcp": "disabled",
+    "wall_limit_seconds": 300,
+    "repository_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "isolation": "Separate disposable checkouts at the same commit; repository root writable, host root read-only; provider reachable through loopback."
+  },
+  "runs": [
+    {
+      "runner": "Veasel current-source headless build",
+      "version": "0.1.0-dev",
+      "source_commit": "4198446815db8cee8a2700172ee7ac9fad241eb4",
+      "binary_sha256": "61cfe1b7d1aff7c332962ff7acc1db7f8aab30e3f9def09d1a8650dc4822527e",
+      "compiler": "V 0.5.2 b0ceb9b",
+      "elapsed_seconds": 300.31,
+      "operation_terminal_elapsed_seconds": 307,
+      "status": "completed_without_edit",
+      "cli_wait_result": "The 300-second headless wait returned timed_out with cancellation unconfirmed; a status query 7 seconds later found the operation completed.",
+      "tool_calls": 4,
+      "tool_calls_by_name": {
+        "workspace_list_files": 1,
+        "workspace_read_file": 2,
+        "workspace_search": 1,
+        "workspace_propose_file_edit": 0,
+        "workspace_propose_shell_command": 0
+      },
+      "focus_sequence": [
+        "Listed src/layouts/DocsLayout.astro",
+        "Read src/layouts/DocsLayout.astro",
+        "Searched for an unrelated MCP metadata string copied from that file",
+        "Read one line from the same file"
+      ],
+      "input_tokens": 20982,
+      "output_tokens": 559,
+      "cache_read_tokens": 13075,
+      "usage_reported": true,
+      "external_checks": [],
+      "oracle_result": "Clean worktree; requested change absent; no check run because no edit was made.",
+      "failure_class": "read-search-meander-then-clarification-despite-explicit-task",
+      "resource_observation": {
+        "qwen_runner_rss_gib": 5.9,
+        "qwen_runner_cpu_percent_sample": 990,
+        "host_available_memory_gib_sample": 1.6,
+        "note": "Single host samples under concurrent workload; not peak or comparative measurements."
+      },
+      "trace_summary": "Private ATIF trajectory inspected locally and reduced to the sanitized tool sequence above; raw trace not committed."
+    },
+    {
+      "runner": "OpenCode standalone",
+      "version": "2.2.5",
+      "source_commit": null,
+      "config": "Local Ollama qwen3:8b, context 4096, output 2048, reasoningEffort none; edit/bash ask auto-approved, webfetch/external-directory denied, MCP and plugins disabled.",
+      "elapsed_seconds": 300.02,
+      "status": "external_timeout_without_output",
+      "stdout_bytes": 0,
+      "stderr_bytes": 0,
+      "tool_calls_observed": null,
+      "edit_proposals": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "oracle_result": "Clean worktree; no edit observed. No check run.",
+      "failure_class": "no_output_before_300_second_limit",
+      "trace_available": false,
+      "resource_observation": {
+        "qwen_runner_rss_gib": 5.9,
+        "qwen_runner_cpu_percent_sample": 1000,
+        "host_available_memory_gib_sample": 1.5,
+        "note": "Single host samples under concurrent workload; not peak or comparative measurements. The exact local runner process started for this run was terminated after the OpenCode client timed out."
+      }
+    }
+  ],
+  "interpretation": "One matched task trial produced zero correct outcomes for both Veasel and OpenCode under a 300-second budget. Veasel emitted a sanitized trace showing four workspace calls and no edit. OpenCode emitted no output and has no retained tool trace. This pair does not establish comparative quality or speed; more trials and task types are required.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  },
+  "configuration_reference": "https://docs.opencode.ai/docs/models/"
+}

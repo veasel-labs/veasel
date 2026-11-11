@@ -1,0 +1,62 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External diff against a clean archived task base. Success requires the accessible responsive docs navigation, the requested checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Veasel PR #610 production-profile headless benchmark build",
+    "source_commit": "294e13b3c3d50d1dce9bd827f2948960f7b18c80",
+    "binary_sha256": "5a9933ddc88809cde5eb07502a86700553aaa5a4ce365d7d06807aa440975816",
+    "compiler": "V 0.5.2 b0ceb9b; gcc -prod",
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "permissions": "Autonomous workspace edits and shell execution enabled only inside an externally isolated Bubblewrap workspace; MCP disabled.",
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 300,
+    "status": "timed_out_after_repeated_off_target_exploration",
+    "cli_result": "veasel run reached its 300-second limit. Its cancellation request initially could not be confirmed; the isolated operation was then cancelled through the session API and persisted as cancelled. No task files were modified.",
+    "tool_calls_observed": 20,
+    "tool_call_summary": {
+      "workspace_list_files": 1,
+      "workspace_read_file": 16,
+      "workspace_search": 3,
+      "workspace_propose_file_edit": 0,
+      "workspace_propose_shell_command": 0,
+      "context_compaction_events": 20,
+      "paths_and_queries": [
+        "Listed src/layouts/DocsLayout.astro; read it twice.",
+        "Read src/scripts/releases.js 14 times.",
+        "Searched for function newestPreviewRelease twice and verifiedPreviewRelease once."
+      ]
+    },
+    "trace_available": true,
+    "trace_summary": "Private ATIF trace was read from the isolated SQLite operation record and reduced to the sanitized counts above. The agent first inspected DocsLayout.astro, then shifted to the release comparator, repeated reads and unrelated searches, and did not propose an edit or shell command. The relevance gate withheld edit access because those search queries did not match the task request.",
+    "oracle_result": "Recursive diff against the archived task base was empty outside node_modules. No requested check or viewport verification ran.",
+    "failure_class": "repeated_off_target_reads_and_searches_then_timeout",
+    "resource_observation": {
+      "model_rss_gib_sample": 5.9,
+      "host_available_memory_gib_sample": 1.4,
+      "swap_used_gib_sample": 7.7,
+      "note": "Single samples during the run, not peaks. The model process was idle after confirmed operation cancellation and unloaded by Ollama; the isolated Veasel server was stopped. An unrelated server on port 44113 was left untouched."
+    },
+    "provider_usage": {
+      "reported": false,
+      "input_tokens": null,
+      "output_tokens": null
+    }
+  },
+  "interpretation": "This attempt scored 0/1. The action-first prompt produced workspace calls, but did not make the model follow through. The relevance gate prevented an unrelated edit proposal, while allowing irrelevant searches and subsequent reads to consume the turn. This evidence motivates blocking unrelated searches and constraining follow-up reads to search-result paths. It does not establish improved real-task success or a comparative quality or speed result.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "prompt_text_or_source_committed": false,
+    "credentials_committed": false
+  }
+}

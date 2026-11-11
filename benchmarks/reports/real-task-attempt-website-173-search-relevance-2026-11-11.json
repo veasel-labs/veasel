@@ -1,0 +1,50 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "c6cdb2d9d991081663243e2efe51216b6f838e5dcc445feb2dc2d161eab5cb16",
+    "oracle": "External diff against a clean archive of the task base. Success requires the accessible responsive docs navigation, exact requested checks, and external inspection at the requested viewports."
+  },
+  "runner": {
+    "name": "Veasel current-source headless benchmark build with search relevance gate",
+    "source_commit": "81cf2b93164509ada23e83bf635f1806883cd790",
+    "source_state": "Uncommitted retry, tool-availability, per-read identity, and lexical search-relevance changes based on main. This binary predates the follow-up that accepts a full-file read made before a relevant search; the follow-up was not exercised because the model made zero tool calls.",
+    "binary_sha256": "4b729832602243c7862211fb23fefa0bd33193768da2d2bdd1371e76db7b3f74",
+    "compiler": "V 0.5.2 b0ceb9b",
+    "provider": "Local Ollama 0.40.13",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "reasoning_effort": "none",
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 178,
+    "status": "completed_without_workspace_tool_calls",
+    "cli_result": "--json returned completed with status completed and no error. The session trace and event rows show repeated assistant text, one empty assistant response, then the incomplete-task guard. No workspace tool call was made.",
+    "tool_calls_observed": 0,
+    "trace_available": true,
+    "trace_summary": "Private ATIF trace inspected locally and reduced to the following sanitized result: three repeated text responses said the model would inspect src/layouts/DocsLayout.astro but did not call a tool; one empty response followed; the final response said no workspace edit or successful shell command occurred. The search relevance gate was not exercised because the model made no search call.",
+    "oracle_result": "External diff against the clean archive is empty outside generated build artifacts. The requested navigation is absent. No requested check or viewport verification was run by the agent.",
+    "failure_class": "repeated_text_without_tool_use_then_incomplete_completion",
+    "resource_observation": {
+      "qwen_runner_rss_gib_sample": 5.6,
+      "qwen_runner_cpu_percent_sample": 1022,
+      "host_available_memory_gib_sample": null,
+      "note": "Single runner samples during the attempt, not peaks. Host available memory was not sampled. The exact runner remained after the isolated client/server exited and was stopped after confirming its port was closed."
+    },
+    "provider_usage": {
+      "reported": true,
+      "input_tokens": 13896,
+      "output_tokens": 302,
+      "cache_read_tokens": 8967
+    }
+  },
+  "interpretation": "This attempt scored 0/1. The model never used the workspace tools, so it neither tests whether the lexical relevance gate blocks unrelated searches nor demonstrates improved task success. Together with the matched OpenCode Qwen3:8b failure, it keeps model capability and agent orchestration as separate unresolved questions; it supports no comparative quality or speed claim.",
+  "privacy": {
+    "raw_traces_committed": false,
+    "prompt_text_or_source_committed": false,
+    "credentials_committed": false
+  }
+}

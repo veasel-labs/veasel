@@ -268,19 +268,18 @@ TASKS = [
     },
     {
         "id": "fix-failing-test",
-        "prompt": "Fix failing test",
-        # The scripted model first runs the workspace check, which fails
-        # because the greet function does not exist yet. Only after that
-        # failed result does it apply the greet edit, then it re-runs the
-        # same check and it passes. A pass proves the fail->fix->re-verify
-        # self-correction loop, scored on the final file contents.
+        "prompt": "Fix failing test in the workspace",
+        # The scripted model searches for and reads the relevant workspace
+        # source, applies the greet edit, then runs a shell check. A pass
+        # proves focused read->edit->verify follow-through, scored on the
+        # final file contents and the verification result.
         "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
-        "check_description": "a failing shell check is fixed by the greet edit and the re-run check passes in the same run",
+        "check_description": "the initially failing greet grep passes after relevant search/read, an edit, and in-run shell verification",
         "expect_response": "Fixed failing test.",
     },
     {
         "id": "vendored-project-fix",
-        "prompt": "Fix vendored project tests",
+        "prompt": "Fix vendored project tests in token-bucket-fixture",
         # A real multi-file V project (fixtures/token-bucket) with a planted
         # bug: Bucket.allow never refills, so its own test suite fails. The
         # scripted model reads the implementation, applies the refill fix,

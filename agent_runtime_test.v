@@ -68,6 +68,9 @@ fn test_explicit_agent_code_change_request_uses_only_latest_user_message() {
 
 fn test_code_change_system_instruction_is_conditional_and_actionable() {
 	instruction := agent_system_code_change_instruction(true)
+	assert instruction.contains('start with a workspace tool call immediately')
+	assert instruction.contains('Do not send an acknowledgement, plan, or promise')
+	assert instruction.contains('If the request names a file, read it')
 	assert instruction.contains('read the complete target file and relevant tests')
 	assert instruction.contains('workspace_propose_file_edit')
 	assert instruction.contains('old_text')
@@ -118,24 +121,120 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 		AgentToolDefinition{ name: 'workspace_propose_file_edit' },
 		AgentToolDefinition{ name: 'workspace_propose_shell_command' },
 	]
-	read_phase := agent_code_change_tools_for_progress(tools, true, false, false, false)
+	read_phase := agent_code_change_tools_for_progress(tools, true, false, 0, false, false, false)
 	assert read_phase.map(it.name) == ['workspace_list_files', 'workspace_read_file', 'workspace_search']
-	retry_phase := agent_code_change_tools_for_progress(tools, true, false, false, true)
-	assert retry_phase.any(it.name == 'workspace_propose_file_edit')
+	retry_phase := agent_code_change_tools_for_progress(tools, true, false, 0, false, false, true)
+	assert retry_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
 	assert !retry_phase.any(it.name == 'workspace_propose_shell_command')
-	edit_phase := agent_code_change_tools_for_progress(tools, true, false, true, false)
+	read_without_search_phase := agent_code_change_tools_for_progress(tools, true, false, 1, false,
+		false, false)
+	assert read_without_search_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
+	search_phase := agent_code_change_tools_for_progress(tools, true, false, 1, true, false,
+		false)
+	assert search_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
+	search_read_phase := agent_code_change_tools_for_progress(tools, true, false, 2, true, true,
+		false)
+	assert search_read_phase.map(it.name) == ['workspace_read_file', 'workspace_search',
+		'workspace_propose_file_edit']
+	retry_edit_phase := agent_code_change_tools_for_progress(tools, true, false, 2, true, true,
+		true)
+	assert retry_edit_phase.map(it.name) == ['workspace_read_file', 'workspace_search',
+		'workspace_propose_file_edit']
+	edit_phase := agent_code_change_tools_for_progress(tools, true, false, 2, true, true, false)
 	assert edit_phase.map(it.name) == ['workspace_read_file', 'workspace_search',
 		'workspace_propose_file_edit']
 	assert !edit_phase.any(it.name == 'workspace_list_files')
 	assert !edit_phase.any(it.name == 'workspace_propose_shell_command')
-	complete_phase := agent_code_change_tools_for_progress(tools, true, true, true, false)
+	complete_phase := agent_code_change_tools_for_progress(tools, true, true, 2, true, true, false)
 	assert complete_phase.len == tools.len
-	assert agent_code_change_tools_for_progress(tools, false, false, false, false).len == tools.len
+	assert agent_code_change_tools_after_edit_failures(search_read_phase, true,
+		max_agent_code_change_edit_recovery_attempts).any(it.name == 'workspace_propose_file_edit')
+	exhausted_phase := agent_code_change_tools_after_edit_failures(complete_phase, true,
+		max_agent_code_change_edit_recovery_attempts + 1)
+	assert exhausted_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
+	assert agent_code_change_tools_after_edit_failures(complete_phase, false,
+		max_agent_code_change_edit_recovery_attempts + 1).len == complete_phase.len
+	assert agent_code_change_tools_for_progress(tools, false, false, 0, false, false, false).len == tools.len
+	assert !agent_tool_available_in_turn('workspace_propose_file_edit', read_phase)
+	assert !agent_tool_available_in_turn('workspace_propose_file_edit', search_phase)
+	assert agent_tool_available_in_turn('workspace_propose_file_edit', search_read_phase)
+	assert agent_tool_result_search_paths('{"matches":[]}').len == 0
+	assert agent_tool_result_search_paths('{"error":"invalid search"}').len == 0
+	assert agent_tool_result_search_paths('{"matches":[{"path":"README.md","line":1,"text":"Original README"}]}') == ['README.md']
+	request := 'Please implement mobile docs navigation with a sidebar Browse sections control.'
+	assert !agent_search_query_matches_request('MCP metadata', request)
+	assert agent_search_query_matches_request('mobile navigation', request)
+	assert agent_search_query_matches_request('sidebar', request)
+	assert agent_search_query_matches_request('mobile', request)
+	assert !agent_search_query_matches_request('docs', request)
+	assert !agent_search_query_matches_request('DocsLayout', request)
+	assert !agent_search_query_matches_request('release build', 'Please build the release.')
+	assert agent_search_query_matches_request('navigation', request)
+	assert agent_search_query_matches_request('DocsLayout mobile', request)
+	unrelated_search_phase := agent_code_change_tools_for_progress(tools, true, false, 1,
+		agent_search_query_matches_request('MCP metadata', request), false, false)
+	assert !unrelated_search_phase.any(it.name == 'workspace_propose_file_edit')
+	matching_read := ProviderToolCall{
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"README.md","start_line":1,"line_count":1}'
+		}
+	}
+	unrelated_read := ProviderToolCall{
+		function: ProviderFunctionCall{
+			name:      'workspace_read_file'
+			arguments: '{"path":"CONTRIBUTING.md","start_line":1,"line_count":1}'
+		}
+	}
+	assert agent_workspace_read_call_allowed(matching_read, true, 0, false, map[string]bool{}, false)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 0, false, map[string]bool{}, true)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, false, map[string]bool{}, false)
+	mut matched_paths := map[string]bool{}
+	matched_paths['README.md'] = true
+	assert agent_workspace_read_call_allowed(matching_read, true, 1, true, matched_paths, false)
+	assert !agent_workspace_read_call_allowed(unrelated_read, true, 1, true, matched_paths, false)
+	unrelated_search := ProviderToolCall{
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"query":"function newestPreviewRelease"}'
+		}
+	}
+	matching_search := ProviderToolCall{
+		function: ProviderFunctionCall{
+			name:      'workspace_search'
+			arguments: '{"query":"sidebar"}'
+		}
+	}
+	assert !agent_workspace_search_call_relevant(unrelated_search, true, request)
+	assert agent_workspace_search_call_relevant(matching_search, true, request)
+	matching_identity := workspace_read_identity_from_call(matching_read) or {
+		panic('expected matching read identity')
+	}
+	unrelated_identity := workspace_read_identity_from_call(unrelated_read) or {
+		panic('expected unrelated read identity')
+	}
+	mut reads_before_batch := map[string]bool{}
+	mut reads_after_batch := map[string]bool{}
+	reads_after_batch[unrelated_identity] = true
+	assert !agent_workspace_read_succeeded_since(matching_read, reads_before_batch,
+		reads_after_batch)
+	reads_after_batch[matching_identity] = true
+	assert agent_workspace_read_succeeded_since(matching_read, reads_before_batch,
+		reads_after_batch)
+	full_read_identity := json2.encode[[]string](['README.md'])
+	mut previously_read := map[string]bool{}
+	previously_read[full_read_identity] = true
+	assert agent_workspace_file_was_read('README.md', previously_read)
+	assert !agent_workspace_file_was_read('CONTRIBUTING.md', previously_read)
 }
 
 fn test_agent_code_change_followthrough_retry_requires_edit_tool_and_deadline() {
 	deadline := time.now().add(60 * time.second)
 	tools := [AgentToolDefinition{ name: 'workspace_propose_file_edit' }]
+	assert agent_code_change_retry_after_read_prompt.contains('do not ask the user to repeat details')
+	assert agent_code_change_retry_after_read_prompt.contains('Search using one or more distinctive terms from the original request')
+	assert agent_code_change_retry_after_read_prompt.contains('Do not make cosmetic or unrelated edits')
+	assert !agent_code_change_retry_after_read_prompt.contains('have not yet located')
 	messages := [ChatMessage{
 		role:    'user'
 		content: 'Please update the README.'
@@ -171,6 +270,30 @@ fn test_agent_tool_result_effect_status_requires_applied_effect() {
 	assert !agent_tool_result_applied_workspace_effect(edit_call, json2.encode(AgentWorkspaceEditResult{
 		note: 'Stored for human review. The file has not been changed.'
 	}))
+	assert agent_tool_result_workspace_edit_proposal_succeeded(edit_call,
+		json2.encode(AgentWorkspaceEditResult{
+			id:   'edit-1'
+			path: 'src/file.v'
+			note: 'Stored for human review. The file has not been changed.'
+		}))
+	assert !agent_tool_result_workspace_edit_proposal_succeeded(edit_call,
+		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'))
+	assert agent_tool_result_workspace_edit_failed(edit_call,
+		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'))
+	assert agent_tool_result_workspace_edit_recoverable(edit_call,
+		encode_agent_tool_error('replacement text must match exactly once; found 0 occurrences'), false)
+	assert !agent_tool_result_workspace_edit_recoverable(edit_call,
+		encode_agent_tool_error('Tool is not available in the current progress phase.'), true)
+	assert !agent_tool_result_workspace_edit_failed(edit_call,
+		json2.encode(AgentWorkspaceEditResult{
+			id:   'edit-1'
+			path: 'src/file.v'
+			note: 'Stored for human review. The file has not been changed.'
+		}))
+	assert !agent_tool_result_workspace_edit_failed(edit_call,
+		encode_agent_tool_error('The edit was applied but its outcome could not be recorded; inspect the workspace.'))
+	assert agent_tool_result_workspace_edit_effect_uncertain(edit_call,
+		encode_agent_tool_error('The edit was applied but its outcome could not be recorded; inspect the workspace.'))
 	assert agent_tool_result_pending_workspace_effect_review(edit_call,
 		json2.encode(AgentWorkspaceEditResult{
 			note: 'Stored for human review. The file has not been changed.'
@@ -847,6 +970,35 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 	commands := store.shell_commands(session.id) or { panic(err) }
 	assert commands.len == 1
 	assert commands[0].status == 'succeeded'
+}
+
+fn test_invalid_workspace_replacement_is_recoverable_and_leaves_file_unchanged() {
+	root := os.join_path(os.temp_dir(), 'veasel-invalid-replacement-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	file_path := os.join_path(root, 'target.txt')
+	os.write_file(file_path, 'current source text') or { panic(err) }
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	session := store.create_session(SessionInput{ title: 'Invalid replacement fixture', directory: root }) or {
+		panic(err)
+	}
+	mut background := vcontext.background()
+	call := ProviderToolCall{
+		id:       'invalid-replacement'
+		function: ProviderFunctionCall{
+			name:      'workspace_propose_file_edit'
+			arguments: '{"path":"target.txt","old_text":"placeholder absent from file","new_text":"requested value"}'
+		}
+	}
+	result := execute_autonomous_workspace_agent_tool(app, mut background, root, session.id, call)
+	assert agent_tool_result_workspace_edit_failed(call, result)
+	assert !agent_tool_result_workspace_edit_proposal_succeeded(call, result)
+	assert os.read_file(file_path) or { panic(err) } == 'current source text'
+	assert (store.workspace_edits(session.id) or { panic(err) }).len == 0
 }
 
 fn test_autonomous_shell_environment_does_not_forward_credentials() {
@@ -1819,9 +1971,74 @@ fn test_agent_tool_call_budget_returns_durable_summary_instead_of_failing_turn()
 
 struct AgentCodeChangeFollowthroughFixture {
 mut:
-	hits           int
-	request_bodies []string
-	reply_text     string
+	hits                 int
+	request_bodies       []string
+	reply_text           string
+	recover_invalid_edit bool
+}
+
+fn agent_code_change_recovery_chunk(hit int) OpenAIStreamChunk {
+	if hit == 1 {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'sidebar-search'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_search'
+							arguments: '{"query":"sidebar"}'
+						}
+					}]
+				}
+			}]
+		}
+	}
+	if hit in [2, 4] {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'sidebar-read-${hit}'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_read_file'
+							arguments: '{"path":"README.md"}'
+						}
+					}]
+				}
+			}]
+		}
+	}
+	if hit in [3, 5] {
+		arguments := if hit == 3 {
+			'{"path":"README.md","old_text":"text not present in file","new_text":"Browse documentation"}'
+		} else {
+			'{"path":"README.md","old_text":"Browse sections","new_text":"Browse documentation"}'
+		}
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'sidebar-edit-${hit}'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_propose_file_edit'
+							arguments: arguments
+						}
+					}]
+				}
+			}]
+		}
+	}
+	return OpenAIStreamChunk{
+		choices: [OpenAIStreamChoice{
+			delta: OpenAIStreamDelta{ content: 'I prepared the corrected sidebar edit for review.' }
+		}]
+	}
 }
 
 fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request) http.Response {
@@ -1833,19 +2050,53 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 				delta: OpenAIStreamDelta{ content: fixture.reply_text }
 			}]
 		}
+	} else if fixture.recover_invalid_edit {
+		agent_code_change_recovery_chunk(fixture.hits)
 	} else if fixture.hits == 1 {
-		OpenAIStreamChunk{
-			choices: [OpenAIStreamChoice{
-				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
-			}]
-		}
-	} else if fixture.hits == 2 {
 		OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
 				delta: OpenAIStreamDelta{
 					tool_calls: [OpenAIStreamToolCallDelta{
 						index:    0
-						id:       'edit-proposal-1'
+						id:       'readme-read-1'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_read_file'
+							arguments: '{"path":"README.md"}'
+						}
+					}]
+				}
+			}]
+		}
+	} else if fixture.hits == 2 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{ content: 'I will take a look.' }
+			}]
+		}
+	} else if fixture.hits == 3 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'readme-search-1'
+						type:     'function'
+						function: OpenAIStreamFunctionDelta{
+							name:      'workspace_search'
+							arguments: '{"query":"fixture changed"}'
+						}
+					}]
+				}
+			}]
+		}
+	} else if fixture.hits == 4 {
+		OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					tool_calls: [OpenAIStreamToolCallDelta{
+						index:    0
+						id:       'edit-proposal-${fixture.hits}'
 						type:     'function'
 						function: OpenAIStreamFunctionDelta{
 							name:      'workspace_propose_file_edit'
@@ -1892,7 +2143,9 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
 	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
-	os.write_file(os.join_path(workspace, 'README.md'), 'Original README\n') or { panic(err) }
+	os.write_file(os.join_path(workspace, 'README.md'), 'Original README\nThe fixture changed.\nUnrelated context\n') or {
+		panic(err)
+	}
 	mut fixture := &AgentCodeChangeFollowthroughFixture{}
 	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
 		panic(err)
@@ -1926,20 +2179,90 @@ fn test_agent_retries_explicit_code_request_after_text_only_completion() {
 	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
 		panic(err)
 	}
-	assert fixture.hits == 3
-	assert fixture.request_bodies.len == 3
-	assert fixture.request_bodies[1].contains(agent_code_change_retry_prompt)
+	assert fixture.hits == 5
+	assert fixture.request_bodies.len == 5
+	assert fixture.request_bodies[2].contains(agent_code_change_retry_after_read_prompt)
+	search_request := json2.decode[OpenAIRequest](fixture.request_bodies[2]) or { panic(err) }
+	assert !search_request.tools.any(it.function.name == 'workspace_propose_file_edit')
+	edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[3]) or { panic(err) }
+	assert edit_request.tools.any(it.function.name == 'workspace_propose_file_edit')
 	assert !exchange.messages.any(it.content == 'I will take a look.')
 	assert exchange.messages.last().content.contains('pending human review'), exchange.messages.last().content
 	assert !exchange.messages.last().content.contains('I prepared the README edit for review.')
 	assert store.assistant_text_for_operation(session.id, operation_id) or { panic(err) } == exchange.messages.last().content
-	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'Original README\n'
+	assert os.read_file(os.join_path(workspace, 'README.md')) or {
+		panic(err)
+	} == 'Original README\nThe fixture changed.\nUnrelated context\n'
 	edits := store.workspace_edits(session.id) or { panic(err) }
 	assert edits.len == 1
 	assert edits[0].status == 'pending'
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('I will take a look.')
-	assert trace.contains(agent_code_change_retry_prompt)
+	assert trace.contains(agent_code_change_retry_after_read_prompt)
+}
+
+fn test_agent_recovers_once_from_invalid_exact_replacement() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-edit-recovery-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'sidebar menu: Browse sections\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		recover_invalid_edit: true
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Invalid exact replacement recovery'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please change the mobile sidebar label to Browse documentation.'
+		collect_trace: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 6
+	assert fixture.request_bodies.len == 6
+	assert fixture.request_bodies[3].contains(agent_code_change_edit_recovery_prompt)
+	recovery_request := json2.decode[OpenAIRequest](fixture.request_bodies[3]) or { panic(err) }
+	assert recovery_request.tools.any(it.function.name == 'workspace_read_file')
+	assert !recovery_request.tools.any(it.function.name == 'workspace_propose_file_edit')
+	corrected_edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[4]) or { panic(err) }
+	assert corrected_edit_request.tools.any(it.function.name == 'workspace_propose_file_edit'), 'available tools: ${corrected_edit_request.tools.map(it.function.name)}; prior tool result: ${corrected_edit_request.messages.filter(it.role == 'tool').map(it.content)}'
+	assert exchange.messages.last().content.contains('pending human review')
+	assert !exchange.messages.last().content.contains('I prepared the corrected sidebar edit for review.')
+	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse sections\n'
+	edits := store.workspace_edits(session.id) or { panic(err) }
+	assert edits.len == 1
+	assert edits[0].status == 'pending'
+	assert edits[0].path == 'README.md'
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('replacement text must match exactly once; found 0 occurrences')
+	assert trace.contains(agent_code_change_edit_recovery_prompt)
 }
 
 fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effect() {

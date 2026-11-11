@@ -1800,6 +1800,12 @@ fn session_turn_failure(message string) (string, string) {
 	if message.to_lower().contains('response body ended early') {
 		return 'failed', 'Model provider connection dropped before the response completed; retry shortly.'
 	}
+	// V's HTTP client reports socket read deadlines as "net: op timed out".
+	// Keep the transport details private while distinguishing a stalled
+	// provider response from an unknown assistant failure.
+	if message.to_lower().contains('net: op timed out') {
+		return 'failed', 'Model provider timed out before the response completed; retry shortly or check the provider service.'
+	}
 	if _ := provider_socket_errno_from_error(message) {
 		return 'failed', 'Could not reach the model provider endpoint. Check the provider base URL and that the service is running, then try again.'
 	}

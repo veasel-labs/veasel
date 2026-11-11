@@ -45,6 +45,10 @@ fn test_session_turn_failure_names_unreachable_endpoint() {
 
 	_, dropped_error := session_turn_failure('response body ended early')
 	assert dropped_error.contains('connection dropped before the response completed')
+
+	_, timed_out_error := session_turn_failure('net: op timed out')
+	assert timed_out_error.contains('Model provider timed out before the response completed')
+	assert !timed_out_error.contains('net: op timed out')
 }
 
 fn test_session_turn_failure_keeps_internal_and_generic_mappings() {

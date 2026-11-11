@@ -43,7 +43,9 @@
       "elapsed_seconds": 351,
       "status": "failed",
       "tool_calls": 1,
-      "tool_names": ["workspace_list_files"],
+      "tool_names": [
+        "workspace_list_files"
+      ],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": null,
@@ -64,7 +66,10 @@
       "elapsed_seconds": null,
       "status": "completed",
       "tool_calls": 16,
-      "tool_names": ["workspace_list_files","workspace_read_file"],
+      "tool_names": [
+        "workspace_list_files",
+        "workspace_read_file"
+      ],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 91965,
@@ -85,7 +90,10 @@
       "elapsed_seconds": null,
       "status": "completed",
       "tool_calls": 16,
-      "tool_names": ["workspace_list_files","workspace_read_file"],
+      "tool_names": [
+        "workspace_list_files",
+        "workspace_read_file"
+      ],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 91865,
@@ -105,7 +113,10 @@
       "elapsed_seconds": null,
       "status": "completed",
       "tool_calls": 22,
-      "tool_names": ["workspace_list_files","workspace_read_file"],
+      "tool_names": [
+        "workspace_list_files",
+        "workspace_read_file"
+      ],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 122769,
@@ -144,13 +155,19 @@
       "elapsed_seconds": 340,
       "status": "completed",
       "tool_calls": 1,
-      "tool_names": ["skill:web-design-guidelines"],
+      "tool_names": [
+        "skill:web-design-guidelines"
+      ],
       "edit_proposals": 0,
       "result": "wrong_skill_selection_then_no_implementation",
       "oracle_result": "clean worktree; expected change absent",
       "resource_measurements": null,
       "source_report": "real-task-attempts/opencode-qwen3-8b-website-173-20261110.json",
-      "limitations": ["Different tool policy","No explicit output-token cap","One diagnostic sample"]
+      "limitations": [
+        "Different tool policy",
+        "No explicit output-token cap",
+        "One diagnostic sample"
+      ]
     },
     {
       "runner": "Veasel packaged TUI",
@@ -233,7 +250,9 @@
       "elapsed_seconds": 170,
       "status": "completed_without_edit",
       "tool_calls": 8,
-      "tool_names": ["workspace_list_files"],
+      "tool_names": [
+        "workspace_list_files"
+      ],
       "edit_proposals": 0,
       "shell_proposals": 0,
       "input_tokens": 37080,
@@ -273,13 +292,40 @@
       "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
       "source_report": "real-task-attempts/veasel-qwen3-8b-website-173-after-honesty-guard-2026-11-11.json",
       "notes": "Veasel replaced model intent/clarification text with an explicit incomplete status; the replacement was the persisted final assistant message."
+    },
+    {
+      "runner": "Veasel headless sandbox build with explicit active context window",
+      "version": "0.1.0-dev",
+      "product_commit": "07141f4e9f3b96a09358e08ba82e4432a11ba61d",
+      "binary_sha256": "02b9facf9d6bdac58cbde513fdecc3e6932d63f0616593152378335575908b91",
+      "model": "qwen3:8b",
+      "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+      "provider": "local Ollama 0.40.13",
+      "context_tokens": 4096,
+      "output_budget_tokens": 2048,
+      "elapsed_seconds": 144,
+      "status": "completed_without_edit",
+      "tool_calls": 2,
+      "tool_names": [
+        "workspace_list_files"
+      ],
+      "edit_proposals": 0,
+      "shell_proposals": 0,
+      "input_tokens": 12836,
+      "output_tokens": 224,
+      "cache_read_tokens": 8260,
+      "result": "no_edit_after_context_window_override_and_followthrough",
+      "oracle_result": "clean worktree; expected change absent",
+      "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+      "source_report": "real-task-attempts/veasel-qwen3-8b-website-173-context-window-2026-11-11.json",
+      "notes": "Against the immediately prior guarded run with the same prompt/model/base/budgets/permissions, one explicit 4096-token runtime window was associated with 12836 vs 49231 input tokens, 144 vs 274 seconds, and 2 vs 13 tool calls. No edit was proposed in either run; this is one diagnostic pair, not a general performance or coding-quality claim."
     }
   ],
   "score": {
     "task_successes": 0,
-    "attempts_in_snapshot": 12,
+    "attempts_in_snapshot": 13,
     "controlled_comparison": false,
-    "claim": "No externally verified coding-task success in 12 attempts. One matched Qwen3:8b Veasel/OpenCode diagnostic pair produced zero edits. A Qwen3:14b Veasel attempt was cancelled before the first tool call due host memory pressure and is unscored. Two repeated Veasel Qwen3:8b runs of the same task still produced no patch: the pre-guard build ended with unsupported intent/clarification text after 8 directory listings; the guarded build ended with an honest incomplete response after 9 directory listings, 2 file reads, and 2 failed shell proposals, with one observed prompt truncation. The honesty behavior improved; coding success did not. No comparative performance claim is supported."
+    "claim": "No externally verified coding-task success in 13 attempts. One matched Qwen3:8b Veasel/OpenCode diagnostic pair produced zero edits. A Qwen3:14b Veasel attempt was cancelled before the first tool call due host memory pressure and is unscored. The latest Qwen3:8b run used an explicit 4096-token context window: compared with the immediately prior guarded run, input tokens were 12836 vs 49231, elapsed time 144 vs 274 seconds, and tool calls 2 vs 13; both runs produced no edit. The override addressed observed prompt truncation and exploration volume, but coding follow-through remains unresolved. No comparative performance claim is supported."
   },
   "privacy": {
     "raw_traces_contain_workspace_content": true,

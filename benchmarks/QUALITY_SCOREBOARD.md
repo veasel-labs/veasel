@@ -7,7 +7,7 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
-| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 12 attempts (1 resource-aborted) | 0 | No run produced the expected patch. The guarded Qwen3:8b run now ends with an honest incomplete response, but still made no edit after 9 directory listings, 2 reads, and 2 failed shell proposals; Ollama truncated one 4282-token prompt to 2050 under the 4096 context. The separate Qwen3:14b run remains unscored due host memory pressure. |
+| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 13 attempts (1 resource-aborted) | 0 | No run produced the expected patch. An explicit 4096-token context window reduced one guarded Qwen3:8b run to 2 directory listings and 12,836 input tokens (previous guarded run: 13 tool calls and 49,231 input tokens); the model still proposed no edit after follow-through retry. The separate Qwen3:14b run remains unscored due host memory pressure. |
 
 The attempts use local Qwen models. One Veasel packaged TUI run and one OpenCode
 2.2.5 TUI run now form a matched diagnostic pair: same task, exact prompt hash,
@@ -31,15 +31,13 @@ and [snapshot](reports/real-task-website-173-2026-11-11.json) record the evidenc
 ## Measurement limits
 
 The snapshot does not include CPU, peak memory, or complete timing for every
-attempt. The official-release replay's elapsed time is measured from the
-command session at roughly 351 seconds; the other missing metrics remain
-unknown. The historical Qwen3 and Qwen2.5 summaries are sanitized local
-reports. The packaged TUI sample measured 5.9 GB model RSS and about 3.1
-generated tokens/second on CPU. Other attempts still lack CPU, peak memory, and
-complete timing. The official-release headless replay took roughly 351 seconds;
-the TUI provider request failed at 180 seconds. Private ATIF traces remain
-outside version control because they may contain workspace source and
-instructions.
+attempt. The latest context-window run took 144 seconds versus 274 seconds in
+the immediately prior guarded run; this is one diagnostic pair and is not a
+general speed claim. It sampled 5.9 GiB model RSS and 4.1 GiB host-available
+memory, not peak values. The official-release replay took roughly 351 seconds;
+the TUI provider request failed at 180 seconds. Other attempts still lack CPU,
+peak-memory, or complete timing data. Private ATIF traces remain outside version
+control because they may contain workspace source and instructions.
 
 ## Model capability probe
 

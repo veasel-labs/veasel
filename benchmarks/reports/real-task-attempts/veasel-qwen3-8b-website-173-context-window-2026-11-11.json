@@ -1,0 +1,63 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-11",
+  "runner": {
+    "name": "Veasel headless sandbox build with explicit active context window",
+    "product_version": "0.1.0-dev",
+    "source_commit": "07141f4e9f3b96a09358e08ba82e4432a11ba61d",
+    "binary_sha256": "02b9facf9d6bdac58cbde513fdecc3e6932d63f0616593152378335575908b91"
+  },
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "bed1100dc5b215dc913fa3cba56741fd60b532b1353c9fc8145b9733c3503bee",
+    "oracle": "Independent clean-clone diff for the expected accessible responsive docs sidebar change."
+  },
+  "model": {
+    "provider": "Ollama local OpenAI-compatible endpoint",
+    "version": "0.40.13",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "quantization": "Q4_K_M",
+    "runner_backend": "llama.cpp on CPU",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048
+  },
+  "execution": {
+    "tool_policy": "autonomous inside bubblewrap; writable mount limited to the disposable task checkout and isolated state directory; host home and credentials were not mounted",
+    "wall_budget_seconds": 1200,
+    "provider_request_read_timeout_seconds": 180,
+    "sandbox_network": "shared host network to reach local Ollama; no model API key was configured",
+    "context_window_override": "VEASEL_MODEL_CONTEXT_TOKENS=4096"
+  },
+  "result": {
+    "status": "completed_without_edit",
+    "elapsed_seconds": 144,
+    "input_tokens": 12836,
+    "output_tokens": 224,
+    "cache_read_tokens": 8260,
+    "tool_calls": {
+      "workspace_list_files": 2
+    },
+    "edit_proposals": 0,
+    "workspace_edits_applied": 0,
+    "context_observation": "Ollama reported num_ctx=4096. The final captured request had 3273 prompt tokens and truncated=0; no context truncation was observed in this attempt.",
+    "followthrough_retry_fired": true,
+    "final_behavior": "The model summarized a directory listing and then stopped after the explicit follow-through retry. Veasel persisted an explicit incomplete response.",
+    "oracle_result": "clean worktree; expected change absent",
+    "coding_success": false
+  },
+  "resource_measurements": {
+    "sampling_note": "One live sample during the run; not a peak measurement.",
+    "model_rss_gib_rounded": 5.9,
+    "model_processor": "100% CPU",
+    "host_available_memory_gib": 4.1,
+    "host_swap_used_gib": 6.3,
+    "host_swap_total_gib": 7.8
+  },
+  "privacy": {
+    "raw_atif_trace_committed": false,
+    "summary_contains_prompt_text_or_source": false,
+    "summary_contains_credentials": false
+  }
+}

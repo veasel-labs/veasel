@@ -7,7 +7,7 @@ mission and acceptance gates are tracked in [veasel#549](https://github.com/veas
 
 | Task | Attempts | Success | Current finding |
 |---|---:|---:|---|
-| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 10 attempts (1 resource-aborted) | 0 | No run produced the expected patch. The matched Qwen3:8b Veasel/OpenCode pair yielded no edits. A Qwen3:14b Veasel attempt was cancelled before its first tool call when available RAM fell below 0.5 GiB and swap use reached 7.2/7.8 GiB; it is not scored as a coding failure. |
+| [website#173](https://github.com/veasel-labs/website/issues/173), mobile documentation navigation | 12 attempts (1 resource-aborted) | 0 | No run produced the expected patch. The guarded Qwen3:8b run now ends with an honest incomplete response, but still made no edit after 9 directory listings, 2 reads, and 2 failed shell proposals; Ollama truncated one 4282-token prompt to 2050 under the 4096 context. The separate Qwen3:14b run remains unscored due host memory pressure. |
 
 The attempts use local Qwen models. One Veasel packaged TUI run and one OpenCode
 2.2.5 TUI run now form a matched diagnostic pair: same task, exact prompt hash,

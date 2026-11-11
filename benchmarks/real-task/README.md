@@ -2,8 +2,9 @@
 
 This directory holds versioned coding tasks and a standard-library runner. It
 starts small: `website-173` pins the repository commit, exact prompt hash,
-Qwen3:8b model digest, Ollama version, CUDA/GPU, permissions, context/output budgets, wall limit, and a memory safety
-floor. The runner rejects drift or insufficient host resources before starting
+Qwen3:8b model digest, Ollama version, CUDA/GPU, permissions, context/output
+budgets, wall limit, and a memory safety floor. It has Veasel and OpenCode
+launch adapters for the same case. The runner rejects drift or insufficient host resources before starting
 an attempt. Resource aborts and timeouts are distinct outcomes and are never
 scored as coding failures.
 
@@ -53,11 +54,37 @@ of `completed`, `resource_aborted`, `timeout`, or `agent_error`. A completed
 turn is still **unscored** until an independent reviewer checks the expected
 diff and task-specific tests against the external oracle.
 
+## Run the OpenCode baseline
+
+Reset the same checkout to the same pinned base commit and use the same local
+Ollama endpoint/model and disposable sandbox. OpenCode is pinned at v2.2.5;
+the runner writes a private provider config with the same endpoint and 4096 / 2048
+context/output limits. The command uses OpenCode's documented standalone, model, directory,
+auto-approval, and JSON event options ([CLI docs](https://opencode.ai/docs/cli/commands),
+[Ollama config](https://opencode.ai/docs/providers/)).
+The preflight rejects repository or system OpenCode config files that could
+override the pinned model/provider setup.
+
+```sh
+python3 benchmarks/real-task/run.py preflight --agent opencode \
+  --workspace /path/to/disposable/website-checkout \
+  --data-dir /benchmark/opencode-state
+python3 benchmarks/real-task/run.py run --agent opencode \
+  --workspace /path/to/disposable/website-checkout \
+  --data-dir /benchmark/opencode-state \
+  --artifacts /path/to/private-opencode-attempt \
+  --sandbox-confirmed
+```
+
+Run Veasel and OpenCode as separate attempts from reset workspaces. Do not run
+them concurrently: they share the same local model and host resource budget.
+The reports pin task/model/settings, but a comparison is valid only after both
+outcomes are externally scored against the same oracle.
+
 This first version samples host available RAM and swap. It does not yet collect
 CPU, process/GPU peak memory, or provider-reported token usage, so reports are
 not complete comparative benchmark records and cannot support efficiency or
 speed claims.
 
-The OpenCode baseline still needs an adapter that consumes the same case,
-workspace, Ollama model digest, limits, resource sampling, and oracle. Do not
-compare runs produced by a different case revision or prompt hash.
+No matched OpenCode/Veasel attempt has been completed through this runner yet.
+Do not compare runs produced by a different case revision or prompt hash.

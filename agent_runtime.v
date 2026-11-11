@@ -2,6 +2,7 @@ module main
 
 import context as vcontext
 import json2
+import os
 import time
 
 const max_agent_tool_rounds = 24
@@ -1467,7 +1468,37 @@ fn agent_context_bytes(messages []ChatMessage) int {
 // models return a zero window so no budget is invented for them.
 fn (app &App) active_model_token_budget() (int, int) {
 	config := app.model_config() or { return 0, 0 }
-	return model_context_tokens(config.provider, config.model) or { 0 }, config.max_output_tokens
+	return active_model_context_window(config), config.max_output_tokens
+}
+
+// active_model_context_window accepts an explicit operator-supplied window for
+// custom/local models whose limit is not in the curated model schedule. This
+// takes precedence because a provider's runtime limit can be lower than the
+// model's advertised maximum (for example, Ollama num_ctx).
+fn active_model_context_window(config ModelConfig) int {
+	if raw := os.getenv_opt('VEASEL_MODEL_CONTEXT_TOKENS') {
+		if configured := parse_model_context_window(raw) {
+			return configured
+		}
+	}
+	return model_context_tokens(config.provider, config.model) or { 0 }
+}
+
+fn parse_model_context_window(raw string) ?int {
+	value := raw.trim_space()
+	if value.len == 0 || value.len > 7 {
+		return none
+	}
+	for digit in value {
+		if digit < `0` || digit > `9` {
+			return none
+		}
+	}
+	tokens := value.int()
+	if tokens < 128 || tokens > 1_048_576 {
+		return none
+	}
+	return tokens
 }
 
 fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut messages []ChatMessage,

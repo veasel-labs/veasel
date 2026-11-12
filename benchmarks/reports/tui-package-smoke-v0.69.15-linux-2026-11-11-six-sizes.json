@@ -1,0 +1,86 @@
+{
+  "schema": "veasel.tui-startup.v1",
+  "measuredAt": "2026-11-11T23:07:55Z",
+  "commit": "986fde4f4db8f58b0cc24af49c1e33da8355c3ae",
+  "workflowCommit": null,
+  "host": {
+    "os": "Linux",
+    "release": "7.2.14-arch1-1",
+    "architecture": "x86_64",
+    "cpuCount": 24
+  },
+  "binaries": {
+    "server": "veasel",
+    "tui": "veasel-tui"
+  },
+  "buildProvenance": {
+    "source_commit": "986fde4f4db8f58b0cc24af49c1e33da8355c3ae",
+    "v_compiler_commit": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "v_compiler_version": "V 0.5.2",
+    "c_compiler": "clang",
+    "c_compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "build_flags": "-cc clang -prod -d veasel_version=0.69.15-next.0 -o dist/veasel .",
+    "target": "linux-x64",
+    "binary_sha256": "c014a34b184f884b157b91a504739d6cfbad29ec1b4007d671c0df043ae2ffc2",
+    "tui_binary_sha256": "ae93a2cf684cc19747959d3f290fef8c22ad89977327ee8c3379701ef30cc3e6",
+    "tui_build_target": "bun-linux-x64",
+    "tui_bun_version": "1.4.2",
+    "runner": {
+      "os": "Linux",
+      "architecture": "X64",
+      "image_os": "ubuntu22",
+      "image_version": "20261101.347.1"
+    },
+    "binary_hashes_match": true
+  },
+  "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
+  "firstRunCoverage": {
+    "journey": "clean profile -> /connect -> local provider -> model discovery -> new session -> prompt -> persisted reply",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "apiKeySaved": false,
+    "conversationPersisted": true
+  },
+  "restartCoverage": {
+    "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+    "messagesBeforeRestart": 2,
+    "messagesAfterRestart": 2,
+    "messagesUnchanged": true
+  },
+  "killRecoveryCoverage": {
+    "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+    "operationStatusAfterRestart": "uncertain",
+    "messagesUnchanged": true
+  },
+  "terminalSizes": [
+    "32x12",
+    "40x16",
+    "80x24",
+    "80x30",
+    "100x35",
+    "120x40"
+  ],
+  "startupMs": {
+    "samples": [
+      101.49830400769133
+    ],
+    "count": 1,
+    "min": 101.49830400769133,
+    "median": 101.49830400769133,
+    "max": 101.49830400769133
+  },
+  "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee.",
+  "releaseTag": "v0.69.15-next.0",
+  "acceptanceHarness": {
+    "source_commit": "ed5570310ffbc16a552b3634534e5d3c13a5edbb",
+    "local_patch": "None; ran the checked-in six-size acceptance harness against the official release archive.",
+    "network_isolation": "bubblewrap private network namespace; mock provider fixture reachable only inside isolated loopback",
+    "release_archive_sha256": "792a73ddfb5394651f649025aec9197f4658adeb47d6c3d02ed7b4ebe2329753",
+    "host_ollama": "not accessed; the fixture ran on isolated loopback"
+  }
+}

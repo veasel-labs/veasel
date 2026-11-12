@@ -176,6 +176,45 @@ fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 		'search query')
 }
 
+fn test_workspace_search_falls_back_to_longest_query_terms() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-search-terms-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'DocsLayout.astro'), 'docs sections expose a sidebar control\n') or {
+		panic(err)
+	}
+	os.write_file(os.join_path(root, 'SiteLayout.astro'), 'main navigation\n') or { panic(err) }
+	result := workspace_search(root, 'docs sidebar navigation') or { panic(err) }
+	assert result.matches.len == 2
+	assert result.matches[0] == WorkspaceSearchMatch{
+		path: 'DocsLayout.astro'
+		line: 1
+		text: 'docs sections expose a sidebar control'
+	}
+	assert result.matches[1].path == 'SiteLayout.astro'
+}
+
+fn test_workspace_search_fallback_ranks_terms_before_truncating() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-search-ranking-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	os.write_file(os.join_path(root, 'results.txt'), 'navigation\n'.repeat(101) + 'docs sidebar\n') or {
+		panic(err)
+	}
+	result := workspace_search(root, 'docs sidebar navigation') or { panic(err) }
+	assert result.matches.len == max_workspace_search_results
+	assert result.truncated
+	assert result.matches[0] == WorkspaceSearchMatch{
+		path: 'results.txt'
+		line: 102
+		text: 'docs sidebar'
+	}
+	os.write_file(os.join_path(root, 'results.txt'), 'navigation\n'.repeat(100)) or { panic(err) }
+	limited := workspace_search(root, 'docs sidebar navigation') or { panic(err) }
+	assert limited.matches.len == max_workspace_search_results
+	assert limited.truncated
+}
+
 fn test_workspace_excerpt_trims_and_crops_once_at_utf8_boundaries() {
 	assert workspace_excerpt('\t  hello\r', 5) == 'hello'
 	assert workspace_excerpt('x'.repeat(4_096), 5) == 'xxxxx'

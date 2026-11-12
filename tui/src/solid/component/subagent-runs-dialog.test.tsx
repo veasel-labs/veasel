@@ -83,7 +83,7 @@ test("agent details refresh and Enter returns through the stack at 32x12", async
     { width: 32, height: 12, kittyKeyboard: true },
   )
   try {
-    await setup.waitFor(() => setup.captureCharFrame().includes("RUNNING · explorer"))
+    await waitForScreen(setup, (frame) => frame.includes("RUNNING · explorer"))
     setup.mockInput.pressEnter()
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toContain("Inspect result")

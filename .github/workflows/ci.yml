@@ -365,9 +365,19 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            v -cc gcc test subagents_test.v subagent_http_routing_test.v
+            v -cc gcc test subagents_test.v
           else
             v test subagents_test.v
+          fi
+      - name: Run cross-provider child HTTP acceptance test
+        timeout-minutes: 20
+        env:
+          VJOBS: 1
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            v -cc gcc test subagent_http_routing_test.v
+          else
             v test subagent_http_routing_test.v
           fi
       - name: Run Linux HTTP and persistence smoke

@@ -286,6 +286,13 @@ fn run_http_subagents_provider_scenario(cancel_openai bool) {
 		api_server.shutdown(timeout: 5 * time.second) or {}
 		api_server_thread.wait()
 	}
+	// On assertion failure, free provider handlers before later app/server
+	// cleanup waits for their workers. These channels have capacity one, so
+	// cleanup can safely queue a release even if no handler is waiting.
+	defer {
+		openai_fixture.release <- true
+		anthropic_fixture.release <- true
+	}
 	base_url := 'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents'
 	started_at := time.sys_mono_now()
 	openai_run := create_http_subagent(base_url, 'openai-child', 'explorer', 'openai-compatible',

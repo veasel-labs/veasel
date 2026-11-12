@@ -95,6 +95,9 @@ export type ApiSubagentRun = {
   cache_reported?: boolean
   reasoning_tokens?: number
   reasoning_reported?: boolean
+  /** Actual adapter-authoritative spend reported by the provider, when supplied. */
+  reported_cost_usd?: number
+  cost_reported?: boolean
 }
 
 export type CreateSubagentInput = {

@@ -45,11 +45,10 @@ export function renderHelp(compact = false) {
   if (compact) {
     return [
       "VEASEL CODE / QUICK HELP",
-      "/help advanced  Show command syntax",
+      "/help advanced · /agents · /delegate  Syntax and delegated work",
       "/skills · /plugins · /mcp · /patches · /commands",
       "/mcp credentials · /mcp oauth  Named HTTP auth (no secrets shown)",
       "/history older · /runs  Load earlier messages or browse execution history",
-      "/agents · /delegate  Inspect or start isolated child work",
       "/connect · /models · /theme · /map  Auth, model, map",
       "Files go to your provider. Review diffs and MCP calls.",
       "Approved shell: Bubblewrap, Seatbelt, or Windows AppContainer when available.",

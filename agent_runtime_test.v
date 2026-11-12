@@ -2542,6 +2542,7 @@ fn test_agent_recovers_once_from_invalid_exact_replacement() {
 	assert !recovery_request.tools.any(it.function.name == 'workspace_propose_file_edit')
 	corrected_edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[4]) or { panic(err) }
 	assert corrected_edit_request.tools.any(it.function.name == 'workspace_propose_file_edit'), 'available tools: ${corrected_edit_request.tools.map(it.function.name)}; prior tool result: ${corrected_edit_request.messages.filter(it.role == 'tool').map(it.content)}'
+	assert fixture.request_bodies[5].split(agent_code_change_edit_recovery_prompt).len == 2
 	assert exchange.messages.last().content.contains('pending human review')
 	assert !exchange.messages.last().content.contains('I prepared the corrected sidebar edit for review.')
 	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse sections\n'
@@ -2551,7 +2552,71 @@ fn test_agent_recovers_once_from_invalid_exact_replacement() {
 	assert edits[0].path == 'README.md'
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('replacement text must match exactly once; found 0 occurrences')
-	assert trace.contains(agent_code_change_edit_recovery_prompt)
+	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2
+}
+
+fn test_agent_successful_edit_retry_clears_recovery_state() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-edit-recovery-cleared-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'sidebar menu: Browse sections\n') or { panic(err) }
+	prior_autonomous := os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION')
+	had_autonomous := 'VEASEL_ALLOW_AUTONOMOUS_EXECUTION' in os.environ()
+	os.setenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION', '1', true)
+	defer {
+		if had_autonomous {
+			os.setenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION', prior_autonomous, true)
+		} else {
+			os.unsetenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION')
+		}
+	}
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		recover_invalid_edit: true
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Successful edit recovery'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please change the mobile sidebar label to Browse documentation.'
+		collect_trace: true
+		autonomous:    true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 6
+	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse documentation\n'
+	assert fixture.request_bodies[4].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert fixture.request_bodies[5].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert !exchange.messages.last().content.contains('incomplete')
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2
 }
 
 fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effect() {

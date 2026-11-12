@@ -1071,6 +1071,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 	mut followthrough_retries := 0
 	mut edit_proposal_attempted := false
 	mut failed_edit_proposals := 0
+	mut edit_recovery_prompt_issued := false
 	mut workspace_effect_applied := false
 	mut workspace_effect_pending_review := false
 	code_change_request_text := agent_latest_user_request_text(messages)
@@ -1401,6 +1402,14 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 					// Never retry a proposal when the write may already have happened.
 					edit_proposal_attempted = true
 				}
+				if call.function.name == 'workspace_propose_file_edit'
+					&& agent_tool_result_applied_workspace_effect(call, tool_result) {
+					// A successful retry resolves the pending recovery state. Keeping
+					// the failure count would append the same recovery prompt after
+					// every later tool batch and derail acceptance review.
+					failed_edit_proposals = 0
+					edit_recovery_prompt_issued = false
+				}
 				if call.function.name == 'workspace_search'
 					&& agent_workspace_search_call_relevant(call, code_change_request,
 						code_change_request_text) {
@@ -1468,7 +1477,8 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 			}
 		}
 		if code_change_request && failed_edit_proposals > 0
-			&& failed_edit_proposals <= max_agent_code_change_edit_recovery_attempts {
+			&& failed_edit_proposals <= max_agent_code_change_edit_recovery_attempts
+			&& !edit_recovery_prompt_issued {
 			messages << ChatMessage{
 				role:    'user'
 				content: agent_code_change_edit_recovery_prompt
@@ -1480,6 +1490,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 					message: agent_code_change_edit_recovery_prompt
 				}
 			}
+			edit_recovery_prompt_issued = true
 		}
 		if collect_trace {
 			trace_steps[trace_steps.len - 1].observation = ATIFObservation{

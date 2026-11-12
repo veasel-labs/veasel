@@ -120,6 +120,35 @@ fn test_workspace_replacement_edit_preserves_file_and_requires_unique_anchor() {
 	assert workspace_replacement_edit_error_contains(root, 'DocsLayout.astro', 'match', 'found at least 2')
 }
 
+fn test_workspace_replacement_edit_supports_large_files_with_small_diffs() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-large-replacement-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	original := 'line\n'.repeat(2_500) + '  .docs-sidebar {\n    position: static;\n  }\n' + 'tail\n'.repeat(20)
+	os.write_file(os.join_path(root, 'global.css'), original) or { panic(err) }
+	draft := prepare_workspace_replacement_edit(root, 'global.css', '    position: static;',
+		'    position: static;\n    top: auto;') or { panic(err) }
+	assert draft.content == original.replace('    position: static;',
+		'    position: static;\n    top: auto;')
+	assert draft.diff.contains('+    top: auto;')
+	assert draft.diff.split_into_lines().len < 20
+	assert draft.expected_hash == workspace_content_hash(original)
+}
+
+fn test_workspace_edit_bounds_line_ending_diff_metadata() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-line-ending-diff-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	original := 'line\n'.repeat(2_100)
+	updated := 'line\r\n'.repeat(2_100)
+	os.write_file(os.join_path(root, 'large.txt'), original) or { panic(err) }
+	_ := prepare_workspace_edit(root, 'large.txt', updated) or {
+		assert err.msg().contains('2000-line diff limit')
+		return
+	}
+	assert false, 'line-ending metadata must count toward the bounded diff size'
+}
+
 fn workspace_replacement_edit_error_contains(root string, path string, old_text string,
 	expected string) bool {
 	_ := prepare_workspace_replacement_edit(root, path, old_text, 'replacement') or {

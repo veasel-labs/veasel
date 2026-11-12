@@ -2077,6 +2077,15 @@ fn agent_code_change_recovery_chunk(hit int) OpenAIStreamChunk {
 			}]
 		}
 	}
+	if hit == 7 {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					content: 'The applied change satisfies the request.\nACCEPTANCE_REVIEW: PASS'
+				}
+			}]
+		}
+	}
 	return OpenAIStreamChunk{
 		choices: [OpenAIStreamChoice{
 			delta: OpenAIStreamDelta{ content: 'I prepared the corrected sidebar edit for review.' }
@@ -2610,10 +2619,11 @@ fn test_agent_successful_edit_retry_clears_recovery_state() {
 	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
 		panic(err)
 	}
-	assert fixture.hits == 6
+	assert fixture.hits == 7
 	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse documentation\n'
 	assert fixture.request_bodies[4].split(agent_code_change_edit_recovery_prompt).len == 2
 	assert fixture.request_bodies[5].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert fixture.request_bodies[6].split(agent_code_change_edit_recovery_prompt).len == 2
 	assert !exchange.messages.last().content.contains('incomplete')
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2

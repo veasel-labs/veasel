@@ -136,9 +136,10 @@ SYSTEM_SUFFIX = (
     "are sent to the configured model provider."
 )
 ASK_INTERACTIVE_INSTRUCTIONS = (
-    "You may propose a focused exact-text replacement or a complete text replacement for one file "
-    "at a time using workspace_propose_file_edit. Exact-text replacements must match once and "
-    "preserve all other file content. Proposing never changes a file; the user must inspect the "
+    "You may propose a focused exact-text replacement with workspace_propose_file_edit using path, "
+    "old_text, and new_text, or a complete text replacement with workspace_propose_file_content "
+    "using path and full content. Exact-text replacements must match once and preserve all other file content. "
+    "Proposing never changes a file; the user must inspect the "
     "saved diff and explicitly approve it in the TUI before application. Never say a proposal was applied "
     "before approval succeeds. You may propose a single-line shell command only when the task "
     "requires a shell side effect, using workspace_propose_shell_command. This tool never executes "
@@ -198,10 +199,10 @@ WORKSPACE_TOOL_INSTRUCTIONS = (
     "tool is not offered, use workspace tools instead. If a skill is unavailable or a skill "
     "resource reports that it is not enabled or loaded, continue the task with the available "
     "workspace tools; do not stop solely because of that skill error. For an explicit code-change "
-    "request, inspect relevant instructions, source, and tests, then propose focused edits with "
-    "workspace_propose_file_edit. For a localized replacement, provide the exact current text as "
-    "old_text and the requested text as new_text; use complete file content only for broader "
-    "changes. Do not stop after summarizing files. Proposals remain pending until the user approves "
+    "request, inspect relevant instructions, source, and tests, then propose a focused replacement "
+    "with workspace_propose_file_edit using path, old_text, and new_text, or a broader replacement "
+    "with workspace_propose_file_content using path and complete content. Do not stop after "
+    "summarizing files. Proposals remain pending until the user approves "
     "them in the TUI; never claim they were applied before approval."
 )
 SESSION_SYSTEM_WITH_WORKSPACE_GUIDANCE = tuple(
@@ -218,9 +219,9 @@ CODE_CHANGE_SYSTEM_INSTRUCTIONS = (
     "acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, "
     "read it; otherwise search for a distinctive term from the requested behavior. Then read the complete "
     "target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before "
-    "answering. For a localized replacement, pass the exact current text as old_text and the requested text "
-    "as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content "
-    "only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing "
+    "answering. For a localized replacement, pass path, the exact current text as old_text, and the requested "
+    "text as new_text; the tool preserves all other bytes and requires a unique match. For broader edits, "
+    "use workspace_propose_file_content with path and complete content. Never replace a file with a fragment or a description of the edit. A file listing "
     "or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant "
     "verification command after the edit and fix failures before reporting completion. Report only checks that "
     "actually succeeded. Do not ask for details already present in the request. If a necessary detail or "
@@ -438,7 +439,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
-                    "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit") else
+                    "workspace_propose_file_content" if user_text in ("Propose workspace edit", "Autonomous workspace edit") else
                     "workspace_propose_shell_command" if user_text in ("Propose shell command", "Propose slow shell command", "Autonomous shell") else
                     next((tool.get("name", "") for tool in payload.get("tools", []) if tool.get("name", "").startswith("mcp_review-tools_effect_write_")), "")
                 )
@@ -556,7 +557,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     "workspace_search" if user_text in ("Inspect workspace", "Edit then verify workspace", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture") else
                     "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
-                    "workspace_propose_file_edit" if user_text in ("Propose workspace edit", "Autonomous workspace edit", "Autonomous multi-file edit", "Edit then verify workspace", "Recover after failed edit", "Try to write outside") else
+                    "workspace_propose_file_content" if user_text in ("Propose workspace edit", "Autonomous workspace edit", "Autonomous multi-file edit", "Edit then verify workspace", "Recover after failed edit", "Try to write outside") else
                     "mcp_review_tools_effect_write" if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect") else
                     "workspace_propose_shell_command"
                 )
@@ -698,7 +699,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
@@ -716,7 +717,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
@@ -725,7 +726,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
@@ -743,7 +744,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
@@ -761,7 +762,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "src/main.v", "content": GREETING_EDIT})
                         }}]
                     }}]}
@@ -779,7 +780,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-3", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "token_bucket.v", "content": VENDORED_FIX})
                         }}]
                     }}]}
@@ -797,7 +798,7 @@ class MockProvider(BaseHTTPRequestHandler):
                         "role": "assistant",
                         "content": None,
                         "tool_calls": [{"id": "openai-tool-2", "type": "function", "function": {
-                            "name": "workspace_propose_file_edit",
+                            "name": "workspace_propose_file_content",
                             "arguments": json.dumps({"path": "src/helper.v", "content": HELPER_EDIT})
                         }}]
                     }}]}
@@ -829,7 +830,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
-                    "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
+                    "workspace_propose_file_content" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"
                 )
                 if not any(tool.get("name") == requested_tool for tool in payload.get("tools", [])):
@@ -892,7 +893,7 @@ class MockProvider(BaseHTTPRequestHandler):
                     "workspace_search" if user_text == "Inspect workspace" else
                     "workspace_read_file" if user_text in ("Try to read outside", "Read then edit workspace") else
                     "agent_skill_read_resource" if user_text == "Read skill reference" else
-                    "workspace_propose_file_edit" if user_text == "Propose workspace edit" else
+                    "workspace_propose_file_content" if user_text == "Propose workspace edit" else
                     "workspace_propose_shell_command"
                 )
                 if not any(tool.get("name") == requested_tool for tool in declarations):

@@ -11,7 +11,7 @@ const agent_tool_loop_warning_threshold = 3
 const agent_tool_loop_stop_threshold = 5
 const agent_search_term_separators = ' \t\r\n,;:()[]{}"\'`./\\_-'
 const tool_budget_summary_note = 'The tool budget for this turn is spent. Pending tool calls were not run. Reply in text only: what is already done, what is unfinished, and the single next step.'
-const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit for the requested change. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text; this preserves all other file content. Do not claim the work is complete without proposing the edits.'
+const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit with path, old_text, and new_text for a focused replacement, or workspace_propose_file_content with path and complete content for a broader change. Do not claim the work is complete without proposing the edits.'
 const agent_code_change_retry_after_no_read_prompt = 'You still have not read any source file. Do not list the directory again or summarize it. Use workspace_search with a distinctive term from the requested behavior to locate the implementation, then workspace_read_file on the relevant source and test. After reading them, propose the requested focused change with workspace_propose_file_edit. Do not claim completion without an edit proposal.'
 const agent_code_change_retry_after_read_prompt = 'You have inspected source, but no edit proposal was made. Re-check the original request and the files already read; the request still applies, so do not ask the user to repeat details. Search using one or more distinctive terms from the original request to locate the implementation or test that directly matches the requested behavior. Do not make cosmetic or unrelated edits. After confirming the relevant code, propose a focused change that satisfies the request. Never claim completion without an edit proposal.'
 const agent_code_change_edit_recovery_prompt = 'The edit proposal failed validation and no file was changed. Re-read the current matched file, then create a fresh focused proposal using exact text from that current file. Do not reuse the failed old_text or claim the change succeeded. The original request still applies.'
@@ -20,8 +20,8 @@ const agent_code_change_verification_failure_prompt = 'The requested verificatio
 const agent_code_change_acceptance_review_marker = 'ACCEPTANCE_REVIEW: PASS'
 const agent_code_change_acceptance_review_prompt = 'Post-edit acceptance review: independently compare the original user request below with the actual applied workspace diff and the verification outcome. Check every requested behavior and user-visible state, not only whether the code compiles or tests pass. If any acceptance behavior is missing or incomplete, continue the task using the available workspace tools and verify it when the user requested verification. If all requested behavior is implemented, provide a concise result and put the exact marker ACCEPTANCE_REVIEW: PASS alone on the final line. If you cannot verify completeness within the bounded review phase, do not use the marker.'
 const agent_code_change_acceptance_review_followup_prompt = 'Your acceptance review did not confirm that every requested behavior is complete. Continue from the specific gap you identified: inspect or edit the workspace with the available policy-filtered tools, then run any verification required by the original request. Do not repeat the review prompt or claim success unless all requested behavior is present; use the exact ACCEPTANCE_REVIEW: PASS marker only after confirming it.'
-const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
-const agent_code_change_system_instruction = 'For an explicit code-change request, start with a workspace tool call immediately. Do not send an acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, read it; otherwise search for a distinctive term from the requested behavior. Then read the complete target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
+const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then propose the edit. For a focused replacement, use workspace_propose_file_edit with path, old_text, and new_text. For a broader change, use workspace_propose_file_content with path and the complete file content. Keep the change scoped to the user request.'
+const agent_code_change_system_instruction = 'For an explicit code-change request, start with a workspace tool call immediately. Do not send an acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, read it; otherwise search for a distinctive term from the requested behavior. Then read the complete target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass path, the exact current text as old_text, and the requested text as new_text; the tool preserves all other bytes and requires a unique match. For broader edits, use workspace_propose_file_content with path and complete content. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
 const agent_code_change_exploration_nudge_after = 4
 const max_agent_code_change_followthrough_retries = 2
 const max_agent_code_change_acceptance_review_rounds = 3
@@ -232,7 +232,7 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 		// Keep focused search and read available so the model can locate the target
 		// without reopening broad directory enumeration or gaining shell access.
 		return tools.filter(it.name in ['workspace_read_file', 'workspace_search',
-			'workspace_propose_file_edit'])
+			'workspace_propose_file_edit', 'workspace_propose_file_content'])
 	}
 	if workspace_read_count > 0 {
 		// Require a matching focused search and a subsequent read before edits are
@@ -241,7 +241,7 @@ fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_re
 	}
 	if followthrough_retried {
 		return tools.filter(it.name in ['workspace_read_file', 'workspace_search',
-			'workspace_propose_file_edit'])
+			'workspace_propose_file_edit', 'workspace_propose_file_content'])
 	}
 	return tools.filter(it.name in ['workspace_read_file', 'workspace_search'])
 }
@@ -268,9 +268,10 @@ fn agent_code_change_tools_after_exploration(tools []AgentToolDefinition, explic
 		// searches. After a failed proposal, allow one additional focused read
 		// without reopening search, then require an edit retry. Verification tools
 		// are restored after an edit is applied.
-		return tools.filter(it.name == 'workspace_propose_file_edit')
+		return tools.filter(agent_tool_is_workspace_edit_proposal(it.name))
 	}
-	return tools.filter(it.name in ['workspace_read_file', 'workspace_propose_file_edit'])
+	return tools.filter(it.name in ['workspace_read_file', 'workspace_propose_file_edit',
+		'workspace_propose_file_content'])
 }
 
 fn agent_code_change_followthrough_retry_available(explicit_request bool, tools []AgentToolDefinition,
@@ -279,7 +280,7 @@ fn agent_code_change_followthrough_retry_available(explicit_request bool, tools 
 		|| request_deadline - time.now() < 20 * time.second {
 		return false
 	}
-	return tools.any(it.name == 'workspace_propose_file_edit')
+	return tools.any(agent_tool_is_workspace_edit_proposal(it.name))
 }
 
 fn agent_discard_buffered_text_on_provider_error(explicit_request bool) bool {
@@ -292,7 +293,7 @@ fn agent_code_change_exploration_nudge_available(explicit_request bool, tools []
 		|| request_deadline - time.now() < 20 * time.second {
 		return false
 	}
-	return tools.any(it.name == 'workspace_propose_file_edit')
+	return tools.any(agent_tool_is_workspace_edit_proposal(it.name))
 }
 
 const plugin_mcp_approval_poll_interval = 250 * time.millisecond
@@ -543,8 +544,12 @@ fn duplicate_workspace_read_note(path string) string {
 }
 
 fn agent_tool_may_mutate_workspace(name string, mcp_bindings map[string]PluginMCPToolBinding) bool {
-	return name in ['workspace_propose_file_edit', 'workspace_propose_shell_command']
+	return agent_tool_is_workspace_edit_proposal(name) || name == 'workspace_propose_shell_command'
 		|| name in mcp_bindings
+}
+
+fn agent_tool_is_workspace_edit_proposal(name string) bool {
+	return name in ['workspace_propose_file_edit', 'workspace_propose_file_content']
 }
 
 // execute_parallel_readonly_workspace_tools runs a read-only batch concurrently.
@@ -757,7 +762,7 @@ struct AgentWorkspaceEditResult {
 }
 
 fn agent_tool_result_applied_workspace_edit_diff(call ProviderToolCall, result string) string {
-	if call.function.name != 'workspace_propose_file_edit' {
+	if !agent_tool_is_workspace_edit_proposal(call.function.name) {
 		return ''
 	}
 	edit := json2.decode[AgentWorkspaceEditResult](result) or { return '' }
@@ -784,9 +789,30 @@ fn prepare_agent_workspace_edit(root string, arguments map[string]json2.Any) !Wo
 	return prepare_workspace_replacement_edit(root, path, old_text, new_text)
 }
 
+fn prepare_agent_workspace_edit_for_tool(root string, tool_name string,
+	arguments map[string]json2.Any) !WorkspaceEditDraft {
+	match tool_name {
+		'workspace_propose_file_edit' {
+			if arguments.len != 3 || 'path' !in arguments || 'old_text' !in arguments
+				|| 'new_text' !in arguments {
+				return error('provide path, old_text, and new_text for a focused replacement')
+			}
+		}
+		'workspace_propose_file_content' {
+			if arguments.len != 2 || 'path' !in arguments || 'content' !in arguments {
+				return error('provide path and complete content for a broad replacement')
+			}
+		}
+		else {
+			return error('unknown workspace edit proposal tool')
+		}
+	}
+	return prepare_agent_workspace_edit(root, arguments)
+}
+
 fn agent_tool_result_applied_workspace_effect(call ProviderToolCall, result string) bool {
 	match call.function.name {
-		'workspace_propose_file_edit' {
+		'workspace_propose_file_edit', 'workspace_propose_file_content' {
 			edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
 			return edit.note.starts_with('Applied by graduated execution policy')
 		}
@@ -801,7 +827,7 @@ fn agent_tool_result_applied_workspace_effect(call ProviderToolCall, result stri
 }
 
 fn agent_tool_result_workspace_edit_proposal_succeeded(call ProviderToolCall, result string) bool {
-	if call.function.name != 'workspace_propose_file_edit' {
+	if !agent_tool_is_workspace_edit_proposal(call.function.name) {
 		return false
 	}
 	edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
@@ -809,7 +835,7 @@ fn agent_tool_result_workspace_edit_proposal_succeeded(call ProviderToolCall, re
 }
 
 fn agent_tool_result_workspace_edit_failed(call ProviderToolCall, result string) bool {
-	if call.function.name != 'workspace_propose_file_edit' {
+	if !agent_tool_is_workspace_edit_proposal(call.function.name) {
 		return false
 	}
 	tool_error := json2.decode[AgentToolError](result) or { return false }
@@ -822,7 +848,7 @@ fn agent_tool_result_workspace_edit_recoverable(call ProviderToolCall, result st
 }
 
 fn agent_tool_result_workspace_edit_effect_uncertain(call ProviderToolCall, result string) bool {
-	if call.function.name != 'workspace_propose_file_edit' {
+	if !agent_tool_is_workspace_edit_proposal(call.function.name) {
 		return false
 	}
 	tool_error := json2.decode[AgentToolError](result) or { return false }
@@ -831,7 +857,7 @@ fn agent_tool_result_workspace_edit_effect_uncertain(call ProviderToolCall, resu
 
 fn agent_tool_result_pending_workspace_effect_review(call ProviderToolCall, result string) bool {
 	match call.function.name {
-		'workspace_propose_file_edit' {
+		'workspace_propose_file_edit', 'workspace_propose_file_content' {
 			edit := json2.decode[AgentWorkspaceEditResult](result) or { return false }
 			return edit.note == 'Stored for human review. The file has not been changed.'
 		}
@@ -912,16 +938,12 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_propose_file_edit'
-			description: 'Propose a change to one UTF-8 file in the current workspace. Prefer old_text and new_text for a focused replacement; old_text must match the existing file exactly once, and all other file content is preserved. For a broader change, provide the complete file as content instead. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
+			description: 'Propose a focused replacement in one UTF-8 file. Provide path, exact old_text, and new_text. old_text must match the existing file exactly once; all other file content is preserved. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
 			parameters:  ToolParameters{
 				properties: {
 					'path':     ToolParameter{
 						type:        'string'
 						description: 'Relative path to an existing file or a new file whose parent directory already exists.'
-					}
-					'content':  ToolParameter{
-						type:        'string'
-						description: 'Complete proposed UTF-8 file text for a broader edit. Do not use for a focused replacement; use old_text and new_text instead.'
 					}
 					'old_text': ToolParameter{
 						type:        'string'
@@ -932,7 +954,18 @@ fn workspace_agent_tools() []AgentToolDefinition {
 						description: 'UTF-8 replacement text for the exact old_text match. All other file bytes are preserved.'
 					}
 				}
-				required:   ['path']
+				required:   ['path', 'old_text', 'new_text']
+			}
+		},
+		AgentToolDefinition{
+			name:        'workspace_propose_file_content'
+			description: 'Propose a broad change to one UTF-8 file by providing its complete content. Use workspace_propose_file_edit for a focused exact-text replacement. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
+			parameters:  ToolParameters{
+				properties: {
+					'path':    ToolParameter{ type: 'string', description: 'Relative path to an existing file or a new file whose parent directory already exists.' }
+					'content': ToolParameter{ type: 'string', description: 'Complete proposed UTF-8 file text, not a fragment or summary.' }
+				}
+				required:   ['path', 'content']
 			}
 		},
 		AgentToolDefinition{
@@ -1425,7 +1458,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 					// Never retry a proposal when the write may already have happened.
 					edit_proposal_attempted = true
 				}
-				if call.function.name == 'workspace_propose_file_edit'
+				if agent_tool_is_workspace_edit_proposal(call.function.name)
 					&& agent_tool_result_applied_workspace_effect(call, tool_result) {
 					// A successful retry resolves the pending recovery state. Keeping
 					// the failure count would append the same recovery prompt after
@@ -1468,7 +1501,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				if applied_diff.len > 0 {
 					applied_workspace_diffs << applied_diff
 				}
-				if verification_required && call.function.name == 'workspace_propose_file_edit'
+				if verification_required && agent_tool_is_workspace_edit_proposal(call.function.name)
 					&& agent_tool_result_applied_workspace_effect(call, tool_result) {
 					verification_succeeded = false
 					verification_failed = false
@@ -1764,11 +1797,11 @@ fn execute_agent_tool_if_allowed_with_status(app &App, mut turn_ctx vcontext.Con
 
 fn execute_autonomous_workspace_agent_tool(app &App, mut turn_ctx vcontext.Context,
 	root string, session_id string, call ProviderToolCall) string {
-	if call.function.name == 'workspace_propose_file_edit' {
+	if agent_tool_is_workspace_edit_proposal(call.function.name) {
 		tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 			return encode_agent_tool_error('Tool arguments must be a JSON object.')
 		}
-		draft := prepare_agent_workspace_edit(root, tool_arguments) or {
+		draft := prepare_agent_workspace_edit_for_tool(root, call.function.name, tool_arguments) or {
 			return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 		}
 		mut store := app.store
@@ -2227,11 +2260,11 @@ fn execute_workspace_agent_tool(app &App, root string, session_id string,
 			}
 			json2.encode[WorkspaceSearchResult](search)
 		}
-		'workspace_propose_file_edit' {
+		'workspace_propose_file_edit', 'workspace_propose_file_content' {
 			tool_arguments := json2.decode[map[string]json2.Any](call.function.arguments) or {
 				return encode_agent_tool_error('Tool arguments must be a JSON object.')
 			}
-			draft := prepare_agent_workspace_edit(root, tool_arguments) or {
+			draft := prepare_agent_workspace_edit_for_tool(root, call.function.name, tool_arguments) or {
 				return encode_agent_tool_error('The workspace edit is invalid or unavailable: ${err.msg()}')
 			}
 			mut store := app.store

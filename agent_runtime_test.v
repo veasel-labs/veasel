@@ -444,7 +444,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	denied_edit := execute_test_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'denied-edit'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"source.txt","content":"changed"}'
 		}
 	}, mut skill_context, {}, mut mcp_connections)
@@ -1009,7 +1009,7 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 	edit := execute_autonomous_workspace_agent_tool(app, mut background, root, session.id, ProviderToolCall{
 		id:       'edit'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"target.txt","content":"after"}'
 		}
 	})
@@ -1208,16 +1208,48 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
 		'workspace_search', 'subagent_run', 'subagent_wait', 'workspace_propose_file_edit',
-		'workspace_propose_shell_command']
+		'workspace_propose_file_content', 'workspace_propose_shell_command']
 	edit_definition := definitions.filter(it.name == 'workspace_propose_file_edit')[0]
-	assert edit_definition.description.contains('old_text and new_text')
+	assert edit_definition.description.contains('old_text')
 	assert 'old_text' in edit_definition.parameters.properties
 	assert 'new_text' in edit_definition.parameters.properties
+	assert edit_definition.parameters.required == ['path', 'old_text', 'new_text']
+	content_definition := definitions.filter(it.name == 'workspace_propose_file_content')[0]
+	assert content_definition.parameters.required == ['path', 'content']
+	assert agent_tool_is_workspace_edit_proposal('workspace_propose_file_edit')
+	assert agent_tool_is_workspace_edit_proposal('workspace_propose_file_content')
+	assert !agent_tool_is_workspace_edit_proposal('workspace_propose_shell_command')
 	replacement_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v","old_text":"workspace-sentinel","new_text":"updated"}') or {
 		panic(err)
 	}
 	replacement_draft := prepare_agent_workspace_edit(root, replacement_arguments) or { panic(err) }
 	assert replacement_draft.content == 'module fixture\nupdated\n'
+	assert prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_edit',
+		replacement_arguments) or { panic(err) } == replacement_draft
+	incomplete_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v"}') or {
+		panic(err)
+	}
+	mut incomplete_rejected := false
+	_ = prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_edit',
+		incomplete_arguments) or {
+		incomplete_rejected = true
+		WorkspaceEditDraft{}
+	}
+	assert incomplete_rejected
+	content_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v","content":"module fixture\\ncomplete write\\n"}') or {
+		panic(err)
+	}
+	content_draft := prepare_agent_workspace_edit(root, content_arguments) or { panic(err) }
+	assert content_draft.content == 'module fixture\ncomplete write\n'
+	assert prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_content',
+		content_arguments) or { panic(err) } == content_draft
+	mut mismatched_tool_rejected := false
+	_ = prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_content',
+		replacement_arguments) or {
+		mismatched_tool_rejected = true
+		WorkspaceEditDraft{}
+	}
+	assert mismatched_tool_rejected
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
 	assert agent_tool_allows_parallel_readonly('workspace_list_files')
 	assert agent_tool_allows_parallel_readonly('workspace_read_file')
@@ -1289,7 +1321,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		ProviderToolCall{
 			id:       'edit-between-waves'
 			function: ProviderFunctionCall{
-				name:      'workspace_propose_file_edit'
+				name:      'workspace_propose_file_content'
 				arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\n"}'
 			}
 		},
@@ -1333,7 +1365,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		ProviderToolCall{
 			id:       'apply-edit'
 			function: ProviderFunctionCall{
-				name:      'workspace_propose_file_edit'
+				name:      'workspace_propose_file_content'
 				arguments: '{"path":"src/auto-edit.txt","content":"after edit"}'
 			}
 		},
@@ -1385,7 +1417,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	skipped_edit := ProviderToolCall{
 		id:       'loop-skipped-edit'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"src/main.v","content":"loop must not apply"}'
 		}
 	}
@@ -1690,7 +1722,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	proposal_result := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'propose-1'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\\n"}'
 		}
 	})
@@ -2169,7 +2201,7 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 						id:       'edit-proposal-${fixture.hits}'
 						type:     'function'
 						function: OpenAIStreamFunctionDelta{
-							name:      'workspace_propose_file_edit'
+							name:      'workspace_propose_file_content'
 							arguments: '{"path":"README.md","content":"Updated by fixture\\n"}'
 						}
 					}]
@@ -2250,7 +2282,7 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 			} else {
 				'Button: Enter or Space activates; visible status feedback follows.\n'
 			}
-			agent_acceptance_review_fixture_tool_call('review-edit', 'workspace_propose_file_edit',
+			agent_acceptance_review_fixture_tool_call('review-edit', 'workspace_propose_file_content',
 				'{"path":"README.md","content":"${content.replace('\\n', '\\\\n')}"}')
 		}
 		4 {
@@ -2269,7 +2301,7 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 				}
 			} else if fixture.missing_acceptance {
 				agent_acceptance_review_fixture_tool_call('review-followup-edit',
-					'workspace_propose_file_edit',
+					'workspace_propose_file_content',
 					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
 			} else {
 				OpenAIStreamChunk{
@@ -2282,7 +2314,7 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 		6 {
 			if fixture.review_text_first {
 				agent_acceptance_review_fixture_tool_call('review-followup-edit',
-					'workspace_propose_file_edit',
+					'workspace_propose_file_content',
 					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
 			} else {
 				OpenAIStreamChunk{

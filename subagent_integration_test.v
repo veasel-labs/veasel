@@ -35,6 +35,7 @@ fn run_subagent_integration_http_test_server(mut app SubagentIntegrationHTTPServ
 fn test_implementer_profile_preserves_parent_policy_and_tool_boundary() {
 	profile := builtin_subagent_profile('implementer') or { panic(err) }
 	assert profile.tool_policy().allows('workspace_propose_file_edit')
+	assert profile.tool_policy().allows('workspace_propose_file_content')
 	assert profile.tool_policy().allows('workspace_read_file')
 	assert !profile.tool_policy().allows('workspace_propose_shell_command')
 	assert !profile.tool_policy().allows('plugin_mcp_tool')

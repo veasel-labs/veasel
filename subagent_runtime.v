@@ -20,6 +20,8 @@ struct SubagentToolResult {
 	cache_reported        bool
 	reasoning_tokens      i64 @[omitempty]
 	reasoning_reported    bool
+	reported_cost_usd     ?f64 @[omitempty]
+	cost_reported         bool
 	wait_interrupted      bool @[omitempty]
 }
 
@@ -174,6 +176,8 @@ fn (app &App) execute_subagent_wait(mut turn_ctx vcontext.Context, parent_sessio
 		cache_reported:        run.cache_reported
 		reasoning_tokens:      run.reasoning_tokens
 		reasoning_reported:    run.reasoning_reported
+		reported_cost_usd:     run.reported_cost_usd
+		cost_reported:         run.cost_reported
 		wait_interrupted:      wait_interrupted
 	})
 }

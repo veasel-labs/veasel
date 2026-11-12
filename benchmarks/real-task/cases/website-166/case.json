@@ -1,0 +1,58 @@
+{
+  "schema": "veasel.real-task-case.v1",
+  "id": "veasel-labs/website#166",
+  "repository": "https://github.com/veasel-labs/website.git",
+  "base_commit": "5d80a22eacd0333fdb40c42124405880c2feaf49",
+  "prompt_file": "prompt.md",
+  "prompt_sha256": "cbd781d4b91f3078686964e71259224f75e861e0d280603e054e55ae32d47b49",
+  "model": {
+    "provider": "ollama",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_tokens": 2048
+  },
+  "provider_config": {
+    "provider": "ollama",
+    "model": "qwen3:8b",
+    "base_url": "http://127.0.0.1:11435/v1",
+    "max_output_tokens": 2048,
+    "api_key_saved": false
+  },
+  "runtime": {
+    "ollama_version": "0.40.15",
+    "accelerator": "CUDA",
+    "gpu": {
+      "name": "NVIDIA GeForce RTX 3060",
+      "memory_mib": 12288
+    }
+  },
+  "permissions": {
+    "edit": "autonomous inside an external disposable sandbox",
+    "shell": "autonomous inside an external disposable sandbox",
+    "mcp": "disabled",
+    "tool_allowlist": [
+      "read",
+      "edit",
+      "glob",
+      "grep",
+      "list",
+      "shell"
+    ],
+    "web": false,
+    "subagents": false
+  },
+  "comparators": {
+    "opencode_version": "opencode v2.2.5",
+    "opencode_model": "ollama/qwen3:8b",
+    "opencode_agent": "build",
+    "opencode_auto_approve": true
+  },
+  "budgets": {
+    "wall_seconds": 300,
+    "minimum_startup_available_memory_bytes": 6174015488,
+    "minimum_available_memory_bytes": 4831838208,
+    "minimum_free_swap_bytes": 0
+  },
+  "oracle": "Compare the result with the merged veasel-labs/website#166 changes at 65703c39528e4bd942284b1a385c93a7cf7309ac. Run npm test, npm run format:check, npm run check, and npm run build. Independently inspect the landing and Evals pages at 320, 390, 768, and 1280 px in light and dark themes; verify long value-card code and checklist text remain in viewport, code blocks still scroll, and no page-level horizontal overflow occurs. The PR's browser evidence and change are at https://github.com/veasel-labs/website/pull/166. A completed model turn alone is not success."
+}

@@ -283,6 +283,11 @@ def cancellation_fixture_prompt(payload, fallback_user_text=""):
     return ""
 
 
+def is_correlated_cancellation_fixture_turn(user_text):
+    """Recognize uniquely correlated cancellation prompts used by the smoke harness."""
+    return user_text.startswith("Wait for cancellation ")
+
+
 def latest_tool_message(messages):
     return next((message for message in reversed(messages) if message.get("role") == "tool"), {})
 
@@ -521,7 +526,7 @@ class MockProvider(BaseHTTPRequestHandler):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = fixture_user_prompt(last_message.get("content", ""))
-            is_cancellation_fixture_turn = user_text.startswith("Wait for cancellation ")
+            is_cancellation_fixture_turn = is_correlated_cancellation_fixture_turn(user_text)
             is_tool_follow_up = last_message.get("role") == "tool" or (
                 user_text.startswith("The requested code edit was applied.")
                 and any(message.get("role") == "tool" for message in messages[:-1])

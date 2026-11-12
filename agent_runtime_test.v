@@ -2178,6 +2178,7 @@ mut:
 	hits               int
 	request_bodies     []string
 	missing_acceptance bool
+	review_text_first  bool
 }
 
 fn agent_acceptance_review_fixture_tool_call(id string, name string, arguments string) OpenAIStreamChunk {
@@ -2227,7 +2228,13 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 			}
 		}
 		5 {
-			if fixture.missing_acceptance {
+			if fixture.review_text_first {
+				OpenAIStreamChunk{
+					choices: [OpenAIStreamChoice{
+						delta: OpenAIStreamDelta{ content: 'The visible feedback requirement is still missing.' }
+					}]
+				}
+			} else if fixture.missing_acceptance {
 				agent_acceptance_review_fixture_tool_call('review-followup-edit',
 					'workspace_propose_file_edit',
 					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
@@ -2235,6 +2242,19 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 				OpenAIStreamChunk{
 					choices: [OpenAIStreamChoice{
 						delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS Button behavior matches the request.' }
+					}]
+				}
+			}
+		}
+		6 {
+			if fixture.review_text_first {
+				agent_acceptance_review_fixture_tool_call('review-followup-edit',
+					'workspace_propose_file_edit',
+					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
+			} else {
+				OpenAIStreamChunk{
+					choices: [OpenAIStreamChoice{
+						delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS The missing keyboard behavior is now present.' }
 					}]
 				}
 			}
@@ -2353,6 +2373,7 @@ fn test_agent_acceptance_review_finds_missing_behavior_and_continues_once() {
 	}
 	mut fixture := &AgentAcceptanceReviewFixture{
 		missing_acceptance: true
+		review_text_first:  true
 	}
 	mut server, server_thread := start_agent_acceptance_review_fixture(mut fixture) or {
 		panic(err)
@@ -2388,8 +2409,9 @@ fn test_agent_acceptance_review_finds_missing_behavior_and_continues_once() {
 	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
 		panic(err)
 	}
-	assert fixture.hits == 6
-	assert fixture.request_bodies[5].split(agent_code_change_acceptance_review_prompt).len == 2
+	assert fixture.hits == 7
+	assert fixture.request_bodies[5].contains(agent_code_change_acceptance_review_followup_prompt)
+	assert fixture.request_bodies[6].split(agent_code_change_acceptance_review_prompt).len == 2
 	assert fixture.request_bodies[4].contains('Button: Click to activate.')
 	assert fixture.request_bodies[4].contains('keyboard activation')
 	assert exchange.messages.last().content == 'The missing keyboard behavior is now present.'

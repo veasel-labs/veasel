@@ -19,6 +19,7 @@ const agent_code_change_verification_prompt = 'The requested code edit was appli
 const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
 const agent_code_change_acceptance_review_marker = 'ACCEPTANCE_REVIEW: PASS'
 const agent_code_change_acceptance_review_prompt = 'Post-edit acceptance review: independently compare the original user request below with the actual applied workspace diff and the verification outcome. Check every requested behavior and user-visible state, not only whether the code compiles or tests pass. If any acceptance behavior is missing or incomplete, continue the task using the available workspace tools and verify it when the user requested verification. If all requested behavior is implemented, respond with the exact marker ACCEPTANCE_REVIEW: PASS followed by a concise result. If you cannot verify completeness within the bounded review phase, do not use the marker.'
+const agent_code_change_acceptance_review_followup_prompt = 'Your acceptance review did not confirm that every requested behavior is complete. Continue from the specific gap you identified: inspect or edit the workspace with the available policy-filtered tools, then run any verification required by the original request. Do not repeat the review prompt or claim success unless all requested behavior is present; use the exact ACCEPTANCE_REVIEW: PASS marker only after confirming it.'
 const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
 const agent_code_change_system_instruction = 'For an explicit code-change request, start with a workspace tool call immediately. Do not send an acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, read it; otherwise search for a distinctive term from the requested behavior. Then read the complete target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
 const agent_code_change_exploration_nudge_after = 4
@@ -1215,6 +1216,31 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 			}
 			review_passed := acceptance_review_started
 				&& output.content.contains(agent_code_change_acceptance_review_marker)
+			if acceptance_review_started && !review_passed
+				&& acceptance_review_rounds < max_agent_code_change_acceptance_review_rounds {
+				messages << ChatMessage{
+					role:    'assistant'
+					content: output.content
+				}
+				messages << ChatMessage{
+					role:    'user'
+					content: agent_code_change_acceptance_review_followup_prompt
+				}
+				if collect_trace {
+					trace_steps << ATIFStep{
+						step_id:    trace_steps.len + 1
+						source:     'agent'
+						model_name: output.model
+						message:    output.content
+					}
+					trace_steps << ATIFStep{
+						step_id: trace_steps.len + 1
+						source:  'user'
+						message: agent_code_change_acceptance_review_followup_prompt
+					}
+				}
+				continue
+			}
 			final_output := CompletionOutput{
 				provider:         output.provider
 				model:            output.model

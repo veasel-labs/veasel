@@ -43,6 +43,11 @@ test("agent details refresh and Enter returns through the stack at 32x12", async
       status: "completed",
       result: "Verified child result after refresh.",
       outcome_claimed: true,
+      input_tokens: 23,
+      output_tokens: 9,
+      usage_reported: true,
+      reported_cost_usd: 0.0042,
+      cost_reported: true,
     }
   }, 600)
   const server = Bun.serve({
@@ -68,15 +73,27 @@ test("agent details refresh and Enter returns through the stack at 32x12", async
     setup.mockInput.pressEnter()
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toContain("Status: running")
+    setup.mockInput.pressKey("END")
+    await setup.renderOnce()
+    const unavailableFrame = setup.captureCharFrame()
+    expect(unavailableFrame).toContain("Provider-reported cost:")
+    expect(unavailableFrame).toContain("unavailable")
+    setup.mockInput.pressKey("HOME")
+    await setup.renderOnce()
     await Bun.sleep(1_600)
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toContain("Status: completed")
 
     setup.mockInput.pressKey("END")
     await setup.renderOnce()
-    const resultFrame = setup.captureCharFrame()
-    expect(resultFrame).toContain("Verified child result after")
-    expect(resultFrame).toContain("refresh.")
+    const costFrame = setup.captureCharFrame()
+    expect(costFrame).toContain("Provider-reported usage: 23")
+    expect(costFrame).toContain("Provider-reported cost: $0.")
+    expect(costFrame).toContain("004200 USD")
+    expect(costFrame).toContain("Cost estimates: not shown")
+    setup.mockInput.pressKey("HOME")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Status: completed")
     const lines = setup.captureCharFrame().split("\n")
     const bottomBorder = lines.findIndex((line) => line.includes("└"))
     expect(bottomBorder).toBeGreaterThan(-1)

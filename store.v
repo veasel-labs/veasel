@@ -940,6 +940,65 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit child provider target migration')
 		}
 	}
+	if current < 27 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin context handoff retention migration')
+		}
+		db.exec('CREATE TABLE context_handoffs (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, next_operation_id TEXT NOT NULL, artifact_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (session_id, next_operation_id))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create context handoff table')
+		}
+		db.exec('CREATE INDEX context_handoffs_session_created ON context_handoffs (session_id, created_at)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index context handoffs')
+		}
+		legacy_handoffs := db.exec_param_many('SELECT session_id, created_at, data FROM events WHERE type = ? ORDER BY id ASC', [
+			context_handoff_event_type,
+		]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to inspect legacy context handoff events')
+		}
+		for row in legacy_handoffs {
+			event_data := json2.decode[EventData](row.val(2)) or { continue }
+			artifact := json2.decode[ContextHandoffArtifact](event_data.delta) or { continue }
+			if artifact.session_id != row.val(0) || artifact.next_operation_id.len == 0 {
+				continue
+			}
+			_ = db.exec_param_many('INSERT OR IGNORE INTO context_handoffs (session_id, next_operation_id, artifact_json, created_at) VALUES (?, ?, ?, ?)', [
+				artifact.session_id,
+				artifact.next_operation_id,
+				event_data.delta,
+				row.val(1),
+			]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to preserve legacy context handoff')
+			}
+			_ = db.exec_param_many('DELETE FROM context_handoffs WHERE session_id = ? AND rowid NOT IN (SELECT rowid FROM context_handoffs WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)', [
+				artifact.session_id,
+				artifact.session_id,
+				max_retained_context_handoffs_per_session.str(),
+			]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to bound retained context handoffs')
+			}
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (27)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record context handoff retention migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit context handoff retention migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -2844,6 +2903,19 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 }
 
 fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEditDraft) !WorkspaceEditProposal {
+	return store.create_workspace_edit_with_pending_reuse(session_id, draft, false)
+}
+
+// Child integration can retry after a lost HTTP response or process restart.
+// Reuse an identical pending proposal atomically so retries do not create
+// duplicate review items. Ordinary workspace proposals keep current behavior.
+fn (mut store Store) create_or_reuse_pending_workspace_edit(session_id string,
+	draft WorkspaceEditDraft) !WorkspaceEditProposal {
+	return store.create_workspace_edit_with_pending_reuse(session_id, draft, true)
+}
+
+fn (mut store Store) create_workspace_edit_with_pending_reuse(session_id string,
+	draft WorkspaceEditDraft, reuse_pending bool) !WorkspaceEditProposal {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -2856,6 +2928,20 @@ fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEdi
 	if sessions.len != 1 {
 		store.db.rollback() or {}
 		return error('session not found')
+	}
+	if reuse_pending {
+		existing := store.db.exec_param_many("SELECT id, session_id, path, diff, status, created_at, updated_at FROM workspace_edits WHERE session_id = ? AND path = ? AND expected_hash = ? AND content = ? AND status = 'pending' ORDER BY created_at, id LIMIT 1",
+			[session_id, draft.path, draft.expected_hash, draft.content]) or {
+			store.db.rollback() or {}
+			return error('unable to inspect matching pending workspace edit')
+		}
+		if existing.len == 1 {
+			store.db.commit() or {
+				store.db.rollback() or {}
+				return error('unable to commit pending workspace edit lookup')
+			}
+			return workspace_edit_proposal_from_row(existing[0])
+		}
 	}
 	pending := store.db.exec_param("SELECT COUNT(*) FROM workspace_edits WHERE session_id = ? AND status = 'pending'",
 		session_id) or {

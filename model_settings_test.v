@@ -196,6 +196,50 @@ fn test_resolve_provider_model_config_rejects_control_bytes_in_model_or_key() {
 	store.close() or { panic(err) }
 }
 
+fn test_provider_model_target_uses_selected_model_without_mutating_active_profile() {
+	root := os.join_path(os.temp_dir(), 'veasel-model-target-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai'
+		model:    'gpt-default'
+		base_url: 'https://api.openai.com/v1'
+		api_key:  'target-test-key'
+	}) or { panic(err) }
+	config := app.provider_model_config_for_target('openai', 'gpt-selected') or { panic(err) }
+	assert config.provider == 'openai'
+	assert config.model == 'gpt-selected'
+	assert config.api_key == 'target-test-key'
+	assert config.base_url == 'https://api.openai.com/v1'
+	assert app.model_config() or { panic(err) }.model == 'gpt-default'
+	assert model_provider_route(config) or { panic(err) }.protocol == 'openai-compatible'
+	app.close()
+	store.close() or { panic(err) }
+}
+
+fn test_provider_model_target_requires_configured_provider_and_valid_model() {
+	root := os.join_path(os.temp_dir(), 'veasel-model-target-invalid-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	if _ := app.provider_model_config_for_target('openai', 'gpt-unconfigured') {
+		assert false, 'provider target without credentials must be rejected'
+	}
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'ollama'
+		model:    'local'
+		base_url: 'http://127.0.0.1:11434/v1'
+	}) or { panic(err) }
+	if _ := app.provider_model_config_for_target('ollama', 'bad\nmodel') {
+		assert false, 'control characters in selected model must be rejected'
+	}
+	app.close()
+	store.close() or { panic(err) }
+}
+
 fn test_provider_catalog_includes_native_and_openai_compatible_options() {
 	catalog := model_provider_catalog()
 	assert catalog.len == supported_model_providers.len

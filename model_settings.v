@@ -241,6 +241,26 @@ fn (app &App) provider_model_config(provider string, fallback_model string) !Mod
 	return app.resolve_provider_model_config(provider, fallback_model, '', '', false)
 }
 
+// provider_model_config_for_target resolves credentials and endpoint settings
+// from the configured provider profile while honoring an explicit per-run
+// model selection. Provider/model overrides never mutate the global active
+// profile.
+fn (app &App) provider_model_config_for_target(provider string, model string) !ModelConfig {
+	selected_model := model.trim_space()
+	if selected_model.len == 0 || selected_model.len > 200
+		|| model_settings_text_has_unsafe_controls(selected_model) {
+		return error('selected model is invalid')
+	}
+	configured := app.resolve_provider_model_config(provider, '', '', '', false)!
+	return ModelConfig{
+		provider:          configured.provider
+		base_url:          configured.base_url
+		model:             selected_model
+		api_key:           configured.api_key
+		max_output_tokens: configured.max_output_tokens
+	}
+}
+
 fn (app &App) provider_catalog_model_config(input ModelCatalogInput) !ModelConfig {
 	if input.provider.trim_space().len == 0 || input.provider.len > 100 || input.base_url.len > 2_048
 		|| input.api_key.len > 4_096 {

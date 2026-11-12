@@ -910,6 +910,36 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit delivered child workspace cleanup migration')
 		}
 	}
+	if current < 26 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin child provider target migration')
+		}
+		for statement in [
+			"ALTER TABLE subagent_runs ADD COLUMN target_provider TEXT NOT NULL DEFAULT ''",
+			"ALTER TABLE subagent_runs ADD COLUMN target_model TEXT NOT NULL DEFAULT ''",
+			"ALTER TABLE subagent_runs ADD COLUMN provider TEXT NOT NULL DEFAULT ''",
+			"ALTER TABLE subagent_runs ADD COLUMN model TEXT NOT NULL DEFAULT ''",
+			"ALTER TABLE subagent_runs ADD COLUMN task TEXT NOT NULL DEFAULT ''",
+			"ALTER TABLE subagent_runs ADD COLUMN child_operation_id TEXT NOT NULL DEFAULT ''",
+		] {
+			db.exec(statement) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to add child provider target')
+			}
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (26)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record child provider target migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit child provider target migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -2678,10 +2708,6 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
-		store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation completed before this child run finished.') or {
-			store.db.rollback() or {}
-			return err
-		}
 		completion := if usage.reported {
 			EventData{
 				operation_id:          operation_id
@@ -2809,10 +2835,6 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session operation failure')
-	}
-	store.request_subagent_cancellations_unlocked(session_id, operation_id, 'Parent operation ended before this child run finished.') or {
-		store.db.rollback() or {}
-		return err
 	}
 	store.db.commit() or {
 		store.db.rollback() or {}

@@ -796,13 +796,26 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'subagent_run'
-			description: 'Delegate one focused read-only codebase investigation to a built-in reviewer or explorer. The child runs in an isolated workspace and returns a bounded summary with file evidence.'
+			description: 'Start one focused read-only codebase investigation with a built-in reviewer or explorer. The child runs asynchronously in an isolated workspace and returns a durable run ID immediately. Use subagent_wait to collect its terminal result. Optionally select a configured provider and model together; otherwise inherit this conversation operation model.'
 			parameters:  ToolParameters{
 				properties: {
-					'agent_id': ToolParameter{ type: 'string', description: 'Built-in profile: reviewer or explorer.' }
+					'agent_id': ToolParameter{ type: 'string', description: 'Built-in role: reviewer or explorer. Role does not change when provider/model changes.' }
 					'task':     ToolParameter{ type: 'string', description: 'Focused read-only investigation request, at most 8192 UTF-8 bytes.' }
+					'provider': ToolParameter{ type: 'string', description: 'Optional configured provider ID. Must be supplied together with model.' }
+					'model':    ToolParameter{ type: 'string', description: 'Optional model ID configured for the selected provider. Must be supplied together with provider.' }
 				}
 				required:   ['agent_id', 'task']
+			}
+		},
+		AgentToolDefinition{
+			name:        'subagent_wait'
+			description: 'Wait up to 30 seconds for one child run belonging to this conversation and parent operation. Returns the persisted terminal result if available, otherwise an explicit running or wait-interrupted status. Waiting never cancels the child.'
+			parameters:  ToolParameters{
+				properties: {
+					'run_id':  ToolParameter{ type: 'string', description: 'Durable run ID returned by subagent_run.' }
+					'wait_ms': ToolParameter{ type: 'integer', description: 'Optional bounded wait from 0 to 30000 milliseconds; defaults to 10000.' }
+				}
+				required:   ['run_id']
 			}
 		},
 		AgentToolDefinition{
@@ -922,6 +935,16 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 	session_id string, operation_id string, request_deadline time.Time, mut skill_context SessionSkillContext,
 	on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep, collect_trace bool,
 	policy ExecutionPolicyTurn, provider_pool ProviderPool) !AgentTraceResult {
+	return app.run_workspace_agent_turn_with_model_override(mut turn_ctx, mut messages, root,
+		session_id, operation_id, request_deadline, mut skill_context, on_text_delta,
+		mut trace_steps, collect_trace, policy, provider_pool, none)
+}
+
+fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext.Context, mut messages []ChatMessage, root string,
+	session_id string, operation_id string, request_deadline time.Time, mut skill_context SessionSkillContext,
+	on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep, collect_trace bool,
+	policy ExecutionPolicyTurn, provider_pool ProviderPool,
+	model_config_override ?ModelConfig) !AgentTraceResult {
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
@@ -990,7 +1013,7 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			return error(context_error)
 		}
 		app.apply_session_compaction_if_due(mut turn_ctx, mut messages, session_id, operation_id,
-			request_deadline, provider_pool)!
+			request_deadline, provider_pool, model_config_override)!
 		if agent_context_bytes(messages) > agent_context_byte_limit() {
 			return error('agent context size limit reached')
 		}
@@ -1019,11 +1042,11 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 		} else {
 			on_text_delta
 		}
-		output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, messages, turn_tools,
+		output := app.complete_agent_with_model_override(mut turn_ctx, session_id, messages, turn_tools,
 			code_change_request && (!edit_proposal_attempted || (verification_required
 				&& workspace_effect_applied && !verification_succeeded && !verification_failed)),
 			stream_text_delta, request_deadline,
-			provider_pool) or {
+			provider_pool, model_config_override) or {
 			if buffer_provider_text && buffered_text.len > 0
 				&& !agent_discard_buffered_text_on_provider_error(code_change_request) {
 				on_text_delta(buffered_text) or { return err }
@@ -1103,14 +1126,15 @@ fn (app &App) run_workspace_agent_turn(mut turn_ctx vcontext.Context, mut messag
 			// for the budget summary instead of failing the whole operation.
 			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output,
 				on_text_delta, mut trace_steps, mut trace_usage, collect_trace, request_deadline,
-				provider_pool)
+				provider_pool, model_config_override)
 		}
 		if round == max_agent_tool_rounds - 1 {
 			if buffer_provider_text && buffered_text.len > 0 {
 				on_text_delta(buffered_text)!
 			}
 			return app.finish_with_tool_budget_summary(mut turn_ctx, session_id, messages, output, on_text_delta,
-				mut trace_steps, mut trace_usage, collect_trace, request_deadline, provider_pool)
+				mut trace_steps, mut trace_usage, collect_trace, request_deadline, provider_pool,
+				model_config_override)
 		}
 		for call in output.tool_calls {
 			if context_error := turn_context_error(mut turn_ctx) {
@@ -1382,7 +1406,8 @@ fn messages_for_tool_budget_summary(messages []ChatMessage, calls []ProviderTool
 fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, session_id string,
 	messages []ChatMessage,
 	blocked CompletionOutput, on_text_delta ProviderTextDeltaFn, mut trace_steps []ATIFStep,
-	mut trace_usage ProviderUsage, collect_trace bool, request_deadline time.Time, provider_pool ProviderPool) !AgentTraceResult {
+	mut trace_usage ProviderUsage, collect_trace bool, request_deadline time.Time, provider_pool ProviderPool,
+	model_config_override ?ModelConfig) !AgentTraceResult {
 	summary_messages := messages_for_tool_budget_summary(messages, blocked.tool_calls)
 	if agent_context_bytes(summary_messages) > agent_context_byte_limit() {
 		return error('agent tool round limit reached')
@@ -1391,8 +1416,8 @@ fn (app &App) finish_with_tool_budget_summary(mut turn_ctx vcontext.Context, ses
 	if boundary.len > 0 {
 		on_text_delta(boundary)!
 	}
-	summary := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, summary_messages, [],
-		false, on_text_delta, request_deadline, provider_pool)!
+	summary := app.complete_agent_with_model_override(mut turn_ctx, session_id, summary_messages, [],
+		false, on_text_delta, request_deadline, provider_pool, model_config_override)!
 	if has_provider_usage_data(summary.usage) {
 		trace_usage = add_provider_usage(trace_usage, summary.usage)
 	}
@@ -1481,6 +1506,9 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 	}
 	if call.function.name == 'subagent_run' {
 		return app.execute_subagent_run(mut turn_ctx, root, session_id, operation_id, call)
+	}
+	if call.function.name == 'subagent_wait' {
+		return app.execute_subagent_wait(mut turn_ctx, session_id, operation_id, call)
 	}
 	if tool_class in ['edit', 'shell'] {
 		decision := decide_execution_permission(policy.mode, tool_class, policy.interactive,
@@ -1823,7 +1851,15 @@ fn agent_context_bytes(messages []ChatMessage) int {
 // active model plus the configured output reserve held back from it. Unknown
 // models return a zero window so no budget is invented for them.
 fn (app &App) active_model_token_budget() (int, int) {
-	config := app.model_config() or { return 0, 0 }
+	return app.active_model_token_budget_with_model_override(none)
+}
+
+fn (app &App) active_model_token_budget_with_model_override(model_config_override ?ModelConfig) (int, int) {
+	config := if model_config_override != none {
+		model_config_override
+	} else {
+		app.model_config() or { return 0, 0 }
+	}
 	return active_model_context_window(config), config.max_output_tokens
 }
 
@@ -1858,9 +1894,10 @@ fn parse_model_context_window(raw string) ?int {
 }
 
 fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut messages []ChatMessage,
-	session_id string, operation_id string, request_deadline time.Time, provider_pool ProviderPool) ! {
+	session_id string, operation_id string, request_deadline time.Time, provider_pool ProviderPool,
+	model_config_override ?ModelConfig) ! {
 	mode := session_compaction_summarizer_mode()
-	context_tokens, reserved_output_tokens := app.active_model_token_budget()
+	context_tokens, reserved_output_tokens := app.active_model_token_budget_with_model_override(model_config_override)
 	result := match mode {
 		'native' {
 			compact_session_messages_with_summarizer(messages, 'native', native_session_compaction_summarizer,
@@ -1868,7 +1905,8 @@ fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut
 		}
 		'llm' {
 			app.compact_session_messages_with_llm_summarizer(mut turn_ctx, session_id, messages,
-				context_tokens, reserved_output_tokens, request_deadline, provider_pool)
+				context_tokens, reserved_output_tokens, request_deadline, provider_pool,
+				model_config_override)
 		}
 		else {
 			compact_session_messages(messages, context_tokens, reserved_output_tokens)
@@ -1884,7 +1922,8 @@ fn (app &App) apply_session_compaction_if_due(mut turn_ctx vcontext.Context, mut
 
 fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext.Context,
 	session_id string, messages []ChatMessage, model_context_tokens int,
-	reserved_output_tokens int, request_deadline time.Time, provider_pool ProviderPool) SessionCompactionResult {
+	reserved_output_tokens int, request_deadline time.Time, provider_pool ProviderPool,
+	model_config_override ?ModelConfig) SessionCompactionResult {
 	bytes_before := agent_context_bytes(messages)
 	due, reason := session_compaction_due(messages, model_context_tokens, reserved_output_tokens)
 	if !due {
@@ -1901,7 +1940,7 @@ fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext
 		return compaction_result_unchanged(messages, bytes_before, reason)
 	}
 	preferred := app.llm_session_compaction_summary(mut turn_ctx, session_id, older, bytes_before,
-		reason, request_deadline, provider_pool) or {
+		reason, request_deadline, provider_pool, model_config_override) or {
 		return apply_extractive_compaction(messages, bytes_before, reason, 'llm_fallback_extractive',
 			ProviderUsage{}, keep_bytes)
 	}
@@ -1911,7 +1950,8 @@ fn (app &App) compact_session_messages_with_llm_summarizer(mut turn_ctx vcontext
 
 fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, session_id string,
 	older []ChatMessage,
-	bytes_before int, reason string, request_deadline time.Time, provider_pool ProviderPool) !SessionCompactionSummarizerOutput {
+	bytes_before int, reason string, request_deadline time.Time, provider_pool ProviderPool,
+	model_config_override ?ModelConfig) !SessionCompactionSummarizerOutput {
 	// Feed the bounded extractive digest to the model so the summarizer request
 	// itself stays under local UTF-8 pressure without inventing token savings.
 	digest := build_extractive_compaction_summary(older, bytes_before, reason)
@@ -1925,8 +1965,8 @@ fn (app &App) llm_session_compaction_summary(mut turn_ctx vcontext.Context, sess
 			content: digest
 		},
 	]
-	output := app.complete_agent_with_provider_limit(mut turn_ctx, session_id, prompt, [],
-		false, ignore_provider_text_delta, request_deadline, provider_pool)!
+	output := app.complete_agent_with_model_override(mut turn_ctx, session_id, prompt, [],
+		false, ignore_provider_text_delta, request_deadline, provider_pool, model_config_override)!
 	text := output.content.trim_space()
 	if text.len == 0 {
 		return error('compaction summarizer returned empty content')

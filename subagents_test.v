@@ -65,6 +65,7 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 		'Queued child', workspace_root) or { panic(err) }
 	ready_cancelled := store.create_subagent_run(parent.id, operation_id, 'request-ready-cancelled',
 		'reviewer', 1, 'Ready then cancelled', workspace_root) or { panic(err) }
+	_ = store.request_subagent_run_cancellation(ready_cancelled.id, 'Cancelled by test') or { panic(err) }
 	_ = store.db.exec_param_many('UPDATE subagent_runs SET workspace_ready = 0 WHERE id = ?', [queued.id]) or {
 		panic(err)
 	}
@@ -86,27 +87,28 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	uncertain := store.create_subagent_run(parent.id, recovery_operation_id, 'request-5',
 		'reviewer', 1, 'Interrupted child', workspace_root) or { panic(err) }
 	_ = store.begin_subagent_run(uncertain.id) or { panic(err) }
-	assert (store.get_subagent_run_unlocked(queued.id) or { panic(err) }).status == 'cancelled'
-	assert !(store.get_subagent_run_unlocked(queued.id) or { panic(err) }).workspace_started
 	assert (store.get_subagent_run_unlocked(ready_cancelled.id) or { panic(err) }).status == 'cancelled'
 	assert !(store.get_subagent_run_unlocked(ready_cancelled.id) or { panic(err) }).workspace_started
 	store.cleanup_unstarted_subagent_workspaces()
-	assert !os.exists(os.join_path(root, 'subagent-worktrees', queued.id))
 	assert !os.exists(os.join_path(root, 'subagent-worktrees', ready_cancelled.id))
 	requested_cancel := store.get_subagent_run_unlocked(running.id) or { panic(err) }
 	assert requested_cancel.status == 'running'
-	assert requested_cancel.cancel_requested
-	assert store.subagent_cancellation_requested(running.id) or { panic(err) }
+	assert !requested_cancel.cancel_requested
+	assert !(store.subagent_cancellation_requested(running.id) or { panic(err) })
 	late_finish := store.finish_subagent_run(running.id, 'completed', 'late child result', '') or {
 		panic(err)
 	}
-	assert late_finish.status == 'cancelled'
-	assert late_finish.result == ''
-	assert late_finish.error == 'Parent operation completed before this child run finished.'
+	assert late_finish.status == 'completed'
+	assert late_finish.result == 'late child result'
+	assert late_finish.error == ''
 	store.close() or { panic(err) }
 
 	mut recovered := open_store(db_path) or { panic(err) }
 	mut app := new_app(recovered, root)
+	assert (recovered.get_subagent_run_unlocked(queued.id) or { panic(err) }).status == 'cancelled'
+	assert !(recovered.get_subagent_run_unlocked(queued.id) or { panic(err) }).workspace_started
+	assert !os.exists(os.join_path(root, 'subagent-worktrees', queued.id))
+	assert (recovered.get_session(queued.child_session_id) or { panic(err) }).directory == workspace_root
 	assert !os.exists(expected_child_directory)
 	assert (recovered.get_session(first.child_session_id) or { panic(err) }).directory == workspace_root
 	retried := recovered.create_subagent_run(parent.id, operation_id, 'request-1', 'reviewer', 1,
@@ -150,8 +152,8 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 	}
 	assert recovered_uncertain_delivery_count == 1
 	recovered_running := recovered.get_subagent_run_unlocked(running.id) or { panic(err) }
-	assert recovered_running.status == 'cancelled'
-	assert recovered_running.cancel_requested
+	assert recovered_running.status == 'completed'
+	assert !recovered_running.cancel_requested
 	app.close()
 	recovered.close() or { panic(err) }
 
@@ -172,6 +174,105 @@ fn test_subagent_run_is_idempotent_bounded_and_delivered_once_after_restart() {
 		}
 	}
 	assert restarted_uncertain_delivery_count == 1
+}
+
+fn test_subagent_persists_task_role_request_target_and_resolved_route() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-target-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	parent := store.create_session(SessionInput{ title: 'Parent', directory: workspace_root }) or {
+		panic(err)
+	}
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	task := 'Inspect provider fallback behavior and report the test locations.'
+	run := store.create_subagent_run_with_cancel_reason(parent.id, operation_id, 'route-request',
+		'explorer', 1, 'Codebase explorer: Inspect provider fallback behavior', workspace_root, '',
+		'gemini', 'gemini-2.5-flash', 'gemini', 'gemini-2.5-flash', task) or { panic(err) }
+	assert run.agent_id == 'explorer'
+	assert run.requested_title == 'Codebase explorer: Inspect provider fallback behavior'
+	assert run.task == task
+	assert run.target_provider == 'gemini'
+	assert run.target_model == 'gemini-2.5-flash'
+	assert run.provider == 'gemini'
+	assert run.model == 'gemini-2.5-flash'
+	retry := store.create_subagent_run_with_cancel_reason(parent.id, operation_id, 'route-request',
+		'explorer', 1, run.requested_title, workspace_root, '', 'gemini', 'gemini-2.5-flash',
+		'gemini', 'gemini-2.5-flash', task) or { panic(err) }
+	assert retry.id == run.id
+	_ = store.create_subagent_run_with_cancel_reason(parent.id, operation_id, 'route-request',
+		'explorer', 1, run.requested_title, workspace_root, '', 'openai', 'gpt-5', 'openai', 'gpt-5',
+		task) or {
+		assert err.msg().contains('reused with different parameters')
+		SubagentRun{}
+	}
+	store.close() or { panic(err) }
+}
+
+fn test_manual_subagent_parent_group_is_durable_and_does_not_create_chat_turn() {
+	root := os.join_path(os.temp_dir(), 'veasel-manual-subagent-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	parent := store.create_session(SessionInput{ title: 'Manual delegation', directory: workspace_root }) or {
+		panic(err)
+	}
+	group_id := store.ensure_subagent_parent_operation(parent.id) or { panic(err) }
+	assert (store.ensure_subagent_parent_operation(parent.id) or { panic(err) }) == group_id
+	group := store.get_session_operation(parent.id, group_id) or { panic(err) }
+	assert group.status == 'completed'
+	assert group.provider == ''
+	assert group.model == ''
+	assert !group.usage_reported
+	assert subagent_count_for_test(mut store, 'SELECT COUNT(*) FROM session_operations WHERE session_id = ?',
+		[parent.id]) == 1
+	assert subagent_count_for_test(mut store, 'SELECT COUNT(*) FROM messages WHERE session_id = ?',
+		[parent.id]) == 0
+	group_events := subagent_count_for_test(mut store, "SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'subagent.user_delegation'",
+		[parent.id])
+	assert group_events == 1
+	run := store.create_subagent_run_with_cancel_reason(parent.id, group_id, 'manual-request',
+		'explorer', 1, 'Codebase explorer: inspect', workspace_root, '', '', '', '', '', 'inspect') or {
+		panic(err)
+	}
+	assert run.workspace_ready
+	started := store.begin_subagent_run(run.id) or { panic(err) }
+	assert started.status == 'running'
+}
+
+fn test_manual_subagent_parent_reuses_latest_existing_operation() {
+	root := os.join_path(os.temp_dir(), 'veasel-manual-subagent-latest-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace_root := init_subagent_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	parent := store.create_session(SessionInput{ title: 'Existing conversation', directory: workspace_root }) or {
+		panic(err)
+	}
+	first_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, first_id) or { panic(err) }
+	_ = store.append_exchange(parent.id, first_id, 'question', 'answer', 'openai', 'gpt-test', '',
+		ProviderUsage{}) or { panic(err) }
+	latest_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, latest_id) or { panic(err) }
+	_ = store.append_exchange(parent.id, latest_id, 'latest question', 'latest answer', 'gemini',
+		'gemini-test', '', ProviderUsage{}) or { panic(err) }
+	assert (store.ensure_subagent_parent_operation(parent.id) or { panic(err) }) == latest_id
+	assert subagent_count_for_test(mut store, "SELECT COUNT(*) FROM events WHERE session_id = ? AND type = 'subagent.user_delegation'",
+		[parent.id]) == 0
+	assert subagent_count_for_test(mut store, 'SELECT COUNT(*) FROM session_operations WHERE session_id = ?',
+		[parent.id]) == 2
+}
+
+fn subagent_count_for_test(mut store Store, query string, args []string) int {
+	rows := store.db.exec_param_many(query, args) or { panic(err) }
+	assert rows.len == 1
+	return rows[0].val(0).int()
 }
 
 fn test_delivered_subagent_cleanup_preserves_workspace_edits() {
@@ -298,7 +399,7 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
 	initial_version := store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert initial_version == 25
+	assert initial_version == 26
 	_ = store.db.exec('DROP TABLE subagent_runs') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 20') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 21') or { panic(err) }
@@ -306,6 +407,7 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 23') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 24') or { panic(err) }
 	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 25') or { panic(err) }
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 26') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(db_path) or { panic(err) }
 	defer { migrated.close() or {} }
@@ -313,7 +415,7 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 		panic(err)
 	} == 1
 	migrated_version := migrated.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert migrated_version == 25
+	assert migrated_version == 26
 	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_unclaimed_outcome'") or {
 		panic(err)
 	} == 1
@@ -402,6 +504,7 @@ fn test_unstarted_workspace_cleanup_skips_live_preparation() {
 	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
 	run := store.create_subagent_run(parent.id, operation_id, 'request', 'reviewer', 1, 'Child',
 		workspace_root) or { panic(err) }
+	_ = store.request_subagent_run_cancellation(run.id, 'Cancelled before execution') or { panic(err) }
 	_ = store.append_exchange(parent.id, operation_id, 'parent task', 'done', '', '', '', ProviderUsage{}) or {
 		panic(err)
 	}

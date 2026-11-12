@@ -11,7 +11,7 @@ import veb.sse
 
 const max_provider_concurrency = 4
 // A delegated TLS request may outlive cancellation before its first response byte.
-const max_subagent_provider_concurrency = 1
+const max_subagent_provider_concurrency = 4
 const max_active_turn_operations = 32
 const max_active_shell_commands = 2
 const session_turn_lock_stripes = 64
@@ -103,6 +103,23 @@ pub:
 struct WorkspaceFileInput {
 pub:
 	path string
+}
+
+struct SubagentTargetInput {
+pub:
+	provider string
+	model    string
+}
+
+struct SubagentCreateInput {
+pub:
+	parent_operation_id string @[omitempty]
+	request_id          string
+	agent_id            string
+	task                string
+	target              ?SubagentTargetInput
+	mode                string @[omitempty]
+	workspace           string @[omitempty]
 }
 
 struct WorkspaceSearchInput {
@@ -352,7 +369,19 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 	session_id string, messages []ChatMessage,
 	tools []AgentToolDefinition, require_tool_choice bool, on_text_delta ProviderTextDeltaFn,
 	request_deadline time.Time, pool ProviderPool) !CompletionOutput {
+	return app.complete_agent_with_model_override(mut turn_ctx, session_id, messages, tools,
+		require_tool_choice, on_text_delta, request_deadline, pool, none)
+}
+
+fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
+	session_id string, messages []ChatMessage,
+	tools []AgentToolDefinition, require_tool_choice bool, on_text_delta ProviderTextDeltaFn,
+	request_deadline time.Time, pool ProviderPool, model_config_override ?ModelConfig) !CompletionOutput {
 	mut config := app.model_config_for_session(session_id)!
+	if model_config_override != none {
+		config = model_config_override
+		config.session_id = session_id
+	}
 	config.request_deadline = request_deadline
 	config.require_tool_choice = require_tool_choice
 	if !app.try_provider_slot(pool) {
@@ -1310,6 +1339,132 @@ pub fn (app &App) complete_chat(mut ctx Context) veb.Result {
 		model:    output.model
 		content:  output.content
 	})
+}
+
+@['/v1/sessions/:id/subagents'; post]
+pub fn (app &App) create_session_subagent(mut ctx Context, id string) veb.Result {
+	if ctx.req.data.len > 16_384 {
+		return json_request_error(mut ctx, 'Child task request exceeds the size limit')
+	}
+	input := json2.decode[SubagentCreateInput](ctx.req.data) or {
+		return json_request_error(mut ctx, 'Expected request_id, agent_id, task, and optional target')
+	}
+	if input.request_id.trim_space().len == 0 || input.request_id.len > 128
+		|| input.request_id.contains('\0') || input.agent_id.trim_space().len == 0
+		|| input.agent_id.len > 128 || input.task.trim_space().len == 0 || input.task.len > 8192 {
+		return json_request_error(mut ctx, 'Child task identifiers and task text are invalid')
+	}
+	mode := if input.mode.trim_space().len == 0 { 'async' } else { input.mode.trim_space() }
+	if mode != 'async' {
+		return json_request_error(mut ctx, 'Child tasks currently support mode "async" only')
+	}
+	workspace := if input.workspace.trim_space().len == 0 {
+		'isolated-worktree'
+	} else {
+		input.workspace.trim_space()
+	}
+	if workspace != 'isolated-worktree' {
+		return json_request_error(mut ctx, 'Child tasks require an isolated-worktree workspace')
+	}
+	parent_operation_id := if input.parent_operation_id.trim_space().len == 0 {
+		''
+	} else {
+		canonical_operation_id(input.parent_operation_id) or {
+			return json_request_error(mut ctx, 'Parent operation identifier must be a non-nil UUID')
+		}
+	}
+	mut target_provider := ''
+	mut target_model := ''
+	if target := input.target {
+		target_provider = target.provider.trim_space()
+		target_model = target.model.trim_space()
+		if target_provider.len == 0 || target_provider.len > 100 || target_model.len == 0
+			|| target_model.len > 200 {
+			return json_request_error(mut ctx, 'Target provider and model must both be valid')
+		}
+	}
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	run := app.delegate_subagent_task(id, parent_operation_id, input.request_id.trim_space(),
+		input.agent_id.trim_space(), input.task, target_provider, target_model) or {
+		if err.msg().contains('capacity') || err.msg().contains('limit') {
+			ctx.res.set_status(.too_many_requests)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		ctx.res.set_status(.unprocessable_entity)
+		return ctx.json(APIError{
+			error: err.msg()
+		})
+	}
+	ctx.res.set_status(.accepted)
+	return ctx.json(run)
+}
+
+@['/v1/sessions/:id/subagents'; get]
+pub fn (app &App) list_session_subagents(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut store := app.store
+	return ctx.json(store.list_subagent_runs(id) or {
+		return json_server_error(mut ctx, 'Unable to list child agent runs')
+	})
+}
+
+@['/v1/sessions/:id/subagents/:run_id'; get]
+pub fn (app &App) get_session_subagent(mut ctx Context, id string, run_id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	canonical_id := canonical_operation_id(run_id) or {
+		return json_request_error(mut ctx, 'Child run identifier must be a non-nil UUID')
+	}
+	mut store := app.store
+	run := store.get_subagent_run(canonical_id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'child agent run not found'
+		})
+	}
+	if run.parent_session_id != id {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'child agent run not found'
+		})
+	}
+	return ctx.json(run)
+}
+
+@['/v1/sessions/:id/subagents/:run_id/cancel'; post]
+pub fn (app &App) cancel_session_subagent(mut ctx Context, id string, run_id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	canonical_id := canonical_operation_id(run_id) or {
+		return json_request_error(mut ctx, 'Child run identifier must be a non-nil UUID')
+	}
+	run := app.cancel_subagent_run(id, canonical_id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'child agent run not found'
+		})
+	}
+	return ctx.json(run)
 }
 
 @['/v1/sessions/:id/operations'; get]

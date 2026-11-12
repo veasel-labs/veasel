@@ -19,7 +19,14 @@ pub:
 	parent_session_id     string
 	parent_operation_id   string
 	child_session_id      string
+	child_operation_id    string
 	agent_id              string
+	requested_title       string
+	task                  string
+	target_provider       string
+	target_model          string
+	provider              string
+	model                 string
 	depth                 int
 	status                string
 	result                string
@@ -29,6 +36,14 @@ pub:
 	workspace_ready       bool
 	workspace_started     bool
 	workspace_base_commit string
+	input_tokens          i64
+	output_tokens         i64
+	usage_reported        bool
+	cache_read_tokens     i64
+	cache_creation_tokens i64
+	cache_reported        bool
+	reasoning_tokens      i64
+	reasoning_reported    bool
 }
 
 // create_subagent_run atomically creates a clean child session and its durable
@@ -36,13 +51,20 @@ pub:
 // callers or expose model tools.
 fn (mut store Store) create_subagent_run(parent_session_id string, parent_operation_id string,
 	request_id string, agent_id string, depth int, title string, directory string) !SubagentRun {
+	return store.create_subagent_run_with_task(parent_session_id, parent_operation_id, request_id,
+		agent_id, depth, title, directory, '')
+}
+
+fn (mut store Store) create_subagent_run_with_task(parent_session_id string, parent_operation_id string,
+	request_id string, agent_id string, depth int, title string, directory string, task string) !SubagentRun {
 	return store.create_subagent_run_with_cancel_reason(parent_session_id, parent_operation_id,
-		request_id, agent_id, depth, title, directory, '')
+		request_id, agent_id, depth, title, directory, '', '', '', '', '', task)
 }
 
 fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id string, parent_operation_id string,
 	request_id string, agent_id string, depth int, title string, directory string,
-	initial_cancel_reason string) !SubagentRun {
+	initial_cancel_reason string, target_provider string, target_model string, provider string,
+	model string, task string) !SubagentRun {
 	if request_id.len == 0 || request_id.len > 128 || request_id.contains('\0') || agent_id.len == 0
 		|| agent_id.len > 128 || agent_id.contains('\0') || parent_operation_id.len == 0
 		|| parent_operation_id.len > 128 {
@@ -55,6 +77,13 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 	if directory.len == 0 || directory.len > 4096 || title.len == 0 || title.len > 512 {
 		return error('child agent session metadata is invalid')
 	}
+	if task.len > 8192 {
+		return error('child agent task exceeds its limit')
+	}
+	if (target_provider.len == 0) != (target_model.len == 0)
+		|| (provider.len == 0) != (model.len == 0) {
+		return error('child agent model target is invalid')
+	}
 	if store.path == ':memory:' {
 		return error('child agent workspaces require a persistent store')
 	}
@@ -66,7 +95,7 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 		}
 	}
 	store.db.exec('BEGIN IMMEDIATE') or { return error('unable to reserve child agent capacity') }
-	prior := store.db.exec_param_many('SELECT id, agent_id, requested_title, requested_directory, depth, workspace_ready FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ? AND request_id = ?', [
+	prior := store.db.exec_param_many('SELECT id, agent_id, requested_title, requested_directory, depth, workspace_ready, target_provider, target_model, task FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ? AND request_id = ?', [
 		parent_session_id,
 		parent_operation_id,
 		request_id,
@@ -77,7 +106,8 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 	if prior.len == 1 {
 		row := prior[0]
 		if row.val(1) != agent_id || row.val(2) != title || row.val(3) != directory
-			|| row.val(4).int() != depth {
+			|| row.val(4).int() != depth || row.val(6) != target_provider || row.val(7) != target_model
+			|| row.val(8) != task {
 			store.db.rollback() or {}
 			return error('child agent request key was reused with different parameters')
 		}
@@ -100,7 +130,7 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 		store.db.rollback() or {}
 		return error('unable to verify parent operation')
 	}
-	if operation.len != 1 || operation[0].val(0) != 'running' {
+	if operation.len != 1 || operation[0].val(0) !in ['running', 'completed', 'failed', 'uncertain'] {
 		store.db.rollback() or {}
 		return error('parent operation is not running')
 	}
@@ -145,6 +175,7 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 		preparation_lock.release()
 	}
 	child_session_id := uuid.new_v4().str()
+	child_operation_id := uuid.new_v4().str()
 	child_directory := os.join_path(os.dir(os.real_path(store.path)), 'subagent-worktrees', run_id)
 	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)', [
 		child_session_id,
@@ -159,9 +190,10 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 		store.db.rollback() or {}
 		return error('unable to record child agent session')
 	}
-	_ = store.db.exec_param_many("INSERT INTO subagent_runs (id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, requested_title, requested_directory, depth, status, workspace_ready, workspace_started) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 0)",
-		[run_id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id,
-			title, directory, depth.str()]) or {
+	_ = store.db.exec_param_many("INSERT INTO subagent_runs (id, request_id, parent_session_id, parent_operation_id, child_session_id, child_operation_id, agent_id, requested_title, requested_directory, depth, status, target_provider, target_model, provider, model, task, workspace_ready, workspace_started) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, 0, 0)",
+		[run_id, request_id, parent_session_id, parent_operation_id, child_session_id,
+			child_operation_id, agent_id, title, directory, depth.str(), target_provider, target_model,
+			provider, model, task]) or {
 		store.db.rollback() or {}
 		return error('unable to persist child agent ownership')
 	}
@@ -202,7 +234,7 @@ fn (mut store Store) create_subagent_run_with_cancel_reason(parent_session_id st
 	store.mu.lock()
 	store_locked = true
 	store.active_subagent_preparations.delete(run_id)
-	_ = store.db.exec_param_many("UPDATE subagent_runs SET workspace_ready = 1, workspace_base_commit = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND EXISTS (SELECT 1 FROM session_operations WHERE id = ? AND session_id = ? AND status = 'running')",
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET workspace_ready = 1, workspace_base_commit = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued' AND EXISTS (SELECT 1 FROM session_operations WHERE id = ? AND session_id = ? AND status IN ('running', 'completed', 'failed', 'uncertain'))",
 		[workspace.base_commit, run_id, parent_operation_id, parent_session_id]) or {
 		store.mu.unlock()
 		store_locked = false
@@ -246,7 +278,8 @@ fn (mut store Store) begin_subagent_run(run_id string) !SubagentRun {
 		store.db.rollback() or {}
 		return error('unable to verify parent operation state')
 	}
-	if parent_operation.len != 1 || parent_operation[0].val(0) != 'running' {
+	if parent_operation.len != 1 || parent_operation[0].val(0) !in ['running', 'completed', 'failed',
+		'uncertain'] {
 		store.db.rollback() or {}
 		return error('parent operation is not running')
 	}
@@ -314,6 +347,22 @@ fn (mut store Store) finish_subagent_run(run_id string, status string, result st
 	return store.get_subagent_run_unlocked(run_id)
 }
 
+fn (mut store Store) fail_queued_subagent_run(run_id string, run_error string) !SubagentRun {
+	if run_error.trim_space().len == 0 || run_error.len > max_subagent_error_bytes {
+		return error('child agent start failure is invalid')
+	}
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'failed', error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
+		[run_error, run_id])!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('child agent run is no longer queued')
+	}
+	return store.get_subagent_run_unlocked(run_id)
+}
+
 // claim_subagent_outcome records delivery in the parent event stream in the
 // same transaction as the durable claim. Retries return the same terminal run,
 // so a restarted parent can fetch its result again by run ID.
@@ -368,7 +417,7 @@ fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 }
 
 fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
-	rows := store.db.exec_param_many('SELECT id, request_id, parent_session_id, parent_operation_id, child_session_id, agent_id, depth, status, result, error, outcome_claimed, cancel_requested, workspace_ready, workspace_started, workspace_base_commit FROM subagent_runs WHERE id = ?',
+	rows := store.db.exec_param_many('SELECT r.id, r.request_id, r.parent_session_id, r.parent_operation_id, r.child_session_id, r.child_operation_id, r.agent_id, r.depth, r.status, r.result, r.error, r.outcome_claimed, r.cancel_requested, r.workspace_ready, r.workspace_started, r.workspace_base_commit, r.target_provider, r.target_model, r.provider, r.model, r.requested_title, r.task, COALESCE(o.input_tokens, 0), COALESCE(o.output_tokens, 0), COALESCE(o.usage_reported, 0), COALESCE(o.cache_read_tokens, 0), COALESCE(o.cache_creation_tokens, 0), COALESCE(o.cache_reported, 0), COALESCE(o.reasoning_tokens, 0), COALESCE(o.reasoning_reported, 0) FROM subagent_runs r LEFT JOIN session_operations o ON o.id = r.child_operation_id AND o.session_id = r.child_session_id WHERE r.id = ?',
 		[run_id])!
 	if rows.len != 1 {
 		return error('child agent run not found')
@@ -380,17 +429,132 @@ fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
 		parent_session_id:     row.val(2)
 		parent_operation_id:   row.val(3)
 		child_session_id:      row.val(4)
-		agent_id:              row.val(5)
-		depth:                 row.val(6).int()
-		status:                row.val(7)
-		result:                row.val(8)
-		error:                 row.val(9)
-		outcome_claimed:       row.val(10).int() == 1
-		cancel_requested:      row.val(11).int() == 1
-		workspace_ready:       row.val(12).int() == 1
-		workspace_started:     row.val(13).int() == 1
-		workspace_base_commit: row.val(14)
+		child_operation_id:    row.val(5)
+		agent_id:              row.val(6)
+		depth:                 row.val(7).int()
+		status:                row.val(8)
+		result:                row.val(9)
+		error:                 row.val(10)
+		outcome_claimed:       row.val(11).int() == 1
+		cancel_requested:      row.val(12).int() == 1
+		workspace_ready:       row.val(13).int() == 1
+		workspace_started:     row.val(14).int() == 1
+		workspace_base_commit: row.val(15)
+		target_provider:       row.val(16)
+		target_model:          row.val(17)
+		provider:              row.val(18)
+		model:                 row.val(19)
+		requested_title:       row.val(20)
+		task:                  row.val(21)
+		input_tokens:          row.val(22).i64()
+		output_tokens:         row.val(23).i64()
+		usage_reported:        row.val(24).int() == 1
+		cache_read_tokens:     row.val(25).i64()
+		cache_creation_tokens: row.val(26).i64()
+		cache_reported:        row.val(27).int() == 1
+		reasoning_tokens:      row.val(28).i64()
+		reasoning_reported:    row.val(29).int() == 1
 	}
+}
+
+// ensure_subagent_parent_operation attaches a manually delegated child to the
+// latest durable conversation operation. Empty sessions receive an explicit
+// synthetic user-delegation group, with no model identity or transcript turn.
+fn (mut store Store) ensure_subagent_parent_operation(session_id string) !string {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.begin()!
+	sessions := store.db.exec_param_many('SELECT id FROM sessions WHERE id = ?', [session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to verify parent conversation')
+	}
+	if sessions.len != 1 {
+		store.db.rollback() or {}
+		return error('parent conversation not found')
+	}
+	latest := store.db.exec_param_many('SELECT id, status FROM session_operations WHERE session_id = ? ORDER BY rowid DESC LIMIT 1',
+		[session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to find parent conversation operation')
+	}
+	if latest.len == 1 {
+		store.db.commit() or {
+			store.db.rollback() or {}
+			return error('unable to commit parent operation lookup')
+		}
+		return latest[0].val(0)
+	}
+	operation_id := uuid.new_v4().str()
+	_ = store.db.exec_param_many("INSERT INTO session_operations (id, session_id, status, provider, model, error, request_json, input_tokens, output_tokens, usage_reported, created_at, updated_at) VALUES (?, ?, 'completed', '', '', '', '', 0, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+		[operation_id, session_id]) or {
+		store.db.rollback() or {}
+		return error('unable to create manual delegation group')
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'subagent.user_delegation',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id: operation_id
+			status:       'completed'
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to record manual delegation group')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit manual delegation group')
+	}
+	return operation_id
+}
+
+fn (mut store Store) get_subagent_run(run_id string) !SubagentRun {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	return store.get_subagent_run_unlocked(run_id)
+}
+
+fn (mut store Store) list_subagent_runs(parent_session_id string) ![]SubagentRun {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many('SELECT id FROM subagent_runs WHERE parent_session_id = ? ORDER BY created_at, rowid',
+		[parent_session_id])!
+	mut runs := []SubagentRun{cap: rows.len}
+	for row in rows {
+		runs << store.get_subagent_run_unlocked(row.val(0))!
+	}
+	return runs
+}
+
+fn (mut store Store) request_subagent_run_cancellation(run_id string, reason string) !SubagentRun {
+	if reason.trim_space().len == 0 || reason.len > max_subagent_error_bytes {
+		return error('child cancellation reason is invalid')
+	}
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	store.db.begin()!
+	run := store.get_subagent_run_unlocked(run_id) or {
+		store.db.rollback() or {}
+		return err
+	}
+	if run.status == 'queued' {
+		_ = store.db.exec_param_many("UPDATE subagent_runs SET status = 'cancelled', cancel_requested = 1, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'",
+			[reason, run_id]) or {
+			store.db.rollback() or {}
+			return error('unable to cancel queued child run')
+		}
+	} else if run.status == 'running' && !run.cancel_requested {
+		_ = store.db.exec_param_many("UPDATE subagent_runs SET cancel_requested = 1, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running' AND cancel_requested = 0",
+			[reason, run_id]) or {
+			store.db.rollback() or {}
+			return error('unable to request child run cancellation')
+		}
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit child run cancellation')
+	}
+	return store.get_subagent_run_unlocked(run_id)
 }
 
 // request_subagent_cancellations_unlocked is called inside the owning

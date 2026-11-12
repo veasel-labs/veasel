@@ -54,8 +54,8 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 			return error('child workspace is unavailable or no longer matches its durable run')
 		}
 		if worktree_changes := run_workspace_git_command_output(worktree,
-			['diff', '--name-only', '-z', '--diff-filter=ACMRTUXB', run.workspace_base_commit,
-				'--'],
+			['diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACMRTUXB',
+				run.workspace_base_commit, '--'],
 			max_subagent_integration_listing_bytes) {
 			for relative_path in worktree_changes.split('\0') {
 				if relative_path.len == 0 {
@@ -109,7 +109,8 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 			return error('unable to inspect child worktree changes: ${err.msg()}')
 		}
 		if deletions := run_workspace_git_command_output(worktree,
-			['diff', '--name-only', '-z', '--diff-filter=D', run.workspace_base_commit, '--'],
+			['diff', '--name-only', '-z', '--no-renames', '--diff-filter=D', run.workspace_base_commit,
+				'--'],
 			max_subagent_integration_listing_bytes) {
 			for relative_path in deletions.split('\0') {
 				if relative_path.len > 0 {

@@ -137,6 +137,42 @@ fn test_child_integration_detects_parent_conflict_and_preserves_child_worktree()
 	assert os.is_dir(child_directory)
 }
 
+fn test_child_rename_reports_old_path_deletion_and_gates_new_path() {
+	root := os.join_path(os.temp_dir(), 'veasel-child-rename-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_integration_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	parent := store.create_session(SessionInput{ title: 'Parent rename', directory: workspace }) or {
+		panic(err)
+	}
+	parent_operation := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, parent_operation) or { panic(err) }
+	run, child_directory := create_completed_implementer_child(mut store, parent, parent_operation,
+		workspace, 'integration-rename')
+	_ := run_workspace_git_command(child_directory, ['mv', 'README.md', 'MOVED.md']) or { panic(err) }
+
+	response := app.propose_subagent_integration(parent.id, run.id) or { panic(err) }
+	assert response.proposals.len == 1
+	assert response.proposals[0].path == 'MOVED.md'
+	assert response.conflicts.len == 1
+	assert response.conflicts[0].path == 'README.md'
+	assert response.conflicts[0].reason.contains('deletion requires explicit parent review')
+	assert response.proposals[0].status == 'pending'
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'base\n'
+	assert !os.exists(os.join_path(workspace, 'MOVED.md'))
+
+	_ = store.review_workspace_edit(parent.id, response.proposals[0].id) or { panic(err) }
+	edit := store.begin_workspace_edit(parent.id, response.proposals[0].id) or { panic(err) }
+	apply_workspace_edit(workspace, edit) or { panic(err) }
+	store.finish_workspace_edit(parent.id, response.proposals[0].id, 'applied') or { panic(err) }
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'base\n'
+	assert os.read_file(os.join_path(workspace, 'MOVED.md')) or { panic(err) } == 'base\n'
+}
+
 fn test_child_integration_http_route_returns_reviewable_proposals_without_parent_writes() {
 	root := os.join_path(os.temp_dir(), 'veasel-child-integration-http-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

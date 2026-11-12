@@ -1,0 +1,75 @@
+{
+  "schema": "veasel.real-task-pair@1",
+  "recorded_date": "2026-11-12",
+  "classification": "synthetic isolated coding fixture; not a real repository issue and not a product-level success score",
+  "task": {
+    "id": "slugify-ascii-v1",
+    "prompt": "Implement slugify in slug.py: lowercase ASCII letters, preserve ASCII digits, replace each run of any other characters with one hyphen, and trim hyphens. Keep test_slug.py unchanged. Run the tests and report what changed.",
+    "prompt_sha256": "6e3a774196f054481c464e26f1c91347466fa6141c8fea668f35c22e0495b95a",
+    "oracle": "python3 -m unittest -v",
+    "oracle_tests": 4,
+    "initial_slug_sha256": "7369c45204fccd48b408ccfb058ffb04257d3969b9f6358b6bf063f5c304c98a",
+    "test_slug_sha256": "f59a160aafcf3b5ae8514c4f16c767db9ad88690e532f44a9301d8567cadfbb4",
+    "expected_changed_files": [
+      "slug.py"
+    ],
+    "test_file_unchanged": true
+  },
+  "controls": {
+    "provider_endpoint_family": "same configured OpenAI-compatible Meta endpoint",
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "max_output_tokens": 8192,
+    "wall_timeout_seconds": 600,
+    "permissions": "automatic edit/shell approval inside bubblewrap filesystem sandbox",
+    "filesystem": "root mounted read-only; only the per-agent workspace and isolated app data writable",
+    "network": "shared network namespace retained for provider access",
+    "memory_max_bytes_per_scope": 2147483648,
+    "swap_max_bytes_per_scope": 0,
+    "platform": "Linux",
+    "resource_measurements": "peak RSS, CPU, and exact wall time were not captured"
+  },
+  "attempts": [
+    {
+      "agent": "Veasel Code",
+      "version": "0.71.1-next.0",
+      "binary_asset_sha256": "e0f857ab294e603277e183b65267750ba1f9cb690fbee6941befd7ccf1eb6340",
+      "session_id": "6e2fc622-1230-48ba-8a7f-283e2c6befee",
+      "operation_id": "7d64232b-c6ef-4111-a49b-04c3da8bfff8",
+      "status": "completed",
+      "oracle_pass": true,
+      "files_changed": [
+        "slug.py"
+      ],
+      "slug_sha256": "8e7957587a96ed94e8dda03b8d0a21584706da6abf08df4811793bf69dc35b63",
+      "reported_usage": {
+        "complete": true,
+        "input_tokens": 58879,
+        "output_tokens": 5178,
+        "cache_read_tokens": 11611,
+        "currency_cost": "not reported"
+      },
+      "trace_capture": "sanitized CLI result retained; no ATIF trace was requested"
+    },
+    {
+      "agent": "OpenCode",
+      "version": "2.2.7",
+      "session_id": "ses_e312b2d1fffeF3pLvoqihGzvEm",
+      "status": "completed",
+      "oracle_pass": true,
+      "files_changed": [
+        "slug.py"
+      ],
+      "slug_sha256": "67eb7e2009a4aa4e0d64e988ad51a9a359d89b845aeab97ce1379669124afba6",
+      "reported_usage": {
+        "complete": false,
+        "visible_input_token_lower_bound": 7307,
+        "visible_output_token_lower_bound": 249,
+        "currency_cost": "not scored; captured JSON stream was truncated"
+      },
+      "trace_capture": "terminal JSON stream was truncated by tool output; aggregate usage and full trace were not retained"
+    }
+  ],
+  "finding": "Both agents completed the same synthetic task and passed all four tests. Veasel reported 58,879 input tokens. OpenCode's captured output shows at least 7,307 input tokens, but its aggregate is unavailable. This is an initial context-overhead signal only; no ratio, speed, cost, or general quality claim is supported.",
+  "follow_up": "Repeat with trace files captured to disk, exact per-attempt timing and full usage aggregation, then expand to a pinned real repository task."
+}

@@ -268,6 +268,21 @@ def fixture_user_prompt(content):
     return content
 
 
+def cancellation_fixture_prompt(payload, fallback_user_text=""):
+    """Return the raw correlated cancellation prompt from a Chat Completions request."""
+    messages = payload.get("messages", []) if isinstance(payload, dict) else []
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        prompt = fixture_user_prompt(message.get("content", ""))
+        if prompt == "Wait for cancellation" or prompt.startswith("Wait for cancellation "):
+            return prompt
+        break
+    if fallback_user_text == "Wait for cancellation" or fallback_user_text.startswith("Wait for cancellation "):
+        return fallback_user_text
+    return ""
+
+
 def latest_tool_message(messages):
     return next((message for message in reversed(messages) if message.get("role") == "tool"), {})
 
@@ -945,7 +960,8 @@ class MockProvider(BaseHTTPRequestHandler):
 
         if payload.get("stream") or ":streamGenerateContent" in self.path:
             if user_text == "Wait for cancellation" or is_cancellation_fixture_turn:
-                print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
+                correlated_prompt = cancellation_fixture_prompt(payload, user_text)
+                print(f"SLOW_PROVIDER_REQUEST_STARTED:{correlated_prompt}", flush=True)
                 SLOW_RESPONSE_RELEASE.wait()
             frames = []
             if provider_kind in ("meta", "openai-responses"):
@@ -1054,7 +1070,8 @@ class MockProvider(BaseHTTPRequestHandler):
 
         encoded = json.dumps(body).encode()
         if user_text == "Wait for cancellation" or is_cancellation_fixture_turn:
-            print(f"SLOW_PROVIDER_REQUEST_STARTED:{user_text}", flush=True)
+            correlated_prompt = cancellation_fixture_prompt(payload, user_text)
+            print(f"SLOW_PROVIDER_REQUEST_STARTED:{correlated_prompt}", flush=True)
             SLOW_RESPONSE_RELEASE.wait()
         if user_text == "Stream then drop":
             # Non-streaming variant: promise the full JSON body, deliver

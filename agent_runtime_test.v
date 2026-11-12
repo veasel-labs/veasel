@@ -196,7 +196,11 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, false,
 		0).map(it.name) == search_read_phase.map(it.name)
 	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, true,
+		1).map(it.name) == ['workspace_propose_file_edit']
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, false,
 		1).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, true,
+		max_agent_code_change_edit_recovery_attempts + 1).map(it.name) == search_read_phase.map(it.name)
 	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, true, true,
 		0).map(it.name) == search_read_phase.map(it.name)
 	assert agent_code_change_tools_after_exploration(search_read_phase, false, true, false, true,

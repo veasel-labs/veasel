@@ -258,12 +258,14 @@ fn agent_code_change_tools_after_exploration(tools []AgentToolDefinition, explic
 	exploration_nudged bool, edit_attempted bool, read_after_search bool,
 	failed_edit_proposals int) []AgentToolDefinition {
 	if explicit_request && exploration_nudged && !edit_attempted && read_after_search
-		&& failed_edit_proposals == 0 {
+		&& failed_edit_proposals <= max_agent_code_change_edit_recovery_attempts {
 		// Once the agent has located and read a request-relevant source file, a
 		// bounded exploration nudge must change the available actions. Otherwise a
 		// model can ignore the reminder and spend the remaining turn budget on more
-		// searches. Keep only the edit action until the first proposal; verification
-		// tools are restored after an edit is applied.
+		// searches. After a failed proposal, read tools remain available until the
+		// required fresh read succeeds, then the model must retry the edit. Keep only
+		// the edit action until the next proposal; verification tools are restored
+		// after an edit is applied.
 		return tools.filter(it.name == 'workspace_propose_file_edit')
 	}
 	return tools

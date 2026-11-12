@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { createMemo, createSignal, onCleanup, onMount, type Accessor } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import type { VeaselApiClient } from "../../api-client"
@@ -14,18 +14,44 @@ import { useDialog, type DialogHost } from "../ui/dialog"
 type SubagentRunsDialogProps = {
   api: VeaselApiClient
   sessionId: string
+  onCancelled?: (run: SubagentRunView) => void
   onFollowUp?: (run: SubagentRunView) => void
   onIntegrate?: (run: SubagentRunView) => void
 }
 
-function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient; sessionId: string; onFollowUp?: (run: SubagentRunView) => void; onIntegrate?: (run: SubagentRunView) => void }) {
+function useSubagentRunRefresh(api: VeaselApiClient, sessionId: string, initial: SubagentRunView) {
+  const [run, setRun] = createSignal(initial)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
+  const refresh = async () => {
+    try {
+      const current = toSubagentRunView(await api.getSubagent(sessionId, initial.id))
+      if (disposed) return
+      setRun(current)
+      if (current.status === "queued" || current.status === "running") {
+        timer = setTimeout(() => void refresh(), 1500)
+      }
+    } catch {
+      if (!disposed) timer = setTimeout(() => void refresh(), 3000)
+    }
+  }
+  onMount(() => { void refresh() })
+  onCleanup(() => {
+    disposed = true
+    if (timer) clearTimeout(timer)
+  })
+  return { run: run as Accessor<SubagentRunView>, setRun }
+}
+
+function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient; sessionId: string; onCancelled?: (run: SubagentRunView) => void; onFollowUp?: (run: SubagentRunView) => void; onIntegrate?: (run: SubagentRunView) => void }) {
   const dialog = useDialog()
+  const state = useSubagentRunRefresh(props.api, props.sessionId, props.run)
   const actions = createMemo((): DialogSelectOption<string>[] => [
     { title: "Inspect result and provenance", value: "inspect", description: "Show the durable child outcome, model, and workspace" },
-    ...(subagentCanCancel(props.run)
+    ...(subagentCanCancel(state.run())
       ? [{ title: "Request cancellation", value: "cancel", description: "Cancel only this child execution" }]
       : []),
-    ...(subagentCanIntegrate(props.run) && props.onIntegrate
+    ...(subagentCanIntegrate(state.run()) && props.onIntegrate
       ? [{ title: "Integrate changes", value: "integrate", description: "Create parent-workspace proposals for explicit review" }]
       : []),
     ...(props.onFollowUp
@@ -33,20 +59,27 @@ function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient;
       : []),
   ])
   return <DialogSelect
-    title={`${props.run.agent_id} · ${props.run.status}`}
+    title={`${state.run().agent_id} · ${state.run().status}`}
     options={actions()}
     footer="Actions are scoped to this child · Esc closes"
     dismissOnSelect={false}
     onSelect={(option) => {
       if (option.value === "inspect") {
-        dialog.replace(() => <SubagentResultDialog run={props.run} />)
+        dialog.push(() => <SubagentResultDialog run={state.run()} api={props.api} sessionId={props.sessionId} />)
       } else if (option.value === "cancel") {
-        void props.api.cancelSubagent(props.sessionId, props.run.id).then((updated) => {
-          openDialogAlert(dialog, {
-            title: "Cancellation recorded",
-            message: `Run ${updated.id} is ${updated.status}${updated.cancel_requested ? " · cancellation requested" : ""}.`,
-            confirmLabel: "close",
-          })
+        const run = state.run()
+        void props.api.cancelSubagent(props.sessionId, run.id).then((updated) => {
+          const refreshed = toSubagentRunView(updated)
+          state.setRun(refreshed)
+          if (props.onCancelled) {
+            props.onCancelled(refreshed)
+          } else {
+            openDialogAlert(dialog, {
+              title: "Cancellation recorded",
+              message: `Run ${updated.id} is ${updated.status}${updated.cancel_requested ? " · cancellation requested" : ""}.`,
+              confirmLabel: "close",
+            })
+          }
         }).catch((error: unknown) => {
           openDialogAlert(dialog, {
             title: "Could not cancel agent",
@@ -56,18 +89,19 @@ function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient;
         })
       } else if (option.value === "follow-up") {
         dialog.clear()
-        props.onFollowUp?.(props.run)
+        props.onFollowUp?.(state.run())
       } else if (option.value === "integrate") {
-        props.onIntegrate?.(props.run)
+        props.onIntegrate?.(state.run())
       }
     }}
   />
 }
 
-function SubagentResultDialog(props: { run: SubagentRunView }) {
+function SubagentResultDialog(props: { run: SubagentRunView; api: VeaselApiClient; sessionId: string }) {
   const colors = useSolidTheme()
   const dimensions = useTerminalDimensions()
   const dialog = useDialog()
+  const state = useSubagentRunRefresh(props.api, props.sessionId, props.run)
   let scroll: ScrollBoxRenderable | undefined
   useKeyboard((key: KeyEvent) => {
     if (key.name === "up") { key.preventDefault(); scroll?.scrollBy(-1) }
@@ -79,7 +113,7 @@ function SubagentResultDialog(props: { run: SubagentRunView }) {
     else if (key.name === "return" || key.name === "kpenter") { key.preventDefault(); dialog.pop() }
   })
   return <DialogLayout
-    header={<DialogHeader title={`Agent · ${props.run.status}`} hint="↑/↓ · PgUp/PgDn · Enter" />}
+    header={<DialogHeader title={`Agent · ${state.run().status}`} hint="↑/↓ · PgUp/PgDn · Enter" />}
     footer={<text fg={colors.muted}>Run outcome and provider provenance · Enter returns</text>}
   >
     <scrollbox
@@ -88,7 +122,7 @@ function SubagentResultDialog(props: { run: SubagentRunView }) {
       height={Math.max(2, dialogGeometry(dimensions().width, dimensions().height, 72).contentHeight - 5)}
       stickyScroll={false}
     >
-      <text fg={colors.body}>{subagentRunDetails(props.run)}</text>
+      <text fg={colors.body}>{subagentRunDetails(state.run())}</text>
     </scrollbox>
   </DialogLayout>
 }
@@ -144,7 +178,14 @@ function SubagentRunsDialog(props: SubagentRunsDialogProps) {
     onSelect={(option) => {
       const run = runs().find((item) => item.id === option.value)
       if (!run) return
-      dialog.replace(() => <SubagentRunActions run={run} api={props.api} sessionId={props.sessionId} onFollowUp={props.onFollowUp} onIntegrate={props.onIntegrate} />)
+      dialog.push(() => <SubagentRunActions
+        run={run}
+        api={props.api}
+        sessionId={props.sessionId}
+        onCancelled={props.onCancelled}
+        onFollowUp={props.onFollowUp}
+        onIntegrate={props.onIntegrate}
+      />)
     }}
   />
 }

@@ -865,6 +865,10 @@ function LiveAppShell(props: LiveAppProps) {
     openSubagentRunsDialog(dialog, {
       api: props.api,
       sessionId,
+      onCancelled: (run) => toast.info(
+        `Run ${run.id} is ${run.status}${run.cancel_requested ? " · cancellation requested" : ""}.`,
+        "Agent",
+      ),
       onIntegrate: (run) => { void integrateSubagent(sessionId, run) },
       onFollowUp: (run) => {
         void props.api.listSessions().then((items) => {
@@ -949,6 +953,10 @@ function LiveAppShell(props: LiveAppProps) {
             openSubagentRunsDialog(dialog, {
               api: props.api,
               sessionId,
+              onCancelled: (childRun) => toast.info(
+                `Run ${childRun.id} is ${childRun.status}${childRun.cancel_requested ? " · cancellation requested" : ""}.`,
+                "Agent",
+              ),
               onIntegrate: (childRun) => { void integrateSubagent(sessionId, childRun) },
             })
           }).catch((error: unknown) => {

@@ -239,7 +239,7 @@ def run_tui_conpty(
             drain()
             # Match the emitted stream directly: VT cursor and screen updates
             # can make a regex-based visible-text projection lossy.
-            if not absent and all(marker in output for marker in markers):
+            if all(marker in output for marker in markers):
                 return
             exit_code = wintypes.DWORD()
             if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
@@ -271,7 +271,7 @@ def run_tui_conpty(
                 marker in rendered for marker in absent
             ):
                 return
-            if all(marker in output for marker in markers):
+            if not absent and all(marker in output for marker in markers):
                 return
             exit_code = wintypes.DWORD()
             if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:

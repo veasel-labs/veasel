@@ -41,6 +41,86 @@ def available_resources() -> tuple[int, int]:
     return values["MemAvailable"], values["SwapFree"]
 
 
+def parse_proc_stat(raw: str, page_size: int) -> tuple[int, int, int]:
+    """Return parent PID, process CPU ticks, and resident bytes from procfs."""
+    closing_paren = raw.rfind(")")
+    if closing_paren < 0:
+        raise ValueError("process stat is missing its command terminator")
+    fields = raw[closing_paren + 1 :].split()
+    if len(fields) <= 21:
+        raise ValueError("process stat is incomplete")
+    parent_pid = int(fields[1])
+    cpu_ticks = int(fields[11]) + int(fields[12])
+    resident_bytes = int(fields[21]) * page_size
+    return parent_pid, cpu_ticks, resident_bytes
+
+
+def process_tree_resources(root_pid: int, proc_root: Path = Path("/proc")) -> dict[str, int] | None:
+    """Sample RSS and CPU time for an agent process and its descendants on Linux."""
+    if not proc_root.is_dir():
+        return None
+    page_size = os.sysconf("SC_PAGE_SIZE")
+    processes: dict[int, tuple[int, int, int]] = {}
+    for stat_path in proc_root.glob("[0-9]*/stat"):
+        try:
+            pid = int(stat_path.parent.name)
+            processes[pid] = parse_proc_stat(stat_path.read_text(), page_size)
+        except (OSError, ValueError):
+            continue
+    if root_pid not in processes:
+        return None
+    descendants = {root_pid}
+    while True:
+        children = {pid for pid, (parent, _cpu, _rss) in processes.items() if parent in descendants}
+        new_descendants = children - descendants
+        if not new_descendants:
+            break
+        descendants.update(new_descendants)
+    return {
+        "process_count": len(descendants),
+        "cpu_time_ms": int(sum(processes[pid][1] for pid in descendants) * 1000 / os.sysconf("SC_CLK_TCK")),
+        "rss_bytes": sum(processes[pid][2] for pid in descendants),
+    }
+
+
+def gpu_memory_used_mib() -> list[int] | None:
+    """Return device-wide used VRAM by GPU; this includes unrelated GPU clients."""
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    try:
+        values = [int(line.strip()) for line in output.splitlines() if line.strip()]
+    except ValueError:
+        return None
+    return values or None
+
+
+def resource_measurement_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    def sampled_maximum(key: str) -> int | None:
+        values = [sample[key] for sample in samples if isinstance(sample.get(key), int)]
+        return max(values) if values else None
+
+    gpu_samples = [sample.get("gpu_memory_used_mib") for sample in samples]
+    device_count = max((len(value) for value in gpu_samples if isinstance(value, list)), default=0)
+    gpu_maxima = [
+        max(value[index] for value in gpu_samples if isinstance(value, list) and len(value) > index)
+        for index in range(device_count)
+    ]
+    return {
+        "sample_period_seconds": 1,
+        "agent_process_tree_rss_sampled_max_bytes": sampled_maximum("agent_process_tree_rss_bytes"),
+        "agent_process_tree_cpu_time_sampled_max_ms": sampled_maximum("agent_process_tree_cpu_time_ms"),
+        "gpu_device_memory_used_sampled_max_mib": gpu_maxima or None,
+        "agent_memory_scope": "agent process tree RSS; shared pages may be counted more than once",
+        "gpu_memory_scope": "device-wide; includes the model server and other GPU clients",
+    }
+
+
 def restricted_environment(source: dict[str, str] | None = None) -> dict[str, str]:
     source = os.environ if source is None else source
     allowed = {"PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR"}
@@ -358,15 +438,27 @@ def run_case(args: argparse.Namespace) -> int:
     started = time.monotonic()
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
-    samples: list[dict[str, int]] = []
+    samples: list[dict[str, Any]] = []
     outcome = "completed"
     with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
         stdout_path.chmod(0o600)
         stderr_path.chmod(0o600)
         process = subprocess.Popen(command, cwd=workspace, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
         while process.poll() is None:
+            sampled_at = time.monotonic()
             available, swap = available_resources()
-            samples.append({"elapsed_ms": int((time.monotonic() - started) * 1000), "available_memory": available, "free_swap": swap})
+            sample: dict[str, Any] = {
+                "elapsed_ms": int((sampled_at - started) * 1000),
+                "available_memory": available,
+                "free_swap": swap,
+            }
+            process_resources = process_tree_resources(process.pid)
+            if process_resources is not None:
+                sample["agent_process_count"] = process_resources["process_count"]
+                sample["agent_process_tree_cpu_time_ms"] = process_resources["cpu_time_ms"]
+                sample["agent_process_tree_rss_bytes"] = process_resources["rss_bytes"]
+            sample["gpu_memory_used_mib"] = gpu_memory_used_mib()
+            samples.append(sample)
             if available < min_memory or swap < min_swap:
                 outcome = "resource_aborted"
                 try:
@@ -416,6 +508,7 @@ def run_case(args: argparse.Namespace) -> int:
         "return_code": return_code,
         "wall_ms": int((time.monotonic() - started) * 1000),
         "resource_samples": samples,
+        "resource_measurements": resource_measurement_summary(samples),
         "artifacts": {"trace": trace_path.name if args.agent == "veasel" else None,
                       "stdout": stdout_path.name, "stderr": stderr_path.name},
         "score": "unscored; externally verify the patch and task oracle",

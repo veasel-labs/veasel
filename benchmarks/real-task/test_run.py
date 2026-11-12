@@ -16,6 +16,68 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(runner)
 
 
+class ResourceSamplerTests(unittest.TestCase):
+    @staticmethod
+    def proc_stat(pid: int, parent_pid: int, user_ticks: int, system_ticks: int, rss_pages: int, command: str) -> str:
+        fields = ["S", str(parent_pid)] + ["0"] * 20
+        fields[11] = str(user_ticks)
+        fields[12] = str(system_ticks)
+        fields[21] = str(rss_pages)
+        return f"{pid} ({command}) " + " ".join(fields)
+
+    def test_parse_proc_stat_handles_command_with_spaces_and_parenthesis(self):
+        stat = self.proc_stat(120, 5, 80, 20, 12, "agent (worker)")
+        self.assertEqual(runner.parse_proc_stat(stat, 4096), (5, 100, 12 * 4096))
+
+    def test_process_tree_resources_sums_root_and_descendants(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            proc_root = Path(temp_dir)
+            processes = {
+                100: self.proc_stat(100, 1, 20, 10, 100, "veasel"),
+                101: self.proc_stat(101, 100, 40, 10, 200, "bwrap child"),
+                200: self.proc_stat(200, 1, 500, 20, 900, "unrelated"),
+            }
+            for pid, stat in processes.items():
+                process_dir = proc_root / str(pid)
+                process_dir.mkdir()
+                (process_dir / "stat").write_text(stat)
+            metrics = runner.process_tree_resources(100, proc_root)
+        self.assertIsNotNone(metrics)
+        self.assertEqual(metrics["process_count"], 2)
+        self.assertEqual(metrics["cpu_time_ms"], int(80 * 1000 / runner.os.sysconf("SC_CLK_TCK")))
+        self.assertEqual(metrics["rss_bytes"], 300 * runner.os.sysconf("SC_PAGE_SIZE"))
+
+    def test_process_tree_resources_returns_none_for_missing_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            self.assertIsNone(runner.process_tree_resources(99, Path(temp_dir)))
+
+    @patch.object(runner.subprocess, "check_output", return_value="1400\n 1700\n")
+    def test_gpu_memory_sampler_returns_one_value_per_device(self, check_output):
+        self.assertEqual(runner.gpu_memory_used_mib(), [1400, 1700])
+        check_output.assert_called_once_with(
+            ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+            text=True,
+            timeout=2,
+        )
+
+    @patch.object(runner.subprocess, "check_output", side_effect=FileNotFoundError)
+    def test_gpu_memory_sampler_is_optional_when_nvidia_smi_is_unavailable(self, _check_output):
+        self.assertIsNone(runner.gpu_memory_used_mib())
+
+    def test_resource_summary_reports_sampled_maxima_and_scope(self):
+        summary = runner.resource_measurement_summary([
+            {"agent_process_tree_rss_bytes": 100, "agent_process_tree_cpu_time_ms": 20,
+             "gpu_memory_used_mib": [4000]},
+            {"agent_process_tree_rss_bytes": 300, "agent_process_tree_cpu_time_ms": 70,
+             "gpu_memory_used_mib": [5000]},
+        ])
+        self.assertEqual(summary["agent_process_tree_rss_sampled_max_bytes"], 300)
+        self.assertEqual(summary["agent_process_tree_cpu_time_sampled_max_ms"], 70)
+        self.assertEqual(summary["gpu_device_memory_used_sampled_max_mib"], [5000])
+        self.assertIn("shared pages", summary["agent_memory_scope"])
+        self.assertIn("device-wide", summary["gpu_memory_scope"])
+
+
 class PreflightTests(unittest.TestCase):
     def test_case_prompt_hash_is_pinned(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
@@ -125,6 +187,52 @@ class PreflightTests(unittest.TestCase):
             report = json.loads((artifacts / "attempt.json").read_text())
             self.assertEqual(report["outcome"], "completed")
             self.assertEqual(report["score"], "unscored; externally verify the patch and task oracle")
+            self.assertEqual(report["resource_measurements"]["sample_period_seconds"], 1)
+            self.assertIsNone(report["resource_measurements"]["agent_process_tree_rss_sampled_max_bytes"])
+
+    def test_launcher_records_agent_and_gpu_resource_samples(self):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            artifacts = root / "artifacts"
+            process = Mock()
+            process.poll.side_effect = [None, 0]
+            process.wait.return_value = 0
+            args = argparse.Namespace(
+                case=case_path,
+                workspace=workspace,
+                data_dir=root / "state",
+                ollama_url="http://127.0.0.1:11435",
+                agent="opencode",
+                opencode="opencode",
+                veasel="veasel",
+                artifacts=artifacts,
+                sandbox_confirmed=True,
+            )
+            with (
+                patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/opencode"),
+                patch.object(runner, "open_code_version", return_value="opencode v2.2.5"),
+                patch.object(runner.platform, "platform", return_value="Linux-test"),
+                patch.object(runner.platform, "machine", return_value="x86_64"),
+                patch.object(runner.platform, "processor", return_value="test-cpu"),
+                patch.object(runner.subprocess, "Popen", return_value=process),
+                patch.object(runner, "available_resources", return_value=(8 * runner.GIB, 2 * runner.GIB)),
+                patch.object(runner, "process_tree_resources", return_value={"process_count": 2, "cpu_time_ms": 42, "rss_bytes": 900}),
+                patch.object(runner, "gpu_memory_used_mib", return_value=[6000]),
+                patch.object(runner.time, "sleep"),
+            ):
+                self.assertEqual(runner.run_case(args), 0)
+            report = json.loads((artifacts / "attempt.json").read_text())
+        self.assertEqual(report["resource_samples"][0]["agent_process_tree_rss_bytes"], 900)
+        self.assertEqual(report["resource_samples"][0]["agent_process_tree_cpu_time_ms"], 42)
+        self.assertEqual(report["resource_samples"][0]["gpu_memory_used_mib"], [6000])
+        measurements = report["resource_measurements"]
+        self.assertEqual(measurements["agent_process_tree_rss_sampled_max_bytes"], 900)
+        self.assertEqual(measurements["agent_process_tree_cpu_time_sampled_max_ms"], 42)
+        self.assertEqual(measurements["gpu_device_memory_used_sampled_max_mib"], [6000])
 
     @patch.object(runner.shutil, "which", return_value="/usr/bin/opencode")
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])

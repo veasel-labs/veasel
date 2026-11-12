@@ -129,10 +129,12 @@ artifact directory. No raw traces or workspace source are included here. Sanitiz
 summaries record the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json)
 and the [unscored fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json), [including the latest guard stop](../reports/real-task-attempt-website-173-post-fallback-resource-abort-retry-2026-11-11.json).
 
-This first version samples host available RAM and swap. It does not yet collect
-CPU, process/GPU peak memory, or provider-reported token usage, so reports are
-not complete comparative benchmark records and cannot support efficiency or
-speed claims.
+The runner samples host available RAM, swap, agent process-tree RSS and CPU
+time, and device-wide GPU memory once per second. Sampled maxima are recorded
+with scope notes: RSS may double-count shared pages, and GPU memory includes the
+model server and any other GPU clients. These are sampled measurements, not
+true process or device peaks. Provider-reported token usage is not yet
+collected, so reports still cannot support efficiency or speed claims.
 
 All three attempts used the same task, prompt hash, model digest, context, and
 output limits; the Veasel attempts also passed the recorded GPU-placement and

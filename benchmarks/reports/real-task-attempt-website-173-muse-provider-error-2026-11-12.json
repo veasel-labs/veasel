@@ -1,0 +1,34 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-12",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "External diff against a clean archived task base. Success requires the accessible responsive docs navigation, repository checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Official Veasel Code release binary in an isolated task worktree",
+    "source_commit": "e696634275784e80c1010a5934772d23648a706a",
+    "binary_sha256": "a9e150636ab63a3ee93cc4c8e1a941e0924bb1d8338933271d200f517d2e455c",
+    "provider": "Meta Model API",
+    "model": "muse-spark-1.3-contributor",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "elapsed_seconds": 4.815,
+    "status": "provider_error",
+    "tool_calls_observed": 1,
+    "tool_sequence": [
+      "workspace_search: DocsLayout (rejected by the search relevance guard as unrelated to the requested change)"
+    ],
+    "provider_error": "HTTP 400; response body was hidden by the client",
+    "token_usage": null,
+    "resource_samples": null,
+    "oracle_result": "Unscored: the provider request failed before an edit. The disposable task worktree remained clean.",
+    "failure_class": "provider_http_400_after_tool_call",
+    "trace_available": true,
+    "trace_note": "Raw trajectory remains private. The recorded tool sequence is sanitized."
+  },
+  "interpretation": "The observed order is one rejected workspace search followed by a provider HTTP 400. The available evidence does not establish that the search rejection caused the provider error. This attempt is neither a coding success nor a completed edit failure and is not part of the Veasel/OpenCode matched comparison. Veasel's error message omitted the provider response body; PR #627 adds bounded, credential-redacted diagnostics. No resource samples or provider-reported token counters were captured, so they remain absent rather than inferred.",
+  "privacy": "Raw prompts, source excerpts, logs, and provider traces remain private. This report contains no source contents or credentials."
+}

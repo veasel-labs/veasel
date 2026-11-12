@@ -1,7 +1,36 @@
 module main
 
 import os
+import json2
+import net
+import net.http
+import time
 import uuid
+import veb
+
+struct SubagentIntegrationHTTPServer {
+	app          &App
+	port         int
+	server_ready chan &veb.Server
+}
+
+pub fn (mut app SubagentIntegrationHTTPServer) init_server(server &veb.Server) {
+	app.server_ready <- server
+}
+
+@['/v1/sessions/:id/subagents/:run_id/integrate'; post]
+pub fn (mut app SubagentIntegrationHTTPServer) integrate_subagent(mut ctx Context, id string,
+	run_id string) veb.Result {
+	return app.app.integrate_session_subagent(mut ctx, id, run_id)
+}
+
+fn run_subagent_integration_http_test_server(mut app SubagentIntegrationHTTPServer) {
+	veb.run_at[SubagentIntegrationHTTPServer, Context](mut app,
+		host:   '127.0.0.1'
+		family: .ip
+		port:   app.port
+	) or { panic(err) }
+}
 
 fn test_implementer_profile_preserves_parent_policy_and_tool_boundary() {
 	profile := builtin_subagent_profile('implementer') or { panic(err) }
@@ -101,6 +130,55 @@ fn test_child_integration_detects_parent_conflict_and_preserves_child_worktree()
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'parent version\n'
 	assert os.read_file(os.join_path(child_directory, 'README.md')) or { panic(err) } == child_content
 	assert os.is_dir(child_directory)
+}
+
+fn test_child_integration_http_route_returns_reviewable_proposals_without_parent_writes() {
+	root := os.join_path(os.temp_dir(), 'veasel-child-integration-http-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_integration_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	parent := store.create_session(SessionInput{ title: 'Parent HTTP', directory: workspace }) or {
+		panic(err)
+	}
+	parent_operation := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, parent_operation) or { panic(err) }
+	run, child_directory := create_completed_implementer_child(mut store, parent, parent_operation,
+		workspace, 'integration-http')
+	os.write_file(os.join_path(child_directory, 'README.md'), 'HTTP child change\n') or { panic(err) }
+	before := os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) }
+
+	mut port_listener := net.listen_tcp(.ip, '127.0.0.1:0') or { panic(err) }
+	port := port_listener.addr() or { panic(err) }.port() or { panic(err) }
+	port_listener.close() or { panic(err) }
+	mut api_server_app := &SubagentIntegrationHTTPServer{
+		app:          app
+		port:         port
+		server_ready: chan &veb.Server{cap: 1}
+	}
+	api_server_thread := spawn run_subagent_integration_http_test_server(mut api_server_app)
+	api_server := <-api_server_app.server_ready
+	api_server.wait_till_running() or { panic(err) }
+	defer {
+		api_server.shutdown(timeout: 5 * time.second) or {}
+		api_server_thread.wait()
+	}
+	response := http.fetch(
+		url:           'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents/${run.id}/integrate'
+		method:        .post
+		read_timeout:  5 * time.second
+		write_timeout: 5 * time.second
+	) or { panic(err) }
+	assert response.status_code == 200
+	integration := json2.decode[SubagentIntegrationResponse](response.body) or { panic(err) }
+	assert integration.run_id == run.id
+	assert integration.proposals.len == 1
+	assert integration.proposals[0].path == 'README.md'
+	assert integration.conflicts.len == 0
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == before
 }
 
 fn init_subagent_integration_test_repo(root string) string {

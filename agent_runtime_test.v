@@ -1151,7 +1151,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
-		'workspace_search', 'subagent_run', 'workspace_propose_file_edit',
+		'workspace_search', 'subagent_run', 'subagent_wait', 'workspace_propose_file_edit',
 		'workspace_propose_shell_command']
 	edit_definition := definitions.filter(it.name == 'workspace_propose_file_edit')[0]
 	assert edit_definition.description.contains('old_text and new_text')

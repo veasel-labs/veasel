@@ -92,49 +92,34 @@ outcomes are externally scored against the same oracle.
 
 ## Current quality scoreboard
 
-As of 2026-11-12, the only task in the corpus is website#173 at base
-`184c7d8`, with the pinned Qwen3:8b digest, Ollama 0.40.15, CUDA on an RTX
-3060, and prompt SHA-256
-`5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e`.
-The independent oracle is the merged website#173 patch plus repository checks
-and responsive/accessibility behavior in the issue acceptance criteria.
+As of 2026-11-12, the only real coding task in the corpus is website#173 at
+base `184c7d8`, using the pinned Qwen3:8b digest, Ollama 0.40.15, CUDA on an
+RTX 3060, and prompt SHA-256
+`5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e`. Across
+30 attempts, the task has **0 verified successes** (4 resource-aborted and 3
+timeouts). Resource-aborted runs are unscored. The independent oracle is the
+merged website#173 patch, repository checks, and responsive/accessibility
+behavior in that issue's acceptance criteria.
 
-| Agent/build | Outcome | Time | Independent task result | Classification |
-|---|---|---:|---|---|
-| Veasel `v0.69.14-next.0` | completed | 34.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
-| Veasel source `986fde4` built with V `b0ceb9b` | completed | 37.1 s | 0 edits; workspace remained clean | failed to follow the coding request |
-| OpenCode `2.2.5` | resource-aborted | 57.4 s | 0 edits; workspace remained clean | unscored: available RAM fell below the 4.5 GiB safety floor |
-| Veasel search-first fix `e836100` built with V `b0ceb9b` | resource-aborted | 1.1 s | no model output or workspace changes | unscored: available RAM fell below the 4.5 GiB safety floor |
-| Veasel PR #614 head `f26b2fd` built with V `b0ceb9b` | completed | 6.1 s | 0 edits; clean workspace | failed: exact multiword search returned no matches and the agent stopped |
-| Veasel multiword-search fallback | resource-aborted | 13.2 s | no scored result; workspace remained clean | unscored: RAM crossed the 4.5 GiB safety floor before a completed turn |
-| Veasel multiword-search fallback retry | resource-aborted | 11.1 s | no scored result; workspace remained clean | unscored: available RAM fell to 4.39 GiB, below the 4.5 GiB safety floor |
-| Veasel PR #615 head `1c7406d` built with V `b0ceb9b` | resource-aborted | 3.1 s | no scorable result or workspace changes | unscored: available RAM fell from 4.92 GiB to 4.42 GiB during agent startup |
+Recent completed attempts expose orchestration gaps: PR #614's agent searched
+for the exact multiword phrase `docs sidebar navigation`, found no literal
+match, and returned without reading or editing a file; a later run found the
+sidebar source but proposed a replacement matching zero occurrences. The
+multiword-search fallback merged in PR #615 has not yet earned a scored
+real-model replay because subsequent runs were stopped by the 4.5 GiB runtime
+floor. PR #617 now adds a 5.75 GiB startup reserve, but no replay under that
+preflight has completed. See the [current product quality scoreboard](../QUALITY_SCOREBOARD.md)
+for the attempt inventory and linked evidence.
 
-The three completed Veasel attempts each count as a verified task failure: the disposable
-workspaces were checked after the run and contained no patch. In the current
-source run, Qwen3:8b first summarized unrelated TUI controls, then searched
-generic terms and repository guidance instead of the Astro navigation source.
-The OpenCode run is not a quality comparison: it was stopped by the resource
-guard after RAM dropped below the case floor, after two exploratory tool calls.
-The first replay after the search-first orchestration change was stopped by the
-guard before model output when available RAM fell to 4.47 GiB. A later PR #614
-head attempt completed in 6.1 seconds, made one literal multiword search, then
-returned without a source read or edit. Three replays after the multiword fallback
-were resource-aborted below the 4.5 GiB floor (13.2 s, 11.1 s, and 3.1 s) and
-remain unscored. Therefore this
-case has **0/3 verified Veasel successes, 0 verified OpenCode successes, and
-no scored head-to-head result**. These are observations from one task and
-one local hardware setup, not a general quality or speed claim.
-
-Full trajectories and logs remain private under the operator's local benchmark
-artifact directory. No raw traces or workspace source are included here. Sanitized
-summaries record the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json)
-and the [unscored fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json), [including the latest guard stop](../reports/real-task-attempt-website-173-post-fallback-resource-abort-retry-2026-11-11.json).
-The [PR #615 replay](../reports/real-task-attempt-website-173-pr615-startup-resource-abort-2026-11-12.json)
-also passed model/GPU preflight but had only 0.42 GiB of RAM headroom before
-agent startup crossed the safety floor. Its #615 branch predates PR #617's
-5.75 GiB startup reserve; the 4.92 GiB launch sample would fail the current
-main preflight, before starting Veasel.
+The initial matched Qwen3:8b Veasel/OpenCode pair yielded no successful task
+outcome for either agent; OpenCode had no usable tool trace. This is one
+diagnostic pair, not enough evidence for a comparative quality or speed claim.
+The separate synthetic sidebar-label calibration has two externally verified
+successes in six attempts; it does not count as a website#173 success.
+Full trajectories remain private under the local benchmark artifact directory.
+Sanitized reports include the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json),
+the [resource-aborted post-fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json),
+and the [PR #615 startup abort](../reports/real-task-attempt-website-173-pr615-startup-resource-abort-2026-11-12.json).
 
 The runner targets a one-second sampling cadence for host available RAM, swap,
 agent process-tree RSS and CPU time, and device-wide GPU memory. Sampling
@@ -144,11 +129,8 @@ model server and any other GPU clients. These are sampled measurements, not
 true process or device peaks. Provider-reported token usage is not yet
 collected, so reports still cannot support efficiency or speed claims.
 
-All attempts used the same task, prompt hash, model digest, context, and
-output limits; the Veasel attempts also passed the recorded GPU-placement and
-4.5 GiB host-memory preflight. Preflight alone did not ensure sufficient
-headroom for agent startup in the latest replay. The corrected OpenCode command
-was used for the resource-aborted result. The harness changes have landed;
-reproduce future attempts from a clean main checkout and keep the case revision
-pinned. Do not compare runs produced by a different case revision or prompt
-hash.
+The case pins task, prompt hash, model digest, context, and output limits.
+Recent resource-aborted attempts did not complete a coding turn and are not
+counted as failures. Reproduce from a clean checkout at the pinned base and
+keep the case revision fixed; outcomes from a different case revision or prompt
+hash are not directly comparable.

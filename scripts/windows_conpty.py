@@ -178,6 +178,7 @@ def run_tui_conpty(
     size: tuple[int, int] = (24, 100),
     first_run: bool = False,
     delegation_task: str | None = None,
+    create_session_via_ui: bool = False,
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -523,6 +524,39 @@ def run_tui_conpty(
         send_keys(b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
 
+        session_opened = False
+        if create_session_via_ui:
+            if session_id or not delegation_task:
+                raise RuntimeError("UI session creation is only supported for a new delegation smoke session")
+            output.clear()
+            send_keys(b"n")
+            wait_for_screen_markers(
+                (b"New session", b"Message Veasel"),
+                10,
+                "the composer of the session created through the TUI",
+                raw_fallback=False,
+            )
+            with urlopen(f"{env['VEASEL_API_URL']}/v1/sessions", timeout=5) as response:
+                sessions = json.load(response)
+            if not isinstance(sessions, list):
+                raise RuntimeError(f"session collection was not an array: {sessions!r}")
+            matches = []
+            for session in sessions:
+                if not isinstance(session, dict) or session.get("title") != "New session":
+                    continue
+                try:
+                    if Path(str(session.get("directory", ""))).samefile(env["VEASEL_PROJECT_DIR"]):
+                        matches.append(session)
+                except OSError:
+                    continue
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "expected one UI-created session named 'New session' in "
+                    f"{env['VEASEL_PROJECT_DIR']}, found {matches!r}"
+                )
+            session_id = str(matches[0]["id"])
+            session_opened = True
+
         if review_path:
             output.clear()
             send_keys(b"\r")
@@ -536,7 +570,7 @@ def run_tui_conpty(
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
-        elif not session_id:
+        elif not session_id and not delegation_task:
             send_keys(b"q")
         elif recovery_only:
             # Reopen the persisted session against the restarted backend
@@ -551,13 +585,14 @@ def run_tui_conpty(
                 "the command palette after backend restart recovery", "the quit command in the palette",
             )
         else:
-            output.clear()
-            send_keys(b"\r")
-            # Recovery uses a different placeholder until submissions are safe.
-            wait_for_screen_markers(
-                (b"Message Veasel",), 5, "the recovered session composer",
-                absent=(b"Restoring this session",),
-            )
+            if not session_opened:
+                output.clear()
+                send_keys(b"\r")
+                # Recovery uses a different placeholder until submissions are safe.
+                wait_for_screen_markers(
+                    (b"Message Veasel",), 5, "the recovered session composer",
+                    absent=(b"Restoring this session",),
+                )
 
             def get_json(path: str) -> object:
                 with urlopen(f"{env['VEASEL_API_URL']}{path}", timeout=5) as response:

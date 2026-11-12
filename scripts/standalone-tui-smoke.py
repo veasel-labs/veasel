@@ -106,6 +106,25 @@ def fixture_provider_requests(provider_base: str) -> list[dict[str, object]]:
     return requests
 
 
+def session_for_title(api_base: str, title: str, workspace: Path) -> dict[str, object]:
+    with urlopen(f"{api_base}/v1/sessions", timeout=5) as response:
+        sessions = json.load(response)
+    if not isinstance(sessions, list):
+        raise RuntimeError(f"session collection was not an array: {sessions!r}")
+    matches: list[dict[str, object]] = []
+    for session in sessions:
+        if not isinstance(session, dict) or session.get("title") != title:
+            continue
+        try:
+            if Path(str(session.get("directory", ""))).samefile(workspace):
+                matches.append(session)
+        except OSError:
+            continue
+    if len(matches) != 1:
+        raise RuntimeError(f"expected one UI-created session named {title!r} in {workspace}, found {matches!r}")
+    return matches[0]
+
+
 def loopback_port_is_free(port: int) -> bool:
     with socket.socket() as probe:
         try:
@@ -172,11 +191,14 @@ def run_tui(
     recovery_only: bool = False,
     first_run: bool = False,
     delegation_task: str | None = None,
+    create_session_via_ui: bool = False,
 ) -> float:
     if os.name == "nt":
         return run_tui_conpty(
             tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
-            first_run=first_run, delegation_task=delegation_task,
+            first_run=first_run,
+            delegation_task=delegation_task,
+            create_session_via_ui=create_session_via_ui,
         )
 
     started = time.monotonic()
@@ -449,6 +471,26 @@ def run_tui(
         os.write(terminal, b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
 
+        session_opened = False
+        if create_session_via_ui:
+            if session_id or not delegation_task:
+                raise RuntimeError("UI session creation is only supported for a new delegation smoke session")
+            output.clear()
+            os.write(terminal, b"n")
+            wait_for_screen_markers(
+                (b"New session", b"Message Veasel"),
+                10,
+                "the composer of the session created through the TUI",
+                raw_fallback=False,
+            )
+            created_session = session_for_title(
+                env["VEASEL_API_URL"],
+                "New session",
+                Path(env["VEASEL_PROJECT_DIR"]),
+            )
+            session_id = str(created_session["id"])
+            session_opened = True
+
         if review_path:
             output.clear()
             os.write(terminal, b"\r")
@@ -462,7 +504,7 @@ def run_tui(
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
-        elif not session_id:
+        elif not session_id and not delegation_task:
             os.write(terminal, b"q")
         elif recovery_only:
             # Reopen the persisted session against the restarted backend:
@@ -486,16 +528,17 @@ def run_tui(
             # fully released keyboard focus. Sending Enter in that same tick
             # occasionally leaves the CI smoke at home rather than selecting
             # the seeded session. Let the dialog teardown/focus settle first.
-            time.sleep(0.25)
-            output.clear()
-            os.write(terminal, b"\r")
-            # Recovery uses a different placeholder until submissions are safe.
-            # This remains a hard readiness assertion for the packaged binary,
-            # but permits normal asynchronous backend startup under CI load.
-            wait_for_screen_markers(
-                (b"Message Veasel",), 10, "the recovered session composer",
-                absent=(b"Restoring this session",),
-            )
+            if not session_opened:
+                time.sleep(0.25)
+                output.clear()
+                os.write(terminal, b"\r")
+                # Recovery uses a different placeholder until submissions are safe.
+                # This remains a hard readiness assertion for the packaged binary,
+                # but permits normal asynchronous backend startup under CI load.
+                wait_for_screen_markers(
+                    (b"Message Veasel",), 10, "the recovered session composer",
+                    absent=(b"Restoring this session",),
+                )
 
             def delegate_task_through_ui(task: str, visible_marker: bytes) -> None:
                 output.clear()
@@ -1084,18 +1127,20 @@ def main() -> None:
             }
             delegation_workspace = Path(temporary) / "delegation-workspace"
             initialize_git_workspace(delegation_workspace)
-            delegation_session = api_json(port, "POST", "/v1/sessions", {
-                "title": "TUI delegated agent smoke",
-                "directory": str(delegation_workspace),
-            })
-            delegation_session_id = str(delegation_session["id"])
+            delegation_env = env.copy()
+            delegation_env["VEASEL_PROJECT_DIR"] = str(delegation_workspace)
             run_tui(
                 tui_path,
-                env,
-                "TUI delegated agent smoke",
-                delegation_session_id,
+                delegation_env,
                 delegation_task=DELEGATION_TASK,
+                create_session_via_ui=True,
             )
+            delegation_session = session_for_title(
+                env["VEASEL_API_URL"],
+                "New session",
+                delegation_workspace,
+            )
+            delegation_session_id = str(delegation_session["id"])
             delegation_run = wait_for_subagent(env["VEASEL_API_URL"], delegation_session_id, DELEGATION_TASK)
             cancelled_run = wait_for_subagent_status(
                 env["VEASEL_API_URL"], delegation_session_id, SLOW_DELEGATION_TASK, "cancelled",
@@ -1132,7 +1177,8 @@ def main() -> None:
                 raise RuntimeError(f"provider fixture did not observe the actual delegated model call: {recorded_requests!r}")
             delegation_coverage = {
                 "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
-                "journey": "packaged TUI /delegate -> choose explorer -> inherit configured route -> /agents status -> inspect result",
+                "journey": "packaged TUI n creates session in isolated Git workspace -> /delegate -> choose explorer -> inherit route -> /agents status -> inspect result",
+                "parentSessionCreatedThroughTui": True,
                 "parentSessionId": delegation_run.get("parent_session_id"),
                 "parentOperationId": delegation_run.get("parent_operation_id"),
                 "runId": delegation_run.get("id"),

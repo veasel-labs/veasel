@@ -365,9 +365,10 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            v -cc gcc test subagents_test.v
+            v -cc gcc test subagents_test.v subagent_http_routing_test.v
           else
             v test subagents_test.v
+            v test subagent_http_routing_test.v
           fi
       - name: Run Linux HTTP and persistence smoke
         if: runner.os == 'Linux'

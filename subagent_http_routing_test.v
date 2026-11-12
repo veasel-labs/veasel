@@ -202,6 +202,14 @@ fn create_http_subagent(base_url string, request_id string, agent_id string, pro
 }
 
 fn test_http_subagents_route_native_providers_concurrently_and_cancel_independently() {
+	run_http_subagents_provider_scenario(true)
+}
+
+fn test_http_subagents_complete_concurrently_on_distinct_native_providers() {
+	run_http_subagents_provider_scenario(false)
+}
+
+fn run_http_subagents_provider_scenario(cancel_openai bool) {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-http-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
@@ -316,33 +324,53 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 	assert anthropic_fixture.model == 'anthropic-child-fixture'
 	assert anthropic_fixture.body.contains('"model":"anthropic-child-fixture"')
 
-	// Let Anthropic finish while OpenAI stays blocked, then cancel only OpenAI.
-	// The blocked first provider cannot serialize or starve its sibling.
+	// The first scenario proves one provider can finish without waiting on its
+	// sibling. The second releases both providers only after both have reached
+	// their barriers, then independently observes two successful results.
 	anthropic_fixture.release <- true
 	anthropic_fixture.block = false
-	anthropic_done := wait_for_http_subagent(base_url, anthropic_run.id)
-	assert anthropic_done.status == 'completed'
-	assert anthropic_done.provider == 'anthropic'
-	assert anthropic_done.model == 'anthropic-child-fixture'
-	assert anthropic_done.result.contains('ANTHROPIC-CHILD-RESULT')
-	assert anthropic_done.input_tokens == 9
-	assert anthropic_done.output_tokens == 3
+	if cancel_openai {
+		anthropic_done := wait_for_http_subagent(base_url, anthropic_run.id)
+		assert anthropic_done.status == 'completed'
+		assert anthropic_done.provider == 'anthropic'
+		assert anthropic_done.model == 'anthropic-child-fixture'
+		assert anthropic_done.result.contains('ANTHROPIC-CHILD-RESULT')
+		assert anthropic_done.input_tokens == 9
+		assert anthropic_done.output_tokens == 3
 
-	cancel_response := http.fetch(
-		url:           '${base_url}/${openai_run.id}/cancel'
-		method:        .post
-		read_timeout:  5 * time.second
-		write_timeout: 5 * time.second
-	) or { panic(err) }
-	assert cancel_response.status_code == 200
-	cancelled_view := json2.decode[SubagentRun](cancel_response.body) or { panic(err) }
-	assert cancelled_view.cancel_requested || cancelled_view.status in ['cancelled', 'uncertain']
-	openai_fixture.release <- true
-	openai_fixture.block = false
-	openai_done := wait_for_http_subagent(base_url, openai_run.id)
-	assert openai_done.status in ['cancelled', 'uncertain']
-	assert openai_done.provider == 'openai-compatible'
-	assert openai_done.model == 'openai-child-fixture'
+		cancel_response := http.fetch(
+			url:           '${base_url}/${openai_run.id}/cancel'
+			method:        .post
+			read_timeout:  5 * time.second
+			write_timeout: 5 * time.second
+		) or { panic(err) }
+		assert cancel_response.status_code == 200
+		cancelled_view := json2.decode[SubagentRun](cancel_response.body) or { panic(err) }
+		assert cancelled_view.cancel_requested || cancelled_view.status in ['cancelled', 'uncertain']
+		openai_fixture.release <- true
+		openai_fixture.block = false
+		openai_done := wait_for_http_subagent(base_url, openai_run.id)
+		assert openai_done.status in ['cancelled', 'uncertain']
+		assert openai_done.provider == 'openai-compatible'
+		assert openai_done.model == 'openai-child-fixture'
+	} else {
+		openai_fixture.release <- true
+		openai_fixture.block = false
+		openai_done := wait_for_http_subagent(base_url, openai_run.id)
+		anthropic_done := wait_for_http_subagent(base_url, anthropic_run.id)
+		assert openai_done.status == 'completed'
+		assert openai_done.provider == 'openai-compatible'
+		assert openai_done.model == 'openai-child-fixture'
+		assert openai_done.result.contains('OPENAI-CHILD-RESULT')
+		assert openai_done.input_tokens == 11
+		assert openai_done.output_tokens == 4
+		assert anthropic_done.status == 'completed'
+		assert anthropic_done.provider == 'anthropic'
+		assert anthropic_done.model == 'anthropic-child-fixture'
+		assert anthropic_done.result.contains('ANTHROPIC-CHILD-RESULT')
+		assert anthropic_done.input_tokens == 9
+		assert anthropic_done.output_tokens == 3
+	}
 	assert openai_fixture.request_count == 1
 	assert anthropic_fixture.request_count == 1
 
@@ -351,6 +379,17 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 	listed := json2.decode[[]SubagentRun](list_response.body) or { panic(err) }
 	assert listed.any(it.id == openai_run.id && it.provider == 'openai-compatible'
 		&& it.model == 'openai-child-fixture')
-	assert listed.any(it.id == anthropic_run.id && it.provider == 'anthropic'
-		&& it.model == 'anthropic-child-fixture' && it.status == 'completed')
+	if cancel_openai {
+		assert listed.any(it.id == anthropic_run.id && it.provider == 'anthropic'
+			&& it.model == 'anthropic-child-fixture' && it.status == 'completed')
+	} else {
+		assert listed.any(it.id == openai_run.id && it.provider == 'openai-compatible'
+			&& it.model == 'openai-child-fixture' && it.status == 'completed'
+			&& it.result.contains('OPENAI-CHILD-RESULT') && it.input_tokens == 11
+			&& it.output_tokens == 4)
+		assert listed.any(it.id == anthropic_run.id && it.provider == 'anthropic'
+			&& it.model == 'anthropic-child-fixture' && it.status == 'completed'
+			&& it.result.contains('ANTHROPIC-CHILD-RESULT') && it.input_tokens == 9
+			&& it.output_tokens == 3)
+	}
 }

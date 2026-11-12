@@ -17,10 +17,14 @@ const agent_code_change_retry_after_read_prompt = 'You have inspected source, bu
 const agent_code_change_edit_recovery_prompt = 'The edit proposal failed validation and no file was changed. Re-read the current matched file, then create a fresh focused proposal using exact text from that current file. Do not reuse the failed old_text or claim the change succeeded. The original request still applies.'
 const agent_code_change_verification_prompt = 'The requested code edit was applied. Before reporting completion, use workspace_propose_shell_command to run a relevant test, typecheck, or build requested by the user. Inspect the command result and fix any failure before finishing. Report only checks that actually ran.'
 const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
+const agent_code_change_acceptance_review_marker = 'ACCEPTANCE_REVIEW: PASS'
+const agent_code_change_acceptance_review_prompt = 'Post-edit acceptance review: independently compare the original user request below with the actual applied workspace diff and the verification outcome. Check every requested behavior and user-visible state, not only whether the code compiles or tests pass. If any acceptance behavior is missing or incomplete, continue the task using the available workspace tools and verify it when the user requested verification. If all requested behavior is implemented, respond with the exact marker ACCEPTANCE_REVIEW: PASS followed by a concise result. If you cannot verify completeness within the bounded review phase, do not use the marker.'
 const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
 const agent_code_change_system_instruction = 'For an explicit code-change request, start with a workspace tool call immediately. Do not send an acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, read it; otherwise search for a distinctive term from the requested behavior. Then read the complete target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
 const agent_code_change_exploration_nudge_after = 4
 const max_agent_code_change_followthrough_retries = 2
+const max_agent_code_change_acceptance_review_rounds = 3
+const max_agent_code_change_acceptance_diff_bytes = 96_000
 const max_agent_code_change_edit_recovery_attempts = 1
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
@@ -148,6 +152,48 @@ fn agent_final_response_for_verification(content string, required bool,
 		return 'The requested code change was applied, but its requested verification did not succeed. This task is not complete. ${content}'
 	}
 	return content
+}
+
+fn agent_code_change_acceptance_review_available(explicit_request bool, applied_diffs []string,
+	verification_required bool, verification_succeeded bool, review_started bool) bool {
+	return explicit_request && applied_diffs.len > 0 && !review_started
+		&& (!verification_required || verification_succeeded)
+}
+
+fn agent_code_change_acceptance_review_context(request string, diffs []string,
+	verification_required bool, verification_succeeded bool) string {
+	mut context := '${agent_code_change_acceptance_review_prompt}\n\nOriginal user request:\n${request}\n\nVerification: '
+	context += if verification_required {
+		if verification_succeeded {
+			'the requested verification succeeded.'
+		} else {
+			'the requested verification has not succeeded.'
+		}
+	} else {
+		'the user did not explicitly request a verification command.'
+	}
+	context += '\n\nActual applied diff:\n'
+	for diff in diffs {
+		if context.len >= max_agent_code_change_acceptance_diff_bytes {
+			context += '\n[Diff context limit reached. Read the changed workspace files before deciding whether all requested behavior is present.]'
+			break
+		}
+		remaining := max_agent_code_change_acceptance_diff_bytes - context.len
+		context += if diff.len > remaining { diff[..remaining] } else { diff }
+		context += '\n'
+	}
+	return context
+}
+
+fn agent_final_response_for_acceptance_review(content string, review_started bool,
+	review_passed bool) string {
+	if !review_started {
+		return content
+	}
+	if !review_passed {
+		return 'The requested code change was applied, but post-edit acceptance review did not confirm that all requested behavior is complete. This task is not complete. ${content}'
+	}
+	return content.replace(agent_code_change_acceptance_review_marker, '').trim_space()
 }
 
 fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_request bool,
@@ -673,6 +719,18 @@ struct AgentWorkspaceEditResult {
 	id   string
 	path string
 	note string
+	diff string
+}
+
+fn agent_tool_result_applied_workspace_edit_diff(call ProviderToolCall, result string) string {
+	if call.function.name != 'workspace_propose_file_edit' {
+		return ''
+	}
+	edit := json2.decode[AgentWorkspaceEditResult](result) or { return '' }
+	if !agent_tool_result_applied_workspace_effect(call, result) {
+		return ''
+	}
+	return edit.diff
 }
 
 fn prepare_agent_workspace_edit(root string, arguments map[string]json2.Any) !WorkspaceEditDraft {
@@ -1006,6 +1064,9 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 	mut verification_succeeded := false
 	mut verification_failed := false
 	mut verification_prompt_issued := false
+	mut applied_workspace_diffs := []string{}
+	mut acceptance_review_started := false
+	mut acceptance_review_rounds := 0
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
 	for round in 0 .. max_agent_tool_rounds {
@@ -1030,10 +1091,17 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 			failed_edit_proposals)
 		turn_tools = agent_code_change_verification_tools(turn_tools, verification_required,
 			workspace_effect_applied, verification_succeeded, verification_failed)
+		if acceptance_review_started {
+			acceptance_review_rounds++
+		}
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)
 			|| agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools,
 				followthrough_retries, edit_proposal_attempted, request_deadline)
 			|| (verification_required && workspace_effect_applied && !verification_succeeded)
+			|| agent_code_change_acceptance_review_available(code_change_request,
+				applied_workspace_diffs, verification_required, verification_succeeded,
+				acceptance_review_started)
+			|| acceptance_review_started
 		mut buffered_text := ''
 		stream_text_delta := if buffer_provider_text {
 			fn [mut buffered_text] (delta string) ! {
@@ -1055,6 +1123,30 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 		}
 		if has_provider_usage_data(output.usage) {
 			trace_usage = add_provider_usage(trace_usage, output.usage)
+		}
+		if acceptance_review_started && acceptance_review_rounds >= max_agent_code_change_acceptance_review_rounds
+			&& output.tool_calls.len > 0 {
+			incomplete := agent_final_response_for_acceptance_review('Acceptance review reached its bounded follow-up limit before confirming completion.',
+				true, false)
+			on_text_delta(incomplete)!
+			if collect_trace {
+				trace_steps << ATIFStep{
+					step_id:    trace_steps.len + 1
+					source:     'agent'
+					model_name: output.model
+					message:    incomplete
+				}
+			}
+			return AgentTraceResult{
+				output: CompletionOutput{
+					provider: output.provider
+					model:    output.model
+					content:  incomplete
+					usage:    output.usage
+				}
+				steps:  trace_steps
+				usage:  trace_usage
+			}
 		}
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
@@ -1092,12 +1184,44 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				followthrough_retries++
 				continue
 			}
+			if agent_code_change_acceptance_review_available(code_change_request,
+				applied_workspace_diffs, verification_required, verification_succeeded,
+				acceptance_review_started) {
+				messages << ChatMessage{
+					role:    'assistant'
+					content: output.content
+				}
+				review_context := agent_code_change_acceptance_review_context(code_change_request_text,
+					applied_workspace_diffs, verification_required, verification_succeeded)
+				messages << ChatMessage{
+					role:    'user'
+					content: review_context
+				}
+				if collect_trace {
+					trace_steps << ATIFStep{
+						step_id:    trace_steps.len + 1
+						source:     'agent'
+						model_name: output.model
+						message:    output.content
+					}
+					trace_steps << ATIFStep{
+						step_id: trace_steps.len + 1
+						source:  'user'
+						message: review_context
+					}
+				}
+				acceptance_review_started = true
+				continue
+			}
+			review_passed := acceptance_review_started
+				&& output.content.contains(agent_code_change_acceptance_review_marker)
 			final_output := CompletionOutput{
 				provider:         output.provider
 				model:            output.model
-				content:          agent_final_response_for_verification(agent_final_response_for_execution_policy(output.content, code_change_request,
+				content:          agent_final_response_for_acceptance_review(agent_final_response_for_verification(agent_final_response_for_execution_policy(output.content, code_change_request,
 					policy, workspace_effect_applied, workspace_effect_pending_review),
-					verification_required, workspace_effect_applied, verification_succeeded)
+					verification_required, workspace_effect_applied, verification_succeeded),
+					acceptance_review_started, review_passed)
 				provider_context: output.provider_context
 				usage:            output.usage
 			}
@@ -1263,6 +1387,10 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				}
 				workspace_effect_applied = workspace_effect_applied
 					|| agent_tool_result_applied_workspace_effect(call, tool_result)
+				applied_diff := agent_tool_result_applied_workspace_edit_diff(call, tool_result)
+				if applied_diff.len > 0 {
+					applied_workspace_diffs << applied_diff
+				}
 				if verification_required && call.function.name == 'workspace_propose_file_edit'
 					&& agent_tool_result_applied_workspace_effect(call, tool_result) {
 					verification_succeeded = false
@@ -1592,6 +1720,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, mut turn_ctx vcontext.Conte
 			id:   proposal.id
 			path: proposal.path
 			note: 'Applied by graduated execution policy (auto-edit or sandbox-auto).'
+			diff: proposal.diff
 		})
 	}
 	if call.function.name == 'workspace_propose_shell_command' {

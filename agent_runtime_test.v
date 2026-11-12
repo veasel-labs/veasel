@@ -113,6 +113,38 @@ fn test_verification_gate_requires_success_after_an_applied_edit() {
 	assert agent_final_response_for_verification('Done.', true, true, true) == 'Done.'
 }
 
+fn test_post_edit_acceptance_review_requires_an_applied_diff_and_successful_required_verification() {
+	diff := ['--- a/README.md\n+++ b/README.md\n+button activates with Enter or Space']
+	assert !agent_code_change_acceptance_review_available(true, [], false, false, false)
+	assert !agent_code_change_acceptance_review_available(true, diff, true, false, false)
+	assert agent_code_change_acceptance_review_available(true, diff, true, true, false)
+	assert !agent_code_change_acceptance_review_available(true, diff, true, true, true)
+	assert !agent_code_change_acceptance_review_available(false, diff, false, false, false)
+	context := agent_code_change_acceptance_review_context('Please enable the button and show status after activation.', diff, true, true)
+	assert context.contains('Original user request:')
+	assert context.contains('show status after activation')
+	assert context.contains('actual applied workspace diff')
+	assert context.contains('button activates with Enter or Space')
+	assert context.contains('the requested verification succeeded')
+	assert agent_final_response_for_acceptance_review('Done.', true, false).contains('not complete')
+	assert agent_final_response_for_acceptance_review('ACCEPTANCE_REVIEW: PASS All requirements are present.', true, true) ==
+		'All requirements are present.'
+}
+
+fn test_failed_requested_verification_prevents_acceptance_review_and_success_claim() {
+	diff := ['--- a/src/main.ts\n+++ b/src/main.ts\n+button.addEventListener(...)']
+	assert !agent_code_change_acceptance_review_available(true, diff, true, false, false)
+	response := agent_final_response_for_verification('The change is complete.', true, true, false)
+	assert response.contains('verification did not succeed')
+	assert response.contains('This task is not complete')
+}
+
+fn test_post_edit_acceptance_review_is_not_restarted_after_followup() {
+	diff := ['--- a/README.md\n+++ b/README.md\n+keyboard activation']
+	assert agent_code_change_acceptance_review_available(true, diff, false, false, false)
+	assert !agent_code_change_acceptance_review_available(true, diff, false, false, true)
+}
+
 fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read() {
 	tools := [
 		AgentToolDefinition{ name: 'workspace_list_files' },
@@ -2139,6 +2171,230 @@ fn start_agent_code_change_followthrough_fixture(mut fixture AgentCodeChangeFoll
 		return error(err.msg())
 	}
 	return server, server_thread
+}
+
+struct AgentAcceptanceReviewFixture {
+mut:
+	hits               int
+	request_bodies     []string
+	missing_acceptance bool
+}
+
+fn agent_acceptance_review_fixture_tool_call(id string, name string, arguments string) OpenAIStreamChunk {
+	return OpenAIStreamChunk{
+		choices: [OpenAIStreamChoice{
+			delta: OpenAIStreamDelta{
+				tool_calls: [OpenAIStreamToolCallDelta{
+					index:    0
+					id:       id
+					type:     'function'
+					function: OpenAIStreamFunctionDelta{
+						name:      name
+						arguments: arguments
+					}
+				}]
+			}
+		}]
+	}
+}
+
+fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	fixture.request_bodies << request.data
+	chunk := match fixture.hits {
+		1 {
+			agent_acceptance_review_fixture_tool_call('review-search', 'workspace_search',
+				'{"query":"keyboard activation feedback"}')
+		}
+		2 {
+			agent_acceptance_review_fixture_tool_call('review-read', 'workspace_read_file',
+				'{"path":"README.md"}')
+		}
+		3 {
+			content := if fixture.missing_acceptance {
+				'Button: Click to activate.\n'
+			} else {
+				'Button: Enter or Space activates; visible status feedback follows.\n'
+			}
+			agent_acceptance_review_fixture_tool_call('review-edit', 'workspace_propose_file_edit',
+				'{"path":"README.md","content":"${content.replace('\\n', '\\\\n')}"}')
+		}
+		4 {
+			OpenAIStreamChunk{
+				choices: [OpenAIStreamChoice{
+					delta: OpenAIStreamDelta{ content: 'The button change is implemented and generic checks passed.' }
+				}]
+			}
+		}
+		5 {
+			if fixture.missing_acceptance {
+				agent_acceptance_review_fixture_tool_call('review-followup-edit',
+					'workspace_propose_file_edit',
+					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
+			} else {
+				OpenAIStreamChunk{
+					choices: [OpenAIStreamChoice{
+						delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS Button behavior matches the request.' }
+					}]
+				}
+			}
+		}
+		else {
+			OpenAIStreamChunk{
+				choices: [OpenAIStreamChoice{
+					delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS The missing keyboard behavior is now present.' }
+				}]
+			}
+		}
+	}
+	mut response := http.Response{}
+	response.set_status(.ok)
+	response.header.set(.content_type, 'text/event-stream')
+	response.body = 'data: ${json2.encode(chunk)}\n\ndata: [DONE]\n\n'
+	return response
+}
+
+fn start_agent_acceptance_review_fixture(mut fixture AgentAcceptanceReviewFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
+fn new_app_with_auto_edit_for_test(store &Store, plugin_directory string) &App {
+	previous := os.getenv('VEASEL_ALLOW_AUTO_EDIT')
+	os.setenv('VEASEL_ALLOW_AUTO_EDIT', '1', true)
+	app := new_app(store, plugin_directory)
+	if previous == '' {
+		os.unsetenv('VEASEL_ALLOW_AUTO_EDIT')
+	} else {
+		os.setenv('VEASEL_ALLOW_AUTO_EDIT', previous, true)
+	}
+	return app
+}
+
+fn test_agent_acceptance_review_passes_when_applied_diff_covers_request() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-acceptance-complete-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'Button: launch demo. Keyboard activation and visible feedback are missing.\n') or {
+		panic(err)
+	}
+	mut fixture := &AgentAcceptanceReviewFixture{}
+	mut server, server_thread := start_agent_acceptance_review_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app_with_auto_edit_for_test(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Post-edit acceptance complete'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	request := 'Please update the README button to support keyboard activation and show visible feedback after activation.'
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:          request
+		collect_trace:    true
+		execution_policy: 'auto-edit'
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 5
+	assert fixture.request_bodies.filter(it.contains(agent_code_change_acceptance_review_prompt)).len == 1
+	review_request := fixture.request_bodies[4]
+	assert review_request.contains(request)
+	assert review_request.contains('Enter or Space activates')
+	assert review_request.contains('visible status feedback follows')
+	assert review_request.contains('+++ README.md')
+	assert exchange.messages.last().content == 'Button behavior matches the request.'
+	assert !exchange.messages.last().content.contains('not complete')
+	assert os.read_file(readme) or { panic(err) } == 'Button: Enter or Space activates; visible status feedback follows.\n'
+}
+
+fn test_agent_acceptance_review_finds_missing_behavior_and_continues_once() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-acceptance-missing-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'Button: launch demo. Keyboard activation and visible feedback are missing.\n') or {
+		panic(err)
+	}
+	mut fixture := &AgentAcceptanceReviewFixture{
+		missing_acceptance: true
+	}
+	mut server, server_thread := start_agent_acceptance_review_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app_with_auto_edit_for_test(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Post-edit acceptance missing behavior'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	request := 'Please update the README button to support keyboard activation and show visible feedback after activation.'
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:          request
+		collect_trace:    true
+		execution_policy: 'auto-edit'
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 6
+	assert fixture.request_bodies[5].split(agent_code_change_acceptance_review_prompt).len == 2
+	assert fixture.request_bodies[4].contains('Button: Click to activate.')
+	assert fixture.request_bodies[4].contains('keyboard activation')
+	assert exchange.messages.last().content == 'The missing keyboard behavior is now present.'
+	assert !exchange.messages.last().content.contains('not complete')
+	assert os.read_file(readme) or { panic(err) } == 'Button: Enter or Space activates; visible status feedback follows.\n'
 }
 
 fn test_agent_retries_explicit_code_request_after_text_only_completion() {

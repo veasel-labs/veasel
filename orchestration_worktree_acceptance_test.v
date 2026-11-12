@@ -7,8 +7,7 @@ import uuid
 // subagents. It does not claim that a model selected a role, made these edits,
 // or that Veasel currently exposes a child-result integration action.
 fn test_two_child_worktrees_preserve_parent_and_surface_git_conflicts() {
-	git := os.find_abs_path_of_executable('git') or { return }
-	_ = git
+	_ = os.find_abs_path_of_executable('git') or { panic('git executable is required') }
 	root := os.join_path(os.temp_dir(), 'veasel-orchestration-worktrees-${uuid.new_v4().str()}')
 	repo := os.join_path(root, 'workspace')
 	data := os.join_path(root, 'data')
@@ -64,8 +63,8 @@ fn test_two_child_worktrees_preserve_parent_and_surface_git_conflicts() {
 
 	// Review in a separate integration checkout. A conflict cannot change the
 	// parent's files, and the unresolved integration state can be aborted.
-	_ := run_workspace_git_command(repo, ['worktree', 'add', '-b', 'fixture/integration', integration_path,
-		'HEAD']) or { panic(err) }
+	_ := run_workspace_git_command(repo, ['worktree', 'add', '-b', 'fixture/integration',
+		integration_path, 'HEAD']) or { panic(err) }
 	_ := run_workspace_git_command(integration_path, ['merge', '--no-edit', first.branch]) or {
 		panic(err)
 	}

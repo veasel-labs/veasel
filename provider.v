@@ -35,6 +35,7 @@ const max_model_output_tokens = 4096
 const min_configured_output_tokens = 16
 const max_configured_output_tokens = 131_072
 const max_provider_response_bytes = 1_000_000
+const max_provider_http_error_detail_bytes = 1024
 const max_provider_stream_bytes = 16_000_000
 const max_provider_model_catalog_bytes = 1_000_000
 
@@ -800,6 +801,45 @@ fn provider_http_error_message(provider string, status_code int, operation strin
 		return '${operation} HTTP ${status_code}'
 	}
 	return 'HTTP ${status_code}'
+}
+
+struct ProviderHTTPErrorEnvelope {
+	error ProviderHTTPErrorDetail
+}
+
+struct ProviderHTTPErrorDetail {
+	message string
+	type    string
+	code    string
+	param   string
+}
+
+fn provider_http_error_detail(body string) string {
+	if body.len == 0 || body.len > max_provider_response_bytes {
+		return ''
+	}
+	envelope := json2.decode[ProviderHTTPErrorEnvelope](body) or { return '' }
+	message := envelope.error.message.trim_space()
+	if message.len == 0 {
+		return ''
+	}
+	secrets := trace_secret_env_values()
+	mut parts := []string{}
+	if envelope.error.type.len > 0 {
+		parts << redact_trace_text(envelope.error.type, secrets)
+	}
+	if envelope.error.code.len > 0 {
+		parts << 'code: ${redact_trace_text(envelope.error.code, secrets)}'
+	}
+	if envelope.error.param.len > 0 {
+		parts << 'param: ${redact_trace_text(envelope.error.param, secrets)}'
+	}
+	parts << redact_trace_text(message, secrets)
+	return truncate_utf8_bytes(' (${parts.join('; ')})', max_provider_http_error_detail_bytes)
+}
+
+fn provider_http_error_diagnostic(provider string, status_code int, operation string, body string) string {
+	return '${provider_http_error_message(provider, status_code, operation)}${provider_http_error_detail(body)}'
 }
 
 // provider_ascii_digit reports whether a byte is an ASCII decimal digit.
@@ -2892,7 +2932,7 @@ fn post_model_sse(mut turn_ctx vcontext.Context, url string, config ModelConfig,
 	if response.status_code < 200 || response.status_code >= 300 {
 		header := response.header.get(.retry_after) or { '' }
 		return ProviderHTTPError{
-			message:        provider_http_error_message(config.provider, response.status_code, '')
+			message:        provider_http_error_diagnostic(config.provider, response.status_code, '', response.body)
 			retry_after_ms: provider_retry_after_ms(header, time.utc())
 		}
 	}

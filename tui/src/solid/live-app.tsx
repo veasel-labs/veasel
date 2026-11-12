@@ -60,6 +60,7 @@ import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
 import { openSubagentDelegateDialog } from "./component/subagent-delegate-dialog"
 import { openSubagentRunsDialog } from "./component/subagent-runs-dialog"
+import { subagentIntegrationReviewTarget, subagentIntegrationSummary, type SubagentRunView } from "./subagent-runs"
 import { openUsageDashboardDialog } from "./component/usage-dashboard-dialog"
 import type { ApiGlobalSessionOperation } from "../api-client"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
@@ -747,6 +748,27 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const integrateSubagent = async (sessionId: string, run: SubagentRunView) => {
+    try {
+      const result = await props.api.integrateSubagent(sessionId, run.id)
+      if (sessionId !== activeSessionId()) {
+        toast.info("Agent proposals were created in the original conversation; reopen it to review them.", "Agent changes")
+        return
+      }
+      const reviewTarget = subagentIntegrationReviewTarget(result)
+      const summary = subagentIntegrationSummary(result)
+      const resolvedNote = result.proposals.length > 0 && !reviewTarget
+        ? " · no pending proposals remain; this may be an already-resolved retry"
+        : ""
+      toast.info(`${summary}${resolvedNote}`, "Agent changes")
+      if (reviewTarget) {
+        await openLiveReviews({ kind: "patch", id: reviewTarget })
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare agent changes for review", "Agent changes")
+    }
+  }
+
   const inSession = createMemo(() => Boolean(activeSessionId()))
   const composerVisible = createMemo(() => inSession() || homeComposerOpen())
   const sessionTitle = createMemo(() => {
@@ -843,6 +865,7 @@ function LiveAppShell(props: LiveAppProps) {
     openSubagentRunsDialog(dialog, {
       api: props.api,
       sessionId,
+      onIntegrate: (run) => { void integrateSubagent(sessionId, run) },
       onFollowUp: (run) => {
         void props.api.listSessions().then((items) => {
           const child = items.find((item) => item.id === run.child_session_id)
@@ -923,7 +946,11 @@ function LiveAppShell(props: LiveAppProps) {
             mode: "async",
           }).then((run) => {
             toast.success(`Queued ${run.agent_id} · ${run.provider}/${run.model}`, "Agent")
-            openSubagentRunsDialog(dialog, { api: props.api, sessionId })
+            openSubagentRunsDialog(dialog, {
+              api: props.api,
+              sessionId,
+              onIntegrate: (childRun) => { void integrateSubagent(sessionId, childRun) },
+            })
           }).catch((error: unknown) => {
             openDialogAlert(dialog, {
               title: "Could not delegate task",

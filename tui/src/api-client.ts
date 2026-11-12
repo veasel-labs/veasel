@@ -229,6 +229,13 @@ export type ApiWorkspaceEditProposal = ApiWorkspaceEditSummary & {
   diff: string
 }
 
+export type ApiSubagentIntegration = {
+  run_id: string
+  status: string
+  proposals: ApiWorkspaceEditProposal[]
+  conflicts: Array<{ path: string; reason: string }>
+}
+
 export type ApiReviewSandboxPreview = {
   mode: string
   will_wrap: boolean
@@ -459,6 +466,15 @@ export class VeaselApiClient {
     })
     if (!response.ok) throw await httpError(response)
     return await response.json() as ApiSubagentRun
+  }
+
+  async integrateSubagent(sessionId: string, runId: string): Promise<ApiSubagentIntegration> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/integrate`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSubagentIntegration
   }
 
   async updateModelSettings(input: {

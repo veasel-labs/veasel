@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import type { ApiSubagentRun } from "../api-client"
-import { subagentRunDetails, toSubagentRunView } from "./subagent-runs"
+import type { ApiSubagentIntegration, ApiSubagentRun } from "../api-client"
+import {
+  subagentCanIntegrate,
+  subagentIntegrationReviewTarget,
+  subagentIntegrationSummary,
+  subagentRunDetails,
+  toSubagentRunView,
+} from "./subagent-runs"
 
 const baseRun: ApiSubagentRun = {
   id: "run-1",
@@ -67,5 +73,41 @@ describe("subagent usage details", () => {
     const run = toSubagentRunView({ ...baseRun, usage_reported: true })
 
     expect(subagentRunDetails(run)).toContain("Provider-reported usage: unavailable input · unavailable output tokens")
+  })
+})
+
+describe("subagent change integration", () => {
+  test("offers integration only for terminal implementer runs", () => {
+    expect(subagentCanIntegrate(toSubagentRunView({ ...baseRun, agent_id: "implementer", status: "completed" }))).toBe(true)
+    expect(subagentCanIntegrate(toSubagentRunView({ ...baseRun, agent_id: "implementer", status: "uncertain" }))).toBe(true)
+    expect(subagentCanIntegrate(toSubagentRunView({ ...baseRun, agent_id: "implementer", status: "running" }))).toBe(false)
+    expect(subagentCanIntegrate(toSubagentRunView({ ...baseRun, agent_id: "explorer", status: "completed" }))).toBe(false)
+  })
+
+  test("summarizes partial conflicts and routes the first pending proposal for review", () => {
+    const response: ApiSubagentIntegration = {
+      run_id: "run-1",
+      status: "partial",
+      proposals: [
+        { id: "edit-applied", path: "one.v", status: "applied", diff: "" },
+        { id: "edit-pending", path: "two.v", status: "pending", diff: "" },
+      ],
+      conflicts: [{ path: "three.v", reason: "parent file changed" }],
+    }
+
+    expect(subagentIntegrationReviewTarget(response)).toBe("edit-pending")
+    expect(subagentIntegrationSummary(response)).toBe("2 proposals · 1 conflict · three.v: parent file changed")
+    expect(subagentIntegrationReviewTarget({ ...response, proposals: [] })).toBeUndefined()
+  })
+
+  test("bounds conflict detail for narrow TUI feedback", () => {
+    const response: ApiSubagentIntegration = {
+      run_id: "run-1",
+      status: "conflicted",
+      proposals: [],
+      conflicts: [{ path: "src/long-name.v", reason: "reason ".repeat(40) }],
+    }
+
+    expect(subagentIntegrationSummary(response).length).toBeLessThan(190)
   })
 })

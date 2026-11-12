@@ -1,5 +1,5 @@
 import type { DialogSelectOption } from "./ui/dialog-select"
-import type { ApiSubagentRun } from "../api-client"
+import type { ApiSubagentIntegration, ApiSubagentRun } from "../api-client"
 
 /** Durable child state returned by the orchestration API. Progress is absent
  * by design: the backend currently exposes lifecycle states, not percentages. */
@@ -117,4 +117,26 @@ function formatUsageCount(value: number | undefined): string {
 
 export function subagentCanCancel(run: SubagentRunView): boolean {
   return (run.status === "queued" || run.status === "running") && !run.cancel_requested
+}
+
+export function subagentCanIntegrate(run: SubagentRunView): boolean {
+  return run.agent_id === "implementer"
+    && ["completed", "failed", "cancelled", "uncertain"].includes(run.status)
+}
+
+/** Select a still-pending proposal when an idempotent integration is retried. */
+export function subagentIntegrationReviewTarget(result: ApiSubagentIntegration): string | undefined {
+  return result.proposals.find((proposal) => proposal.status === "pending")?.id
+}
+
+/** Keep conflict feedback useful in the narrow terminal dialog/toast area. */
+export function subagentIntegrationSummary(result: ApiSubagentIntegration): string {
+  const proposals = result.proposals.length
+  const conflicts = result.conflicts.length
+  const counts = `${proposals} proposal${proposals === 1 ? "" : "s"} · ${conflicts} conflict${conflicts === 1 ? "" : "s"}`
+  if (conflicts === 0) return counts
+  const first = result.conflicts[0]!
+  const detail = `${first.path}: ${first.reason}`.replace(/\s+/g, " ").trim()
+  const short = detail.length > 120 ? `${detail.slice(0, 117)}…` : detail
+  return `${counts} · ${short}`
 }

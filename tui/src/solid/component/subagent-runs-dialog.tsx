@@ -3,7 +3,7 @@ import { createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import type { VeaselApiClient } from "../../api-client"
-import { subagentCanCancel, subagentRunDetails, subagentRunOption, toSubagentRunView, type SubagentRunView } from "../subagent-runs"
+import { subagentCanCancel, subagentCanIntegrate, subagentRunDetails, subagentRunOption, toSubagentRunView, type SubagentRunView } from "../subagent-runs"
 import { openDialogAlert } from "../ui/dialog-alert"
 import { DialogHeader, DialogLayout } from "../ui/dialog"
 import { dialogGeometry } from "../ui/dialog-layout"
@@ -15,14 +15,18 @@ type SubagentRunsDialogProps = {
   api: VeaselApiClient
   sessionId: string
   onFollowUp?: (run: SubagentRunView) => void
+  onIntegrate?: (run: SubagentRunView) => void
 }
 
-function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient; sessionId: string; onFollowUp?: (run: SubagentRunView) => void }) {
+function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient; sessionId: string; onFollowUp?: (run: SubagentRunView) => void; onIntegrate?: (run: SubagentRunView) => void }) {
   const dialog = useDialog()
   const actions = createMemo((): DialogSelectOption<string>[] => [
     { title: "Inspect result and provenance", value: "inspect", description: "Show the durable child outcome, model, and workspace" },
     ...(subagentCanCancel(props.run)
       ? [{ title: "Request cancellation", value: "cancel", description: "Cancel only this child execution" }]
+      : []),
+    ...(subagentCanIntegrate(props.run) && props.onIntegrate
+      ? [{ title: "Integrate changes", value: "integrate", description: "Create parent-workspace proposals for explicit review" }]
       : []),
     ...(props.onFollowUp
       ? [{ title: "Continue in child session", value: "follow-up", description: "Open this child session to send a follow-up" }]
@@ -53,6 +57,8 @@ function SubagentRunActions(props: { run: SubagentRunView; api: VeaselApiClient;
       } else if (option.value === "follow-up") {
         dialog.clear()
         props.onFollowUp?.(props.run)
+      } else if (option.value === "integrate") {
+        props.onIntegrate?.(props.run)
       }
     }}
   />
@@ -138,7 +144,7 @@ function SubagentRunsDialog(props: SubagentRunsDialogProps) {
     onSelect={(option) => {
       const run = runs().find((item) => item.id === option.value)
       if (!run) return
-      dialog.replace(() => <SubagentRunActions run={run} api={props.api} sessionId={props.sessionId} onFollowUp={props.onFollowUp} />)
+      dialog.replace(() => <SubagentRunActions run={run} api={props.api} sessionId={props.sessionId} onFollowUp={props.onFollowUp} onIntegrate={props.onIntegrate} />)
     }}
   />
 }

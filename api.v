@@ -10,8 +10,8 @@ import veb
 import veb.sse
 
 const max_provider_concurrency = 4
-// A delegated TLS request may outlive cancellation before its first response byte.
-const max_subagent_provider_concurrency = 4
+// Keep one global provider slot available for parent and ordinary turns.
+const max_subagent_provider_concurrency = max_provider_concurrency - 1
 const max_active_turn_operations = 32
 const max_active_shell_commands = 2
 const session_turn_lock_stripes = 64
@@ -330,9 +330,7 @@ fn (app &App) complete_with_provider_limit(mut turn_ctx vcontext.Context,
 	input CompletionInput, request_deadline time.Time, pool ProviderPool) !CompletionOutput {
 	mut config := app.model_config()!
 	config.request_deadline = request_deadline
-	if !app.try_provider_slot(pool) {
-		return error('provider_busy')
-	}
+	app.acquire_provider_slot(mut turn_ctx, pool)!
 	mut slots := app.provider_slots
 	mut subagent_slots := app.subagent_provider_slots
 	workers := app.begin_provider_worker() or {
@@ -384,9 +382,7 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	}
 	config.request_deadline = request_deadline
 	config.require_tool_choice = require_tool_choice
-	if !app.try_provider_slot(pool) {
-		return error('provider_busy')
-	}
+	app.acquire_provider_slot(mut turn_ctx, pool)!
 	mut slots := app.provider_slots
 	mut subagent_slots := app.subagent_provider_slots
 	workers := app.begin_provider_worker() or {
@@ -434,6 +430,27 @@ fn (app &App) try_provider_slot(pool ProviderPool) bool {
 		return false
 	}
 	return true
+}
+
+// Child workers wait for a bounded provider slot rather than failing just
+// because other children are busy. Their separate semaphore caps active child
+// calls below the global limit, preserving capacity for parent turns.
+fn (app &App) acquire_provider_slot(mut turn_ctx vcontext.Context, pool ProviderPool) ! {
+	if pool == .regular {
+		if !app.try_provider_slot(pool) {
+			return error('provider_busy')
+		}
+		return
+	}
+	for {
+		if context_error := turn_context_error(mut turn_ctx) {
+			return error(context_error)
+		}
+		if app.try_provider_slot(.subagent) {
+			return
+		}
+		time.sleep(10 * time.millisecond)
+	}
 }
 
 fn (app &App) try_plugin_mcp_slot() bool {

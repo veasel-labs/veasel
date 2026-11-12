@@ -319,12 +319,21 @@ fn (app &App) launch_subagent_worker(run SubagentRun, task string, profile Subag
 		}
 		result := app.run_subagent_session(mut turn_ctx, session, operation_id, request_deadline,
 			task, profile, model_config) or {
-			status := if err.msg() in ['cancelled', 'deadline_exceeded', 'app_shutting_down'] {
+			mut store := app.store
+			current := store.get_subagent_run(run_id) or {
+				eprintln('veasel: unable to inspect interrupted child ${run_id} (${err.msg()})')
+				return
+			}
+			// Only an explicit durable cancellation is safely classified as
+			// cancelled. A context interruption without that intent (shutdown or
+			// deadline) leaves the provider side effect uncertain and must not replay.
+			status := if current.cancel_requested {
 				'cancelled'
+			} else if err.msg() in ['cancelled', 'deadline_exceeded', 'app_shutting_down'] {
+				'uncertain'
 			} else {
 				'failed'
 			}
-			mut store := app.store
 			store.record_session_turn_completion(session.id, operation_id, status,
 				truncate_utf8_bytes(err.msg(), 1024), task, '') or {}
 			finished := store.finish_subagent_run(run_id, status, '', err.msg()) or {

@@ -408,11 +408,11 @@ fn test_model_callable_subagent_child_cancellation_returns_while_http_is_waiting
 	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
 	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
 	mut fixture := &SubagentProviderFixture{
-		pause_child_until_released:  true
-		child_request_started:       chan bool{cap: 1}
-		release_child_request:       chan bool{cap: 1}
-		parent_request_started:      chan bool{cap: 1}
-		release_parent_request:      chan bool{cap: 1}
+		pause_child_until_released: true
+		child_request_started:      chan bool{cap: 1}
+		release_child_request:      chan bool{cap: 1}
+		parent_request_started:     chan bool{cap: 1}
+		release_parent_request:     chan bool{cap: 1}
 	}
 	mut server, server_thread := start_subagent_provider_fixture(mut fixture) or { panic(err) }
 	defer {
@@ -498,4 +498,102 @@ fn test_model_callable_subagent_child_cancellation_returns_while_http_is_waiting
 	assert child_run.status == 'cancelled'
 	assert child_run.cancel_requested
 	assert child_run.outcome_claimed
+}
+
+fn test_subagent_provider_pool_reserves_parent_capacity_and_queues_excess_children() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-provider-pool-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_runtime_test_repo(root)
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 2 * time.second)
+	defer { cancel() }
+	for _ in 0 .. max_subagent_provider_concurrency {
+		app.acquire_provider_slot(mut turn_ctx, .subagent) or { panic(err) }
+	}
+	assert app.try_provider_slot(.regular), 'child calls must leave one global provider slot for parent turns'
+	mut provider_slots := app.provider_slots
+	provider_slots.post()
+
+	acquired_chan := chan bool{cap: 1}
+	spawn fn (app &App, turn_ctx vcontext.Context, acquired_chan chan bool) {
+		mut child_ctx := turn_ctx
+		app.acquire_provider_slot(mut child_ctx, .subagent) or {
+			acquired_chan <- false
+			return
+		}
+		acquired_chan <- true
+	}(app, turn_ctx, acquired_chan)
+	mut acquired := false
+	assert acquired_chan.try_pop(mut acquired) == .not_ready, 'excess child should wait for a child slot'
+	mut child_slots := app.subagent_provider_slots
+	child_slots.post()
+	provider_slots.post()
+	acquired = <-acquired_chan
+	assert acquired, 'waiting child should acquire released capacity instead of failing provider_busy'
+	for _ in 0 .. max_subagent_provider_concurrency {
+		child_slots.post()
+		provider_slots.post()
+	}
+}
+
+fn test_app_shutdown_interrupting_child_is_persisted_as_uncertain() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-shutdown-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_runtime_test_repo(root)
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut fixture := &SubagentProviderFixture{
+		pause_child_until_released: true
+		child_request_started:      chan bool{cap: 1}
+		release_child_request:      chan bool{cap: 1}
+		parent_request_started:     chan bool{cap: 1}
+		release_parent_request:     chan bool{cap: 1}
+	}
+	mut server, server_thread := start_subagent_provider_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	defer { _ = fixture.release_child_request.try_push(true) }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	parent := store.create_session(SessionInput{
+		title:     'Shutdown interruption parent'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	run := app.delegate_subagent_task(parent.id, operation_id, 'shutdown-request', 'explorer',
+		'Inspect README.md and report its marker.', '', '') or { panic(err) }
+	mut child_request_started := false
+	start_deadline := time.sys_mono_now() + u64(10 * time.second)
+	for !child_request_started && time.sys_mono_now() < start_deadline {
+		if fixture.child_request_started.try_pop(mut child_request_started) != .success {
+			time.sleep(10 * time.millisecond)
+		}
+	}
+	assert child_request_started, 'expected child provider request to be in flight before shutdown'
+	app.cancel_all_turn_operations()
+	fixture.release_child_request <- true
+	app.wait_for_turn_operations()
+	interrupted := store.get_subagent_run(run.id) or { panic(err) }
+	assert interrupted.status == 'uncertain'
+	assert !interrupted.cancel_requested
+	assert interrupted.outcome_claimed
 }

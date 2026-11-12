@@ -54,6 +54,34 @@ fn start_opencode_go_header_fixture(mut fixture OpenCodeGoHeaderFixture) !(&http
 	return server, server_thread
 }
 
+struct ProviderErrorFixture {
+	body string
+}
+
+fn (fixture ProviderErrorFixture) handle(_ http.Request) http.Response {
+	mut response := http.Response{}
+	response.set_status(.bad_request)
+	response.header.set(.content_type, 'application/json')
+	response.body = fixture.body
+	return response
+}
+
+fn start_provider_error_fixture(fixture ProviderErrorFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
 fn test_opencode_go_requests_use_stable_session_ids() {
 	assert opencode_go_session_header(ModelConfig{
 		provider:   'opencode-go'
@@ -229,6 +257,43 @@ fn test_opencode_invalid_key_error_explains_expired_console_key() {
 	assert message.contains('does not reuse the OpenCode CLI login')
 	assert provider_http_error_message('opencode', 403, '') == 'HTTP 403'
 	assert provider_http_error_message('opencode', 401, 'model catalog endpoint returned') == 'model catalog endpoint returned HTTP 401'
+}
+
+fn test_provider_http_error_diagnostic_includes_bounded_redacted_error_details() {
+	body := '{"error":{"message":"Model unavailable","type":"invalid_request_error","code":"API_KEY=super-secret-value","param":"model"}}'
+	diagnostic := provider_http_error_diagnostic('meta', 400, '', body)
+	assert diagnostic.starts_with('HTTP 400 (invalid_request_error; code: API_KEY=${trace_redaction_marker}; param: model; Model unavailable)')
+	assert !diagnostic.contains('super-secret-value')
+
+	long_body := '{"error":{"message":"${strings.repeat(`x`, max_provider_http_error_detail_bytes + 100)}"}}'
+	long_diagnostic := provider_http_error_diagnostic('meta', 400, '', long_body)
+	assert long_diagnostic.len <= 'HTTP 400'.len + max_provider_http_error_detail_bytes
+	assert provider_http_error_detail('not json') == ''
+	assert provider_http_error_detail(strings.repeat(`x`, max_provider_response_bytes + 1)) == ''
+}
+
+fn test_post_model_sse_surfaces_sanitized_provider_error_body() {
+	mut server, server_thread := start_provider_error_fixture(ProviderErrorFixture{
+		body: '{"error":{"message":"Unknown model","type":"invalid_request_error","code":"API_KEY=super-secret-value"}}'
+	}) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer {
+		cancel()
+	}
+	_ := post_model_sse(mut turn_ctx, 'http://${server.addr}/v1/responses', ModelConfig{
+		provider: 'meta'
+	}, '{}', .bearer, fn (_ string) ! {}) or {
+		assert err is ProviderHTTPError
+		assert err.msg().contains('HTTP 400 (invalid_request_error; code: API_KEY=${trace_redaction_marker}; Unknown model)')
+		assert !err.msg().contains('super-secret-value')
+		return
+	}
+	assert false, 'Expected the provider HTTP failure to be returned.'
 }
 
 fn test_opencode_go_turn_sends_required_session_and_client_headers() {

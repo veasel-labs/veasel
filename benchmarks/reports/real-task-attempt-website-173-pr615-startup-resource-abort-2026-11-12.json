@@ -1,0 +1,35 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-12",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "External diff against the clean task base. Success requires the requested accessible responsive docs navigation, repository checks, and viewport verification."
+  },
+  "runner": {
+    "name": "Veasel PR #615 head in the filesystem-isolated Bubblewrap sandbox",
+    "source_commit": "1c7406d95783df3dfd382c4d3fa3d9844dfb28a4",
+    "harness_commit": "1c7406d95783df3dfd382c4d3fa3d9844dfb28a4",
+    "binary_sha256": "ce2c550c214e36583fdf9f33c900dfe52c5e73761e61cad3c974878f024559c5",
+    "compiler": "V 0.5.2 b0ceb9b",
+    "provider": "Ollama 0.40.15 CUDA",
+    "model": "qwen3:8b",
+    "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "context_tokens": 4096,
+    "output_budget_tokens": 2048,
+    "wall_limit_seconds": 300,
+    "elapsed_seconds": 3.117,
+    "status": "resource_aborted_during_agent_startup",
+    "preflight_passed": true,
+    "available_memory_at_launch_bytes": 5278863360,
+    "minimum_available_memory_bytes": 4746665984,
+    "required_available_memory_bytes": 4831838208,
+    "tool_calls_observed": null,
+    "oracle_result": "Unscored: the resource guard stopped the attempt below the 4.5 GiB RAM floor. The external task workspace remained clean and no trajectory file was produced.",
+    "failure_class": "resource_safety_floor",
+    "trace_available": false
+  },
+  "interpretation": "The pinned model and GPU placement passed the pre-#617 preflight, but available RAM was only 0.42 GiB above the runtime floor when the agent started and fell below that floor within 3.1 seconds. PR #617's 5.75 GiB startup preflight, now on main, would reject this 4.92 GiB launch sample before the run. The harness captured no trajectory, so tool-call count and coding outcome cannot be scored. This is a resource abort, not evidence of coding success or model failure. It does not change the verified-task success count or provide a Veasel/OpenCode comparison.",
+  "privacy": "Raw prompts, source excerpts, logs, and provider traces remain private. This summary contains no source contents or credentials."
+}

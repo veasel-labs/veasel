@@ -92,7 +92,7 @@ outcomes are externally scored against the same oracle.
 
 ## Current quality scoreboard
 
-As of 2026-11-11, the only task in the corpus is website#173 at base
+As of 2026-11-12, the only task in the corpus is website#173 at base
 `184c7d8`, with the pinned Qwen3:8b digest, Ollama 0.40.15, CUDA on an RTX
 3060, and prompt SHA-256
 `5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e`.
@@ -108,6 +108,7 @@ and responsive/accessibility behavior in the issue acceptance criteria.
 | Veasel PR #614 head `f26b2fd` built with V `b0ceb9b` | completed | 6.1 s | 0 edits; clean workspace | failed: exact multiword search returned no matches and the agent stopped |
 | Veasel multiword-search fallback | resource-aborted | 13.2 s | no scored result; workspace remained clean | unscored: RAM crossed the 4.5 GiB safety floor before a completed turn |
 | Veasel multiword-search fallback retry | resource-aborted | 11.1 s | no scored result; workspace remained clean | unscored: available RAM fell to 4.39 GiB, below the 4.5 GiB safety floor |
+| Veasel PR #615 head `1c7406d` built with V `b0ceb9b` | resource-aborted | 3.1 s | no scorable result or workspace changes | unscored: available RAM fell from 4.92 GiB to 4.42 GiB during agent startup |
 
 The three completed Veasel attempts each count as a verified task failure: the disposable
 workspaces were checked after the run and contained no patch. In the current
@@ -118,8 +119,9 @@ guard after RAM dropped below the case floor, after two exploratory tool calls.
 The first replay after the search-first orchestration change was stopped by the
 guard before model output when available RAM fell to 4.47 GiB. A later PR #614
 head attempt completed in 6.1 seconds, made one literal multiword search, then
-returned without a source read or edit. Two replays after the fallback change were resource-aborted below the 4.5 GiB
-floor (13.2 s and 11.1 s) and remain unscored. Therefore this
+returned without a source read or edit. Three replays after the multiword fallback
+were resource-aborted below the 4.5 GiB floor (13.2 s, 11.1 s, and 3.1 s) and
+remain unscored. Therefore this
 case has **0/3 verified Veasel successes, 0 verified OpenCode successes, and
 no scored head-to-head result**. These are observations from one task and
 one local hardware setup, not a general quality or speed claim.
@@ -128,15 +130,22 @@ Full trajectories and logs remain private under the operator's local benchmark
 artifact directory. No raw traces or workspace source are included here. Sanitized
 summaries record the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json)
 and the [unscored fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json), [including the latest guard stop](../reports/real-task-attempt-website-173-post-fallback-resource-abort-retry-2026-11-11.json).
+The [PR #615 replay](../reports/real-task-attempt-website-173-pr615-startup-resource-abort-2026-11-12.json)
+also passed model/GPU preflight but had only 0.42 GiB of RAM headroom before
+agent startup crossed the safety floor. Its #615 branch predates PR #617's
+5.75 GiB startup reserve; the 4.92 GiB launch sample would fail the current
+main preflight, before starting Veasel.
 
 This first version samples host available RAM and swap. It does not yet collect
 CPU, process/GPU peak memory, or provider-reported token usage, so reports are
 not complete comparative benchmark records and cannot support efficiency or
 speed claims.
 
-All three attempts used the same task, prompt hash, model digest, context, and
+All attempts used the same task, prompt hash, model digest, context, and
 output limits; the Veasel attempts also passed the recorded GPU-placement and
-4.5 GiB host-memory preflight. The corrected OpenCode command was used for the
-resource-aborted result. The harness changes have landed; reproduce future attempts from a clean main
-checkout and keep the case revision pinned. Do not
-compare runs produced by a different case revision or prompt hash.
+4.5 GiB host-memory preflight. Preflight alone did not ensure sufficient
+headroom for agent startup in the latest replay. The corrected OpenCode command
+was used for the resource-aborted result. The harness changes have landed;
+reproduce future attempts from a clean main checkout and keep the case revision
+pinned. Do not compare runs produced by a different case revision or prompt
+hash.

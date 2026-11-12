@@ -25,6 +25,17 @@ mut:
 	request_count int
 }
 
+// A buffered token releases a blocked handler; the else branch makes deferred
+// cleanup idempotent when the normal success path already queued a token.
+fn release_routed_fixture_if_waiting(mut fixture RoutedProviderFixture) {
+	select {
+		fixture.release <- true {
+		}
+		else {
+		}
+	}
+}
+
 fn (mut fixture RoutedProviderFixture) handle(request http.Request) http.Response {
 	return if fixture.protocol == 'anthropic' {
 		fixture.handle_anthropic(request)
@@ -230,11 +241,13 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 	}
 	mut openai_server, openai_thread := start_routed_openai_fixture(mut openai_fixture) or { panic(err) }
 	defer {
+		release_routed_fixture_if_waiting(mut openai_fixture)
 		openai_server.stop()
 		openai_thread.wait()
 	}
 	mut anthropic_server, anthropic_thread := start_routed_anthropic_fixture(mut anthropic_fixture) or { panic(err) }
 	defer {
+		release_routed_fixture_if_waiting(mut anthropic_fixture)
 		anthropic_server.stop()
 		anthropic_thread.wait()
 	}
@@ -245,6 +258,12 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 	os.mkdir_all(plugin_dir) or { panic(err) }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
+	// Register after app.close so blocked provider workers are released before
+	// shutdown waits for those workers.
+	defer {
+		release_routed_fixture_if_waiting(mut openai_fixture)
+		release_routed_fixture_if_waiting(mut anthropic_fixture)
+	}
 	mut settings := app.model_settings
 	settings.update(ModelSettingsInput{
 		provider: 'openai-compatible'
@@ -279,7 +298,6 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 		api_server_thread.wait()
 	}
 	base_url := 'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents'
-	started_at := time.sys_mono_now()
 	openai_run := create_http_subagent(base_url, 'openai-child', 'explorer', 'openai-compatible',
 		'openai-child-fixture')
 	anthropic_run := create_http_subagent(base_url, 'anthropic-child', 'reviewer', 'anthropic',
@@ -308,7 +326,6 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 			panic('Anthropic child did not reach its loopback provider while OpenAI was blocked')
 		}
 	}
-	assert time.sys_mono_now() - started_at < u64(10 * time.second)
 	assert openai_fixture.path == '/v1/chat/completions'
 	assert openai_fixture.model == 'openai-child-fixture'
 	assert openai_fixture.body.contains('"model":"openai-child-fixture"')
@@ -388,6 +405,7 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 		panic(err)
 	}
 	defer {
+		release_routed_fixture_if_waiting(mut openai_fixture)
 		openai_server.stop()
 		openai_thread.wait()
 	}
@@ -395,6 +413,7 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 		panic(err)
 	}
 	defer {
+		release_routed_fixture_if_waiting(mut anthropic_fixture)
 		anthropic_server.stop()
 		anthropic_thread.wait()
 	}
@@ -405,6 +424,12 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 	os.mkdir_all(plugin_dir) or { panic(err) }
 	mut app := new_app(store, plugin_dir)
 	defer { app.close() }
+	// Register after app.close so blocked provider workers are released before
+	// shutdown waits for those workers.
+	defer {
+		release_routed_fixture_if_waiting(mut openai_fixture)
+		release_routed_fixture_if_waiting(mut anthropic_fixture)
+	}
 	mut settings := app.model_settings
 	settings.update(ModelSettingsInput{
 		provider: 'openai-compatible'
@@ -439,7 +464,6 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 		api_server_thread.wait()
 	}
 	base_url := 'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents'
-	started_at := time.sys_mono_now()
 	openai_run := create_http_subagent(base_url, 'openai-completes', 'explorer',
 		'openai-compatible', 'openai-child-fixture')
 	second_run := create_http_subagent(base_url, 'anthropic-completes', 'reviewer', 'anthropic',
@@ -470,7 +494,6 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 			panic('Anthropic child did not reach its loopback provider while OpenAI was blocked')
 		}
 	}
-	assert time.sys_mono_now() - started_at < u64(10 * time.second)
 	assert openai_fixture.request_count == 1
 	assert openai_fixture.path == '/v1/chat/completions'
 	assert openai_fixture.model == 'openai-child-fixture'

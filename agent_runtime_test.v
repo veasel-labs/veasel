@@ -127,8 +127,14 @@ fn test_post_edit_acceptance_review_requires_an_applied_diff_and_successful_requ
 	assert context.contains('button activates with Enter or Space')
 	assert context.contains('the requested verification succeeded')
 	assert agent_final_response_for_acceptance_review('Done.', true, false).contains('not complete')
-	assert agent_final_response_for_acceptance_review('ACCEPTANCE_REVIEW: PASS All requirements are present.', true, true) ==
+	assert agent_content_has_terminal_acceptance_marker('All requirements are present.\nACCEPTANCE_REVIEW: PASS')
+	assert agent_final_response_for_acceptance_review('All requirements are present.\nACCEPTANCE_REVIEW: PASS', true, true) ==
 		'All requirements are present.'
+	assert !agent_content_has_terminal_acceptance_marker('The request is not complete; ACCEPTANCE_REVIEW: PASS')
+	assert !agent_content_has_terminal_acceptance_marker('"ACCEPTANCE_REVIEW: PASS"')
+	assert !agent_content_has_terminal_acceptance_marker('ACCEPTANCE_REVIEW: PASS but one requirement is missing')
+	assert agent_has_agent_turn_round_after(max_agent_turn_rounds - 2)
+	assert !agent_has_agent_turn_round_after(max_agent_turn_rounds - 1)
 }
 
 fn test_failed_requested_verification_prevents_acceptance_review_and_success_claim() {
@@ -2241,7 +2247,7 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 			} else {
 				OpenAIStreamChunk{
 					choices: [OpenAIStreamChoice{
-						delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS Button behavior matches the request.' }
+						delta: OpenAIStreamDelta{ content: 'Button behavior matches the request.\nACCEPTANCE_REVIEW: PASS' }
 					}]
 				}
 			}
@@ -2254,7 +2260,7 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 			} else {
 				OpenAIStreamChunk{
 					choices: [OpenAIStreamChoice{
-						delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS The missing keyboard behavior is now present.' }
+						delta: OpenAIStreamDelta{ content: 'The missing keyboard behavior is now present.\nACCEPTANCE_REVIEW: PASS' }
 					}]
 				}
 			}
@@ -2262,7 +2268,7 @@ fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.
 		else {
 			OpenAIStreamChunk{
 				choices: [OpenAIStreamChoice{
-					delta: OpenAIStreamDelta{ content: 'ACCEPTANCE_REVIEW: PASS The missing keyboard behavior is now present.' }
+					delta: OpenAIStreamDelta{ content: 'The missing keyboard behavior is now present.\nACCEPTANCE_REVIEW: PASS' }
 				}]
 			}
 		}

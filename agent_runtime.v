@@ -18,7 +18,7 @@ const agent_code_change_edit_recovery_prompt = 'The edit proposal failed validat
 const agent_code_change_verification_prompt = 'The requested code edit was applied. Before reporting completion, use workspace_propose_shell_command to run a relevant test, typecheck, or build requested by the user. Inspect the command result and fix any failure before finishing. Report only checks that actually ran.'
 const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
 const agent_code_change_acceptance_review_marker = 'ACCEPTANCE_REVIEW: PASS'
-const agent_code_change_acceptance_review_prompt = 'Post-edit acceptance review: independently compare the original user request below with the actual applied workspace diff and the verification outcome. Check every requested behavior and user-visible state, not only whether the code compiles or tests pass. If any acceptance behavior is missing or incomplete, continue the task using the available workspace tools and verify it when the user requested verification. If all requested behavior is implemented, respond with the exact marker ACCEPTANCE_REVIEW: PASS followed by a concise result. If you cannot verify completeness within the bounded review phase, do not use the marker.'
+const agent_code_change_acceptance_review_prompt = 'Post-edit acceptance review: independently compare the original user request below with the actual applied workspace diff and the verification outcome. Check every requested behavior and user-visible state, not only whether the code compiles or tests pass. If any acceptance behavior is missing or incomplete, continue the task using the available workspace tools and verify it when the user requested verification. If all requested behavior is implemented, provide a concise result and put the exact marker ACCEPTANCE_REVIEW: PASS alone on the final line. If you cannot verify completeness within the bounded review phase, do not use the marker.'
 const agent_code_change_acceptance_review_followup_prompt = 'Your acceptance review did not confirm that every requested behavior is complete. Continue from the specific gap you identified: inspect or edit the workspace with the available policy-filtered tools, then run any verification required by the original request. Do not repeat the review prompt or claim success unless all requested behavior is present; use the exact ACCEPTANCE_REVIEW: PASS marker only after confirming it.'
 const agent_code_change_exploration_nudge = 'You have spent several tool calls exploring without changing files. Stop broad discovery now: inspect only the files directly related to the requested change and the most relevant tests, then use workspace_propose_file_edit to implement it. For a focused replacement, pass the exact existing text as old_text and the replacement as new_text. Keep the change scoped to the user request.'
 const agent_code_change_system_instruction = 'For an explicit code-change request, start with a workspace tool call immediately. Do not send an acknowledgement, plan, or promise before your first workspace tool call. If the request names a file, read it; otherwise search for a distinctive term from the requested behavior. Then read the complete target file and relevant tests, and propose a focused edit with workspace_propose_file_edit before answering. For a localized replacement, pass the exact current text as old_text and the requested text as new_text; the tool preserves all other bytes and requires a unique match. Use complete file content only for broader edits. Never replace a file with a fragment or a description of the edit. A file listing or summary is not a completed change. If the request asks for tests, checks, or a build, run a relevant verification command after the edit and fix failures before reporting completion. Report only checks that actually succeeded. Do not ask for details already present in the request. If a necessary detail or permission is missing, identify the concrete blocker.'
@@ -26,6 +26,7 @@ const agent_code_change_exploration_nudge_after = 4
 const max_agent_code_change_followthrough_retries = 2
 const max_agent_code_change_acceptance_review_rounds = 3
 const max_agent_code_change_acceptance_diff_bytes = 96_000
+const max_agent_turn_rounds = max_agent_tool_rounds + max_agent_code_change_acceptance_review_rounds
 const max_agent_code_change_edit_recovery_attempts = 1
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
@@ -194,7 +195,20 @@ fn agent_final_response_for_acceptance_review(content string, review_started boo
 	if !review_passed {
 		return 'The requested code change was applied, but post-edit acceptance review did not confirm that all requested behavior is complete. This task is not complete. ${content}'
 	}
-	return content.replace(agent_code_change_acceptance_review_marker, '').trim_space()
+	lines := content.trim_space().split_into_lines()
+	if lines.len == 1 {
+		return 'The requested changes passed the acceptance review.'
+	}
+	return lines[..lines.len - 1].join('\n').trim_space()
+}
+
+fn agent_content_has_terminal_acceptance_marker(content string) bool {
+	lines := content.trim_space().split_into_lines()
+	return lines.len > 0 && lines.last().trim_space() == agent_code_change_acceptance_review_marker
+}
+
+fn agent_has_agent_turn_round_after(round int) bool {
+	return round + 1 < max_agent_turn_rounds
 }
 
 fn agent_code_change_tools_for_progress(tools []AgentToolDefinition, explicit_request bool,
@@ -1070,7 +1084,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 	mut acceptance_review_rounds := 0
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
-	for round in 0 .. max_agent_tool_rounds {
+	for round in 0 .. max_agent_turn_rounds {
 		if context_error := turn_context_error(mut turn_ctx) {
 			return error(context_error)
 		}
@@ -1125,8 +1139,11 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 		if has_provider_usage_data(output.usage) {
 			trace_usage = add_provider_usage(trace_usage, output.usage)
 		}
-		if acceptance_review_started && acceptance_review_rounds >= max_agent_code_change_acceptance_review_rounds
-			&& output.tool_calls.len > 0 {
+		if output.tool_calls.len > 0
+			&& ((acceptance_review_started
+				&& acceptance_review_rounds >= max_agent_code_change_acceptance_review_rounds)
+				|| (round == max_agent_turn_rounds - 1 && code_change_request
+					&& applied_workspace_diffs.len > 0)) {
 			incomplete := agent_final_response_for_acceptance_review('Acceptance review reached its bounded follow-up limit before confirming completion.',
 				true, false)
 			on_text_delta(incomplete)!
@@ -1185,9 +1202,12 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				followthrough_retries++
 				continue
 			}
-			if agent_code_change_acceptance_review_available(code_change_request,
+			review_passed := acceptance_review_started
+				&& agent_content_has_terminal_acceptance_marker(output.content)
+			review_available := agent_code_change_acceptance_review_available(code_change_request,
 				applied_workspace_diffs, verification_required, verification_succeeded,
-				acceptance_review_started) {
+				acceptance_review_started)
+			if review_available && agent_has_agent_turn_round_after(round) {
 				messages << ChatMessage{
 					role:    'assistant'
 					content: output.content
@@ -1214,10 +1234,9 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				acceptance_review_started = true
 				continue
 			}
-			review_passed := acceptance_review_started
-				&& output.content.contains(agent_code_change_acceptance_review_marker)
 			if acceptance_review_started && !review_passed
-				&& acceptance_review_rounds < max_agent_code_change_acceptance_review_rounds {
+				&& acceptance_review_rounds < max_agent_code_change_acceptance_review_rounds
+				&& agent_has_agent_turn_round_after(round) {
 				messages << ChatMessage{
 					role:    'assistant'
 					content: output.content
@@ -1247,7 +1266,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				content:          agent_final_response_for_acceptance_review(agent_final_response_for_verification(agent_final_response_for_execution_policy(output.content, code_change_request,
 					policy, workspace_effect_applied, workspace_effect_pending_review),
 					verification_required, workspace_effect_applied, verification_succeeded),
-					acceptance_review_started, review_passed)
+					acceptance_review_started || review_available, review_passed)
 				provider_context: output.provider_context
 				usage:            output.usage
 			}
@@ -1278,7 +1297,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				on_text_delta, mut trace_steps, mut trace_usage, collect_trace, request_deadline,
 				provider_pool, model_config_override)
 		}
-		if round == max_agent_tool_rounds - 1 {
+		if round == max_agent_turn_rounds - 1 {
 			if buffer_provider_text && buffered_text.len > 0 {
 				on_text_delta(buffered_text)!
 			}

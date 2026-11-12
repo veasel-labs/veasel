@@ -29,6 +29,20 @@ const fixture: ApiSubagentRun = {
   usage_reported: false,
 }
 
+type TestSetup = Awaited<ReturnType<typeof testRender>>
+
+async function waitForScreen(setup: TestSetup, predicate: (frame: string) => boolean, timeoutMs = 3_000) {
+  const deadline = Date.now() + timeoutMs
+  let frame = setup.captureCharFrame()
+  while (!predicate(frame) && Date.now() < deadline) {
+    await Bun.sleep(25)
+    await setup.renderOnce()
+    frame = setup.captureCharFrame()
+  }
+  if (!predicate(frame)) throw new Error(`Timed out waiting for terminal state:\n${frame}`)
+  return frame
+}
+
 function Harness(props: { api: VeaselApiClient }) {
   const dialog = useDialog()
   onMount(() => openSubagentRunsDialog(dialog, { api: props.api, sessionId: "parent-1" }))
@@ -37,6 +51,7 @@ function Harness(props: { api: VeaselApiClient }) {
 
 test("agent details refresh and Enter returns through the stack at 32x12", async () => {
   let current = fixture
+  let completedListRequests = 0
   const completion = setTimeout(() => {
     current = {
       ...fixture,
@@ -55,7 +70,10 @@ test("agent details refresh and Enter returns through the stack at 32x12", async
     port: 0,
     fetch(request) {
       const path = new URL(request.url).pathname
-      if (path.endsWith("/subagents")) return Response.json([current])
+      if (path.endsWith("/subagents")) {
+        if (current.status === "completed") completedListRequests += 1
+        return Response.json([current])
+      }
       if (path.endsWith("/subagents/run-1")) return Response.json(current)
       return new Response("not found", { status: 404 })
     },
@@ -104,7 +122,8 @@ test("agent details refresh and Enter returns through the stack at 32x12", async
     expect(setup.captureCharFrame()).toContain("Inspect result")
     setup.mockInput.pressEscape()
     await setup.renderOnce()
-    await setup.waitFor(() => setup.captureCharFrame().includes("COMPLETED · explorer"))
+    await waitForScreen(setup, (frame) => frame.includes("COMPLETED · explorer"))
+    expect(completedListRequests).toBeGreaterThan(0)
   } finally {
     clearTimeout(completion)
     setup.renderer.destroy()

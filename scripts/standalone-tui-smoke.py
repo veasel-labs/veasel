@@ -325,7 +325,11 @@ def run_tui(
         return None
 
     try:
-        home_markers = (b"SESSIONS", b"VEASEL") if first_run else (b"connected", b"SESSIONS", b"VEASEL")
+        home_markers = (
+            (b"VEASEL CODE", b"your local workspace", b"/connect")
+            if first_run
+            else (b"connected", b"SESSIONS", b"VEASEL")
+        )
         if session_title:
             home_markers = (*home_markers, session_title.encode())
         wait_for_markers(home_markers, 10, "its connected session screen")

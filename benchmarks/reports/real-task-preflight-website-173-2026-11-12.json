@@ -1,0 +1,108 @@
+{
+  "schema": "veasel.real-task-preflight.v1",
+  "case_id": "veasel-labs/website#173",
+  "agent": "veasel",
+  "passed": false,
+  "checks": [
+    {
+      "name": "prompt_sha256",
+      "passed": true,
+      "actual": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+      "required": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e"
+    },
+    {
+      "name": "repository",
+      "passed": true,
+      "actual": "https://github.com/veasel-labs/website.git",
+      "required": "https://github.com/veasel-labs/website.git"
+    },
+    {
+      "name": "base_commit",
+      "passed": true,
+      "actual": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+      "required": "184c7d86911d4a760ec89c6ddc9097682e65da44"
+    },
+    {
+      "name": "clean_workspace",
+      "passed": true,
+      "actual": true,
+      "required": true
+    },
+    {
+      "name": "ollama_endpoint",
+      "passed": true,
+      "actual": "http://127.0.0.1:11435",
+      "required": "http://127.0.0.1:11435"
+    },
+    {
+      "name": "veasel_model_config",
+      "passed": true,
+      "actual": {
+        "provider": "ollama",
+        "model": "qwen3:8b",
+        "base_url": "http://127.0.0.1:11435/v1",
+        "max_output_tokens": 2048,
+        "api_key_saved": false
+      },
+      "required": {
+        "provider": "ollama",
+        "model": "qwen3:8b",
+        "base_url": "http://127.0.0.1:11435/v1",
+        "max_output_tokens": 2048,
+        "api_key_saved": false
+      }
+    },
+    {
+      "name": "model_digest",
+      "passed": false,
+      "actual": "URLError",
+      "required": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+    },
+    {
+      "name": "ollama_version",
+      "passed": false,
+      "actual": "URLError",
+      "required": "0.40.15"
+    },
+    {
+      "name": "gpu",
+      "passed": true,
+      "actual": {
+        "name": "NVIDIA GeForce RTX 3060",
+        "memory_mib": 12288
+      },
+      "required": {
+        "name": "NVIDIA GeForce RTX 3060",
+        "memory_mib": 12288
+      }
+    },
+    {
+      "name": "ollama_model_gpu_placement",
+      "passed": false,
+      "actual": "URLError",
+      "required": "model loaded on CUDA at pinned context"
+    },
+    {
+      "name": "available_memory",
+      "passed": false,
+      "actual": 4410720256,
+      "required": 4831838208
+    },
+    {
+      "name": "startup_memory_headroom",
+      "passed": false,
+      "actual": 4410720256,
+      "required": 6174015488
+    },
+    {
+      "name": "free_swap",
+      "passed": true,
+      "actual": 8314404864,
+      "required": 0
+    }
+  ],
+  "resources_bytes": {
+    "available_memory": 4410720256,
+    "free_swap": 8314404864
+  }
+}

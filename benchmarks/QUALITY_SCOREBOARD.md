@@ -14,8 +14,9 @@ No new real-model result has been scored since the 30 website#173 attempts. A
 local candidate from source `6285cf1` was rebuilt with installed V 0.5.2
 `b0ceb9b` (binary SHA-256
 `2481356332355c968c517b759a1feec1a9096077f3f1f19f8f21bcacb641a25c`). Recent
-host samples showed 4.2–5.2 GiB available RAM, below the 5.75 GiB model-start
+host samples showed 4.1–5.2 GiB available RAM, below the 5.75 GiB model-start
 reserve; the local Ollama endpoint was inactive. No model was loaded or run.
+See the [guarded 2026-11-12 preflight](reports/real-task-preflight-website-173-2026-11-12.json).
 
 The attempts use local Qwen models. The official Veasel 0.69.13 packaged TUI run timed out after 180 seconds before its first tool call and displayed only “The assistant turn failed.” OpenCode 2.2.5 was externally stopped at the same wall limit with no assistant output or tool call. They form one matched diagnostic pair: same task, exact prompt hash,
 base commit, model digest, context/output budgets, edit/bash permissions, disabled

@@ -2580,7 +2580,7 @@ fn test_agent_turn_retries_one_rate_limit_then_completes() {
 
 fn test_agent_turn_returns_auth_failure_without_retry() {
 	outcome := run_agent_provider_retry_turn([401])
-	assert outcome.turn_error == 'HTTP 401'
+	assert outcome.turn_error == 'HTTP 401 (provider fixture status)'
 	assert outcome.hits == 1
 	assert outcome.content == ''
 }

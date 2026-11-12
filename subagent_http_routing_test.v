@@ -23,6 +23,17 @@ mut:
 	protocol      string
 	response_text string
 	request_count int
+	release_sent  bool
+}
+
+// A release token is sent at most once per fixture. This keeps deferred
+// cleanup non-blocking when a scenario already released a handler.
+fn release_routed_provider_fixture(mut fixture RoutedProviderFixture) {
+	if fixture.release_sent {
+		return
+	}
+	fixture.release_sent = true
+	fixture.release <- true
 }
 
 fn (mut fixture RoutedProviderFixture) handle(request http.Request) http.Response {
@@ -287,11 +298,11 @@ fn run_http_subagents_provider_scenario(cancel_openai bool) {
 		api_server_thread.wait()
 	}
 	// On assertion failure, free provider handlers before later app/server
-	// cleanup waits for their workers. These channels have capacity one, so
-	// cleanup can safely queue a release even if no handler is waiting.
+	// cleanup waits for their workers. The helper guarantees one buffered send
+	// per fixture even when normal scenario flow already released a handler.
 	defer {
-		openai_fixture.release <- true
-		anthropic_fixture.release <- true
+		release_routed_provider_fixture(mut openai_fixture)
+		release_routed_provider_fixture(mut anthropic_fixture)
 	}
 	base_url := 'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents'
 	started_at := time.sys_mono_now()
@@ -334,7 +345,7 @@ fn run_http_subagents_provider_scenario(cancel_openai bool) {
 	// The first scenario proves one provider can finish without waiting on its
 	// sibling. The second releases both providers only after both have reached
 	// their barriers, then independently observes two successful results.
-	anthropic_fixture.release <- true
+	release_routed_provider_fixture(mut anthropic_fixture)
 	anthropic_fixture.block = false
 	if cancel_openai {
 		anthropic_done := wait_for_http_subagent(base_url, anthropic_run.id)
@@ -354,14 +365,14 @@ fn run_http_subagents_provider_scenario(cancel_openai bool) {
 		assert cancel_response.status_code == 200
 		cancelled_view := json2.decode[SubagentRun](cancel_response.body) or { panic(err) }
 		assert cancelled_view.cancel_requested || cancelled_view.status in ['cancelled', 'uncertain']
-		openai_fixture.release <- true
+		release_routed_provider_fixture(mut openai_fixture)
 		openai_fixture.block = false
 		openai_done := wait_for_http_subagent(base_url, openai_run.id)
 		assert openai_done.status in ['cancelled', 'uncertain']
 		assert openai_done.provider == 'openai-compatible'
 		assert openai_done.model == 'openai-child-fixture'
 	} else {
-		openai_fixture.release <- true
+		release_routed_provider_fixture(mut openai_fixture)
 		openai_fixture.block = false
 		openai_done := wait_for_http_subagent(base_url, openai_run.id)
 		anthropic_done := wait_for_http_subagent(base_url, anthropic_run.id)

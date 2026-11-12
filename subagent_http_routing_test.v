@@ -354,3 +354,172 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 	assert listed.any(it.id == anthropic_run.id && it.provider == 'anthropic'
 		&& it.model == 'anthropic-child-fixture' && it.status == 'completed')
 }
+
+fn test_http_subagents_complete_concurrently_across_providers_and_attribute_results_to_parent() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-http-both-complete-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	_ := run_workspace_git_command(workspace, ['init', '-b', 'main']) or { panic(err) }
+	_ := run_workspace_git_command(workspace, ['config', 'user.email', 'veasel@example.com']) or {
+		panic(err)
+	}
+	_ := run_workspace_git_command(workspace, ['config', 'user.name', 'Veasel']) or { panic(err) }
+	os.write_file(os.join_path(workspace, 'README.md'), 'fixture workspace\n') or { panic(err) }
+	_ := run_workspace_git_command(workspace, ['add', 'README.md']) or { panic(err) }
+	_ := run_workspace_git_command(workspace, ['commit', '-m', 'fixture base']) or { panic(err) }
+
+	mut openai_fixture := RoutedProviderFixture{
+		started:       chan bool{cap: 1}
+		release:       chan bool{cap: 1}
+		block:         true
+		protocol:      'openai-compatible'
+		response_text: 'OPENAI-COMPLETE-RESULT'
+	}
+	mut anthropic_fixture := RoutedProviderFixture{
+		started:       chan bool{cap: 1}
+		release:       chan bool{cap: 1}
+		block:         true
+		protocol:      'anthropic'
+		response_text: 'ANTHROPIC-COMPLETE-RESULT'
+	}
+	mut openai_server, openai_thread := start_routed_openai_fixture(mut openai_fixture) or {
+		panic(err)
+	}
+	defer {
+		openai_server.stop()
+		openai_thread.wait()
+	}
+	mut anthropic_server, anthropic_thread := start_routed_anthropic_fixture(mut anthropic_fixture) or {
+		panic(err)
+	}
+	defer {
+		anthropic_server.stop()
+		anthropic_thread.wait()
+	}
+
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	plugin_dir := os.join_path(root, 'plugins')
+	os.mkdir_all(plugin_dir) or { panic(err) }
+	mut app := new_app(store, plugin_dir)
+	defer { app.close() }
+	mut settings := app.model_settings
+	settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'parent-fixture'
+		base_url: 'http://${openai_server.addr}/v1'
+		api_key:  'fixture-only-openai-key'
+	}) or { panic(err) }
+	settings.update(ModelSettingsInput{
+		provider: 'anthropic'
+		model:    'anthropic-child-fixture'
+		base_url: 'http://${anthropic_server.addr}/v1'
+		api_key:  'fixture-only-anthropic-key'
+	}) or { panic(err) }
+	parent := store.create_session(SessionInput{
+		title:     'HTTP cross-provider both-complete acceptance'
+		directory: workspace
+	}) or { panic(err) }
+
+	mut port_listener := net.listen_tcp(.ip, '127.0.0.1:0') or { panic(err) }
+	port := port_listener.addr() or { panic(err) }.port() or { panic(err) }
+	port_listener.close() or { panic(err) }
+	mut api_server_app := &SubagentHTTPServer{
+		app:          app
+		port:         port
+		server_ready: chan &veb.Server{cap: 1}
+	}
+	api_server_thread := spawn run_subagent_http_test_server(mut api_server_app)
+	api_server := <-api_server_app.server_ready
+	api_server.wait_till_running() or { panic(err) }
+	defer {
+		api_server.shutdown(timeout: 5 * time.second) or {}
+		api_server_thread.wait()
+	}
+	base_url := 'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents'
+	started_at := time.sys_mono_now()
+	openai_run := create_http_subagent(base_url, 'openai-completes', 'explorer',
+		'openai-compatible', 'openai-child-fixture')
+	second_run := create_http_subagent(base_url, 'anthropic-completes', 'reviewer', 'anthropic',
+		'anthropic-child-fixture')
+	assert openai_run.status in ['queued', 'running']
+	assert second_run.status in ['queued', 'running']
+	assert openai_run.parent_session_id == parent.id
+	assert second_run.parent_session_id == parent.id
+	assert openai_run.parent_operation_id == second_run.parent_operation_id
+	assert openai_run.target_provider == 'openai-compatible'
+	assert openai_run.target_model == 'openai-child-fixture'
+	assert second_run.target_provider == 'anthropic'
+	assert second_run.target_model == 'anthropic-child-fixture'
+
+	// Both native adapters must have entered their independent HTTP fixtures
+	// before either response is released, proving actual provider-call overlap.
+	select {
+		_ := <-openai_fixture.started {
+		}
+		10 * time.second {
+			panic('OpenAI-compatible child did not reach its loopback provider')
+		}
+	}
+	select {
+		_ := <-anthropic_fixture.started {
+		}
+		10 * time.second {
+			panic('Anthropic child did not reach its loopback provider while OpenAI was blocked')
+		}
+	}
+	assert time.sys_mono_now() - started_at < u64(10 * time.second)
+	assert openai_fixture.request_count == 1
+	assert openai_fixture.path == '/v1/chat/completions'
+	assert openai_fixture.model == 'openai-child-fixture'
+	assert anthropic_fixture.request_count == 1
+	assert anthropic_fixture.path == '/v1/messages'
+	assert anthropic_fixture.model == 'anthropic-child-fixture'
+
+	// Complete the first child while the second provider call remains blocked;
+	// then prove both results survive under the same parent operation.
+	openai_fixture.release <- true
+	openai_done := wait_for_http_subagent(base_url, openai_run.id)
+	assert openai_done.status == 'completed'
+	assert openai_done.parent_session_id == parent.id
+	assert openai_done.parent_operation_id == second_run.parent_operation_id
+	assert openai_done.provider == 'openai-compatible'
+	assert openai_done.model == 'openai-child-fixture'
+	assert openai_done.result.contains('OPENAI-COMPLETE-RESULT')
+	assert openai_done.usage_reported
+	assert openai_done.input_tokens == 11
+	assert openai_done.output_tokens == 4
+	blocked_anthropic_response := http.get('${base_url}/${second_run.id}') or { panic(err) }
+	assert blocked_anthropic_response.status_code == 200
+	blocked_anthropic := json2.decode[SubagentRun](blocked_anthropic_response.body) or { panic(err) }
+	assert blocked_anthropic.status == 'running'
+
+	// Release the sibling independently and collect its terminal durable result.
+	anthropic_fixture.release <- true
+	anthropic_done := wait_for_http_subagent(base_url, second_run.id)
+	assert anthropic_done.status == 'completed'
+	assert anthropic_done.parent_session_id == parent.id
+	assert anthropic_done.parent_operation_id == openai_run.parent_operation_id
+	assert anthropic_done.provider == 'anthropic'
+	assert anthropic_done.model == 'anthropic-child-fixture'
+	assert anthropic_done.result.contains('ANTHROPIC-COMPLETE-RESULT')
+	assert anthropic_done.usage_reported
+	assert anthropic_done.input_tokens == 9
+	assert anthropic_done.output_tokens == 3
+	assert openai_done.id != anthropic_done.id
+	assert openai_done.child_session_id != anthropic_done.child_session_id
+
+	list_response := http.get(base_url) or { panic(err) }
+	assert list_response.status_code == 200
+	listed := json2.decode[[]SubagentRun](list_response.body) or { panic(err) }
+	assert listed.any(it.id == openai_run.id && it.parent_session_id == parent.id
+		&& it.parent_operation_id == openai_run.parent_operation_id && it.status == 'completed'
+		&& it.provider == 'openai-compatible' && it.model == 'openai-child-fixture'
+		&& it.input_tokens == 11 && it.output_tokens == 4 && it.usage_reported)
+	assert listed.any(it.id == second_run.id && it.parent_session_id == parent.id
+		&& it.parent_operation_id == openai_run.parent_operation_id && it.status == 'completed'
+		&& it.provider == 'anthropic' && it.model == 'anthropic-child-fixture'
+		&& it.input_tokens == 9 && it.output_tokens == 3 && it.usage_reported)
+}

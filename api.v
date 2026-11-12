@@ -398,12 +398,6 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	}
 	config.request_deadline = request_deadline
 	config.require_tool_choice = require_tool_choice
-	if config.max_output_tokens <= 0 {
-		// A provider-side output ceiling is part of the reservation. In
-		// particular, do not leave Meta Responses unlimited when its profile has
-		// no explicit max_output_tokens value.
-		config.max_output_tokens = max_model_output_tokens
-	}
 	policy := agent_token_budget_policy()!
 	reservation_tokens := provider_call_reservation_tokens(messages, tools, config)
 	mut store := app.store

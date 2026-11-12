@@ -25,6 +25,10 @@ from terminal_screen import TerminalScreen
 # Attempts to open the command palette, filter it, and confirm the Quit option
 # before the smoke gives up. Each attempt starts from a clean palette state.
 _PALETTE_RETRIES = 3
+DELEGATION_TASK = "Return the deterministic smoke marker: standalone-subagent-result-v1"
+DELEGATION_REPLY = "Deterministic delegated result marker."
+SLOW_DELEGATION_TASK = "Wait for cancellation: standalone-subagent-cancel-v1"
+FAST_SIBLING_TASK = "Return the deterministic smoke marker: standalone-subagent-sibling-v1"
 
 if os.name == "nt":
     from windows_conpty import run_tui_conpty
@@ -66,6 +70,51 @@ def wait_for_persisted_reply(api_base: str, session_id: str, expected_reply: str
     raise TimeoutError("mock provider response was rendered but not persisted by the backend")
 
 
+def wait_for_subagent_status(
+    api_base: str,
+    session_id: str,
+    task: str,
+    expected_status: str,
+    timeout: float = 30,
+) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    url = f"{api_base}/v1/sessions/{quote(session_id, safe='')}/subagents"
+    while time.monotonic() < deadline:
+        with urlopen(url, timeout=5) as response:
+            runs = json.load(response)
+        if not isinstance(runs, list):
+            raise RuntimeError(f"subagent collection was not an array: {runs!r}")
+        run = next((item for item in runs if isinstance(item, dict) and item.get("task") == task), None)
+        if run is not None:
+            if run.get("status") == expected_status:
+                return run
+            if run.get("status") in ("failed", "cancelled", "uncertain"):
+                raise RuntimeError(f"delegated task reached {run.get('status')} before {expected_status}: {run!r}")
+        time.sleep(0.05)
+    raise TimeoutError(f"delegated task did not reach durable status {expected_status!r}: {task!r}")
+
+
+def wait_for_subagent(api_base: str, session_id: str, task: str) -> dict[str, object]:
+    return wait_for_subagent_status(api_base, session_id, task, "completed")
+
+
+def fixture_provider_requests(provider_base: str) -> list[dict[str, object]]:
+    with urlopen(f"{provider_base}/fixture-requests", timeout=5) as response:
+        requests = json.load(response)
+    if not isinstance(requests, list) or not all(isinstance(item, dict) for item in requests):
+        raise RuntimeError(f"deterministic provider fixture returned invalid request records: {requests!r}")
+    return requests
+
+
+def loopback_port_is_free(port: int) -> bool:
+    with socket.socket() as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
 def api_json(port: int, method: str, path: str, body: dict[str, str] | None = None) -> dict[str, object]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = Request(
@@ -100,6 +149,20 @@ def create_review_fixture(port: int, temporary: Path) -> tuple[str, str, Path, s
     return session_id, str(edit["id"]), workspace, "before\napproved-by-tui\n"
 
 
+def initialize_git_workspace(workspace: Path) -> None:
+    workspace.mkdir()
+    (workspace / "README.md").write_text("Deterministic delegated-agent smoke workspace.\n", encoding="utf-8")
+    commands = (
+        ["git", "init", str(workspace)],
+        ["git", "-C", str(workspace), "config", "user.name", "Veasel smoke"],
+        ["git", "-C", str(workspace), "config", "user.email", "smoke@veasel.invalid"],
+        ["git", "-C", str(workspace), "add", "README.md"],
+        ["git", "-C", str(workspace), "commit", "-m", "Initialize deterministic smoke workspace"],
+    )
+    for command in commands:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+
+
 def run_tui(
     tui_path: Path,
     env: dict[str, str],
@@ -108,11 +171,12 @@ def run_tui(
     review_path: bytes | None = None,
     recovery_only: bool = False,
     first_run: bool = False,
+    delegation_task: str | None = None,
 ) -> float:
     if os.name == "nt":
         return run_tui_conpty(
             tui_path, env, session_title, session_id, wait_for_persisted_reply, review_path, recovery_only,
-            first_run=first_run,
+            first_run=first_run, delegation_task=delegation_task,
         )
 
     started = time.monotonic()
@@ -176,7 +240,7 @@ def run_tui(
                     marker in rendered for marker in absent
                 ):
                     return
-                if all(marker in visible_output() for marker in markers):
+                if not absent and all(marker in visible_output() for marker in markers):
                     return
             finished, status = os.waitpid(child, os.WNOHANG)
             if finished:
@@ -412,13 +476,152 @@ def run_tui(
                 (b"Message Veasel",), 10, "the recovered session composer",
                 absent=(b"Restoring this session",),
             )
-            output.clear()
-            os.write(terminal, b"Stream incrementally\r")
-            wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
-            wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
-            wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
+
+            def delegate_task_through_ui(task: str, visible_marker: bytes) -> None:
+                output.clear()
+                os.write(terminal, f"/delegate {task}\r".encode())
+                wait_for_screen_markers((b"Choose agent role", b"explorer"), 10, "the delegate role picker")
+                os.write(terminal, b"\r")
+                wait_for_screen_markers((b"Choose model", b"Use this conversation"), 10, "the delegate model picker")
+                os.write(terminal, b"\r")
+                wait_for_screen_markers(
+                    (b"Delegate task", visible_marker), 10, "the focused child task prompt",
+                )
+                os.write(terminal, b"\r")
+                wait_for_screen_markers((b"Agents",), 15, "the child run list opened from /delegate")
+
+            if delegation_task:
+                delegate_task_through_ui(delegation_task, b"standalone-subagent-result-v1")
+                run = wait_for_subagent(env["VEASEL_API_URL"], session_id, delegation_task)
+                if run.get("parent_session_id") != session_id or not run.get("child_session_id"):
+                    raise RuntimeError(f"delegated run lost its parent/child attribution: {run!r}")
+                if run.get("provider") != "ollama" or run.get("model") != "smoke-model":
+                    raise RuntimeError(f"delegated run resolved the wrong model route: {run!r}")
+                wait_for_screen_markers(
+                    (b"COMPLETED", b"explorer"), 10, "the durable completed child status in /agents",
+                )
+                time.sleep(0.15)
+                os.write(terminal, b"\r")
+                wait_for_screen_markers((b"Inspect result and provenance",), 10, "the child action menu")
+                os.write(terminal, b"\r")
+                wait_for_screen_markers(
+                    (b"Status: completed", b"Model: ollama/smoke-model"),
+                    10,
+                    "the child status and resolved model in the packaged TUI",
+                )
+                os.write(terminal, b"\x1b[F")
+                wait_for_screen_markers(
+                    (b"Result:", b"Deterministic delegated result marker."),
+                    10,
+                    "the scrolled child result in the packaged TUI",
+                )
+                os.write(terminal, b"\r")
+                wait_for_screen_markers((b"Inspect result and provenance",), 10, "returning from result to child actions")
+                os.write(terminal, b"\x1b")
+                wait_for_screen_markers((b"Agents",), 10, "returning to the child list")
+                time.sleep(0.2)
+                os.write(terminal, b"\x1b")
+                wait_for_screen_markers(
+                    (b"Message Veasel",),
+                    10,
+                    "the parent composer before another delegation",
+                    absent=(b"Agents", b"Inspect result and provenance"),
+                )
+
+                current_settings = api_json(int(env["VEASEL_PORT"]), "GET", "/v1/config/model")
+                current_profile = current_settings.get("profiles", {}).get("ollama", {})
+                provider_base = str(current_profile.get("base_url", "")).removesuffix("/v1")
+                if not provider_base:
+                    raise RuntimeError(f"could not find the configured deterministic provider base URL: {current_settings!r}")
+                with urlopen(f"{provider_base}/hold-slow-response", timeout=5):
+                    pass
+                delegate_task_through_ui(SLOW_DELEGATION_TASK, b"standalone-subagent-cancel-v1")
+                slow_run = wait_for_subagent_status(
+                    env["VEASEL_API_URL"], session_id, SLOW_DELEGATION_TASK, "running",
+                )
+                slow_run_id = str(slow_run["id"])
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    slow_requests = fixture_provider_requests(provider_base)
+                    if any("standalone-subagent-cancel-v1" in str(item.get("prompt", "")) for item in slow_requests):
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise TimeoutError("slow child did not enter the deterministic provider fixture")
+
+                os.write(terminal, b"\x1b")
+                wait_for_screen_markers(
+                    (b"Message Veasel",),
+                    10,
+                    "the parent composer before the sibling task",
+                    absent=(b"Agents",),
+                )
+                delegate_task_through_ui(FAST_SIBLING_TASK, b"standalone-subagent-sibling-v1")
+                sibling_run = wait_for_subagent(
+                    env["VEASEL_API_URL"], session_id, FAST_SIBLING_TASK,
+                )
+                if sibling_run.get("parent_session_id") != session_id:
+                    raise RuntimeError(f"fast sibling lost parent attribution: {sibling_run!r}")
+                if sibling_run.get("provider") != "ollama" or sibling_run.get("model") != "smoke-model":
+                    raise RuntimeError(f"fast sibling resolved the wrong model route: {sibling_run!r}")
+
+                os.write(terminal, b"standalone-subagent-cancel-v1")
+                wait_for_screen_markers(
+                    (b"RUNNING", b"standalone-subagent-cancel-v1"),
+                    10,
+                    "filtering /agents to the still-running child",
+                )
+                os.write(terminal, b"\r")
+                wait_for_screen_markers((b"Request cancellation",), 10, "the slow child action menu")
+                os.write(terminal, b"\x1b[B\r")
+                deadline = time.monotonic() + 10
+                cancel_requested = False
+                while time.monotonic() < deadline:
+                    current = api_json(
+                        int(env["VEASEL_PORT"]),
+                        "GET",
+                        f"/v1/sessions/{quote(session_id, safe='')}/subagents/{quote(slow_run_id, safe='')}",
+                    )
+                    if current.get("cancel_requested") or current.get("status") == "cancelled":
+                        cancel_requested = True
+                        break
+                    time.sleep(0.05)
+                if not cancel_requested:
+                    raise TimeoutError(f"TUI cancellation was not persisted for the slow child: {current!r}")
+                with urlopen(f"{provider_base}/release-slow-response", timeout=5):
+                    pass
+                cancelled_run = wait_for_subagent_status(
+                    env["VEASEL_API_URL"], session_id, SLOW_DELEGATION_TASK, "cancelled",
+                )
+                confirmed_sibling = wait_for_subagent(
+                    env["VEASEL_API_URL"], session_id, FAST_SIBLING_TASK,
+                )
+                if (confirmed_sibling.get("id") != sibling_run.get("id")
+                        or confirmed_sibling.get("status") != "completed"):
+                    raise RuntimeError(f"cancelling one child changed its completed sibling: {confirmed_sibling!r}")
+                requests_after_cancel = fixture_provider_requests(provider_base)
+                if not any(item.get("prompt") == FAST_SIBLING_TASK for item in requests_after_cancel):
+                    raise RuntimeError("provider fixture did not observe the fast sibling model call")
+                os.write(terminal, b"\x1b")
+                wait_for_screen_markers((b"Agents",), 10, "returning to the filtered child list after cancellation")
+                time.sleep(0.2)
+                os.write(terminal, b"\x1b")
+                wait_for_screen_markers(
+                    (b"Message Veasel",),
+                    10,
+                    "the parent composer after child cancellation",
+                    absent=(b"Agents",),
+                )
+                os.write(terminal, b"/agents\r")
+                wait_for_screen_markers((b"CANCELLED", b"COMPLETED"), 10, "independent child terminal statuses in /agents")
+            else:
+                output.clear()
+                os.write(terminal, b"Stream incrementally\r")
+                wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
+                wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
+                wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
             quit_via_palette(
-                "the command palette after the assistant reply", "the quit command in the palette",
+                "the command palette after the conversation workflow", "the quit command in the palette",
             )
 
         status = wait_exit(5)
@@ -583,16 +786,6 @@ def main() -> None:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    with socket.socket() as ollama_probe:
-        ollama_probe.settimeout(0.2)
-        try:
-            ollama_probe.connect(("127.0.0.1", 11434))
-        except OSError:
-            pass
-        else:
-            raise RuntimeError(
-                "standalone first-run smoke needs 127.0.0.1:11434 free for its isolated Ollama fixture"
-            )
 
     with tempfile.TemporaryDirectory(prefix="veasel-tui-smoke-") as temporary:
         data_dir = Path(temporary) / "data"
@@ -609,8 +802,6 @@ def main() -> None:
                 sys.executable,
                 str(Path(__file__).with_name("mock-provider.py")),
                 str(provider_port_file),
-                "--port",
-                "11434",
                 "--allow-no-auth",
             ],
             stdout=subprocess.DEVNULL,
@@ -626,6 +817,9 @@ def main() -> None:
             provider.terminate()
             provider.wait(timeout=5)
             raise RuntimeError("mock provider did not become ready")
+        provider_port = int(provider_port_file.read_text(encoding="utf-8"))
+        provider_base = f"http://127.0.0.1:{provider_port}"
+        provider_api_base = f"{provider_base}/v1"
         env.update(
             VEASEL_PORT=str(port),
             VEASEL_DATA_DIR=str(data_dir),
@@ -642,6 +836,7 @@ def main() -> None:
         ):
             env.pop(name, None)
         server: subprocess.Popen[bytes] | None = None
+        first_run_provider: subprocess.Popen[bytes] | None = None
 
         def start_server() -> subprocess.Popen[bytes]:
             process = subprocess.Popen(
@@ -668,19 +863,82 @@ def main() -> None:
 
         try:
             server = start_server()
-            run_tui(tui_path, env, first_run=True)
+            first_run_coverage: dict[str, object]
+            if loopback_port_is_free(11434):
+                first_run_port_file = Path(temporary) / "first-run-provider.port"
+                first_run_provider = subprocess.Popen(
+                    [
+                        sys.executable,
+                        str(Path(__file__).with_name("mock-provider.py")),
+                        str(first_run_port_file),
+                        "--port",
+                        "11434",
+                        "--allow-no-auth",
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    env=env,
+                )
+                deadline = time.monotonic() + 5
+                while not first_run_port_file.exists() and time.monotonic() < deadline:
+                    if first_run_provider.poll() is not None:
+                        break
+                    time.sleep(0.05)
+                if first_run_port_file.exists() and first_run_provider.poll() is None:
+                    run_tui(tui_path, env, first_run=True)
+                    connected = api_json(port, "GET", "/v1/config/model")
+                    connected_profile = connected.get("profiles", {}).get("ollama", {})
+                    if (connected.get("active_provider") != "ollama"
+                            or connected_profile.get("model") != "smoke-model"
+                            or connected_profile.get("base_url") != "http://127.0.0.1:11434/v1"
+                            or connected_profile.get("api_key_saved")
+                            or not connected.get("model_ready")):
+                        raise RuntimeError(f"packaged TUI /connect did not save the isolated fixture: {connected!r}")
+                    first_run_coverage = {
+                        "status": "completed",
+                        "classification": "deterministic local fixture; not real-model coding success",
+                        "journey": "clean profile -> packaged TUI /connect -> mock Ollama-compatible model discovery -> new session -> prompt -> persisted reply",
+                        "provider": connected["active_provider"],
+                        "model": connected_profile["model"],
+                        "fixturePort": 11434,
+                        "apiKeySaved": connected_profile.get("api_key_saved", False),
+                        "conversationPersisted": True,
+                    }
+                else:
+                    first_run_coverage = {
+                        "status": "skipped",
+                        "reason": "11434 passed the bind preflight but the local fixture could not bind it; no existing listener was contacted or stopped",
+                    }
+            else:
+                first_run_coverage = {
+                    "status": "skipped",
+                    "reason": "127.0.0.1:11434 is occupied; preserved the existing listener and skipped the /connect first-run leg",
+                }
+            if first_run_provider is not None and first_run_provider.poll() is None:
+                first_run_provider.terminate()
+                first_run_provider.wait(timeout=5)
+                first_run_provider = None
+            # All remaining journeys, including delegation, use this isolated
+            # mock on its kernel-assigned ephemeral port. The initial `/connect`
+            # leg above is separately bound only after a 11434 preflight.
+            api_json(port, "POST", "/v1/config/model", {
+                "provider": "ollama",
+                "model": "smoke-model",
+                "base_url": provider_api_base,
+            })
             settings = api_json(port, "GET", "/v1/config/model")
             profile = settings.get("profiles", {}).get("ollama", {})
-            if settings.get("active_provider") != "ollama" or profile.get("model") != "smoke-model":
-                raise RuntimeError(f"first-run provider/model selection was not saved: {settings!r}")
+            if (settings.get("active_provider") != "ollama" or profile.get("model") != "smoke-model"
+                    or profile.get("base_url") != provider_api_base):
+                raise RuntimeError(f"ephemeral local provider/model route was not saved: {settings!r}")
             if profile.get("api_key_saved") or not settings.get("model_ready"):
-                raise RuntimeError(f"local first-run profile should be ready without a saved API key: {settings!r}")
-            first_run_coverage = {
-                "journey": "clean profile -> /connect -> local provider -> model discovery -> new session -> prompt -> persisted reply",
+                raise RuntimeError(f"local fixture profile should be ready without a saved API key: {settings!r}")
+            ephemeral_fixture_coverage = {
+                "classification": "deterministic local fixture setup",
                 "provider": settings["active_provider"],
                 "model": profile["model"],
-                "apiKeySaved": profile.get("api_key_saved", False),
-                "conversationPersisted": True,
+                "providerBaseUrl": profile["base_url"],
+                "modelReady": settings.get("model_ready", False),
             }
             samples_ms = [run_tui(tui_path, env) for _ in range(args.startup_samples)]
             terminal_sizes: list[str] = []
@@ -804,9 +1062,98 @@ def main() -> None:
                 "workspaceEditStatus": review_state["status"],
                 "fileContentVerified": actual_content == expected_content,
             }
+            delegation_workspace = Path(temporary) / "delegation-workspace"
+            initialize_git_workspace(delegation_workspace)
+            delegation_session = api_json(port, "POST", "/v1/sessions", {
+                "title": "TUI delegated agent smoke",
+                "directory": str(delegation_workspace),
+            })
+            delegation_session_id = str(delegation_session["id"])
+            run_tui(
+                tui_path,
+                env,
+                "TUI delegated agent smoke",
+                delegation_session_id,
+                delegation_task=DELEGATION_TASK,
+            )
+            delegation_run = wait_for_subagent(env["VEASEL_API_URL"], delegation_session_id, DELEGATION_TASK)
+            cancelled_run = wait_for_subagent_status(
+                env["VEASEL_API_URL"], delegation_session_id, SLOW_DELEGATION_TASK, "cancelled",
+            )
+            sibling_run = wait_for_subagent(
+                env["VEASEL_API_URL"], delegation_session_id, FAST_SIBLING_TASK,
+            )
+            if (delegation_run.get("parent_session_id") != delegation_session_id
+                    or not delegation_run.get("parent_operation_id")
+                    or not delegation_run.get("child_session_id")
+                    or delegation_run.get("status") != "completed"
+                    or delegation_run.get("result") != DELEGATION_REPLY):
+                raise RuntimeError(f"durable delegated-run attribution/result was incomplete: {delegation_run!r}")
+            if delegation_run.get("provider") != "ollama" or delegation_run.get("model") != "smoke-model":
+                raise RuntimeError(f"delegated run resolved the wrong model route: {delegation_run!r}")
+            child_messages = api_json(
+                port,
+                "GET",
+                f"/v1/sessions/{quote(str(delegation_run['child_session_id']), safe='')}/messages",
+            )
+            if not isinstance(child_messages, list) or not any(
+                message.get("role") == "assistant" and message.get("content") == DELEGATION_REPLY
+                for message in child_messages if isinstance(message, dict)
+            ):
+                raise RuntimeError(f"child result was not persisted in its attributed session: {child_messages!r}")
+            recorded_requests = fixture_provider_requests(provider_base)
+            child_request = next(
+                (item for item in recorded_requests if item.get("prompt") == DELEGATION_TASK),
+                None,
+            )
+            if (child_request is None or child_request.get("provider") != "openai"
+                    or child_request.get("path") != "/v1/chat/completions"
+                    or child_request.get("model") != "smoke-model"):
+                raise RuntimeError(f"provider fixture did not observe the actual delegated model call: {recorded_requests!r}")
+            delegation_coverage = {
+                "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
+                "journey": "packaged TUI /delegate -> choose explorer -> inherit configured route -> /agents status -> inspect result",
+                "parentSessionId": delegation_run.get("parent_session_id"),
+                "parentOperationId": delegation_run.get("parent_operation_id"),
+                "runId": delegation_run.get("id"),
+                "childSessionId": delegation_run.get("child_session_id"),
+                "status": delegation_run.get("status"),
+                "provider": delegation_run.get("provider"),
+                "model": delegation_run.get("model"),
+                "providerFixtureObservedCall": child_request is not None,
+                "resultPersisted": delegation_run.get("result") == DELEGATION_REPLY,
+            }
+            if (cancelled_run.get("cancel_requested") is not True
+                    or sibling_run.get("status") != "completed"
+                    or sibling_run.get("provider") != "ollama"
+                    or sibling_run.get("model") != "smoke-model"):
+                raise RuntimeError(
+                    "cancelling the slow child affected the unrelated sibling or did not persist: "
+                    f"cancelled={cancelled_run!r}, sibling={sibling_run!r}"
+                )
+            cancellation_coverage = {
+                "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
+                "slowChildRunId": cancelled_run.get("id"),
+                "slowChildStatus": cancelled_run.get("status"),
+                "slowChildCancelRequested": cancelled_run.get("cancel_requested"),
+                "siblingRunId": sibling_run.get("id"),
+                "siblingStatusAfterCancellation": sibling_run.get("status"),
+                "bothProviderCallsObserved": all(
+                    any(item.get("prompt") == task for item in recorded_requests)
+                    for task in (SLOW_DELEGATION_TASK, FAST_SIBLING_TASK)
+                ),
+                "uiShowedIndependentTerminalStatuses": True,
+            }
         finally:
             if server is not None:
                 stop_server(server)
+            if first_run_provider is not None and first_run_provider.poll() is None:
+                first_run_provider.terminate()
+                try:
+                    first_run_provider.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    first_run_provider.kill()
+                    first_run_provider.wait(timeout=5)
             if provider.poll() is None:
                 provider.terminate()
             try:
@@ -834,6 +1181,9 @@ def main() -> None:
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "interactiveCoverage": review_coverage,
         "firstRunCoverage": first_run_coverage,
+        "ephemeralFixtureCoverage": ephemeral_fixture_coverage,
+        "delegationCoverage": delegation_coverage,
+        "cancellationCoverage": cancellation_coverage,
         "restartCoverage": restart_coverage,
         "killRecoveryCoverage": kill_coverage,
         "terminalSizes": terminal_sizes,

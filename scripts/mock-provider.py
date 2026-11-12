@@ -7,7 +7,7 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 
 
 API_KEYS = {
@@ -115,6 +115,7 @@ VENDORED_FIX = (
     "}\n"
 )
 SLOW_RESPONSE_RELEASE = Event()
+DELEGATION_REPLY = "Deterministic delegated result marker."
 SLOW_SHELL_COMMAND = "timeout /T 3 /NOBREAK >NUL" if sys.platform == "win32" else "sleep 2"
 # Sleeps long enough to cancel mid-execution, then writes an effect file:
 # the file must never appear when the turn is cancelled during the sleep.
@@ -311,6 +312,15 @@ def is_session_system(content):
 
 class MockProvider(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/fixture-requests":
+            with self.server.fixture_requests_lock:
+                encoded = json.dumps(self.server.fixture_requests).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+            return
         if self.path in ("/v1/models", "/v1beta/models"):
             authorization = self.headers.get("Authorization")
             simulated_error = {
@@ -506,7 +516,18 @@ class MockProvider(BaseHTTPRequestHandler):
             messages = payload.get("messages", [])
             last_message = messages[-1] if messages else {}
             user_text = fixture_user_prompt(last_message.get("content", ""))
-            is_cancellation_fixture_turn = user_text.startswith("Wait for cancellation ")
+            is_subagent_fixture_turn = user_text.startswith(
+                "Return the deterministic smoke marker: standalone-subagent-"
+            )
+            is_cancellation_fixture_turn = "standalone-subagent-cancel-v1" in user_text or user_text == "Wait for cancellation"
+            if is_subagent_fixture_turn or is_cancellation_fixture_turn:
+                with self.server.fixture_requests_lock:
+                    self.server.fixture_requests.append({
+                        "provider": provider_kind,
+                        "path": self.path,
+                        "model": payload.get("model"),
+                        "prompt": user_text,
+                    })
             is_tool_follow_up = last_message.get("role") == "tool" or (
                 user_text.startswith("The requested code edit was applied.")
                 and any(message.get("role") == "tool" for message in messages[:-1])
@@ -526,16 +547,22 @@ class MockProvider(BaseHTTPRequestHandler):
                 or not (
                     messages[0].get("content") == "Be concise"
                     or is_session_system(messages[0].get("content"))
+                    or messages[0].get("content", "").startswith(
+                        "You are a read-only Veasel Code Codebase explorer."
+                    )
                 )
                 or (user_text not in ("Say hello", "Stream incrementally", "Stream then drop", "Continue this session", "Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture", "Autonomous shell", "Wait for cancellation", "Call MCP effect", "Reject MCP effect", "Fail MCP effect")
                     and not is_cancellation_fixture_turn
+                    and not is_subagent_fixture_turn
                     and not is_tool_follow_up)
             ):
                 if user_text in ("Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                     print(f"MCP fixture rejected request guard: path={self.path!r}, model={payload.get('model')!r}, max_tokens={payload.get('max_tokens')!r}, system_ok={bool(messages) and (messages[0].get('content') == 'Be concise' or is_session_system(messages[0].get('content')))}, user={user_text!r}", file=sys.stderr)
                 self.reject(payload)
                 return
-            if user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
+            if is_subagent_fixture_turn:
+                body = {"choices": [{"message": {"role": "assistant", "content": DELEGATION_REPLY}}]}
+            elif user_text in ("Inspect workspace", "Try to read outside", "Try to write outside", "Read skill reference", "Propose workspace edit", "Propose shell command", "Propose slow shell command", "Run slow shell", "Run shell effect", "Autonomous workspace edit", "Autonomous multi-file edit", "Read then edit workspace", "Edit then verify workspace", "Recover after failed check", "Recover after failed edit", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture", "Autonomous shell", "Call MCP effect", "Reject MCP effect", "Fail MCP effect"):
                 tools = payload.get("tools", [])
                 requested_tool = (
                     "workspace_search" if user_text in ("Inspect workspace", "Edit then verify workspace", "Fix failing test in the workspace", "Fix vendored project tests in token-bucket-fixture") else
@@ -1089,5 +1116,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     ALLOW_NO_AUTH = args.allow_no_auth
     server = ThreadingHTTPServer(("127.0.0.1", args.port), MockProvider)
+    server.fixture_requests = []
+    server.fixture_requests_lock = Lock()
     args.port_file.write_text(str(server.server_address[1]))
     server.serve_forever()

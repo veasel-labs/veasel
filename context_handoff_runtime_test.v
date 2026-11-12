@@ -329,6 +329,49 @@ fn test_context_handoff_migration_copies_legacy_event_artifacts_into_retained_ta
 	assert recovered[0].target_provider == 'google'
 }
 
+fn test_incomplete_previous_handoff_forces_bounded_full_context_fallback() {
+	root := os.join_path(os.temp_dir(), 'veasel-context-handoff-incomplete-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_context_handoff_runtime_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	parent := store.create_session(SessionInput{ title: 'Incomplete checkpoint', directory: workspace }) or {
+		panic(err)
+	}
+	op_a := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, op_a) or { panic(err) }
+	_ = store.append_exchange(parent.id, op_a, 'Question on A', 'Answer from A', 'provider-a',
+		'model-a', '', ProviderUsage{}) or { panic(err) }
+	op_b := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, op_b) or { panic(err) }
+	policy := ExecutionPolicyTurn{ mode: .ask, interactive: true }
+	first := store.persist_context_handoff_retained(parent.id, op_b, 'provider-b', 'model-b',
+		policy, 'parent_turn') or { panic(err) }
+	_ = store.append_exchange(parent.id, op_b, 'Question on B', 'Answer from B', 'provider-b',
+		'model-b', '', ProviderUsage{}) or { panic(err) }
+	incomplete := store.retained_context_handoff_for_operation(parent.id, op_b) or { panic(err) }
+	encoded := json2.encode(incomplete).replace('"transcript_complete":true',
+		'"transcript_complete":false')
+	assert encoded.contains('"transcript_complete":false')
+	_ = store.db.exec_param_many('UPDATE context_handoffs SET artifact_json = ? WHERE session_id = ? AND next_operation_id = ?', [
+		encoded,
+		parent.id,
+		op_b,
+	]) or { panic(err) }
+	op_c := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, op_c) or { panic(err) }
+	second := store.persist_context_handoff_retained(parent.id, op_c, 'provider-c', 'model-c', policy,
+		'parent_turn') or { panic(err) }
+	assert first.context_mode == 'full'
+	assert second.context_mode == 'full'
+	assert second.fallback_reason == 'previous handoff checkpoint was incomplete; using a bounded full-context snapshot'
+	assert second.transcript.any(it.content == 'Question on A')
+	assert second.transcript.any(it.content == 'Answer from A')
+	assert second.transcript.any(it.content == 'Question on B')
+	assert second.transcript.any(it.content == 'Answer from B')
+}
+
 fn init_context_handoff_runtime_repo(root string) string {
 	repo := os.join_path(root, 'workspace')
 	os.mkdir_all(repo) or { panic(err) }

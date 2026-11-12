@@ -1,0 +1,80 @@
+{
+  "schema": "veasel.tui-startup.v1",
+  "measuredAt": "2026-11-12T04:21:33Z",
+  "commit": "e696634275784e80c1010a5934772d23648a706a",
+  "workflowCommit": null,
+  "host": {
+    "os": "Linux",
+    "release": "7.2.14-arch1-1",
+    "architecture": "x86_64",
+    "cpuCount": 24
+  },
+  "binaries": {
+    "server": "veasel",
+    "tui": "veasel-tui"
+  },
+  "buildProvenance": {
+    "source_commit": "e696634275784e80c1010a5934772d23648a706a",
+    "v_compiler_commit": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "v_compiler_version": "V 0.5.2",
+    "c_compiler": "clang",
+    "c_compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "build_flags": "-cc clang -prod -d veasel_version=0.70.0-next.0 -o dist/veasel .",
+    "target": "linux-x64",
+    "binary_sha256": "a9e150636ab63a3ee93cc4c8e1a941e0924bb1d8338933271d200f517d2e455c",
+    "tui_binary_sha256": "094780d0e6811aca72cf935322c22f6e15415cd1d14268e6526f2b59311dffe4",
+    "tui_build_target": "bun-linux-x64",
+    "tui_bun_version": "1.4.2",
+    "runner": {
+      "os": "Linux",
+      "architecture": "X64",
+      "image_os": "ubuntu22",
+      "image_version": "20261101.347.1"
+    },
+    "binary_hashes_match": true
+  },
+  "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
+  "firstRunCoverage": {
+    "journey": "clean profile -> /connect -> local provider -> model discovery -> new session -> prompt -> persisted reply",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "apiKeySaved": false,
+    "conversationPersisted": true
+  },
+  "restartCoverage": {
+    "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+    "messagesBeforeRestart": 2,
+    "messagesAfterRestart": 2,
+    "messagesUnchanged": true
+  },
+  "killRecoveryCoverage": {
+    "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+    "operationStatusAfterRestart": "uncertain",
+    "messagesUnchanged": true
+  },
+  "terminalSizes": [
+    "32x12",
+    "40x16",
+    "80x24",
+    "80x30",
+    "100x35",
+    "120x40"
+  ],
+  "startupMs": {
+    "samples": [
+      112.11902499962889,
+      112.01351400086423,
+      112.62175600040791
+    ],
+    "count": 3,
+    "min": 112.01351400086423,
+    "median": 112.11902499962889,
+    "max": 112.62175600040791
+  },
+  "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee."
+}

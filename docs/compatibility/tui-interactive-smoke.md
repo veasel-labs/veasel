@@ -7,7 +7,9 @@
 ## Scope
 
 This track packages the standalone TUI for Linux, macOS, and Windows in CI.
-Interactive PTY smoke is a separate gate from packaging. It starts from a clean
+Each platform job extracts the archive it just built, checks both executable
+SHA-256 values against the archive's `build.json`, then runs the interactive
+PTY/ConPTY journey using those extracted files. It starts from a clean
 profile and drives `/connect` through the bundled `veasel-tui`, selects the
 local Ollama-compatible fixture, discovers and saves a model without an API
 key, creates the first session, sends a prompt, verifies the persisted reply,
@@ -21,13 +23,14 @@ that port must be free on the runner.
 
 | Platform | Runner | Standalone terminal smoke | Notes |
 |----------|--------|----------------------|-------|
-| Linux x64 | `ubuntu-22.04` (V backend job) | Yes | Existing CI step |
-| macOS arm64 | `macos-latest` (V backend job) | Yes | Same Unix `pty` harness as Linux |
-| Windows x64 | `windows-latest` (V backend job) | Yes | Native ConPTY driver in `scripts/windows_conpty.py` |
+| Linux x64 | `ubuntu-22.04` (V backend job) | Yes | Extracted tar archive; SHA-256 checked against `build.json` |
+| macOS arm64 | `macos-latest` (V backend job) | Yes | Extracted tar archive; same Unix `pty` harness as Linux |
+| Windows x64 | `windows-latest` (V backend job) | Yes | Extracted zip archive; native ConPTY driver in `scripts/windows_conpty.py` |
 
 The same journey runs through Unix PTY on Linux/macOS and native ConPTY on
-Windows. Each CI run first completes the clean-profile `/connect` and first
-session journey, then takes three startup samples, exercises streamed replies,
+Windows. Each CI run first verifies archive binary hashes against provenance,
+then completes the clean-profile `/connect` and first session journey, takes
+three startup samples, exercises streamed replies,
 restart recovery, and workspace-edit review, and
 retains a JSON startup report as the `tui-startup-<platform>` artifact. The
 metric starts when the packaged TUI process is launched and stops when the
@@ -36,13 +39,17 @@ short hosted-runner samples are for platform coverage and trend tracking, not
 a performance gate or a stable cross-machine comparison. All three
 packaged-client smoke paths passed in [CI run
 42190204273](https://github.com/veasel-labs/veasel/actions/runs/42190204273)
-for PR head `ae1178da4f5e1a55cc1cbc27a6276cbcca3e810c`. Its Linux x64,
+for PR head `ae1178da4f5e1a55cc1cbc27a6276cbcca3e810c`. That historical run
+exercised loose build outputs. The current workflow also tests the extracted
+platform archives; future CI reports will be evidence for this exact path.
+The historical Linux x64,
 macOS arm64, and Windows x64 artifacts each record the clean-profile
 `/connect` → local Ollama model discovery → new session → prompt → persisted
-reply journey, with no API key saved. Binary hashes match build provenance.
+reply journey, with no API key saved. Binary hashes in that run match build
+provenance.
 The same run covers restart and SIGKILL recovery, approved workspace edit,
-and 32×12 / 80×30 / 120×40 terminal sizes. This verifies the smoke journey on
-the pinned CI runners; it is not a real-provider coding-task result or a
+and 32×12 / 80×30 / 120×40 terminal sizes. The CI smoke verifies the mock
+journey on pinned runners; it is not a real-provider coding-task result or a
 physical-device install test. This work adds per-run launch-to-home
 measurements; render FPS and broader interactive journeys remain separate work.
 

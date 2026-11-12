@@ -20,6 +20,14 @@ export type SubagentRunView = {
   workspace_ready: boolean
   workspace_started: boolean
   workspace_base_commit: string
+  input_tokens?: number
+  output_tokens?: number
+  usage_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
+  reasoning_tokens?: number
+  reasoning_reported?: boolean
 }
 
 export function toSubagentRunView(run: ApiSubagentRun): SubagentRunView {
@@ -39,6 +47,14 @@ export function toSubagentRunView(run: ApiSubagentRun): SubagentRunView {
     workspace_ready: run.workspace_ready,
     workspace_started: run.workspace_started,
     workspace_base_commit: run.workspace_base_commit,
+    input_tokens: run.input_tokens,
+    output_tokens: run.output_tokens,
+    usage_reported: run.usage_reported,
+    cache_read_tokens: run.cache_read_tokens,
+    cache_creation_tokens: run.cache_creation_tokens,
+    cache_reported: run.cache_reported,
+    reasoning_tokens: run.reasoning_tokens,
+    reasoning_reported: run.reasoning_reported,
   }
 }
 
@@ -79,8 +95,24 @@ export function subagentRunDetails(run: SubagentRunView): string {
   lines.push(`Workspace base: ${run.workspace_base_commit || "unavailable"}`)
   if (run.result) lines.push(`Result:\n${run.result}`)
   if (run.error) lines.push(`Error:\n${run.error}`)
-  lines.push("Provider-reported usage: unavailable")
+  if (run.usage_reported) {
+    lines.push(`Provider-reported usage: ${formatUsageCount(run.input_tokens)} input · ${formatUsageCount(run.output_tokens)} output tokens`)
+    if (run.cache_reported) {
+      lines.push(`Provider-reported cache: ${formatUsageCount(run.cache_read_tokens)} read · ${formatUsageCount(run.cache_creation_tokens)} created tokens`)
+    }
+    if (run.reasoning_reported) {
+      lines.push(`Provider-reported reasoning: ${formatUsageCount(run.reasoning_tokens)} tokens`)
+    }
+  } else {
+    lines.push("Provider-reported usage: unavailable")
+  }
   return lines.join("\n")
+}
+
+function formatUsageCount(value: number | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value).toLocaleString("en-US")
+    : "unavailable"
 }
 
 export function subagentCanCancel(run: SubagentRunView): boolean {

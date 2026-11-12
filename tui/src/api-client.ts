@@ -87,6 +87,14 @@ export type ApiSubagentRun = {
   workspace_base_commit: string
   requested_title?: string
   task?: string
+  input_tokens?: number
+  output_tokens?: number
+  usage_reported?: boolean
+  cache_read_tokens?: number
+  cache_creation_tokens?: number
+  cache_reported?: boolean
+  reasoning_tokens?: number
+  reasoning_reported?: boolean
 }
 
 export type CreateSubagentInput = {

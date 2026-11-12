@@ -67,12 +67,14 @@ class ResourceSamplerTests(unittest.TestCase):
     def test_resource_summary_reports_sampled_maxima_and_scope(self):
         summary = runner.resource_measurement_summary([
             {"agent_process_tree_rss_bytes": 100, "agent_process_tree_cpu_time_ms": 20,
-             "gpu_memory_used_mib": [4000]},
+             "sampling_overhead_ms": 5, "gpu_memory_used_mib": [4000]},
             {"agent_process_tree_rss_bytes": 300, "agent_process_tree_cpu_time_ms": 70,
-             "gpu_memory_used_mib": [5000]},
+             "sampling_overhead_ms": 9, "gpu_memory_used_mib": [5000]},
         ])
         self.assertEqual(summary["agent_process_tree_rss_sampled_max_bytes"], 300)
         self.assertEqual(summary["agent_process_tree_cpu_time_sampled_max_ms"], 70)
+        self.assertEqual(summary["sampling_interval_target_seconds"], 1)
+        self.assertEqual(summary["sampling_overhead_total_ms"], 14)
         self.assertEqual(summary["gpu_device_memory_used_sampled_max_mib"], [5000])
         self.assertIn("shared pages", summary["agent_memory_scope"])
         self.assertIn("device-wide", summary["gpu_memory_scope"])
@@ -187,7 +189,7 @@ class PreflightTests(unittest.TestCase):
             report = json.loads((artifacts / "attempt.json").read_text())
             self.assertEqual(report["outcome"], "completed")
             self.assertEqual(report["score"], "unscored; externally verify the patch and task oracle")
-            self.assertEqual(report["resource_measurements"]["sample_period_seconds"], 1)
+            self.assertEqual(report["resource_measurements"]["sampling_interval_target_seconds"], 1)
             self.assertIsNone(report["resource_measurements"]["agent_process_tree_rss_sampled_max_bytes"])
 
     def test_launcher_records_agent_and_gpu_resource_samples(self):
@@ -229,6 +231,7 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(report["resource_samples"][0]["agent_process_tree_rss_bytes"], 900)
         self.assertEqual(report["resource_samples"][0]["agent_process_tree_cpu_time_ms"], 42)
         self.assertEqual(report["resource_samples"][0]["gpu_memory_used_mib"], [6000])
+        self.assertIsInstance(report["resource_samples"][0]["sampling_overhead_ms"], int)
         measurements = report["resource_measurements"]
         self.assertEqual(measurements["agent_process_tree_rss_sampled_max_bytes"], 900)
         self.assertEqual(measurements["agent_process_tree_cpu_time_sampled_max_ms"], 42)

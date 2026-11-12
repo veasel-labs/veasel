@@ -112,7 +112,10 @@ def resource_measurement_summary(samples: list[dict[str, Any]]) -> dict[str, Any
         for index in range(device_count)
     ]
     return {
-        "sample_period_seconds": 1,
+        "sampling_interval_target_seconds": 1,
+        "sampling_overhead_total_ms": sum(
+            sample["sampling_overhead_ms"] for sample in samples if isinstance(sample.get("sampling_overhead_ms"), int)
+        ),
         "agent_process_tree_rss_sampled_max_bytes": sampled_maximum("agent_process_tree_rss_bytes"),
         "agent_process_tree_cpu_time_sampled_max_ms": sampled_maximum("agent_process_tree_cpu_time_ms"),
         "gpu_device_memory_used_sampled_max_mib": gpu_maxima or None,
@@ -458,6 +461,7 @@ def run_case(args: argparse.Namespace) -> int:
                 sample["agent_process_tree_cpu_time_ms"] = process_resources["cpu_time_ms"]
                 sample["agent_process_tree_rss_bytes"] = process_resources["rss_bytes"]
             sample["gpu_memory_used_mib"] = gpu_memory_used_mib()
+            sample["sampling_overhead_ms"] = int((time.monotonic() - sampled_at) * 1000)
             samples.append(sample)
             if available < min_memory or swap < min_swap:
                 outcome = "resource_aborted"
@@ -487,7 +491,9 @@ def run_case(args: argparse.Namespace) -> int:
                     except ProcessLookupError:
                         pass
                 break
-            time.sleep(1)
+            sample_delay = 1 - (time.monotonic() - sampled_at)
+            if sample_delay > 0:
+                time.sleep(sample_delay)
         return_code = process.wait()
     if outcome == "completed" and return_code != 0:
         outcome = "agent_error"

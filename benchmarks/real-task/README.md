@@ -129,8 +129,9 @@ artifact directory. No raw traces or workspace source are included here. Sanitiz
 summaries record the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json)
 and the [unscored fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json), [including the latest guard stop](../reports/real-task-attempt-website-173-post-fallback-resource-abort-retry-2026-11-11.json).
 
-The runner samples host available RAM, swap, agent process-tree RSS and CPU
-time, and device-wide GPU memory once per second. Sampled maxima are recorded
+The runner targets a one-second sampling cadence for host available RAM, swap,
+agent process-tree RSS and CPU time, and device-wide GPU memory. Sampling
+overhead and actual sample timestamps are recorded. Sampled maxima are recorded
 with scope notes: RSS may double-count shared pages, and GPU memory includes the
 model server and any other GPU clients. These are sampled measurements, not
 true process or device peaks. Provider-reported token usage is not yet

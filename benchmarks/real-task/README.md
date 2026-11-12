@@ -136,10 +136,13 @@ agent startup crossed the safety floor. Its #615 branch predates PR #617's
 5.75 GiB startup reserve; the 4.92 GiB launch sample would fail the current
 main preflight, before starting Veasel.
 
-This first version samples host available RAM and swap. It does not yet collect
-CPU, process/GPU peak memory, or provider-reported token usage, so reports are
-not complete comparative benchmark records and cannot support efficiency or
-speed claims.
+The runner targets a one-second sampling cadence for host available RAM, swap,
+agent process-tree RSS and CPU time, and device-wide GPU memory. Sampling
+overhead and actual sample timestamps are recorded. Sampled maxima are recorded
+with scope notes: RSS may double-count shared pages, and GPU memory includes the
+model server and any other GPU clients. These are sampled measurements, not
+true process or device peaks. Provider-reported token usage is not yet
+collected, so reports still cannot support efficiency or speed claims.
 
 All attempts used the same task, prompt hash, model digest, context, and
 output limits; the Veasel attempts also passed the recorded GPU-placement and

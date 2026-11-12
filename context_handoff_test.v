@@ -116,6 +116,16 @@ fn test_context_handoff_falls_back_to_bounded_full_snapshot_when_delta_exceeds_l
 	assert fallback.permissions_inherited
 	assert !fallback.hidden_reasoning_transferred
 	assert json2.encode(fallback).len <= max_context_handoff_event_bytes
+	_ = store.append_exchange(parent.id, operation_c, 'C question', 'C answer', 'openai',
+		'gpt-test', '', ProviderUsage{}) or { panic(err) }
+	operation_d := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_d) or { panic(err) }
+	after_incomplete := store.persist_context_handoff(parent.id, operation_d, 'anthropic',
+		'claude-next', policy, 'parent_turn') or { panic(err) }
+	assert after_incomplete.context_mode == 'full'
+	assert after_incomplete.fallback_reason == 'previous handoff checkpoint was incomplete; using a bounded full-context snapshot'
+	assert after_incomplete.transcript.any(it.content == 'C question')
+	assert after_incomplete.transcript.any(it.content == 'C answer')
 }
 
 fn init_context_handoff_repo(root string) string {

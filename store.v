@@ -940,6 +940,65 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit child provider target migration')
 		}
 	}
+	if current < 27 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin context handoff retention migration')
+		}
+		db.exec('CREATE TABLE context_handoffs (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, next_operation_id TEXT NOT NULL, artifact_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (session_id, next_operation_id))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create context handoff table')
+		}
+		db.exec('CREATE INDEX context_handoffs_session_created ON context_handoffs (session_id, created_at)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index context handoffs')
+		}
+		legacy_handoffs := db.exec_param_many('SELECT session_id, created_at, data FROM events WHERE type = ? ORDER BY id ASC', [
+			context_handoff_event_type,
+		]) or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to inspect legacy context handoff events')
+		}
+		for row in legacy_handoffs {
+			event_data := json2.decode[EventData](row.val(2)) or { continue }
+			artifact := json2.decode[ContextHandoffArtifact](event_data.delta) or { continue }
+			if artifact.session_id != row.val(0) || artifact.next_operation_id.len == 0 {
+				continue
+			}
+			_ = db.exec_param_many('INSERT OR IGNORE INTO context_handoffs (session_id, next_operation_id, artifact_json, created_at) VALUES (?, ?, ?, ?)', [
+				artifact.session_id,
+				artifact.next_operation_id,
+				event_data.delta,
+				row.val(1),
+			]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to preserve legacy context handoff')
+			}
+			_ = db.exec_param_many('DELETE FROM context_handoffs WHERE session_id = ? AND rowid NOT IN (SELECT rowid FROM context_handoffs WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)', [
+				artifact.session_id,
+				artifact.session_id,
+				max_retained_context_handoffs_per_session.str(),
+			]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to bound retained context handoffs')
+			}
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (27)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record context handoff retention migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit context handoff retention migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

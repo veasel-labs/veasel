@@ -103,16 +103,20 @@ fn (mut store Store) persist_context_handoff(session_id string, next_operation_i
 	if previous.artifact_id.len > 0 {
 		last := previous
 		if last.target_provider == source_operation.provider && last.target_model == source_operation.model {
-			mode = 'delta'
-			base_message_id = last.through_message_id
-			fallback_reason = ''
-			messages = store.context_handoff_messages_after(session_id, base_message_id,
-				max_context_handoff_messages + 1)!
-			if messages.len > max_context_handoff_messages
-				|| context_handoff_messages_bytes(messages) > max_context_handoff_transcript_bytes {
-				mode = 'full'
-				fallback_reason = 'transcript delta exceeded the handoff message or byte bound; using a bounded full-context snapshot'
-				messages = store.context_handoff_full_messages(session_id)!
+			if last.transcript_complete {
+				mode = 'delta'
+				base_message_id = last.through_message_id
+				fallback_reason = ''
+				messages = store.context_handoff_messages_after(session_id, base_message_id,
+					max_context_handoff_messages + 1)!
+				if messages.len > max_context_handoff_messages
+					|| context_handoff_messages_bytes(messages) > max_context_handoff_transcript_bytes {
+					mode = 'full'
+					fallback_reason = 'transcript delta exceeded the handoff message or byte bound; using a bounded full-context snapshot'
+					messages = store.context_handoff_full_messages(session_id)!
+				}
+			} else {
+				fallback_reason = 'previous handoff checkpoint was incomplete; using a bounded full-context snapshot'
 			}
 		} else {
 			fallback_reason = 'previous handoff target does not match the source route; using a bounded full-context snapshot'

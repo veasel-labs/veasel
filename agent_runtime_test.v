@@ -190,6 +190,17 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 	assert complete_phase.len == tools.len
 	assert agent_code_change_tools_after_edit_failures(search_read_phase, true,
 		max_agent_code_change_edit_recovery_attempts).any(it.name == 'workspace_propose_file_edit')
+	nudged_edit_phase := agent_code_change_tools_after_exploration(search_read_phase, true, true,
+		false, true, 0)
+	assert nudged_edit_phase.map(it.name) == ['workspace_propose_file_edit']
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, false,
+		0).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, true,
+		1).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, true, true,
+		0).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, false, true, false, true,
+		0).map(it.name) == search_read_phase.map(it.name)
 	exhausted_phase := agent_code_change_tools_after_edit_failures(complete_phase, true,
 		max_agent_code_change_edit_recovery_attempts + 1)
 	assert exhausted_phase.map(it.name) == ['workspace_read_file', 'workspace_search']

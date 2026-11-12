@@ -173,6 +173,61 @@ fn test_child_rename_reports_old_path_deletion_and_gates_new_path() {
 	assert os.read_file(os.join_path(workspace, 'MOVED.md')) or { panic(err) } == 'base\n'
 }
 
+fn test_cancelled_implementer_conflict_preserves_dirty_worktree_for_review() {
+	root := os.join_path(os.temp_dir(), 'veasel-child-cancelled-conflict-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_integration_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	parent := store.create_session(SessionInput{ title: 'Parent cancelled conflict', directory: workspace }) or {
+		panic(err)
+	}
+	parent_operation := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, parent_operation) or { panic(err) }
+	run := store.create_subagent_run(parent.id, parent_operation, 'cancelled-dirty-conflict',
+		'implementer', 1, 'Code implementer: update README.md', workspace) or { panic(err) }
+	child := store.get_session(run.child_session_id) or { panic(err) }
+	_ = store.create_session_operation(child.id, run.child_operation_id) or { panic(err) }
+	_ = store.begin_subagent_run(run.id) or { panic(err) }
+	child_directory := child.directory
+	child_content := 'cancelled child version\n'
+	os.write_file(os.join_path(child_directory, 'README.md'), child_content) or { panic(err) }
+	os.write_file(os.join_path(child_directory, 'independent.txt'), 'preserve this result\n') or { panic(err) }
+	os.write_file(os.join_path(workspace, 'README.md'), 'parent version\n') or { panic(err) }
+
+	requested := app.cancel_subagent_run(parent.id, run.id) or { panic(err) }
+	assert requested.status == 'running'
+	assert requested.cancel_requested
+	finished := store.finish_subagent_run(run.id, 'cancelled', '',
+		'Child cancelled after producing partial changes.') or { panic(err) }
+	assert finished.status == 'cancelled'
+	claimed := store.claim_subagent_outcome(run.id) or { panic(err) }
+	assert claimed.outcome_claimed
+	app.cleanup_delivered_subagent_workspace(run.id)
+
+	assert os.is_dir(child_directory), 'cancellation cleanup must retain a dirty child worktree'
+	retained_run := store.get_subagent_run(run.id) or { panic(err) }
+	assert retained_run.workspace_ready
+	retained_child := store.get_session(run.child_session_id) or { panic(err) }
+	assert os.real_path(retained_child.directory) == os.real_path(child_directory)
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'parent version\n'
+	assert os.read_file(os.join_path(child_directory, 'README.md')) or { panic(err) } == child_content
+	assert os.read_file(os.join_path(child_directory, 'independent.txt')) or { panic(err) } == 'preserve this result\n'
+
+	integration := app.propose_subagent_integration(parent.id, run.id) or { panic(err) }
+	assert integration.status == 'cancelled'
+	assert integration.conflicts.len == 1
+	assert integration.conflicts[0].path == 'README.md'
+	assert integration.proposals.len == 1
+	assert integration.proposals[0].path == 'independent.txt'
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'parent version\n'
+	assert !os.exists(os.join_path(workspace, 'independent.txt'))
+	assert os.is_dir(child_directory)
+}
+
 fn test_child_integration_http_route_returns_reviewable_proposals_without_parent_writes() {
 	root := os.join_path(os.temp_dir(), 'veasel-child-integration-http-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

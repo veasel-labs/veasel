@@ -64,6 +64,41 @@ export type ApiSessionOperation = {
   updated_at: string
 }
 
+/** Durable child run from GET/POST /v1/sessions/{id}/subagents. */
+export type ApiSubagentRun = {
+  id: string
+  request_id: string
+  parent_session_id: string
+  parent_operation_id: string
+  child_session_id: string
+  agent_id: string
+  target_provider: string
+  target_model: string
+  provider: string
+  model: string
+  depth: number
+  status: "queued" | "running" | "completed" | "failed" | "cancelled" | "uncertain"
+  result: string
+  error: string
+  cancel_requested: boolean
+  outcome_claimed: boolean
+  workspace_ready: boolean
+  workspace_started: boolean
+  workspace_base_commit: string
+  requested_title?: string
+  task?: string
+}
+
+export type CreateSubagentInput = {
+  parent_operation_id?: string
+  request_id: string
+  agent_id: string
+  task: string
+  target?: { provider: string; model: string }
+  mode?: "async"
+  workspace?: string
+}
+
 export type ApiGlobalSessionOperation = {
   operation: ApiSessionOperation
   session_title: string
@@ -380,6 +415,42 @@ export class VeaselApiClient {
     const response = await fetch(`${this.base}/v1/config/model`, { signal: this.signal })
     if (!response.ok) throw await httpError(response)
     return await response.json() as ModelSettingsView
+  }
+
+  async listSubagents(sessionId: string): Promise<ApiSubagentRun[]> {
+    const response = await fetch(`${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/subagents`, {
+      signal: this.signal,
+    })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSubagentRun[]
+  }
+
+  async createSubagent(sessionId: string, input: CreateSubagentInput): Promise<ApiSubagentRun> {
+    const response = await fetch(`${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/subagents`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+      signal: this.signal,
+    })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSubagentRun
+  }
+
+  async getSubagent(sessionId: string, runId: string): Promise<ApiSubagentRun> {
+    const response = await fetch(`${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}`, {
+      signal: this.signal,
+    })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSubagentRun
+  }
+
+  async cancelSubagent(sessionId: string, runId: string): Promise<ApiSubagentRun> {
+    const response = await fetch(`${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST",
+      signal: this.signal,
+    })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSubagentRun
   }
 
   async updateModelSettings(input: {

@@ -1,4 +1,4 @@
-export type SlashCategory = "guide" | "setup" | "skills" | "plugins" | "mcp" | "approvals" | "session"
+export type SlashCategory = "guide" | "setup" | "skills" | "plugins" | "mcp" | "approvals" | "agents" | "session"
 
 export type SlashCommand = {
   name: string
@@ -17,6 +17,7 @@ export const slashCategoryLabels: Record<SlashCategory, string> = {
   plugins: "plugins",
   mcp: "mcp",
   approvals: "review",
+  agents: "agents",
   session: "session",
 }
 
@@ -33,6 +34,7 @@ export function slashCategoryForName(name: string): SlashCategory {
   if (name === "/mcp calls" || name.startsWith("/mcp call")) return "approvals"
   if (name.startsWith("/mcp")) return "mcp"
   if (name.startsWith("/patch") || name.startsWith("/command")) return "approvals"
+  if (name.startsWith("/agent") || name.startsWith("/delegate")) return "agents"
   return "session"
 }
 
@@ -93,6 +95,8 @@ export const slashCommands: SlashCommand[] = [
   { name: "/command", category: "approvals", description: "Show, approve, or reject a shell command", usage: "/command show|approve|reject <id>" },
   { name: "/history older", category: "session", description: "Load earlier messages in this session" },
   { name: "/runs", category: "session", description: "Browse durable execution history for this session" },
+  { name: "/agents", category: "agents", description: "Inspect delegated agents, durable status, results, model, and usage" },
+  { name: "/delegate", category: "agents", description: "Delegate a focused task with an optional role and provider/model override", usage: "/delegate [task]", run: true },
   { name: "/usage", category: "session", description: "Browse provider-reported token usage by model across sessions" },
   { name: "/status", category: "session", description: "Show session, model, and connection status" },
   { name: "/map", category: "session", description: "Show the extractive workspace repository map; add text to hint ranking" },

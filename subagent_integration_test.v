@@ -93,6 +93,11 @@ fn test_child_integration_creates_parent_proposal_and_applies_only_after_approva
 	assert response.proposals.any(it.path == 'new-file.md')
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == before
 	assert !os.exists(os.join_path(workspace, 'new-file.md'))
+	retried := app.propose_subagent_integration(parent.id, run.id) or { panic(err) }
+	assert retried.proposals.len == response.proposals.len
+	for proposal in response.proposals {
+		assert retried.proposals.any(it.id == proposal.id && it.path == proposal.path)
+	}
 
 	for proposal in response.proposals {
 		_ = store.review_workspace_edit(parent.id, proposal.id) or { panic(err) }
@@ -179,6 +184,16 @@ fn test_child_integration_http_route_returns_reviewable_proposals_without_parent
 	assert integration.proposals[0].path == 'README.md'
 	assert integration.conflicts.len == 0
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == before
+	retry := http.fetch(
+		url:           'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents/${run.id}/integrate'
+		method:        .post
+		read_timeout:  5 * time.second
+		write_timeout: 5 * time.second
+	) or { panic(err) }
+	assert retry.status_code == 200
+	retried := json2.decode[SubagentIntegrationResponse](retry.body) or { panic(err) }
+	assert retried.proposals.len == 1
+	assert retried.proposals[0].id == integration.proposals[0].id
 }
 
 fn init_subagent_integration_test_repo(root string) string {

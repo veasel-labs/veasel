@@ -268,7 +268,7 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 			}
 			continue
 		}
-		proposal := store.create_workspace_edit(parent_session_id, draft) or {
+		proposal := store.create_or_reuse_pending_workspace_edit(parent_session_id, draft) or {
 			conflicts << SubagentIntegrationConflict{
 				path:   path
 				reason: 'unable to save parent proposal: ${err.msg()}'

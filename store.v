@@ -2844,6 +2844,19 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 }
 
 fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEditDraft) !WorkspaceEditProposal {
+	return store.create_workspace_edit_with_pending_reuse(session_id, draft, false)
+}
+
+// Child integration can retry after a lost HTTP response or process restart.
+// Reuse an identical pending proposal atomically so retries do not create
+// duplicate review items. Ordinary workspace proposals keep current behavior.
+fn (mut store Store) create_or_reuse_pending_workspace_edit(session_id string,
+	draft WorkspaceEditDraft) !WorkspaceEditProposal {
+	return store.create_workspace_edit_with_pending_reuse(session_id, draft, true)
+}
+
+fn (mut store Store) create_workspace_edit_with_pending_reuse(session_id string,
+	draft WorkspaceEditDraft, reuse_pending bool) !WorkspaceEditProposal {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
@@ -2856,6 +2869,20 @@ fn (mut store Store) create_workspace_edit(session_id string, draft WorkspaceEdi
 	if sessions.len != 1 {
 		store.db.rollback() or {}
 		return error('session not found')
+	}
+	if reuse_pending {
+		existing := store.db.exec_param_many("SELECT id, session_id, path, diff, status, created_at, updated_at FROM workspace_edits WHERE session_id = ? AND path = ? AND expected_hash = ? AND content = ? AND status = 'pending' ORDER BY created_at, id LIMIT 1",
+			[session_id, draft.path, draft.expected_hash, draft.content]) or {
+			store.db.rollback() or {}
+			return error('unable to inspect matching pending workspace edit')
+		}
+		if existing.len == 1 {
+			store.db.commit() or {
+				store.db.rollback() or {}
+				return error('unable to commit pending workspace edit lookup')
+			}
+			return workspace_edit_proposal_from_row(existing[0])
+		}
 	}
 	pending := store.db.exec_param("SELECT COUNT(*) FROM workspace_edits WHERE session_id = ? AND status = 'pending'",
 		session_id) or {

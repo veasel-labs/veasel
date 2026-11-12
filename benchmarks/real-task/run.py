@@ -124,6 +124,99 @@ def resource_measurement_summary(samples: list[dict[str, Any]]) -> dict[str, Any
     }
 
 
+def provider_reported_usage(agent: str, trace_path: Path, stdout_path: Path) -> dict[str, Any]:
+    """Read token counters explicitly reported by the agent/provider adapters."""
+    fields = {
+        "input_tokens": None,
+        "output_tokens": None,
+        "reasoning_tokens": None,
+        "cache_read_tokens": None,
+        "cache_write_tokens": None,
+    }
+    if agent == "veasel":
+        source = "veasel_atif_final_metrics"
+        try:
+            trajectory = json.loads(trace_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return {"reported": False, "source": source, "trace_step_count": None,
+                    "reported_agent_cost_usd": None, **fields}
+        if not isinstance(trajectory, dict):
+            return {"reported": False, "source": source, "trace_step_count": None,
+                    "reported_agent_cost_usd": None, **fields}
+        extra = trajectory.get("extra", {})
+        extra = extra if isinstance(extra, dict) else {}
+        steps = trajectory.get("steps", [])
+        step_count = len(steps) if isinstance(steps, list) else None
+        if extra.get("token_usage") != "reported":
+            return {"reported": False, "source": source, "trace_step_count": step_count,
+                    "reported_agent_cost_usd": None, **fields}
+        metrics = trajectory.get("final_metrics", {})
+        metrics = metrics if isinstance(metrics, dict) else {}
+        values = {
+            "input_tokens": metrics.get("total_prompt_tokens"),
+            "output_tokens": metrics.get("total_completion_tokens"),
+            "reasoning_tokens": metrics.get("reasoning_tokens"),
+            "cache_read_tokens": metrics.get("cache_read_tokens"),
+            "cache_write_tokens": metrics.get("cache_creation_tokens"),
+        }
+        for key, value in values.items():
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                fields[key] = value
+        return {
+            "reported": fields["input_tokens"] is not None or fields["output_tokens"] is not None,
+            "source": source,
+            "trace_step_count": step_count,
+            "reported_agent_cost_usd": None,
+            "cost_note": "Veasel ATIF does not export a cost value",
+            **fields,
+        }
+
+    source = "opencode_json_step_finish_events"
+    step_count = 0
+    reported_keys: set[str] = set()
+    reported_agent_cost_usd: float | None = None
+    try:
+        with stdout_path.open(errors="replace") as stdout:
+            for line in stdout:
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(event, dict) or event.get("type") not in {"step_finish", "step-finish"}:
+                    continue
+                part = event.get("part")
+                part = part if isinstance(part, dict) else {}
+                tokens = part.get("tokens", event.get("tokens"))
+                step_count += 1
+                tokens = tokens if isinstance(tokens, dict) else {}
+                token_values = {
+                    "input_tokens": tokens.get("input"),
+                    "output_tokens": tokens.get("output"),
+                    "reasoning_tokens": tokens.get("reasoning"),
+                }
+                cache = tokens.get("cache")
+                cache = cache if isinstance(cache, dict) else {}
+                token_values["cache_read_tokens"] = cache.get("read")
+                token_values["cache_write_tokens"] = cache.get("write")
+                for key, value in token_values.items():
+                    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                        fields[key] = (fields[key] or 0) + value
+                        reported_keys.add(key)
+                cost = part.get("cost", event.get("cost"))
+                if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost >= 0:
+                    reported_agent_cost_usd = (reported_agent_cost_usd or 0.0) + cost
+    except OSError:
+        pass
+    return {
+        "reported": bool(reported_keys),
+        "source": source,
+        "usage_event_count": step_count,
+        "reported_agent_cost_usd": reported_agent_cost_usd,
+        "cost_note": "OpenCode-reported cost; local-model zero may mean no configured price",
+        **fields,
+    }
+
+
 def restricted_environment(source: dict[str, str] | None = None) -> dict[str, str]:
     source = os.environ if source is None else source
     allowed = {"PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR"}
@@ -497,6 +590,7 @@ def run_case(args: argparse.Namespace) -> int:
         return_code = process.wait()
     if outcome == "completed" and return_code != 0:
         outcome = "agent_error"
+    usage = provider_reported_usage(args.agent, trace_path, stdout_path)
     report = {
         "schema": "veasel.real-task-attempt.v1",
         "case_id": case["id"],
@@ -515,6 +609,7 @@ def run_case(args: argparse.Namespace) -> int:
         "wall_ms": int((time.monotonic() - started) * 1000),
         "resource_samples": samples,
         "resource_measurements": resource_measurement_summary(samples),
+        "provider_usage": usage,
         "artifacts": {"trace": trace_path.name if args.agent == "veasel" else None,
                       "stdout": stdout_path.name, "stderr": stderr_path.name},
         "score": "unscored; externally verify the patch and task oracle",

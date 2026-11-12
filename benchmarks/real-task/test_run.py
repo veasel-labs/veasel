@@ -80,6 +80,79 @@ class ResourceSamplerTests(unittest.TestCase):
         self.assertIn("device-wide", summary["gpu_memory_scope"])
 
 
+class ProviderUsageTests(unittest.TestCase):
+    def test_veasel_usage_reads_provider_reported_atif_metrics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trace = Path(temp_dir) / "trace.json"
+            stdout = Path(temp_dir) / "stdout.log"
+            trace.write_text(json.dumps({
+                "steps": [{"step_id": 1}, {"step_id": 2}],
+                "final_metrics": {
+                    "total_prompt_tokens": 1200,
+                    "total_completion_tokens": 48,
+                    "reasoning_tokens": 5,
+                    "cache_read_tokens": 700,
+                    "cache_creation_tokens": 100,
+                },
+                "extra": {"token_usage": "reported"},
+            }))
+            usage = runner.provider_reported_usage("veasel", trace, stdout)
+        self.assertTrue(usage["reported"])
+        self.assertEqual(usage["source"], "veasel_atif_final_metrics")
+        self.assertEqual(usage["trace_step_count"], 2)
+        self.assertEqual(usage["input_tokens"], 1200)
+        self.assertEqual(usage["output_tokens"], 48)
+        self.assertEqual(usage["reasoning_tokens"], 5)
+        self.assertEqual(usage["cache_read_tokens"], 700)
+        self.assertEqual(usage["cache_write_tokens"], 100)
+
+    def test_veasel_unreported_usage_is_not_recorded_as_zero(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trace = Path(temp_dir) / "trace.json"
+            trace.write_text(json.dumps({"steps": [{"step_id": 1}], "final_metrics": {},
+                                         "extra": {"token_usage": "unavailable"}}))
+            usage = runner.provider_reported_usage("veasel", trace, Path(temp_dir) / "stdout.log")
+        self.assertFalse(usage["reported"])
+        self.assertIsNone(usage["input_tokens"])
+        self.assertIsNone(usage["output_tokens"])
+
+    def test_opencode_usage_sums_only_step_finish_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = Path(temp_dir) / "stdout.log"
+            stdout.write_text("\n".join([
+                json.dumps({"type": "text", "part": {"text": "done"}}),
+                json.dumps({"type": "step_finish", "part": {"tokens": {
+                    "input": 500, "output": 20, "reasoning": 4,
+                    "cache": {"read": 300, "write": 10},
+                }, "cost": 0.003}}),
+                json.dumps({"type": "step_finish", "part": {"tokens": {
+                    "input": 600, "output": 30, "reasoning": 6,
+                    "cache": {"read": 400, "write": 20},
+                }, "cost": 0.004}}),
+                "not json",
+            ]))
+            usage = runner.provider_reported_usage("opencode", Path(temp_dir) / "trace.json", stdout)
+        self.assertTrue(usage["reported"])
+        self.assertEqual(usage["source"], "opencode_json_step_finish_events")
+        self.assertEqual(usage["usage_event_count"], 2)
+        self.assertEqual(usage["input_tokens"], 1100)
+        self.assertEqual(usage["output_tokens"], 50)
+        self.assertEqual(usage["reasoning_tokens"], 10)
+        self.assertEqual(usage["cache_read_tokens"], 700)
+        self.assertEqual(usage["cache_write_tokens"], 30)
+        self.assertAlmostEqual(usage["reported_agent_cost_usd"], 0.007)
+
+    def test_missing_opencode_step_finish_keeps_usage_unavailable(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout = Path(temp_dir) / "stdout.log"
+            stdout.write_text(json.dumps({"type": "text", "part": {"text": "done"}}))
+            usage = runner.provider_reported_usage("opencode", Path(temp_dir) / "trace.json", stdout)
+        self.assertFalse(usage["reported"])
+        self.assertEqual(usage["usage_event_count"], 0)
+        self.assertIsNone(usage["input_tokens"])
+        self.assertIsNone(usage["reported_agent_cost_usd"])
+
+
 class PreflightTests(unittest.TestCase):
     def test_case_prompt_hash_is_pinned(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
@@ -191,6 +264,8 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(report["score"], "unscored; externally verify the patch and task oracle")
             self.assertEqual(report["resource_measurements"]["sampling_interval_target_seconds"], 1)
             self.assertIsNone(report["resource_measurements"]["agent_process_tree_rss_sampled_max_bytes"])
+            self.assertFalse(report["provider_usage"]["reported"])
+            self.assertEqual(report["provider_usage"]["source"], "opencode_json_step_finish_events")
 
     def test_launcher_records_agent_and_gpu_resource_samples(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"

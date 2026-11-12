@@ -58,6 +58,9 @@ import { openSessionTimelineDialog } from "./component/session-timeline-dialog"
 import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
+import { openSubagentDelegateDialog } from "./component/subagent-delegate-dialog"
+import { openSubagentRunsDialog } from "./component/subagent-runs-dialog"
+import { subagentIntegrationReviewTarget, subagentIntegrationSummary, type SubagentRunView } from "./subagent-runs"
 import { openUsageDashboardDialog } from "./component/usage-dashboard-dialog"
 import type { ApiGlobalSessionOperation } from "../api-client"
 import { openErrorDetailsDialog } from "./component/error-details-dialog"
@@ -745,6 +748,27 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
+  const integrateSubagent = async (sessionId: string, run: SubagentRunView) => {
+    try {
+      const result = await props.api.integrateSubagent(sessionId, run.id)
+      if (sessionId !== activeSessionId()) {
+        toast.info("Agent proposals were created in the original conversation; reopen it to review them.", "Agent changes")
+        return
+      }
+      const reviewTarget = subagentIntegrationReviewTarget(result)
+      const summary = subagentIntegrationSummary(result)
+      const resolvedNote = result.proposals.length > 0 && !reviewTarget
+        ? " · no pending proposals remain; this may be an already-resolved retry"
+        : ""
+      toast.info(`${summary}${resolvedNote}`, "Agent changes")
+      if (reviewTarget) {
+        await openLiveReviews({ kind: "patch", id: reviewTarget })
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not prepare agent changes for review", "Agent changes")
+    }
+  }
+
   const inSession = createMemo(() => Boolean(activeSessionId()))
   const composerVisible = createMemo(() => inSession() || homeComposerOpen())
   const sessionTitle = createMemo(() => {
@@ -825,6 +849,132 @@ function LiveAppShell(props: LiveAppProps) {
   const openLiveExecutionHistory = () => {
     setComposerFocused(false)
     openExecutionHistoryDialog(dialog, props.api)
+  }
+
+  const openLiveSubagents = () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Session required",
+        message: "Open a conversation before inspecting delegated agents.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    setComposerFocused(false)
+    openSubagentRunsDialog(dialog, {
+      api: props.api,
+      sessionId,
+      onCancelled: (run) => toast.info(
+        `Run ${run.id} is ${run.status}${run.cancel_requested ? " · cancellation requested" : ""}.`,
+        "Agent",
+      ),
+      onIntegrate: (run) => { void integrateSubagent(sessionId, run) },
+      onFollowUp: (run) => {
+        void props.api.listSessions().then((items) => {
+          const child = items.find((item) => item.id === run.child_session_id)
+          if (!child) {
+            toast.error("Child session is unavailable", "Agents")
+            return
+          }
+          void openSession(sessionEntry(child))
+        }).catch((error: unknown) => {
+          toast.error(error instanceof Error ? error.message : "Could not open child session", "Agents")
+        })
+      },
+    })
+  }
+
+  const openLiveDelegate = async (initialTask: string) => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      openDialogAlert(dialog, {
+        title: "Session required",
+        message: "Open a conversation before delegating a task.",
+        onConfirm: () => setComposerFocused(true),
+      })
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const settings = await props.api.getModelSettings()
+      const configured = new Set(settings.configured_providers ?? [])
+      const modelLists = await Promise.all((settings.providers ?? [])
+        .filter((provider) => configured.has(provider.id))
+        .map(async (provider) => {
+          try {
+            const catalog = await props.api.listProviderModels(provider.id)
+            return catalog.models.map((model) => catalogEntryToSolidModel(provider.id, provider.name, {
+              ...model,
+              id: safeModelCatalogText(model.id) || model.id,
+              name: safeModelCatalogText(model.name) || model.name,
+            }))
+          } catch {
+            return []
+          }
+        }))
+      const models = modelLists.flat()
+      for (const providerId of configured) {
+        const profileModel = settings.profiles[providerId]?.model
+        if (!profileModel || models.some((model) => model.providerID === providerId && model.modelID === profileModel)) continue
+        const provider = settings.providers.find((item) => item.id === providerId)
+        models.push({
+          providerID: providerId,
+          modelID: profileModel,
+          name: profileModel,
+          providerName: provider?.name ?? providerId,
+        })
+      }
+      const profile = settings.profiles[settings.active_provider]
+      const currentModel = profile?.model ? {
+        providerID: settings.active_provider,
+        modelID: profile.model,
+        name: profile.model,
+        providerName: settings.providers.find((provider) => provider.id === settings.active_provider)?.name,
+      } : undefined
+      if (currentModel && !models.some((model) => model.providerID === currentModel.providerID && model.modelID === currentModel.modelID)) models.unshift(currentModel)
+      openSubagentDelegateDialog(dialog, {
+        roles: [
+          { id: "explorer", description: "Read-only repository investigation" },
+          { id: "reviewer", description: "Read-only code and change review" },
+        ],
+        models,
+        currentModel,
+        initialTask,
+        onSubmit: (input) => {
+          void props.api.createSubagent(sessionId, {
+            request_id: crypto.randomUUID(),
+            agent_id: input.agent_id,
+            task: input.task,
+            target: input.target,
+            mode: "async",
+          }).then((run) => {
+            toast.success(`Queued ${run.agent_id} · ${run.provider}/${run.model}`, "Agent")
+            openSubagentRunsDialog(dialog, {
+              api: props.api,
+              sessionId,
+              onCancelled: (childRun) => toast.info(
+                `Run ${childRun.id} is ${childRun.status}${childRun.cancel_requested ? " · cancellation requested" : ""}.`,
+                "Agent",
+              ),
+              onIntegrate: (childRun) => { void integrateSubagent(sessionId, childRun) },
+            })
+          }).catch((error: unknown) => {
+            openDialogAlert(dialog, {
+              title: "Could not delegate task",
+              message: error instanceof Error ? error.message : "The server could not create the delegated run.",
+              onConfirm: () => setComposerFocused(true),
+            })
+          })
+        },
+      })
+    } catch (error) {
+      openDialogAlert(dialog, {
+        title: "Could not load agent models",
+        message: error instanceof Error ? error.message : "Provider settings are unavailable.",
+        onConfirm: () => setComposerFocused(true),
+      })
+    }
   }
 
   const [composerSkills, setComposerSkills] = createSignal<SkillCatalogEntry[]>([])
@@ -1619,6 +1769,14 @@ function LiveAppShell(props: LiveAppProps) {
       case "runs":
         dismissHomeComposer()
         void openLiveExecutionHistory()
+        return
+      case "agents":
+        dismissHomeComposer()
+        openLiveSubagents()
+        return
+      case "delegate":
+        dismissHomeComposer()
+        void openLiveDelegate(action.task)
         return
       case "help":
         dismissHomeComposer()

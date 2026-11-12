@@ -33,6 +33,8 @@ export type LiveSlashAction =
   | { kind: "history-older" }
   | { kind: "history-hint" }
   | { kind: "runs" }
+  | { kind: "agents" }
+  | { kind: "delegate"; task: string }
   | { kind: "unsupported"; command: string }
   | { kind: "unknown"; command: string }
 
@@ -69,6 +71,10 @@ export function resolveLiveSlash(input: string): LiveSlashAction {
   if (isModelSettingsCommand(content)) return { kind: "models" }
 
   if (content === "/runs" || content === "/history runs") return { kind: "runs" }
+  if (content === "/agents") return { kind: "agents" }
+  if (content === "/delegate" || content.startsWith("/delegate ")) {
+    return { kind: "delegate", task: content === "/delegate" ? "" : content.slice("/delegate ".length).trim() }
+  }
   if (content === "/history older") return { kind: "history-older" }
   if (/^\/history(?:\s|$)/.test(content)) return { kind: "history-hint" }
 

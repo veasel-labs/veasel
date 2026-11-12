@@ -385,14 +385,14 @@ fn test_model_callable_subagent_persists_parent_cancellation() {
 	mut background := vcontext.background()
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
 	cancel()
-	result := app.execute_subagent_run(mut turn_ctx, workspace, parent.id, operation_id,
+	result := app.execute_subagent_run(mut turn_ctx, parent.id, operation_id,
 		ProviderToolCall{
 			id:       'call-cancel'
 			function: ProviderFunctionCall{
 				name:      'subagent_run'
 				arguments: '{"agent_id":"explorer","task":"Read README.md."}'
 			}
-		}) or { panic(err) }
+		}, execution_policy_turn_from_input('', false, false), AgentToolPolicy{}) or { panic(err) }
 	assert result.contains('cancelled')
 	assert fixture.hits == 0
 	child_rows := store.db.exec_param_many('SELECT id, child_session_id, status, outcome_claimed, workspace_started, workspace_ready FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ?',

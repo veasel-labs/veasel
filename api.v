@@ -1484,6 +1484,35 @@ pub fn (app &App) cancel_session_subagent(mut ctx Context, id string, run_id str
 	return ctx.json(run)
 }
 
+@['/v1/sessions/:id/subagents/:run_id/integrate'; post]
+pub fn (app &App) integrate_session_subagent(mut ctx Context, id string, run_id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	canonical_id := canonical_operation_id(run_id) or {
+		return json_request_error(mut ctx, 'Child run identifier must be a non-nil UUID')
+	}
+	response := app.propose_subagent_integration(id, canonical_id) or {
+		if err.msg().contains('terminal state') || err.msg().contains('implementer child') {
+			ctx.res.set_status(.conflict)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		if err.msg().contains('not found') {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: 'child agent run not found'
+			})
+		}
+		return json_server_error(mut ctx, 'Unable to prepare child changes for review')
+	}
+	return ctx.json(response)
+}
+
 @['/v1/sessions/:id/operations'; get]
 pub fn (app &App) list_session_operations(mut ctx Context, id string) veb.Result {
 	_ := app.store.get_session(id) or {

@@ -796,11 +796,11 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'subagent_run'
-			description: 'Start one focused read-only codebase investigation with a built-in reviewer or explorer. The child runs asynchronously in an isolated workspace and returns a durable run ID immediately. Use subagent_wait to collect its terminal result. Optionally select a configured provider and model together; otherwise inherit this conversation operation model.'
+			description: 'Start one focused child task with a trusted built-in role. The child runs asynchronously in an isolated workspace and returns a durable run ID immediately. Use subagent_wait to collect its terminal result. Optionally select a configured provider and model together; otherwise inherit this conversation operation model.'
 			parameters:  ToolParameters{
 				properties: {
-					'agent_id': ToolParameter{ type: 'string', description: 'Built-in role: reviewer or explorer. Role does not change when provider/model changes.' }
-					'task':     ToolParameter{ type: 'string', description: 'Focused read-only investigation request, at most 8192 UTF-8 bytes.' }
+					'agent_id': ToolParameter{ type: 'string', description: 'Trusted built-in role: explorer, reviewer, or implementer. Implementer can edit only its isolated worktree under the inherited execution policy; parent integration always requires explicit review.' }
+					'task':     ToolParameter{ type: 'string', description: 'Focused task brief, at most 8192 UTF-8 bytes.' }
 					'provider': ToolParameter{ type: 'string', description: 'Optional configured provider ID. Must be supplied together with model.' }
 					'model':    ToolParameter{ type: 'string', description: 'Optional model ID configured for the selected provider. Must be supplied together with provider.' }
 				}
@@ -1505,7 +1505,8 @@ fn execute_agent_tool_if_allowed(app &App, mut turn_ctx vcontext.Context, root s
 		return execute_agent_skill_resource(skill_context.resource_access, call)
 	}
 	if call.function.name == 'subagent_run' {
-		return app.execute_subagent_run(mut turn_ctx, root, session_id, operation_id, call)
+		return app.execute_subagent_run(mut turn_ctx, session_id, operation_id, call,
+			policy, skill_context.tool_policy)
 	}
 	if call.function.name == 'subagent_wait' {
 		return app.execute_subagent_wait(mut turn_ctx, session_id, operation_id, call)

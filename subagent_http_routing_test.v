@@ -150,6 +150,11 @@ pub fn (mut app SubagentHTTPServer) cancel_subagent(mut ctx Context, id string, 
 	return app.app.cancel_session_subagent(mut ctx, id, run_id)
 }
 
+@['/v1/sessions/:id/subagents/:run_id/integrate'; post]
+pub fn (mut app SubagentHTTPServer) integrate_subagent(mut ctx Context, id string, run_id string) veb.Result {
+	return app.app.integrate_session_subagent(mut ctx, id, run_id)
+}
+
 fn run_subagent_http_test_server(mut app SubagentHTTPServer) {
 	veb.run_at[SubagentHTTPServer, Context](mut app, host: '127.0.0.1', family: .ip, port: app.port) or {
 		panic(err)

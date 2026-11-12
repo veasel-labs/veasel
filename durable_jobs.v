@@ -95,10 +95,14 @@ fn (app &App) resume_durable_queued_operations() {
 			}
 			continue
 		}
-		if app.configured_model() == none {
-			eprintln('veasel: rejecting queued operation ${operation.id}; model not configured')
-			store.reject_queued_session_operation(operation.session_id, operation.id,
-				'Queued turn cannot start because a model is not configured.') or {
+		_ := app.model_config_for_chat_input(operation.session_id, input) or {
+			reason := if input.provider.len > 0 || input.model.len > 0 {
+				'Queued turn cannot start because its selected provider/model is unavailable.'
+			} else {
+				'Queued turn cannot start because a model is not configured.'
+			}
+			eprintln('veasel: rejecting queued operation ${operation.id}; model unavailable')
+			store.reject_queued_session_operation(operation.session_id, operation.id, reason) or {
 				eprintln('veasel: unable to reject queued operation without a model ${operation.id}')
 				''
 			}

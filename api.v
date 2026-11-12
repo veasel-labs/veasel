@@ -73,10 +73,26 @@ pub:
 struct ChatMessageInput {
 pub:
 	content          string
+	provider         string @[omitempty]
+	model            string @[omitempty]
 	collect_trace    bool   @[json: 'collect_trace'; omitempty]
 	autonomous       bool   @[json: 'autonomous'; omitempty]
 	execution_policy string @[json: 'execution_policy'; omitempty]
 	non_interactive  bool   @[json: 'non_interactive'; omitempty]
+}
+
+// model_config_for_chat_input resolves a per-turn target without changing the
+// session's global model default. An omitted target inherits that default.
+fn (app &App) model_config_for_chat_input(session_id string, input ChatMessageInput) !ModelConfig {
+	if input.provider.len == 0 && input.model.len == 0 {
+		return app.model_config_for_session(session_id)
+	}
+	if input.provider.len == 0 || input.model.len == 0 {
+		return error('provider and model must be supplied together')
+	}
+	mut config := app.provider_model_config_for_target(input.provider, input.model)!
+	config.session_id = session_id
+	return config
 }
 
 struct PluginSkillSelectionInput {
@@ -1587,6 +1603,20 @@ pub fn (app &App) get_session_operation(mut ctx Context, id string, operation_id
 	return ctx.json(operation)
 }
 
+@['/v1/sessions/:id/context-handoffs'; get]
+pub fn (app &App) list_session_context_handoffs(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut store := app.store
+	return ctx.json(store.list_retained_context_handoffs(id) or {
+		return json_server_error(mut ctx, 'Unable to list session context handoffs')
+	})
+}
+
 @['/v1/sessions/:id/operations/:operation_id/result'; get]
 pub fn (app &App) get_session_operation_result(mut ctx Context, id string,
 	operation_id string) veb.Result {
@@ -1795,10 +1825,18 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'session not found'
 		})
 	}
-	if app.configured_model() == none {
-		ctx.res.set_status(.service_unavailable)
+	_ := app.model_config_for_chat_input(id, input) or {
+		ctx.res.set_status(if input.provider.len > 0 || input.model.len > 0 {
+			.bad_request
+		} else {
+			.service_unavailable
+		})
 		return ctx.json(APIError{
-			error: no_model_configured_message
+			error: if input.provider.len > 0 || input.model.len > 0 {
+				err.msg()
+			} else {
+				no_model_configured_message
+			}
 		})
 	}
 	requested_id := ctx.req.header.get_custom('X-Veasel-Operation-ID', exact: false) or { '' }
@@ -2056,12 +2094,27 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 
 fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id string, session Session,
 	input ChatMessageInput, operation_id string, request_deadline time.Time) !ChatExchange {
+	model_config := app.model_config_for_chat_input(id, input)!
 	user_message := ChatMessage{
 		role:    'user'
 		content: input.content
 	}
 	policy := execution_policy_turn_from_input(input.execution_policy, input.autonomous,
 		input.non_interactive)
+	mut handoff_store := app.store
+	prior_operations := handoff_store.list_session_operations(id)!
+	mut source_operation := SessionOperation{}
+	for prior in prior_operations {
+		if prior.id != operation_id && prior.status == 'completed' && prior.provider.len > 0
+			&& prior.model.len > 0 {
+			source_operation = prior
+		}
+	}
+	if source_operation.id.len > 0
+		&& (source_operation.provider != model_config.provider || source_operation.model != model_config.model) {
+		handoff_store.persist_context_handoff_retained(id, operation_id, model_config.provider,
+			model_config.model, policy, 'parent_turn')!
+	}
 	tool_instructions := execution_policy_tool_instructions(policy)
 	code_change_instructions := agent_system_code_change_instruction(explicit_agent_code_change_request([user_message]))
 	optional_code_change_instructions := if code_change_instructions.len > 0 {
@@ -2141,9 +2194,9 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 		delta_buffer.append(delta)!
 	}
 	mut partial_trace_steps := []ATIFStep{}
-	result := app.run_workspace_agent_turn(mut turn_ctx, mut messages, session.directory, id,
-		operation_id, request_deadline, mut skill_context, on_text_delta, mut partial_trace_steps, input.collect_trace,
-		policy, .regular) or {
+	result := app.run_workspace_agent_turn_with_model_override(mut turn_ctx, mut messages,
+		session.directory, id, operation_id, request_deadline, mut skill_context, on_text_delta,
+		mut partial_trace_steps, input.collect_trace, policy, .regular, model_config) or {
 		delta_buffer.close_and_flush() or {
 			eprintln('veasel: unable to persist streamed assistant text (${err.msg()})')
 		}

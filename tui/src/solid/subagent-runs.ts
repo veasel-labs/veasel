@@ -28,6 +28,8 @@ export type SubagentRunView = {
   cache_reported?: boolean
   reasoning_tokens?: number
   reasoning_reported?: boolean
+  reported_cost_usd?: number
+  cost_reported?: boolean
 }
 
 export function toSubagentRunView(run: ApiSubagentRun): SubagentRunView {
@@ -55,6 +57,8 @@ export function toSubagentRunView(run: ApiSubagentRun): SubagentRunView {
     cache_reported: run.cache_reported,
     reasoning_tokens: run.reasoning_tokens,
     reasoning_reported: run.reasoning_reported,
+    reported_cost_usd: run.reported_cost_usd,
+    cost_reported: run.cost_reported,
   }
 }
 
@@ -106,7 +110,21 @@ export function subagentRunDetails(run: SubagentRunView): string {
   } else {
     lines.push("Provider-reported usage: unavailable")
   }
+  const reportedCost = formatReportedCost(run.reported_cost_usd, run.cost_reported)
+  lines.push(`Provider-reported cost: ${reportedCost}`)
+  lines.push("Cost estimates: not shown")
   return lines.join("\n")
+}
+
+function formatReportedCost(value: number | undefined, reported: boolean | undefined): string {
+  if (reported !== true || typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "unavailable"
+  }
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 12,
+  }).format(value)
+  return `$${formatted} USD`
 }
 
 function formatUsageCount(value: number | undefined): string {

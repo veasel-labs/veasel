@@ -999,6 +999,37 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit context handoff retention migration')
 		}
 	}
+	if current < 28 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin agent token budget migration')
+		}
+		db.exec("CREATE TABLE agent_token_budget_reservations (id TEXT PRIMARY KEY, root_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, reserved_tokens INTEGER NOT NULL CHECK (reserved_tokens > 0), accounted_tokens INTEGER NOT NULL CHECK (accounted_tokens >= 0), status TEXT NOT NULL CHECK (status IN ('reserved', 'settled', 'uncertain', 'released')), actual_tokens INTEGER NOT NULL DEFAULT 0 CHECK (actual_tokens >= 0), usage_reported INTEGER NOT NULL DEFAULT 0 CHECK (usage_reported IN (0, 1)), reported_cost_usd REAL NOT NULL DEFAULT 0 CHECK (reported_cost_usd >= 0), cost_reported INTEGER NOT NULL DEFAULT 0 CHECK (cost_reported IN (0, 1)), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create agent token budget ledger')
+		}
+		db.exec('CREATE INDEX agent_token_budget_parent_status ON agent_token_budget_reservations (root_session_id, status)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index parent agent token budget ledger')
+		}
+		db.exec('CREATE INDEX agent_token_budget_child_status ON agent_token_budget_reservations (session_id, status)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index child agent token budget ledger')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (28)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record agent token budget migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit agent token budget migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -1016,6 +1047,11 @@ fn open_store_at(path string) !&Store {
 		db.rollback() or {}
 		db.close() or {}
 		return error('unable to classify interrupted child agent run')
+	}
+	_ = db.exec("UPDATE agent_token_budget_reservations SET status = 'uncertain', accounted_tokens = reserved_tokens, updated_at = CURRENT_TIMESTAMP WHERE status = 'reserved'") or {
+		db.rollback() or {}
+		db.close() or {}
+		return error('unable to classify interrupted agent token budget reservations')
 	}
 	for row in interrupted_operations {
 		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {

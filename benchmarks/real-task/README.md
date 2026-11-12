@@ -132,7 +132,9 @@ summaries record the [PR #614 search failure](../reports/real-task-attempt-websi
 and the [unscored fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json), [including the latest guard stop](../reports/real-task-attempt-website-173-post-fallback-resource-abort-retry-2026-11-11.json).
 The [PR #615 replay](../reports/real-task-attempt-website-173-pr615-startup-resource-abort-2026-11-12.json)
 also passed model/GPU preflight but had only 0.42 GiB of RAM headroom before
-agent startup crossed the safety floor.
+agent startup crossed the safety floor. Its #615 branch predates PR #617's
+5.75 GiB startup reserve; the 4.92 GiB launch sample would fail the current
+main preflight, before starting Veasel.
 
 This first version samples host available RAM and swap. It does not yet collect
 CPU, process/GPU peak memory, or provider-reported token usage, so reports are

@@ -545,17 +545,21 @@ fn test_app_rejects_provider_work_when_all_slots_are_busy() {
 	for _ in 0 .. max_provider_concurrency {
 		slots.post()
 	}
-	assert app.try_provider_slot(.subagent)
-	for _ in 0 .. max_provider_concurrency - max_subagent_provider_concurrency {
-		assert app.try_provider_slot(.regular)
+	for _ in 0 .. max_subagent_provider_concurrency {
+		assert app.try_provider_slot(.subagent)
 	}
-	assert !app.try_provider_slot(.regular)
 	assert !app.try_provider_slot(.subagent)
-	for _ in 0 .. max_provider_concurrency - max_subagent_provider_concurrency {
+	// Child calls can occupy at most three provider slots, leaving one for
+	// parent or ordinary turns even when the provider is otherwise saturated.
+	assert app.try_provider_slot(.regular)
+	assert !app.try_provider_slot(.regular)
+	for _ in 0 .. max_subagent_provider_concurrency {
 		slots.post()
 	}
 	mut subagent_slots := app.subagent_provider_slots
-	subagent_slots.post()
+	for _ in 0 .. max_subagent_provider_concurrency {
+		subagent_slots.post()
+	}
 	slots.post()
 	for _ in 0 .. max_provider_concurrency {
 		assert app.try_provider_slot(.regular)

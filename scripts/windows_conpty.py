@@ -258,6 +258,7 @@ def run_tui_conpty(
         timeout: float,
         description: str,
         absent: tuple[bytes, ...] = (),
+        raw_fallback: bool = True,
     ) -> None:
         # Same differential-repaint hazard as the PTY smoke: assert against
         # the rendered screen, not contiguous raw bytes.
@@ -271,7 +272,7 @@ def run_tui_conpty(
                 marker in rendered for marker in absent
             ):
                 return
-            if not absent and all(marker in output for marker in markers):
+            if raw_fallback and not absent and all(marker in output for marker in markers):
                 return
             exit_code = wintypes.DWORD()
             if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
@@ -426,7 +427,15 @@ def run_tui_conpty(
         )
         if session_title:
             home_markers = (*home_markers, session_title.encode())
-        wait_for_markers(home_markers, 30, "its connected session screen")
+        if first_run:
+            wait_for_screen_markers(
+                home_markers,
+                30,
+                "the clean-profile home screen",
+                raw_fallback=False,
+            )
+        else:
+            wait_for_markers(home_markers, 30, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
         if first_run:
             output.clear()

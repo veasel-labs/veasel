@@ -221,6 +221,7 @@ def run_tui(
         timeout: float,
         description: str,
         absent: tuple[bytes, ...] = (),
+        raw_fallback: bool = True,
     ) -> None:
         # Differential repaints emit only changed cells, so a placeholder
         # transition (Restoring… -> Message Veasel…) may never appear as a
@@ -229,6 +230,11 @@ def run_tui(
         # screen instead, and require stale-state text to be gone.
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            rendered = screen.text().encode()
+            if all(marker in rendered for marker in markers) and not any(
+                marker in rendered for marker in absent
+            ):
+                return
             readable, _, _ = select.select([terminal], [], [], 0.1)
             if readable:
                 try:
@@ -240,7 +246,9 @@ def run_tui(
                     marker in rendered for marker in absent
                 ):
                     return
-                if not absent and all(marker in visible_output() for marker in markers):
+                if raw_fallback and not absent and all(
+                    marker in visible_output() for marker in markers
+                ):
                     return
             finished, status = os.waitpid(child, os.WNOHANG)
             if finished:
@@ -332,7 +340,15 @@ def run_tui(
         )
         if session_title:
             home_markers = (*home_markers, session_title.encode())
-        wait_for_markers(home_markers, 10, "its connected session screen")
+        if first_run:
+            wait_for_screen_markers(
+                home_markers,
+                10,
+                "the clean-profile home screen",
+                raw_fallback=False,
+            )
+        else:
+            wait_for_markers(home_markers, 10, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
 
         if first_run:

@@ -423,6 +423,9 @@ fn session_compaction_summarizer_enabled() bool {
 }
 
 fn compaction_accepts_candidate(reason string, bytes_before int, messages_before int, candidate []ChatMessage) bool {
+	if !compaction_preserves_tool_call_pairs(candidate) {
+		return false
+	}
 	bytes_after := agent_context_bytes(candidate)
 	reduced_bytes := bytes_after < bytes_before
 	reduced_messages := candidate.len < messages_before
@@ -430,6 +433,31 @@ fn compaction_accepts_candidate(reason string, bytes_before int, messages_before
 		return reduced_messages || reduced_bytes
 	}
 	return reduced_bytes
+}
+
+// compaction_preserves_tool_call_pairs prevents a compacted provider history
+// from retaining a tool result after its assistant function call was removed.
+// OpenAI Responses rejects such histories with an invalid function_call_output
+// call_id; keep the original history when a candidate would split the pair.
+fn compaction_preserves_tool_call_pairs(messages []ChatMessage) bool {
+	mut pending_call_ids := map[string]bool{}
+	for message in messages {
+		if message.role == 'assistant' {
+			for call in message.tool_calls {
+				if call.id.len == 0 || pending_call_ids[call.id] {
+					return false
+				}
+				pending_call_ids[call.id] = true
+			}
+		}
+		if message.role == 'tool' {
+			if message.tool_call_id.len == 0 || !pending_call_ids[message.tool_call_id] {
+				return false
+			}
+			pending_call_ids.delete(message.tool_call_id)
+		}
+	}
+	return true
 }
 
 fn assemble_compacted_messages(messages []ChatMessage, first int, cut int, summary string) []ChatMessage {

@@ -116,6 +116,67 @@ fn test_session_compaction_preserves_tool_pair_in_recent_tail() {
 	assert saw_tool_result
 }
 
+fn test_compaction_rejects_candidate_that_splits_tool_pair() {
+	older := 'older context '.repeat(300)
+	mut messages := [
+		ChatMessage{ role: 'system', content: 'You are Veasel Code.' },
+		ChatMessage{ role: 'user', content: older },
+		ChatMessage{
+			role:       'assistant'
+			tool_calls: [ProviderToolCall{
+				id:       'call-split'
+				type:     'function'
+				function: ProviderFunctionCall{
+					name:      'workspace_read_file'
+					arguments: '{"path":"main.v"}'
+				}
+			}]
+		},
+		ChatMessage{ role: 'user', content: 'continue after this boundary' },
+		ChatMessage{ role: 'tool', tool_call_id: 'call-split', content: 'file contents' },
+	]
+	candidate := assemble_compacted_messages(messages, 1, 3, 'summarized old context')
+	assert !compaction_preserves_tool_call_pairs(candidate)
+	assert !compaction_accepts_candidate('token_pressure', agent_context_bytes(messages),
+		messages.len, candidate)
+}
+
+fn test_session_compaction_preserves_multi_tool_batch_for_responses_input() {
+	mut messages := [
+		ChatMessage{ role: 'system', content: 'You are Veasel Code.' },
+		ChatMessage{ role: 'user', content: 'old context '.repeat(900) },
+		ChatMessage{ role: 'assistant', content: 'old answer' },
+		ChatMessage{ role: 'user', content: 'Continue by inspecting two files.' },
+		ChatMessage{
+			role:       'assistant'
+			tool_calls: [
+				ProviderToolCall{
+					id:       'call-a'
+					type:     'function'
+					function: ProviderFunctionCall{
+						name:      'workspace_read_file'
+						arguments: '{"path":"a.v"}'
+					}
+				},
+				ProviderToolCall{
+					id:       'call-b'
+					type:     'function'
+					function: ProviderFunctionCall{
+						name:      'workspace_read_file'
+						arguments: '{"path":"b.v"}'
+					}
+				},
+			]
+		},
+		ChatMessage{ role: 'tool', tool_call_id: 'call-a', content: 'a contents' },
+		ChatMessage{ role: 'tool', tool_call_id: 'call-b', content: 'b contents' },
+	]
+	result := compact_session_messages(messages, 4_096, 2_048)
+	assert result.measurement.triggered
+	assert compaction_preserves_tool_call_pairs(result.messages)
+	_ := openai_responses_input(result.messages) or { panic(err) }
+}
+
 fn test_session_compaction_message_pressure_without_huge_payload() {
 	mut messages := [
 		ChatMessage{

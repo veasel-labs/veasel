@@ -2030,6 +2030,7 @@ fn openai_responses_failure_message(event OpenAIResponsesEvent) string {
 
 fn openai_responses_input(messages []ChatMessage) ![]json2.Any {
 	mut input := []json2.Any{}
+	mut pending_call_ids := map[string]bool{}
 	for message in messages {
 		if message.role == 'assistant' {
 			for context_item in message.provider_context {
@@ -2043,6 +2044,10 @@ fn openai_responses_input(messages []ChatMessage) ![]json2.Any {
 			if message.tool_call_id.len == 0 || message.tool_call_id.len > 64 {
 				return error('provider tool call ID is invalid for Responses API')
 			}
+			if !pending_call_ids[message.tool_call_id] {
+				return error('provider tool result has no matching preceding function call')
+			}
+			pending_call_ids.delete(message.tool_call_id)
 			input << json2.Any({
 				'type':    json2.Any('function_call_output')
 				'call_id': json2.Any(message.tool_call_id)
@@ -2068,6 +2073,10 @@ fn openai_responses_input(messages []ChatMessage) ![]json2.Any {
 			if call.id.len == 0 || call.id.len > 64 {
 				return error('provider tool call ID is invalid for Responses API')
 			}
+			if pending_call_ids[call.id] {
+				return error('provider function call ID is duplicated in Responses history')
+			}
+			pending_call_ids[call.id] = true
 			mut item := map[string]json2.Any{
 				'type':      json2.Any('function_call')
 				'call_id':   json2.Any(call.id)

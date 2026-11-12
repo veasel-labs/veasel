@@ -126,8 +126,13 @@ agent process-tree RSS and CPU time, and device-wide GPU memory. Sampling
 overhead and actual sample timestamps are recorded. Sampled maxima are recorded
 with scope notes: RSS may double-count shared pages, and GPU memory includes the
 model server and any other GPU clients. These are sampled measurements, not
-true process or device peaks. Provider-reported token usage is not yet
-collected, so reports still cannot support efficiency or speed claims.
+true process or device peaks. Attempt reports now capture Veasel's ATIF usage
+summary and OpenCode's JSON `step_finish` token counters when present. Missing
+counters remain `null`, not zero. OpenCode may omit a final `step_finish` event,
+so its observed usage can be partial. Its reported cost is recorded separately
+and can be zero for a local model without configured pricing; Veasel ATIF does
+not export cost. These fields enable collection but do not establish comparable
+efficiency or speed without scored, complete runs.
 
 The case pins task, prompt hash, model digest, context, and output limits.
 Recent resource-aborted attempts did not complete a coding turn and are not

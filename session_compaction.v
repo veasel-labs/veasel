@@ -197,21 +197,55 @@ fn find_compaction_cut(messages []ChatMessage, keep_bytes int, reason string) in
 		cut--
 	}
 	if cut > first && messages[cut].role == 'user' {
-		return cut
+		return compaction_cut_before_tool_call_pairs(messages, first, cut)
 	}
 	for forward := start; forward < messages.len; forward++ {
 		if messages[forward].role == 'user' {
 			if forward > first {
-				return forward
+				return compaction_cut_before_tool_call_pairs(messages, first, forward)
 			}
 			break
 		}
 	}
 	// One remaining exchange: keep the newest message verbatim and summarize the rest.
 	if messages.len - first > 1 {
-		return messages.len - 1
+		return compaction_cut_before_tool_call_pairs(messages, first, messages.len - 1)
 	}
 	return messages.len
+}
+
+// If a candidate cut would summarize a function call but retain one of its
+// results, move the boundary back to the call. This keeps the full call/output
+// batch in recent history while still allowing older messages to compact.
+fn compaction_cut_before_tool_call_pairs(messages []ChatMessage, first int, requested_cut int) int {
+	mut cut := requested_cut
+	for {
+		mut call_indices := map[string]int{}
+		for index, message in messages {
+			if message.role == 'assistant' {
+				for call in message.tool_calls {
+					if call.id.len > 0 {
+						call_indices[call.id] = index
+					}
+				}
+			}
+		}
+		mut earlier_cut := cut
+		for index, message in messages {
+			if index < cut || message.role != 'tool' {
+				continue
+			}
+			if call_index := call_indices[message.tool_call_id] {
+				if call_index >= first && call_index < earlier_cut {
+					earlier_cut = call_index
+				}
+			}
+		}
+		if earlier_cut == cut {
+			return cut
+		}
+		cut = earlier_cut
+	}
 }
 
 fn sanitize_compaction_text(text string) string {

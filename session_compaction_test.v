@@ -141,6 +141,40 @@ fn test_compaction_rejects_candidate_that_splits_tool_pair() {
 		messages.len, candidate)
 }
 
+fn test_compaction_cut_keeps_multi_tool_batch_with_its_results() {
+	messages := [
+		ChatMessage{ role: 'system', content: 'You are Veasel Code.' },
+		ChatMessage{ role: 'user', content: 'old context '.repeat(12_000) },
+		ChatMessage{
+			role:       'assistant'
+			tool_calls: [
+				ProviderToolCall{
+					id:       'call-a'
+					type:     'function'
+					function: ProviderFunctionCall{ name: 'workspace_search', arguments: '{"query":"a"}' }
+				},
+				ProviderToolCall{
+					id:       'call-b'
+					type:     'function'
+					function: ProviderFunctionCall{ name: 'workspace_search', arguments: '{"query":"b"}' }
+				},
+			]
+		},
+		ChatMessage{ role: 'user', content: 'continue with the search results' },
+		ChatMessage{ role: 'tool', tool_call_id: 'call-a', content: 'a result' },
+		ChatMessage{ role: 'tool', tool_call_id: 'call-b', content: 'b result' },
+		ChatMessage{ role: 'assistant', content: 'Continue after the search batch.' },
+	]
+	cut := find_compaction_cut(messages, 2_048, 'token_pressure')
+	assert cut == 2
+	result := compact_session_messages(messages, 8_192, 1_024)
+	assert result.measurement.triggered
+	assert compaction_preserves_tool_call_pairs(result.messages)
+	assert result.messages.any(it.role == 'assistant' && it.tool_calls.len == 2)
+	assert result.messages.any(it.role == 'tool' && it.tool_call_id == 'call-a')
+	assert result.messages.any(it.role == 'tool' && it.tool_call_id == 'call-b')
+}
+
 fn test_session_compaction_preserves_multi_tool_batch_for_responses_input() {
 	mut messages := [
 		ChatMessage{ role: 'system', content: 'You are Veasel Code.' },

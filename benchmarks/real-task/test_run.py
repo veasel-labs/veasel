@@ -173,6 +173,7 @@ class PreflightTests(unittest.TestCase):
             "provider_config": {"mode": "veasel-profile", "provider": "anthropic",
                                 "model": "claude-example", "base_url": "https://api.anthropic.com/v1",
                                 "credential": "saved-profile"},
+            "runtime": {},
             "permissions": {"tool_allowlist": ["read", "edit", "shell"]},
             "budgets": {"wall_seconds": 60, "minimum_available_memory_bytes": 0,
                         "minimum_free_swap_bytes": 0},
@@ -215,7 +216,7 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(failed, {"provider_model_selection", "provider_output_budget", "provider_credential_ready"})
 
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
-    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""])
+    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""] * 4)
     def test_non_ollama_preflight_does_not_probe_ollama_or_claim_live_model_readiness(self, _git, _resources):
         with tempfile.TemporaryDirectory() as temp_dir:
             case_path = self.configured_case(Path(temp_dir))
@@ -228,6 +229,68 @@ class PreflightTests(unittest.TestCase):
         self.assertTrue(result["passed"], result["checks"])
         readiness = next(item for item in result["checks"] if item["name"] == "provider_live_readiness")
         self.assertEqual(readiness["actual"], "not_probed")
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""] * 4)
+    def test_non_ollama_preflight_never_serializes_endpoint_secrets(self, _git, _resources):
+        endpoint_cases = [
+            ("https://userinfo-secret@example.invalid/v1", False),
+            ("https://example.invalid/v1?token=query-secret", False),
+            ("https://example.invalid/v1#fragment-secret", False),
+            ("https://example.invalid/secret-path-token/v1", True),
+        ]
+        for endpoint, expected_pass in endpoint_cases:
+            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory() as temp_dir:
+                case_path = self.configured_case(Path(temp_dir))
+                case = json.loads(case_path.read_text())
+                case["provider_config"]["base_url"] = endpoint
+                case_path.write_text(json.dumps(case))
+                with patch.object(runner, "configured_model", return_value={
+                    "provider": "anthropic", "model": "claude-example", "base_url": endpoint,
+                    "max_output_tokens": 1024, "api_key_saved": True,
+                }):
+                    result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435",
+                                              Path(temp_dir) / "state")
+                serialized = json.dumps(result)
+                self.assertEqual(result["passed"], expected_pass)
+                for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
+                    self.assertNotIn(sentinel, serialized)
+
+    @patch.object(runner, "preflight", return_value={"passed": True, "checks": []})
+    @patch.object(runner.shutil, "which", return_value="/usr/bin/veasel")
+    @patch.object(runner.subprocess, "check_output", return_value="veasel test")
+    @patch.object(runner, "provider_reported_usage", return_value={"reported": False})
+    def test_attempt_report_projects_provider_config_without_endpoint_secrets(self, _usage, _version, _which, _preflight):
+        endpoint_cases = [
+            "https://userinfo-secret@example.invalid/v1",
+            "https://example.invalid/v1?token=query-secret",
+            "https://example.invalid/v1#fragment-secret",
+            "https://example.invalid/secret-path-token/v1",
+        ]
+        for endpoint in endpoint_cases:
+            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                case_path = self.configured_case(root)
+                case = json.loads(case_path.read_text())
+                case["provider_config"]["base_url"] = endpoint
+                case_path.write_text(json.dumps(case))
+                workspace = root / "workspace"
+                workspace.mkdir()
+                artifacts = root / "artifacts"
+                process = Mock()
+                process.poll.return_value = 0
+                process.wait.return_value = 0
+                args = argparse.Namespace(
+                    case=case_path, workspace=workspace, data_dir=root / "state", ollama_url="unused",
+                    agent="veasel", veasel="veasel", opencode="opencode", artifacts=artifacts,
+                    sandbox_confirmed=True,
+                )
+                with patch.object(runner.subprocess, "Popen", return_value=process):
+                    self.assertEqual(runner.run_case(args), 0)
+                report_text = (artifacts / "attempt.json").read_text()
+                self.assertNotIn("base_url", json.loads(report_text)["provider_config"])
+                for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
+                    self.assertNotIn(sentinel, report_text)
 
     def test_config_projection_never_returns_saved_api_key(self):
         with tempfile.TemporaryDirectory() as temp_dir:

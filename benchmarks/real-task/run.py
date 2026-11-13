@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parent
@@ -299,6 +300,28 @@ def configured_model(data_dir: Path) -> dict[str, Any]:
     }
 
 
+def safe_provider_config_report(case: dict[str, Any]) -> dict[str, Any]:
+    """Allowlist non-secret provider identity/settings, excluding endpoint URLs."""
+    config = case.get("provider_config", {})
+    if not isinstance(config, dict):
+        return {}
+    safe_fields = ("mode", "provider", "model", "max_output_tokens", "api_key_saved", "credential")
+    return {key: config[key] for key in safe_fields if key in config}
+
+
+def safe_endpoint(value: Any) -> bool:
+    """Accept HTTP(S) endpoints without URL-carried credentials or query secrets."""
+    if not isinstance(value, str) or not value or any(ord(char) < 0x20 for char in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname) \
+            and parsed.username is None and parsed.password is None \
+            and not parsed.query and not parsed.fragment
+    except ValueError:
+        return False
+
+
 def configured_provider_target(case: dict[str, Any], data_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Check a non-Ollama target against Veasel's saved profile without probing it."""
     expected = case["provider_config"]
@@ -319,8 +342,11 @@ def configured_provider_target(case: dict[str, Any], data_dir: Path) -> tuple[di
     check("provider_model_selection", actual["provider"] == provider and actual["model"] == model_name,
           {"provider": actual["provider"], "model": actual["model"]},
           {"provider": provider, "model": model_name})
-    check("provider_endpoint", bool(expected_endpoint) and actual["base_url"] == expected_endpoint,
-          actual["base_url"], expected_endpoint)
+    endpoint_matches = safe_endpoint(expected_endpoint) and safe_endpoint(actual["base_url"]) \
+        and actual["base_url"] == expected_endpoint
+    check("provider_endpoint", endpoint_matches,
+          "matched" if endpoint_matches else "missing, unsafe, or mismatched",
+          "safe configured case endpoint")
     output_tokens = model.get("output_tokens", 0)
     context_tokens = model.get("context_tokens", 0)
     check("provider_context_budget", isinstance(context_tokens, int) and not isinstance(context_tokens, bool)
@@ -437,16 +463,24 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
     check("base_commit", revision == case["base_commit"], revision, case["base_commit"])
     dirty = git(workspace, "status", "--porcelain")
     check("clean_workspace", not dirty, not bool(dirty), True)
+    ollama_target_safe = False
     if is_ollama:
         expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")
         actual_ollama_url = ollama_url.rstrip("/")
-        check("ollama_endpoint", actual_ollama_url == expected_ollama_url, actual_ollama_url, expected_ollama_url)
+        endpoint_matches = safe_endpoint(expected_ollama_url) and safe_endpoint(actual_ollama_url) \
+            and actual_ollama_url == expected_ollama_url
+        ollama_target_safe = endpoint_matches
+        check("ollama_endpoint", endpoint_matches,
+              "matched" if endpoint_matches else "missing, unsafe, or mismatched",
+              "safe pinned Ollama endpoint")
     if agent == "veasel" and is_ollama:
         expected_config = case["provider_config"]
         try:
             actual_config = configured_model(data_dir)
-            safe_actual = {key: actual_config[key] for key in expected_config}
-            check("veasel_model_config", safe_actual == expected_config, safe_actual, expected_config)
+            config_matches = all(actual_config.get(key) == value for key, value in expected_config.items())
+            safe_actual = {key: actual_config[key] for key in ("provider", "model", "max_output_tokens", "api_key_saved")}
+            safe_expected = safe_provider_config_report(case)
+            check("veasel_model_config", config_matches, safe_actual, safe_expected)
         except (OSError, KeyError, json.JSONDecodeError) as exc:
             check("veasel_model_config", False, type(exc).__name__, expected_config)
     elif agent == "opencode" and is_ollama:
@@ -495,13 +529,16 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             check("opencode_non_ollama_target", False, "unsupported", "Veasel configured-profile adapter")
     if is_ollama:
         expected = model["digest"]
-        try:
-            actual_digest = model_digest(ollama_url, model["name"])
-            check("model_digest", actual_digest == expected, actual_digest, expected)
-        except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
-            check("model_digest", False, type(exc).__name__, expected)
+        if ollama_target_safe:
+            try:
+                actual_digest = model_digest(ollama_url, model["name"])
+                check("model_digest", actual_digest == expected, actual_digest, expected)
+            except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
+                check("model_digest", False, type(exc).__name__, expected)
+        else:
+            check("model_digest", False, "not_probed_unsafe_or_mismatched_endpoint", "pinned model digest")
     expected_ollama = case.get("runtime", {}).get("ollama_version")
-    if expected_ollama:
+    if expected_ollama and ollama_target_safe:
         try:
             actual_ollama = ollama_version(ollama_url)
             check("ollama_version", actual_ollama == expected_ollama, actual_ollama, expected_ollama)
@@ -515,28 +552,32 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
         except (OSError, subprocess.CalledProcessError, IndexError, ValueError) as exc:
             check("gpu", False, type(exc).__name__, expected_gpu)
     if is_ollama and case.get("runtime", {}).get("accelerator") == "CUDA":
-        try:
-            placement = ollama_gpu_placement(ollama_url, case["model"]["name"])
-            expected_context = case["model"]["context_tokens"]
-            gpu_loaded = placement["size_vram_bytes"] >= placement["size_bytes"] > 0
-            context_matches = placement["context_length"] >= expected_context
-            expected_placement = {
-                "name": case["model"]["name"],
-                "digest": case["model"]["digest"],
-                "size_vram_bytes_at_least": placement["size_bytes"],
-                "context_length_at_least": expected_context,
-            }
-            check(
-                "ollama_model_gpu_placement",
-                placement["name"] == case["model"]["name"]
-                and placement["digest"] == case["model"]["digest"]
-                and gpu_loaded
-                and context_matches,
-                placement,
-                expected_placement,
-            )
-        except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            check("ollama_model_gpu_placement", False, type(exc).__name__, "model loaded on CUDA at pinned context")
+        if not ollama_target_safe:
+            check("ollama_model_gpu_placement", False,
+                  "not_probed_unsafe_or_mismatched_endpoint", "pinned model placement at pinned context")
+        else:
+            try:
+                placement = ollama_gpu_placement(ollama_url, model["name"])
+                expected_context = model["context_tokens"]
+                gpu_loaded = placement["size_vram_bytes"] >= placement["size_bytes"] > 0
+                context_matches = placement["context_length"] >= expected_context
+                expected_placement = {
+                    "name": model["name"],
+                    "digest": model["digest"],
+                    "size_vram_bytes_at_least": placement["size_bytes"],
+                    "context_length_at_least": expected_context,
+                }
+                check(
+                    "ollama_model_gpu_placement",
+                    placement["name"] == model["name"]
+                    and placement["digest"] == model["digest"]
+                    and gpu_loaded
+                    and context_matches,
+                    placement,
+                    expected_placement,
+                )
+            except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                check("ollama_model_gpu_placement", False, type(exc).__name__, "model loaded on CUDA at pinned context")
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_startup_memory = case["budgets"].get("minimum_startup_available_memory_bytes", min_memory)
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
@@ -671,7 +712,7 @@ def run_case(args: argparse.Namespace) -> int:
             "selection_source": "versioned_case_and_configured_profile" if case["model"]["provider"] != "ollama" else "versioned_case",
             "remote_model_readiness": "not_probed" if case["model"]["provider"] != "ollama" else "ollama_digest_verified",
         },
-        "provider_config": case["provider_config"],
+        "provider_config": safe_provider_config_report(case),
         "budgets": case["budgets"],
         "runtime": case["runtime"],
         "permissions": case["permissions"],

@@ -192,6 +192,9 @@ non-Ollama case currently supports the Veasel runner only; OpenCode comparator
 preflight rejects it instead of silently changing the baseline. Keep a separate
 case ID for every provider/model target; don't compare runs with different
 provider, exact model, prompt, repository base, or budgets.
+Endpoint strings are compared internally but omitted from preflight and attempt
+reports. Endpoints with URL userinfo, query strings, or fragments fail
+preflight; path components are also never copied into reports.
 
 Veasel receives the case context/output limits. Attempt reports include the
 provider/model target, declared budgets, and provider-reported token usage when

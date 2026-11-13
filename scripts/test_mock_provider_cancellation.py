@@ -33,10 +33,15 @@ class CancellationCorrelationTests(unittest.TestCase):
         # generic old marker, but the request body contains the unique ID.
         marker_prompt = self.mock.cancellation_fixture_prompt(payload, "Wait for cancellation")
         self.assertEqual(marker_prompt, prompt)
+        self.assertTrue(self.mock.is_correlated_cancellation_fixture_turn(prompt))
         self.assertEqual(
             f"SLOW_PROVIDER_REQUEST_STARTED:{marker_prompt}",
             f"SLOW_PROVIDER_REQUEST_STARTED:{prompt}",
         )
+
+    def test_unrelated_near_prefix_is_not_a_cancellation_turn(self):
+        self.assertFalse(self.mock.is_correlated_cancellation_fixture_turn("Wait for cancellations 123"))
+        self.assertFalse(self.mock.is_correlated_cancellation_fixture_turn("Wait for cancellationish 123"))
 
     def test_generic_cancellation_prompt_remains_supported(self):
         payload = {"messages": [{"role": "user", "content": "Wait for cancellation"}]}

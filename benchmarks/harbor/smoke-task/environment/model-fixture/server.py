@@ -32,9 +32,9 @@ class Handler(BaseHTTPRequestHandler):
             None,
         )
         if previous_tool_result is None:
-            name = "workspace_propose_file_edit"
+            name = "workspace_propose_file_content"
             if name not in available:
-                self.send_error(400, "Veasel did not expose workspace file edit")
+                self.send_error(400, "Veasel did not expose complete-content workspace edits")
                 return
             delta = {
                 "tool_calls": [{
@@ -69,7 +69,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             if (
                 assistant_call.get("id") != tool_result.get("tool_call_id")
-                or "Applied by explicit autonomous benchmark policy"
+                or "Applied by graduated execution policy"
                 not in tool_result.get("content", "")
             ):
                 self.send_error(400, "expected a successfully applied workspace edit")

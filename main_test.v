@@ -56,6 +56,19 @@ fn test_openai_responses_history_rejects_overlong_function_call_ids() {
 	assert false
 }
 
+fn test_openai_responses_history_rejects_orphaned_tool_output_locally() {
+	messages := [ChatMessage{
+		role:         'tool'
+		tool_call_id: 'call-orphan'
+		content:      'result'
+	}]
+	openai_responses_input(messages) or {
+		assert err.msg() == 'provider tool result has no matching preceding function call'
+		return
+	}
+	assert false
+}
+
 fn test_openai_responses_failures_read_top_level_and_response_errors() {
 	top_level := json2.decode[OpenAIResponsesEvent]('{"type":"error","error":{"message":"request rejected"}}') or {
 		panic(err)

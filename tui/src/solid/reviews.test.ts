@@ -43,10 +43,22 @@ describe("Solid reviews helpers", () => {
 
   test("formats shell and MCP bodies through legacy helpers", () => {
     const [, shell, mcp] = demoPendingReviews()
-    expect(formatSolidReviewBody(shell!)).toContain("bun test")
-    expect(formatSolidReviewBody(shell!)).toContain("Bubblewrap")
+    const shellBody = formatSolidReviewBody(shell!)
+    expect(shellBody).toContain("bun test")
+    expect(shellBody).toContain("Bubblewrap")
+    expect(shellBody.indexOf("Command:")).toBeLessThan(shellBody.indexOf("Bubblewrap"))
     expect(formatSolidReviewBody(mcp!)).toContain("write_note")
     expect(formatSolidReviewBody(mcp!)).toContain("Arguments")
+  })
+
+  test("keeps every pending command line available in the scrollable review body", () => {
+    const shell = demoPendingReviews()[1]!
+    if (shell.kind !== "command") throw new Error("expected shell review fixture")
+    const command = Array.from({ length: 80 }, (_, index) => `echo inspect-step-${index + 1}`).join("\n")
+    const body = formatSolidReviewBody({ ...shell, command }, { terminalRows: 12 })
+    expect(body).toContain("echo inspect-step-1\n")
+    expect(body).toContain("echo inspect-step-80")
+    expect(body).not.toContain("Showing ")
   })
 
   test("resolveReviewAction maps approve/reject/navigate/hunk/surface", () => {

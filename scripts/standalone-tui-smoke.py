@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request
@@ -168,6 +169,66 @@ def create_review_fixture(port: int, temporary: Path) -> tuple[str, str, Path, s
     return session_id, str(edit["id"]), workspace, "before\napproved-by-tui\n"
 
 
+def create_shell_review_fixture(
+    port: int,
+    temporary: Path,
+    title: str,
+    proposal_count: int,
+    prompt: str = "Propose shell command",
+    expected_command: str = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved",
+) -> tuple[str, Path, list[dict[str, object]]]:
+    workspace = temporary / f"{title.lower().replace(' ', '-')}-workspace"
+    workspace.mkdir()
+    session = api_json(
+        port,
+        "POST",
+        "/v1/sessions",
+        {"title": title, "directory": str(workspace)},
+    )
+    session_id = str(session["id"])
+    for turn_prompt in ([prompt] * proposal_count) + ["Say hello"]:
+        operation_id = str(uuid.uuid4())
+        request = Request(
+            f"http://127.0.0.1:{port}/v1/sessions/{quote(session_id, safe='')}/messages",
+            data=json.dumps({"content": turn_prompt}).encode("utf-8"),
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "x-veasel-operation-id": operation_id,
+                "prefer": "respond-async",
+            },
+        )
+        with urlopen(request, timeout=5) as response:
+            accepted = json.load(response)
+            if response.status != 202 or accepted.get("operation_id") != operation_id:
+                raise RuntimeError(f"fixture shell proposal was not accepted asynchronously: {accepted!r}")
+        operation_path = f"/v1/sessions/{quote(session_id, safe='')}/operations/{operation_id}"
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            operation = api_json(port, "GET", operation_path)
+            if operation.get("status") == "completed":
+                break
+            if operation.get("status") in ("failed", "cancelled", "uncertain"):
+                raise RuntimeError(f"fixture shell proposal turn did not complete: {operation!r}")
+            time.sleep(0.05)
+        else:
+            raise TimeoutError(f"fixture shell proposal turn did not complete: {operation_id}")
+
+    commands = api_json(
+        port,
+        "GET",
+        f"/v1/sessions/{quote(session_id, safe='')}/workspace/commands",
+    )
+    pending = [item for item in commands if item.get("status") == "pending"]
+    if len(pending) != proposal_count:
+        raise RuntimeError(f"expected {proposal_count} pending shell proposals, got {commands!r}")
+    if any(item.get("command") != expected_command for item in pending):
+        raise RuntimeError(f"fixture proposed an unexpected shell command: {pending!r}")
+    if (workspace / "approved-effect.txt").exists():
+        raise RuntimeError("pending shell command executed before explicit TUI approval")
+    return session_id, workspace, pending
+
+
 def initialize_git_workspace(workspace: Path) -> None:
     workspace.mkdir()
     (workspace / "README.md").write_text("Deterministic delegated-agent smoke workspace.\n", encoding="utf-8")
@@ -192,6 +253,7 @@ def run_tui(
     first_run: bool = False,
     delegation_task: str | None = None,
     create_session_via_ui: bool = False,
+    shell_review_command: bytes | None = None,
 ) -> float:
     if os.name == "nt":
         return run_tui_conpty(
@@ -199,6 +261,7 @@ def run_tui(
             first_run=first_run,
             delegation_task=delegation_task,
             create_session_via_ui=create_session_via_ui,
+            shell_review_command=shell_review_command,
         )
 
     started = time.monotonic()
@@ -503,6 +566,23 @@ def run_tui(
             wait_for_screen_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
+            )
+        elif shell_review_command:
+            output.clear()
+            os.write(terminal, b"\r")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the seeded shell review session")
+            wait_for_screen_markers((b"2 pending", b"Ctrl+R reviews"), 5, "the pending shell count and review shortcut")
+            output.clear()
+            os.write(terminal, b"\x12")
+            wait_for_screen_markers((b"Shell command", b"Command:", b"echo veasel-shell-approved"), 5, "the pending shell command")
+            time.sleep(0.5)  # Let the review detail fetch finish before activating a decision.
+            os.write(terminal, b"x")
+            wait_for_screen_markers((b"1/2 pending", b"Command:", b"echo veasel-shell-approved"), 5, "the remaining shell command after rejection")
+            time.sleep(0.5)
+            os.write(terminal, b"a")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the session after the remaining command was approved")
+            quit_via_palette(
+                "the command palette after shell approval", "the command palette quit option",
             )
         elif not session_id and not delegation_task:
             os.write(terminal, b"q")
@@ -1125,6 +1205,52 @@ def main() -> None:
                 "workspaceEditStatus": review_state["status"],
                 "fileContentVerified": actual_content == expected_content,
             }
+            shell_session_id, shell_workspace, shell_commands = create_shell_review_fixture(
+                port,
+                Path(temporary),
+                "Shell approval smoke",
+                proposal_count=2,
+            )
+            shell_command = str(shell_commands[0]["command"]).encode("utf-8")
+            run_tui(
+                tui_path,
+                env,
+                session_title="Shell approval smoke",
+                session_id=shell_session_id,
+                shell_review_command=shell_command,
+            )
+            rejected_command = api_json(
+                port,
+                "GET",
+                f"/v1/sessions/{quote(shell_session_id, safe='')}/workspace/commands/{quote(str(shell_commands[0]['id']), safe='')}",
+            )
+            approved_command = api_json(
+                port,
+                "GET",
+                f"/v1/sessions/{quote(shell_session_id, safe='')}/workspace/commands/{quote(str(shell_commands[1]['id']), safe='')}",
+            )
+            shell_effect = shell_workspace / "approved-effect.txt"
+            if rejected_command.get("status") != "rejected":
+                raise RuntimeError(f"TUI rejection did not settle the first shell review: {rejected_command!r}")
+            if approved_command.get("status") != "succeeded" or not shell_effect.exists():
+                raise RuntimeError(
+                    "TUI approval did not execute the second shell review: "
+                    f"status={approved_command.get('status')!r}, output={approved_command.get('output')!r}"
+                )
+            effect_content = shell_effect.read_text(encoding="utf-8")
+            if effect_content != "veasel-shell-approved\n":
+                raise RuntimeError(f"approved shell effect had unexpected contents: {effect_content!r}")
+
+            shell_review_coverage = {
+                "classification": "packaged TUI against isolated backend and deterministic local provider fixture",
+                "journey": "two pending shell commands survive a completed follow-up and session refresh -> 2 pending cue -> Ctrl+R shows the exact command and reject/approve work -> verified file effect",
+                "pendingBeforeReview": len(shell_commands),
+                "followUpTurnCompleted": True,
+                "rejectedStatus": rejected_command.get("status"),
+                "approvedStatus": approved_command.get("status"),
+                "approvedEffectVerified": effect_content == "veasel-shell-approved\n",
+                "tinyTerminalNavigation": "not verified",
+            }
             delegation_workspace = Path(temporary) / "delegation-workspace"
             initialize_git_workspace(delegation_workspace)
             delegation_env = env.copy()
@@ -1246,6 +1372,7 @@ def main() -> None:
         "buildProvenance": provenance,
         "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
         "interactiveCoverage": review_coverage,
+        "shellReviewCoverage": shell_review_coverage,
         "firstRunCoverage": first_run_coverage,
         "ephemeralFixtureCoverage": ephemeral_fixture_coverage,
         "delegationCoverage": delegation_coverage,

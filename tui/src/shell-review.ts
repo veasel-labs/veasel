@@ -99,8 +99,12 @@ export function formatShellReview(input: {
     input.sandbox,
     input.sandboxCapability ?? (input.bubblewrapCapable === true ? "bubblewrap" : null),
   )
-  const command = formatBoundedBlock(input.command, input.maxLines)
+  // Shell commands are approval payloads: truncating one can hide the effect
+  // the user is authorizing. The backend already caps commands at 8 KiB; the
+  // scrollable review panel renders this bounded payload in full.
+  const command = input.command
   const parts = [
+    ...(command ? [`Command:\n${command}`] : []),
     `CWD: ${input.cwd} · timeout ${input.timeoutSeconds}s`,
     `Runner: ${input.runner} · non-interactive stdin`,
   ]
@@ -108,7 +112,6 @@ export function formatShellReview(input: {
   if (previewLine) parts.push(previewLine)
   parts.push(approvedShellSandboxWarning(capability, input.sandbox))
   if (input.pending) parts.push(`Type /command approve ${input.id} or /command reject ${input.id}.`)
-  if (command.text) parts.push(command.text)
   if (!input.pending && input.output) {
     const output = formatBoundedBlock(input.output, input.maxLines)
     if (output.text) parts.push(output.text)

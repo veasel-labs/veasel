@@ -179,6 +179,7 @@ def run_tui_conpty(
     first_run: bool = False,
     delegation_task: str | None = None,
     create_session_via_ui: bool = False,
+    shell_review_command: bytes | None = None,
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -569,6 +570,23 @@ def run_tui_conpty(
             wait_for_screen_markers((b"Message Veasel",), 5, "the session after its only review was approved")
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
+            )
+        elif shell_review_command:
+            output.clear()
+            send_keys(b"\r")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the seeded shell review session")
+            wait_for_screen_markers((b"2 pending", b"Ctrl+R reviews"), 5, "the pending shell count and review shortcut")
+            output.clear()
+            send_keys(b"\x12")
+            wait_for_screen_markers((b"Shell command", b"Command:", b"echo veasel-shell-approved"), 5, "the pending shell command")
+            time.sleep(0.5)
+            send_keys(b"x")
+            wait_for_screen_markers((b"1/2 pending", b"Command:", b"echo veasel-shell-approved"), 5, "the remaining shell command after rejection")
+            time.sleep(0.5)
+            send_keys(b"a")
+            wait_for_screen_markers((b"Message Veasel",), 5, "the session after the remaining command was approved")
+            quit_via_palette(
+                "the command palette after shell approval", "the command palette quit option",
             )
         elif not session_id and not delegation_task:
             send_keys(b"q")

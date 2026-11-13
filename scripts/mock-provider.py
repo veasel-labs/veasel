@@ -284,6 +284,15 @@ def cancellation_fixture_prompt(payload, fallback_user_text=""):
     return ""
 
 
+def is_cancellation_fixture_prompt(prompt):
+    """Recognize both the generic cancellation prompt and its correlated form."""
+    return (
+        prompt == "Wait for cancellation"
+        or prompt.startswith("Wait for cancellation ")
+        or "standalone-subagent-cancel-v1" in prompt
+    )
+
+
 def latest_tool_message(messages):
     return next((message for message in reversed(messages) if message.get("role") == "tool"), {})
 
@@ -534,7 +543,7 @@ class MockProvider(BaseHTTPRequestHandler):
             is_subagent_fixture_turn = user_text.startswith(
                 "Return the deterministic smoke marker: standalone-subagent-"
             )
-            is_cancellation_fixture_turn = "standalone-subagent-cancel-v1" in user_text or user_text == "Wait for cancellation"
+            is_cancellation_fixture_turn = is_cancellation_fixture_prompt(user_text)
             if is_subagent_fixture_turn or is_cancellation_fixture_turn:
                 with self.server.fixture_requests_lock:
                     self.server.fixture_requests.append({

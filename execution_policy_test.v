@@ -17,7 +17,10 @@ fn test_workspace_guidance_routes_repository_instructions_to_workspace_tools() {
 	assert guidance.contains('workspace_read_file')
 	assert guidance.contains('workspace_search')
 	assert guidance.contains('workspace_propose_file_edit')
-	assert guidance.contains('old_text and the requested text as new_text')
+	assert guidance.contains('workspace_propose_file_content')
+	assert execution_tool_class('workspace_propose_file_edit') == 'edit'
+	assert execution_tool_class('workspace_propose_file_content') == 'edit'
+	assert guidance.contains('using path, old_text, and new_text')
 	assert guidance.contains('not Agent Skill resources')
 	assert guidance.contains('continue the task with the available workspace tools')
 	assert guidance.contains('do not stop solely because of that skill error')

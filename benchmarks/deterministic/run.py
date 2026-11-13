@@ -239,7 +239,7 @@ TASKS = [
         # chaining, scored on the final file contents.
         "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
         "check_description": "greet edit applied and verified by a shell grep in the same run",
-        "expect_response": "Edit verified by shell.",
+        "expect_response": "The applied fixture edit matches the request and its verification succeeded.",
     },
     {
         "id": "failed-shell-then-edit",
@@ -275,7 +275,7 @@ TASKS = [
         # final file contents and the verification result.
         "check": lambda ws: EXPECTED_GREET in (ws / "src" / "main.v").read_text(encoding="utf-8"),
         "check_description": "the initially failing greet grep passes after relevant search/read, an edit, and in-run shell verification",
-        "expect_response": "Fixed failing test.",
+        "expect_response": "The applied fixture edit matches the request and its verification succeeded.",
     },
     {
         "id": "vendored-project-fix",
@@ -293,7 +293,7 @@ TASKS = [
             == (FIXTURES_DIR / "token-bucket" / "token_bucket_test.v").read_text(encoding="utf-8"),
         "check_command": ["{v}", "test", "."],
         "check_description": "vendored token-bucket project: its own `v test .` passes after the run and its test file is unchanged",
-        "expect_response": "Vendored project fixed.",
+        "expect_response": "The applied fixture edit matches the request and its verification succeeded.",
         "veasel_only": True,
     },
     {

@@ -14,6 +14,8 @@ $if windows {
 }
 
 const max_workspace_edit_bytes = 512_000
+const max_workspace_edit_file_lines = 10_000
+const max_workspace_edit_diff_lines = 2_000
 const max_workspace_edit_request_bytes = max_workspace_edit_bytes * 6 + 4_096
 const max_pending_workspace_edits = 20
 // Git lock basenames checked under the resolved git directory (including linked
@@ -94,14 +96,17 @@ fn prepare_workspace_edit(root string, relative_path string, content string) !Wo
 	}
 	old_lines := old_content.split_into_lines()
 	new_lines := content.split_into_lines()
-	if old_lines.len > 2_000 || new_lines.len > 2_000 {
-		return error('proposed file exceeds the 2000-line diff limit')
+	if old_lines.len > max_workspace_edit_file_lines || new_lines.len > max_workspace_edit_file_lines {
+		return error('proposed file exceeds the ${max_workspace_edit_file_lines}-line bounded diff limit')
 	}
 	mut changes := diff.diff[string](old_lines, new_lines)
 	mut patch := changes.generate_patch(unified: 3, block_header: true)
 	line_ending_diff := workspace_line_ending_diff(old_content, content)
 	if line_ending_diff.len > 0 {
 		patch += '\n${line_ending_diff}'
+	}
+	if patch.split_into_lines().len > max_workspace_edit_diff_lines {
+		return error('proposed edit exceeds the ${max_workspace_edit_diff_lines}-line diff limit')
 	}
 	return WorkspaceEditDraft{
 		path:          relative_path.replace('\\', '/')

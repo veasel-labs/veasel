@@ -113,6 +113,44 @@ fn test_verification_gate_requires_success_after_an_applied_edit() {
 	assert agent_final_response_for_verification('Done.', true, true, true) == 'Done.'
 }
 
+fn test_post_edit_acceptance_review_requires_an_applied_diff_and_successful_required_verification() {
+	diff := ['--- a/README.md\n+++ b/README.md\n+button activates with Enter or Space']
+	assert !agent_code_change_acceptance_review_available(true, [], false, false, false)
+	assert !agent_code_change_acceptance_review_available(true, diff, true, false, false)
+	assert agent_code_change_acceptance_review_available(true, diff, true, true, false)
+	assert !agent_code_change_acceptance_review_available(true, diff, true, true, true)
+	assert !agent_code_change_acceptance_review_available(false, diff, false, false, false)
+	context := agent_code_change_acceptance_review_context('Please enable the button and show status after activation.', diff, true, true)
+	assert context.contains('Original user request:')
+	assert context.contains('show status after activation')
+	assert context.contains('actual applied workspace diff')
+	assert context.contains('button activates with Enter or Space')
+	assert context.contains('the requested verification succeeded')
+	assert agent_final_response_for_acceptance_review('Done.', true, false).contains('not complete')
+	assert agent_content_has_terminal_acceptance_marker('All requirements are present.\nACCEPTANCE_REVIEW: PASS')
+	assert agent_final_response_for_acceptance_review('All requirements are present.\nACCEPTANCE_REVIEW: PASS', true, true) ==
+		'All requirements are present.'
+	assert !agent_content_has_terminal_acceptance_marker('The request is not complete; ACCEPTANCE_REVIEW: PASS')
+	assert !agent_content_has_terminal_acceptance_marker('"ACCEPTANCE_REVIEW: PASS"')
+	assert !agent_content_has_terminal_acceptance_marker('ACCEPTANCE_REVIEW: PASS but one requirement is missing')
+	assert agent_has_agent_turn_round_after(max_agent_turn_rounds - 2)
+	assert !agent_has_agent_turn_round_after(max_agent_turn_rounds - 1)
+}
+
+fn test_failed_requested_verification_prevents_acceptance_review_and_success_claim() {
+	diff := ['--- a/src/main.ts\n+++ b/src/main.ts\n+button.addEventListener(...)']
+	assert !agent_code_change_acceptance_review_available(true, diff, true, false, false)
+	response := agent_final_response_for_verification('The change is complete.', true, true, false)
+	assert response.contains('verification did not succeed')
+	assert response.contains('This task is not complete')
+}
+
+fn test_post_edit_acceptance_review_is_not_restarted_after_followup() {
+	diff := ['--- a/README.md\n+++ b/README.md\n+keyboard activation']
+	assert agent_code_change_acceptance_review_available(true, diff, false, false, false)
+	assert !agent_code_change_acceptance_review_available(true, diff, false, false, true)
+}
+
 fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read() {
 	tools := [
 		AgentToolDefinition{ name: 'workspace_list_files' },
@@ -152,6 +190,24 @@ fn test_code_change_tool_phase_keeps_focused_inspection_available_after_a_read()
 	assert complete_phase.len == tools.len
 	assert agent_code_change_tools_after_edit_failures(search_read_phase, true,
 		max_agent_code_change_edit_recovery_attempts).any(it.name == 'workspace_propose_file_edit')
+	nudged_edit_phase := agent_code_change_tools_after_exploration(search_read_phase, true, true,
+		false, 2, true, 0)
+	assert nudged_edit_phase.map(it.name) == ['workspace_propose_file_edit']
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, 2,
+		false, 0).map(it.name) == search_read_phase.map(it.name)
+	retry_read_phase := agent_code_change_tools_after_exploration(search_read_phase, true, true,
+		false, 1, true, 1)
+	assert retry_read_phase.map(it.name) == ['workspace_read_file', 'workspace_propose_file_edit']
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, 2, true,
+		1).map(it.name) == ['workspace_propose_file_edit']
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, 1, false,
+		1).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, false, 1, true,
+		max_agent_code_change_edit_recovery_attempts + 1).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, true, true, true, 2, true,
+		0).map(it.name) == search_read_phase.map(it.name)
+	assert agent_code_change_tools_after_exploration(search_read_phase, false, true, false, 2, true,
+		0).map(it.name) == search_read_phase.map(it.name)
 	exhausted_phase := agent_code_change_tools_after_edit_failures(complete_phase, true,
 		max_agent_code_change_edit_recovery_attempts + 1)
 	assert exhausted_phase.map(it.name) == ['workspace_read_file', 'workspace_search']
@@ -388,7 +444,7 @@ fn test_skill_tool_restrictions_filter_advertising_and_reject_execution() {
 	denied_edit := execute_test_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'denied-edit'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"source.txt","content":"changed"}'
 		}
 	}, mut skill_context, {}, mut mcp_connections)
@@ -953,7 +1009,7 @@ fn test_autonomous_benchmark_tools_apply_workspace_edits_and_record_shell_result
 	edit := execute_autonomous_workspace_agent_tool(app, mut background, root, session.id, ProviderToolCall{
 		id:       'edit'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"target.txt","content":"after"}'
 		}
 	})
@@ -1152,16 +1208,48 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	definitions := workspace_agent_tools()
 	assert definitions.map(it.name) == ['workspace_list_files', 'workspace_read_file',
 		'workspace_search', 'subagent_run', 'subagent_wait', 'workspace_propose_file_edit',
-		'workspace_propose_shell_command']
+		'workspace_propose_file_content', 'workspace_propose_shell_command']
 	edit_definition := definitions.filter(it.name == 'workspace_propose_file_edit')[0]
-	assert edit_definition.description.contains('old_text and new_text')
+	assert edit_definition.description.contains('old_text')
 	assert 'old_text' in edit_definition.parameters.properties
 	assert 'new_text' in edit_definition.parameters.properties
+	assert edit_definition.parameters.required == ['path', 'old_text', 'new_text']
+	content_definition := definitions.filter(it.name == 'workspace_propose_file_content')[0]
+	assert content_definition.parameters.required == ['path', 'content']
+	assert agent_tool_is_workspace_edit_proposal('workspace_propose_file_edit')
+	assert agent_tool_is_workspace_edit_proposal('workspace_propose_file_content')
+	assert !agent_tool_is_workspace_edit_proposal('workspace_propose_shell_command')
 	replacement_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v","old_text":"workspace-sentinel","new_text":"updated"}') or {
 		panic(err)
 	}
 	replacement_draft := prepare_agent_workspace_edit(root, replacement_arguments) or { panic(err) }
 	assert replacement_draft.content == 'module fixture\nupdated\n'
+	assert prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_edit',
+		replacement_arguments) or { panic(err) } == replacement_draft
+	incomplete_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v"}') or {
+		panic(err)
+	}
+	mut incomplete_rejected := false
+	_ = prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_edit',
+		incomplete_arguments) or {
+		incomplete_rejected = true
+		WorkspaceEditDraft{}
+	}
+	assert incomplete_rejected
+	content_arguments := json2.decode[map[string]json2.Any]('{"path":"src/main.v","content":"module fixture\\ncomplete write\\n"}') or {
+		panic(err)
+	}
+	content_draft := prepare_agent_workspace_edit(root, content_arguments) or { panic(err) }
+	assert content_draft.content == 'module fixture\ncomplete write\n'
+	assert prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_content',
+		content_arguments) or { panic(err) } == content_draft
+	mut mismatched_tool_rejected := false
+	_ = prepare_agent_workspace_edit_for_tool(root, 'workspace_propose_file_content',
+		replacement_arguments) or {
+		mismatched_tool_rejected = true
+		WorkspaceEditDraft{}
+	}
+	assert mismatched_tool_rejected
 	assert os.read_file(os.join_path(root, 'src', 'main.v')) or { panic(err) } == 'module fixture\nworkspace-sentinel\n'
 	assert agent_tool_allows_parallel_readonly('workspace_list_files')
 	assert agent_tool_allows_parallel_readonly('workspace_read_file')
@@ -1233,7 +1321,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		ProviderToolCall{
 			id:       'edit-between-waves'
 			function: ProviderFunctionCall{
-				name:      'workspace_propose_file_edit'
+				name:      'workspace_propose_file_content'
 				arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\n"}'
 			}
 		},
@@ -1277,7 +1365,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 		ProviderToolCall{
 			id:       'apply-edit'
 			function: ProviderFunctionCall{
-				name:      'workspace_propose_file_edit'
+				name:      'workspace_propose_file_content'
 				arguments: '{"path":"src/auto-edit.txt","content":"after edit"}'
 			}
 		},
@@ -1329,7 +1417,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	skipped_edit := ProviderToolCall{
 		id:       'loop-skipped-edit'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"src/main.v","content":"loop must not apply"}'
 		}
 	}
@@ -1634,7 +1722,7 @@ fn test_workspace_agent_tools_validate_arguments_and_never_apply_edits_without_a
 	proposal_result := execute_workspace_agent_tool(app, root, session.id, ProviderToolCall{
 		id:       'propose-1'
 		function: ProviderFunctionCall{
-			name:      'workspace_propose_file_edit'
+			name:      'workspace_propose_file_content'
 			arguments: '{"path":"src/main.v","content":"module fixture\\nchanged\\n"}'
 		}
 	})
@@ -2039,6 +2127,15 @@ fn agent_code_change_recovery_chunk(hit int) OpenAIStreamChunk {
 			}]
 		}
 	}
+	if hit == 7 {
+		return OpenAIStreamChunk{
+			choices: [OpenAIStreamChoice{
+				delta: OpenAIStreamDelta{
+					content: 'The applied change satisfies the request.\nACCEPTANCE_REVIEW: PASS'
+				}
+			}]
+		}
+	}
 	return OpenAIStreamChunk{
 		choices: [OpenAIStreamChoice{
 			delta: OpenAIStreamDelta{ content: 'I prepared the corrected sidebar edit for review.' }
@@ -2104,7 +2201,7 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 						id:       'edit-proposal-${fixture.hits}'
 						type:     'function'
 						function: OpenAIStreamFunctionDelta{
-							name:      'workspace_propose_file_edit'
+							name:      'workspace_propose_file_content'
 							arguments: '{"path":"README.md","content":"Updated by fixture\\n"}'
 						}
 					}]
@@ -2139,6 +2236,252 @@ fn start_agent_code_change_followthrough_fixture(mut fixture AgentCodeChangeFoll
 		return error(err.msg())
 	}
 	return server, server_thread
+}
+
+struct AgentAcceptanceReviewFixture {
+mut:
+	hits               int
+	request_bodies     []string
+	missing_acceptance bool
+	review_text_first  bool
+}
+
+fn agent_acceptance_review_fixture_tool_call(id string, name string, arguments string) OpenAIStreamChunk {
+	return OpenAIStreamChunk{
+		choices: [OpenAIStreamChoice{
+			delta: OpenAIStreamDelta{
+				tool_calls: [OpenAIStreamToolCallDelta{
+					index:    0
+					id:       id
+					type:     'function'
+					function: OpenAIStreamFunctionDelta{
+						name:      name
+						arguments: arguments
+					}
+				}]
+			}
+		}]
+	}
+}
+
+fn (mut fixture AgentAcceptanceReviewFixture) handle(request http.Request) http.Response {
+	fixture.hits++
+	fixture.request_bodies << request.data
+	chunk := match fixture.hits {
+		1 {
+			agent_acceptance_review_fixture_tool_call('review-search', 'workspace_search',
+				'{"query":"keyboard activation feedback"}')
+		}
+		2 {
+			agent_acceptance_review_fixture_tool_call('review-read', 'workspace_read_file',
+				'{"path":"README.md"}')
+		}
+		3 {
+			content := if fixture.missing_acceptance {
+				'Button: Click to activate.\n'
+			} else {
+				'Button: Enter or Space activates; visible status feedback follows.\n'
+			}
+			agent_acceptance_review_fixture_tool_call('review-edit', 'workspace_propose_file_content',
+				'{"path":"README.md","content":"${content.replace('\\n', '\\\\n')}"}')
+		}
+		4 {
+			OpenAIStreamChunk{
+				choices: [OpenAIStreamChoice{
+					delta: OpenAIStreamDelta{ content: 'The button change is implemented and generic checks passed.' }
+				}]
+			}
+		}
+		5 {
+			if fixture.review_text_first {
+				OpenAIStreamChunk{
+					choices: [OpenAIStreamChoice{
+						delta: OpenAIStreamDelta{ content: 'The visible feedback requirement is still missing.' }
+					}]
+				}
+			} else if fixture.missing_acceptance {
+				agent_acceptance_review_fixture_tool_call('review-followup-edit',
+					'workspace_propose_file_content',
+					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
+			} else {
+				OpenAIStreamChunk{
+					choices: [OpenAIStreamChoice{
+						delta: OpenAIStreamDelta{ content: 'Button behavior matches the request.\nACCEPTANCE_REVIEW: PASS' }
+					}]
+				}
+			}
+		}
+		6 {
+			if fixture.review_text_first {
+				agent_acceptance_review_fixture_tool_call('review-followup-edit',
+					'workspace_propose_file_content',
+					'{"path":"README.md","content":"Button: Enter or Space activates; visible status feedback follows.\\n"}')
+			} else {
+				OpenAIStreamChunk{
+					choices: [OpenAIStreamChoice{
+						delta: OpenAIStreamDelta{ content: 'The missing keyboard behavior is now present.\nACCEPTANCE_REVIEW: PASS' }
+					}]
+				}
+			}
+		}
+		else {
+			OpenAIStreamChunk{
+				choices: [OpenAIStreamChoice{
+					delta: OpenAIStreamDelta{ content: 'The missing keyboard behavior is now present.\nACCEPTANCE_REVIEW: PASS' }
+				}]
+			}
+		}
+	}
+	mut response := http.Response{}
+	response.set_status(.ok)
+	response.header.set(.content_type, 'text/event-stream')
+	response.body = 'data: ${json2.encode(chunk)}\n\ndata: [DONE]\n\n'
+	return response
+}
+
+fn start_agent_acceptance_review_fixture(mut fixture AgentAcceptanceReviewFixture) !(&http.Server, thread) {
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		return error(err.msg())
+	}
+	return server, server_thread
+}
+
+fn new_app_with_auto_edit_for_test(store &Store, plugin_directory string) &App {
+	previous := os.getenv('VEASEL_ALLOW_AUTO_EDIT')
+	os.setenv('VEASEL_ALLOW_AUTO_EDIT', '1', true)
+	app := new_app(store, plugin_directory)
+	if previous == '' {
+		os.unsetenv('VEASEL_ALLOW_AUTO_EDIT')
+	} else {
+		os.setenv('VEASEL_ALLOW_AUTO_EDIT', previous, true)
+	}
+	return app
+}
+
+fn test_agent_acceptance_review_passes_when_applied_diff_covers_request() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-acceptance-complete-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'Button: launch demo. Keyboard activation and visible feedback are missing.\n') or {
+		panic(err)
+	}
+	mut fixture := &AgentAcceptanceReviewFixture{}
+	mut server, server_thread := start_agent_acceptance_review_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app_with_auto_edit_for_test(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Post-edit acceptance complete'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	request := 'Please update the README button to support keyboard activation and show visible feedback after activation.'
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:          request
+		collect_trace:    true
+		execution_policy: 'auto-edit'
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 5
+	assert fixture.request_bodies.filter(it.contains(agent_code_change_acceptance_review_prompt)).len == 1
+	review_request := fixture.request_bodies[4]
+	assert review_request.contains(request)
+	assert review_request.contains('Enter or Space activates')
+	assert review_request.contains('visible status feedback follows')
+	assert review_request.contains('+++ README.md')
+	assert exchange.messages.last().content == 'Button behavior matches the request.'
+	assert !exchange.messages.last().content.contains('not complete')
+	assert os.read_file(readme) or { panic(err) } == 'Button: Enter or Space activates; visible status feedback follows.\n'
+}
+
+fn test_agent_acceptance_review_finds_missing_behavior_and_continues_once() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-acceptance-missing-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'Button: launch demo. Keyboard activation and visible feedback are missing.\n') or {
+		panic(err)
+	}
+	mut fixture := &AgentAcceptanceReviewFixture{
+		missing_acceptance: true
+		review_text_first:  true
+	}
+	mut server, server_thread := start_agent_acceptance_review_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app_with_auto_edit_for_test(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Post-edit acceptance missing behavior'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	request := 'Please update the README button to support keyboard activation and show visible feedback after activation.'
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:          request
+		collect_trace:    true
+		execution_policy: 'auto-edit'
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 7
+	assert fixture.request_bodies[5].contains(agent_code_change_acceptance_review_followup_prompt)
+	assert fixture.request_bodies[6].split(agent_code_change_acceptance_review_prompt).len == 2
+	assert fixture.request_bodies[4].contains('Button: Click to activate.')
+	assert fixture.request_bodies[4].contains('keyboard activation')
+	assert exchange.messages.last().content == 'The missing keyboard behavior is now present.'
+	assert !exchange.messages.last().content.contains('not complete')
+	assert os.read_file(readme) or { panic(err) } == 'Button: Enter or Space activates; visible status feedback follows.\n'
 }
 
 fn test_agent_retries_explicit_code_request_after_text_only_completion() {
@@ -2258,6 +2601,7 @@ fn test_agent_recovers_once_from_invalid_exact_replacement() {
 	assert !recovery_request.tools.any(it.function.name == 'workspace_propose_file_edit')
 	corrected_edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[4]) or { panic(err) }
 	assert corrected_edit_request.tools.any(it.function.name == 'workspace_propose_file_edit'), 'available tools: ${corrected_edit_request.tools.map(it.function.name)}; prior tool result: ${corrected_edit_request.messages.filter(it.role == 'tool').map(it.content)}'
+	assert fixture.request_bodies[5].split(agent_code_change_edit_recovery_prompt).len == 2
 	assert exchange.messages.last().content.contains('pending human review')
 	assert !exchange.messages.last().content.contains('I prepared the corrected sidebar edit for review.')
 	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse sections\n'
@@ -2267,7 +2611,72 @@ fn test_agent_recovers_once_from_invalid_exact_replacement() {
 	assert edits[0].path == 'README.md'
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('replacement text must match exactly once; found 0 occurrences')
-	assert trace.contains(agent_code_change_edit_recovery_prompt)
+	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2
+}
+
+fn test_agent_successful_edit_retry_clears_recovery_state() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-edit-recovery-cleared-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'sidebar menu: Browse sections\n') or { panic(err) }
+	prior_autonomous := os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION')
+	had_autonomous := 'VEASEL_ALLOW_AUTONOMOUS_EXECUTION' in os.environ()
+	os.setenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION', '1', true)
+	defer {
+		if had_autonomous {
+			os.setenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION', prior_autonomous, true)
+		} else {
+			os.unsetenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION')
+		}
+	}
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		recover_invalid_edit: true
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Successful edit recovery'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please change the mobile sidebar label to Browse documentation.'
+		collect_trace: true
+		autonomous:    true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 7
+	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse documentation\n'
+	assert fixture.request_bodies[4].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert fixture.request_bodies[5].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert fixture.request_bodies[6].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert !exchange.messages.last().content.contains('incomplete')
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2
 }
 
 fn test_agent_reports_code_change_incomplete_after_retry_without_workspace_effect() {

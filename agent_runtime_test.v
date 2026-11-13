@@ -2068,10 +2068,11 @@ mut:
 	request_bodies         []string
 	reply_text             string
 	recover_invalid_edit   bool
+	recover_invalid_path   bool
 	recover_ambiguous_edit bool
 }
 
-fn agent_code_change_recovery_chunk(hit int, ambiguous_edit bool) OpenAIStreamChunk {
+fn agent_code_change_recovery_chunk(hit int, ambiguous_edit bool, invalid_path bool) OpenAIStreamChunk {
 	if hit == 1 {
 		return OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
@@ -2107,7 +2108,9 @@ fn agent_code_change_recovery_chunk(hit int, ambiguous_edit bool) OpenAIStreamCh
 		}
 	}
 	if hit in [3, 5] {
-		arguments := if hit == 3 && ambiguous_edit {
+		arguments := if hit == 3 && invalid_path {
+			'{"path":"placeholder","old_text":"Browse sections","new_text":"Browse documentation"}'
+		} else if hit == 3 && ambiguous_edit {
 			'{"path":"README.md","old_text":"Browse sections","new_text":"Browse documentation"}'
 		} else if hit == 3 {
 			'{"path":"README.md","old_text":"text not present in file","new_text":"Browse documentation"}'
@@ -2157,8 +2160,9 @@ fn (mut fixture AgentCodeChangeFollowthroughFixture) handle(request http.Request
 				delta: OpenAIStreamDelta{ content: fixture.reply_text }
 			}]
 		}
-	} else if fixture.recover_invalid_edit || fixture.recover_ambiguous_edit {
-		agent_code_change_recovery_chunk(fixture.hits, fixture.recover_ambiguous_edit)
+	} else if fixture.recover_invalid_edit || fixture.recover_invalid_path || fixture.recover_ambiguous_edit {
+		agent_code_change_recovery_chunk(fixture.hits, fixture.recover_ambiguous_edit,
+			fixture.recover_invalid_path)
 	} else if fixture.hits == 1 {
 		OpenAIStreamChunk{
 			choices: [OpenAIStreamChoice{
@@ -2616,6 +2620,69 @@ fn test_agent_recovers_once_from_invalid_exact_replacement() {
 	assert edits[0].path == 'README.md'
 	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
 	assert trace.contains('replacement text must match exactly once; found 0 occurrences')
+	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2
+}
+
+fn test_agent_recovers_once_from_unread_edit_path() {
+	root := os.join_path(os.temp_dir(), 'veasel-code-unread-edit-path-${uuid.new_v4().str()}')
+	workspace := os.join_path(root, 'workspace')
+	os.mkdir_all(workspace) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	readme := os.join_path(workspace, 'README.md')
+	os.write_file(readme, 'sidebar menu: Browse sections\n') or { panic(err) }
+	mut fixture := &AgentCodeChangeFollowthroughFixture{
+		recover_invalid_path: true
+	}
+	mut server, server_thread := start_agent_code_change_followthrough_fixture(mut fixture) or {
+		panic(err)
+	}
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'local-fixture'
+		base_url: 'http://${server.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	session := store.create_session(SessionInput{
+		title:     'Unread edit path recovery'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(session.id, operation_id) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 60 * time.second)
+	defer { cancel() }
+	exchange := app.run_session_message(mut turn_ctx, session.id, session, ChatMessageInput{
+		content:       'Please change the mobile sidebar label to Browse documentation.'
+		collect_trace: true
+	}, operation_id, turn_ctx.deadline() or { panic('expected a turn deadline') }) or {
+		panic(err)
+	}
+	assert fixture.hits == 6
+	assert fixture.request_bodies.len == 6
+	assert fixture.request_bodies[3].contains(agent_code_change_edit_recovery_prompt)
+	recovery_request := json2.decode[OpenAIRequest](fixture.request_bodies[3]) or { panic(err) }
+	assert recovery_request.tools.any(it.function.name == 'workspace_read_file')
+	corrected_edit_request := json2.decode[OpenAIRequest](fixture.request_bodies[4]) or { panic(err) }
+	assert corrected_edit_request.tools.any(it.function.name == 'workspace_propose_file_edit')
+	assert fixture.request_bodies[5].split(agent_code_change_edit_recovery_prompt).len == 2
+	assert exchange.messages.last().content.contains('pending human review')
+	assert os.read_file(readme) or { panic(err) } == 'sidebar menu: Browse sections\n'
+	edits := store.workspace_edits(session.id) or { panic(err) }
+	assert edits.len == 1
+	assert edits[0].status == 'pending'
+	assert edits[0].path == 'README.md'
+	trace := store.operation_trace(session.id, operation_id) or { panic(err) }
+	assert trace.contains('Focused edit rejected: search for the target and read the complete file')
 	assert trace.split(agent_code_change_edit_recovery_prompt).len == 2
 }
 

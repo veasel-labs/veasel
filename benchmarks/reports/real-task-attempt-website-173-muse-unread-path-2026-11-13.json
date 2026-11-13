@@ -1,0 +1,53 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-13",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "Compare against the merged website#173 change, run the repository checks, and verify the responsive accessibility, search, resizing, dark mode, reduced-motion, and no-JavaScript requirements."
+  },
+  "runner": {
+    "name": "Veasel Code built from main in a disposable Bubblewrap workspace",
+    "source_commit": "c1bbb58889660d474ea3db477a3ecb7f319fc004",
+    "binary_sha256": "15891d9fa77970869967263efe478c3684fef0f563d3cb554f20799c0c0af73d",
+    "provider_configured": "Meta Model API",
+    "model_configured": "muse-spark-1.3-contributor",
+    "provider_route_confirmed": false,
+    "context_tokens": 8192,
+    "output_budget_tokens": 512,
+    "request_input_byte_limit": 32768,
+    "wall_limit_seconds": 300,
+    "memory_limit_bytes": 2147483648,
+    "elapsed_ms": 83000,
+    "status": "agent_error"
+  },
+  "execution": {
+    "tool_calls_observed": 6,
+    "tool_sequence": [
+      "workspace_search x4",
+      "workspace_read_file x1",
+      "workspace_propose_file_edit: rejected because the requested path was not read and did not exist"
+    ],
+    "workspace_changes": false,
+    "repository_check_result": "Not run; no edit was applied.",
+    "failure_class": "guessed_edit_path_followthrough_failure"
+  },
+  "measurements": {
+    "agent_process_tree_rss_sampled_max_bytes": null,
+    "agent_process_tree_cpu_time_sampled_ms": null,
+    "host_memory_abort": null,
+    "gpu_memory_used_sampled_max_mib": null,
+    "note": "The private collector lost stdout/stderr and resource samples when the backend inherited its pipes. Timing and tool outcome were recovered from the durable operation record."
+  },
+  "provider_usage": {
+    "reported": false,
+    "input_tokens": null,
+    "output_tokens": null,
+    "provider_cost_usd": null,
+    "note": "The durable operation did not report provider/model identity or usage counters. The model listed above is the configured target, not a confirmed provider route. Cost is unknown and is not inferred."
+  },
+  "interpretation": "The agent searched four times, read one file, then proposed an edit against the literal path placeholder. No workspace change or repository check occurred. This post-merge replay shows a target-selection/follow-through failure distinct from the earlier ambiguous-anchor edit failure. The external task oracle failed. It is not a controlled comparison.",
+  "oracle_result": "Failure: no file changes, so the requested repository outcome was not achieved. Website#173 remains at zero verified successes.",
+  "privacy": "Raw prompts, source excerpts, logs, and provider trajectories remain private. This report contains no credential values or source contents."
+}

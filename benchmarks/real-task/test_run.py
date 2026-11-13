@@ -18,6 +18,43 @@ assert SPEC.loader is not None
 SPEC.loader.exec_module(runner)
 
 
+def make_isolation_wrapper(root: Path) -> tuple[Path, str]:
+    wrapper = root / "operator-isolation-wrapper"
+    wrapper.write_text('#!/bin/sh\n[ "$1" = "--" ] || exit 64\nshift\nexec "$@"\n')
+    wrapper.chmod(0o700)
+    return wrapper, hashlib.sha256(wrapper.read_bytes()).hexdigest()
+
+
+class IsolationWrapperTests(unittest.TestCase):
+    def test_wrapper_is_required_and_sha256_must_match(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            wrapper, digest = make_isolation_wrapper(root)
+            with self.assertRaisesRegex(ValueError, "required"):
+                runner.validated_isolation_wrapper(argparse.Namespace())
+            with self.assertRaisesRegex(ValueError, "does not match"):
+                runner.validated_isolation_wrapper(argparse.Namespace(
+                    isolation_wrapper=wrapper, isolation_wrapper_sha256="0" * 64,
+                ))
+            actual_path, actual_digest = runner.validated_isolation_wrapper(argparse.Namespace(
+                isolation_wrapper=wrapper, isolation_wrapper_sha256=digest,
+            ))
+        self.assertEqual(actual_path, wrapper.resolve())
+        self.assertEqual(actual_digest, digest)
+
+    def test_agent_command_is_always_passed_through_wrapper(self):
+        self.assertEqual(
+            runner.wrapped_command(Path("/opt/benchmark/isolate"), ["/usr/bin/veasel", "run"]),
+            ["/opt/benchmark/isolate", "--", "/usr/bin/veasel", "run"],
+        )
+
+    def test_run_refuses_to_preflight_or_launch_without_wrapper(self):
+        args = argparse.Namespace()
+        with patch.object(runner, "preflight", side_effect=AssertionError("must fail before preflight")), \
+             patch.object(runner.subprocess, "Popen", side_effect=AssertionError("must not launch")):
+            self.assertEqual(runner.run_case(args), 2)
+
+
 class ResourceSamplerTests(unittest.TestCase):
     @staticmethod
     def proc_stat(pid: int, parent_pid: int, user_ticks: int, system_ticks: int, rss_pages: int, command: str) -> str:
@@ -191,6 +228,21 @@ class PreflightTests(unittest.TestCase):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         case, _prompt, digest = runner.load_case(case_path)
         self.assertEqual(digest, case["prompt_sha256"])
+
+    def test_muse_spark_0793_case_is_immutable_and_pins_the_released_binary(self):
+        case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0793/case.json"
+        case, _prompt, digest = runner.load_case(case_path)
+        self.assertEqual(digest, case["prompt_sha256"])
+        self.assertEqual(case["runtime"]["veasel_version"], "Veasel Code 0.79.3-next.0")
+        self.assertIn("Veasel 0.79.3", case["cost_budget"]["request_cap_basis"])
+        self.assertEqual(
+            case["runtime"]["veasel_binary_sha256"],
+            "f9055a2ca22d0ed0f5f670b0499664f87c765a4ce6376bbe77a1f68c3242080b",
+        )
+        self.assertEqual(
+            hashlib.sha256(case_path.read_bytes()).hexdigest(),
+            "619e50221c8bbfb25a3680c458f4352578be536c87d6d3a7862f9638d5c04517",
+        )
 
     def test_non_ollama_profile_preflight_checks_model_endpoint_budget_and_saved_credential(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -409,6 +461,7 @@ class PreflightTests(unittest.TestCase):
                 artifacts = root / "artifacts"
                 data_dir = root / "state"
                 data_dir.mkdir()
+                wrapper, wrapper_sha256 = make_isolation_wrapper(root)
                 (data_dir / "model-settings.json").write_text(json.dumps({
                     "active_provider": "anthropic",
                     "profiles": {"anthropic": {
@@ -422,15 +475,22 @@ class PreflightTests(unittest.TestCase):
                 args = argparse.Namespace(
                     case=case_path, workspace=workspace, data_dir=data_dir, ollama_url="unused",
                     agent="veasel", veasel="veasel", opencode="opencode", artifacts=artifacts,
-                    sandbox_confirmed=True, approved_spend_usd="5",
+                    isolation_wrapper=wrapper, isolation_wrapper_sha256=wrapper_sha256,
+                    approved_spend_usd="5",
                 )
                 with patch.object(runner.subprocess, "Popen", return_value=process) as popen:
                     self.assertEqual(runner.run_case(args), 0)
+                launched_command = popen.call_args.args[0]
+                self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
+                self.assertNotIn("private-provider-key", launched_command)
                 launched_env = popen.call_args.kwargs["env"]
                 self.assertEqual(launched_env["VEASEL_MODEL_API_KEY"], "private-provider-key")
                 self.assertNotIn("private-provider-key", (data_dir / "model-settings.json").read_text())
                 report_text = (artifacts / "attempt.json").read_text()
-                self.assertNotIn("base_url", json.loads(report_text)["provider_config"])
+                report = json.loads(report_text)
+                self.assertNotIn("base_url", report["provider_config"])
+                self.assertEqual(report["isolation"]["wrapper_sha256"], wrapper_sha256)
+                self.assertEqual(report["case_sha256"], hashlib.sha256(case_path.read_bytes()).hexdigest())
                 for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
                     self.assertNotIn(sentinel, report_text)
 
@@ -530,6 +590,7 @@ class PreflightTests(unittest.TestCase):
             workspace.mkdir()
             artifacts = root / "artifacts"
             data_dir = root / "state"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
             process = Mock()
             process.poll.return_value = 0
             process.wait.return_value = 0
@@ -542,7 +603,8 @@ class PreflightTests(unittest.TestCase):
                 opencode="opencode",
                 veasel="veasel",
                 artifacts=artifacts,
-                sandbox_confirmed=True,
+                isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256,
                 approved_spend_usd="0",
             )
             with patch.dict(runner.os.environ, {"ANTHROPIC_API_KEY": "test-secret"}):
@@ -550,6 +612,7 @@ class PreflightTests(unittest.TestCase):
                     self.assertEqual(runner.run_case(args), 0)
             launched_command = popen.call_args.args[0]
             launched_env = popen.call_args.kwargs["env"]
+            self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
             self.assertIn("--standalone", launched_command)
             self.assertEqual(launched_env["OPENCODE_CONFIG"], str(data_dir / "benchmark-opencode.json"))
             self.assertNotIn("ANTHROPIC_API_KEY", launched_env)
@@ -569,6 +632,7 @@ class PreflightTests(unittest.TestCase):
             workspace = root / "workspace"
             workspace.mkdir()
             artifacts = root / "artifacts"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
             process = Mock()
             process.poll.side_effect = [None, 0]
             process.wait.return_value = 0
@@ -581,7 +645,8 @@ class PreflightTests(unittest.TestCase):
                 opencode="opencode",
                 veasel="veasel",
                 artifacts=artifacts,
-                sandbox_confirmed=True,
+                isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256,
                 approved_spend_usd="0",
             )
             with (

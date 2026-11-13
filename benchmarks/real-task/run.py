@@ -590,6 +590,31 @@ def build_command(agent: str, binary: str, case: dict[str, Any], workspace: Path
     return command
 
 
+def validated_isolation_wrapper(args: argparse.Namespace) -> tuple[Path, str]:
+    """Require the operator's pinned launcher that enforces task isolation."""
+    wrapper_arg = getattr(args, "isolation_wrapper", None)
+    expected_hash = getattr(args, "isolation_wrapper_sha256", None)
+    if not wrapper_arg or not expected_hash:
+        raise ValueError("an operator-managed isolation wrapper and its SHA-256 are required")
+    if len(expected_hash) != 64 or any(char not in "0123456789abcdefABCDEF" for char in expected_hash):
+        raise ValueError("isolation wrapper SHA-256 must be 64 hexadecimal characters")
+    wrapper_input = Path(wrapper_arg).expanduser()
+    if not wrapper_input.is_absolute():
+        raise ValueError("isolation wrapper path must be absolute")
+    wrapper = wrapper_input.resolve(strict=True)
+    if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
+        raise ValueError("isolation wrapper must be an executable regular file")
+    actual_hash = hashlib.sha256(wrapper.read_bytes()).hexdigest()
+    if actual_hash.lower() != expected_hash.lower():
+        raise ValueError("isolation wrapper SHA-256 does not match the reviewed operator pin")
+    return wrapper, actual_hash
+
+
+def wrapped_command(wrapper: Path, command: list[str]) -> list[str]:
+    """Pass the agent command to the pinned wrapper using its `--` contract."""
+    return [str(wrapper), "--", *command]
+
+
 def git(workspace: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(workspace), *args], text=True).strip()
 
@@ -768,6 +793,11 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
 
 
 def run_case(args: argparse.Namespace) -> int:
+    try:
+        isolation_wrapper, isolation_wrapper_sha256 = validated_isolation_wrapper(args)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Refusing autonomous run: {exc}", file=sys.stderr)
+        return 2
     case, _prompt_path, _prompt_hash = load_case(args.case)
     workspace = args.workspace.resolve()
     data_dir = args.data_dir.resolve()
@@ -777,10 +807,6 @@ def run_case(args: argparse.Namespace) -> int:
     if not result["passed"]:
         print(json.dumps(result, indent=2))
         return 2
-    if not args.sandbox_confirmed:
-        print("Refusing autonomous run without --sandbox-confirmed inside a disposable sandbox.", file=sys.stderr)
-        return 2
-
     private_directory(data_dir)
 
     agent_binary = shutil.which(agent_binary_arg)
@@ -817,6 +843,7 @@ def run_case(args: argparse.Namespace) -> int:
         for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
             env[key] = str(private_directory(data_dir / name))
         command = build_command(args.agent, agent_binary, case, workspace, prompt, trace_path)
+    command = wrapped_command(isolation_wrapper, command)
     started = time.monotonic()
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
@@ -894,6 +921,11 @@ def run_case(args: argparse.Namespace) -> int:
         "budgets": case["budgets"],
         "runtime": case["runtime"],
         "permissions": case["permissions"],
+        "isolation": {
+            "mode": "operator_managed_wrapper",
+            "wrapper_sha256": isolation_wrapper_sha256,
+            "contract": "operator-reviewed wrapper enforces disposable workspace and task isolation",
+        },
         "host": {"platform": platform.platform(), "machine": platform.machine(), "processor": platform.processor()},
         "agent": args.agent,
         "agent_version": open_code_version(agent_binary) if args.agent == "opencode" else subprocess.check_output([agent_binary, "--version"], text=True).strip(),
@@ -933,7 +965,10 @@ def main() -> int:
                          help="operator-authorized maximum spend for configured remote-provider cases")
         if action == "run":
             sub.add_argument("--artifacts", type=Path, required=True)
-            sub.add_argument("--sandbox-confirmed", action="store_true", help="confirm this runs inside a disposable, externally isolated task sandbox")
+            sub.add_argument("--isolation-wrapper", type=Path, required=True,
+                             help="absolute path to an operator-reviewed wrapper that enforces task isolation")
+            sub.add_argument("--isolation-wrapper-sha256", required=True,
+                             help="SHA-256 pin for the reviewed isolation wrapper")
     args = parser.parse_args()
     try:
         if args.action == "preflight":

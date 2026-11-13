@@ -117,6 +117,15 @@ diagnostic pair, not enough evidence for a comparative quality or speed claim.
 The separate synthetic sidebar-label calibration has two externally verified
 successes in six attempts; it does not count as a website#173 success.
 Full trajectories remain private under the local benchmark artifact directory.
+On 2026-11-12, the official Veasel 0.74.0-next.0 Linux artifact and OpenCode
+2.2.7 were also run against the same repository base, exact prompt, Muse Spark
+1.3 Contributor model, context/output limits, and 330-second wall cap. Veasel
+made an incomplete, inert button edit in 84.6 seconds; OpenCode made no edits
+before timeout. Both failed the independent oracle. The sanitized report is
+[`real-task-comparison-website-173-muse-2026-11-12.json`](../reports/real-task-comparison-website-173-muse-2026-11-12.json).
+This was an exploratory manual replay: the checked-in runner still pins the
+Ollama/CUDA Qwen case and does not yet reproduce this configured Muse run.
+Peak RSS/CPU sampling was missed, so those measurements are explicitly absent.
 Sanitized reports include the [PR #614 search failure](../reports/real-task-attempt-website-173-post-614-search-failure-2026-11-11.json),
 the [resource-aborted post-fallback replays](../reports/real-task-attempt-website-173-post-fallback-resource-abort-2026-11-11.json),
 and the [PR #615 startup abort](../reports/real-task-attempt-website-173-pr615-startup-resource-abort-2026-11-12.json).

@@ -1,0 +1,114 @@
+{
+  "schema": "veasel.real-task-pair@1",
+  "recorded_date": "2026-11-12",
+  "classification": "real repository issue; one exploratory matched pair; not enough evidence for comparative quality or speed claims",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "repository": "https://github.com/veasel-labs/website",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "Independent review of changed files against the issue and prompt: mobile sidebar must collapse at <=850px behind a working accessible control, search must reveal matches, desktop must show full navigation after resizing, progressive enhancement and requested accessibility behavior must be preserved, and relevant tests must cover the behavior.",
+    "expected_change": "Responsive, accessible docs navigation with working interaction and regression tests; no dependencies, routes, or tracking."
+  },
+  "controls": {
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "endpoint_family": "configured Meta Responses API",
+    "max_context_tokens": 16384,
+    "max_output_tokens_per_call": 2048,
+    "wall_timeout_seconds": 330,
+    "platform": "Linux x86_64",
+    "veasel_artifact": {
+      "version": "0.74.0-next.0",
+      "asset": "veasel-Linux.tar.gz",
+      "sha256": "6baee8fd1a7f86afa36817e6e38f934618d91a439f19e2c319f870bb55f7907e",
+      "source_commit": "7be6114e64d19a228dbc83aa4e51d614101cc497",
+      "compiler": "V 0.5.2"
+    },
+    "opencode_version": "2.2.7",
+    "filesystem": "Separate disposable clean checkouts at the same base commit; isolated home and application state; provider access retained.",
+    "permissions": "Repository-scoped read/search/edit and a narrow shell allowlist; filesystem sandbox and approval details differ between clients, so this pair is task- and model-matched but not a perfectly identical permission implementation.",
+    "mcp": "disabled",
+    "memory_scope": "2 GiB; swap disabled for both runs",
+    "resource_measurements": "Not captured; peak RSS and CPU are null rather than inferred."
+  },
+  "attempts": [
+    {
+      "agent": "Veasel Code",
+      "version": "0.74.0-next.0",
+      "status": "completed",
+      "elapsed_seconds": 84.582,
+      "operation_exit_code": 0,
+      "provider": "meta",
+      "model": "muse-spark-1.3-contributor",
+      "tool_steps": 14,
+      "tool_calls": 10,
+      "reported_usage": {
+        "complete": true,
+        "input_tokens": 57581,
+        "output_tokens": 7369,
+        "cache_read_tokens": 13674,
+        "reasoning_tokens": 6167,
+        "cost": {
+          "amount_usd": 0.0058918,
+          "kind": "estimated",
+          "basis": "User-authorized Contributor rate: 43,907 non-cached input tokens at $0.10/M, 13,674 cached input tokens at $0.002/M, and 7,369 output tokens at $0.20/M; provider did not report cost."
+        }
+      },
+      "changed_files": [
+        "src/layouts/DocsLayout.astro"
+      ],
+      "edit_summary": "Inserted an inert Browse sections button with aria-controls and aria-expanded=false. No toggle handler, responsive collapse, search reveal behavior, or task-specific tests were implemented.",
+      "oracle_pass": false,
+      "failure_class": "partial-ui-scaffold-stopped-before-functional-implementation",
+      "checks": {
+        "npm_test": "21 passed, 0 failed (Node 24.21.0); these tests did not establish the requested behavior",
+        "npm_run_check": "0 errors, 0 warnings, 4 pre-existing hints in src/pages/demo.astro",
+        "npm_run_build": "passed; 21 pages built and internal links/assets checked"
+      },
+      "trace_capture": "Private local trace inspected and sanitized into the findings above; raw prompt, source, and tool I/O are not published."
+    },
+    {
+      "agent": "OpenCode",
+      "version": "2.2.7",
+      "status": "external_timeout",
+      "elapsed_seconds": 330.114,
+      "exit_code": 130,
+      "provider": "meta",
+      "model": "muse-spark-1.3-contributor",
+      "model_steps": 39,
+      "tool_calls": 104,
+      "tool_calls_by_type": {
+        "read": 99,
+        "glob": 2,
+        "grep": 3,
+        "edit": 0,
+        "shell": 0
+      },
+      "changed_files": [],
+      "oracle_pass": false,
+      "failure_class": "repository-exploration-without-edit-before-timeout",
+      "reported_usage": {
+        "complete": true,
+        "input_tokens": 30707,
+        "output_tokens": 7393,
+        "cache_read_tokens": 175174,
+        "reasoning_tokens": 1990,
+        "cost": {
+          "amount_usd": 0.005297648,
+          "kind": "reported_by_opencode"
+        }
+      },
+      "trace_capture": "Private local event log inspected and summarized; raw prompt, source, and tool I/O are not published."
+    }
+  ],
+  "interpretation": "Both attempts failed the external task oracle. Veasel made one incomplete UI scaffold and stopped; OpenCode made no edits before timeout. Their elapsed times are not a speed comparison because there is one pair and client permission implementations differ. This pair does not establish general quality or comparative efficiency.",
+  "accounting": {
+    "total_observed_or_estimated_cost_usd": 0.011189448,
+    "paid_api_spend_authorized_by_user": true,
+    "authorization_limit_usd": 5,
+    "provider_data_training_notice_acknowledged": true,
+    "secrets_or_raw_traces_published": false
+  },
+  "follow_up": "Use this failure to target follow-through and task-completion behavior, add repeat attempts and resource sampling to the harness, and rerun the exact pinned task after a concrete orchestration change. Keep real multi-provider acceptance open until different providers independently execute and pass an externally verified task."
+}

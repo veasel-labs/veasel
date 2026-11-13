@@ -91,6 +91,9 @@ fn test_approved_shell_sandbox_network_flag_parses_allowlist() {
 }
 
 fn test_linux_shell_writable_scope_rejects_parent_escape_and_symlinks() {
+	$if !linux {
+		return
+	}
 	root := os.join_path(os.temp_dir(), 'veasel-write-scope-${uuid.new_v4().str()}')
 	child := os.join_path(root, 'child')
 	sibling := os.join_path(root, 'sibling')

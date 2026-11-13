@@ -1290,7 +1290,13 @@ def main() -> None:
                     f"status={approved_command.get('status')!r}, output={approved_command.get('output')!r}"
                 )
             effect_content = shell_effect.read_text(encoding="utf-8")
-            if effect_content != "veasel-shell-approved\n":
+            # cmd.exe retains one trailing space in this wrapped echo/redirection
+            # command; POSIX shells do not. Verify the exact platform result so
+            # the smoke checks the actual file contents on each OS.
+            expected_effect_content = (
+                "veasel-shell-approved \n" if os.name == "nt" else "veasel-shell-approved\n"
+            )
+            if effect_content != expected_effect_content:
                 raise RuntimeError(f"approved shell effect had unexpected contents: {effect_content!r}")
 
             shell_review_coverage = {

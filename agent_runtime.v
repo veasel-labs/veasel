@@ -473,6 +473,18 @@ fn workspace_read_identity_from_call(call ProviderToolCall) ?string {
 	}
 }
 
+fn workspace_edit_path_was_read(call ProviderToolCall, read_paths map[string]bool) bool {
+	if call.function.name != 'workspace_propose_file_edit' {
+		return true
+	}
+	fields := json2.decode[map[string]json2.Any](call.function.arguments) or { return false }
+	path := string_tool_argument(fields, 'path') or { return false }
+	if path.len == 0 {
+		return false
+	}
+	return read_paths[json2.encode[[]string]([path])]
+}
+
 fn agent_workspace_read_succeeded_since(call ProviderToolCall, previous_reads map[string]bool,
 	current_reads map[string]bool) bool {
 	identity := workspace_read_identity_from_call(call) or { return false }
@@ -709,6 +721,12 @@ fn execute_agent_tool_batch(app &App, mut turn_ctx vcontext.Context, root string
 					continue
 				}
 			}
+		}
+		if call.function.name == 'workspace_propose_file_edit'
+			&& !workspace_edit_path_was_read(call, read_paths) {
+			results[index] = encode_agent_tool_error('Focused edit rejected: search for the target and read the complete file with workspace_read_file first, then use that exact path. Do not use a placeholder or guessed path.')
+			index++
+			continue
 		}
 		// Edits, shell, and MCP may change workspace contents. A denied Skill
 		// read is handled below without entering the duplicate-read cache.

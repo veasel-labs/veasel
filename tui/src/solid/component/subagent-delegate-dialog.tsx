@@ -77,7 +77,9 @@ function chooseTarget(dialog: DialogHost, props: SubagentDelegateDialogProps, ag
     ],
     footer: props.catalogFailures?.length
       ? undefined
-      : "Only listed configured models can be selected · Enter continues · Esc cancels",
+      : agentId === "implementer"
+        ? "Implementer edits files only; parent reviews changes and runs tests"
+        : "Only listed configured models can be selected · Enter continues · Esc cancels",
     dismissOnSelect: false,
     onSelect: (selected) => {
       if (selected.value.startsWith("__retry_provider_catalog__\0")) {

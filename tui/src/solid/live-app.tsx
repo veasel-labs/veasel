@@ -937,6 +937,7 @@ function LiveAppShell(props: LiveAppProps) {
         roles: [
           { id: "explorer", description: "Read-only repository investigation" },
           { id: "reviewer", description: "Read-only code and change review" },
+          { id: "implementer", description: "File edits only; parent reviews changes and runs tests" },
         ],
         models,
         initialRole,

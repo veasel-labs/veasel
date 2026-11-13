@@ -256,6 +256,37 @@ class PreflightTests(unittest.TestCase):
                 for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
                     self.assertNotIn(sentinel, serialized)
 
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""])
+    @patch.object(runner, "configured_model", side_effect=OSError("profile unreadable"))
+    @patch.object(runner, "model_digest", return_value="pinned-digest")
+    def test_ollama_profile_read_error_does_not_serialize_expected_endpoint(self, _digest, _config, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_path = self.configured_case(Path(temp_dir))
+            case = json.loads(case_path.read_text())
+            case["model"].update({"provider": "ollama", "name": "qwen3:8b", "digest": "pinned-digest"})
+            case["provider_config"] = {
+                "provider": "ollama", "model": "qwen3:8b",
+                "base_url": "http://127.0.0.1:11435/secret-path-token/v1",
+                "max_output_tokens": 1024, "api_key_saved": False,
+            }
+            case_path.write_text(json.dumps(case))
+            result = runner.preflight(case_path, Path(temp_dir),
+                                      "http://127.0.0.1:11435/secret-path-token", Path(temp_dir) / "state")
+        serialized = json.dumps(result)
+        self.assertFalse(result["passed"])
+        self.assertNotIn("secret-path-token", serialized)
+        config_check = next(item for item in result["checks"] if item["name"] == "veasel_model_config")
+        self.assertNotIn("base_url", json.dumps(config_check))
+
+    def test_provider_config_report_filters_field_types_and_enums(self):
+        case = {"provider_config": {
+            "mode": ["veasel-profile"], "provider": ["anthropic"],
+            "model": "https://model-secret.invalid/id", "base_url": "https://url-secret.invalid/?token=x",
+            "credential": ["saved-profile"], "max_output_tokens": True, "api_key_saved": "true",
+        }}
+        self.assertEqual(runner.safe_provider_config_report(case), {})
+
     @patch.object(runner, "preflight", return_value={"passed": True, "checks": []})
     @patch.object(runner.shutil, "which", return_value="/usr/bin/veasel")
     @patch.object(runner.subprocess, "check_output", return_value="veasel test")

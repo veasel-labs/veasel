@@ -305,8 +305,28 @@ def safe_provider_config_report(case: dict[str, Any]) -> dict[str, Any]:
     config = case.get("provider_config", {})
     if not isinstance(config, dict):
         return {}
-    safe_fields = ("mode", "provider", "model", "max_output_tokens", "api_key_saved", "credential")
-    return {key: config[key] for key in safe_fields if key in config}
+    safe: dict[str, Any] = {}
+    mode = config.get("mode")
+    if mode == "veasel-profile":
+        safe["mode"] = mode
+    credential = config.get("credential")
+    if isinstance(credential, str) and credential in {"saved-profile", "none"}:
+        safe["credential"] = credential
+    provider = config.get("provider")
+    if isinstance(provider, str) and 0 < len(provider) <= 128 and provider.isascii() \
+        and all(char.isalnum() or char in "._+-" for char in provider):
+        safe["provider"] = provider
+    model = config.get("model")
+    if isinstance(model, str) and 0 < len(model) <= 200 and model.isascii() and "://" not in model \
+        and all(char.isalnum() or char in "._:/+-" for char in model):
+        safe["model"] = model
+    output_tokens = config.get("max_output_tokens")
+    if isinstance(output_tokens, int) and not isinstance(output_tokens, bool) and output_tokens > 0:
+        safe["max_output_tokens"] = output_tokens
+    api_key_saved = config.get("api_key_saved")
+    if isinstance(api_key_saved, bool):
+        safe["api_key_saved"] = api_key_saved
+    return safe
 
 
 def safe_endpoint(value: Any) -> bool:
@@ -482,7 +502,7 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             safe_expected = safe_provider_config_report(case)
             check("veasel_model_config", config_matches, safe_actual, safe_expected)
         except (OSError, KeyError, json.JSONDecodeError) as exc:
-            check("veasel_model_config", False, type(exc).__name__, expected_config)
+            check("veasel_model_config", False, type(exc).__name__, safe_provider_config_report(case))
     elif agent == "opencode" and is_ollama:
         expected_version = case["comparators"]["opencode_version"]
         expected_model_id = case["comparators"]["opencode_model"]

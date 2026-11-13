@@ -116,6 +116,25 @@ fn test_linux_shell_writable_scope_rejects_parent_escape_and_symlinks() {
 	assert linux_shell_writable_scope_rejected(canonical_root, link)
 }
 
+fn test_linux_sandbox_shell_path_falls_back_to_usr_bin_without_path_lookup() {
+	$if !linux {
+		return
+	}
+	resolved := linux_sandbox_shell_executable_path() or { panic(err) }
+	assert os.is_executable(resolved)
+	if !os.is_executable('/bin/sh') && os.is_executable('/usr/bin/sh') {
+		assert resolved == '/usr/bin/sh'
+	}
+	if !os.is_executable('/usr/bin/sh') {
+		return
+	}
+	selected := linux_sandbox_shell_executable_path_from(['/bin/sh-missing', '/usr/bin/sh']) or {
+		panic(err)
+	}
+	assert selected == '/usr/bin/sh'
+	assert linux_sandbox_shell_executable_path_from(['/bin/sh-missing']) or { '' } == ''
+}
+
 fn test_linux_bubblewrap_default_scope_rejects_symlink_to_broad_root() {
 	$if !linux {
 		return

@@ -269,3 +269,60 @@ test("a background turn completion cannot invalidate the focused session review 
     server.stop(true)
   }
 })
+
+test("a background uncertain turn keeps its warning in the focused session", async () => {
+  const controller = new AbortController()
+  let operationId = ""
+  let eventStream: ReadableStreamDefaultController<Uint8Array> | undefined
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname
+      if (path === "/v1/events") return new Response(new ReadableStream({
+        start(stream) {
+          eventStream = stream
+          stream.enqueue(new TextEncoder().encode(": connected\n\n"))
+        },
+      }), { headers: { "content-type": "text/event-stream" } })
+      if (path === "/v1/sessions") return Response.json([
+        { id: "a", title: "Session A", directory: "/tmp/a" },
+        { id: "b", title: "Session B", directory: "/tmp/b" },
+      ])
+      if (path === "/v1/sessions/a/messages" && request.method === "POST") {
+        operationId = request.headers.get("x-veasel-operation-id") ?? ""
+        return Response.json({ operation_id: operationId, status: "running" }, { status: 202 })
+      }
+      if (path.endsWith("/messages")) return Response.json([])
+      if (path.endsWith("/operations")) return Response.json([])
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
+      return Response.json({})
+    },
+  })
+  const setup = await testRender(
+    () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />,
+    { width: 100, height: 35, kittyKeyboard: true },
+  )
+  try {
+    await until(setup, "Session A")
+    setup.mockInput.pressEnter()
+    await until(setup, "Message Veasel")
+    await setup.mockInput.typeText("Work in session A")
+    setup.mockInput.pressEnter()
+    for (let attempt = 0; attempt < 120 && !operationId; attempt++) await Bun.sleep(5)
+    expect(operationId).not.toBe("")
+
+    setup.mockInput.pressKey("]", { ctrl: true })
+    await until(setup, "Session B")
+    eventStream!.enqueue(new TextEncoder().encode(`event: session.turn_completed\ndata: ${JSON.stringify({
+      session_id: "a",
+      data: { operation_id: operationId, status: "uncertain", error: "provider disconnected" },
+    })}\n\n`))
+    await until(setup, "Other session outcome uncertain")
+    expect(setup.captureCharFrame()).toContain("inspect before retrying")
+  } finally {
+    setup.renderer.destroy()
+    controller.abort()
+    server.stop(true)
+  }
+})

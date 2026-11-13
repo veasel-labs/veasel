@@ -1611,10 +1611,18 @@ function LiveAppShell(props: LiveAppProps) {
         }
         setComposerFocused(true)
       } else if (activeSessionId() && status().includes("Turn active in another session")) {
-        const waiting = queuedFollowUps().filter((item) => item.sessionId === activeSessionId()).length
-        setStatus(waiting > 0
-          ? formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`)
-          : "● connected  ·  listening for activity")
+        if (completion.status === "cancelled") {
+          setStatus(formatWarnStatus("Turn cancelled in another session"))
+        } else if (completion.status === "uncertain") {
+          setStatus(formatWarnStatus("Other session outcome uncertain; inspect before retrying"))
+        } else if (completion.status !== "completed") {
+          noteError("turns.complete", completion.error ?? "Assistant turn failed in another session", sessionId)
+        } else {
+          const waiting = queuedFollowUps().filter((item) => item.sessionId === activeSessionId()).length
+          setStatus(waiting > 0
+            ? formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`)
+            : "● connected  ·  listening for activity")
+        }
       }
       attention.notifyTurnFinished(
         completion.status ?? "",

@@ -450,11 +450,14 @@ fn test_approved_shell_uses_windows_appcontainer_sandbox_when_available() {
 	// capture is unreliable on some hosts even when the command succeeds. Also
 	// prove the child does not inherit an unrelated parent-process secret.
 	result := run_approved_shell_command(root, ShellCommandSummary{
-		command:         'echo approved-windows-ac-ok>sandbox-write.txt & if defined ${secret_env_name} (echo inherited>sandbox-env.txt) else (echo filtered>sandbox-env.txt)'
+		command:         'echo approved-windows-ac-ok>sandbox-write.txt & if defined ${secret_env_name} (echo inherited>sandbox-env.txt) else (echo filtered>sandbox-env.txt) & echo approved-windows-output-marker'
 		cwd:             '.'
 		timeout_seconds: 5
 	})
 	assert result.status == 'succeeded', result.output
+	if result.output.len > 0 {
+		assert result.output.contains('approved-windows-output-marker'), result.output
+	}
 	written := os.read_file(os.join_path(root, 'sandbox-write.txt')) or { '' }
 	assert written.contains('approved-windows-ac-ok'), written
 	environment_result := os.read_file(os.join_path(root, 'sandbox-env.txt')) or { '' }

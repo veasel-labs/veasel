@@ -113,6 +113,31 @@ fn test_linux_shell_writable_scope_rejects_parent_escape_and_symlinks() {
 	assert linux_shell_writable_scope_rejected(canonical_root, link)
 }
 
+fn test_linux_bubblewrap_default_scope_rejects_symlink_to_broad_root() {
+	$if !linux {
+		return
+	}
+	link := os.join_path(os.temp_dir(), 'veasel-broad-root-${uuid.new_v4().str()}')
+	os.symlink('/home', link) or { panic(err) }
+	defer { os.rm(link) or {} }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer { cancel() }
+	result := run_linux_sandboxed_shell_command(mut turn_ctx, link, '.', ShellCommandSummary{
+		command:         'printf unsafe-root-command-started'
+		cwd:             '.'
+		timeout_seconds: 2
+	}, LinuxShellSandboxOptions{
+		purpose:            'Delegated child command'
+		fail_closed:        true
+		filter_environment: true
+		allow_network:      false
+	})
+	assert result.status == 'failed'
+	assert result.output.contains('symbolic-link workspace root')
+	assert !result.output.contains('unsafe-root-command-started')
+}
+
 fn linux_shell_writable_scope_rejected(root string, writable_root string) bool {
 	_ := validate_linux_shell_writable_scope(root, writable_root) or { return true }
 	return false

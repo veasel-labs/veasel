@@ -513,7 +513,7 @@ fn run_approved_shell_command_with_context(mut turn_ctx vcontext.Context, root s
 fn run_linux_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string, cwd string, command ShellCommandSummary,
 	options LinuxShellSandboxOptions) ShellCommandResult {
 	return run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx, root, cwd, command,
-		options, if options.writable_root.len == 0 { root } else { options.writable_root })
+		options, options.writable_root)
 }
 
 // run_linux_sandboxed_shell_command_with_write_scope uses the existing
@@ -527,9 +527,16 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	cwd string, command ShellCommandSummary, options LinuxShellSandboxOptions,
 	writable_root string) ShellCommandResult {
 	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
+	canonical_root := validate_linux_shell_workspace_root(root) or {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    '${purpose} refused a non-canonical or symbolic-link workspace root; no process was started.'
+		}
+	}
 	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr', '/etc',
 		'/opt', '/boot', '/sys', '/proc', '/dev', '/run', '/bin', '/sbin', '/lib', '/lib64'] {
-		if root == broad_root {
+		if canonical_root == broad_root {
 			return ShellCommandResult{
 				status:    'failed'
 				exit_code: -1
@@ -537,8 +544,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 			}
 		}
 	}
-	canonical_root := os.real_path(root)
-	canonical_writable_root := if writable_root == root {
+	canonical_writable_root := if writable_root.len == 0 {
 		canonical_root
 	} else {
 		validate_linux_shell_writable_scope(canonical_root, writable_root) or {
@@ -585,7 +591,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << '--dev'
 	args << '/dev'
 	mut parent := ''
-	for component in root.split('/') {
+	for component in canonical_root.split('/') {
 		if component.len == 0 {
 			continue
 		}
@@ -597,7 +603,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << canonical_writable_root
 	args << canonical_writable_root
 	args << '--chdir'
-	args << os.join_path(root, cwd)
+	args << os.join_path(canonical_root, cwd)
 	args << '--'
 	args << '/bin/sh'
 	args << '-c'
@@ -619,15 +625,25 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
 }
 
-fn validate_linux_shell_writable_scope(root string, writable_root string) !string {
-	if root.len == 0 || writable_root.len == 0 || !os.is_abs_path(root)
-		|| !os.is_abs_path(writable_root) || os.is_link(root) || os.is_link(writable_root) {
-		return error('workspace paths must be canonical absolute directories')
+fn validate_linux_shell_workspace_root(root string) !string {
+	if root.len == 0 || !os.is_abs_path(root) || os.is_link(root) {
+		return error('workspace root must be a canonical absolute directory')
 	}
 	canonical_root := os.real_path(root)
+	if canonical_root != root || !os.is_dir(root) {
+		return error('workspace root must be a canonical absolute directory')
+	}
+	return canonical_root
+}
+
+fn validate_linux_shell_writable_scope(root string, writable_root string) !string {
+	canonical_root := validate_linux_shell_workspace_root(root)!
+	if writable_root.len == 0 || !os.is_abs_path(writable_root) || os.is_link(writable_root) {
+		return error('writable directory must be a canonical absolute path')
+	}
 	canonical_writable_root := os.real_path(writable_root)
-	if canonical_root != root || canonical_writable_root != writable_root || !os.is_dir(root)
-		|| !os.is_dir(writable_root) || canonical_writable_root == canonical_root
+	if canonical_writable_root != writable_root || !os.is_dir(writable_root)
+		|| canonical_writable_root == canonical_root
 		|| !shell_path_is_within(canonical_root, canonical_writable_root) {
 		return error('writable directory must be a strict descendant of the canonical child workspace')
 	}

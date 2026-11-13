@@ -1007,13 +1007,15 @@ def main() -> None:
             env.pop(name, None)
         server: subprocess.Popen[bytes] | None = None
         first_run_provider: subprocess.Popen[bytes] | None = None
+        backend_log_path = Path(temporary) / "backend.log"
+        backend_log = backend_log_path.open("ab")
 
         def start_server() -> subprocess.Popen[bytes]:
             process = subprocess.Popen(
                 [str(server_path), "serve"],
                 env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=backend_log,
+                stderr=subprocess.STDOUT,
             )
             wait_for_server(process, port)
             return process
@@ -1246,6 +1248,13 @@ def main() -> None:
                 session_id=shell_session_id,
                 shell_review_command=shell_command,
             )
+            if server.poll() is not None:
+                backend_log.flush()
+                diagnostic = backend_log_path.read_text(encoding="utf-8", errors="replace")[-8_000:]
+                raise RuntimeError(
+                    "standalone backend exited during the packaged shell-review journey "
+                    f"(exit={server.returncode}); final backend log:\n{diagnostic}"
+                )
             rejected_command = wait_for_shell_command_status(
                 port,
                 shell_session_id,
@@ -1368,6 +1377,7 @@ def main() -> None:
         finally:
             if server is not None:
                 stop_server(server)
+            backend_log.close()
             if first_run_provider is not None and first_run_provider.poll() is None:
                 first_run_provider.terminate()
                 try:

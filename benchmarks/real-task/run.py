@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parent
@@ -280,15 +281,124 @@ def gpu_info() -> dict[str, Any]:
 
 def configured_model(data_dir: Path) -> dict[str, Any]:
     settings = json.loads((data_dir / "model-settings.json").read_text())
+    if not isinstance(settings, dict):
+        raise ValueError("model settings must be an object")
     provider = settings.get("active_provider", "")
-    profile = settings.get("profiles", {}).get(provider, {})
+    provider = provider if isinstance(provider, str) else ""
+    profiles = settings.get("profiles", {})
+    profiles = profiles if isinstance(profiles, dict) else {}
+    profile = profiles.get(provider, {})
+    if not isinstance(profile, dict):
+        profile = {}
+    max_output_tokens = profile.get("max_output_tokens", 0)
     return {
         "provider": provider,
         "model": profile.get("model", ""),
         "base_url": profile.get("base_url", ""),
-        "max_output_tokens": profile.get("max_output_tokens", 0),
-        "api_key_saved": bool(profile.get("api_key", "")),
+        "max_output_tokens": max_output_tokens if isinstance(max_output_tokens, int) and not isinstance(max_output_tokens, bool) else 0,
+        "api_key_saved": isinstance(profile.get("api_key"), str) and bool(profile["api_key"].strip()),
     }
+
+
+def safe_provider_config_report(case: dict[str, Any]) -> dict[str, Any]:
+    """Allowlist non-secret provider identity/settings, excluding endpoint URLs."""
+    config = case.get("provider_config", {})
+    if not isinstance(config, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    mode = config.get("mode")
+    if mode == "veasel-profile":
+        safe["mode"] = mode
+    credential = config.get("credential")
+    if isinstance(credential, str) and credential in {"saved-profile", "none"}:
+        safe["credential"] = credential
+    provider = config.get("provider")
+    if isinstance(provider, str) and 0 < len(provider) <= 128 and provider.isascii() \
+        and all(char.isalnum() or char in "._+-" for char in provider):
+        safe["provider"] = provider
+    model = config.get("model")
+    if isinstance(model, str) and 0 < len(model) <= 200 and model.isascii() and "://" not in model \
+        and all(char.isalnum() or char in "._:/+-" for char in model):
+        safe["model"] = model
+    output_tokens = config.get("max_output_tokens")
+    if isinstance(output_tokens, int) and not isinstance(output_tokens, bool) and output_tokens > 0:
+        safe["max_output_tokens"] = output_tokens
+    api_key_saved = config.get("api_key_saved")
+    if isinstance(api_key_saved, bool):
+        safe["api_key_saved"] = api_key_saved
+    return safe
+
+
+def safe_endpoint(value: Any) -> bool:
+    """Accept HTTP(S) endpoints without URL-carried credentials or query secrets."""
+    if not isinstance(value, str) or not value or any(ord(char) < 0x20 for char in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname) \
+            and parsed.username is None and parsed.password is None \
+            and not parsed.query and not parsed.fragment
+    except ValueError:
+        return False
+
+
+def repository_identity(value: Any) -> tuple[str, str, int | None, str] | None:
+    """Parse repository identity without retaining URL credentials or query data."""
+    if not isinstance(value, str) or any(ord(char) < 0x20 for char in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not hostname or parsed.query or parsed.fragment:
+        return None
+    path = parsed.path.rstrip("/").removesuffix(".git")
+    return parsed.scheme.lower(), hostname.lower(), port, path
+
+
+def configured_provider_target(case: dict[str, Any], data_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Check a non-Ollama target against Veasel's saved profile without probing it."""
+    expected = case["provider_config"]
+    model = case["model"]
+    checks: list[dict[str, Any]] = []
+
+    def check(name: str, ok: bool, actual: Any, required: Any) -> None:
+        checks.append({"name": name, "passed": ok, "actual": actual, "required": required})
+
+    try:
+        actual = configured_model(data_dir)
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        actual = {"provider": "", "model": "", "base_url": "", "max_output_tokens": 0,
+                  "api_key_saved": False}
+    provider = model.get("provider", "")
+    model_name = model.get("name", "")
+    expected_endpoint = expected.get("base_url", "")
+    check("provider_model_selection", actual["provider"] == provider and actual["model"] == model_name,
+          {"provider": actual["provider"], "model": actual["model"]},
+          {"provider": provider, "model": model_name})
+    endpoint_matches = safe_endpoint(expected_endpoint) and safe_endpoint(actual["base_url"]) \
+        and actual["base_url"] == expected_endpoint
+    check("provider_endpoint", endpoint_matches,
+          "matched" if endpoint_matches else "missing, unsafe, or mismatched",
+          "safe configured case endpoint")
+    output_tokens = model.get("output_tokens", 0)
+    context_tokens = model.get("context_tokens", 0)
+    check("provider_context_budget", isinstance(context_tokens, int) and not isinstance(context_tokens, bool)
+          and context_tokens > 0,
+          context_tokens, "positive integer")
+    check("provider_output_budget", isinstance(output_tokens, int) and not isinstance(output_tokens, bool)
+          and output_tokens > 0 and actual["max_output_tokens"] >= output_tokens,
+          actual["max_output_tokens"], {"at_least": output_tokens})
+    credential_policy = expected.get("credential", "")
+    requires_key = credential_policy == "saved-profile"
+    check("provider_credential_policy", credential_policy in {"saved-profile", "none"},
+          credential_policy or "missing", ["saved-profile", "none"])
+    check("provider_credential_ready", not requires_key or actual["api_key_saved"],
+          "saved" if actual["api_key_saved"] else "missing",
+          "saved profile credential" if requires_key else "no credential required")
+    return actual, checks
 
 
 def open_code_version(binary: str) -> str:
@@ -374,7 +484,8 @@ def git(workspace: Path, *args: str) -> str:
 
 def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode") -> dict[str, Any]:
     case, _prompt_path, prompt_hash = load_case(case_path)
-    expected = case["model"]["digest"]
+    model = case["model"]
+    is_ollama = model.get("provider") == "ollama"
     available, swap = available_resources()
     checks: list[dict[str, Any]] = []
 
@@ -383,23 +494,36 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
 
     check("prompt_sha256", prompt_hash == case["prompt_sha256"], prompt_hash, case["prompt_sha256"])
     origin = git(workspace, "remote", "get-url", "origin")
-    check("repository", origin.rstrip("/").removesuffix(".git") == case["repository"].removesuffix(".git"), origin, case["repository"])
+    repository_matches = repository_identity(origin) is not None \
+        and repository_identity(origin) == repository_identity(case["repository"])
+    check("repository", repository_matches,
+          "matched" if repository_matches else "mismatch or invalid pinned repository identity",
+          "pinned repository identity")
     revision = git(workspace, "rev-parse", "HEAD")
     check("base_commit", revision == case["base_commit"], revision, case["base_commit"])
     dirty = git(workspace, "status", "--porcelain")
     check("clean_workspace", not dirty, not bool(dirty), True)
-    expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")
-    actual_ollama_url = ollama_url.rstrip("/")
-    check("ollama_endpoint", actual_ollama_url == expected_ollama_url, actual_ollama_url, expected_ollama_url)
-    if agent == "veasel":
+    ollama_target_safe = False
+    if is_ollama:
+        expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")
+        actual_ollama_url = ollama_url.rstrip("/")
+        endpoint_matches = safe_endpoint(expected_ollama_url) and safe_endpoint(actual_ollama_url) \
+            and actual_ollama_url == expected_ollama_url
+        ollama_target_safe = endpoint_matches
+        check("ollama_endpoint", endpoint_matches,
+              "matched" if endpoint_matches else "missing, unsafe, or mismatched",
+              "safe pinned Ollama endpoint")
+    if agent == "veasel" and is_ollama:
         expected_config = case["provider_config"]
         try:
             actual_config = configured_model(data_dir)
-            safe_actual = {key: actual_config[key] for key in expected_config}
-            check("veasel_model_config", safe_actual == expected_config, safe_actual, expected_config)
+            config_matches = all(actual_config.get(key) == value for key, value in expected_config.items())
+            safe_actual = {key: actual_config[key] for key in ("provider", "model", "max_output_tokens", "api_key_saved")}
+            safe_expected = safe_provider_config_report(case)
+            check("veasel_model_config", config_matches, safe_actual, safe_expected)
         except (OSError, KeyError, json.JSONDecodeError) as exc:
-            check("veasel_model_config", False, type(exc).__name__, expected_config)
-    else:
+            check("veasel_model_config", False, type(exc).__name__, safe_provider_config_report(case))
+    elif agent == "opencode" and is_ollama:
         expected_version = case["comparators"]["opencode_version"]
         expected_model_id = case["comparators"]["opencode_model"]
         try:
@@ -427,13 +551,34 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
                 check("opencode_version", actual_version == expected_version, actual_version, expected_version)
             except (OSError, subprocess.CalledProcessError) as exc:
                 check("opencode_version", False, type(exc).__name__, expected_version)
-    try:
-        actual_digest = model_digest(ollama_url, case["model"]["name"])
-        check("model_digest", actual_digest == expected, actual_digest, expected)
-    except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        check("model_digest", False, type(exc).__name__, expected)
+    elif not is_ollama:
+        provider_config = case.get("provider_config", {})
+        check("case_provider_consistency",
+              provider_config.get("provider") == model.get("provider")
+              and provider_config.get("model") == model.get("name")
+              and provider_config.get("mode") == "veasel-profile",
+              {"provider": provider_config.get("provider"), "model": provider_config.get("model")},
+              {"mode": "veasel-profile", "provider": model.get("provider"), "model": model.get("name")})
+        if agent == "veasel":
+            _actual, provider_checks = configured_provider_target(case, data_dir)
+            checks.extend(provider_checks)
+            # This records the limit explicitly: config readiness is not a
+            # network probe or proof that the provider hosts the model.
+            check("provider_live_readiness", True, "not_probed", "live provider/model availability is unverified")
+        else:
+            check("opencode_non_ollama_target", False, "unsupported", "Veasel configured-profile adapter")
+    if is_ollama:
+        expected = model["digest"]
+        if ollama_target_safe:
+            try:
+                actual_digest = model_digest(ollama_url, model["name"])
+                check("model_digest", actual_digest == expected, actual_digest, expected)
+            except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
+                check("model_digest", False, type(exc).__name__, expected)
+        else:
+            check("model_digest", False, "not_probed_unsafe_or_mismatched_endpoint", "pinned model digest")
     expected_ollama = case.get("runtime", {}).get("ollama_version")
-    if expected_ollama:
+    if expected_ollama and ollama_target_safe:
         try:
             actual_ollama = ollama_version(ollama_url)
             check("ollama_version", actual_ollama == expected_ollama, actual_ollama, expected_ollama)
@@ -446,29 +591,33 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             check("gpu", actual_gpu == expected_gpu, actual_gpu, expected_gpu)
         except (OSError, subprocess.CalledProcessError, IndexError, ValueError) as exc:
             check("gpu", False, type(exc).__name__, expected_gpu)
-    if case.get("runtime", {}).get("accelerator") == "CUDA":
-        try:
-            placement = ollama_gpu_placement(ollama_url, case["model"]["name"])
-            expected_context = case["model"]["context_tokens"]
-            gpu_loaded = placement["size_vram_bytes"] >= placement["size_bytes"] > 0
-            context_matches = placement["context_length"] >= expected_context
-            expected_placement = {
-                "name": case["model"]["name"],
-                "digest": case["model"]["digest"],
-                "size_vram_bytes_at_least": placement["size_bytes"],
-                "context_length_at_least": expected_context,
-            }
-            check(
-                "ollama_model_gpu_placement",
-                placement["name"] == case["model"]["name"]
-                and placement["digest"] == case["model"]["digest"]
-                and gpu_loaded
-                and context_matches,
-                placement,
-                expected_placement,
-            )
-        except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            check("ollama_model_gpu_placement", False, type(exc).__name__, "model loaded on CUDA at pinned context")
+    if is_ollama and case.get("runtime", {}).get("accelerator") == "CUDA":
+        if not ollama_target_safe:
+            check("ollama_model_gpu_placement", False,
+                  "not_probed_unsafe_or_mismatched_endpoint", "pinned model placement at pinned context")
+        else:
+            try:
+                placement = ollama_gpu_placement(ollama_url, model["name"])
+                expected_context = model["context_tokens"]
+                gpu_loaded = placement["size_vram_bytes"] >= placement["size_bytes"] > 0
+                context_matches = placement["context_length"] >= expected_context
+                expected_placement = {
+                    "name": model["name"],
+                    "digest": model["digest"],
+                    "size_vram_bytes_at_least": placement["size_bytes"],
+                    "context_length_at_least": expected_context,
+                }
+                check(
+                    "ollama_model_gpu_placement",
+                    placement["name"] == model["name"]
+                    and placement["digest"] == model["digest"]
+                    and gpu_loaded
+                    and context_matches,
+                    placement,
+                    expected_placement,
+                )
+            except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                check("ollama_model_gpu_placement", False, type(exc).__name__, "model loaded on CUDA at pinned context")
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_startup_memory = case["budgets"].get("minimum_startup_available_memory_bytes", min_memory)
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
@@ -597,7 +746,14 @@ def run_case(args: argparse.Namespace) -> int:
         "base_commit": case["base_commit"],
         "prompt_sha256": case["prompt_sha256"],
         "model": case["model"],
-        "provider_config": case["provider_config"],
+        "provider_provenance": {
+            "provider": case["model"]["provider"],
+            "model": case["model"]["name"],
+            "selection_source": "versioned_case_and_configured_profile" if case["model"]["provider"] != "ollama" else "versioned_case",
+            "remote_model_readiness": "not_probed" if case["model"]["provider"] != "ollama" else "ollama_digest_verified",
+        },
+        "provider_config": safe_provider_config_report(case),
+        "budgets": case["budgets"],
         "runtime": case["runtime"],
         "permissions": case["permissions"],
         "host": {"platform": platform.platform(), "machine": platform.machine(), "processor": platform.processor()},

@@ -20,7 +20,14 @@ class CaseCorpusTests(unittest.TestCase):
                 case_ids.add(case["id"])
                 prompt = (case_file.parent / case["prompt_file"]).read_bytes()
                 self.assertEqual(hashlib.sha256(prompt).hexdigest(), case["prompt_sha256"])
-                self.assertEqual(case["model"]["name"], case["comparators"]["opencode_model"].removeprefix("ollama/"))
+                if case["model"]["provider"] == "ollama":
+                    self.assertEqual(case["model"]["name"], case["comparators"]["opencode_model"].removeprefix("ollama/"))
+                    self.assertIn("digest", case["model"])
+                else:
+                    self.assertEqual(case["provider_config"]["mode"], "veasel-profile")
+                    self.assertEqual(case["provider_config"]["provider"], case["model"]["provider"])
+                    self.assertEqual(case["provider_config"]["model"], case["model"]["name"])
+                    self.assertNotIn("api_key", case["provider_config"])
                 self.assertGreater(case["budgets"]["wall_seconds"], 0)
                 self.assertTrue(case["oracle"])
 

@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import argparse
 import json
@@ -154,10 +155,220 @@ class ProviderUsageTests(unittest.TestCase):
 
 
 class PreflightTests(unittest.TestCase):
+    @staticmethod
+    def configured_case(root: Path) -> Path:
+        case_dir = root / "case"
+        case_dir.mkdir()
+        prompt = "Add a deterministic test for the requested behavior.\n"
+        (case_dir / "prompt.md").write_text(prompt)
+        case = {
+            "schema": "veasel.real-task-case.v1",
+            "id": "example/repo#1",
+            "repository": "https://github.com/example/repo.git",
+            "base_commit": "a" * 40,
+            "prompt_file": "prompt.md",
+            "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+            "model": {"provider": "anthropic", "name": "claude-example", "context_tokens": 8192,
+                      "output_tokens": 1024},
+            "provider_config": {"mode": "veasel-profile", "provider": "anthropic",
+                                "model": "claude-example", "base_url": "https://api.anthropic.com/v1",
+                                "credential": "saved-profile"},
+            "runtime": {},
+            "permissions": {"tool_allowlist": ["read", "edit", "shell"]},
+            "budgets": {"wall_seconds": 60, "minimum_available_memory_bytes": 0,
+                        "minimum_free_swap_bytes": 0},
+            "oracle": "Independently inspect the resulting patch.",
+        }
+        case_path = case_dir / "case.json"
+        case_path.write_text(json.dumps(case))
+        return case_path
+
     def test_case_prompt_hash_is_pinned(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         case, _prompt, digest = runner.load_case(case_path)
         self.assertEqual(digest, case["prompt_sha256"])
+
+    def test_non_ollama_profile_preflight_checks_model_endpoint_budget_and_saved_credential(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_path = self.configured_case(Path(temp_dir))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "anthropic", "model": "claude-example",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 2048,
+                "api_key_saved": True,
+            }):
+                _case, _prompt, _digest = runner.load_case(case_path)
+                actual, checks = runner.configured_provider_target(_case, Path(temp_dir) / "state")
+        self.assertTrue(all(check["passed"] for check in checks), checks)
+        self.assertEqual(actual["provider"], "anthropic")
+        self.assertNotIn("api_key", actual)
+
+    def test_non_ollama_profile_fails_closed_on_missing_or_mismatched_credentials(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_path = self.configured_case(Path(temp_dir))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "openai-compatible", "model": "other-model",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 0,
+                "api_key_saved": False,
+            }):
+                case, _prompt, _digest = runner.load_case(case_path)
+                _actual, checks = runner.configured_provider_target(case, Path(temp_dir) / "state")
+        failed = {item["name"] for item in checks if not item["passed"]}
+        self.assertEqual(failed, {"provider_model_selection", "provider_output_budget", "provider_credential_ready"})
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""] * 4)
+    def test_non_ollama_preflight_does_not_probe_ollama_or_claim_live_model_readiness(self, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_path = self.configured_case(Path(temp_dir))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "anthropic", "model": "claude-example",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
+                "api_key_saved": True,
+            }), patch.object(runner, "model_digest", side_effect=AssertionError("must not probe Ollama")):
+                result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435", Path(temp_dir) / "state")
+        self.assertTrue(result["passed"], result["checks"])
+        readiness = next(item for item in result["checks"] if item["name"] == "provider_live_readiness")
+        self.assertEqual(readiness["actual"], "not_probed")
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=[
+        "https://origin-user:origin-token@github.com/example/repo.git", "a" * 40, "",
+    ])
+    def test_preflight_never_serializes_repository_url_credentials(self, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case_path = self.configured_case(root)
+            case = json.loads(case_path.read_text())
+            case["repository"] = "https://case-user:case-token@github.com/example/repo.git"
+            case_path.write_text(json.dumps(case))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "anthropic", "model": "claude-example",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
+                "api_key_saved": True,
+            }):
+                result = runner.preflight(case_path, root, "unused", root / "state")
+        self.assertTrue(result["passed"], result["checks"])
+        serialized = json.dumps(result)
+        for sentinel in ("origin-user", "origin-token", "case-user", "case-token"):
+            self.assertNotIn(sentinel, serialized)
+        repository_check = next(item for item in result["checks"] if item["name"] == "repository")
+        self.assertEqual(repository_check["actual"], "matched")
+        self.assertEqual(repository_check["required"], "pinned repository identity")
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=[
+        "https://github.com/example/repo.git?access_token=remote-secret", "a" * 40, "",
+    ])
+    def test_preflight_rejects_and_redacts_repository_url_query_secrets(self, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case_path = self.configured_case(root)
+            case = json.loads(case_path.read_text())
+            case["repository"] = "https://github.com/example/repo.git?access_token=case-secret"
+            case_path.write_text(json.dumps(case))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "anthropic", "model": "claude-example",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
+                "api_key_saved": True,
+            }):
+                result = runner.preflight(case_path, root, "unused", root / "state")
+        self.assertFalse(result["passed"])
+        serialized = json.dumps(result)
+        self.assertNotIn("remote-secret", serialized)
+        self.assertNotIn("case-secret", serialized)
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""] * 4)
+    def test_non_ollama_preflight_never_serializes_endpoint_secrets(self, _git, _resources):
+        endpoint_cases = [
+            ("https://userinfo-secret@example.invalid/v1", False),
+            ("https://example.invalid/v1?token=query-secret", False),
+            ("https://example.invalid/v1#fragment-secret", False),
+            ("https://example.invalid/secret-path-token/v1", True),
+        ]
+        for endpoint, expected_pass in endpoint_cases:
+            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory() as temp_dir:
+                case_path = self.configured_case(Path(temp_dir))
+                case = json.loads(case_path.read_text())
+                case["provider_config"]["base_url"] = endpoint
+                case_path.write_text(json.dumps(case))
+                with patch.object(runner, "configured_model", return_value={
+                    "provider": "anthropic", "model": "claude-example", "base_url": endpoint,
+                    "max_output_tokens": 1024, "api_key_saved": True,
+                }):
+                    result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435",
+                                              Path(temp_dir) / "state")
+                serialized = json.dumps(result)
+                self.assertEqual(result["passed"], expected_pass)
+                for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
+                    self.assertNotIn(sentinel, serialized)
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""])
+    @patch.object(runner, "configured_model", side_effect=OSError("profile unreadable"))
+    @patch.object(runner, "model_digest", return_value="pinned-digest")
+    def test_ollama_profile_read_error_does_not_serialize_expected_endpoint(self, _digest, _config, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_path = self.configured_case(Path(temp_dir))
+            case = json.loads(case_path.read_text())
+            case["model"].update({"provider": "ollama", "name": "qwen3:8b", "digest": "pinned-digest"})
+            case["provider_config"] = {
+                "provider": "ollama", "model": "qwen3:8b",
+                "base_url": "http://127.0.0.1:11435/secret-path-token/v1",
+                "max_output_tokens": 1024, "api_key_saved": False,
+            }
+            case_path.write_text(json.dumps(case))
+            result = runner.preflight(case_path, Path(temp_dir),
+                                      "http://127.0.0.1:11435/secret-path-token", Path(temp_dir) / "state")
+        serialized = json.dumps(result)
+        self.assertFalse(result["passed"])
+        self.assertNotIn("secret-path-token", serialized)
+        config_check = next(item for item in result["checks"] if item["name"] == "veasel_model_config")
+        self.assertNotIn("base_url", json.dumps(config_check))
+
+    def test_provider_config_report_filters_field_types_and_enums(self):
+        case = {"provider_config": {
+            "mode": ["veasel-profile"], "provider": ["anthropic"],
+            "model": "https://model-secret.invalid/id", "base_url": "https://url-secret.invalid/?token=x",
+            "credential": ["saved-profile"], "max_output_tokens": True, "api_key_saved": "true",
+        }}
+        self.assertEqual(runner.safe_provider_config_report(case), {})
+
+    @patch.object(runner, "preflight", return_value={"passed": True, "checks": []})
+    @patch.object(runner.shutil, "which", return_value="/usr/bin/veasel")
+    @patch.object(runner.subprocess, "check_output", return_value="veasel test")
+    @patch.object(runner, "provider_reported_usage", return_value={"reported": False})
+    def test_attempt_report_projects_provider_config_without_endpoint_secrets(self, _usage, _version, _which, _preflight):
+        endpoint_cases = [
+            "https://userinfo-secret@example.invalid/v1",
+            "https://example.invalid/v1?token=query-secret",
+            "https://example.invalid/v1#fragment-secret",
+            "https://example.invalid/secret-path-token/v1",
+        ]
+        for endpoint in endpoint_cases:
+            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                case_path = self.configured_case(root)
+                case = json.loads(case_path.read_text())
+                case["provider_config"]["base_url"] = endpoint
+                case_path.write_text(json.dumps(case))
+                workspace = root / "workspace"
+                workspace.mkdir()
+                artifacts = root / "artifacts"
+                process = Mock()
+                process.poll.return_value = 0
+                process.wait.return_value = 0
+                args = argparse.Namespace(
+                    case=case_path, workspace=workspace, data_dir=root / "state", ollama_url="unused",
+                    agent="veasel", veasel="veasel", opencode="opencode", artifacts=artifacts,
+                    sandbox_confirmed=True,
+                )
+                with patch.object(runner.subprocess, "Popen", return_value=process):
+                    self.assertEqual(runner.run_case(args), 0)
+                report_text = (artifacts / "attempt.json").read_text()
+                self.assertNotIn("base_url", json.loads(report_text)["provider_config"])
+                for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
+                    self.assertNotIn(sentinel, report_text)
 
     def test_config_projection_never_returns_saved_api_key(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -174,6 +385,18 @@ class PreflightTests(unittest.TestCase):
             config = runner.configured_model(Path(temp_dir))
         self.assertTrue(config["api_key_saved"])
         self.assertNotIn("must-not-leak", repr(config))
+
+    def test_config_projection_requires_nonblank_string_api_key(self):
+        for api_key in ("   ", 123, ["present"]):
+            with self.subTest(api_key_type=type(api_key).__name__):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    settings_path = Path(temp_dir) / "model-settings.json"
+                    settings_path.write_text(json.dumps({
+                        "active_provider": "anthropic",
+                        "profiles": {"anthropic": {"api_key": api_key}},
+                    }))
+                    config = runner.configured_model(Path(temp_dir))
+                self.assertFalse(config["api_key_saved"])
 
     def test_opencode_config_pins_endpoint_and_token_limits(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"

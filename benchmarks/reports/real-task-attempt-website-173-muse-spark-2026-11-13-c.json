@@ -1,0 +1,730 @@
+{
+  "schema": "veasel.real-task-attempt.v1",
+  "case_id": "veasel-labs/website#173-muse-spark-1.3-contributor",
+  "case_sha256": "8af7a58218a20319a42ea798a65698865caba905b498332300de2f02bc3922f0",
+  "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+  "model": {
+    "provider": "meta",
+    "name": "muse-spark-1.3-contributor",
+    "context_tokens": 8192,
+    "output_tokens": 2048
+  },
+  "provider_provenance": {
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "selection_source": "versioned_case_and_configured_profile",
+    "remote_model_readiness": "not_probed"
+  },
+  "provider_config": {
+    "mode": "veasel-profile",
+    "credential": "saved-profile",
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor"
+  },
+  "budgets": {
+    "wall_seconds": 330,
+    "minimum_startup_available_memory_bytes": 5368709120,
+    "minimum_available_memory_bytes": 4831838208,
+    "minimum_free_swap_bytes": 0
+  },
+  "runtime": {
+    "veasel_version": "Veasel Code 0.79.2-next.0",
+    "veasel_binary_sha256": "b8bf7212e4b4324f255a45e12fac06d2c6516d0c570d386c1ce753921bfe5443"
+  },
+  "permissions": {
+    "edit": "autonomous inside a disposable Bubblewrap sandbox",
+    "shell": "autonomous inside a disposable Bubblewrap sandbox",
+    "mcp": "disabled",
+    "tool_allowlist": [
+      "read",
+      "edit",
+      "glob",
+      "grep",
+      "list",
+      "shell"
+    ],
+    "web": false,
+    "subagents": false
+  },
+  "host": {
+    "platform": "Linux-7.2.15-arch1-1-x86_64-with-glibc2.44",
+    "machine": "x86_64",
+    "processor": ""
+  },
+  "agent": "veasel",
+  "agent_version": "Veasel Code 0.79.2-next.0",
+  "agent_binary_sha256": "b8bf7212e4b4324f255a45e12fac06d2c6516d0c570d386c1ce753921bfe5443",
+  "preflight": {
+    "schema": "veasel.real-task-preflight.v1",
+    "case_id": "veasel-labs/website#173-muse-spark-1.3-contributor",
+    "case_sha256": "8af7a58218a20319a42ea798a65698865caba905b498332300de2f02bc3922f0",
+    "agent": "veasel",
+    "passed": true,
+    "checks": [
+      {
+        "name": "prompt_sha256",
+        "passed": true,
+        "actual": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+        "required": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e"
+      },
+      {
+        "name": "repository",
+        "passed": true,
+        "actual": "matched",
+        "required": "pinned repository identity"
+      },
+      {
+        "name": "base_commit",
+        "passed": true,
+        "actual": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+        "required": "184c7d86911d4a760ec89c6ddc9097682e65da44"
+      },
+      {
+        "name": "clean_workspace",
+        "passed": true,
+        "actual": true,
+        "required": true
+      },
+      {
+        "name": "approved_cost_ceiling",
+        "passed": true,
+        "actual": {
+          "approved_spend_usd": "4.89",
+          "max_cost_usd": "0.1",
+          "max_model_requests": 81,
+          "input_usd_per_million_tokens": "0.1",
+          "output_usd_per_million_tokens": "0.2",
+          "worst_case_input_tokens": 663552,
+          "worst_case_output_tokens": 165888,
+          "conservative_max_cost_usd": "0.09953280",
+          "cost_basis": "all input billed at uncached rate; every request uses full context and output caps"
+        },
+        "required": "positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling"
+      },
+      {
+        "name": "case_provider_consistency",
+        "passed": true,
+        "actual": {
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        },
+        "required": {
+          "mode": "veasel-profile",
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        }
+      },
+      {
+        "name": "provider_model_selection",
+        "passed": true,
+        "actual": {
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        },
+        "required": {
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        }
+      },
+      {
+        "name": "provider_endpoint",
+        "passed": true,
+        "actual": "matched",
+        "required": "safe configured case endpoint"
+      },
+      {
+        "name": "provider_context_budget",
+        "passed": true,
+        "actual": 8192,
+        "required": "positive integer"
+      },
+      {
+        "name": "provider_output_budget",
+        "passed": true,
+        "actual": 2048,
+        "required": {
+          "at_least": 2048
+        }
+      },
+      {
+        "name": "provider_credential_policy",
+        "passed": true,
+        "actual": "saved-profile",
+        "required": [
+          "saved-profile",
+          "none"
+        ]
+      },
+      {
+        "name": "provider_credential_ready",
+        "passed": true,
+        "actual": "saved",
+        "required": "saved profile credential"
+      },
+      {
+        "name": "veasel_version",
+        "passed": true,
+        "actual": "Veasel Code 0.79.2-next.0",
+        "required": "Veasel Code 0.79.2-next.0"
+      },
+      {
+        "name": "veasel_binary_sha256",
+        "passed": true,
+        "actual": "b8bf7212e4b4324f255a45e12fac06d2c6516d0c570d386c1ce753921bfe5443",
+        "required": "b8bf7212e4b4324f255a45e12fac06d2c6516d0c570d386c1ce753921bfe5443"
+      },
+      {
+        "name": "provider_live_readiness",
+        "passed": true,
+        "actual": "not_probed",
+        "required": "live provider/model availability is unverified"
+      },
+      {
+        "name": "available_memory",
+        "passed": true,
+        "actual": 6651617280,
+        "required": 4831838208
+      },
+      {
+        "name": "startup_memory_headroom",
+        "passed": true,
+        "actual": 6651617280,
+        "required": 5368709120
+      },
+      {
+        "name": "free_swap",
+        "passed": true,
+        "actual": 3450535936,
+        "required": 0
+      }
+    ],
+    "resources_bytes": {
+      "available_memory": 6651617280,
+      "free_swap": 3450535936
+    },
+    "cost_budget": {
+      "approved_spend_usd": "4.89",
+      "max_cost_usd": "0.1",
+      "max_model_requests": 81,
+      "input_usd_per_million_tokens": "0.1",
+      "output_usd_per_million_tokens": "0.2",
+      "worst_case_input_tokens": 663552,
+      "worst_case_output_tokens": 165888,
+      "conservative_max_cost_usd": "0.09953280",
+      "cost_basis": "all input billed at uncached rate; every request uses full context and output caps"
+    }
+  },
+  "outcome": "resource_aborted",
+  "return_code": -2,
+  "wall_ms": 45047,
+  "resource_samples": [
+    {
+      "elapsed_ms": 0,
+      "available_memory": 6656892928,
+      "free_swap": 3450535936,
+      "agent_process_count": 1,
+      "agent_process_tree_cpu_time_ms": 0,
+      "agent_process_tree_rss_bytes": 6500352,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 1000,
+      "available_memory": 6543704064,
+      "free_swap": 3450535936,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 20,
+      "agent_process_tree_rss_bytes": 23392256,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 27
+    },
+    {
+      "elapsed_ms": 2000,
+      "available_memory": 6272536576,
+      "free_swap": 3450535936,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 20,
+      "agent_process_tree_rss_bytes": 23392256,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 33
+    },
+    {
+      "elapsed_ms": 3000,
+      "available_memory": 6031548416,
+      "free_swap": 3450544128,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23633920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 29
+    },
+    {
+      "elapsed_ms": 4000,
+      "available_memory": 5993304064,
+      "free_swap": 3450634240,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23830528,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 5000,
+      "available_memory": 5936787456,
+      "free_swap": 3450671104,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 40,
+      "agent_process_tree_rss_bytes": 24223744,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 6000,
+      "available_memory": 5902831616,
+      "free_swap": 3450671104,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 40,
+      "agent_process_tree_rss_bytes": 24223744,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 7000,
+      "available_memory": 5822902272,
+      "free_swap": 3450671104,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 50,
+      "agent_process_tree_rss_bytes": 26800128,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 29
+    },
+    {
+      "elapsed_ms": 8000,
+      "available_memory": 6088019968,
+      "free_swap": 3450716160,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 50,
+      "agent_process_tree_rss_bytes": 26800128,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 29
+    },
+    {
+      "elapsed_ms": 9000,
+      "available_memory": 5929967616,
+      "free_swap": 3450875904,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 26800128,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 31
+    },
+    {
+      "elapsed_ms": 10001,
+      "available_memory": 5793669120,
+      "free_swap": 3451006976,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 29016064,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 31
+    },
+    {
+      "elapsed_ms": 11001,
+      "available_memory": 5602951168,
+      "free_swap": 3451011072,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 29016064,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 43
+    },
+    {
+      "elapsed_ms": 12001,
+      "available_memory": 5508964352,
+      "free_swap": 3450847232,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 29212672,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 32
+    },
+    {
+      "elapsed_ms": 13001,
+      "available_memory": 5361143808,
+      "free_swap": 3450748928,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 29409280,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 35
+    },
+    {
+      "elapsed_ms": 14001,
+      "available_memory": 5177815040,
+      "free_swap": 3450810368,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 29409280,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 37
+    },
+    {
+      "elapsed_ms": 15001,
+      "available_memory": 5297766400,
+      "free_swap": 3450699776,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 29999104,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 35
+    },
+    {
+      "elapsed_ms": 16001,
+      "available_memory": 5235478528,
+      "free_swap": 3450339328,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 30392320,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 37
+    },
+    {
+      "elapsed_ms": 17001,
+      "available_memory": 5229850624,
+      "free_swap": 3449958400,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 90,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 78
+    },
+    {
+      "elapsed_ms": 18001,
+      "available_memory": 6424113152,
+      "free_swap": 3433639936,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 100,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 19002,
+      "available_memory": 6322569216,
+      "free_swap": 3433639936,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 110,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 31
+    },
+    {
+      "elapsed_ms": 20002,
+      "available_memory": 6511415296,
+      "free_swap": 3433668608,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 110,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 21002,
+      "available_memory": 6517370880,
+      "free_swap": 3433684992,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 110,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 22002,
+      "available_memory": 6519943168,
+      "free_swap": 3433684992,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 110,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 23002,
+      "available_memory": 6526627840,
+      "free_swap": 3433721856,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 110,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 24002,
+      "available_memory": 6479626240,
+      "free_swap": 3433779200,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 110,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 25002,
+      "available_memory": 6496206848,
+      "free_swap": 3433779200,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 120,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 26002,
+      "available_memory": 6506319872,
+      "free_swap": 3433779200,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 130,
+      "agent_process_tree_rss_bytes": 30584832,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 27
+    },
+    {
+      "elapsed_ms": 27002,
+      "available_memory": 6445539328,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 140,
+      "agent_process_tree_rss_bytes": 30248960,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 28002,
+      "available_memory": 6420250624,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 140,
+      "agent_process_tree_rss_bytes": 30248960,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 30
+    },
+    {
+      "elapsed_ms": 29002,
+      "available_memory": 6424121344,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 140,
+      "agent_process_tree_rss_bytes": 30248960,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 29
+    },
+    {
+      "elapsed_ms": 30002,
+      "available_memory": 6423461888,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 150,
+      "agent_process_tree_rss_bytes": 30248960,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 31003,
+      "available_memory": 6617669632,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 160,
+      "agent_process_tree_rss_bytes": 30445568,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 32003,
+      "available_memory": 6496866304,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 160,
+      "agent_process_tree_rss_bytes": 30445568,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 29
+    },
+    {
+      "elapsed_ms": 33003,
+      "available_memory": 6613671936,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 160,
+      "agent_process_tree_rss_bytes": 30445568,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 27
+    },
+    {
+      "elapsed_ms": 34003,
+      "available_memory": 6626377728,
+      "free_swap": 3433783296,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 180,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 35003,
+      "available_memory": 6637023232,
+      "free_swap": 3433787392,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 36003,
+      "available_memory": 6640279552,
+      "free_swap": 3433787392,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 27
+    },
+    {
+      "elapsed_ms": 37003,
+      "available_memory": 6641926144,
+      "free_swap": 3433787392,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 38003,
+      "available_memory": 6318190592,
+      "free_swap": 3433844736,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 31
+    },
+    {
+      "elapsed_ms": 39003,
+      "available_memory": 5727916032,
+      "free_swap": 3434156032,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 50
+    },
+    {
+      "elapsed_ms": 40003,
+      "available_memory": 5516005376,
+      "free_swap": 3434176512,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 33
+    },
+    {
+      "elapsed_ms": 41003,
+      "available_memory": 5347094528,
+      "free_swap": 3434196992,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 190,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 32
+    },
+    {
+      "elapsed_ms": 42003,
+      "available_memory": 5169414144,
+      "free_swap": 3434196992,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 210,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 30
+    },
+    {
+      "elapsed_ms": 43004,
+      "available_memory": 5023035392,
+      "free_swap": 3434196992,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 210,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 44004,
+      "available_memory": 4850315264,
+      "free_swap": 3434323968,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 210,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 45004,
+      "available_memory": 4663476224,
+      "free_swap": 3434323968,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 210,
+      "agent_process_tree_rss_bytes": 30289920,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 31
+    }
+  ],
+  "resource_measurements": {
+    "sampling_interval_target_seconds": 1,
+    "sampling_overhead_total_ms": 1422,
+    "agent_process_tree_rss_sampled_max_bytes": 30584832,
+    "agent_process_tree_cpu_time_sampled_max_ms": 210,
+    "gpu_device_memory_used_sampled_max_mib": null,
+    "agent_memory_scope": "agent process tree RSS; shared pages may be counted more than once",
+    "gpu_memory_scope": "device-wide; includes the model server and other GPU clients"
+  },
+  "provider_usage": {
+    "reported": false,
+    "source": "veasel_atif_final_metrics",
+    "trace_step_count": null,
+    "reported_agent_cost_usd": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "reasoning_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null
+  },
+  "estimated_provider_cost_usd": null,
+  "artifacts": {
+    "trace": "trajectory.private.json",
+    "stdout": "stdout.private.log",
+    "stderr": "stderr.private.log"
+  },
+  "score": "unscored: resource floor reached before turn completion",
+  "oracle_review": {
+    "passed": false,
+    "status": "unscored resource abort; not counted as model coding failure",
+    "workspace_changed": false,
+    "minimum_available_memory_bytes": 4663476224,
+    "required_available_memory_bytes": 4831838208,
+    "provider_usage_available": false,
+    "conservative_cost_reserve_usd": 0.11,
+    "reconciled_cost_reserve_usd": 0.11,
+    "preflight_omitted_terminal_summary_completion": true
+  },
+  "cost_bound_audit": {
+    "original_preflight_http_attempt_cap": 81,
+    "corrected_pinned_runtime_http_attempt_cap": 84,
+    "corrected_worst_case_cost_usd": "0.10321920",
+    "original_case_ceiling_usd": "0.10",
+    "corrected_case_ceiling_usd": "0.11",
+    "provider_usage_unknown_reserve_usd": "0.11",
+    "finding": "Original preflight omitted the runtime terminal tool-budget summary completion. This correction updates the future case bound; historical preflight and case hashes remain unchanged."
+  }
+}

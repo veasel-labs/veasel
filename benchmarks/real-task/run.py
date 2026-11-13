@@ -16,6 +16,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -23,6 +24,8 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 GIB = 1024**3
+PINNED_VEASEL_MAX_MODEL_ROUNDS = 28
+PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND = 3
 
 
 def load_case(path: Path) -> tuple[dict[str, Any], Path, str]:
@@ -218,6 +221,28 @@ def provider_reported_usage(agent: str, trace_path: Path, stdout_path: Path) -> 
     }
 
 
+def estimate_provider_cost(case: dict[str, Any], usage: dict[str, Any]) -> str | None:
+    """Estimate configured-provider cost from reported usage and pinned rates."""
+    budget = case.get("cost_budget")
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    if not isinstance(budget, dict) or not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+        return None
+    try:
+        input_rate = Decimal(str(budget["input_usd_per_million_tokens"]))
+        output_rate = Decimal(str(budget["output_usd_per_million_tokens"]))
+        cached_tokens = usage.get("cache_read_tokens")
+        cached_tokens = cached_tokens if isinstance(cached_tokens, int) and not isinstance(cached_tokens, bool) else 0
+        cached_tokens = min(max(cached_tokens, 0), input_tokens)
+        cached_rate = Decimal(str(budget.get("cached_input_usd_per_million_tokens", budget["input_usd_per_million_tokens"])))
+        cost = (Decimal(input_tokens - cached_tokens) * input_rate
+                + Decimal(cached_tokens) * cached_rate
+                + Decimal(output_tokens) * output_rate) / Decimal(1_000_000)
+        return str(cost.quantize(Decimal("0.00000001"))) if cost.is_finite() and cost >= 0 else None
+    except (KeyError, InvalidOperation, TypeError, ValueError):
+        return None
+
+
 def restricted_environment(source: dict[str, str] | None = None) -> dict[str, str]:
     source = os.environ if source is None else source
     allowed = {"PATH", "HOME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR"}
@@ -300,6 +325,33 @@ def configured_model(data_dir: Path) -> dict[str, Any]:
     }
 
 
+def private_profile_key(data_dir: Path) -> str:
+    settings_path = data_dir / "model-settings.json"
+    settings = json.loads(settings_path.read_text())
+    provider = settings.get("active_provider", "")
+    profile = settings.get("profiles", {}).get(provider, {})
+    key = profile.get("api_key", "") if isinstance(profile, dict) else ""
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError("saved provider credential disappeared after preflight")
+    return key
+
+
+def remove_profile_key_from_disk(data_dir: Path) -> None:
+    """Move the key to the backend-only environment, then scrub benchmark state."""
+    settings_path = data_dir / "model-settings.json"
+    settings = json.loads(settings_path.read_text())
+    provider = settings.get("active_provider", "")
+    profiles = settings.get("profiles", {})
+    profile = profiles.get(provider, {}) if isinstance(profiles, dict) else {}
+    if not isinstance(profile, dict):
+        raise ValueError("saved provider profile is invalid")
+    profile.pop("api_key", None)
+    temporary = settings_path.with_name(f".{settings_path.name}.scrubbed")
+    temporary.write_text(json.dumps(settings))
+    temporary.chmod(0o600)
+    os.replace(temporary, settings_path)
+
+
 def safe_provider_config_report(case: dict[str, Any]) -> dict[str, Any]:
     """Allowlist non-secret provider identity/settings, excluding endpoint URLs."""
     config = case.get("provider_config", {})
@@ -327,6 +379,55 @@ def safe_provider_config_report(case: dict[str, Any]) -> dict[str, Any]:
     if isinstance(api_key_saved, bool):
         safe["api_key_saved"] = api_key_saved
     return safe
+
+
+def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Compute a conservative configured-provider upper bound before any model call."""
+    checks: list[dict[str, Any]] = []
+    budget = case.get("cost_budget", {})
+
+    def check(name: str, ok: bool, actual: Any, required: Any) -> None:
+        checks.append({"name": name, "passed": ok, "actual": actual, "required": required})
+
+    try:
+        approved = Decimal(approved_spend_usd)
+        ceiling = Decimal(str(budget["max_cost_usd"]))
+        input_rate = Decimal(str(budget["input_usd_per_million_tokens"]))
+        output_rate = Decimal(str(budget["output_usd_per_million_tokens"]))
+        request_cap = budget["max_model_requests"]
+        context_tokens = case["model"]["context_tokens"]
+        output_tokens = case["model"]["output_tokens"]
+        numeric_values = (approved, ceiling, input_rate, output_rate)
+        valid_numbers = all(value.is_finite() and value >= 0 for value in numeric_values)
+        valid_counts = all(isinstance(value, int) and not isinstance(value, bool) and value > 0
+                           for value in (request_cap, context_tokens, output_tokens))
+        request_cap_matches_runtime = request_cap == (
+            PINNED_VEASEL_MAX_MODEL_ROUNDS * PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND
+        )
+        bound = (Decimal(request_cap) * (Decimal(context_tokens) * input_rate
+                                         + Decimal(output_tokens) * output_rate) / Decimal(1_000_000)
+                 if valid_numbers and valid_counts else None)
+        safe = valid_numbers and valid_counts and request_cap_matches_runtime and ceiling > 0 and approved > 0 \
+            and ceiling <= approved and bound is not None and bound <= ceiling
+        report = {
+            "approved_spend_usd": str(approved) if approved.is_finite() else "invalid",
+            "max_cost_usd": str(ceiling) if ceiling.is_finite() else "invalid",
+            "max_model_requests": request_cap if valid_counts else None,
+            "pinned_runtime_max_model_requests": PINNED_VEASEL_MAX_MODEL_ROUNDS * PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND,
+            "input_usd_per_million_tokens": str(input_rate) if input_rate.is_finite() else "invalid",
+            "output_usd_per_million_tokens": str(output_rate) if output_rate.is_finite() else "invalid",
+            "worst_case_input_tokens": request_cap * context_tokens if valid_counts else None,
+            "worst_case_output_tokens": request_cap * output_tokens if valid_counts else None,
+            "conservative_max_cost_usd": str(bound.quantize(Decimal("0.00000001"))) if bound is not None else None,
+            "cost_basis": "all input billed at uncached rate; every request uses full context and output caps",
+        }
+        check("approved_cost_ceiling", safe, report,
+              "model request cap matches pinned runtime (28 rounds including the tool-budget summary x 3 HTTP attempts); positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling")
+        return report, checks
+    except (KeyError, InvalidOperation, TypeError, ValueError):
+        report = {"cost_basis": "missing or invalid configured-provider cost budget"}
+        check("approved_cost_ceiling", False, report, "valid rates, request cap, model limits, and approved spend")
+        return report, checks
 
 
 def safe_endpoint(value: Any) -> bool:
@@ -403,6 +504,17 @@ def configured_provider_target(case: dict[str, Any], data_dir: Path) -> tuple[di
 
 def open_code_version(binary: str) -> str:
     return subprocess.check_output([binary, "--version"], text=True, stderr=subprocess.DEVNULL).strip()
+
+
+def veasel_version(binary: str) -> str:
+    return subprocess.check_output([binary, "--version"], text=True, stderr=subprocess.DEVNULL).strip()
+
+
+def binary_sha256(binary: str) -> str | None:
+    try:
+        return hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def open_code_config(case: dict[str, Any]) -> dict[str, Any]:
@@ -482,7 +594,7 @@ def git(workspace: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(workspace), *args], text=True).strip()
 
 
-def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode") -> dict[str, Any]:
+def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode", approved_spend_usd: str = "0") -> dict[str, Any]:
     case, _prompt_path, prompt_hash = load_case(case_path)
     model = case["model"]
     is_ollama = model.get("provider") == "ollama"
@@ -552,6 +664,8 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             except (OSError, subprocess.CalledProcessError) as exc:
                 check("opencode_version", False, type(exc).__name__, expected_version)
     elif not is_ollama:
+        cost_report, cost_checks = provider_cost_bound(case, approved_spend_usd)
+        checks.extend(cost_checks)
         provider_config = case.get("provider_config", {})
         check("case_provider_consistency",
               provider_config.get("provider") == model.get("provider")
@@ -562,6 +676,23 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
         if agent == "veasel":
             _actual, provider_checks = configured_provider_target(case, data_dir)
             checks.extend(provider_checks)
+            expected_version = case.get("runtime", {}).get("veasel_version")
+            if expected_version:
+                binary = shutil.which(agent_binary)
+                if not binary:
+                    check("veasel_version", False, "not_installed", expected_version)
+                else:
+                    try:
+                        actual_version = veasel_version(binary)
+                        check("veasel_version", actual_version == expected_version,
+                              actual_version, expected_version)
+                        expected_hash = case.get("runtime", {}).get("veasel_binary_sha256")
+                        if expected_hash:
+                            actual_hash = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+                            check("veasel_binary_sha256", actual_hash == expected_hash,
+                                  actual_hash, expected_hash)
+                    except (OSError, subprocess.CalledProcessError) as exc:
+                        check("veasel_version", False, type(exc).__name__, expected_version)
             # This records the limit explicitly: config readiness is not a
             # network probe or proof that the provider hosts the model.
             check("provider_live_readiness", True, "not_probed", "live provider/model availability is unverified")
@@ -627,10 +758,12 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
     return {
         "schema": "veasel.real-task-preflight.v1",
         "case_id": case["id"],
+        "case_sha256": hashlib.sha256(case_path.read_bytes()).hexdigest(),
         "agent": agent,
         "passed": all(item["passed"] for item in checks),
         "checks": checks,
         "resources_bytes": {"available_memory": available, "free_swap": swap},
+        "cost_budget": cost_report if not is_ollama else None,
     }
 
 
@@ -639,7 +772,8 @@ def run_case(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     data_dir = args.data_dir.resolve()
     agent_binary_arg = args.veasel if args.agent == "veasel" else args.opencode
-    result = preflight(args.case, workspace, args.ollama_url, data_dir, args.agent, agent_binary_arg)
+    result = preflight(args.case, workspace, args.ollama_url, data_dir, args.agent,
+                       agent_binary_arg, args.approved_spend_usd)
     if not result["passed"]:
         print(json.dumps(result, indent=2))
         return 2
@@ -667,6 +801,9 @@ def run_case(args: argparse.Namespace) -> int:
     prompt = (args.case.parent / case["prompt_file"]).read_text()
     if args.agent == "veasel":
         env["VEASEL_DATA_DIR"] = str(data_dir)
+        if case.get("provider_config", {}).get("credential") == "saved-profile":
+            env["VEASEL_MODEL_API_KEY"] = private_profile_key(data_dir)
+            remove_profile_key_from_disk(data_dir)
         plugin_dir = private_directory(data_dir / "plugins")
         env["VEASEL_PLUGIN_DIR"] = str(plugin_dir)
         env["VEASEL_PORT"] = str(free_loopback_port())
@@ -743,6 +880,7 @@ def run_case(args: argparse.Namespace) -> int:
     report = {
         "schema": "veasel.real-task-attempt.v1",
         "case_id": case["id"],
+        "case_sha256": hashlib.sha256(args.case.read_bytes()).hexdigest(),
         "base_commit": case["base_commit"],
         "prompt_sha256": case["prompt_sha256"],
         "model": case["model"],
@@ -759,6 +897,7 @@ def run_case(args: argparse.Namespace) -> int:
         "host": {"platform": platform.platform(), "machine": platform.machine(), "processor": platform.processor()},
         "agent": args.agent,
         "agent_version": open_code_version(agent_binary) if args.agent == "opencode" else subprocess.check_output([agent_binary, "--version"], text=True).strip(),
+        "agent_binary_sha256": binary_sha256(agent_binary),
         "preflight": result,
         "outcome": outcome,
         "return_code": return_code,
@@ -766,6 +905,7 @@ def run_case(args: argparse.Namespace) -> int:
         "resource_samples": samples,
         "resource_measurements": resource_measurement_summary(samples),
         "provider_usage": usage,
+        "estimated_provider_cost_usd": estimate_provider_cost(case, usage),
         "artifacts": {"trace": trace_path.name if args.agent == "veasel" else None,
                       "stdout": stdout_path.name, "stderr": stderr_path.name},
         "score": "unscored; externally verify the patch and task oracle",
@@ -789,6 +929,8 @@ def main() -> int:
         sub.add_argument("--data-dir", type=Path, required=True, help="isolated agent state directory inside the benchmark sandbox")
         sub.add_argument("--veasel", default="veasel")
         sub.add_argument("--opencode", default="opencode")
+        sub.add_argument("--approved-spend-usd", default="0",
+                         help="operator-authorized maximum spend for configured remote-provider cases")
         if action == "run":
             sub.add_argument("--artifacts", type=Path, required=True)
             sub.add_argument("--sandbox-confirmed", action="store_true", help="confirm this runs inside a disposable, externally isolated task sandbox")
@@ -796,7 +938,7 @@ def main() -> int:
     try:
         if args.action == "preflight":
             agent_binary = args.veasel if args.agent == "veasel" else args.opencode
-            report = preflight(args.case, args.workspace.resolve(), args.ollama_url, args.data_dir.resolve(), args.agent, agent_binary)
+            report = preflight(args.case, args.workspace.resolve(), args.ollama_url, args.data_dir.resolve(), args.agent, agent_binary, args.approved_spend_usd)
             print(json.dumps(report, indent=2))
             return 0 if report["passed"] else 2
         return run_case(args)

@@ -28,6 +28,11 @@ class CaseCorpusTests(unittest.TestCase):
                     self.assertEqual(case["provider_config"]["provider"], case["model"]["provider"])
                     self.assertEqual(case["provider_config"]["model"], case["model"]["name"])
                     self.assertNotIn("api_key", case["provider_config"])
+                    self.assertIn("cost_budget", case)
+                    self.assertGreater(case["cost_budget"]["max_cost_usd"], 0)
+                    self.assertGreater(case["cost_budget"]["max_model_requests"], 0)
+                    self.assertIn("veasel_version", case["runtime"])
+                    self.assertRegex(case["runtime"].get("veasel_binary_sha256", ""), r"^[a-f0-9]{64}$")
                 self.assertGreater(case["budgets"]["wall_seconds"], 0)
                 self.assertTrue(case["oracle"])
 

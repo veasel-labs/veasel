@@ -3142,6 +3142,7 @@ fn test_provider_retryable_failure_classification() {
 	assert !provider_retryable_failure('HTTP 050')
 	assert !provider_retryable_failure('provider stream size limit exceeded')
 	assert !provider_retryable_failure('response_parse')
+	assert provider_retryable_failure('provider response ended before completion')
 	assert !provider_retryable_failure('cancelled')
 	assert !provider_retryable_failure('deadline_exceeded')
 	// The pinned net.http backend reports connection failures with numeric
@@ -3204,6 +3205,26 @@ fn test_provider_retry_recovers_transient_failure_without_delivered_text() {
 		[]AgentToolDefinition{}, ignore_provider_text_delta, ModelConfig{}, stub)
 	assert result.error == ''
 	assert result.output.content == 'recovered'
+	assert attempts[0] == 2
+}
+
+fn test_provider_retry_recovers_incomplete_responses_stream_without_replaying_delivered_text() {
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 30 * time.second)
+	defer { cancel() }
+	mut attempts := []int{len: 1}
+	stub := fn [mut attempts] (mut _ctx vcontext.Context, _ []ChatMessage, _ []AgentToolDefinition,
+		_on_text_delta ProviderTextDeltaFn, _ ModelConfig) ProviderTurnResult {
+		attempts[0]++
+		if attempts[0] == 1 {
+			return ProviderTurnResult{ error: 'provider response ended before completion' }
+		}
+		return ProviderTurnResult{ output: CompletionOutput{ content: 'complete response' } }
+	}
+	result := complete_with_turn_context_retry_attempts(mut turn_ctx, []ChatMessage{},
+		[]AgentToolDefinition{}, ignore_provider_text_delta, ModelConfig{}, stub)
+	assert result.error == ''
+	assert result.output.content == 'complete response'
 	assert attempts[0] == 2
 }
 

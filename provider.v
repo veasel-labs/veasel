@@ -444,6 +444,8 @@ pub:
 	content          string
 	provider_context []string @[json: '-']
 	usage            ProviderUsage
+mut:
+	provider_attempts int @[json: '-']
 }
 
 pub struct ModelCatalogEntry {
@@ -1045,6 +1047,7 @@ interface ModelProvider {
 }
 
 struct ProviderTurnResult {
+mut:
 	output         CompletionOutput
 	error          string
 	retry_after_ms ?int
@@ -1778,7 +1781,8 @@ fn complete_with_turn_context_retry_attempts(mut turn_ctx vcontext.Context, mess
 	for {
 		delivery.delivered = false
 		mut attempt_ctx := turn_ctx
-		result := attempt(mut attempt_ctx, messages, tools, stoppable_delta, config)
+		mut result := attempt(mut attempt_ctx, messages, tools, stoppable_delta, config)
+		result.output.provider_attempts = attempts + 1
 		if result.error.len == 0 {
 			return result
 		}

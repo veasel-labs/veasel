@@ -59,6 +59,7 @@ import { openSkillDialog } from "./component/skill-dialog"
 import { openStatusDialog } from "./component/status-dialog"
 import { openExecutionHistoryDialog } from "./component/execution-history-dialog"
 import { openSubagentDelegateDialog } from "./component/subagent-delegate-dialog"
+import { loadDelegateCatalogs } from "./component/subagent-model-catalog"
 import { openSubagentRunsDialog } from "./component/subagent-runs-dialog"
 import { subagentIntegrationReviewTarget, subagentIntegrationSummary, type SubagentRunView } from "./subagent-runs"
 import { openUsageDashboardDialog } from "./component/usage-dashboard-dialog"
@@ -885,7 +886,7 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
-  const openLiveDelegate = async (initialTask: string) => {
+  const openLiveDelegate = async (initialTask: string, initialRole?: string) => {
     const sessionId = activeSessionId()
     if (!sessionId) {
       openDialogAlert(dialog, {
@@ -899,21 +900,20 @@ function LiveAppShell(props: LiveAppProps) {
     try {
       const settings = await props.api.getModelSettings()
       const configured = new Set(settings.configured_providers ?? [])
-      const modelLists = await Promise.all((settings.providers ?? [])
-        .filter((provider) => configured.has(provider.id))
-        .map(async (provider) => {
-          try {
-            const catalog = await props.api.listProviderModels(provider.id)
-            return catalog.models.map((model) => catalogEntryToSolidModel(provider.id, provider.name, {
-              ...model,
-              id: safeModelCatalogText(model.id) || model.id,
-              name: safeModelCatalogText(model.name) || model.name,
-            }))
-          } catch {
-            return []
-          }
-        }))
-      const models = modelLists.flat()
+      const catalogs = await loadDelegateCatalogs(
+        settings.providers ?? [],
+        configured,
+        async (providerId) => (await props.api.listProviderModels(providerId)).models,
+      )
+      const models = catalogs.flatMap(({ provider, models: catalogModels }) =>
+        catalogModels.map((model) => catalogEntryToSolidModel(provider.id, provider.name, {
+          ...model,
+          id: safeModelCatalogText(model.id) || model.id,
+          name: safeModelCatalogText(model.name) || model.name,
+        })))
+      const catalogFailures = catalogs.flatMap(({ provider, error }) => error
+        ? [{ providerId: provider.id, providerName: provider.name, detail: error }]
+        : [])
       for (const providerId of configured) {
         const profileModel = settings.profiles[providerId]?.model
         if (!profileModel || models.some((model) => model.providerID === providerId && model.modelID === profileModel)) continue
@@ -939,6 +939,13 @@ function LiveAppShell(props: LiveAppProps) {
           { id: "reviewer", description: "Read-only code and change review" },
         ],
         models,
+        initialRole,
+        catalogFailures,
+        onRetryProviderCatalog: (providerId, roleId) => {
+          const failed = catalogFailures.find((failure) => failure.providerId === providerId)
+          if (!failed) return
+          void openLiveDelegate(initialTask, roleId)
+        },
         currentModel,
         initialTask,
         onSubmit: (input) => {

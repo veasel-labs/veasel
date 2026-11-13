@@ -60,6 +60,7 @@ test("delegation sends the selected cross-provider model independently of the ro
       roles: [
         { id: "explorer", description: "Read-only repository investigation" },
         { id: "reviewer", description: "Read-only code and change review" },
+        { id: "implementer", description: "File edits only; parent reviews changes and runs tests" },
       ],
       models,
       currentModel: { providerID: "google", modelID: "parent", name: "Parent model", providerName: "Google" },
@@ -118,6 +119,42 @@ test("delegation sends the selected cross-provider model independently of the ro
   } finally {
     server.stop(true)
   }
+})
+
+test("implementer delegation discloses its file-only capability before task entry", async () => {
+  let submitted: { agent_id: string; task: string } | undefined
+  function Harness() {
+    const dialog = useDialog()
+    onMount(() => openSubagentDelegateDialog(dialog, {
+      roles: [
+        { id: "explorer", description: "Read-only repository investigation" },
+        { id: "reviewer", description: "Read-only code and change review" },
+        { id: "implementer", description: "File edits only; parent reviews changes and runs tests" },
+      ],
+      models: [],
+      currentModel: { providerID: "openai", modelID: "parent", name: "Parent model" },
+      onSubmit: (input) => { submitted = input },
+    }))
+    return <text>Implementer capability test</text>
+  }
+
+  const setup = await testRender(
+    () => <DialogProvider><Harness /></DialogProvider>,
+    { width: 120, height: 36, kittyKeyboard: true },
+  )
+  setups.push(setup)
+  await setup.waitFor(() => setup.captureCharFrame().includes("Choose agent role"))
+  setup.mockInput.pressArrow("down")
+  setup.mockInput.pressArrow("down")
+  await setup.renderOnce()
+  setup.mockInput.pressEnter()
+  await setup.renderOnce()
+  expect(setup.captureCharFrame()).toContain("Choose model")
+  expect(setup.captureCharFrame()).toContain("Implementer edits files only")
+  setup.mockInput.pressEnter()
+  await setup.renderOnce()
+  expect(setup.captureCharFrame()).toContain("Role: implementer")
+  expect(submitted).toBeUndefined()
 })
 
 test("delegate model picker shows provider-scoped catalog retry and retains healthy models", async () => {

@@ -1,0 +1,53 @@
+{
+  "schema": "veasel-real-task-attempt/1",
+  "date": "2026-11-13",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "Compare against the merged website#173 change, run repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior."
+  },
+  "runner": {
+    "name": "Veasel Code candidate built in a disposable Bubblewrap workspace",
+    "source_commit": "2e19f8dbe2bb72761e1762205324b12ed6c50d44",
+    "binary_sha256": "f356bd6429eb0ee1dea49ae979e5381e067b3f91c476ac37fc42da61df046bfa",
+    "provider_configured": "Meta Model API",
+    "model_configured": "muse-spark-1.3-contributor",
+    "provider_route_confirmed": false,
+    "context_tokens": 8192,
+    "output_budget_tokens": 512,
+    "request_input_byte_limit": 32768,
+    "wall_limit_seconds": 300,
+    "memory_limit_bytes": 2147483648,
+    "elapsed_ms": 44279,
+    "status": "failed"
+  },
+  "execution": {
+    "tool_calls_observed": 4,
+    "tool_sequence": [
+      "workspace_search x2",
+      "workspace_read_file x2"
+    ],
+    "workspace_changes": false,
+    "repository_check_result": "Not run; no edit was proposed.",
+    "failure_class": "turn_failed_after_repository_reads"
+  },
+  "measurements": {
+    "agent_process_tree_rss_sampled_max_bytes": 48136192,
+    "agent_process_tree_cpu_time_sampled_ms": 300,
+    "host_available_ram_sampled_min_bytes": 4021587968,
+    "host_memory_abort": false,
+    "gpu_memory_used_sampled_max_mib": null,
+    "note": "Process-tree and host-memory sampling completed. GPU sampling was not configured."
+  },
+  "provider_usage": {
+    "reported": false,
+    "input_tokens": null,
+    "output_tokens": null,
+    "provider_cost_usd": null,
+    "note": "The durable operation did not report provider/model identity or usage counters. The model above is the configured target, not a confirmed provider route. Cost is unknown and is not inferred."
+  },
+  "interpretation": "The provider call ended with a failed operation after two workspace searches and two file reads, before any edit proposal. The isolated workspace remained clean. This is a failed real-model task attempt and is not a controlled comparison.",
+  "oracle_result": "Failure: no file changes, so the requested repository outcome was not achieved. Website#173 remains at zero verified successes.",
+  "privacy": "Raw prompts, source excerpts, logs, and provider trajectories remain private. This report contains no credential values or source contents."
+}

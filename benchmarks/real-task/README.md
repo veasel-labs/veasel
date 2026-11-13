@@ -37,19 +37,30 @@ the runner continues sampling RAM and swap once per second and aborts below the
 
 ## Run Veasel
 
-Run only inside an externally isolated, disposable task environment with no
-host home mounts, unrelated secrets, or writable paths beyond the task checkout
-and isolated Veasel state. The confirmation flag records that operator
-assertion; it does not create or verify a sandbox. The local Veasel provider
+Run only through an operator-managed isolation wrapper whose reviewed behavior
+enforces a disposable task environment: no host home mounts or unrelated
+secrets, and writable access limited to the task checkout and isolated Veasel
+state/artifacts. The runner requires an absolute executable wrapper path and
+its reviewed SHA-256, verifies that digest immediately before launch, and
+passes the agent command through the wrapper using `-- <agent argv>`. A plain
+confirmation flag is not accepted. The runner verifies wrapper identity, not
+its sandbox semantics; the operator must review that the pinned wrapper applies
+the intended filesystem, process, and network boundaries. The wrapper's digest
+is recorded in `attempt.json`. It should `exec` the child so the monitored PID,
+signals, and process tree continue to cover Veasel/OpenCode, and it must never
+log command arguments or environment variables. The local Veasel provider
 configuration must already point at the pinned local model. No paid API is
 used.
 
 ```sh
+ISOLATION_WRAPPER=/absolute/path/to/reviewed-isolation-wrapper
+ISOLATION_WRAPPER_SHA256=<reviewed-64-character-sha256>
 python3 benchmarks/real-task/run.py run \
   --workspace /path/to/disposable/website-checkout \
   --data-dir /benchmark/state \
   --artifacts /path/to/private-attempt-artifacts \
-  --sandbox-confirmed
+  --isolation-wrapper "$ISOLATION_WRAPPER" \
+  --isolation-wrapper-sha256 "$ISOLATION_WRAPPER_SHA256"
 ```
 
 The runner sets the pinned context and output limits itself, samples available
@@ -75,6 +86,8 @@ The preflight rejects repository or system OpenCode config files that could
 override the pinned model/provider setup.
 
 ```sh
+ISOLATION_WRAPPER=/absolute/path/to/reviewed-isolation-wrapper
+ISOLATION_WRAPPER_SHA256=<reviewed-64-character-sha256>
 python3 benchmarks/real-task/run.py preflight --agent opencode \
   --workspace /path/to/disposable/website-checkout \
   --data-dir /benchmark/opencode-state
@@ -82,7 +95,8 @@ python3 benchmarks/real-task/run.py run --agent opencode \
   --workspace /path/to/disposable/website-checkout \
   --data-dir /benchmark/opencode-state \
   --artifacts /path/to/private-opencode-attempt \
-  --sandbox-confirmed
+  --isolation-wrapper "$ISOLATION_WRAPPER" \
+  --isolation-wrapper-sha256 "$ISOLATION_WRAPPER_SHA256"
 ```
 
 Run Veasel and OpenCode as separate attempts from reset workspaces. Do not run
@@ -217,11 +231,18 @@ attempts below are audited with the corrected USD 0.11 reserve. The runtime
 version and binary hash are pinned because the request count follows these
 bounded retry limits. For a five-dollar total authorization, reserve USD 0.11
 for each run whose provider usage is unavailable; the operator's remaining
-approved amount is still required explicitly:
+approved amount is still required explicitly. The original case retains its
+0.79.2 binary pin for replay. The separate
+[`website-173-muse-spark-v0793`](cases/website-173-muse-spark-v0793/case.json)
+case pins Veasel `0.79.3-next.0`, binary SHA-256
+`f9055a2ca22d0ed0f5f670b0499664f87c765a4ce6376bbe77a1f68c3242080b`, and case
+SHA-256 `619e50221c8bbfb25a3680c458f4352578be536c87d6d3a7862f9638d5c04517`.
+Attempt reports include the exact case SHA-256, so results remain attributable
+to the immutable case revision.
 
 ```sh
 python3 benchmarks/real-task/run.py preflight \
-  --case benchmarks/real-task/cases/website-173-muse-spark/case.json \
+  --case benchmarks/real-task/cases/website-173-muse-spark-v0793/case.json \
   --workspace /path/to/disposable/website-checkout \
   --data-dir /benchmark/state \
   --approved-spend-usd 5

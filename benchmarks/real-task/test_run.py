@@ -231,6 +231,53 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(readiness["actual"], "not_probed")
 
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=[
+        "https://origin-user:origin-token@github.com/example/repo.git", "a" * 40, "",
+    ])
+    def test_preflight_never_serializes_repository_url_credentials(self, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case_path = self.configured_case(root)
+            case = json.loads(case_path.read_text())
+            case["repository"] = "https://case-user:case-token@github.com/example/repo.git"
+            case_path.write_text(json.dumps(case))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "anthropic", "model": "claude-example",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
+                "api_key_saved": True,
+            }):
+                result = runner.preflight(case_path, root, "unused", root / "state")
+        self.assertTrue(result["passed"], result["checks"])
+        serialized = json.dumps(result)
+        for sentinel in ("origin-user", "origin-token", "case-user", "case-token"):
+            self.assertNotIn(sentinel, serialized)
+        repository_check = next(item for item in result["checks"] if item["name"] == "repository")
+        self.assertEqual(repository_check["actual"], "matched")
+        self.assertEqual(repository_check["required"], "pinned repository identity")
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
+    @patch.object(runner, "git", side_effect=[
+        "https://github.com/example/repo.git?access_token=remote-secret", "a" * 40, "",
+    ])
+    def test_preflight_rejects_and_redacts_repository_url_query_secrets(self, _git, _resources):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            case_path = self.configured_case(root)
+            case = json.loads(case_path.read_text())
+            case["repository"] = "https://github.com/example/repo.git?access_token=case-secret"
+            case_path.write_text(json.dumps(case))
+            with patch.object(runner, "configured_model", return_value={
+                "provider": "anthropic", "model": "claude-example",
+                "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
+                "api_key_saved": True,
+            }):
+                result = runner.preflight(case_path, root, "unused", root / "state")
+        self.assertFalse(result["passed"])
+        serialized = json.dumps(result)
+        self.assertNotIn("remote-secret", serialized)
+        self.assertNotIn("case-secret", serialized)
+
+    @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
     @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""] * 4)
     def test_non_ollama_preflight_never_serializes_endpoint_secrets(self, _git, _resources):
         endpoint_cases = [
@@ -338,6 +385,18 @@ class PreflightTests(unittest.TestCase):
             config = runner.configured_model(Path(temp_dir))
         self.assertTrue(config["api_key_saved"])
         self.assertNotIn("must-not-leak", repr(config))
+
+    def test_config_projection_requires_nonblank_string_api_key(self):
+        for api_key in ("   ", 123, ["present"]):
+            with self.subTest(api_key_type=type(api_key).__name__):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    settings_path = Path(temp_dir) / "model-settings.json"
+                    settings_path.write_text(json.dumps({
+                        "active_provider": "anthropic",
+                        "profiles": {"anthropic": {"api_key": api_key}},
+                    }))
+                    config = runner.configured_model(Path(temp_dir))
+                self.assertFalse(config["api_key_saved"])
 
     def test_opencode_config_pins_endpoint_and_token_limits(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"

@@ -296,7 +296,7 @@ def configured_model(data_dir: Path) -> dict[str, Any]:
         "model": profile.get("model", ""),
         "base_url": profile.get("base_url", ""),
         "max_output_tokens": max_output_tokens if isinstance(max_output_tokens, int) and not isinstance(max_output_tokens, bool) else 0,
-        "api_key_saved": bool(profile.get("api_key", "")),
+        "api_key_saved": isinstance(profile.get("api_key"), str) and bool(profile["api_key"].strip()),
     }
 
 
@@ -340,6 +340,22 @@ def safe_endpoint(value: Any) -> bool:
             and not parsed.query and not parsed.fragment
     except ValueError:
         return False
+
+
+def repository_identity(value: Any) -> tuple[str, str, int | None, str] | None:
+    """Parse repository identity without retaining URL credentials or query data."""
+    if not isinstance(value, str) or any(ord(char) < 0x20 for char in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not hostname or parsed.query or parsed.fragment:
+        return None
+    path = parsed.path.rstrip("/").removesuffix(".git")
+    return parsed.scheme.lower(), hostname.lower(), port, path
 
 
 def configured_provider_target(case: dict[str, Any], data_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -478,7 +494,11 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
 
     check("prompt_sha256", prompt_hash == case["prompt_sha256"], prompt_hash, case["prompt_sha256"])
     origin = git(workspace, "remote", "get-url", "origin")
-    check("repository", origin.rstrip("/").removesuffix(".git") == case["repository"].removesuffix(".git"), origin, case["repository"])
+    repository_matches = repository_identity(origin) is not None \
+        and repository_identity(origin) == repository_identity(case["repository"])
+    check("repository", repository_matches,
+          "matched" if repository_matches else "mismatch or invalid pinned repository identity",
+          "pinned repository identity")
     revision = git(workspace, "rev-parse", "HEAD")
     check("base_commit", revision == case["base_commit"], revision, case["base_commit"])
     dirty = git(workspace, "status", "--porcelain")

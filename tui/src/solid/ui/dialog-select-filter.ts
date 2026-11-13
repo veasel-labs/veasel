@@ -4,6 +4,8 @@ export type DialogSelectOption<T = string> = {
   title: string
   value: T
   description?: string
+  /** One-line identity shown below the selected option on compact terminals. */
+  compactDescription?: string
   category?: string
   /** Extra fuzzy haystack (keywords, ids). */
   searchText?: string

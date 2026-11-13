@@ -129,6 +129,7 @@ function SubagentResultDialog(props: { run: SubagentRunView; api: VeaselApiClien
 
 function SubagentRunsDialog(props: SubagentRunsDialogProps) {
   const dialog = useDialog()
+  const dimensions = useTerminalDimensions()
   const [runs, setRuns] = createSignal<SubagentRunView[]>([])
   const [loading, setLoading] = createSignal(true)
   const [error, setError] = createSignal<string>()
@@ -173,7 +174,9 @@ function SubagentRunsDialog(props: SubagentRunsDialogProps) {
     title={`Agents · ${runs().length}`}
     options={options()}
     placeholder="Filter task, role, model, or status…"
-    footer={error() ?? (loading() ? "Refreshing durable agent state…" : "Enter to inspect · select a child to view actions · Esc closes")}
+    footer={error() ?? (loading() ? "Refreshing durable agent state…" : dimensions().width < 44 || dimensions().height < 20
+      ? "Enter actions · Esc closes"
+      : "Enter to inspect · select a child to view actions · Esc closes")}
     dismissOnSelect={false}
     onSelect={(option) => {
       const run = runs().find((item) => item.id === option.value)

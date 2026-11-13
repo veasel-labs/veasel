@@ -77,6 +77,7 @@ export function subagentRunOption(run: SubagentRunView): DialogSelectOption<stri
     title: subagentRunTitle(run),
     value: run.id,
     description: subagentRunDescription(run),
+    compactDescription: `${run.provider}/${run.model}`,
     footer: run.cancel_requested ? "cancellation requested" : undefined,
     searchText: [run.id, run.child_session_id, run.parent_operation_id, run.agent_id,
       run.task, run.status, run.provider, run.model].join(" "),

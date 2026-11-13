@@ -175,7 +175,7 @@ def create_shell_review_fixture(
     title: str,
     proposal_count: int,
     prompt: str = "Propose shell command",
-    expected_command: str = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved",
+    expected_command: str = "echo veasel-shell-approved>approved-effect.txt && echo veasel-shell-approved",
 ) -> tuple[str, Path, list[dict[str, object]]]:
     workspace = temporary / f"{title.lower().replace(' ', '-')}-workspace"
     workspace.mkdir()

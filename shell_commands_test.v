@@ -189,6 +189,42 @@ fn test_linux_bubblewrap_child_write_scope_keeps_parent_and_sibling_read_only() 
 	assert os.read_file(protected_sibling_file) or { panic(err) } == 'sibling-safe'
 }
 
+fn test_linux_bubblewrap_rejects_hardlink_escape_before_process_start() {
+	$if !linux {
+		return
+	}
+	if !os.is_dir('/var/tmp') {
+		return
+	}
+	parent := os.join_path('/var/tmp', 'veasel-hardlink-sandbox-${uuid.new_v4().str()}')
+	root := os.join_path(parent, 'parent-workspace')
+	child := os.join_path(root, 'child-worktree')
+	os.mkdir_all(child) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	protected_file := os.join_path(root, 'protected.txt')
+	hardlink_alias := os.join_path(child, 'write-through.txt')
+	os.write_file(protected_file, 'parent-safe') or { panic(err) }
+	os.link(protected_file, hardlink_alias) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer { cancel() }
+	result := run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx, os.real_path(root),
+		'child-worktree', ShellCommandSummary{
+			command:         'printf unsafe-hardlink-write > write-through.txt; printf hardlink-command-started'
+			cwd:             'child-worktree'
+			timeout_seconds: 2
+		}, LinuxShellSandboxOptions{
+			purpose:            'Delegated child command'
+			fail_closed:        true
+			filter_environment: true
+			allow_network:      false
+		}, os.real_path(child))
+	assert result.status == 'failed'
+	assert result.output.contains('no process was started')
+	assert !result.output.contains('hardlink-command-started')
+	assert os.read_file(protected_file) or { panic(err) } == 'parent-safe'
+}
+
 fn test_shell_sandbox_bubblewrap_capability_is_false_when_disabled() {
 	$if linux {
 		previous := os.getenv(shell_sandbox_mode_env)

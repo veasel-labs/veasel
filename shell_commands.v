@@ -658,7 +658,35 @@ fn validate_linux_shell_writable_scope(root string, writable_root string) !strin
 			return error('writable directory contains a symbolic link')
 		}
 	}
+	mut inspector := LinuxWritableScopeInspector{}
+	os.walk_dir(canonical_writable_root, inspector.visit)!
+	if inspector.unsafe_entry {
+		return error('writable directory contains an unsafe or multiply-linked entry')
+	}
 	return canonical_writable_root
+}
+
+struct LinuxWritableScopeInspector {
+mut:
+	unsafe_entry bool
+}
+
+fn (mut inspector LinuxWritableScopeInspector) visit(path string, entry os.WalkDirEntry) os.WalkDirAction {
+	if entry.err != none {
+		inspector.unsafe_entry = true
+		return .stop
+	}
+	if entry.typ == .regular {
+		info := os.lstat(path) or {
+			inspector.unsafe_entry = true
+			return .stop
+		}
+		if info.nlink > 1 {
+			inspector.unsafe_entry = true
+			return .stop
+		}
+	}
+	return .proceed
 }
 
 fn shell_path_is_within(parent string, child string) bool {

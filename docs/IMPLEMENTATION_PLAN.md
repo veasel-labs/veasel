@@ -680,8 +680,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   not grant shell or MCP. Issue #642 keeps child commands disabled while the
   platform boundary is incomplete. A Linux-only Bubblewrap primitive can bind
   a canonical strict-descendant directory as writable while the rest of its
-  workspace remains read-only, with symlink and parent-escape rejection. This
-  primitive is not exposed to agents: aggregate memory/disk/process limits,
+  workspace remains read-only, with symlink, parent-escape, and pre-existing
+  hard-link rejection in the writable tree. This primitive is not exposed to
+  agents: aggregate memory/disk/process limits,
   durable child command lifecycle and review, restart/cancellation acceptance,
   and equivalent macOS/Windows enforcement remain open. Unsupported platforms
   therefore continue to have no child command capability.

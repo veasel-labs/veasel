@@ -234,6 +234,8 @@ def wait_for_shell_command_status(
     session_id: str,
     command_id: str,
     terminal_statuses: set[str],
+    server: subprocess.Popen[bytes],
+    backend_log_path: Path,
     timeout_seconds: float = 20.0,
 ) -> dict[str, object]:
     command_path = (
@@ -243,7 +245,15 @@ def wait_for_shell_command_status(
     deadline = time.monotonic() + timeout_seconds
     command: dict[str, object] = {}
     while time.monotonic() < deadline:
-        command = api_json(port, "GET", command_path)
+        try:
+            command = api_json(port, "GET", command_path)
+        except Exception as error:
+            backend_log.flush()
+            diagnostic = backend_log_path.read_text(encoding="utf-8", errors="replace")[-8_000:]
+            raise RuntimeError(
+                f"could not read shell command status {command_id!r}; "
+                f"backend_process_exit={server.poll()!r}; backend log tail:\n{diagnostic}"
+            ) from error
         status = str(command.get("status", ""))
         if status in terminal_statuses:
             return command
@@ -1260,12 +1270,16 @@ def main() -> None:
                 shell_session_id,
                 str(shell_commands[0]["id"]),
                 {"rejected"},
+                server,
+                backend_log_path,
             )
             approved_command = wait_for_shell_command_status(
                 port,
                 shell_session_id,
                 str(shell_commands[1]["id"]),
                 {"succeeded", "failed", "cancelled", "uncertain"},
+                server,
+                backend_log_path,
             )
             shell_effect = shell_workspace / "approved-effect.txt"
             if rejected_command.get("status") != "rejected":

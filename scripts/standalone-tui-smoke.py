@@ -229,6 +229,33 @@ def create_shell_review_fixture(
     return session_id, workspace, pending
 
 
+def wait_for_shell_command_status(
+    port: int,
+    session_id: str,
+    command_id: str,
+    terminal_statuses: set[str],
+    timeout_seconds: float = 20.0,
+) -> dict[str, object]:
+    command_path = (
+        f"/v1/sessions/{quote(session_id, safe='')}/workspace/commands/"
+        f"{quote(command_id, safe='')}"
+    )
+    deadline = time.monotonic() + timeout_seconds
+    command: dict[str, object] = {}
+    while time.monotonic() < deadline:
+        command = api_json(port, "GET", command_path)
+        status = str(command.get("status", ""))
+        if status in terminal_statuses:
+            return command
+        if status not in {"pending", "running"}:
+            raise RuntimeError(f"shell command entered an unexpected state: {command!r}")
+        time.sleep(0.05)
+    raise TimeoutError(
+        f"shell command did not reach {sorted(terminal_statuses)!r} within "
+        f"{timeout_seconds}s: {command!r}"
+    )
+
+
 def initialize_git_workspace(workspace: Path) -> None:
     workspace.mkdir()
     (workspace / "README.md").write_text("Deterministic delegated-agent smoke workspace.\n", encoding="utf-8")
@@ -1219,15 +1246,17 @@ def main() -> None:
                 session_id=shell_session_id,
                 shell_review_command=shell_command,
             )
-            rejected_command = api_json(
+            rejected_command = wait_for_shell_command_status(
                 port,
-                "GET",
-                f"/v1/sessions/{quote(shell_session_id, safe='')}/workspace/commands/{quote(str(shell_commands[0]['id']), safe='')}",
+                shell_session_id,
+                str(shell_commands[0]["id"]),
+                {"rejected"},
             )
-            approved_command = api_json(
+            approved_command = wait_for_shell_command_status(
                 port,
-                "GET",
-                f"/v1/sessions/{quote(shell_session_id, safe='')}/workspace/commands/{quote(str(shell_commands[1]['id']), safe='')}",
+                shell_session_id,
+                str(shell_commands[1]["id"]),
+                {"succeeded", "failed", "cancelled", "uncertain"},
             )
             shell_effect = shell_workspace / "approved-effect.txt"
             if rejected_command.get("status") != "rejected":

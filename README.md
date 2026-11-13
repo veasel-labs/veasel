@@ -156,8 +156,11 @@ high reasoning where supported.
 In a session, `/` opens slash suggestions. Review file edits with `/patches`
 and `/patch show|approve|reject <id>`; shell with `/commands` and
 `/command show|approve|reject <id>`; MCP with `/mcp calls` and
-`/mcp call show|approve|reject <id>`. Rejected or interrupted work is not
-replayed automatically.
+`/mcp call show|approve|reject <id>`. The Live TUI also shows a pending-review
+notice when proposals need attention; press `Ctrl+R` to inspect them, then `a`
+to approve or `x` to reject the selected proposal. A chat reply such as “yes”
+does not approve a shell command. Rejected or interrupted work is not replayed
+automatically.
 
 Agent Plugin packages are discovered from `$VEASEL_PLUGIN_DIR` or
 `$VEASEL_DATA_DIR/plugins`. Standalone `SKILL.md` folders are also discovered

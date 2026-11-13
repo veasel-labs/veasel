@@ -255,6 +255,24 @@ fn bubblewrap_available() bool {
 	}
 }
 
+// linux_sandbox_shell_executable_path resolves a shell path that is visible
+// inside the read-only root mounted by Bubblewrap. Some Linux containers do
+// not provide /bin (or /bin/sh) even though the standard /usr/bin/sh path is
+// available. Keep this allowlist limited to the conventional POSIX sh paths;
+// do not resolve through PATH, which could select a workspace-controlled tool.
+fn linux_sandbox_shell_executable_path() !string {
+	return linux_sandbox_shell_executable_path_from(['/bin/sh', '/usr/bin/sh'])
+}
+
+fn linux_sandbox_shell_executable_path_from(candidates []string) !string {
+	for candidate in candidates {
+		if os.is_executable(candidate) {
+			return candidate
+		}
+	}
+	return error('no executable POSIX shell found at /bin/sh or /usr/bin/sh')
+}
+
 // shell_sandbox_bubblewrap_capability is true only when Linux Bubblewrap will
 // actually wrap approved shell commands for the current process configuration.
 fn shell_sandbox_bubblewrap_capability() bool {
@@ -569,6 +587,13 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 			output:    '${purpose} could not locate bubblewrap (bwrap); no process was started.'
 		}
 	}
+	shell_executable := linux_sandbox_shell_executable_path() or {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    '${purpose} could not locate /bin/sh or /usr/bin/sh; no process was started.'
+		}
+	}
 	mut args := [
 		'--unshare-all',
 		'--die-with-parent',
@@ -605,7 +630,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << '--chdir'
 	args << os.join_path(canonical_root, cwd)
 	args << '--'
-	args << '/bin/sh'
+	args << shell_executable
 	args << '-c'
 	args << command.command
 	mut process := os.new_process(bwrap)

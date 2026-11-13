@@ -2539,7 +2539,12 @@ function LiveAppShell(props: LiveAppProps) {
       try {
         const view = await props.api.getModelSettings()
         if (needsModelSetup(view)) {
-          toast.warning(NO_MODEL_SETUP_GUIDANCE, "Model setup")
+          // The toast occupies almost the full top row on compact terminals.
+          // Keep the brand and tabs visible there; the persistent status still
+          // tells the operator how to configure a model.
+          if (terminalDimensions().width >= 96 && terminalDimensions().height >= 24) {
+            toast.warning(NO_MODEL_SETUP_GUIDANCE, "Model setup")
+          }
           if (!activeSessionId() && !dialog.open()) {
             setStatus(formatWarnStatus("no model configured · type /connect to set one up"))
           }

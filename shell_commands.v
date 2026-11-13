@@ -163,6 +163,9 @@ struct LinuxShellSandboxOptions {
 	fail_closed        bool
 	filter_environment bool
 	allow_network      bool
+	// writable_root narrows the writable bind for delegated work. Empty keeps
+	// the reviewed workspace-root behavior used by ordinary shell approvals.
+	writable_root string
 }
 
 struct MacosShellSandboxOptions {
@@ -509,6 +512,20 @@ fn run_approved_shell_command_with_context(mut turn_ctx vcontext.Context, root s
 // - Bubblewrap is a host capability, not a bundled V runtime dependency
 fn run_linux_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string, cwd string, command ShellCommandSummary,
 	options LinuxShellSandboxOptions) ShellCommandResult {
+	return run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx, root, cwd, command,
+		options, if options.writable_root.len == 0 { root } else { options.writable_root })
+}
+
+// run_linux_sandboxed_shell_command_with_write_scope uses the existing
+// fail-closed Bubblewrap namespace, but binds only writable_root as writable.
+// Every other host path remains read-only and network stays isolated unless
+// explicitly enabled by the caller. A delegated caller must pass its exact
+// isolated child worktree here; the helper rejects paths outside root and
+// symlinked scope components. This primitive is intentionally not wired to the
+// implementer profile until aggregate resource limits are available.
+fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Context, root string,
+	cwd string, command ShellCommandSummary, options LinuxShellSandboxOptions,
+	writable_root string) ShellCommandResult {
 	purpose := if options.purpose.len == 0 { 'Shell execution' } else { options.purpose }
 	for broad_root in ['/', '/home', '/root', '/tmp', '/mnt', '/media', '/var', '/usr', '/etc',
 		'/opt', '/boot', '/sys', '/proc', '/dev', '/run', '/bin', '/sbin', '/lib', '/lib64'] {
@@ -517,6 +534,18 @@ fn run_linux_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string,
 				status:    'failed'
 				exit_code: -1
 				output:    '${purpose} refused: the workspace root is too broad for the enforced sandbox.'
+			}
+		}
+	}
+	canonical_root := os.real_path(root)
+	canonical_writable_root := if writable_root == root {
+		canonical_root
+	} else {
+		validate_linux_shell_writable_scope(canonical_root, writable_root) or {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    '${purpose} refused an unsafe writable workspace scope; no process was started.'
 			}
 		}
 	}
@@ -565,8 +594,8 @@ fn run_linux_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string,
 		args << parent
 	}
 	args << '--bind'
-	args << root
-	args << root
+	args << canonical_writable_root
+	args << canonical_writable_root
 	args << '--chdir'
 	args << os.join_path(root, cwd)
 	args << '--'
@@ -588,6 +617,36 @@ fn run_linux_sandboxed_shell_command(mut turn_ctx vcontext.Context, root string,
 	process.set_redirect_stdio()
 	process.use_pgroup = true
 	return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
+}
+
+fn validate_linux_shell_writable_scope(root string, writable_root string) !string {
+	if root.len == 0 || writable_root.len == 0 || !os.is_abs_path(root)
+		|| !os.is_abs_path(writable_root) || os.is_link(root) || os.is_link(writable_root) {
+		return error('workspace paths must be canonical absolute directories')
+	}
+	canonical_root := os.real_path(root)
+	canonical_writable_root := os.real_path(writable_root)
+	if canonical_root != root || canonical_writable_root != writable_root || !os.is_dir(root)
+		|| !os.is_dir(writable_root) || canonical_writable_root == canonical_root
+		|| !shell_path_is_within(canonical_root, canonical_writable_root) {
+		return error('writable directory must be a strict descendant of the canonical child workspace')
+	}
+	relative := canonical_writable_root[canonical_root.len..].trim_left('/')
+	mut cursor := canonical_root
+	for component in relative.split('/') {
+		if component.len == 0 || component in ['.', '..'] {
+			return error('writable directory contains an unsafe path component')
+		}
+		cursor = os.join_path(cursor, component)
+		if os.is_link(cursor) {
+			return error('writable directory contains a symbolic link')
+		}
+	}
+	return canonical_writable_root
+}
+
+fn shell_path_is_within(parent string, child string) bool {
+	return child.len > parent.len && child.starts_with('${parent}/')
 }
 
 // macOS Seatbelt policy for approved shell (principles adapted from Codex Seatbelt

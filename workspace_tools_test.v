@@ -157,6 +157,24 @@ fn workspace_replacement_edit_error_contains(root string, path string, old_text 
 	return false
 }
 
+fn test_workspace_replacement_edit_reports_ambiguous_match_lines_without_changing_file() {
+	root := os.join_path(os.temp_dir(), 'veasel-workspace-ambiguous-edit-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	original := 'sidebar menu: Browse sections\nfooter: Browse sections\n'
+	os.write_file(os.join_path(root, 'README.md'), original) or { panic(err) }
+	assert workspace_replacement_edit_error_contains(root, 'README.md', 'Browse sections',
+		'first matches on lines 1 and 2')
+	assert workspace_replacement_edit_error_contains(root, 'README.md', 'Browse sections',
+		'Expand old_text with adjacent unchanged lines')
+	assert os.read_file(os.join_path(root, 'README.md')) or { panic(err) } == original
+	carriage_return_content := 'header\rsidebar menu: Browse sections\rfooter: Browse sections\r'
+	os.write_file(os.join_path(root, 'README-cr.txt'), carriage_return_content) or { panic(err) }
+	assert workspace_replacement_edit_error_contains(root, 'README-cr.txt', 'Browse sections',
+		'first matches on lines 2 and 3')
+	assert os.read_file(os.join_path(root, 'README-cr.txt')) or { panic(err) } == carriage_return_content
+}
+
 fn test_workspace_search_is_literal_bounded_and_skips_binary_files() {
 	root := os.join_path(os.temp_dir(), 'veasel-workspace-search-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

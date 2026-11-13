@@ -126,8 +126,10 @@ fn prepare_workspace_replacement_edit(root string, relative_path string, old_tex
 	match_start := file.content.index_after(old_text, 0) or {
 		return error('replacement text must match exactly once; found 0 occurrences')
 	}
-	if file.content.index_after(old_text, match_start + 1) != none {
-		return error('replacement text must match exactly once; found at least 2 occurrences')
+	if second_match := file.content.index_after(old_text, match_start + 1) {
+		first_line := workspace_line_number_at_offset(file.content, match_start)
+		second_line := workspace_line_number_at_offset(file.content, second_match)
+		return error('replacement text must match exactly once; found at least 2 occurrences (first matches on lines ${first_line} and ${second_line}). Expand old_text with adjacent unchanged lines to identify the intended location, or use workspace_propose_file_content.')
 	}
 	updated_content := file.content[..match_start] + new_text + file.content[match_start + old_text.len..]
 	draft := prepare_workspace_edit(root, relative_path, updated_content)!
@@ -135,6 +137,21 @@ fn prepare_workspace_replacement_edit(root string, relative_path string, old_tex
 		return error('file changed while preparing the replacement; read it again and retry')
 	}
 	return draft
+}
+
+fn workspace_line_number_at_offset(content string, offset int) int {
+	mut line := 1
+	mut index := 0
+	for index < offset {
+		if content[index] in [`\r`, `\n`] {
+			line++
+			if content[index] == `\r` && index + 1 < offset && content[index + 1] == `\n` {
+				index++
+			}
+		}
+		index++
+	}
+	return line
 }
 
 fn workspace_line_ending_diff(old_content string, new_content string) string {

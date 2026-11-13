@@ -14,7 +14,7 @@ const tool_budget_summary_note = 'The tool budget for this turn is spent. Pendin
 const agent_code_change_retry_prompt = 'You have not proposed any workspace edits yet. The user explicitly asked for a code change. Inspect the relevant files and tests, then use workspace_propose_file_edit with path, old_text, and new_text for a focused replacement, or workspace_propose_file_content with path and complete content for a broader change. Do not claim the work is complete without proposing the edits.'
 const agent_code_change_retry_after_no_read_prompt = 'You still have not read any source file. Do not list the directory again or summarize it. Use workspace_search with a distinctive term from the requested behavior to locate the implementation, then workspace_read_file on the relevant source and test. After reading them, propose the requested focused change with workspace_propose_file_edit. Do not claim completion without an edit proposal.'
 const agent_code_change_retry_after_read_prompt = 'You have inspected source, but no edit proposal was made. Re-check the original request and the files already read; the request still applies, so do not ask the user to repeat details. Search using one or more distinctive terms from the original request to locate the implementation or test that directly matches the requested behavior. Do not make cosmetic or unrelated edits. After confirming the relevant code, propose a focused change that satisfies the request. Never claim completion without an edit proposal.'
-const agent_code_change_edit_recovery_prompt = 'The edit proposal failed validation and no file was changed. Re-read the current matched file, then create a fresh focused proposal using exact text from that current file. Do not reuse the failed old_text or claim the change succeeded. The original request still applies.'
+const agent_code_change_edit_recovery_prompt = 'The edit proposal failed validation and no file was changed. Re-read the current matched file, then create a fresh focused proposal using exact text from that current file. If the old_text was ambiguous, expand it with adjacent unchanged lines until it identifies only the intended location; if it is not present, copy the current text exactly. For a broad edit, use workspace_propose_file_content with the complete file. Do not retry the same old_text or claim the change succeeded. The original request still applies.'
 const agent_code_change_verification_prompt = 'The requested code edit was applied. Before reporting completion, use workspace_propose_shell_command to run a relevant test, typecheck, or build requested by the user. Inspect the command result and fix any failure before finishing. Report only checks that actually ran.'
 const agent_code_change_verification_failure_prompt = 'The requested verification command did not succeed. Inspect its output, fix the code or test issue with workspace tools, then rerun the relevant verification command. Do not report this task as complete until a requested check succeeds.'
 const agent_code_change_acceptance_review_marker = 'ACCEPTANCE_REVIEW: PASS'
@@ -938,7 +938,7 @@ fn workspace_agent_tools() []AgentToolDefinition {
 		},
 		AgentToolDefinition{
 			name:        'workspace_propose_file_edit'
-			description: 'Propose a focused replacement in one UTF-8 file. Provide path, exact old_text, and new_text. old_text must match the existing file exactly once; all other file content is preserved. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
+			description: 'Propose a focused replacement in one UTF-8 file. Provide path, exact old_text, and new_text. old_text must match the existing file exactly once; include adjacent unchanged lines when needed to disambiguate repeated text. All other file content is preserved. This never writes the file unless an explicit autonomous execution policy is active; otherwise the user must inspect and approve the stored diff.'
 			parameters:  ToolParameters{
 				properties: {
 					'path':     ToolParameter{
@@ -947,7 +947,7 @@ fn workspace_agent_tools() []AgentToolDefinition {
 					}
 					'old_text': ToolParameter{
 						type:        'string'
-						description: 'Exact existing UTF-8 text to replace. Must match exactly once in the current file.'
+						description: 'Exact existing UTF-8 text to replace. Must match exactly once in the current file; include adjacent unchanged lines if needed to distinguish repeated text.'
 					}
 					'new_text': ToolParameter{
 						type:        'string'

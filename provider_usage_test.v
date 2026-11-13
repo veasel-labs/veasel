@@ -5,10 +5,12 @@ import net.http
 import strings
 import time
 
-fn test_provider_stream_read_timeout_is_longer_for_local_ollama_and_deadline_bounded() {
+fn test_provider_stream_read_timeout_is_bounded_and_allows_slow_coding_turns() {
 	assert provider_stream_read_timeout('ollama', 300 * time.second) == 180 * time.second
-	assert provider_stream_read_timeout('openai', 300 * time.second) == 60 * time.second
+	assert provider_stream_read_timeout('openai', 300 * time.second) == 180 * time.second
+	assert provider_stream_read_timeout('meta', 300 * time.second) == 180 * time.second
 	assert provider_stream_read_timeout('ollama', 45 * time.second) == 45 * time.second
+	assert provider_stream_read_timeout('meta', 45 * time.second) == 45 * time.second
 }
 
 struct OpenCodeGoHeaderFixture {

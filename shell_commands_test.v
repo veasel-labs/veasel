@@ -90,6 +90,141 @@ fn test_approved_shell_sandbox_network_flag_parses_allowlist() {
 	assert approved_shell_sandbox_network_allowed_from('YES')
 }
 
+fn test_linux_shell_writable_scope_rejects_parent_escape_and_symlinks() {
+	$if !linux {
+		return
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-write-scope-${uuid.new_v4().str()}')
+	child := os.join_path(root, 'child')
+	sibling := os.join_path(root, 'sibling')
+	external := '${root}-external'
+	os.mkdir_all(child) or { panic(err) }
+	os.mkdir_all(sibling) or { panic(err) }
+	os.mkdir_all(external) or { panic(err) }
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(external) or {}
+	}
+	canonical_root := os.real_path(root)
+	canonical_child := os.real_path(child)
+	assert validate_linux_shell_writable_scope(canonical_root, canonical_child) or { panic(err) } == canonical_child
+	assert linux_shell_writable_scope_rejected(canonical_root, canonical_root)
+	assert linux_shell_writable_scope_rejected(canonical_root, external)
+	assert linux_shell_writable_scope_rejected(canonical_root, os.temp_dir())
+	link := os.join_path(child, 'escape')
+	os.symlink(sibling, link) or { panic(err) }
+	assert linux_shell_writable_scope_rejected(canonical_root, link)
+}
+
+fn test_linux_bubblewrap_default_scope_rejects_symlink_to_broad_root() {
+	$if !linux {
+		return
+	}
+	link := os.join_path(os.temp_dir(), 'veasel-broad-root-${uuid.new_v4().str()}')
+	os.symlink('/home', link) or { panic(err) }
+	defer { os.rm(link) or {} }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer { cancel() }
+	result := run_linux_sandboxed_shell_command(mut turn_ctx, link, '.', ShellCommandSummary{
+		command:         'printf unsafe-root-command-started'
+		cwd:             '.'
+		timeout_seconds: 2
+	}, LinuxShellSandboxOptions{
+		purpose:            'Delegated child command'
+		fail_closed:        true
+		filter_environment: true
+		allow_network:      false
+	})
+	assert result.status == 'failed'
+	assert result.output.contains('symbolic-link workspace root')
+	assert !result.output.contains('unsafe-root-command-started')
+}
+
+fn linux_shell_writable_scope_rejected(root string, writable_root string) bool {
+	_ := validate_linux_shell_writable_scope(root, writable_root) or { return true }
+	return false
+}
+
+fn test_linux_bubblewrap_child_write_scope_keeps_parent_and_sibling_read_only() {
+	$if !linux {
+		return
+	}
+	if !bubblewrap_available() || !os.is_dir('/var/tmp') {
+		return
+	}
+	parent := os.join_path('/var/tmp', 'veasel-child-sandbox-${uuid.new_v4().str()}')
+	root := os.join_path(parent, 'parent-workspace')
+	child := os.join_path(root, 'child-worktree')
+	sibling := os.join_path(root, 'sibling-worktree')
+	os.mkdir_all(child) or { panic(err) }
+	os.mkdir_all(sibling) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	protected_parent_file := os.join_path(root, 'parent.txt')
+	protected_sibling_file := os.join_path(sibling, 'sibling.txt')
+	os.write_file(protected_parent_file, 'parent-safe') or { panic(err) }
+	os.write_file(protected_sibling_file, 'sibling-safe') or { panic(err) }
+	os.symlink(sibling, os.join_path(child, 'escape')) or { panic(err) }
+	canonical_root := os.real_path(root)
+	canonical_child := os.real_path(child)
+	command := 'printf child-ok > result.txt; if printf bad > "${protected_parent_file}" 2>/dev/null; then exit 31; fi; if printf bad > "${protected_sibling_file}" 2>/dev/null; then exit 32; fi; if printf bad > escape/sibling.txt 2>/dev/null; then exit 33; fi; if test -e /run/user; then exit 34; fi; printf scoped-ok'
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 10 * time.second)
+	defer { cancel() }
+	result := run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx, canonical_root,
+		'child-worktree', ShellCommandSummary{
+			command:         command
+			cwd:             'child-worktree'
+			timeout_seconds: 5
+		}, LinuxShellSandboxOptions{
+			purpose:            'Delegated child command'
+			fail_closed:        true
+			filter_environment: true
+			allow_network:      false
+		}, canonical_child)
+	assert result.status == 'succeeded', result.output
+	assert result.output.contains('scoped-ok')
+	assert os.read_file(os.join_path(child, 'result.txt')) or { panic(err) } == 'child-ok'
+	assert os.read_file(protected_parent_file) or { panic(err) } == 'parent-safe'
+	assert os.read_file(protected_sibling_file) or { panic(err) } == 'sibling-safe'
+}
+
+fn test_linux_bubblewrap_rejects_hardlink_escape_before_process_start() {
+	$if !linux {
+		return
+	}
+	if !os.is_dir('/var/tmp') {
+		return
+	}
+	parent := os.join_path('/var/tmp', 'veasel-hardlink-sandbox-${uuid.new_v4().str()}')
+	root := os.join_path(parent, 'parent-workspace')
+	child := os.join_path(root, 'child-worktree')
+	os.mkdir_all(child) or { panic(err) }
+	defer { os.rmdir_all(parent) or {} }
+	protected_file := os.join_path(root, 'protected.txt')
+	hardlink_alias := os.join_path(child, 'write-through.txt')
+	os.write_file(protected_file, 'parent-safe') or { panic(err) }
+	os.link(protected_file, hardlink_alias) or { panic(err) }
+	mut background := vcontext.background()
+	mut turn_ctx, cancel := vcontext.with_timeout(mut background, 5 * time.second)
+	defer { cancel() }
+	result := run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx, os.real_path(root),
+		'child-worktree', ShellCommandSummary{
+			command:         'printf unsafe-hardlink-write > write-through.txt; printf hardlink-command-started'
+			cwd:             'child-worktree'
+			timeout_seconds: 2
+		}, LinuxShellSandboxOptions{
+			purpose:            'Delegated child command'
+			fail_closed:        true
+			filter_environment: true
+			allow_network:      false
+		}, os.real_path(child))
+	assert result.status == 'failed'
+	assert result.output.contains('no process was started')
+	assert !result.output.contains('hardlink-command-started')
+	assert os.read_file(protected_file) or { panic(err) } == 'parent-safe'
+}
+
 fn test_shell_sandbox_bubblewrap_capability_is_false_when_disabled() {
 	$if linux {
 		previous := os.getenv(shell_sandbox_mode_env)

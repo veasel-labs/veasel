@@ -676,6 +676,16 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   deadlines, cancellation of the underlying in-flight HTTP request/process,
   parent turn replay, API/TUI integration, and task-level benchmark evidence
   remain required before a model-callable tool is enabled outside this draft.
+  The `implementer` profile now has file-only tools; its trusted profile does
+  not grant shell or MCP. Issue #642 keeps child commands disabled while the
+  platform boundary is incomplete. A Linux-only Bubblewrap primitive can bind
+  a canonical strict-descendant directory as writable while the rest of its
+  workspace remains read-only, with symlink, parent-escape, and pre-existing
+  hard-link rejection in the writable tree. This primitive is not exposed to
+  agents: aggregate memory/disk/process limits,
+  durable child command lifecycle and review, restart/cancellation acceptance,
+  and equivalent macOS/Windows enforcement remain open. Unsupported platforms
+  therefore continue to have no child command capability.
 - [x] Keep the selected home-screen session inside the sidebar. A longer list
   shows a text position such as `8/20` and omits sessions outside that window.
   Titles and directories are clipped so a narrow sidebar cannot wrap the

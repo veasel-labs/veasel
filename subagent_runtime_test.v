@@ -294,6 +294,69 @@ fn test_model_callable_subagent_reads_in_isolated_workspace_and_persists_usage()
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'marker: BLUE-MOON\n'
 }
 
+fn test_subagent_targets_route_to_distinct_configured_provider_instances() {
+	root := os.join_path(os.temp_dir(), 'veasel-subagent-cross-provider-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_runtime_test_repo(root)
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut provider_b := &SubagentProviderFixture{}
+	mut provider_c := &SubagentProviderFixture{}
+	mut server_b, thread_b := start_subagent_provider_fixture(mut provider_b) or { panic(err) }
+	mut server_c, thread_c := start_subagent_provider_fixture(mut provider_c) or { panic(err) }
+	defer {
+		server_b.stop()
+		server_c.stop()
+		thread_b.wait()
+		thread_c.wait()
+	}
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai'
+		model:    'parent-model'
+		base_url: 'http://${server_b.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	app.model_settings.update(ModelSettingsInput{
+		provider: 'openai-compatible'
+		model:    'provider-c-default'
+		base_url: 'http://${server_c.addr}/v1'
+		api_key:  'fixture-only'
+	}) or { panic(err) }
+	parent := store.create_session(SessionInput{
+		title:     'Cross provider parent'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	first := app.delegate_subagent_task(parent.id, operation_id, 'provider-b-child', 'explorer',
+		'Inspect README using provider B.', 'openai', 'provider-b-model') or { panic(err) }
+	second := app.delegate_subagent_task(parent.id, operation_id, 'provider-c-child', 'explorer',
+		'Inspect README using provider C.', 'openai-compatible', 'provider-c-model') or { panic(err) }
+	assert first.provider == 'openai'
+	assert first.model == 'provider-b-model'
+	assert second.provider == 'openai-compatible'
+	assert second.model == 'provider-c-model'
+	completed_b := wait_for_subagent_terminal(mut store, first.id)
+	completed_c := wait_for_subagent_terminal(mut store, second.id)
+	assert completed_b.status == 'completed'
+	assert completed_c.status == 'completed'
+	assert completed_b.provider == 'openai'
+	assert completed_b.model == 'provider-b-model'
+	assert completed_c.provider == 'openai-compatible'
+	assert completed_c.model == 'provider-c-model'
+	assert provider_b.child_hits == 2
+	assert provider_c.child_hits == 2
+	assert provider_b.request_bodies.any(it.contains('"model":"provider-b-model"'))
+	assert provider_c.request_bodies.any(it.contains('"model":"provider-c-model"'))
+	assert provider_b.request_bodies.all(!it.contains('provider-c-model'))
+	assert provider_c.request_bodies.all(!it.contains('provider-b-model'))
+}
+
 fn test_model_callable_subagent_delivers_child_provider_failure_to_parent() {
 	root := os.join_path(os.temp_dir(), 'veasel-subagent-failure-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

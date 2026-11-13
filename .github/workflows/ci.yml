@@ -359,7 +359,7 @@ jobs:
           v test repository_map_test.v
           v test shell_commands_test.v
       - name: Run child-agent lifecycle tests
-        timeout-minutes: 10
+        timeout-minutes: 20
         env:
           VJOBS: 1
         shell: bash

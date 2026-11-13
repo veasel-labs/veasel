@@ -57,7 +57,7 @@ HELPER_EDIT = (
     "module fixture\n\n// multi-file-helper-sentinel\n"
     "pub fn helper() string {\n\treturn 'helper-fixture'\n}\n"
 )
-APPROVED_SHELL_COMMAND = "echo veasel-shell-approved > approved-effect.txt && echo veasel-shell-approved"
+APPROVED_SHELL_COMMAND = "echo veasel-shell-approved>approved-effect.txt && echo veasel-shell-approved"
 # Vendored token-bucket fixture: the repaired token_bucket.v. Keep in sync
 # with benchmarks/deterministic/fixtures/token-bucket/token_bucket.v plus
 # the one-line refill fix in allow(); the harness proves it with `v test`.

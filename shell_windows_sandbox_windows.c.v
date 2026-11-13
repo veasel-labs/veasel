@@ -281,7 +281,9 @@ fn run_windows_sandboxed_shell_command(mut turn_ctx vcontext.Context, root strin
 	}
 	mut safe_output := ''
 	if result.output != unsafe { nil } && result.output_len > 0 {
-		safe_output = unsafe { result.output.vstring_with_len(result.output_len) }
+		// The C result buffer is freed by the defer below; copy it before
+		// returning so the ShellCommandResult never retains a dangling string.
+		safe_output = unsafe { result.output.vstring_with_len(result.output_len).clone() }
 		bytes := safe_output.bytes()
 		if !utf8.validate(&bytes[0], bytes.len) {
 			safe_output = '[Output omitted: command produced invalid UTF-8]'

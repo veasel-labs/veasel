@@ -5,6 +5,10 @@ import os
 import time
 import uuid
 
+$if windows {
+	import strconv
+}
+
 fn test_approved_shell_sandbox_mode_parses_known_values() {
 	assert approved_shell_sandbox_mode_from('') == .require
 	assert approved_shell_sandbox_mode_from('auto') == .auto
@@ -465,11 +469,14 @@ fn test_approved_shell_uses_windows_appcontainer_sandbox_when_available() {
 	// capture is unreliable on some hosts even when the command succeeds. Also
 	// prove the child does not inherit an unrelated parent-process secret.
 	result := run_approved_shell_command(root, ShellCommandSummary{
-		command:         'echo approved-windows-ac-ok>sandbox-write.txt & if defined ${secret_env_name} (echo inherited>sandbox-env.txt) else (echo filtered>sandbox-env.txt)'
+		command:         'echo approved-windows-ac-ok>sandbox-write.txt & if defined ${secret_env_name} (echo inherited>sandbox-env.txt) else (echo filtered>sandbox-env.txt) & echo approved-windows-output-marker'
 		cwd:             '.'
 		timeout_seconds: 5
 	})
 	assert result.status == 'succeeded', result.output
+	if result.output.len > 0 {
+		assert result.output.contains('approved-windows-output-marker'), result.output
+	}
 	written := os.read_file(os.join_path(root, 'sandbox-write.txt')) or { '' }
 	assert written.contains('approved-windows-ac-ok'), written
 	environment_result := os.read_file(os.join_path(root, 'sandbox-env.txt')) or { '' }
@@ -622,21 +629,36 @@ fn test_shell_command_cancelled_mid_run_kills_process_group() {
 	mut turn_ctx, cancel := vcontext.with_cancel(mut background)
 	// Windows: cmd has no sleep builtin, loopback ping is unavailable
 	// inside the AppContainer, and PowerShell dies on the filtered
-	// environment, so burn time in a pure-cmd loop that only writes
-	// the effect file if it ever finishes (it cannot: the iteration
-	// count holds it far past the 30s command timeout).
+	// environment. Mark that cmd reached the long-running loop, then
+	// cancel only after the marker exists so process startup time does
+	// not count against the process-group termination bound.
 	mut command := 'sleep 5 && echo cancel-survived > cancelled-effect.txt'
-	mut cancel_after := 400 * time.millisecond
-	mut elapsed_limit := u64(4000)
+	elapsed_limit := u64(4000)
+	mut started_marker := ''
+	mut cancel_marker := ''
 	$if windows {
-		command = 'for /L %i in (1,1,200000000) do @rem veasel-cancel-spin & echo cancel-survived > cancelled-effect.txt'
-		cancel_after = 2500 * time.millisecond
-		elapsed_limit = 9000
+		command = 'echo running > command-started.txt & for /L %i in (1,1,200000000) do @rem veasel-cancel-spin & echo cancel-survived > cancelled-effect.txt'
+		started_marker = os.join_path(root, 'command-started.txt')
+		cancel_marker = os.join_path(root, 'cancel-requested-at.txt')
 	}
-	spawn fn (cancel vcontext.CancelFn, delay time.Duration) {
-		time.sleep(delay)
-		cancel()
-	}(cancel, cancel_after)
+	$if windows {
+		spawn fn (cancel vcontext.CancelFn, marker string, cancel_marker_path string) {
+			deadline := time.sys_mono_now() + u64(20 * time.second)
+			for !os.exists(marker) && time.sys_mono_now() < deadline {
+				time.sleep(20 * time.millisecond)
+			}
+			if os.exists(marker) {
+				time.sleep(250 * time.millisecond)
+			}
+			os.write_file(cancel_marker_path, time.sys_mono_now().str()) or { panic(err) }
+			cancel()
+		}(cancel, started_marker, cancel_marker)
+	} $else {
+		spawn fn (cancel vcontext.CancelFn) {
+			time.sleep(400 * time.millisecond)
+			cancel()
+		}(cancel)
+	}
 	started := time.sys_mono_now()
 	result := run_approved_shell_command_with_context(mut turn_ctx, root, ShellCommandSummary{
 		command:         command
@@ -645,7 +667,16 @@ fn test_shell_command_cancelled_mid_run_kills_process_group() {
 	}, true)
 	elapsed_ms := (time.sys_mono_now() - started) / time.millisecond
 	assert result.status == 'cancelled', result.output
-	assert elapsed_ms < elapsed_limit
+	$if windows {
+		assert os.exists(started_marker), 'Windows shell never reached the long-running command before cancellation'
+		cancel_requested_at := strconv.parse_uint(os.read_file(cancel_marker) or { panic(err) }, 10, 64) or {
+			panic(err)
+		}
+		cancel_elapsed_ms := (time.sys_mono_now() - cancel_requested_at) / time.millisecond
+		assert cancel_elapsed_ms < 7000
+	} $else {
+		assert elapsed_ms < elapsed_limit
+	}
 	// Give a leaked process group time to betray itself after the sleep.
 	time.sleep(300 * time.millisecond)
 	assert !os.exists(os.join_path(root, 'cancelled-effect.txt'))

@@ -18,9 +18,9 @@
     "base_url": "https://api.meta.ai/v1",
     "credential": "saved-profile"
   },
-    "runtime": {
-        "veasel_version": "Veasel Code 0.79.2-next.0",
-        "veasel_binary_sha256": "b8bf7212e4b4324f255a45e12fac06d2c6516d0c570d386c1ce753921bfe5443"
+  "runtime": {
+    "veasel_version": "Veasel Code 0.79.2-next.0",
+    "veasel_binary_sha256": "b8bf7212e4b4324f255a45e12fac06d2c6516d0c570d386c1ce753921bfe5443"
   },
   "permissions": {
     "edit": "autonomous inside a disposable Bubblewrap sandbox",
@@ -44,12 +44,12 @@
     "minimum_free_swap_bytes": 0
   },
   "cost_budget": {
-        "max_cost_usd": 0.1,
+    "max_cost_usd": 0.11,
     "input_usd_per_million_tokens": 0.1,
     "cached_input_usd_per_million_tokens": 0.002,
     "output_usd_per_million_tokens": 0.2,
-        "max_model_requests": 81,
-        "request_cap_basis": "Veasel 0.79.2 has 24 tool rounds plus 3 edit-acceptance rounds; up to 3 HTTP attempts per model round including two bounded transient retries.",
+    "max_model_requests": 84,
+    "request_cap_basis": "Veasel 0.79.2 has 24 tool rounds plus 3 edit-acceptance rounds and one terminal tool-budget summary completion; up to 3 HTTP attempts per model round including two bounded transient retries.",
     "worst_case_cost_note": "Calculates every input token at uncached rate and every request at the full context and output caps."
   },
   "oracle": "Externally compare the patch with the merged website#173 change, run the repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior. A completed model turn alone is not success."

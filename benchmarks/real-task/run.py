@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
 GIB = 1024**3
-PINNED_VEASEL_MAX_MODEL_ROUNDS = 27
+PINNED_VEASEL_MAX_MODEL_ROUNDS = 28
 PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND = 3
 
 
@@ -422,7 +422,7 @@ def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[
             "cost_basis": "all input billed at uncached rate; every request uses full context and output caps",
         }
         check("approved_cost_ceiling", safe, report,
-              "model request cap matches pinned runtime (27 rounds x 3 HTTP attempts); positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling")
+              "model request cap matches pinned runtime (28 rounds including the tool-budget summary x 3 HTTP attempts); positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling")
         return report, checks
     except (KeyError, InvalidOperation, TypeError, ValueError):
         report = {"cost_basis": "missing or invalid configured-provider cost budget"}

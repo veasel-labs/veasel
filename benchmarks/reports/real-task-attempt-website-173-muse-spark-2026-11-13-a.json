@@ -521,10 +521,20 @@
   "case_sha256": "d51322618e99ad91b07333831905591c53c855cf34cbe061c2c7416a997d43df",
   "oracle_review": {
     "passed": false,
-    "reason": "This exploratory attempt used the first cost-bound draft (one HTTP attempt per model round). Source review found up to two transient retries; the corrected case reserves three HTTP attempts per round and the maximum remains below the approved total budget.",
+    "reason": "This exploratory attempt used the first cost-bound draft (one HTTP attempt per model round). The corrected runtime bound includes up to two transient retries plus the possible terminal tool-budget summary completion; its 84-attempt worst case is USD 0.10321920, reserved at USD 0.11.",
     "provider_usage_available": false,
-    "conservative_cost_reserve_usd": 0.1,
+    "conservative_cost_reserve_usd": 0.11,
     "preflight_bound_understated_retry_amplification": true,
-    "reconciled_cost_reserve_usd": 0.1
+    "reconciled_cost_reserve_usd": 0.11,
+    "preflight_omitted_terminal_summary_completion": true
+  },
+  "cost_bound_audit": {
+    "original_preflight_http_attempt_cap": 27,
+    "corrected_pinned_runtime_http_attempt_cap": 84,
+    "corrected_worst_case_cost_usd": "0.10321920",
+    "original_case_ceiling_usd": "5",
+    "corrected_case_ceiling_usd": "0.11",
+    "provider_usage_unknown_reserve_usd": "0.11",
+    "finding": "This exploratory attempt used the first bound draft, which allowed one request per model round and omitted bounded retries and the terminal tool-budget summary completion. The corrected pinned runtime bound is 84 HTTP attempts and USD 0.10321920; historical preflight and case hashes remain unchanged."
   }
 }

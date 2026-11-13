@@ -714,6 +714,17 @@
     "minimum_available_memory_bytes": 4663476224,
     "required_available_memory_bytes": 4831838208,
     "provider_usage_available": false,
-    "conservative_cost_reserve_usd": 0.1
+    "conservative_cost_reserve_usd": 0.11,
+    "reconciled_cost_reserve_usd": 0.11,
+    "preflight_omitted_terminal_summary_completion": true
+  },
+  "cost_bound_audit": {
+    "original_preflight_http_attempt_cap": 81,
+    "corrected_pinned_runtime_http_attempt_cap": 84,
+    "corrected_worst_case_cost_usd": "0.10321920",
+    "original_case_ceiling_usd": "0.10",
+    "corrected_case_ceiling_usd": "0.11",
+    "provider_usage_unknown_reserve_usd": "0.11",
+    "finding": "Original preflight omitted the runtime terminal tool-budget summary completion. This correction updates the future case bound; historical preflight and case hashes remain unchanged."
   }
 }

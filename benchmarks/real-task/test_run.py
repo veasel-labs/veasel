@@ -180,7 +180,7 @@ class PreflightTests(unittest.TestCase):
                         "minimum_free_swap_bytes": 0},
             "cost_budget": {"max_cost_usd": 5, "input_usd_per_million_tokens": 0.1,
                             "cached_input_usd_per_million_tokens": 0.002,
-                            "output_usd_per_million_tokens": 0.2, "max_model_requests": 81},
+                            "output_usd_per_million_tokens": 0.2, "max_model_requests": 84},
             "oracle": "Independently inspect the resulting patch.",
         }
         case_path = case_dir / "case.json"
@@ -250,6 +250,24 @@ class PreflightTests(unittest.TestCase):
             report, checks = runner.provider_cost_bound(case, "5")
             self.assertFalse(checks[0]["passed"])
             self.assertNotEqual(report["max_model_requests"], report["pinned_runtime_max_model_requests"])
+
+    def test_configured_provider_bound_includes_terminal_tool_budget_summary(self):
+        case = {
+            "model": {"context_tokens": 8192, "output_tokens": 2048},
+            "cost_budget": {
+                "max_cost_usd": 0.11,
+                "input_usd_per_million_tokens": 0.1,
+                "output_usd_per_million_tokens": 0.2,
+                "max_model_requests": 84,
+            },
+        }
+        report, checks = runner.provider_cost_bound(case, "5")
+        self.assertTrue(checks[0]["passed"], checks)
+        self.assertEqual(report["pinned_runtime_max_model_requests"], 84)
+        self.assertEqual(report["conservative_max_cost_usd"], "0.10321920")
+        case["cost_budget"]["max_cost_usd"] = 0.10
+        _report, checks = runner.provider_cost_bound(case, "5")
+        self.assertFalse(checks[0]["passed"])
 
     def test_reported_provider_cost_uses_pinned_rates_and_cached_input(self):
         case = {

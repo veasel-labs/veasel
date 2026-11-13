@@ -207,13 +207,16 @@ or account-level controls. Attempt reports include a separate cost estimate
 from reported token usage, and keep missing usage unknown.
 
 The `website-173-muse-spark` case pins Meta's `muse-spark-1.3-contributor`, the
-published Contributor rates, a USD 0.10 ceiling per attempt, 8,192 context /
-2,048 output tokens, and 81 maximum HTTP attempts. This allows up to three
-provider attempts per each of Veasel 0.79.2's 24 tool rounds plus three
-edit-review rounds. Its conservative worst-case estimate is USD 0.0995328. The
-runtime version and binary hash are pinned because the request count follows
-these bounded retry limits. For a five-dollar total authorization, reserve USD
-0.10 for each run whose provider usage is unavailable; the operator's remaining
+published Contributor rates, a USD 0.11 ceiling per attempt, 8,192 context /
+2,048 output tokens, and 84 maximum HTTP attempts. This allows up to three
+provider attempts per each of Veasel 0.79.2's 24 tool rounds, three edit-review
+rounds, and one possible terminal tool-budget summary completion. Its
+conservative worst-case estimate is USD 0.1032192. An earlier preflight
+incorrectly omitted that summary completion and reported a USD 0.10 cap; the
+attempts below are audited with the corrected USD 0.11 reserve. The runtime
+version and binary hash are pinned because the request count follows these
+bounded retry limits. For a five-dollar total authorization, reserve USD 0.11
+for each run whose provider usage is unavailable; the operator's remaining
 approved amount is still required explicitly:
 
 ```sh

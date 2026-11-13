@@ -35,6 +35,7 @@ test(`Ctrl+X targets the originating session and reports ${outcome}`, async () =
         operationsRequested = true
         return Response.json({})
       }
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
         return Response.json({ operation_id: operationId, status: "cancelling" }, { status: 202 })

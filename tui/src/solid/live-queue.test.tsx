@@ -21,6 +21,7 @@ test("queues a follow-up and cancels it without affecting the active turn", asyn
         return Response.json([{ id: "s1", title: "Session alpha", directory: "/tmp" }])
       }
       if (path === "/v1/sessions/s1/operations") return Response.json([])
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
         const operationId = path.split("/").at(-2)
@@ -130,6 +131,7 @@ async function mountDurableOperation(status: "queued" | "running" | "uncertain")
           updated_at: "2026-10-23T00:00:00Z",
         }])
       }
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
         return Response.json({
@@ -238,6 +240,7 @@ test("preserves an early submission draft until durable recovery is ready", asyn
         operationsRequested = true
         return operationsResponse
       }
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
       if (path.endsWith("/messages")) {
         if (request.method === "POST") {
           posts.push((await request.json() as { content: string }).content)
@@ -320,6 +323,7 @@ test.each([true, false])("prefers a live start event over a stale snapshot (cont
         operationsRequested = true
         return operationsResponse
       }
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
       if (path.endsWith("/cancel")) {
         cancellations.push(path)
         return Response.json({ operation_id: operationId, status: "cancelling" }, { status: 202 })

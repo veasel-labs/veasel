@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import type { KeyEvent } from "@opentui/core"
-import { useKeyboard, useRenderer } from "@opentui/solid"
+import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
 import {
   appendStreamingDelta,
   type ApiSession,
@@ -45,7 +45,13 @@ import { openImagePreviewDialog } from "./component/image-preview-dialog"
 import { openSessionDiffDialog } from "./component/session-diff-dialog"
 import { openReviewPanel } from "./component/review-panel"
 import { decideSolidReviews, loadPendingSolidReviews, inspectSolidReview } from "./reviews-inventory"
-import { reviewShortcut, reviewSummaryLine, type SolidReviewItem } from "./reviews"
+import {
+  countsFromReviews,
+  reviewShortcut,
+  reviewSummaryLine,
+  type SolidReviewItem,
+} from "./reviews"
+import { totalPendingReviews } from "../pending-reviews"
 import type { ActiveReviewKind } from "../active-review"
 import { openAgentDialog } from "./component/agent-dialog"
 import {
@@ -150,7 +156,7 @@ import {
 } from "./composer-attachments"
 
 /** Solid live chrome: Open/Workspaces use session git worktree HTTP. */
-const liveFooterHint = `Ctrl+X stop turn · Ctrl+Shift+X cancel queued follow-up · ${homeFooterHint} · ${paletteShortcut.label} commands · Ctrl+O open · Ctrl+W worktrees`
+const liveFooterHint = `Ctrl+R reviews · ${paletteShortcut.label} commands · Ctrl+X stop turn · Ctrl+Shift+X cancel queued follow-up · ${homeFooterHint} · Ctrl+O open · Ctrl+W worktrees`
 const historyPageSize = 100
 import {
   type SolidOpenProject,
@@ -190,6 +196,7 @@ function sessionEntry(session: ApiSession): SolidSessionEntry {
 
 function LiveAppShell(props: LiveAppProps) {
   const attention = createAttentionNotifier(useRenderer())
+  const terminalDimensions = useTerminalDimensions()
   const colors = useSolidTheme()
   const dialog = useDialog()
   const toast = useToast()
@@ -200,6 +207,9 @@ function LiveAppShell(props: LiveAppProps) {
   const [sessions, setSessions] = createSignal<SolidSessionEntry[]>([])
   const [selectedIndex, setSelectedIndex] = createSignal(0)
   const [activeSessionId, setActiveSessionId] = createSignal<string | undefined>()
+  const [pendingReviewItems, setPendingReviewItems] = createSignal<SolidReviewItem[]>([])
+  const [pendingReviewSessionId, setPendingReviewSessionId] = createSignal<string | undefined>()
+  const [pendingReviewInventoryError, setPendingReviewInventoryError] = createSignal(false)
   /** Session ids with background turn completions while another tab is focused. */
   const [unreadSessionIds, setUnreadSessionIds] = createSignal<Record<string, true>>({})
   // Invalidates history reads when navigating, including A -> B -> A.
@@ -212,6 +222,13 @@ function LiveAppShell(props: LiveAppProps) {
   const [historyHasOlder, setHistoryHasOlder] = createSignal(false)
   const reducedMotion = prefersReducedMotion()
   const [status, setStatus] = createSignal(formatBusyStatus("connecting", { reducedMotion }))
+  const statusNeedsPriority = () => {
+    const current = status()
+    if (/^[▲✖]/.test(current)) return true
+    return /^[◌◍○]/.test(current)
+      && Boolean(activeTurnId())
+      && activeTurnSessionId === activeSessionId()
+  }
   // Cycle the busy glyph while a busy status is shown, matching the
   // classic shell. Reduced motion keeps the static glyph and no timer.
   let busyFrame = 0
@@ -298,7 +315,7 @@ function LiveAppShell(props: LiveAppProps) {
   }
   const [verbosity, setVerbosity] = createSignal<TranscriptVerbosity>("default")
   const [thinkingToggleTick, setThinkingToggleTick] = createSignal(0)
-  const terminalColumns = () => process.stdout.columns ?? 80
+  const terminalColumns = () => terminalDimensions().width
   const [sidebarWidth, setSidebarWidth] = createSignal(
     loadHomeSidebarWidth({}, terminalColumns()),
   )
@@ -704,6 +721,9 @@ function LiveAppShell(props: LiveAppProps) {
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
       if (sessionId !== activeSessionId()) return
+      setPendingReviewItems(reviews)
+      setPendingReviewSessionId(sessionId)
+      setPendingReviewInventoryError(false)
       if (reviews.length === 0) {
         openDialogAlert(dialog, {
           title: "Reviews",
@@ -727,6 +747,7 @@ function LiveAppShell(props: LiveAppProps) {
         onInspect: (target) => inspectSolidReview(props.api, sessionId, target),
         onDecide: async (decision, targets) => {
           const result = await decideSolidReviews(props.api, sessionId, decision, targets)
+          await refreshPendingReviews(sessionId)
           const verb = decision === "approve" ? "Approved" : "Rejected"
           if (result.settled.length > 0) {
             toast.success(
@@ -990,6 +1011,42 @@ function LiveAppShell(props: LiveAppProps) {
   const [mcpArgumentServers, setMcpArgumentServers] = createSignal<SlashArgument[]>([])
   const [configuredMcpArguments, setConfiguredMcpArguments] = createSignal<SlashArgument[]>([])
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
+  let pendingReviewRevision = 0
+  const refreshPendingReviews = async (sessionId = activeSessionId()) => {
+    // Background completions must not invalidate a pending refresh for the
+    // currently focused tab.
+    if (sessionId && sessionId !== activeSessionId()) return
+    if (!sessionId) {
+      pendingReviewRevision++
+      setPendingReviewItems([])
+      setPendingReviewSessionId(undefined)
+      setPendingReviewInventoryError(false)
+      return
+    }
+    if (pendingReviewSessionId() !== sessionId) {
+      setPendingReviewItems([])
+      setPendingReviewSessionId(sessionId)
+      setPendingReviewInventoryError(false)
+    }
+    const revision = ++pendingReviewRevision
+    try {
+      const items = await loadPendingSolidReviews(props.api, sessionId)
+      if (revision !== pendingReviewRevision || sessionId !== activeSessionId()) return
+      setPendingReviewItems(items)
+      setPendingReviewInventoryError(false)
+    } catch {
+      if (revision === pendingReviewRevision && sessionId === activeSessionId()) {
+        // Preserve known pending work during transient inventory failures and
+        // show an explicit unavailable cue if this session has no prior view.
+        setPendingReviewInventoryError(true)
+      }
+    }
+  }
+  const currentPendingReviewItems = () =>
+    pendingReviewSessionId() === activeSessionId() ? pendingReviewItems() : []
+  createEffect(() => {
+    void refreshPendingReviews(activeSessionId())
+  })
   const [pluginLinkArguments, setPluginLinkArguments] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {
     const draft = composerDraft()
@@ -1530,6 +1587,7 @@ function LiveAppShell(props: LiveAppProps) {
     } catch {
       // History reload is best-effort; reopen still works.
     }
+    await refreshPendingReviews(sessionId)
     if (activeTurnId() === operationId) {
       setActiveTurnId(undefined)
       activeTurnSessionId = undefined
@@ -1552,6 +1610,19 @@ function LiveAppShell(props: LiveAppProps) {
           noteError("turns.complete", completion.error ?? "Assistant turn failed", sessionId)
         }
         setComposerFocused(true)
+      } else if (activeSessionId() && status().includes("Turn active in another session")) {
+        if (completion.status === "cancelled") {
+          setStatus(formatWarnStatus("Turn cancelled in another session"))
+        } else if (completion.status === "uncertain") {
+          setStatus(formatWarnStatus("Other session outcome uncertain; inspect before retrying"))
+        } else if (completion.status !== "completed") {
+          noteError("turns.complete", completion.error ?? "Assistant turn failed in another session", sessionId)
+        } else {
+          const waiting = queuedFollowUps().filter((item) => item.sessionId === activeSessionId()).length
+          setStatus(waiting > 0
+            ? formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`)
+            : "● connected  ·  listening for activity")
+        }
       }
       attention.notifyTurnFinished(
         completion.status ?? "",
@@ -1922,6 +1993,7 @@ function LiveAppShell(props: LiveAppProps) {
       if (!disposed && activeSessionId() === sessionId) {
         applyHistoryPage(result.messages, "replace")
       }
+      await refreshPendingReviews(sessionId)
       setStreaming(false)
       setStreamingText("")
       setSending(false)
@@ -2467,7 +2539,12 @@ function LiveAppShell(props: LiveAppProps) {
       try {
         const view = await props.api.getModelSettings()
         if (needsModelSetup(view)) {
-          toast.warning(NO_MODEL_SETUP_GUIDANCE, "Model setup")
+          // The toast occupies almost the full top row on compact terminals.
+          // Keep the brand and tabs visible there; the persistent status still
+          // tells the operator how to configure a model.
+          if (terminalDimensions().width >= 96 && terminalDimensions().height >= 24) {
+            toast.warning(NO_MODEL_SETUP_GUIDANCE, "Model setup")
+          }
           if (!activeSessionId() && !dialog.open()) {
             setStatus(formatWarnStatus("no model configured · type /connect to set one up"))
           }
@@ -2863,7 +2940,13 @@ function LiveAppShell(props: LiveAppProps) {
         {/* Below 44 columns the full status overlaps the wordmark; keep
             only the connection dot segment (e.g. "● connected"). */}
         <text fg={colors.localStatus} wrapMode="none">
-          {terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
+          {statusNeedsPriority()
+            ? terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()
+            : totalPendingReviews(countsFromReviews(currentPendingReviewItems())) > 0
+            ? `▲ ${totalPendingReviews(countsFromReviews(currentPendingReviewItems()))} pending${terminalColumns() >= 44 ? ` · ${reviewShortcut.label}` : ""}${pendingReviewInventoryError() ? " · refresh failed" : ""}`
+            : pendingReviewInventoryError()
+              ? terminalColumns() < 44 ? "▲ reviews unavailable" : `▲ reviews unavailable · ${reviewShortcut.label}`
+              : terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
         </text>
       </box>
 
@@ -2995,7 +3078,7 @@ function LiveAppShell(props: LiveAppProps) {
               when={inSession()}
               fallback={homeFooterHintForWidth(terminalColumns())}
             >
-              {liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
+              {terminalColumns() < 40 ? "Ctrl+R reviews" : terminalColumns() < 64 ? "Ctrl+R reviews · Ctrl+P commands" : liveFooterHint} · Ctrl+[ / ] tabs · Alt+[ / ] user msgs · Ctrl+T timeline · Ctrl+E export · Ctrl+M MCP · Ctrl+I status · Ctrl+S stash · Ctrl+D diffs · theme {themeId()}
             </Show>
           </text>
         </box>

@@ -49,10 +49,19 @@ class CancellationCorrelationTests(unittest.TestCase):
             self.mock.cancellation_fixture_prompt(payload),
             "Wait for cancellation",
         )
+        self.assertTrue(self.mock.is_cancellation_fixture_prompt("Wait for cancellation"))
+
+    def test_correlated_cancellation_prompt_is_classified_as_fixture(self):
+        prompt = "Wait for cancellation 4541c142-8afe-4f50-ae8a-ec54007d1a69"
+        payload = {"messages": [{"role": "user", "content": prompt}]}
+        correlated_prompt = self.mock.cancellation_fixture_prompt(payload, "Wait for cancellation")
+        self.assertEqual(correlated_prompt, prompt)
+        self.assertTrue(self.mock.is_cancellation_fixture_prompt(correlated_prompt))
 
     def test_unrelated_prompt_does_not_create_cancellation_marker(self):
         payload = {"messages": [{"role": "user", "content": "Say hello"}]}
         self.assertEqual(self.mock.cancellation_fixture_prompt(payload, "Say hello"), "")
+        self.assertFalse(self.mock.is_cancellation_fixture_prompt("Say hello"))
 
 
 if __name__ == "__main__":

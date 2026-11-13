@@ -1,0 +1,124 @@
+{
+  "schema": "veasel.tui-startup.v1",
+  "measuredAt": "2026-11-13T00:40:28Z",
+  "commit": "2f5a74b6bf236e603d3dfc32579cb014878f425d",
+  "workflowCommit": null,
+  "host": {
+    "os": "Linux",
+    "release": "7.2.14-arch1-1",
+    "architecture": "x86_64",
+    "cpuCount": 24
+  },
+  "binaries": {
+    "server": "veasel",
+    "tui": "veasel-tui"
+  },
+  "buildProvenance": {
+    "source_commit": "2f5a74b6bf236e603d3dfc32579cb014878f425d",
+    "v_compiler_commit": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "v_compiler_version": "V 0.5.2",
+    "c_compiler": "clang",
+    "c_compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "build_flags": "-cc clang -prod -d veasel_version=0.77.0-next.0 -o dist/veasel .",
+    "target": "linux-x64",
+    "binary_sha256": "575c20e0bb190957fd89da63bc49788533b4d099466141682c05ce25e8ff84f6",
+    "tui_binary_sha256": "3f69f56a89fee4c0807ffa149a9201cddebd7265c4f33ffaf3cd544a2adffb93",
+    "tui_build_target": "bun-linux-x64",
+    "tui_bun_version": "1.4.2",
+    "runner": {
+      "os": "Linux",
+      "architecture": "X64",
+      "image_os": "ubuntu22",
+      "image_version": "20261101.347.1"
+    },
+    "binary_hashes_match": true
+  },
+  "measurement": "TUI process launch to connected home markers (connected, SESSIONS, VEASEL); local backend already healthy; one full keyboard smoke journey per sample",
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
+  "firstRunCoverage": {
+    "status": "completed",
+    "classification": "deterministic local fixture; not real-model coding success",
+    "journey": "clean profile -> packaged TUI /connect -> mock Ollama-compatible model discovery -> new session -> prompt -> persisted reply",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "fixturePort": 11434,
+    "apiKeySaved": false,
+    "conversationPersisted": true
+  },
+  "ephemeralFixtureCoverage": {
+    "classification": "deterministic local fixture setup",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "providerBaseUrl": "http://127.0.0.1:41867/v1",
+    "modelReady": true
+  },
+  "delegationCoverage": {
+    "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
+    "journey": "packaged TUI n creates session in isolated Git workspace -> /delegate -> choose explorer -> inherit route -> /agents status -> inspect result",
+    "parentSessionCreatedThroughTui": true,
+    "parentSessionId": "81174cb3-3fb1-4055-ac5b-e7403be8d10e",
+    "parentOperationId": "de49ba0d-60a3-4bee-a678-0682ee4feb3f",
+    "runId": "76869bcb-de3f-4e27-bc70-7a4178e83c2b",
+    "childSessionId": "a7de5954-97c7-4578-b844-21bed542ef47",
+    "status": "completed",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "providerFixtureObservedCall": true,
+    "resultPersisted": true
+  },
+  "cancellationCoverage": {
+    "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
+    "slowChildRunId": "1711d396-7a78-4f19-b9af-bd9d7be7aa5a",
+    "slowChildStatus": "cancelled",
+    "slowChildCancelRequested": true,
+    "siblingRunId": "8340f1a6-a223-4d06-ad94-10225700fe23",
+    "siblingStatusAfterCancellation": "completed",
+    "bothProviderCallsObserved": true,
+    "uiShowedIndependentTerminalStatuses": true
+  },
+  "restartCoverage": {
+    "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+    "messagesBeforeRestart": 2,
+    "messagesAfterRestart": 2,
+    "messagesUnchanged": true
+  },
+  "killRecoveryCoverage": {
+    "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+    "operationStatusAfterRestart": "uncertain",
+    "messagesUnchanged": true
+  },
+  "terminalSizes": [
+    "32x12",
+    "40x16",
+    "80x24",
+    "80x30",
+    "100x35",
+    "120x40"
+  ],
+  "startupMs": {
+    "samples": [
+      143.2198169932235,
+      147.36549199733417,
+      149.23741600068752
+    ],
+    "count": 3,
+    "min": 143.2198169932235,
+    "median": 147.36549199733417,
+    "max": 149.23741600068752
+  },
+  "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee.",
+  "execution": {
+    "harness_commit": "05eb2651879a775d1dca3fdd733b980ef8606ce2",
+    "systemd_scope": "systemd-run --user --scope --collect",
+    "memory_limit": "2 GiB",
+    "swap_limit": "0",
+    "observed_memory_peak": "173.3 MiB",
+    "observed_cpu_time_seconds": 7.985,
+    "observed_wall_time_seconds": 36.161,
+    "host_time": "2026-11-13T00:40:28Z"
+  }
+}

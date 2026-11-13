@@ -45,7 +45,7 @@ const max_provider_model_catalog_bytes = 1_000_000
 // reproducible; every retry yields to cancellation and the request deadline.
 const provider_transient_retry_delays_ms = [500, 2000]
 const provider_retry_poll_step_ms = 50
-const provider_default_stream_read_timeout = 60 * time.second
+const provider_default_stream_read_timeout = 180 * time.second
 const provider_local_model_stream_read_timeout = 180 * time.second
 // Leave this margin under the request deadline so a retried request still
 // gets bounded read time instead of failing instantly on a deadline race.

@@ -1,0 +1,530 @@
+{
+  "schema": "veasel.real-task-attempt.v1",
+  "case_id": "veasel-labs/website#173-muse-spark-1.3-contributor",
+  "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+  "model": {
+    "provider": "meta",
+    "name": "muse-spark-1.3-contributor",
+    "context_tokens": 8192,
+    "output_tokens": 2048
+  },
+  "provider_provenance": {
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "selection_source": "versioned_case_and_configured_profile",
+    "remote_model_readiness": "not_probed"
+  },
+  "provider_config": {
+    "mode": "veasel-profile",
+    "credential": "saved-profile",
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor"
+  },
+  "budgets": {
+    "wall_seconds": 330,
+    "minimum_startup_available_memory_bytes": 5368709120,
+    "minimum_available_memory_bytes": 4831838208,
+    "minimum_free_swap_bytes": 0
+  },
+  "runtime": {
+    "veasel_version": "Veasel Code 0.79.2-next.0"
+  },
+  "permissions": {
+    "edit": "autonomous inside a disposable Bubblewrap sandbox",
+    "shell": "autonomous inside a disposable Bubblewrap sandbox",
+    "mcp": "disabled",
+    "tool_allowlist": [
+      "read",
+      "edit",
+      "glob",
+      "grep",
+      "list",
+      "shell"
+    ],
+    "web": false,
+    "subagents": false
+  },
+  "host": {
+    "platform": "Linux-7.2.15-arch1-1-x86_64-with-glibc2.44",
+    "machine": "x86_64",
+    "processor": ""
+  },
+  "agent": "veasel",
+  "agent_version": "Veasel Code 0.79.2-next.0",
+  "preflight": {
+    "schema": "veasel.real-task-preflight.v1",
+    "case_id": "veasel-labs/website#173-muse-spark-1.3-contributor",
+    "agent": "veasel",
+    "passed": true,
+    "checks": [
+      {
+        "name": "prompt_sha256",
+        "passed": true,
+        "actual": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+        "required": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e"
+      },
+      {
+        "name": "repository",
+        "passed": true,
+        "actual": "matched",
+        "required": "pinned repository identity"
+      },
+      {
+        "name": "base_commit",
+        "passed": true,
+        "actual": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+        "required": "184c7d86911d4a760ec89c6ddc9097682e65da44"
+      },
+      {
+        "name": "clean_workspace",
+        "passed": true,
+        "actual": true,
+        "required": true
+      },
+      {
+        "name": "approved_cost_ceiling",
+        "passed": true,
+        "actual": {
+          "approved_spend_usd": "5",
+          "max_cost_usd": "5",
+          "max_model_requests": 27,
+          "input_usd_per_million_tokens": "0.1",
+          "output_usd_per_million_tokens": "0.2",
+          "worst_case_input_tokens": 221184,
+          "worst_case_output_tokens": 55296,
+          "conservative_max_cost_usd": "0.03317760",
+          "cost_basis": "all input billed at uncached rate; every request uses full context and output caps"
+        },
+        "required": "positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling"
+      },
+      {
+        "name": "case_provider_consistency",
+        "passed": true,
+        "actual": {
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        },
+        "required": {
+          "mode": "veasel-profile",
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        }
+      },
+      {
+        "name": "provider_model_selection",
+        "passed": true,
+        "actual": {
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        },
+        "required": {
+          "provider": "meta",
+          "model": "muse-spark-1.3-contributor"
+        }
+      },
+      {
+        "name": "provider_endpoint",
+        "passed": true,
+        "actual": "matched",
+        "required": "safe configured case endpoint"
+      },
+      {
+        "name": "provider_context_budget",
+        "passed": true,
+        "actual": 8192,
+        "required": "positive integer"
+      },
+      {
+        "name": "provider_output_budget",
+        "passed": true,
+        "actual": 2048,
+        "required": {
+          "at_least": 2048
+        }
+      },
+      {
+        "name": "provider_credential_policy",
+        "passed": true,
+        "actual": "saved-profile",
+        "required": [
+          "saved-profile",
+          "none"
+        ]
+      },
+      {
+        "name": "provider_credential_ready",
+        "passed": true,
+        "actual": "saved",
+        "required": "saved profile credential"
+      },
+      {
+        "name": "veasel_version",
+        "passed": true,
+        "actual": "Veasel Code 0.79.2-next.0",
+        "required": "Veasel Code 0.79.2-next.0"
+      },
+      {
+        "name": "provider_live_readiness",
+        "passed": true,
+        "actual": "not_probed",
+        "required": "live provider/model availability is unverified"
+      },
+      {
+        "name": "available_memory",
+        "passed": true,
+        "actual": 6435147776,
+        "required": 4831838208
+      },
+      {
+        "name": "startup_memory_headroom",
+        "passed": true,
+        "actual": 6435147776,
+        "required": 5368709120
+      },
+      {
+        "name": "free_swap",
+        "passed": true,
+        "actual": 3932360704,
+        "required": 0
+      }
+    ],
+    "resources_bytes": {
+      "available_memory": 6435147776,
+      "free_swap": 3932360704
+    },
+    "cost_budget": {
+      "approved_spend_usd": "5",
+      "max_cost_usd": "5",
+      "max_model_requests": 27,
+      "input_usd_per_million_tokens": "0.1",
+      "output_usd_per_million_tokens": "0.2",
+      "worst_case_input_tokens": 221184,
+      "worst_case_output_tokens": 55296,
+      "conservative_max_cost_usd": "0.03317760",
+      "cost_basis": "all input billed at uncached rate; every request uses full context and output caps"
+    }
+  },
+  "outcome": "agent_error",
+  "return_code": 1,
+  "wall_ms": 28006,
+  "resource_samples": [
+    {
+      "elapsed_ms": 0,
+      "available_memory": 6435479552,
+      "free_swap": 3932360704,
+      "agent_process_count": 1,
+      "agent_process_tree_cpu_time_ms": 0,
+      "agent_process_tree_rss_bytes": 6098944,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 99
+    },
+    {
+      "elapsed_ms": 1000,
+      "available_memory": 6435209216,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23035904,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 2000,
+      "available_memory": 6434893824,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23232512,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 3000,
+      "available_memory": 6447370240,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23232512,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 4000,
+      "available_memory": 6441758720,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23625728,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 5000,
+      "available_memory": 6441050112,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23625728,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 6000,
+      "available_memory": 6443192320,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 30,
+      "agent_process_tree_rss_bytes": 23625728,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 7000,
+      "available_memory": 6427873280,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 40,
+      "agent_process_tree_rss_bytes": 23625728,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 8000,
+      "available_memory": 6419046400,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 50,
+      "agent_process_tree_rss_bytes": 23625728,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 9000,
+      "available_memory": 6423752704,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 50,
+      "agent_process_tree_rss_bytes": 23625728,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 10001,
+      "available_memory": 6439411712,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 50,
+      "agent_process_tree_rss_bytes": 24018944,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 11001,
+      "available_memory": 6444384256,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 24018944,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 24
+    },
+    {
+      "elapsed_ms": 12001,
+      "available_memory": 6449016832,
+      "free_swap": 3932364800,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 24215552,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 24
+    },
+    {
+      "elapsed_ms": 13001,
+      "available_memory": 6450634752,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 24412160,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 24
+    },
+    {
+      "elapsed_ms": 14001,
+      "available_memory": 6456815616,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 24412160,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 15001,
+      "available_memory": 6456778752,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 60,
+      "agent_process_tree_rss_bytes": 24608768,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 27
+    },
+    {
+      "elapsed_ms": 16001,
+      "available_memory": 6459867136,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 24805376,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 17001,
+      "available_memory": 6463127552,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 24805376,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 27
+    },
+    {
+      "elapsed_ms": 18001,
+      "available_memory": 6472298496,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 70,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 19001,
+      "available_memory": 6474334208,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 20001,
+      "available_memory": 6444109824,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 21001,
+      "available_memory": 6452400128,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 28
+    },
+    {
+      "elapsed_ms": 22002,
+      "available_memory": 6464585728,
+      "free_swap": 3932368896,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 23002,
+      "available_memory": 6468308992,
+      "free_swap": 3932381184,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 24002,
+      "available_memory": 6469459968,
+      "free_swap": 3932381184,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    },
+    {
+      "elapsed_ms": 25002,
+      "available_memory": 6468710400,
+      "free_swap": 3932381184,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 80,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 26002,
+      "available_memory": 6465675264,
+      "free_swap": 3932381184,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 100,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 26
+    },
+    {
+      "elapsed_ms": 27002,
+      "available_memory": 6472777728,
+      "free_swap": 3932381184,
+      "agent_process_count": 2,
+      "agent_process_tree_cpu_time_ms": 100,
+      "agent_process_tree_rss_bytes": 25001984,
+      "gpu_memory_used_mib": null,
+      "sampling_overhead_ms": 25
+    }
+  ],
+  "resource_measurements": {
+    "sampling_interval_target_seconds": 1,
+    "sampling_overhead_total_ms": 791,
+    "agent_process_tree_rss_sampled_max_bytes": 25001984,
+    "agent_process_tree_cpu_time_sampled_max_ms": 100,
+    "gpu_device_memory_used_sampled_max_mib": null,
+    "agent_memory_scope": "agent process tree RSS; shared pages may be counted more than once",
+    "gpu_memory_scope": "device-wide; includes the model server and other GPU clients"
+  },
+  "provider_usage": {
+    "reported": false,
+    "source": "veasel_atif_final_metrics",
+    "trace_step_count": 6,
+    "reported_agent_cost_usd": null,
+    "input_tokens": null,
+    "output_tokens": null,
+    "reasoning_tokens": null,
+    "cache_read_tokens": null,
+    "cache_write_tokens": null
+  },
+  "estimated_provider_cost_usd": null,
+  "artifacts": {
+    "trace": "trajectory.private.json",
+    "stdout": "stdout.private.log",
+    "stderr": "stderr.private.log"
+  },
+  "score": "failed: provider response ended before completion; no patch to score",
+  "agent_binary_sha256": "10ca86a47168b112161c7b90f897e6026cc5b5a587d685b35cf402e0c22a30c1",
+  "case_sha256": "d51322618e99ad91b07333831905591c53c855cf34cbe061c2c7416a997d43df",
+  "oracle_review": {
+    "passed": false,
+    "reason": "This exploratory attempt used the first cost-bound draft (one HTTP attempt per model round). Source review found up to two transient retries; the corrected case reserves three HTTP attempts per round and the maximum remains below the approved total budget.",
+    "provider_usage_available": false,
+    "conservative_cost_reserve_usd": 0.1,
+    "preflight_bound_understated_retry_amplification": true,
+    "reconciled_cost_reserve_usd": 0.1
+  }
+}

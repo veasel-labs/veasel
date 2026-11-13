@@ -196,11 +196,37 @@ Endpoint strings are compared internally but omitted from preflight and attempt
 reports. Endpoints with URL userinfo, query strings, or fragments fail
 preflight; path components are also never copied into reports.
 
-Veasel receives the case context/output limits. Attempt reports include the
-provider/model target, declared budgets, and provider-reported token usage when
-available; missing usage stays unknown, not zero. An optional `max_cost_usd`
-may record an operator-approved budget and is included in the attempt report,
-but the runner does **not** enforce a monetary ceiling or guarantee provider
-side accounting. Do not run a paid-provider case until spend is authorized and
-provider-side limits are independently established. A completed turn remains
-unscored until the independent oracle verifies the patch and tests.
+Paid configured-provider cases pin input/output rates, a maximum model request
+count, and a case cost ceiling. The operator must also pass
+`--approved-spend-usd`; otherwise preflight fails before the provider is called.
+The runner computes a conservative upper bound using the full context and output
+limit on every allowed request and bills all input at the uncached rate. Pin the
+Veasel version whose runtime enforces that request bound. This bounds declared
+model-call exposure; it does not replace checking the provider's final invoice
+or account-level controls. Attempt reports include a separate cost estimate
+from reported token usage, and keep missing usage unknown.
+
+The `website-173-muse-spark` case pins Meta's `muse-spark-1.3-contributor`, the
+published Contributor rates, a USD 0.10 ceiling per attempt, 8,192 context /
+2,048 output tokens, and 81 maximum HTTP attempts. This allows up to three
+provider attempts per each of Veasel 0.79.2's 24 tool rounds plus three
+edit-review rounds. Its conservative worst-case estimate is USD 0.0995328. The
+runtime version and binary hash are pinned because the request count follows
+these bounded retry limits. For a five-dollar total authorization, reserve USD
+0.10 for each run whose provider usage is unavailable; the operator's remaining
+approved amount is still required explicitly:
+
+```sh
+python3 benchmarks/real-task/run.py preflight \
+  --case benchmarks/real-task/cases/website-173-muse-spark/case.json \
+  --workspace /path/to/disposable/website-checkout \
+  --data-dir /benchmark/state \
+  --approved-spend-usd 5
+```
+
+Create the isolated `model-settings.json` from the saved profile without
+printing or copying the credential into command arguments, and switch only that
+isolated profile to the exact case model before preflight. The profile readiness
+check verifies that a credential exists but does not test it against Meta. The
+corpus still has no successful externally verified website#173 attempt; a
+completed turn remains unscored until the independent oracle passes.

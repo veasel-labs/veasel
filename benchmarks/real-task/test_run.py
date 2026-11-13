@@ -5,6 +5,7 @@ import json
 import stat
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -177,6 +178,9 @@ class PreflightTests(unittest.TestCase):
             "permissions": {"tool_allowlist": ["read", "edit", "shell"]},
             "budgets": {"wall_seconds": 60, "minimum_available_memory_bytes": 0,
                         "minimum_free_swap_bytes": 0},
+            "cost_budget": {"max_cost_usd": 5, "input_usd_per_million_tokens": 0.1,
+                            "cached_input_usd_per_million_tokens": 0.002,
+                            "output_usd_per_million_tokens": 0.2, "max_model_requests": 81},
             "oracle": "Independently inspect the resulting patch.",
         }
         case_path = case_dir / "case.json"
@@ -225,10 +229,40 @@ class PreflightTests(unittest.TestCase):
                 "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
                 "api_key_saved": True,
             }), patch.object(runner, "model_digest", side_effect=AssertionError("must not probe Ollama")):
-                result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435", Path(temp_dir) / "state")
+                result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435",
+                                          Path(temp_dir) / "state", approved_spend_usd="5")
         self.assertTrue(result["passed"], result["checks"])
         readiness = next(item for item in result["checks"] if item["name"] == "provider_live_readiness")
         self.assertEqual(readiness["actual"], "not_probed")
+        self.assertLess(Decimal(result["cost_budget"]["conservative_max_cost_usd"]), Decimal("5"))
+
+    def test_configured_provider_preflight_fails_without_budget_authorization_or_when_bound_exceeds_ceiling(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            case_path = self.configured_case(Path(temp_dir))
+            case, _prompt, _digest = runner.load_case(case_path)
+            report, checks = runner.provider_cost_bound(case, "0")
+            self.assertFalse(checks[0]["passed"])
+            self.assertEqual(report["approved_spend_usd"], "0")
+            report, checks = runner.provider_cost_bound(case, "0.01")
+            self.assertFalse(checks[0]["passed"])
+            self.assertGreater(Decimal(report["conservative_max_cost_usd"]), Decimal("0.01"))
+            case["cost_budget"]["max_model_requests"] = 1
+            report, checks = runner.provider_cost_bound(case, "5")
+            self.assertFalse(checks[0]["passed"])
+            self.assertNotEqual(report["max_model_requests"], report["pinned_runtime_max_model_requests"])
+
+    def test_reported_provider_cost_uses_pinned_rates_and_cached_input(self):
+        case = {
+            "cost_budget": {
+                "input_usd_per_million_tokens": 0.1,
+                "cached_input_usd_per_million_tokens": 0.002,
+                "output_usd_per_million_tokens": 0.2,
+            },
+        }
+        estimate = runner.estimate_provider_cost(case, {
+            "input_tokens": 1000, "cache_read_tokens": 400, "output_tokens": 100,
+        })
+        self.assertEqual(estimate, "0.00008080")
 
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
     @patch.object(runner, "git", side_effect=[
@@ -246,7 +280,7 @@ class PreflightTests(unittest.TestCase):
                 "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
                 "api_key_saved": True,
             }):
-                result = runner.preflight(case_path, root, "unused", root / "state")
+                result = runner.preflight(case_path, root, "unused", root / "state", approved_spend_usd="5")
         self.assertTrue(result["passed"], result["checks"])
         serialized = json.dumps(result)
         for sentinel in ("origin-user", "origin-token", "case-user", "case-token"):
@@ -297,7 +331,7 @@ class PreflightTests(unittest.TestCase):
                     "max_output_tokens": 1024, "api_key_saved": True,
                 }):
                     result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435",
-                                              Path(temp_dir) / "state")
+                                              Path(temp_dir) / "state", approved_spend_usd="5")
                 serialized = json.dumps(result)
                 self.assertEqual(result["passed"], expected_pass)
                 for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
@@ -355,20 +389,39 @@ class PreflightTests(unittest.TestCase):
                 workspace = root / "workspace"
                 workspace.mkdir()
                 artifacts = root / "artifacts"
+                data_dir = root / "state"
+                data_dir.mkdir()
+                (data_dir / "model-settings.json").write_text(json.dumps({
+                    "active_provider": "anthropic",
+                    "profiles": {"anthropic": {
+                        "model": "claude-example", "base_url": endpoint,
+                        "max_output_tokens": 1024, "api_key": "private-provider-key",
+                    }},
+                }))
                 process = Mock()
                 process.poll.return_value = 0
                 process.wait.return_value = 0
                 args = argparse.Namespace(
-                    case=case_path, workspace=workspace, data_dir=root / "state", ollama_url="unused",
+                    case=case_path, workspace=workspace, data_dir=data_dir, ollama_url="unused",
                     agent="veasel", veasel="veasel", opencode="opencode", artifacts=artifacts,
-                    sandbox_confirmed=True,
+                    sandbox_confirmed=True, approved_spend_usd="5",
                 )
-                with patch.object(runner.subprocess, "Popen", return_value=process):
+                with patch.object(runner.subprocess, "Popen", return_value=process) as popen:
                     self.assertEqual(runner.run_case(args), 0)
+                launched_env = popen.call_args.kwargs["env"]
+                self.assertEqual(launched_env["VEASEL_MODEL_API_KEY"], "private-provider-key")
+                self.assertNotIn("private-provider-key", (data_dir / "model-settings.json").read_text())
                 report_text = (artifacts / "attempt.json").read_text()
                 self.assertNotIn("base_url", json.loads(report_text)["provider_config"])
                 for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):
                     self.assertNotIn(sentinel, report_text)
+
+    def test_restricted_environment_drops_provider_key(self):
+        env = runner.restricted_environment({
+            "PATH": "/usr/bin", "VEASEL_MODEL_API_KEY": "must-not-reach-tools",
+            "ANTHROPIC_API_KEY": "must-not-reach-tools-either", "LANG": "C.UTF-8",
+        })
+        self.assertEqual(env, {"PATH": "/usr/bin", "LANG": "C.UTF-8"})
 
     def test_config_projection_never_returns_saved_api_key(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -472,6 +525,7 @@ class PreflightTests(unittest.TestCase):
                 veasel="veasel",
                 artifacts=artifacts,
                 sandbox_confirmed=True,
+                approved_spend_usd="0",
             )
             with patch.dict(runner.os.environ, {"ANTHROPIC_API_KEY": "test-secret"}):
                 with patch.object(runner.subprocess, "Popen", return_value=process) as popen:
@@ -510,6 +564,7 @@ class PreflightTests(unittest.TestCase):
                 veasel="veasel",
                 artifacts=artifacts,
                 sandbox_confirmed=True,
+                approved_spend_usd="0",
             )
             with (
                 patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),

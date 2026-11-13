@@ -947,6 +947,12 @@ fn provider_retryable_errno(errno int) bool {
 // network failure. Everything else (auth, malformed responses, parse
 // failures, cancellation) keeps the exact fail-closed behavior.
 fn provider_retryable_failure(message string) bool {
+	// A Responses API stream can close cleanly at the HTTP layer without its
+	// terminal response.completed event. Treat that as transient; the retry
+	// wrapper still refuses replay once any assistant text was delivered.
+	if message == 'provider response ended before completion' {
+		return true
+	}
 	if status := provider_http_status_from_error(message) {
 		return provider_retryable_http_status(status)
 	}

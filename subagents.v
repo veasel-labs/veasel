@@ -44,6 +44,8 @@ pub:
 	cache_reported        bool
 	reasoning_tokens      i64
 	reasoning_reported    bool
+	reported_cost_usd     ?f64 @[omitempty]
+	cost_reported         bool
 }
 
 // create_subagent_run atomically creates a clean child session and its durable
@@ -417,7 +419,7 @@ fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 }
 
 fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
-	rows := store.db.exec_param_many('SELECT r.id, r.request_id, r.parent_session_id, r.parent_operation_id, r.child_session_id, r.child_operation_id, r.agent_id, r.depth, r.status, r.result, r.error, r.outcome_claimed, r.cancel_requested, r.workspace_ready, r.workspace_started, r.workspace_base_commit, r.target_provider, r.target_model, r.provider, r.model, r.requested_title, r.task, COALESCE(o.input_tokens, 0), COALESCE(o.output_tokens, 0), COALESCE(o.usage_reported, 0), COALESCE(o.cache_read_tokens, 0), COALESCE(o.cache_creation_tokens, 0), COALESCE(o.cache_reported, 0), COALESCE(o.reasoning_tokens, 0), COALESCE(o.reasoning_reported, 0) FROM subagent_runs r LEFT JOIN session_operations o ON o.id = r.child_operation_id AND o.session_id = r.child_session_id WHERE r.id = ?',
+	rows := store.db.exec_param_many('SELECT r.id, r.request_id, r.parent_session_id, r.parent_operation_id, r.child_session_id, r.child_operation_id, r.agent_id, r.depth, r.status, r.result, r.error, r.outcome_claimed, r.cancel_requested, r.workspace_ready, r.workspace_started, r.workspace_base_commit, r.target_provider, r.target_model, r.provider, r.model, r.requested_title, r.task, COALESCE(o.input_tokens, 0), COALESCE(o.output_tokens, 0), COALESCE(o.usage_reported, 0), COALESCE(o.cache_read_tokens, 0), COALESCE(o.cache_creation_tokens, 0), COALESCE(o.cache_reported, 0), COALESCE(o.reasoning_tokens, 0), COALESCE(o.reasoning_reported, 0), COALESCE(o.provider_cost_usd, 0), COALESCE(o.provider_cost_reported, 0) FROM subagent_runs r LEFT JOIN session_operations o ON o.id = r.child_operation_id AND o.session_id = r.child_session_id WHERE r.id = ?',
 		[run_id])!
 	if rows.len != 1 {
 		return error('child agent run not found')
@@ -454,6 +456,8 @@ fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
 		cache_reported:        row.val(27).int() == 1
 		reasoning_tokens:      row.val(28).i64()
 		reasoning_reported:    row.val(29).int() == 1
+		reported_cost_usd:     if row.val(31).int() == 1 { row.val(30).f64() } else { none }
+		cost_reported:         row.val(31).int() == 1
 	}
 }
 

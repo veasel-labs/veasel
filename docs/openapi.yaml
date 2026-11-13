@@ -748,6 +748,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/agent-budget:
+    get:
+      operationId: getSessionAgentBudget
+      description: Read-only cumulative parent/descendant token reservation and adapter-reported usage summary. Accounted tokens include conservative bounds retained for missing usage, retries, or interrupted calls; they are never labeled as actual usage. Aggregate USD is present only when every included provider call has adapter-reported actual cost.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cumulative agent token budget and actual-usage provenance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTokenBudgetSummary'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/sessions/{id}/messages:
     parameters:
       - in: path
@@ -3150,6 +3174,22 @@ components:
         cost:
           type: string
           description: USD total using provider-reported request costs when available and pinned schedule prices otherwise. If a token-reported turn lacks a matching schedule rate, the literal unavailable. Provider amounts include explicit zero; Veasel never invents rates or token counts.
+    AgentTokenBudgetSummary:
+      type: object
+      required: [root_session_id, per_child_token_limit, parent_token_limit, reserved_tokens, accounted_tokens, actual_tokens, provider_calls, usage_reported_calls, usage_complete, cost_reported_calls, cost_reported]
+      properties:
+        root_session_id: { type: string, format: uuid, description: Canonical parent conversation whose descendants share this aggregate ceiling. }
+        per_child_token_limit: { type: integer, minimum: 1 }
+        parent_token_limit: { type: integer, minimum: 1 }
+        reserved_tokens: { type: integer, minimum: 0, description: Currently in-flight reservations only. }
+        accounted_tokens: { type: integer, minimum: 0, description: Durable conservative admission total, including uncertain and settled calls. }
+        actual_tokens: { type: integer, minimum: 0, description: Sum of adapter-reported token usage; may be incomplete when usage_complete is false. }
+        provider_calls: { type: integer, minimum: 0 }
+        usage_reported_calls: { type: integer, minimum: 0 }
+        usage_complete: { type: boolean, description: True when every included provider call has complete adapter-reported token usage. }
+        reported_cost_usd: { type: number, minimum: 0, description: Present only when every included provider call has authoritative adapter-reported actual cost. }
+        cost_reported_calls: { type: integer, minimum: 0 }
+        cost_reported: { type: boolean, description: True only when there is at least one call and every included call has adapter-reported actual cost. }
     ChatMessage:
       type: object
       required: [role, content]

@@ -64,6 +64,7 @@ fn test_provider_retry_after_survives_adapter_error_propagation_and_delays_retry
 		worker.wait()
 		assert result.error == ''
 		assert result.output.content == 'recovered'
+		assert result.output.provider_attempts == 2
 		assert fixture.hits == 2
 		assert time.since(started) >= 950 * time.millisecond
 	}

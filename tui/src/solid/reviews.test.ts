@@ -46,7 +46,7 @@ describe("Solid reviews helpers", () => {
     const shellBody = formatSolidReviewBody(shell!)
     expect(shellBody).toContain("bun test")
     expect(shellBody).toContain("Bubblewrap")
-    expect(shellBody.indexOf("Command:")).toBeLessThan(shellBody.indexOf("Bubblewrap"))
+    expect(shellBody.indexOf("Bubblewrap")).toBeLessThan(shellBody.indexOf("Command:"))
     expect(formatSolidReviewBody(mcp!)).toContain("write_note")
     expect(formatSolidReviewBody(mcp!)).toContain("Arguments")
   })

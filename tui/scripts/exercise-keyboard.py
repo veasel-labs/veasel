@@ -1015,10 +1015,11 @@ def run_core_suite() -> None:
         screen.clear_line(14)  # "/command show "
         screen.send(f"/command show {COMMAND_ID}\r", 0.7)
         screen.wait_for("without an OS sandbox", 4)
-        screen.wait_for("Showing ")
+        screen.wait_for("Command:", 4)
+        screen.wait_for("echo step 01", 4)
         reviewed = screen.terminal.text()
-        if "SHELL-TAIL" in reviewed:
-            raise AssertionError(f"shell review showed lines past the terminal budget\n--- screen ---\n{reviewed}")
+        if "Showing " in reviewed:
+            raise AssertionError(f"shell review truncated the pending command\n--- screen ---\n{reviewed}")
         screen.send("keep this prompt\r", 0.4)
         screen.wait_for("The assistant turn failed.", 6)
         screen.wait_for("keep this prompt")

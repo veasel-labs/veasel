@@ -98,7 +98,7 @@ describe("formatShellReview", () => {
     expect(text).toContain("VEASEL_SHELL_SANDBOX=off only if you intentionally accept")
   })
 
-  test("hides the tail of a command taller than the terminal", () => {
+  test("keeps the entire command available when it exceeds the terminal", () => {
     expect(shellReviewLineBudget(40)).toBe(20)
     const command = longCommand()
     const text = formatShellReview({
@@ -114,9 +114,10 @@ describe("formatShellReview", () => {
     const block = formatBoundedBlock(command, 20)
     expect(block.totalLines).toBe(31)
     expect(block.shownLines).toBe(20)
-    expect(text).toContain("Showing 20 of 31 lines.")
-    expect(text).not.toContain("SHELL-TAIL")
-    expect(text.indexOf("without an OS sandbox")).toBeLessThan(text.indexOf("Showing 20 of 31 lines."))
+    expect(text).toContain(command)
+    expect(text).toContain("SHELL-TAIL")
+    expect(text).not.toContain("Showing ")
+    expect(text.indexOf("without an OS sandbox")).toBeLessThan(text.indexOf("Command:"))
   })
 
   test("keeps captured output behind the same line budget", () => {

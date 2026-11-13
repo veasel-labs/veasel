@@ -148,3 +148,56 @@ Recent resource-aborted attempts did not complete a coding turn and are not
 counted as failures. Reproduce from a clean checkout at the pinned base and
 keep the case revision fixed; outcomes from a different case revision or prompt
 hash are not directly comparable.
+
+## Explicit non-Ollama provider cases
+
+The original `website-173` and `website-166` Ollama/CUDA cases remain pinned and
+unchanged. A separate case can select a provider/model already supported by
+Veasel through an explicit profile target. Never put API keys, bearer tokens,
+or credential values in a case, prompt, command line, trace, or report.
+
+```json
+{
+  "model": {
+    "provider": "anthropic",
+    "name": "claude-example-model",
+    "context_tokens": 8192,
+    "output_tokens": 2048
+  },
+  "provider_config": {
+    "mode": "veasel-profile",
+    "provider": "anthropic",
+    "model": "claude-example-model",
+    "base_url": "https://api.anthropic.com/v1",
+    "credential": "saved-profile"
+  }
+}
+```
+
+The full case must still pin repository URL and base commit, prompt hash,
+permissions, an independent oracle, and wall/resource budgets. Add the selected
+profile to the isolated `--data-dir/model-settings.json` before preflight. Its
+provider, exact model, and endpoint must match the case; its output cap must be
+at least the requested output limit. The runner reports only whether a saved
+credential exists, never the value. For a provider that intentionally needs no
+key, set `credential` to `none`. The runner strips provider credential
+environment variables before launch, so environment-only credentials do not
+qualify as ready.
+
+Preflight fails closed for missing/mismatched profiles, endpoints, saved
+credentials, or insufficient output limits. It makes **no provider network
+request**. `provider_live_readiness: not_probed` means remote model availability,
+account entitlement, and credential acceptance remain unverified. A
+non-Ollama case currently supports the Veasel runner only; OpenCode comparator
+preflight rejects it instead of silently changing the baseline. Keep a separate
+case ID for every provider/model target; don't compare runs with different
+provider, exact model, prompt, repository base, or budgets.
+
+Veasel receives the case context/output limits. Attempt reports include the
+provider/model target, declared budgets, and provider-reported token usage when
+available; missing usage stays unknown, not zero. An optional `max_cost_usd`
+may record an operator-approved budget and is included in the attempt report,
+but the runner does **not** enforce a monetary ceiling or guarantee provider
+side accounting. Do not run a paid-provider case until spend is authorized and
+provider-side limits are independently established. A completed turn remains
+unscored until the independent oracle verifies the patch and tests.

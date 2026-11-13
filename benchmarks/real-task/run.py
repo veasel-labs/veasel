@@ -280,15 +280,63 @@ def gpu_info() -> dict[str, Any]:
 
 def configured_model(data_dir: Path) -> dict[str, Any]:
     settings = json.loads((data_dir / "model-settings.json").read_text())
+    if not isinstance(settings, dict):
+        raise ValueError("model settings must be an object")
     provider = settings.get("active_provider", "")
-    profile = settings.get("profiles", {}).get(provider, {})
+    provider = provider if isinstance(provider, str) else ""
+    profiles = settings.get("profiles", {})
+    profiles = profiles if isinstance(profiles, dict) else {}
+    profile = profiles.get(provider, {})
+    if not isinstance(profile, dict):
+        profile = {}
+    max_output_tokens = profile.get("max_output_tokens", 0)
     return {
         "provider": provider,
         "model": profile.get("model", ""),
         "base_url": profile.get("base_url", ""),
-        "max_output_tokens": profile.get("max_output_tokens", 0),
+        "max_output_tokens": max_output_tokens if isinstance(max_output_tokens, int) and not isinstance(max_output_tokens, bool) else 0,
         "api_key_saved": bool(profile.get("api_key", "")),
     }
+
+
+def configured_provider_target(case: dict[str, Any], data_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Check a non-Ollama target against Veasel's saved profile without probing it."""
+    expected = case["provider_config"]
+    model = case["model"]
+    checks: list[dict[str, Any]] = []
+
+    def check(name: str, ok: bool, actual: Any, required: Any) -> None:
+        checks.append({"name": name, "passed": ok, "actual": actual, "required": required})
+
+    try:
+        actual = configured_model(data_dir)
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        actual = {"provider": "", "model": "", "base_url": "", "max_output_tokens": 0,
+                  "api_key_saved": False}
+    provider = model.get("provider", "")
+    model_name = model.get("name", "")
+    expected_endpoint = expected.get("base_url", "")
+    check("provider_model_selection", actual["provider"] == provider and actual["model"] == model_name,
+          {"provider": actual["provider"], "model": actual["model"]},
+          {"provider": provider, "model": model_name})
+    check("provider_endpoint", bool(expected_endpoint) and actual["base_url"] == expected_endpoint,
+          actual["base_url"], expected_endpoint)
+    output_tokens = model.get("output_tokens", 0)
+    context_tokens = model.get("context_tokens", 0)
+    check("provider_context_budget", isinstance(context_tokens, int) and not isinstance(context_tokens, bool)
+          and context_tokens > 0,
+          context_tokens, "positive integer")
+    check("provider_output_budget", isinstance(output_tokens, int) and not isinstance(output_tokens, bool)
+          and output_tokens > 0 and actual["max_output_tokens"] >= output_tokens,
+          actual["max_output_tokens"], {"at_least": output_tokens})
+    credential_policy = expected.get("credential", "")
+    requires_key = credential_policy == "saved-profile"
+    check("provider_credential_policy", credential_policy in {"saved-profile", "none"},
+          credential_policy or "missing", ["saved-profile", "none"])
+    check("provider_credential_ready", not requires_key or actual["api_key_saved"],
+          "saved" if actual["api_key_saved"] else "missing",
+          "saved profile credential" if requires_key else "no credential required")
+    return actual, checks
 
 
 def open_code_version(binary: str) -> str:
@@ -374,7 +422,8 @@ def git(workspace: Path, *args: str) -> str:
 
 def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode") -> dict[str, Any]:
     case, _prompt_path, prompt_hash = load_case(case_path)
-    expected = case["model"]["digest"]
+    model = case["model"]
+    is_ollama = model.get("provider") == "ollama"
     available, swap = available_resources()
     checks: list[dict[str, Any]] = []
 
@@ -388,10 +437,11 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
     check("base_commit", revision == case["base_commit"], revision, case["base_commit"])
     dirty = git(workspace, "status", "--porcelain")
     check("clean_workspace", not dirty, not bool(dirty), True)
-    expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")
-    actual_ollama_url = ollama_url.rstrip("/")
-    check("ollama_endpoint", actual_ollama_url == expected_ollama_url, actual_ollama_url, expected_ollama_url)
-    if agent == "veasel":
+    if is_ollama:
+        expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")
+        actual_ollama_url = ollama_url.rstrip("/")
+        check("ollama_endpoint", actual_ollama_url == expected_ollama_url, actual_ollama_url, expected_ollama_url)
+    if agent == "veasel" and is_ollama:
         expected_config = case["provider_config"]
         try:
             actual_config = configured_model(data_dir)
@@ -399,7 +449,7 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             check("veasel_model_config", safe_actual == expected_config, safe_actual, expected_config)
         except (OSError, KeyError, json.JSONDecodeError) as exc:
             check("veasel_model_config", False, type(exc).__name__, expected_config)
-    else:
+    elif agent == "opencode" and is_ollama:
         expected_version = case["comparators"]["opencode_version"]
         expected_model_id = case["comparators"]["opencode_model"]
         try:
@@ -427,11 +477,29 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
                 check("opencode_version", actual_version == expected_version, actual_version, expected_version)
             except (OSError, subprocess.CalledProcessError) as exc:
                 check("opencode_version", False, type(exc).__name__, expected_version)
-    try:
-        actual_digest = model_digest(ollama_url, case["model"]["name"])
-        check("model_digest", actual_digest == expected, actual_digest, expected)
-    except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
-        check("model_digest", False, type(exc).__name__, expected)
+    elif not is_ollama:
+        provider_config = case.get("provider_config", {})
+        check("case_provider_consistency",
+              provider_config.get("provider") == model.get("provider")
+              and provider_config.get("model") == model.get("name")
+              and provider_config.get("mode") == "veasel-profile",
+              {"provider": provider_config.get("provider"), "model": provider_config.get("model")},
+              {"mode": "veasel-profile", "provider": model.get("provider"), "model": model.get("name")})
+        if agent == "veasel":
+            _actual, provider_checks = configured_provider_target(case, data_dir)
+            checks.extend(provider_checks)
+            # This records the limit explicitly: config readiness is not a
+            # network probe or proof that the provider hosts the model.
+            check("provider_live_readiness", True, "not_probed", "live provider/model availability is unverified")
+        else:
+            check("opencode_non_ollama_target", False, "unsupported", "Veasel configured-profile adapter")
+    if is_ollama:
+        expected = model["digest"]
+        try:
+            actual_digest = model_digest(ollama_url, model["name"])
+            check("model_digest", actual_digest == expected, actual_digest, expected)
+        except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as exc:
+            check("model_digest", False, type(exc).__name__, expected)
     expected_ollama = case.get("runtime", {}).get("ollama_version")
     if expected_ollama:
         try:
@@ -446,7 +514,7 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             check("gpu", actual_gpu == expected_gpu, actual_gpu, expected_gpu)
         except (OSError, subprocess.CalledProcessError, IndexError, ValueError) as exc:
             check("gpu", False, type(exc).__name__, expected_gpu)
-    if case.get("runtime", {}).get("accelerator") == "CUDA":
+    if is_ollama and case.get("runtime", {}).get("accelerator") == "CUDA":
         try:
             placement = ollama_gpu_placement(ollama_url, case["model"]["name"])
             expected_context = case["model"]["context_tokens"]
@@ -597,7 +665,14 @@ def run_case(args: argparse.Namespace) -> int:
         "base_commit": case["base_commit"],
         "prompt_sha256": case["prompt_sha256"],
         "model": case["model"],
+        "provider_provenance": {
+            "provider": case["model"]["provider"],
+            "model": case["model"]["name"],
+            "selection_source": "versioned_case_and_configured_profile" if case["model"]["provider"] != "ollama" else "versioned_case",
+            "remote_model_readiness": "not_probed" if case["model"]["provider"] != "ollama" else "ollama_digest_verified",
+        },
         "provider_config": case["provider_config"],
+        "budgets": case["budgets"],
         "runtime": case["runtime"],
         "permissions": case["permissions"],
         "host": {"platform": platform.platform(), "machine": platform.machine(), "processor": platform.processor()},

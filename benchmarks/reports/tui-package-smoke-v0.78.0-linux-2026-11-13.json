@@ -1,0 +1,147 @@
+{
+  "schema": "veasel.tui-startup.v1",
+  "measuredAt": "2026-11-13T02:22:17Z",
+  "commit": "9a2cf29645e5d7f389d08e64c315c561123d0ffb",
+  "workflowCommit": "b35f6d372ea73cce228ff73909c4b8d26ef7b38e",
+  "host": {
+    "os": "Linux",
+    "release": "7.2.14-arch1-1",
+    "architecture": "x86_64",
+    "cpuCount": 24
+  },
+  "binaries": {
+    "server": "veasel",
+    "tui": "veasel-tui"
+  },
+  "buildProvenance": {
+    "source_commit": "9a2cf29645e5d7f389d08e64c315c561123d0ffb",
+    "v_compiler_commit": "ffc38ada48df34cbf3aa818c3410ce7fcdef5c1f",
+    "v_compiler_version": "V 0.5.2",
+    "c_compiler": "clang",
+    "c_compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "build_flags": "-cc clang -prod -d veasel_version=0.78.0-next.0 -o dist/veasel .",
+    "target": "linux-x64",
+    "binary_sha256": "b5cffac4c62a1cf736318276f3b3c0d7ce8773789ec271bbb6443f6c8ddd30ea",
+    "tui_binary_sha256": "033bdafce68f89dd73c0e3a22cac9df99431311fde08b6a3dc4b453affd6c479",
+    "tui_build_target": "bun-linux-x64",
+    "tui_bun_version": "1.4.2",
+    "runner": {
+      "os": "Linux",
+      "architecture": "X64",
+      "image_os": "ubuntu22",
+      "image_version": "20261101.347.1"
+    },
+    "binary_hashes_match": true
+  },
+  "acceptanceClassification": "deterministic packaged TUI acceptance with local mock-provider fixtures; not real-model coding success",
+  "measurement": "startupMs measures TUI process launch to connected home markers only (local backend already healthy); it excludes the subsequent acceptance workflow",
+  "workflowMeasurement": {
+    "status": "completed",
+    "classification": "deterministic packaged TUI acceptance with local mock-provider fixtures; not real-model coding success",
+    "timing": "End-to-end workflow wall time was not separately collected",
+    "coverage": "first-use provider connection and persisted reply; approved edit; delegation; independent child cancellation; graceful restart and SIGKILL recovery; terminal-size matrix"
+  },
+  "interactiveCoverage": {
+    "journey": "connected home -> seeded session -> Ctrl+R review -> approve workspace edit -> session composer",
+    "workspaceEditStatus": "applied",
+    "fileContentVerified": true
+  },
+  "firstRunCoverage": {
+    "status": "completed",
+    "classification": "deterministic local fixture; not real-model coding success",
+    "journey": "clean profile -> packaged TUI /connect -> mock Ollama-compatible model discovery -> new session -> prompt -> persisted reply",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "fixturePort": 11434,
+    "apiKeySaved": false,
+    "conversationPersisted": true
+  },
+  "ephemeralFixtureCoverage": {
+    "classification": "deterministic local fixture setup",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "providerBaseUrl": "http://127.0.0.1:41365/v1",
+    "modelReady": true
+  },
+  "delegationCoverage": {
+    "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
+    "journey": "packaged TUI n creates session in isolated Git workspace -> /delegate -> choose explorer -> inherit route -> /agents status -> inspect result",
+    "parentSessionCreatedThroughTui": true,
+    "parentSessionId": "28bf235e-4569-4d6f-bcce-fdf5a10a9dbe",
+    "parentOperationId": "240bdbe3-9479-4893-9575-7e8d6d6bcf31",
+    "runId": "faa5593d-0c15-4c3f-ae63-38a384e2b4ba",
+    "childSessionId": "9b19919f-1e5f-47b8-8603-ba18e2b9d1be",
+    "status": "completed",
+    "provider": "ollama",
+    "model": "smoke-model",
+    "providerFixtureObservedCall": true,
+    "resultPersisted": true
+  },
+  "cancellationCoverage": {
+    "classification": "deterministic provider-fixture TUI smoke; not real-model coding success",
+    "slowChildRunId": "1763a43f-9d9d-4c56-8268-0c095e439fd7",
+    "slowChildStatus": "cancelled",
+    "slowChildCancelRequested": true,
+    "siblingRunId": "2e4cd557-50a1-445d-808b-15b08ea2a174",
+    "siblingStatusAfterCancellation": "completed",
+    "bothProviderCallsObserved": true,
+    "uiShowedIndependentTerminalStatuses": true
+  },
+  "restartCoverage": {
+    "journey": "conversation persisted -> backend SIGINT/terminate -> restart on same data dir -> TUI reopen -> transcript + ready composer, no new prompt sent",
+    "messagesBeforeRestart": 2,
+    "messagesAfterRestart": 2,
+    "messagesUnchanged": true
+  },
+  "killRecoveryCoverage": {
+    "journey": "async slow turn running -> backend SIGKILL mid-operation -> restart on same data dir -> operation uncertain with error, conversation unchanged",
+    "operationStatusAfterRestart": "uncertain",
+    "messagesUnchanged": true
+  },
+  "terminalSizes": [
+    "32x12",
+    "40x16",
+    "80x24",
+    "80x30",
+    "100x35",
+    "120x40"
+  ],
+  "startupMs": {
+    "samples": [
+      147.25371600070503,
+      145.33784599916544,
+      145.78294999955688
+    ],
+    "count": 3,
+    "min": 145.33784599916544,
+    "median": 145.78294999955688,
+    "max": 147.25371600070503
+  },
+  "exclusions": "Not render FPS, model/token latency, coding-task quality, or a cross-runner performance guarantee.",
+  "releaseVerification": {
+    "tag": "v0.78.0-next.0",
+    "publishedAt": "2026-11-13T02:07:01Z",
+    "releaseManifestSha256": "fe8d8f637212f123f6268dc9dbe26b957a6f12faa0c1c561898b8b457804451e",
+    "linuxArchiveSha256": "a5fedda430cd7a1264a0aefd45f746c1ca2360915b213f53962b7ece838c772d",
+    "buildManifestSha256": "03b2af958d5c3ce4b549860e1d46825f37353c1e863eaacfe90dc7e55d085b5a",
+    "serverSha256": "b5cffac4c62a1cf736318276f3b3c0d7ce8773789ec271bbb6443f6c8ddd30ea",
+    "tuiSha256": "033bdafce68f89dd73c0e3a22cac9df99431311fde08b6a3dc4b453affd6c479",
+    "archiveAndInternalBinaryHashesVerified": true
+  },
+  "promptCompatibility": {
+    "classification": "package system prompt reconstructed from source and compared with the smoke fixture; prompt text is not stored",
+    "packageSystemPromptSha256": "956478eb387e90e8641bf44cd52276aca6f5b6d0acd45d85ebe4a0d1e2eabad4",
+    "currentFixtureSystemPromptSha256": "956478eb387e90e8641bf44cd52276aca6f5b6d0acd45d85ebe4a0d1e2eabad4",
+    "exactCurrentFixtureMatch": true,
+    "historicalV0771PromptMatch": false,
+    "historicalCompatibilityRequired": false
+  },
+  "execution": {
+    "systemdScope": "systemd-run --user --scope --collect",
+    "systemdInvocationId": "43de7782dc7e4d4ea5955d4c4e53dc61",
+    "memoryMax": "2 GiB",
+    "memorySwapMax": "0",
+    "tmpDir": "/home/ulisesjcf/.cache/veasel-bench/tmp/tmp",
+    "cpuAndPeakMemoryMeasurements": "Not captured by this harness run"
+  }
+}

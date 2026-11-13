@@ -584,7 +584,11 @@ def run_tui_conpty(
             wait_for_screen_markers((b"1/2 pending", b"Command:", b"echo veasel-shell-approved"), 5, "the remaining shell command after rejection")
             time.sleep(0.5)
             send_keys(b"a")
-            wait_for_screen_markers((b"Message Veasel",), 5, "the session after the remaining command was approved")
+            # The approval endpoint runs the shell command before returning.
+            # Windows AppContainer process setup can exceed the short UI
+            # transition waits used by workspace edits, so allow the bounded
+            # 10s command timeout plus runner scheduling overhead here.
+            wait_for_screen_markers((b"Message Veasel",), 20, "the session after the remaining command was approved")
             quit_via_palette(
                 "the command palette after shell approval", "the command palette quit option",
             )

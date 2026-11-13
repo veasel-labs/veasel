@@ -5,6 +5,7 @@ import {
   subagentIntegrationReviewTarget,
   subagentIntegrationSummary,
   subagentRunDetails,
+  subagentRunDescription,
   toSubagentRunView,
 } from "./subagent-runs"
 
@@ -29,6 +30,13 @@ const baseRun: ApiSubagentRun = {
   workspace_started: false,
   workspace_base_commit: "",
 }
+
+describe("subagent list visibility", () => {
+  test("prioritizes provider/model before task text when the description is rendered", () => {
+    expect(subagentRunDescription(toSubagentRunView({ ...baseRun, task: "A complex task that may be clipped" })))
+      .toBe("provider-a/model-a · A complex task that may be clipped")
+  })
+})
 
 describe("subagent usage details", () => {
   test("shows provider-reported usage and optional reported breakdowns", () => {

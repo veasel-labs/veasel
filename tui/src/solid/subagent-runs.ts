@@ -69,7 +69,7 @@ export function subagentRunTitle(run: SubagentRunView): string {
 export function subagentRunDescription(run: SubagentRunView): string {
   const task = run.task.replace(/\s+/g, " ").trim()
   const shortTask = task.length > 96 ? `${task.slice(0, 93)}…` : task
-  return `${shortTask} · ${run.provider}/${run.model}`
+  return `${run.provider}/${run.model} · ${shortTask}`
 }
 
 export function subagentRunOption(run: SubagentRunView): DialogSelectOption<string> {

@@ -9,6 +9,7 @@ import time
 from ctypes import wintypes
 from pathlib import Path
 from typing import Callable
+from urllib.parse import quote
 from urllib.request import urlopen
 
 from terminal_screen import TerminalScreen
@@ -19,6 +20,8 @@ kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 # Kept in sync with _PALETTE_RETRIES in standalone-tui-smoke.py: attempts to open
 # the command palette, filter it, and confirm the Quit option before giving up.
 _PALETTE_RETRIES = 3
+SLOW_DELEGATION_TASK = "Wait for cancellation: standalone-subagent-cancel-v1"
+FAST_SIBLING_TASK = "Return the deterministic smoke marker: standalone-subagent-sibling-v1"
 
 HPCON = wintypes.HANDLE
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
@@ -174,6 +177,8 @@ def run_tui_conpty(
     home_only: bool = False,
     size: tuple[int, int] = (24, 100),
     first_run: bool = False,
+    delegation_task: str | None = None,
+    create_session_via_ui: bool = False,
 ) -> float:
     """Run a packaged TUI in ConPTY and verify a mock-provider conversation."""
     started = time.monotonic()
@@ -254,6 +259,7 @@ def run_tui_conpty(
         timeout: float,
         description: str,
         absent: tuple[bytes, ...] = (),
+        raw_fallback: bool = True,
     ) -> None:
         # Same differential-repaint hazard as the PTY smoke: assert against
         # the rendered screen, not contiguous raw bytes.
@@ -267,7 +273,7 @@ def run_tui_conpty(
                 marker in rendered for marker in absent
             ):
                 return
-            if all(marker in output for marker in markers):
+            if raw_fallback and not absent and all(marker in output for marker in markers):
                 return
             exit_code = wintypes.DWORD()
             if kernel32.GetExitCodeProcess(process.hProcess, ctypes.byref(exit_code)) and exit_code.value != 259:
@@ -415,10 +421,22 @@ def run_tui_conpty(
         close(input_read)
         close(output_write)
 
-        home_markers = (b"SESSIONS", b"VEASEL") if first_run else (b"connected", b"SESSIONS", b"VEASEL")
+        home_markers = (
+            (b"VEASEL CODE", b"your local workspace", b"/connect")
+            if first_run
+            else (b"connected", b"SESSIONS", b"VEASEL")
+        )
         if session_title:
             home_markers = (*home_markers, session_title.encode())
-        wait_for_markers(home_markers, 30, "its connected session screen")
+        if first_run:
+            wait_for_screen_markers(
+                home_markers,
+                30,
+                "the clean-profile home screen",
+                raw_fallback=False,
+            )
+        else:
+            wait_for_markers(home_markers, 30, "its connected session screen")
         startup_ms = (time.monotonic() - started) * 1000
         if first_run:
             output.clear()
@@ -506,6 +524,39 @@ def run_tui_conpty(
         send_keys(b"\x1b")
         wait_for_markers((b"SESSIONS", b"q quit"), 5, "the home session list after leaving settings")
 
+        session_opened = False
+        if create_session_via_ui:
+            if session_id or not delegation_task:
+                raise RuntimeError("UI session creation is only supported for a new delegation smoke session")
+            output.clear()
+            send_keys(b"n")
+            wait_for_screen_markers(
+                (b"New session", b"Message Veasel"),
+                10,
+                "the composer of the session created through the TUI",
+                raw_fallback=False,
+            )
+            with urlopen(f"{env['VEASEL_API_URL']}/v1/sessions", timeout=5) as response:
+                sessions = json.load(response)
+            if not isinstance(sessions, list):
+                raise RuntimeError(f"session collection was not an array: {sessions!r}")
+            matches = []
+            for session in sessions:
+                if not isinstance(session, dict) or session.get("title") != "New session":
+                    continue
+                try:
+                    if Path(str(session.get("directory", ""))).samefile(env["VEASEL_PROJECT_DIR"]):
+                        matches.append(session)
+                except OSError:
+                    continue
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "expected one UI-created session named 'New session' in "
+                    f"{env['VEASEL_PROJECT_DIR']}, found {matches!r}"
+                )
+            session_id = str(matches[0]["id"])
+            session_opened = True
+
         if review_path:
             output.clear()
             send_keys(b"\r")
@@ -519,7 +570,7 @@ def run_tui_conpty(
             quit_via_palette(
                 "the command palette after the only review was approved", "the command palette quit option",
             )
-        elif not session_id:
+        elif not session_id and not delegation_task:
             send_keys(b"q")
         elif recovery_only:
             # Reopen the persisted session against the restarted backend
@@ -534,20 +585,158 @@ def run_tui_conpty(
                 "the command palette after backend restart recovery", "the quit command in the palette",
             )
         else:
-            output.clear()
-            send_keys(b"\r")
-            # Recovery uses a different placeholder until submissions are safe.
-            wait_for_screen_markers(
-                (b"Message Veasel",), 5, "the recovered session composer",
-                absent=(b"Restoring this session",),
-            )
-            output.clear()
-            send_keys(b"Stream incrementally\r")
-            wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
-            wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
-            wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
+            if not session_opened:
+                output.clear()
+                send_keys(b"\r")
+                # Recovery uses a different placeholder until submissions are safe.
+                wait_for_screen_markers(
+                    (b"Message Veasel",), 5, "the recovered session composer",
+                    absent=(b"Restoring this session",),
+                )
+
+            def get_json(path: str) -> object:
+                with urlopen(f"{env['VEASEL_API_URL']}{path}", timeout=5) as response:
+                    return json.load(response)
+
+            def wait_for_run(task: str, expected_status: str, timeout: float = 30) -> dict[str, object]:
+                deadline = time.monotonic() + timeout
+                runs_path = f"/v1/sessions/{quote(session_id, safe='')}/subagents"
+                while time.monotonic() < deadline:
+                    runs = get_json(runs_path)
+                    if not isinstance(runs, list):
+                        raise RuntimeError(f"subagent collection was not an array: {runs!r}")
+                    run = next((item for item in runs if isinstance(item, dict) and item.get("task") == task), None)
+                    if run and run.get("status") == expected_status:
+                        return run
+                    if run and run.get("status") in ("failed", "cancelled", "uncertain"):
+                        raise RuntimeError(f"delegated task reached {run.get('status')} before {expected_status}: {run!r}")
+                    time.sleep(0.05)
+                raise TimeoutError(f"delegated task did not reach {expected_status!r}: {task!r}")
+
+            def delegate_task_through_ui(task: str, visible_marker: bytes) -> None:
+                output.clear()
+                send_keys(f"/delegate {task}\r".encode())
+                wait_for_screen_markers((b"Choose agent role", b"explorer"), 10, "the delegate role picker")
+                send_keys(b"\r")
+                wait_for_screen_markers((b"Choose model", b"Use this conversation"), 10, "the delegate model picker")
+                send_keys(b"\r")
+                wait_for_screen_markers((b"Delegate task", visible_marker), 10, "the focused child task prompt")
+                send_keys(b"\r")
+                wait_for_screen_markers((b"Agents",), 15, "the child run list opened from /delegate")
+
+            if delegation_task:
+                delegate_task_through_ui(delegation_task, b"standalone-subagent-result-v1")
+                run = wait_for_run(delegation_task, "completed")
+                if run.get("parent_session_id") != session_id or not run.get("child_session_id"):
+                    raise RuntimeError(f"delegated run lost its parent/child attribution: {run!r}")
+                if run.get("provider") != "ollama" or run.get("model") != "smoke-model":
+                    raise RuntimeError(f"delegated run resolved the wrong model route: {run!r}")
+                wait_for_screen_markers(
+                    (b"COMPLETED", b"explorer"), 10, "the durable completed child status in /agents",
+                )
+                time.sleep(0.15)
+                send_keys(b"\r")
+                wait_for_screen_markers((b"Inspect result and provenance",), 10, "the child action menu")
+                send_keys(b"\r")
+                wait_for_screen_markers(
+                    (b"Status: completed", b"Model: ollama/smoke-model"),
+                    10,
+                    "the child status and resolved model in the packaged TUI",
+                )
+                send_keys(b"\x1b[F")
+                wait_for_screen_markers(
+                    (b"Result:", b"Deterministic delegated result marker."),
+                    10,
+                    "the scrolled child result in the packaged TUI",
+                )
+                send_keys(b"\r")
+                wait_for_screen_markers((b"Inspect result and provenance",), 10, "returning from result to child actions")
+                send_keys(b"\x1b")
+                wait_for_screen_markers((b"Agents",), 10, "returning to the child list")
+                time.sleep(0.2)
+                send_keys(b"\x1b")
+                wait_for_screen_markers(
+                    (b"Message Veasel",), 10, "the parent composer before another delegation",
+                    absent=(b"Agents", b"Inspect result and provenance"),
+                )
+
+                settings = get_json("/v1/config/model")
+                if not isinstance(settings, dict):
+                    raise RuntimeError(f"provider settings response was not an object: {settings!r}")
+                profile = settings.get("profiles", {}).get("ollama", {})
+                provider_base = str(profile.get("base_url", "")).removesuffix("/v1")
+                if not provider_base:
+                    raise RuntimeError(f"could not find the configured deterministic provider base URL: {settings!r}")
+                with urlopen(f"{provider_base}/hold-slow-response", timeout=5):
+                    pass
+                delegate_task_through_ui(SLOW_DELEGATION_TASK, b"standalone-subagent-cancel-v1")
+                slow_run = wait_for_run(SLOW_DELEGATION_TASK, "running")
+                slow_run_id = str(slow_run["id"])
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    with urlopen(f"{provider_base}/fixture-requests", timeout=5) as response:
+                        fixture_requests = json.load(response)
+                    if any("standalone-subagent-cancel-v1" in str(item.get("prompt", "")) for item in fixture_requests):
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise TimeoutError("slow child did not enter the deterministic provider fixture")
+
+                send_keys(b"\x1b")
+                wait_for_screen_markers(
+                    (b"Message Veasel",), 10, "the parent composer before the sibling task", absent=(b"Agents",),
+                )
+                delegate_task_through_ui(FAST_SIBLING_TASK, b"standalone-subagent-sibling-v1")
+                sibling_run = wait_for_run(FAST_SIBLING_TASK, "completed")
+                if sibling_run.get("parent_session_id") != session_id:
+                    raise RuntimeError(f"fast sibling lost parent attribution: {sibling_run!r}")
+                if sibling_run.get("provider") != "ollama" or sibling_run.get("model") != "smoke-model":
+                    raise RuntimeError(f"fast sibling resolved the wrong model route: {sibling_run!r}")
+
+                send_keys(b"standalone-subagent-cancel-v1")
+                wait_for_screen_markers(
+                    (b"RUNNING", b"standalone-subagent-cancel-v1"),
+                    10,
+                    "filtering /agents to the still-running child",
+                )
+                send_keys(b"\r")
+                wait_for_screen_markers((b"Request cancellation",), 10, "the slow child action menu")
+                send_keys(b"\x1b[B\r")
+                deadline = time.monotonic() + 10
+                cancel_requested = False
+                while time.monotonic() < deadline:
+                    current = get_json(
+                        f"/v1/sessions/{quote(session_id, safe='')}/subagents/{quote(slow_run_id, safe='')}"
+                    )
+                    if isinstance(current, dict) and (current.get("cancel_requested") or current.get("status") == "cancelled"):
+                        cancel_requested = True
+                        break
+                    time.sleep(0.05)
+                if not cancel_requested:
+                    raise TimeoutError(f"TUI cancellation was not persisted for the slow child: {current!r}")
+                with urlopen(f"{provider_base}/release-slow-response", timeout=5):
+                    pass
+                cancelled_run = wait_for_run(SLOW_DELEGATION_TASK, "cancelled")
+                confirmed_sibling = wait_for_run(FAST_SIBLING_TASK, "completed")
+                if confirmed_sibling.get("status") != "completed" or confirmed_sibling.get("id") != sibling_run.get("id"):
+                    raise RuntimeError(f"cancelling one child changed its completed sibling: {confirmed_sibling!r}")
+                send_keys(b"\x1b")
+                wait_for_screen_markers((b"Agents",), 10, "returning to the filtered child list after cancellation")
+                time.sleep(0.2)
+                send_keys(b"\x1b")
+                wait_for_screen_markers(
+                    (b"Message Veasel",), 10, "the parent composer after child cancellation", absent=(b"Agents",),
+                )
+                send_keys(b"/agents\r")
+                wait_for_screen_markers((b"CANCELLED", b"COMPLETED"), 10, "independent child terminal statuses in /agents")
+            else:
+                output.clear()
+                send_keys(b"Stream incrementally\r")
+                wait_for_partial_reply(b"Streaming fixture", b"Streaming fixture reply arrives in two pieces", 15)
+                wait_for_markers((b"arrives in two pieces",), 30, "the mock provider response in the transcript")
+                wait_for_persisted_reply(env["VEASEL_API_URL"], session_id, "Streaming fixture reply arrives in two pieces")
             quit_via_palette(
-                "the command palette after the assistant reply", "the quit command in the palette",
+                "the command palette after the conversation workflow", "the quit command in the palette",
             )
         if kernel32.WaitForSingleObject(process.hProcess, 5_000) != 0:
             snippet = visible_output()[-2_500:].decode(errors="replace")

@@ -84,9 +84,17 @@ test("agent details refresh and Enter returns through the stack at 32x12", async
   )
   try {
     await waitForScreen(setup, (frame) => frame.includes("RUNNING · explorer"))
+    const compactList = setup.captureCharFrame()
+    expect(compactList).toContain("RUNNING · explorer")
+    expect(compactList).toContain("provider-a/model-a")
     setup.mockInput.pressEnter()
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toContain("Inspect result")
+    setup.mockInput.pressArrow("down")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("Request cancellation")
+    setup.mockInput.pressArrow("up")
+    await setup.renderOnce()
 
     setup.mockInput.pressEnter()
     await setup.renderOnce()

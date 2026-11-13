@@ -69,7 +69,7 @@ export function subagentRunTitle(run: SubagentRunView): string {
 export function subagentRunDescription(run: SubagentRunView): string {
   const task = run.task.replace(/\s+/g, " ").trim()
   const shortTask = task.length > 96 ? `${task.slice(0, 93)}…` : task
-  return `${shortTask} · ${run.provider}/${run.model}`
+  return `${run.provider}/${run.model} · ${shortTask}`
 }
 
 export function subagentRunOption(run: SubagentRunView): DialogSelectOption<string> {
@@ -77,6 +77,7 @@ export function subagentRunOption(run: SubagentRunView): DialogSelectOption<stri
     title: subagentRunTitle(run),
     value: run.id,
     description: subagentRunDescription(run),
+    compactDescription: `${run.provider}/${run.model}`,
     footer: run.cancel_requested ? "cancellation requested" : undefined,
     searchText: [run.id, run.child_session_id, run.parent_operation_id, run.agent_id,
       run.task, run.status, run.provider, run.model].join(" "),

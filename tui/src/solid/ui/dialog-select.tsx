@@ -119,7 +119,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   })
 
   return (
-    <box width="100%" flexDirection="column" gap={1}>
+    <box width="100%" flexDirection="column" gap={compact() ? 0 : 1}>
       <DialogHeader title={props.title} hint="↑/↓ · Enter · Esc" />
       <input
         ref={(next: InputRenderable) => {
@@ -164,30 +164,35 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                     const isCurrent = () =>
                       props.current !== undefined && option.value === props.current
                     return (
-                      <box
-                        width="100%"
-                        flexDirection="row"
-                        backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
-                        paddingLeft={1}
-                        paddingRight={1}
-                        onMouseUp={() => {
-                          props.onSelect?.(option)
-                          if (props.dismissOnSelect !== false) dialog.clear()
-                        }}
-                      >
-                        <text fg={active() ? colors.brand : colors.body} flexGrow={1} flexShrink={0} wrapMode="none">
-                          {isCurrent() ? "● " : active() ? "▸ " : "  "}
-                          {option.title}
-                        </text>
-                        <Show when={!compact() && (option.description || option.footer || (flatMode() && option.category))}>
-                          <text fg={colors.muted} flexShrink={1} wrapMode="none">
-                            {"  "}
-                            {flatMode()
-                              ? (option.footer ?? option.category ?? option.description ?? "")
-                              : (option.footer ?? option.description ?? "")}
+                      <>
+                        <box
+                          width="100%"
+                          flexDirection="row"
+                          backgroundColor={active() ? colors.inputFocusBg : colors.panelBg}
+                          paddingLeft={1}
+                          paddingRight={1}
+                          onMouseUp={() => {
+                            props.onSelect?.(option)
+                            if (props.dismissOnSelect !== false) dialog.clear()
+                          }}
+                        >
+                          <text fg={active() ? colors.brand : colors.body} flexGrow={1} flexShrink={0} wrapMode="none">
+                            {isCurrent() ? "● " : active() ? "▸ " : "  "}
+                            {option.title}
                           </text>
+                          <Show when={!compact() && (option.description || option.footer || (flatMode() && option.category))}>
+                            <text fg={colors.muted} flexShrink={1} wrapMode="none">
+                              {"  "}
+                              {flatMode()
+                                ? (option.footer ?? option.category ?? option.description ?? "")
+                                : (option.footer ?? option.description ?? "")}
+                            </text>
+                          </Show>
+                        </box>
+                        <Show when={compact() && active() && option.compactDescription}>
+                          <text fg={colors.muted} wrapMode="none">{option.compactDescription}</text>
                         </Show>
-                      </box>
+                      </>
                     )
                   }}
                 </For>

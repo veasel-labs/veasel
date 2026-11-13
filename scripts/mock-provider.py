@@ -269,6 +269,36 @@ def fixture_user_prompt(content):
     return content
 
 
+def acceptance_review_fixture_response(content):
+    """Return the deterministic acceptance result only for verified fixture edits."""
+    if not isinstance(content, str) or not content.startswith("Post-edit acceptance review:"):
+        return None
+    fixture_changes = (
+        ("Original user request:\nEdit then verify workspace", "src/main.v", "+fn greet(name string) string {"),
+        ("Original user request:\nFix failing test in the workspace", "src/main.v", "+fn greet(name string) string {"),
+        ("Original user request:\nFix vendored project tests in token-bucket-fixture", "token_bucket.v",
+         "+\tb.refill(now)"),
+    )
+    requested_change = next(
+        ((path, addition) for request, path, addition in fixture_changes if request in content),
+        None,
+    )
+    if requested_change is None:
+        return None
+    path, addition = requested_change
+    required_evidence = (
+        "Verification: the requested verification succeeded." in content
+        and "Actual applied diff:" in content
+        and f"--- {path}" in content
+        and f"+++ {path}" in content
+        and "@@" in content
+        and addition in content
+    )
+    if required_evidence:
+        return "The applied fixture edit matches the request and its verification succeeded.\nACCEPTANCE_REVIEW: PASS"
+    return None
+
+
 def cancellation_fixture_prompt(payload, fallback_user_text=""):
     """Return the raw correlated cancellation prompt from a Chat Completions request."""
     messages = payload.get("messages", []) if isinstance(payload, dict) else []
@@ -523,10 +553,11 @@ class MockProvider(BaseHTTPRequestHandler):
             last_message = messages[-1] if messages else {}
             user_text = fixture_user_prompt(last_message.get("content", ""))
             is_cancellation_fixture_turn = user_text.startswith("Wait for cancellation ")
+            acceptance_review_result = acceptance_review_fixture_response(last_message.get("content", ""))
             is_tool_follow_up = last_message.get("role") == "tool" or (
                 user_text.startswith("The requested code edit was applied.")
                 and any(message.get("role") == "tool" for message in messages[:-1])
-            )
+            ) or acceptance_review_result is not None
             is_mcp_fixture_turn = any(
                 message.get("role") == "user"
                 and fixture_user_prompt(message.get("content", ""))
@@ -622,6 +653,8 @@ class MockProvider(BaseHTTPRequestHandler):
                         "arguments": arguments
                     }}]
                 }}]}
+            elif acceptance_review_result is not None:
+                body = {"choices": [{"message": {"role": "assistant", "content": acceptance_review_result}}]}
             elif is_tool_follow_up:
                 tool_result = latest_tool_result(messages)
                 applied_edit = (

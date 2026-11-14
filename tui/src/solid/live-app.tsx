@@ -731,8 +731,14 @@ function LiveAppShell(props: LiveAppProps) {
       if (automatic && dialog.open()) return
       if (inventoryRevision !== pendingReviewRevision) {
         if (automatic) return
+        const retryRevision = pendingReviewRevision
         reviews = await loadPendingSolidReviews(props.api, sessionId)
         if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
+        if (retryRevision !== pendingReviewRevision) {
+          toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
+          setComposerFocused(true)
+          return
+        }
       }
       setPendingReviewItems(reviews)
       setPendingReviewSessionId(sessionId)

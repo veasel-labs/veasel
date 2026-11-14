@@ -51,7 +51,7 @@ import {
   reviewSummaryLine,
   type SolidReviewItem,
 } from "./reviews"
-import { totalPendingReviews } from "../pending-reviews"
+import { pendingReviewInventoryFailureNotice, totalPendingReviews } from "../pending-reviews"
 import type { ActiveReviewKind } from "../active-review"
 import { openAgentDialog } from "./component/agent-dialog"
 import {
@@ -718,9 +718,16 @@ function LiveAppShell(props: LiveAppProps) {
       return
     }
     setComposerFocused(false)
+    const openRevision = ++pendingReviewOpenRevision
+    const inventoryRevision = pendingReviewRevision
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
-      if (sessionId !== activeSessionId()) return
+      if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
+      if (inventoryRevision !== pendingReviewRevision) {
+        toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
+        setComposerFocused(true)
+        return
+      }
       setPendingReviewItems(reviews)
       setPendingReviewSessionId(sessionId)
       setPendingReviewInventoryError(false)
@@ -761,12 +768,18 @@ function LiveAppShell(props: LiveAppProps) {
           return result
         },
       })
-    } catch (error) {
-      toast.info(
-        error instanceof Error ? error.message : "could not load pending reviews",
-        "Reviews",
-      )
-      setComposerFocused(true)
+    } catch {
+      if (openRevision === pendingReviewOpenRevision && sessionId === activeSessionId()) {
+        if (inventoryRevision !== pendingReviewRevision) {
+          toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
+          setComposerFocused(true)
+          return
+        }
+        setPendingReviewSessionId(sessionId)
+        setPendingReviewInventoryError(true)
+        toast.info(pendingReviewInventoryFailureNotice(), "Reviews")
+        setComposerFocused(true)
+      }
     }
   }
 
@@ -1012,6 +1025,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [configuredMcpArguments, setConfiguredMcpArguments] = createSignal<SlashArgument[]>([])
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
   let pendingReviewRevision = 0
+  let pendingReviewOpenRevision = 0
   const refreshPendingReviews = async (sessionId = activeSessionId()) => {
     // Background completions must not invalidate a pending refresh for the
     // currently focused tab.
@@ -2945,7 +2959,7 @@ function LiveAppShell(props: LiveAppProps) {
             : totalPendingReviews(countsFromReviews(currentPendingReviewItems())) > 0
             ? `▲ ${totalPendingReviews(countsFromReviews(currentPendingReviewItems()))} pending${terminalColumns() >= 44 ? ` · ${reviewShortcut.label}` : ""}${pendingReviewInventoryError() ? " · refresh failed" : ""}`
             : pendingReviewInventoryError()
-              ? terminalColumns() < 44 ? "▲ reviews unavailable" : `▲ reviews unavailable · ${reviewShortcut.label}`
+              ? terminalColumns() < 44 ? "▲ approvals unavailable" : `▲ approvals unavailable · ${reviewShortcut.label}`
               : terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
         </text>
       </box>

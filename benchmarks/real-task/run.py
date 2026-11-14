@@ -73,7 +73,7 @@ REMOTE_CASE_PINS = {
         "max_request_body_bytes": 32768,
     },
     "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.13": {
-        "case_sha256": "2b9960e190472b7f37b049f48071816c36969903802ce93da33f30f81a3c336d",
+        "case_sha256": "8ca52d626367fa437ec1ae8baa6adc5d815d29ddd0e9955ca88b5ccca52b4e53",
         "max_cost_usd": Decimal("0.16"),
         "max_model_requests": 126,
         "max_request_body_bytes": 32768,

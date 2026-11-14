@@ -629,6 +629,7 @@ class PreflightTests(unittest.TestCase):
         case, _prompt, _digest = runner.load_case(path)
         report, checks = runner.provider_cost_bound(case, "5")
         self.assertTrue(checks[0]["passed"], checks)
+        self.assertEqual(case["budgets"]["minimum_startup_available_memory_bytes"], 6 * runner.GIB)
         self.assertEqual(report["pinned_runtime_max_model_rounds"], 42)
         self.assertEqual(report["pinned_runtime_max_model_requests"], 126)
         self.assertEqual(report["conservative_max_cost_usd"], "0.15482880")

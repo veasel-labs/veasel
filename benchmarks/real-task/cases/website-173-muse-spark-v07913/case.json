@@ -39,7 +39,7 @@
   },
   "budgets": {
     "wall_seconds": 600,
-    "minimum_startup_available_memory_bytes": 5368709120,
+    "minimum_startup_available_memory_bytes": 6442450944,
     "minimum_available_memory_bytes": 4831838208,
     "minimum_free_swap_bytes": 0
   },

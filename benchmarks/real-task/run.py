@@ -48,6 +48,61 @@ IMPORTED_PRIOR_SPEND_NOTE = (
 )
 OPEN_CODE_SHELL_WRAPPER = ROOT / "opencode-shell-sandbox.sh"
 OPEN_CODE_SHELL_WRAPPER_SHA256 = "338fc0a17cf62688d5209b4b51da275bbb9ef4497645b38afcf523fed89f2166"
+REMOTE_CASE_SHA256 = "35ab4f629c82b9001775b62f1fd81a71b76eea2fd071a550385b9e82a88bf49c"
+REMOTE_CASE_MODEL = "muse-spark-1.3-contributor"
+REMOTE_CASE_PROVIDER = "meta"
+REMOTE_CASE_BASE_URL = "https://api.meta.ai/v1"
+REMOTE_CASE_CONTEXT_TOKENS = 8192
+REMOTE_CASE_OUTPUT_TOKENS = 2048
+REMOTE_CASE_INPUT_USD_PER_MILLION = Decimal("0.1")
+REMOTE_CASE_OUTPUT_USD_PER_MILLION = Decimal("0.2")
+REMOTE_CASE_MAX_COST_USD = Decimal("0.11")
+REMOTE_CASE_MAX_REQUESTS = 84
+REMOTE_CASE_MAX_BODY_BYTES = 32768
+
+
+def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | None:
+    """Allow only the reviewed remote case and its fixed rate/budget contract."""
+    if case.get("model", {}).get("provider") == "ollama":
+        return None
+    raw = case_path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        disk_case = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("remote benchmark case is not valid pinned JSON") from exc
+    expected = {
+        "id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5",
+        "model": {
+            "provider": REMOTE_CASE_PROVIDER,
+            "name": REMOTE_CASE_MODEL,
+            "context_tokens": REMOTE_CASE_CONTEXT_TOKENS,
+            "output_tokens": REMOTE_CASE_OUTPUT_TOKENS,
+        },
+        "provider_config": {
+            "provider": REMOTE_CASE_PROVIDER,
+            "model": REMOTE_CASE_MODEL,
+            "base_url": REMOTE_CASE_BASE_URL,
+        },
+        "cost_budget": {
+            "max_cost_usd": float(REMOTE_CASE_MAX_COST_USD),
+            "input_usd_per_million_tokens": float(REMOTE_CASE_INPUT_USD_PER_MILLION),
+            "output_usd_per_million_tokens": float(REMOTE_CASE_OUTPUT_USD_PER_MILLION),
+            "max_model_requests": REMOTE_CASE_MAX_REQUESTS,
+            "max_request_body_bytes": REMOTE_CASE_MAX_BODY_BYTES,
+        },
+    }
+    if digest != REMOTE_CASE_SHA256 or disk_case != case:
+        raise ValueError("remote benchmark case hash is not in the reviewed allowlist")
+    for key, value in expected.items():
+        actual = disk_case.get(key)
+        if key == "provider_config":
+            actual = {field: actual.get(field) for field in value} if isinstance(actual, dict) else actual
+        if key == "cost_budget":
+            actual = {field: actual.get(field) for field in value} if isinstance(actual, dict) else actual
+        if actual != value:
+            raise ValueError("remote benchmark model, provider rates, or limits differ from reviewed pins")
+    return digest
 
 
 def load_case(path: Path) -> tuple[dict[str, Any], Path, str]:
@@ -107,6 +162,58 @@ def process_tree_resources(root_pid: int, proc_root: Path = Path("/proc")) -> di
         "cpu_time_ms": int(sum(processes[pid][1] for pid in descendants) * 1000 / os.sysconf("SC_CLK_TCK")),
         "rss_bytes": sum(processes[pid][2] for pid in descendants),
     }
+
+
+def terminate_process_group(process: subprocess.Popen[Any], grace_seconds: float = 3.0) -> bool:
+    """Stop and reap an agent session and its same-process-group descendants."""
+    process_group = process.pid
+
+    def signal_group(signal_number: int) -> bool:
+        try:
+            os.killpg(process_group, signal_number)
+            return True
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+
+    def group_exists() -> bool:
+        try:
+            os.killpg(process_group, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
+
+    if not signal_group(signal.SIGINT):
+        return False
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        if not signal_group(signal.SIGTERM):
+            return False
+        try:
+            process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            if not signal_group(signal.SIGKILL):
+                return False
+            try:
+                process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                return False
+
+    deadline = time.monotonic() + 1.0
+    while group_exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if not group_exists():
+        return True
+    if not signal_group(signal.SIGKILL):
+        return False
+    deadline = time.monotonic() + 1.0
+    while group_exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not group_exists()
 
 
 def gpu_memory_used_mib() -> list[int] | None:
@@ -1040,6 +1147,7 @@ def preserve_candidate_changes(task_root: Path, base_commit: str, artifact_dir: 
 
 def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode", approved_spend_usd: str = "0", bwrap_path: str | Path = "/usr/bin/bwrap", isolation_wrapper_path: str | Path | None = None, isolation_wrapper_sha256: str | None = None, task_root_value: str | Path | None = None) -> dict[str, Any]:
     case, _prompt_path, prompt_hash = load_case(case_path)
+    validate_remote_case_pin(case_path, case)
     model = case["model"]
     is_ollama = model.get("provider") == "ollama"
     available, swap = available_resources()
@@ -1328,6 +1436,11 @@ def run_case(args: argparse.Namespace) -> int:
         print(f"Refusing autonomous run: {exc}", file=sys.stderr)
         return 2
     case, _prompt_path, _prompt_hash = load_case(args.case)
+    try:
+        validate_remote_case_pin(args.case, case)
+    except (OSError, ValueError) as exc:
+        print(f"Refusing autonomous run: remote case is not allowlisted ({type(exc).__name__})", file=sys.stderr)
+        return 2
     workspace = args.workspace.resolve()
     data_dir = args.data_dir.resolve()
     agent_binary_arg = args.veasel if args.agent == "veasel" else args.opencode
@@ -1394,17 +1507,17 @@ def run_case(args: argparse.Namespace) -> int:
                 remove_profile_key_from_disk(data_dir)
                 proxy_budget = responses_proxy_budget(case, args.approved_spend_usd)
                 proxy = BudgetProxy(
-                    upstream_base_url=case["provider_config"]["base_url"],
+                    upstream_base_url=REMOTE_CASE_BASE_URL,
                     api_key=upstream_key,
-                    model=case["model"]["name"],
-                    max_requests=proxy_budget["upstream_attempt_limit"],
-                    context_tokens=case["model"]["context_tokens"],
-                    output_tokens=case["model"]["output_tokens"],
+                    model=REMOTE_CASE_MODEL,
+                    max_requests=min(proxy_budget["upstream_attempt_limit"], REMOTE_CASE_MAX_REQUESTS),
+                    context_tokens=REMOTE_CASE_CONTEXT_TOKENS,
+                    output_tokens=REMOTE_CASE_OUTPUT_TOKENS,
                     client_api_key=client_key,
                     max_request_body_bytes=proxy_budget["max_request_body_bytes"],
                     max_run_cost_usd=proxy_budget["enforced_run_cost_cap_usd"],
-                    input_usd_per_million_tokens=case["cost_budget"]["input_usd_per_million_tokens"],
-                    output_usd_per_million_tokens=case["cost_budget"]["output_usd_per_million_tokens"],
+                    input_usd_per_million_tokens=REMOTE_CASE_INPUT_USD_PER_MILLION,
+                    output_usd_per_million_tokens=REMOTE_CASE_OUTPUT_USD_PER_MILLION,
                 )
                 proxy_base_url = proxy.start()
                 env["VEASEL_BENCHMARK_PROXY_KEY"] = client_key
@@ -1429,6 +1542,8 @@ def run_case(args: argparse.Namespace) -> int:
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
     samples: list[dict[str, Any]] = []
     outcome = "completed"
+    runner_error_type: str | None = None
+    process_group_terminated: bool | None = None
     previous_handlers: dict[int, Any] = {}
     process: subprocess.Popen[bytes] | None = None
     def request_interrupt(signum: int, _frame: Any) -> None:
@@ -1466,31 +1581,15 @@ def run_case(args: argparse.Namespace) -> int:
                 samples.append(sample)
                 if available < min_memory or swap < min_swap:
                     outcome = "resource_aborted"
-                    try:
-                        os.killpg(process.pid, signal.SIGINT)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
+                    process_group_terminated = terminate_process_group(process)
+                    if not process_group_terminated:
+                        outcome = "resource_aborted_orphaned"
                     break
                 if time.monotonic() - started >= case["budgets"]["wall_seconds"]:
                     outcome = "timeout"
-                    try:
-                        os.killpg(process.pid, signal.SIGINT)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
+                    process_group_terminated = terminate_process_group(process)
+                    if not process_group_terminated:
+                        outcome = "timeout_orphaned"
                     break
                 sample_delay = 1 - (time.monotonic() - sampled_at)
                 if sample_delay > 0:
@@ -1501,18 +1600,21 @@ def run_case(args: argparse.Namespace) -> int:
         if process is None:
             return_code = 130
         else:
+            process_group_terminated = terminate_process_group(process)
+            if not process_group_terminated:
+                outcome = "interrupted_orphaned"
+            return_code = process.returncode if process.returncode is not None else 130
+    except Exception as exc:
+        outcome = "runner_error"
+        runner_error_type = type(exc).__name__
+        return_code = 1
+        if process is not None:
             try:
-                os.killpg(process.pid, signal.SIGINT)
-            except ProcessLookupError:
-                pass
-            try:
-                return_code = process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                return_code = process.wait()
+                process_group_terminated = terminate_process_group(process)
+            except Exception:
+                process_group_terminated = False
+            if process_group_terminated is False:
+                outcome = "runner_error_orphaned"
     finally:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
@@ -1520,8 +1622,19 @@ def run_case(args: argparse.Namespace) -> int:
             proxy.close()
     if outcome == "completed" and return_code != 0:
         outcome = "agent_error"
-    usage = provider_reported_usage(args.agent, trace_path, stdout_path)
-    candidate = preserve_candidate_changes(task_root, case["base_commit"], artifact_dir)
+    try:
+        usage = provider_reported_usage(args.agent, trace_path, stdout_path)
+    except Exception as exc:
+        usage = {"reported": False, "source": "unavailable_after_runner_error", "error": type(exc).__name__}
+    try:
+        candidate = preserve_candidate_changes(task_root, case["base_commit"], artifact_dir)
+    except Exception as exc:
+        candidate = {
+            "task_clone": str(task_root),
+            "dirty": None,
+            "preservation_error": type(exc).__name__,
+            "workspace_retained": task_root.exists(),
+        }
     aggregate_after: dict[str, str] | None = None
     aggregate_status = "not_applicable"
     if aggregate_run_id is not None:
@@ -1529,7 +1642,9 @@ def run_case(args: argparse.Namespace) -> int:
         if outcome == "completed" and return_code == 0:
             if args.agent == "opencode" and proxy is not None:
                 metrics = proxy.metrics()
-                if metrics["uncertain_responses"] == 0 and metrics["over_budget_responses"] == 0:
+                if metrics["uncertain_responses"] == 0 and metrics["over_budget_responses"] == 0 \
+                        and metrics["generation_cost_in_flight"] == 0 \
+                        and metrics["generation_cost_reserved_usd"] == "0.00000000":
                     actual_cost = Decimal(metrics["generation_cost_settled_usd"])
             else:
                 estimated = estimate_provider_cost(case, usage)
@@ -1570,6 +1685,9 @@ def run_case(args: argparse.Namespace) -> int:
         "preflight": result,
         "outcome": outcome,
         "return_code": return_code,
+        "runner_error_type": runner_error_type,
+        "agent_process_group_terminated": process_group_terminated,
+        "agent_process_group_orphaned": process_group_terminated is False,
         "wall_ms": int((time.monotonic() - started) * 1000),
         "resource_samples": samples,
         "resource_measurements": resource_measurement_summary(samples),
@@ -1617,7 +1735,7 @@ def main() -> int:
         sub.add_argument("--isolation-wrapper-sha256",
                          help="SHA-256 pin for the operator-reviewed outer launcher wrapper")
         sub.add_argument("--task-root", type=Path,
-                         help="existing /tmp/veasel-real-task-* clone to validate during preflight")
+                         help="existing persistent data-dir/workspaces/veasel-real-task-* clone for preflight")
         if action == "run":
             sub.add_argument("--artifacts", type=Path, required=True)
     args = parser.parse_args()
@@ -1630,7 +1748,7 @@ def main() -> int:
             print(json.dumps(report, indent=2))
             return 0 if report["passed"] else 2
         return run_case(args)
-    except (OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError) as exc:
+    except (OSError, subprocess.CalledProcessError, KeyError, ValueError, json.JSONDecodeError) as exc:
         print(f"preflight error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 

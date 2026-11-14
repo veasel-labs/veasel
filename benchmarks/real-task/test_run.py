@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import argparse
 import json
+import os
 import stat
 import subprocess
 import shutil
@@ -263,7 +264,36 @@ class ProviderUsageTests(unittest.TestCase):
         self.assertIsNone(usage["reported_agent_cost_usd"])
 
 
+class RemoteCasePinTests(unittest.TestCase):
+    def test_tampered_price_or_provider_budget_is_rejected_before_credential_access(self):
+        source = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        original = json.loads(source.read_text())
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            prompt = source.parent / original["prompt_file"]
+            (root / "prompt.md").write_text(prompt.read_text())
+            case_path = root / "case.json"
+            tampered = json.loads(json.dumps(original))
+            tampered["cost_budget"]["input_usd_per_million_tokens"] = 0.0001
+            tampered["cost_budget"]["max_model_requests"] = 8400
+            case_path.write_text(json.dumps(tampered))
+            with patch.object(runner, "configured_model",
+                              side_effect=AssertionError("credential/profile access must not happen")):
+                with self.assertRaisesRegex(ValueError, "allowlist"):
+                    runner.preflight(case_path, root, "unused", root / "state", approved_spend_usd="5")
+
+    def test_exact_reviewed_remote_case_matches_fixed_model_rate_and_budget_pins(self):
+        path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        case, _prompt, _digest = runner.load_case(path)
+        self.assertEqual(runner.validate_remote_case_pin(path, case), runner.REMOTE_CASE_SHA256)
+
+
 class PreflightTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.allow_synthetic_remote_cases = patch.object(runner, "validate_remote_case_pin", return_value=None)
+        self.allow_synthetic_remote_cases.start()
+        self.addCleanup(self.allow_synthetic_remote_cases.stop)
+
     def test_disposable_task_clone_preserves_tracked_and_untracked_candidate_content(self):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
@@ -878,6 +908,86 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(measurements["agent_process_tree_rss_sampled_max_bytes"], 900)
         self.assertEqual(measurements["agent_process_tree_cpu_time_sampled_max_ms"], 42)
         self.assertEqual(measurements["gpu_device_memory_used_sampled_max_mib"], [6000])
+
+    def test_runner_resource_exception_stops_process_group_and_writes_recovery_report(self):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            artifacts = root / "artifacts"
+            data_dir = root / "state"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
+            process = Mock()
+            process.pid = 400123
+            process.poll.return_value = None
+            args = argparse.Namespace(
+                case=case_path, workspace=workspace, data_dir=data_dir,
+                ollama_url="http://127.0.0.1:11435", agent="opencode", opencode="opencode",
+                veasel="veasel", artifacts=artifacts, isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256, approved_spend_usd="0",
+            )
+            with (
+                patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
+                patch.object(runner, "create_task_clone", return_value=workspace),
+                patch.object(runner, "preserve_candidate_changes", return_value={"dirty": True,
+                                                                                  "task_clone": str(workspace)}) as preserve,
+                patch.object(runner, "provider_reported_usage", return_value={"reported": False}),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/opencode"),
+                patch.object(runner, "open_code_version", return_value="opencode v2.2.7"),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
+                patch.object(runner.platform, "platform", return_value="Linux-test"),
+                patch.object(runner.platform, "machine", return_value="x86_64"),
+                patch.object(runner.platform, "processor", return_value="test-cpu"),
+                patch.object(runner, "available_resources", side_effect=RuntimeError("fixture sampler failed")),
+                patch.object(runner, "terminate_process_group", return_value=True) as terminate,
+                patch.object(runner.subprocess, "Popen", return_value=process),
+            ):
+                self.assertEqual(runner.run_case(args), 1)
+            terminate.assert_called_once_with(process)
+            preserve.assert_called_once()
+            report = json.loads((artifacts / "attempt.json").read_text())
+        self.assertEqual(report["outcome"], "runner_error")
+        self.assertEqual(report["runner_error_type"], "RuntimeError")
+        self.assertTrue(report["agent_process_group_terminated"])
+        self.assertFalse(report["agent_process_group_orphaned"])
+        self.assertTrue(report["artifacts"]["candidate"]["dirty"])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "process group integration test requires Linux")
+    def test_terminate_process_group_stops_agent_and_descendant(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            child_pid_file = Path(temp_dir) / "child.pid"
+            parent_script = (
+                "import signal, subprocess, sys, time\n"
+                f"child = subprocess.Popen([sys.executable, '-c', \"import os,time; open({str(child_pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)\"])\n"
+                "def stop(_sig, _frame):\n"
+                "    try: child.wait(timeout=2)\n"
+                "    except subprocess.TimeoutExpired: child.kill(); child.wait()\n"
+                "    raise SystemExit(0)\n"
+                "signal.signal(signal.SIGINT, stop)\n"
+                "time.sleep(60)\n"
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-c", parent_script],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                for _ in range(100):
+                    if child_pid_file.exists():
+                        break
+                    threading.Event().wait(0.02)
+                self.assertTrue(child_pid_file.exists(), "agent descendant did not start")
+                child_pid = int(child_pid_file.read_text())
+                self.assertTrue(runner.terminate_process_group(process, grace_seconds=1.0))
+                self.assertIsNotNone(process.poll())
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(child_pid, 0)
+            finally:
+                if process.poll() is None:
+                    runner.terminate_process_group(process, grace_seconds=0.1)
 
     @patch.object(runner.shutil, "which", return_value="/usr/bin/opencode")
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])

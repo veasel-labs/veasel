@@ -46,6 +46,7 @@ class BudgetProxy:
     MAX_COUNT_RESPONSE_BYTES = 64 * 1024
     MAX_RESPONSE_BYTES = 2 * 1024 * 1024
     UPSTREAM_TIMEOUT_SECONDS = 300
+    DRAIN_TIMEOUT_SECONDS = 2.0
 
     def __init__(self, upstream_base_url: str, api_key: str, model: str,
                  max_requests: int, context_tokens: int, output_tokens: int,
@@ -95,6 +96,10 @@ class BudgetProxy:
 
         self._client_api_key = client_api_key.encode()
         self._lock = threading.Lock()
+        self._state_changed = threading.Condition(self._lock)
+        self._closing = False
+        self._reservation_sequence = 0
+        self._generation_reservations: dict[int, str] = {}
         self._attempts_reserved = 0
         self._settled_cost = Decimal(0)
         self._reserved_cost = Decimal(0)
@@ -123,13 +128,17 @@ class BudgetProxy:
                 pass
 
             def _respond(self, status: int, payload: bytes) -> None:
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Connection", "close")
-                self.end_headers()
-                self.wfile.write(payload)
-                self.close_connection = True
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(payload)
+                except OSError:
+                    pass
+                finally:
+                    self.close_connection = True
 
             def do_GET(self) -> None:
                 self._respond(405, b'{"error":"method_not_allowed"}')
@@ -213,7 +222,8 @@ class BudgetProxy:
                     self._respond(413, b'{"error":"context_budget_exceeded"}')
                     return
                 proxy._record_precheck(input_tokens)
-                if not proxy._reserve_attempt():
+                attempt_id = proxy._reserve_attempt()
+                if attempt_id is None:
                     self._respond(429, b'{"error":"run_budget_exhausted"}')
                     return
 
@@ -228,34 +238,34 @@ class BudgetProxy:
                 try:
                     with proxy._opener.open(request, timeout=proxy.UPSTREAM_TIMEOUT_SECONDS) as response:
                         if int(response.headers.get("Content-Length", "0") or "0") > proxy.MAX_RESPONSE_BYTES:
-                            proxy._mark_uncertain()
+                            proxy._mark_uncertain(attempt_id)
                             self._respond(502, b'{"error":"upstream_response_too_large"}')
                             return
                         forwarded_body = response.read(proxy.MAX_RESPONSE_BYTES + 1)
                         if len(forwarded_body) > proxy.MAX_RESPONSE_BYTES:
-                            proxy._mark_uncertain()
+                            proxy._mark_uncertain(attempt_id)
                             self._respond(502, b'{"error":"upstream_response_too_large"}')
                             return
                         status = response.status
                         content_type = response.headers.get("Content-Type", "application/json")
                 except HTTPError:
-                    proxy._mark_uncertain()
+                    proxy._mark_uncertain(attempt_id)
                     self._respond(502, b'{"error":"upstream_request_failed"}')
                     return
                 except Exception:
-                    proxy._mark_uncertain()
+                    proxy._mark_uncertain(attempt_id)
                     self._respond(502, b'{"error":"upstream_request_failed"}')
                     return
                 if 300 <= status < 400:
-                    proxy._mark_uncertain()
+                    proxy._mark_uncertain(attempt_id)
                     self._respond(502, b'{"error":"upstream_redirect_rejected"}')
                     return
                 usage = _final_usage(forwarded_body, content_type)
                 if status < 200 or status >= 300 or usage is None:
-                    proxy._mark_uncertain()
+                    proxy._mark_uncertain(attempt_id)
                     self._respond(502, b'{"error":"final_usage_missing_or_ambiguous"}')
                     return
-                if not proxy._settle_attempt(usage):
+                if not proxy._settle_attempt(attempt_id, usage):
                     self._respond(502, b'{"error":"reported_usage_exceeded_reserved_limit"}')
                     return
 
@@ -264,29 +274,41 @@ class BudgetProxy:
                 self.send_header("Content-Length", str(len(forwarded_body)))
                 self.send_header("Connection", "close")
                 self.end_headers()
-                self.wfile.write(forwarded_body)
+                try:
+                    self.wfile.write(forwarded_body)
+                except OSError:
+                    # The client may disconnect after generation completed.
+                    # Usage is already settled from the provider's final event.
+                    pass
                 self.close_connection = True
 
         self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._httpd.daemon_threads = True
+        # close() performs its own bounded handler drain. Do not let
+        # ThreadingMixIn.server_close() turn an unresolved upstream request
+        # into an unbounded join after that deadline.
+        self._httpd.block_on_close = False
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
         return f"http://127.0.0.1:{self._httpd.server_port}/v1"
 
-    def _reserve_attempt(self) -> bool:
+    def _reserve_attempt(self) -> int | None:
         with self._lock:
-            if self._blocked or self._attempts_reserved >= self._max_requests \
+            if self._closing or self._blocked or self._attempts_reserved >= self._max_requests \
                     or self._settled_cost + self._reserved_cost + self._worst_case_per_call > self._max_run_cost:
                 self._budget_rejections += 1
-                return False
+                return None
             self._attempts_reserved += 1
             self._reserved_cost += self._worst_case_per_call
-            return True
+            self._reservation_sequence += 1
+            attempt_id = self._reservation_sequence
+            self._generation_reservations[attempt_id] = "in_flight"
+            return attempt_id
 
     def _reserve_precheck(self) -> bool:
         """Count every token-count request before making it, including failures."""
         with self._lock:
-            if self._precheck_attempts >= self._max_requests:
+            if self._closing or self._precheck_attempts >= self._max_requests:
                 self._budget_rejections += 1
                 return False
             self._precheck_attempts += 1
@@ -304,32 +326,48 @@ class BudgetProxy:
             if rejected:
                 self._oversized_requests_rejected += 1
 
-    def _mark_uncertain(self) -> None:
-        with self._lock:
+    def _mark_uncertain(self, attempt_id: int) -> None:
+        with self._state_changed:
+            if self._generation_reservations.get(attempt_id) != "in_flight":
+                return
+            self._generation_reservations[attempt_id] = "uncertain"
             self._uncertain_responses += 1
             self._blocked = True
+            self._state_changed.notify_all()
 
-    def _settle_attempt(self, usage: dict[str, int]) -> bool:
+    def _settle_attempt(self, attempt_id: int, usage: dict[str, int]) -> bool:
         input_tokens = usage["input_tokens"]
         output_tokens = usage["output_tokens"]
         cached_tokens = usage["cached_tokens"]
         if input_tokens > self._context_tokens or output_tokens > self._output_tokens \
                 or cached_tokens > input_tokens:
-            with self._lock:
+            with self._state_changed:
+                if self._generation_reservations.get(attempt_id) != "in_flight":
+                    return False
+                self._generation_reservations[attempt_id] = "uncertain"
                 self._over_budget_responses += 1
+                self._uncertain_responses += 1
                 self._blocked = True
+                self._state_changed.notify_all()
             return False
         # Count all input at the uncached rate. This over-reserves cached input
         # and avoids relying on cache accounting or discounts for the cap.
         actual_cost = Decimal(input_tokens) * self._input_rate + Decimal(output_tokens) * self._output_rate
-        with self._lock:
-            self._reserved_cost -= self._worst_case_per_call
+        with self._state_changed:
+            if self._generation_reservations.get(attempt_id) != "in_flight":
+                return False
             if actual_cost > self._worst_case_per_call:
+                self._generation_reservations[attempt_id] = "uncertain"
                 self._over_budget_responses += 1
+                self._uncertain_responses += 1
                 self._blocked = True
                 self._settled_cost += actual_cost
+                self._state_changed.notify_all()
                 return False
+            self._reserved_cost -= self._worst_case_per_call
+            self._generation_reservations[attempt_id] = "settled"
             self._settled_cost += actual_cost
+            self._state_changed.notify_all()
         return True
 
     def metrics(self) -> dict[str, Any]:
@@ -344,6 +382,10 @@ class BudgetProxy:
                 "run_cost_cap_usd": _money(self._max_run_cost),
                 "generation_cost_reserved_usd": _money(self._reserved_cost),
                 "generation_cost_settled_usd": _money(self._settled_cost),
+                "generation_cost_in_flight": sum(
+                    state == "in_flight" for state in self._generation_reservations.values()),
+                "generation_cost_uncertain": sum(
+                    state == "uncertain" for state in self._generation_reservations.values()),
                 "uncertain_responses": self._uncertain_responses,
                 "over_budget_responses": self._over_budget_responses,
                 "budget_rejections": self._budget_rejections,
@@ -356,7 +398,20 @@ class BudgetProxy:
         httpd = self._httpd
         if httpd is None:
             return
+        with self._state_changed:
+            self._closing = True
         httpd.shutdown()
+        with self._state_changed:
+            self._state_changed.wait_for(
+                lambda: not any(state == "in_flight" for state in self._generation_reservations.values()),
+                timeout=self.DRAIN_TIMEOUT_SECONDS,
+            )
+            for attempt_id, state in list(self._generation_reservations.items()):
+                if state == "in_flight":
+                    self._generation_reservations[attempt_id] = "uncertain"
+                    self._uncertain_responses += 1
+                    self._blocked = True
+            self._state_changed.notify_all()
         httpd.server_close()
         if self._thread is not None:
             self._thread.join(timeout=2)

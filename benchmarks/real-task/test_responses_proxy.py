@@ -9,6 +9,7 @@ import importlib
 import json
 import sys
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -56,6 +57,8 @@ class UpstreamFixtureHandler(BaseHTTPRequestHandler):
         "output_tokens_details": {"reasoning_tokens": 3},
         "total_tokens": 108,
     }
+    generation_started: threading.Event | None = None
+    generation_release: threading.Event | None = None
 
     def log_message(self, _format: str, *_args: object) -> None:
         pass
@@ -98,6 +101,9 @@ class UpstreamFixtureHandler(BaseHTTPRequestHandler):
         if self.path != "/v1/responses":
             self._respond_json(404, {"error": "unexpected fixture path"})
             return
+        if type(self).generation_started is not None and type(self).generation_release is not None:
+            type(self).generation_started.set()
+            type(self).generation_release.wait(timeout=10)
         model = payload["model"]
         response = {
             "id": "resp_fixture_1", "object": "response", "status": "completed", "model": model,
@@ -159,6 +165,8 @@ class ResponsesProxyTests(unittest.TestCase):
                 "output_tokens_details": {"reasoning_tokens": 3},
                 "total_tokens": 108,
             }
+            UpstreamFixtureHandler.generation_started = None
+            UpstreamFixtureHandler.generation_release = None
         self.proxy = self.make_proxy(max_requests=4)
         self.proxy_url = self.proxy.start()
 
@@ -406,6 +414,49 @@ class ResponsesProxyTests(unittest.TestCase):
         status, _body = self.post_json(self.valid_payload())
         self.assertEqual(status, 429)
         self.assertEqual(len(self.upstream_requests("/v1/responses")), 1)
+
+    def test_close_drains_or_marks_blocked_generation_uncertain_after_client_disconnect(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        UpstreamFixtureHandler.generation_started = started
+        UpstreamFixtureHandler.generation_release = release
+        self.proxy.DRAIN_TIMEOUT_SECONDS = 0.05
+        request = Request(
+            self.responses_endpoint(), data=json.dumps(self.valid_payload()).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer local-client-secret-test"},
+            method="POST",
+        )
+        client_errors: list[Exception] = []
+
+        def disconnected_client() -> None:
+            try:
+                HTTP_OPENER.open(request, timeout=0.2).read()
+            except (OSError, URLError) as exc:
+                client_errors.append(exc)
+
+        client = threading.Thread(target=disconnected_client)
+        client.start()
+        try:
+            self.assertTrue(started.wait(timeout=3), "upstream generation did not start")
+            client.join(timeout=2)
+            self.assertFalse(client.is_alive(), "client did not disconnect on its timeout")
+            self.proxy.close()
+            metrics = self.proxy.metrics()
+            self.assertEqual(metrics["generation_cost_in_flight"], 0)
+            self.assertEqual(metrics["generation_cost_uncertain"], 1)
+            self.assertEqual(metrics["uncertain_responses"], 1)
+            self.assertEqual(metrics["generation_cost_reserved_usd"], "0.00122880")
+            self.assertEqual(metrics["generation_cost_settled_usd"], "0.00000000")
+        finally:
+            release.set()
+            client.join(timeout=2)
+            UpstreamFixtureHandler.generation_started = None
+            UpstreamFixtureHandler.generation_release = None
+        time.sleep(0.05)
+        metrics = self.proxy.metrics()
+        self.assertEqual(metrics["generation_cost_reserved_usd"], "0.00122880")
+        self.assertEqual(metrics["generation_cost_settled_usd"], "0.00000000")
+        self.assertTrue(client_errors)
 
     def test_usage_outside_reserved_context_or_output_halts_budget(self) -> None:
         UpstreamFixtureHandler.response_usage = {

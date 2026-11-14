@@ -953,6 +953,114 @@ class PreflightTests(unittest.TestCase):
         self.assertFalse(report["agent_process_group_orphaned"])
         self.assertTrue(report["artifacts"]["candidate"]["dirty"])
 
+    def test_orphaned_resource_abort_uses_bounded_wait_and_writes_report(self):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            artifacts = root / "artifacts"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
+            process = Mock()
+            process.pid = 400124
+            process.poll.return_value = None
+            process.wait.side_effect = subprocess.TimeoutExpired(["agent"], 2.0)
+            args = argparse.Namespace(
+                case=case_path, workspace=workspace, data_dir=root / "state",
+                ollama_url="http://127.0.0.1:11435", agent="opencode", opencode="opencode",
+                veasel="veasel", artifacts=artifacts, isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256, approved_spend_usd="0",
+            )
+            with (
+                patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
+                patch.object(runner, "create_task_clone", return_value=workspace),
+                patch.object(runner, "preserve_candidate_changes", return_value={"dirty": True}) as preserve,
+                patch.object(runner, "provider_reported_usage", return_value={"reported": False}),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/opencode"),
+                patch.object(runner, "open_code_version", return_value="opencode v2.2.7"),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
+                patch.object(runner.platform, "platform", return_value="Linux-test"),
+                patch.object(runner.platform, "machine", return_value="x86_64"),
+                patch.object(runner.platform, "processor", return_value="test-cpu"),
+                patch.object(runner, "available_resources", return_value=(1, 0)),
+                patch.object(runner, "process_tree_resources", return_value=None),
+                patch.object(runner, "gpu_memory_used_mib", return_value=None),
+                patch.object(runner, "terminate_process_group", return_value=False) as terminate,
+                patch.object(runner.subprocess, "Popen", return_value=process),
+            ):
+                self.assertEqual(runner.run_case(args), 1)
+            terminate.assert_called_once_with(process)
+            preserve.assert_called_once()
+            report = json.loads((artifacts / "attempt.json").read_text())
+            self.assertEqual(report["outcome"], "resource_aborted_orphaned")
+            self.assertIsNone(report["runner_error_type"])
+            process.wait.assert_called_once_with(timeout=2.0)
+        self.assertEqual(report["outcome"], "resource_aborted_orphaned")
+        self.assertEqual(report["return_code"], 124)
+        self.assertFalse(report["agent_process_group_terminated"])
+        self.assertTrue(report["agent_process_group_orphaned"])
+        self.assertTrue(report["artifacts"]["candidate"]["dirty"])
+
+    def test_proxy_close_error_still_preserves_candidate_and_writes_report(self):
+        case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            artifacts = root / "artifacts"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
+            data_dir = root / "state"
+            process = Mock()
+            process.pid = 400125
+            process.poll.return_value = 0
+            process.wait.return_value = 0
+            proxy = Mock()
+            proxy.start.return_value = "http://127.0.0.1:43210/v1"
+            proxy.close.side_effect = RuntimeError("fixture close failure")
+            proxy.metrics.return_value = {
+                "uncertain_responses": 0, "over_budget_responses": 0,
+                "generation_cost_in_flight": 0, "generation_cost_reserved_usd": "0.00000000",
+                "generation_cost_settled_usd": "0.00000000",
+            }
+            args = argparse.Namespace(
+                case=case_path, workspace=workspace, data_dir=data_dir,
+                ollama_url="http://127.0.0.1:11435", agent="opencode", opencode="opencode",
+                veasel="veasel", artifacts=artifacts, isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256, approved_spend_usd="5",
+            )
+            with (
+                patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
+                patch.object(runner, "create_task_clone", return_value=workspace),
+                patch.object(runner, "preserve_candidate_changes", return_value={"dirty": True}) as preserve,
+                patch.object(runner, "provider_reported_usage", return_value={"reported": False}),
+                patch.object(runner, "private_profile_key", return_value="fixture-secret"),
+                patch.object(runner, "remove_profile_key_from_disk"),
+                patch.object(runner, "responses_proxy_budget", return_value={
+                    "upstream_attempt_limit": 84, "max_request_body_bytes": 32768,
+                    "enforced_run_cost_cap_usd": "0.1",
+                }),
+                patch.object(runner, "BudgetProxy", return_value=proxy),
+                patch.object(runner, "install_opencode_shell_wrapper", return_value=(root / "shell", "fixture-hash")),
+                patch.object(runner, "prepare_open_code_config", return_value=root / "opencode.json"),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
+                patch.object(runner, "build_command", return_value=["/usr/bin/opencode", "run"]),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/opencode"),
+                patch.object(runner, "open_code_version", return_value="opencode v2.2.7"),
+                patch.object(runner, "binary_sha256", return_value="fixture-binary-hash"),
+                patch.object(runner.platform, "platform", return_value="Linux-test"),
+                patch.object(runner.platform, "machine", return_value="x86_64"),
+                patch.object(runner.platform, "processor", return_value="test-cpu"),
+                patch.object(runner.subprocess, "Popen", return_value=process),
+            ):
+                self.assertEqual(runner.run_case(args), 1)
+            proxy.close.assert_called_once_with()
+            preserve.assert_called_once()
+            report = json.loads((artifacts / "attempt.json").read_text())
+        self.assertEqual(report["outcome"], "proxy_close_error")
+        self.assertEqual(report["proxy_close_error_type"], "RuntimeError")
+        self.assertTrue(report["artifacts"]["candidate"]["dirty"])
+        self.assertEqual(report["aggregate_spend"]["status"], "reserved_uncertain")
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "process group integration test requires Linux")
     def test_terminate_process_group_stops_agent_and_descendant(self):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:

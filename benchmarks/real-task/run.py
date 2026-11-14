@@ -1543,6 +1543,7 @@ def run_case(args: argparse.Namespace) -> int:
     samples: list[dict[str, Any]] = []
     outcome = "completed"
     runner_error_type: str | None = None
+    proxy_close_error_type: str | None = None
     process_group_terminated: bool | None = None
     previous_handlers: dict[int, Any] = {}
     process: subprocess.Popen[bytes] | None = None
@@ -1594,7 +1595,13 @@ def run_case(args: argparse.Namespace) -> int:
                 sample_delay = 1 - (time.monotonic() - sampled_at)
                 if sample_delay > 0:
                     time.sleep(sample_delay)
-            return_code = process.wait()
+            try:
+                return_code = process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                process_group_terminated = False
+                if not outcome.endswith("_orphaned"):
+                    outcome = f"{outcome}_orphaned"
+                return_code = 124
     except KeyboardInterrupt:
         outcome = "interrupted"
         if process is None:
@@ -1619,7 +1626,12 @@ def run_case(args: argparse.Namespace) -> int:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
         if args.agent == "opencode" and case["model"].get("provider") != "ollama" and proxy is not None:
-            proxy.close()
+            try:
+                proxy.close()
+            except Exception as exc:
+                proxy_close_error_type = type(exc).__name__
+                if outcome == "completed":
+                    outcome = "proxy_close_error"
     if outcome == "completed" and return_code != 0:
         outcome = "agent_error"
     try:
@@ -1686,6 +1698,7 @@ def run_case(args: argparse.Namespace) -> int:
         "outcome": outcome,
         "return_code": return_code,
         "runner_error_type": runner_error_type,
+        "proxy_close_error_type": proxy_close_error_type,
         "agent_process_group_terminated": process_group_terminated,
         "agent_process_group_orphaned": process_group_terminated is False,
         "wall_ms": int((time.monotonic() - started) * 1000),

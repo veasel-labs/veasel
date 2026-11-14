@@ -3,6 +3,7 @@ import importlib.util
 import argparse
 import json
 import stat
+import sys
 import tempfile
 import unittest
 from decimal import Decimal
@@ -12,6 +13,8 @@ from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).with_name("run.py")
+if str(SCRIPT.parent) not in sys.path:
+    sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("real_task_runner", SCRIPT)
 runner = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -243,6 +246,26 @@ class PreflightTests(unittest.TestCase):
             hashlib.sha256(case_path.read_bytes()).hexdigest(),
             "619e50221c8bbfb25a3680c458f4352578be536c87d6d3a7862f9638d5c04517",
         )
+
+    def test_muse_spark_0795_case_pins_responses_comparator_and_proxy_route(self):
+        case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        case, _prompt, digest = runner.load_case(case_path)
+        self.assertEqual(digest, case["prompt_sha256"])
+        self.assertEqual(case["runtime"]["veasel_version"], "Veasel Code 0.79.5-next.0")
+        self.assertEqual(case["comparators"]["opencode_version"], "opencode v2.2.7")
+        config = runner.open_code_config(case)
+        provider = config["providers"]["museproxy"]
+        self.assertEqual(config["model"], "museproxy/muse-spark-1.3-contributor")
+        self.assertEqual(provider["package"], "@opencode/ai/providers/openai-compatible/responses")
+        self.assertEqual(provider["settings"]["baseURL"], "http://127.0.0.1:1/v1")
+        self.assertEqual(provider["models"][case["model"]["name"]]["limit"]["context"], 8192)
+        self.assertEqual(provider["models"][case["model"]["name"]]["limit"]["output"], 2048)
+        self.assertNotIn("api_key", json.dumps(config).lower())
+        budget = runner.responses_proxy_budget(case)
+        self.assertEqual(budget["upstream_attempt_limit"], 29)
+        self.assertEqual(budget["max_request_body_bytes"], 32768)
+        self.assertEqual(budget["estimated_cost_usd"], "0.10690560")
+        self.assertIn("estimate only", budget["cost_basis"])
 
     def test_non_ollama_profile_preflight_checks_model_endpoint_budget_and_saved_credential(self):
         with tempfile.TemporaryDirectory() as temp_dir:

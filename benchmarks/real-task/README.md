@@ -104,6 +104,36 @@ them concurrently: they share the same local model and host resource budget.
 The reports pin task/model/settings, but a comparison is valid only after both
 outcomes are externally scored against the same oracle.
 
+## Configured Muse Responses case
+
+`cases/website-173-muse-spark-v0795/case.json` pins the same website issue,
+base commit, prompt hash, Muse Spark 1.3 Contributor model, output ceiling,
+permissions, and wall/resource limits for Veasel 0.79.5 and OpenCode 2.2.7.
+The OpenCode adapter uses the documented OpenAI-compatible Responses runtime
+and sends requests through `responses_proxy.py`, which in live mode accepts only
+the pinned Meta host (the local fixture mode accepts loopback only), one
+`/v1/responses` route, the exact model, text-only JSON, and bounded output. It
+counts every client retry as an upstream attempt, rejects redirects,
+replaces the local bearer token with the saved provider credential, and emits
+only aggregate metrics. The case caps OpenCode request bodies at 32 KiB and
+allows at most 29 upstream attempts. USD 0.10690560 is an estimate under the
+case's USD 0.11 limit, not a guaranteed billing ceiling: treating serialized
+request bytes as input tokens does not account for provider-side framing or
+tokenization of structured Responses payloads. Preflight marks the billing
+bound unreviewed and fails closed until that exact payload shape has a
+provider-verified bound. The authorized USD 5 aggregate budget remains the
+operator ceiling; it does not turn this per-case estimate into a guarantee.
+
+`test_opencode_responses_fixture.py` optionally drives the pinned OpenCode CLI
+through the proxy into a deterministic local Responses fixture. It proves the
+actual endpoint, model, streaming protocol, usage parsing, and credential
+replacement without contacting Meta. This fixture is not real-model success.
+The real run remains blocked until both the reviewed operator wrapper proves
+that OpenCode shell tools cannot read the proxy token, reach the proxy directly,
+or bypass it to contact Meta, and the input billing bound is validated. The
+runner's current preflight fails these gates by design; do not remove them to
+force a live run.
+
 ## Current quality scoreboard
 
 As of 2026-11-12, the only real coding task in the corpus is website#173 at

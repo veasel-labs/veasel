@@ -51,7 +51,7 @@ import {
   reviewSummaryLine,
   type SolidReviewItem,
 } from "./reviews"
-import { totalPendingReviews } from "../pending-reviews"
+import { pendingReviewInventoryFailureNotice, totalPendingReviews } from "../pending-reviews"
 import type { ActiveReviewKind } from "../active-review"
 import { openAgentDialog } from "./component/agent-dialog"
 import {
@@ -761,11 +761,8 @@ function LiveAppShell(props: LiveAppProps) {
           return result
         },
       })
-    } catch (error) {
-      toast.info(
-        error instanceof Error ? error.message : "could not load pending reviews",
-        "Reviews",
-      )
+    } catch {
+      toast.info(pendingReviewInventoryFailureNotice(), "Reviews")
       setComposerFocused(true)
     }
   }
@@ -2945,7 +2942,7 @@ function LiveAppShell(props: LiveAppProps) {
             : totalPendingReviews(countsFromReviews(currentPendingReviewItems())) > 0
             ? `▲ ${totalPendingReviews(countsFromReviews(currentPendingReviewItems()))} pending${terminalColumns() >= 44 ? ` · ${reviewShortcut.label}` : ""}${pendingReviewInventoryError() ? " · refresh failed" : ""}`
             : pendingReviewInventoryError()
-              ? terminalColumns() < 44 ? "▲ reviews unavailable" : `▲ reviews unavailable · ${reviewShortcut.label}`
+              ? terminalColumns() < 44 ? "▲ approvals unavailable" : `▲ approvals unavailable · ${reviewShortcut.label}`
               : terminalColumns() < 44 ? status().split("·")[0]?.trimEnd() : status()}
         </text>
       </box>

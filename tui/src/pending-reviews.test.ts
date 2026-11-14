@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import {
   formatPendingReviewStatus,
+  loadPendingReviewInventory,
+  pendingReviewInventoryFailureNotice,
   pendingReviewActions,
   pendingReviewOpenCommand,
+  statusWithPendingReviewFailure,
   statusWithPendingReviews,
   totalPendingReviews,
 } from "./pending-reviews"
@@ -44,5 +47,73 @@ describe("formatPendingReviewStatus", () => {
       commands: 0,
       mcp: 0,
     })).toBe("● openai-compatible  ·  fixture")
+  })
+})
+
+describe("pending review inventory", () => {
+  test("distinguishes a successfully empty inventory from an unavailable one", async () => {
+    const fetcher = async () => Response.json([])
+    const empty = await loadPendingReviewInventory(
+      "http://127.0.0.1:8000",
+      "session/one",
+      undefined,
+      fetcher,
+    )
+    expect(empty).toEqual({
+      ok: true,
+      counts: { edits: 0, commands: 0, mcp: 0 },
+      queue: [],
+    })
+    expect(statusWithPendingReviews("● connected", { edits: 0, commands: 0, mcp: 0 })).toBe("● connected")
+
+    const unavailable = await loadPendingReviewInventory(
+      "http://127.0.0.1:8000",
+      "session/one",
+      undefined,
+      async () => new Response("unavailable", { status: 503 }),
+    )
+    expect(unavailable).toEqual({ ok: false })
+    expect(statusWithPendingReviewFailure({ edits: 0, commands: 0, mcp: 0 })).toContain("approvals unavailable")
+    expect(pendingReviewInventoryFailureNotice()).toContain("Ctrl+R to retry")
+    expect(pendingReviewInventoryFailureNotice()).toContain("/commands")
+  })
+
+  test("loads all three queues atomically and preserves their pending IDs", async () => {
+    const requests: string[] = []
+    const fetcher = async (input: string | URL | Request) => {
+      const url = String(input)
+      requests.push(url)
+      if (url.endsWith("/workspace/edits")) {
+        return Response.json([{ id: "edit-1", status: "pending" }, { id: "edit-2", status: "applied" }])
+      }
+      if (url.endsWith("/workspace/commands")) {
+        return Response.json([{ id: "command-1", status: "pending" }])
+      }
+      return Response.json([{ id: "mcp-1", status: "pending" }])
+    }
+    const result = await loadPendingReviewInventory("http://127.0.0.1:8000/", "session/one", undefined, fetcher)
+    expect(requests).toEqual([
+      "http://127.0.0.1:8000/v1/sessions/session%2Fone/workspace/edits",
+      "http://127.0.0.1:8000/v1/sessions/session%2Fone/workspace/commands",
+      "http://127.0.0.1:8000/v1/sessions/session%2Fone/mcp-tool-calls",
+    ])
+    expect(result).toEqual({
+      ok: true,
+      counts: { edits: 1, commands: 1, mcp: 1 },
+      queue: [
+        { kind: "patch", id: "edit-1", pending: true },
+        { kind: "command", id: "command-1", pending: true },
+        { kind: "mcp", id: "mcp-1", pending: true },
+      ],
+    })
+  })
+
+  test("a partial non-OK response makes the entire inventory unavailable", async () => {
+    const fetcher = async (input: string | URL | Request) =>
+      String(input).endsWith("/workspace/commands")
+        ? new Response("temporarily unavailable", { status: 503 })
+        : Response.json([])
+    expect(await loadPendingReviewInventory("http://127.0.0.1:8000", "session-1", undefined, fetcher))
+      .toEqual({ ok: false })
   })
 })

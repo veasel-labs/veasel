@@ -185,6 +185,46 @@ test("compact LiveApp keeps the review shortcut discoverable beside pending work
   }
 })
 
+test("LiveApp distinguishes an unavailable review inventory and lets Ctrl+R retry it", async () => {
+  const controller = new AbortController()
+  const { server, requests, completeTurn, setInventoryUnavailable } = reviewServer()
+  const setup = await testRender(
+    () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />,
+    { width: 100, height: 35, kittyKeyboard: true },
+  )
+  try {
+    await until(setup, "HTML request")
+    setup.mockInput.pressEnter()
+    await until(setup, "Message Veasel")
+    await setup.mockInput.typeText("Create a file that needs review")
+    setup.mockInput.pressEnter()
+    for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
+      await Bun.sleep(5)
+    }
+    expect(requests).toContain("POST /v1/sessions/session-1/messages")
+    setInventoryUnavailable(true)
+    completeTurn()
+
+    await until(setup, "approvals unavailable")
+    const unavailableFrame = setup.captureCharFrame()
+    expect(unavailableFrame).toContain("Ctrl+R reviews")
+    expect(unavailableFrame).not.toContain("No pending file, shell, or MCP reviews.")
+
+    const commandInventoryReads = requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length
+    setup.mockInput.pressKey("r", { ctrl: true })
+    for (let attempt = 0; attempt < 120 && requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length === commandInventoryReads; attempt++) {
+      await Bun.sleep(5)
+    }
+    expect(requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length)
+      .toBeGreaterThan(commandInventoryReads)
+    await until(setup, "Could not load pending approvals")
+  } finally {
+    setup.renderer.destroy()
+    controller.abort()
+    server.stop(true)
+  }
+})
+
 test("a background turn completion cannot invalidate the focused session review refresh", async () => {
   const controller = new AbortController()
   const requests: string[] = []

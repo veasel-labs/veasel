@@ -156,7 +156,16 @@ import {
   formatMcpOauthRefreshNotice,
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
-import { formatPendingReviewStatus, pendingReviewOpenCommand, statusWithPendingReviews, totalPendingReviews, type PendingReviewCounts } from "./pending-reviews"
+import {
+  formatPendingReviewStatus,
+  loadPendingReviewInventory,
+  pendingReviewInventoryFailureNotice,
+  pendingReviewOpenCommand,
+  statusWithPendingReviewFailure,
+  statusWithPendingReviews,
+  totalPendingReviews,
+  type PendingReviewCounts,
+} from "./pending-reviews"
 import { formatBusyStatus, formatCancelledStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatOkStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
 import {
   prefersReducedMotion,
@@ -268,8 +277,8 @@ function ensureMotionPulse() {
   }, 530)
 }
 
-function pendingReviewStatusColor(counts: PendingReviewCounts): string {
-  return totalPendingReviews(counts) > 0 ? theme.statusWarn : theme.statusOk
+function pendingReviewStatusColor(counts: PendingReviewCounts, unavailable = false): string {
+  return totalPendingReviews(counts) > 0 || unavailable ? theme.statusWarn : theme.statusOk
 }
 
 function shortHomePath(value: string): string {
@@ -668,6 +677,7 @@ let activeTurnCancelled = false
 let pendingUserMessage = ""
 let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let pendingReviewQueue: ActiveReview[] = []
+let pendingReviewInventoryUnavailable = false
 let activeReview: ActiveReview | undefined
 let selectedReviewKeys = new Set<string>()
 let activePatchDiff = ""
@@ -866,8 +876,10 @@ function restoreCommittedTheme() {
   themePreviewActive = false
   applyTheme(resolveTheme(committedThemeId))
   // Prefer the pending-review cue over a theme-restored status when approvals wait.
-  if (totalPendingReviews(lastPendingCounts) > 0) {
-    status.content = statusWithPendingReviews(
+  if (totalPendingReviews(lastPendingCounts) > 0 || pendingReviewInventoryUnavailable) {
+    status.content = pendingReviewInventoryUnavailable
+      ? statusWithPendingReviewFailure(lastPendingCounts, activeModelLabel || undefined)
+      : statusWithPendingReviews(
       formatOkStatus(`theme ${resolveTheme(committedThemeId).name}`),
       lastPendingCounts,
       activeModelLabel || undefined,
@@ -904,7 +916,7 @@ async function refreshProviderSetupHint() {
     if (!settingsOpen && !activeSession) {
       sessionDetail.content = homeDetailContent(providersConfigured)
     }
-    if (activeSession && !sendingMessage && totalPendingReviews(lastPendingCounts) === 0) {
+    if (activeSession && !sendingMessage && totalPendingReviews(lastPendingCounts) === 0 && !pendingReviewInventoryUnavailable) {
       status.content = formatListeningStatus(activeModelLabel || undefined)
       status.fg = theme.statusOk
     }
@@ -1159,6 +1171,9 @@ function safeTerminalReviewText(value: string) {
 async function openSession(session: Session) {
   resetSlashContext()
   activeSession = session
+  lastPendingCounts = { edits: 0, commands: 0, mcp: 0 }
+  pendingReviewQueue = []
+  pendingReviewInventoryUnavailable = false
   chatHistoryHasOlder = false
   chatHistoryLoading = false
   chatMessages = []
@@ -1608,11 +1623,12 @@ async function sendMessage(value: string) {
     const latest = await historyResponse.json() as ChatTurn[]
     chatHistoryHasOlder ||= pageMayHaveOlder(latest, chatHistoryPageSize)
     renderChat(mergeChatTurns(chatMessages, latest))
-    await notifyPendingProposals()
+    const pendingCounts = await notifyPendingProposals()
     const completedStatus = statusWithUsage(exchange.provider, exchange.model, exchange)
-    const pendingCounts = await countPendingReviews()
-    status.content = statusWithPendingReviews(completedStatus, pendingCounts, activeModelLabel || undefined)
-    status.fg = pendingReviewStatusColor(pendingCounts)
+    status.content = pendingReviewInventoryUnavailable
+      ? statusWithPendingReviewFailure(pendingCounts, activeModelLabel || undefined)
+      : statusWithPendingReviews(completedStatus, pendingCounts, activeModelLabel || undefined)
+    status.fg = pendingReviewStatusColor(pendingCounts, pendingReviewInventoryUnavailable)
   } catch (error) {
     if (activeTurnCancelled) {
       status.content = formatCancelledStatus("response cancelled")
@@ -1775,6 +1791,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   }
   const userCancelled = activeTurnCancelled
   let historyLoaded = false
+  let completedPendingCounts: PendingReviewCounts | undefined
   try {
     const historyResponse = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/messages`, {
       signal: controller.signal,
@@ -1794,7 +1811,7 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     streamingAssistantText = ""
     renderChat(mergeChatTurns(chatMessages, latest))
     historyLoaded = true
-    if (completion.status === "completed") await notifyPendingProposals()
+    if (completion.status === "completed") completedPendingCounts = await notifyPendingProposals()
   } catch (error) {
     if (activeSession?.id === sessionId) renderChat(chatMessages)
     if (completion.status === "completed") {
@@ -1818,9 +1835,11 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   if (completion.status === "completed") {
     if (historyLoaded) {
       const completedStatus = statusWithUsage(completion.provider ?? "provider", completion.model ?? "assistant", completion)
-      const pendingCounts = await countPendingReviews()
-      status.content = statusWithPendingReviews(completedStatus, pendingCounts, activeModelLabel || undefined)
-      status.fg = pendingReviewStatusColor(pendingCounts)
+      const pendingCounts = completedPendingCounts ?? await countPendingReviews()
+      status.content = pendingReviewInventoryUnavailable
+        ? statusWithPendingReviewFailure(pendingCounts, activeModelLabel || undefined)
+        : statusWithPendingReviews(completedStatus, pendingCounts, activeModelLabel || undefined)
+      status.fg = pendingReviewStatusColor(pendingCounts, pendingReviewInventoryUnavailable)
     }
   } else if (completion.status === "uncertain") {
     status.content = formatWarnStatus("operation outcome uncertain · inspect the workspace before retrying")
@@ -2427,49 +2446,24 @@ async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
 }
 
 async function countPendingReviews(): Promise<PendingReviewCounts> {
-  const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
-  const queue: ActiveReview[] = []
   if (!activeSession) {
-    lastPendingCounts = counts
-    pendingReviewQueue = queue
-    return counts
+    const empty = { edits: 0, commands: 0, mcp: 0 }
+    pendingReviewInventoryUnavailable = false
+    lastPendingCounts = empty
+    pendingReviewQueue = []
+    return empty
   }
-  try {
-    const [editsResponse, commandsResponse, mcpResponse] = await Promise.all([
-      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/edits`, {
-        signal: controller.signal,
-      }),
-      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/workspace/commands`, {
-        signal: controller.signal,
-      }),
-      fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls`, {
-        signal: controller.signal,
-      }),
-    ])
-    if (editsResponse.ok) {
-      const edits = await editsResponse.json() as WorkspaceEditSummary[]
-      const pending = edits.filter((edit) => edit.status === "pending")
-      counts.edits = pending.length
-      for (const edit of pending) queue.push({ kind: "patch", id: edit.id, pending: true })
-    }
-    if (commandsResponse.ok) {
-      const commands = await commandsResponse.json() as ShellCommandSummary[]
-      const pending = commands.filter((item) => item.status === "pending")
-      counts.commands = pending.length
-      for (const item of pending) queue.push({ kind: "command", id: item.id, pending: true })
-    }
-    if (mcpResponse.ok) {
-      const calls = await mcpResponse.json() as PluginMCPToolCallSummary[]
-      const pending = calls.filter((call) => call.status === "pending")
-      counts.mcp = pending.length
-      for (const call of pending) queue.push({ kind: "mcp", id: call.id, pending: true })
-    }
-  } catch {
-    // Optional counts must not break the active turn.
+  const sessionId = activeSession.id
+  const inventory = await loadPendingReviewInventory(apiBase, sessionId, controller.signal)
+  if (activeSession?.id !== sessionId) return lastPendingCounts
+  if (!inventory.ok) {
+    pendingReviewInventoryUnavailable = true
+    return lastPendingCounts
   }
-  lastPendingCounts = counts
-  pendingReviewQueue = queue
-  return counts
+  pendingReviewInventoryUnavailable = false
+  lastPendingCounts = inventory.counts
+  pendingReviewQueue = inventory.queue
+  return inventory.counts
 }
 
 function setActiveReview(review: ActiveReview | undefined) {
@@ -2718,7 +2712,14 @@ async function notifyPendingMcpToolCalls() {
     if (pending.length === 0) return
     skillNotice = `${pending.length} MCP tool call${pending.length === 1 ? "" : "s"} need review. The model turn is waiting and no pending call has reached its server. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`
     const counts = await countPendingReviews()
-    const pendingStatus = formatPendingReviewStatus(counts, activeModelLabel || undefined)
+    if (pendingReviewInventoryUnavailable) {
+      skillNotice += `\n\n${pendingReviewInventoryFailureNotice()}`
+      status.content = statusWithPendingReviewFailure(counts, activeModelLabel || undefined)
+      status.fg = theme.statusWarn
+    }
+    const pendingStatus = pendingReviewInventoryUnavailable
+      ? undefined
+      : formatPendingReviewStatus(counts, activeModelLabel || undefined)
     if (pendingStatus) {
       status.content = pendingStatus
       status.fg = theme.statusWarn
@@ -2764,31 +2765,36 @@ async function showWorkspaceEdits(filter = "") {
   }
 }
 
-async function notifyPendingProposals() {
-  if (!activeSession) return
-  try {
-    const counts = await countPendingReviews()
-    const notices: string[] = []
-    if (counts.edits > 0) {
-      notices.push(`${counts.edits} workspace edit proposal${counts.edits === 1 ? "" : "s"} need review. Type /patches to inspect them. No files have changed.`)
-    }
-    if (counts.commands > 0) {
-      notices.push(pendingShellSandboxNotice(counts.commands))
-    }
-    if (counts.mcp > 0) {
-      notices.push(`${counts.mcp} MCP tool call${counts.mcp === 1 ? "" : "s"} need review. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`)
-    }
-    if (notices.length === 0) return
-    skillNotice = notices.join("\n\n")
-    const pendingStatus = formatPendingReviewStatus(counts, activeModelLabel || undefined)
-    if (pendingStatus) {
-      status.content = pendingStatus
-      status.fg = theme.statusWarn
-    }
-    renderChat(chatMessages)
-  } catch {
-    // Keep chat usable when the optional proposal notification cannot be loaded.
+async function notifyPendingProposals(): Promise<PendingReviewCounts> {
+  if (!activeSession) return lastPendingCounts
+  const counts = await countPendingReviews()
+  const notices: string[] = []
+  if (counts.edits > 0) {
+    notices.push(`${counts.edits} workspace edit proposal${counts.edits === 1 ? "" : "s"} need review. Type /patches to inspect them. No files have changed.`)
   }
+  if (counts.commands > 0) {
+    notices.push(pendingShellSandboxNotice(counts.commands))
+  }
+  if (counts.mcp > 0) {
+    notices.push(`${counts.mcp} MCP tool call${counts.mcp === 1 ? "" : "s"} need review. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`)
+  }
+  if (pendingReviewInventoryUnavailable) {
+    notices.push(pendingReviewInventoryFailureNotice())
+    status.content = statusWithPendingReviewFailure(counts, activeModelLabel || undefined)
+    status.fg = theme.statusWarn
+  }
+  if (notices.length === 0) return counts
+  skillNotice = notices.join("\n\n")
+  const pendingStatus = pendingReviewInventoryUnavailable
+    ? statusWithPendingReviewFailure(counts, activeModelLabel || undefined)
+    : formatPendingReviewStatus(counts, activeModelLabel || undefined)
+  if (pendingStatus) {
+    status.content = pendingStatus
+    status.fg = theme.statusWarn
+  }
+  chatInput?.focus()
+  renderChat(chatMessages)
+  return counts
 }
 
 async function showWorkspaceEdit(editId: string) {
@@ -4228,14 +4234,33 @@ renderer.keyInput.on("keypress", (key) => {
       return
     }
     if (key.ctrl && key.name === "r") {
-      const open = pendingReviewOpenCommand(lastPendingCounts)
-      if (open) {
-        key.preventDefault()
-        key.stopPropagation()
-        setComposerValue(chatInput, open)
-        chatInput.submit()
-        return
-      }
+      key.preventDefault()
+      key.stopPropagation()
+      void (async () => {
+        const counts = await countPendingReviews()
+        if (pendingReviewInventoryUnavailable) {
+          skillNotice = pendingReviewInventoryFailureNotice()
+          status.content = statusWithPendingReviewFailure(counts, activeModelLabel || undefined)
+          status.fg = theme.statusWarn
+          renderChat(chatMessages)
+          return
+        }
+        const open = pendingReviewOpenCommand(counts)
+        if (open) {
+          setComposerValue(chatInput!, open)
+          chatInput!.submit()
+          return
+        }
+        skillNotice = "No pending approvals were found."
+        status.content = statusWithPendingReviews(
+          formatListeningStatus(activeModelLabel || undefined),
+          counts,
+          activeModelLabel || undefined,
+        )
+        status.fg = pendingReviewStatusColor(counts)
+        renderChat(chatMessages)
+      })()
+      return
     }
     if (key.ctrl && key.name === "y") {
       key.preventDefault()

@@ -1,9 +1,66 @@
 import { formatStatusLine } from "./status-a11y"
+import type { ActiveReview } from "./active-review"
 
 export type PendingReviewCounts = {
   edits: number
   commands: number
   mcp: number
+}
+
+export type PendingReviewInventoryResult =
+  | { ok: true; counts: PendingReviewCounts; queue: ActiveReview[] }
+  | { ok: false }
+
+type ReviewRecord = { id?: unknown; status?: unknown }
+type PendingReviewFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+
+/** Fetch every review family as one inventory snapshot; partial failures are unavailable, not empty. */
+export async function loadPendingReviewInventory(
+  apiBase: string,
+  sessionId: string,
+  signal?: AbortSignal,
+  fetcher: PendingReviewFetcher = fetch,
+): Promise<PendingReviewInventoryResult> {
+  const base = apiBase.replace(/\/+$/, "")
+  const session = encodeURIComponent(sessionId)
+  const load = async (path: string): Promise<ReviewRecord[]> => {
+    const response = await fetcher(`${base}/v1/sessions/${session}/${path}`, { signal })
+    if (!response.ok) throw new Error(`review inventory HTTP ${response.status}`)
+    const value: unknown = await response.json()
+    if (!Array.isArray(value) || value.some((item) =>
+      !item || typeof item !== "object" || typeof item.id !== "string" || typeof item.status !== "string",
+    )) {
+      throw new Error("invalid review inventory")
+    }
+    return value as ReviewRecord[]
+  }
+
+  try {
+    const [edits, commands, mcp] = await Promise.all([
+      load("workspace/edits"),
+      load("workspace/commands"),
+      load("mcp-tool-calls"),
+    ])
+    const groups = [
+      { kind: "patch" as const, records: edits, count: "edits" as const },
+      { kind: "command" as const, records: commands, count: "commands" as const },
+      { kind: "mcp" as const, records: mcp, count: "mcp" as const },
+    ]
+    const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
+    const queue: ActiveReview[] = []
+    for (const group of groups) {
+      const pending = group.records.filter((item) => item.status === "pending" && typeof item.id === "string")
+      counts[group.count] = pending.length
+      for (const item of pending) queue.push({ kind: group.kind, id: item.id as string, pending: true })
+    }
+    return { ok: true, counts, queue }
+  } catch {
+    return { ok: false }
+  }
+}
+
+export function pendingReviewInventoryFailureNotice(): string {
+  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, or /mcp calls to reopen a review list."
 }
 
 export function totalPendingReviews(counts: PendingReviewCounts): number {
@@ -63,4 +120,11 @@ export function statusWithPendingReviews(
   if (!pending) return baseStatus
   // Prefer the review cue: approvals block progress more than usage trivia.
   return pending
+}
+
+export function statusWithPendingReviewFailure(counts: PendingReviewCounts, modelLabel?: string): string {
+  if (totalPendingReviews(counts) > 0) {
+    return `${formatPendingReviewStatus(counts, modelLabel) ?? "▲ review needed"} · refresh failed`
+  }
+  return formatStatusLine("warn", "approvals unavailable  ·  Ctrl+R to retry")
 }

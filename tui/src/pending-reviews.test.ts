@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import {
+  createPendingReviewInventoryCoordinator,
   formatPendingReviewStatus,
   loadPendingReviewInventory,
+  pendingReviewDecisionFailureNotice,
   pendingReviewInventoryFailureNotice,
   pendingReviewActions,
   pendingReviewOpenCommand,
@@ -115,5 +117,49 @@ describe("pending review inventory", () => {
         : Response.json([])
     expect(await loadPendingReviewInventory("http://127.0.0.1:8000", "session-1", undefined, fetcher))
       .toEqual({ ok: false })
+  })
+
+  test("a late inventory response cannot replace the newest same-session refresh", async () => {
+    const coordinator = createPendingReviewInventoryCoordinator()
+    let releaseOldRequest!: () => void
+    const oldRequestGate = new Promise<void>((resolve) => { releaseOldRequest = resolve })
+    const oldRequest = coordinator.load(
+      "http://127.0.0.1:8000",
+      "session-1",
+      undefined,
+      async () => {
+        await oldRequestGate
+        return Response.json([])
+      },
+    )
+    const newestRequest = await coordinator.load(
+      "http://127.0.0.1:8000",
+      "session-1",
+      undefined,
+      async (input) => String(input).endsWith("/workspace/commands")
+        ? Response.json([{ id: "command-new", status: "pending" }])
+        : Response.json([]),
+    )
+    expect(newestRequest.current).toBe(true)
+    expect(newestRequest.inventory).toMatchObject({
+      ok: true,
+      counts: { edits: 0, commands: 1, mcp: 0 },
+      queue: [{ kind: "command", id: "command-new", pending: true }],
+    })
+
+    releaseOldRequest()
+    const staleRequest = await oldRequest
+    expect(staleRequest.current).toBe(false)
+    expect(staleRequest.inventory).toEqual({
+      ok: true,
+      counts: { edits: 0, commands: 0, mcp: 0 },
+      queue: [],
+    })
+  })
+
+  test("approval decisions are blocked while inventory is unavailable", () => {
+    expect(pendingReviewDecisionFailureNotice(false)).toBeUndefined()
+    expect(pendingReviewDecisionFailureNotice(true)).toContain("Approval and rejection are paused")
+    expect(pendingReviewDecisionFailureNotice(false, true)).toContain("while the review queue refreshes")
   })
 })

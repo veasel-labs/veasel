@@ -14,6 +14,31 @@ export type PendingReviewInventoryResult =
 type ReviewRecord = { id?: unknown; status?: unknown }
 type PendingReviewFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
+export type PendingReviewInventoryRequest = {
+  current: boolean
+  inventory: PendingReviewInventoryResult
+}
+
+/** Makes only the most recently requested inventory eligible to update UI state. */
+export function createPendingReviewInventoryCoordinator() {
+  let revision = 0
+  return {
+    invalidate() {
+      revision++
+    },
+    async load(
+      apiBase: string,
+      sessionId: string,
+      signal?: AbortSignal,
+      fetcher?: PendingReviewFetcher,
+    ): Promise<PendingReviewInventoryRequest> {
+      const requestRevision = ++revision
+      const inventory = await loadPendingReviewInventory(apiBase, sessionId, signal, fetcher)
+      return { current: requestRevision === revision, inventory }
+    },
+  }
+}
+
 /** Fetch every review family as one inventory snapshot; partial failures are unavailable, not empty. */
 export async function loadPendingReviewInventory(
   apiBase: string,
@@ -61,6 +86,17 @@ export async function loadPendingReviewInventory(
 
 export function pendingReviewInventoryFailureNotice(): string {
   return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, or /mcp calls to reopen a review list."
+}
+
+export function pendingReviewDecisionFailureNotice(
+  inventoryUnavailable: boolean,
+  inventoryRefreshing = false,
+): string | undefined {
+  if (inventoryUnavailable) {
+    return `${pendingReviewInventoryFailureNotice()} Approval and rejection are paused until the queue loads.`
+  }
+  if (inventoryRefreshing) return "Approval and rejection are paused while the review queue refreshes. Retry after it finishes."
+  return undefined
 }
 
 export function totalPendingReviews(counts: PendingReviewCounts): number {

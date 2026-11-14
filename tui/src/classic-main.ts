@@ -157,8 +157,9 @@ import {
   type McpOauthAuthorizeView,
 } from "./mcp-oauth"
 import {
+  createPendingReviewInventoryCoordinator,
   formatPendingReviewStatus,
-  loadPendingReviewInventory,
+  pendingReviewDecisionFailureNotice,
   pendingReviewInventoryFailureNotice,
   pendingReviewOpenCommand,
   statusWithPendingReviewFailure,
@@ -678,6 +679,8 @@ let pendingUserMessage = ""
 let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let pendingReviewQueue: ActiveReview[] = []
 let pendingReviewInventoryUnavailable = false
+let pendingReviewInventoryRefreshing = false
+const pendingReviewInventoryCoordinator = createPendingReviewInventoryCoordinator()
 let activeReview: ActiveReview | undefined
 let selectedReviewKeys = new Set<string>()
 let activePatchDiff = ""
@@ -1170,6 +1173,8 @@ function safeTerminalReviewText(value: string) {
 
 async function openSession(session: Session) {
   resetSlashContext()
+  pendingReviewInventoryCoordinator.invalidate()
+  pendingReviewInventoryRefreshing = false
   activeSession = session
   lastPendingCounts = { edits: 0, commands: 0, mcp: 0 }
   pendingReviewQueue = []
@@ -1185,6 +1190,10 @@ async function openSession(session: Session) {
   reviewedShellCommandIds.clear()
   skillNotice = ""
   reviewedEditIds.clear()
+  selectedReviewKeys = new Set()
+  setActiveReview(undefined)
+  activePatchDiff = ""
+  hideReviewDiffRenderable()
   renderChat([])
   const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(session.id)}/messages`, {
     signal: controller.signal,
@@ -2428,6 +2437,7 @@ async function showMcpToolCall(callId: string) {
 }
 
 async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
+  if (blockReviewDecisionWhenInventoryUnavailable()) return
   if (!activeSession) return
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-tool-calls/${callId}/${action}`, {
@@ -2447,6 +2457,8 @@ async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
 
 async function countPendingReviews(): Promise<PendingReviewCounts> {
   if (!activeSession) {
+    pendingReviewInventoryCoordinator.invalidate()
+    pendingReviewInventoryRefreshing = false
     const empty = { edits: 0, commands: 0, mcp: 0 }
     pendingReviewInventoryUnavailable = false
     lastPendingCounts = empty
@@ -2454,8 +2466,11 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
     return empty
   }
   const sessionId = activeSession.id
-  const inventory = await loadPendingReviewInventory(apiBase, sessionId, controller.signal)
-  if (activeSession?.id !== sessionId) return lastPendingCounts
+  pendingReviewInventoryRefreshing = true
+  const request = await pendingReviewInventoryCoordinator.load(apiBase, sessionId, controller.signal)
+  if (!request.current || activeSession?.id !== sessionId) return lastPendingCounts
+  pendingReviewInventoryRefreshing = false
+  const { inventory } = request
   if (!inventory.ok) {
     pendingReviewInventoryUnavailable = true
     return lastPendingCounts
@@ -2469,6 +2484,19 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
 function setActiveReview(review: ActiveReview | undefined) {
   activeReview = review
   refreshSessionFooter()
+}
+
+function blockReviewDecisionWhenInventoryUnavailable(): boolean {
+  const message = pendingReviewDecisionFailureNotice(
+    pendingReviewInventoryUnavailable,
+    pendingReviewInventoryRefreshing,
+  )
+  if (!message) return false
+  skillNotice = message
+  status.content = statusWithPendingReviewFailure(lastPendingCounts, activeModelLabel || undefined)
+  status.fg = theme.statusWarn
+  renderChat(chatMessages)
+  return true
 }
 
 // Swap the always-visible session footer for the active mode so discovery stays
@@ -2606,6 +2634,9 @@ async function actOnReviewItems(action: "approve" | "reject", items: ActiveRevie
 
 async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | "rejectAll" | "toggleSelect" | "next" | "prev" | "hunkNext" | "hunkPrev" | "diffPageNext" | "diffPagePrev" | "toggleDiffSurface") {
   if (!activeReview?.pending) return
+  const review = activeReview
+  const isDecision = action === "approve" || action === "approveAll" || action === "reject" || action === "rejectAll"
+  if (isDecision && blockReviewDecisionWhenInventoryUnavailable()) return
   if (action === "toggleDiffSurface") {
     if (activeReview.kind !== "patch" || !activePatchDiff) return
     reviewDiffSurface = cycleReviewDiffSurface(reviewDiffSurface)
@@ -2658,6 +2689,7 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
     const kind = activeReview.kind
     const decide = action === "approveAll" ? "approve" : "reject"
     if (pendingReviewQueue.length === 0) await countPendingReviews()
+    if (blockReviewDecisionWhenInventoryUnavailable()) return
     const batch = pendingReviewsOfKind(pendingReviewQueue, kind)
     await actOnReviewItems(decide, batch)
     selectedReviewKeys = new Set()
@@ -2677,8 +2709,18 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
   }
   if (action === "approve" || action === "reject") {
     if (pendingReviewQueue.length === 0) await countPendingReviews()
+    if (blockReviewDecisionWhenInventoryUnavailable()) return
     const selected = resolveSelectedReviews(pendingReviewQueue, selectedReviewKeys)
-    const batch = selected.length > 0 ? selected : [activeReview]
+    if (selected.length === 0 && !pendingReviewQueue.some(
+      (item) => item.kind === review.kind && item.id === review.id,
+    )) {
+      activeReview = { ...review, pending: false }
+      skillNotice = `This review is no longer pending. Press Ctrl+R to refresh the approval queue.`
+      refreshSessionFooter()
+      renderChat(chatMessages)
+      return
+    }
+    const batch = selected.length > 0 ? selected : [review]
     await actOnReviewItems(action, batch)
     selectedReviewKeys = new Set()
     setActiveReview(undefined)
@@ -2821,6 +2863,7 @@ async function showWorkspaceEdit(editId: string) {
 }
 
 async function actOnWorkspaceEdit(action: "approve" | "reject", editId: string) {
+  if (blockReviewDecisionWhenInventoryUnavailable()) return
   if (!activeSession) return
   if (!reviewedEditIds.has(editId)) {
     skillNotice = `Inspect this proposal first with /patch show ${editId}.`
@@ -2911,6 +2954,7 @@ async function showShellCommand(commandId: string) {
 }
 
 async function actOnShellCommand(action: "approve" | "reject", commandId: string) {
+  if (blockReviewDecisionWhenInventoryUnavailable()) return
   if (!activeSession) return
   if (!reviewedShellCommandIds.has(commandId)) {
     skillNotice = `Inspect the exact command first with /command show ${commandId}.`

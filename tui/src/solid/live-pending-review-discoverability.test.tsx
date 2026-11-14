@@ -10,10 +10,16 @@ function reviewServer() {
   let inventoryUnavailable = false
   let eventStream: ReadableStreamDefaultController<Uint8Array> | undefined
   let submittedOperationId = ""
+  let deferredCommandInventory: {
+    gate: Promise<void>
+    release: () => void
+    started: Promise<void>
+    start: () => void
+  } | undefined
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       const path = new URL(request.url).pathname
       requests.push(`${request.method} ${path}`)
       if (path === "/v1/events") return new Response(new ReadableStream({
@@ -36,14 +42,22 @@ function reviewServer() {
       if (path === "/v1/sessions/session-1/operations") return Response.json([])
       if (path === "/v1/sessions/session-1/workspace/edits") return Response.json([])
       if (path === "/v1/sessions/session-1/workspace/commands") {
-        if (inventoryUnavailable) return new Response("temporarily unavailable", { status: 503 })
-        return Response.json(pending ? [{
+        const unavailable = inventoryUnavailable
+        const snapshot = pending ? [{
           id: "command-1",
           command: "printf '<html>Veasel</html>' > /tmp/veasel-code.html",
           cwd: "/tmp",
           timeout_seconds: 30,
           status: "pending",
-        }] : [])
+        }] : []
+        const deferred = deferredCommandInventory
+        if (deferred) {
+          deferredCommandInventory = undefined
+          deferred.start()
+          await deferred.gate
+        }
+        if (unavailable) return new Response("temporarily unavailable", { status: 503 })
+        return Response.json(snapshot)
       }
       if (path === "/v1/sessions/session-1/mcp-tool-calls") return Response.json([])
       if (path === "/v1/sessions/session-1/workspace/commands/command-1") {
@@ -74,6 +88,14 @@ function reviewServer() {
     server,
     requests,
     setInventoryUnavailable(value: boolean) { inventoryUnavailable = value },
+    deferNextCommandInventory() {
+      let release!: () => void
+      let start!: () => void
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const started = new Promise<void>((resolve) => { start = resolve })
+      deferredCommandInventory = { gate, release, started, start }
+      return { started, release }
+    },
     completeTurn() {
       if (!eventStream || !submittedOperationId) throw new Error("Turn was not submitted")
       eventStream.enqueue(new TextEncoder().encode(`event: session.turn_completed\ndata: ${JSON.stringify({
@@ -218,6 +240,77 @@ test("LiveApp distinguishes an unavailable review inventory and lets Ctrl+R retr
     expect(requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length)
       .toBeGreaterThan(commandInventoryReads)
     await until(setup, "Could not load pending approvals")
+  } finally {
+    setup.renderer.destroy()
+    controller.abort()
+    server.stop(true)
+  }
+})
+
+test("an explicit review load failure stays visible after a previously empty refresh", async () => {
+  const controller = new AbortController()
+  const { server, setInventoryUnavailable } = reviewServer()
+  const setup = await testRender(
+    () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />,
+    { width: 100, height: 35, kittyKeyboard: true },
+  )
+  try {
+    await until(setup, "HTML request")
+    setup.mockInput.pressEnter()
+    await until(setup, "Message Veasel")
+    await until(setup, "connected")
+
+    setInventoryUnavailable(true)
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await until(setup, "Could not load pending approvals")
+    // The actionable toast remains above the app until its normal timeout.
+    await Bun.sleep(5100)
+    await until(setup, "▲ approvals unavailable")
+    const failedFrame = setup.captureCharFrame()
+    expect(failedFrame).toContain("Ctrl+R reviews")
+
+    setInventoryUnavailable(false)
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await until(setup, "No pending edits, shell commands, or MCP calls.")
+    const recoveredFrame = setup.captureCharFrame()
+    expect(recoveredFrame).not.toContain("approvals unavailable")
+  } finally {
+    setup.renderer.destroy()
+    controller.abort()
+    server.stop(true)
+  }
+}, 10_000)
+
+test("a stale explicit empty review result cannot open a false empty-state dialog", async () => {
+  const controller = new AbortController()
+  const { server, requests, completeTurn, deferNextCommandInventory } = reviewServer()
+  const api = new VeaselApiClient(server.url.origin, controller.signal)
+  const setup = await testRender(
+    () => <LiveApp api={api} directory="/tmp" />,
+    { width: 100, height: 35, kittyKeyboard: true },
+  )
+  try {
+    await until(setup, "HTML request")
+    setup.mockInput.pressEnter()
+    await until(setup, "Message Veasel")
+    await until(setup, "connected")
+
+    const commandReadsBefore = requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length
+    const delayedInventory = deferNextCommandInventory()
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await delayedInventory.started
+
+    await api.sendMessage("session-1", "Create the requested HTML file", "operation-race")
+    expect(requests).toContain("POST /v1/sessions/session-1/messages")
+    completeTurn()
+    await until(setup, "1 pending · Ctrl+R")
+    expect(requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length)
+      .toBeGreaterThan(commandReadsBefore + 1)
+
+    delayedInventory.release()
+    await until(setup, "review queue changed while loading")
+    const frame = setup.captureCharFrame()
+    expect(frame).not.toContain("No pending edits, shell commands, or MCP calls.")
   } finally {
     setup.renderer.destroy()
     controller.abort()

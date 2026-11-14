@@ -718,9 +718,16 @@ function LiveAppShell(props: LiveAppProps) {
       return
     }
     setComposerFocused(false)
+    const openRevision = ++pendingReviewOpenRevision
+    const inventoryRevision = pendingReviewRevision
     try {
       const reviews = await loadPendingSolidReviews(props.api, sessionId)
-      if (sessionId !== activeSessionId()) return
+      if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
+      if (inventoryRevision !== pendingReviewRevision) {
+        toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
+        setComposerFocused(true)
+        return
+      }
       setPendingReviewItems(reviews)
       setPendingReviewSessionId(sessionId)
       setPendingReviewInventoryError(false)
@@ -762,8 +769,17 @@ function LiveAppShell(props: LiveAppProps) {
         },
       })
     } catch {
-      toast.info(pendingReviewInventoryFailureNotice(), "Reviews")
-      setComposerFocused(true)
+      if (openRevision === pendingReviewOpenRevision && sessionId === activeSessionId()) {
+        if (inventoryRevision !== pendingReviewRevision) {
+          toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
+          setComposerFocused(true)
+          return
+        }
+        setPendingReviewSessionId(sessionId)
+        setPendingReviewInventoryError(true)
+        toast.info(pendingReviewInventoryFailureNotice(), "Reviews")
+        setComposerFocused(true)
+      }
     }
   }
 
@@ -1009,6 +1025,7 @@ function LiveAppShell(props: LiveAppProps) {
   const [configuredMcpArguments, setConfiguredMcpArguments] = createSignal<SlashArgument[]>([])
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
   let pendingReviewRevision = 0
+  let pendingReviewOpenRevision = 0
   const refreshPendingReviews = async (sessionId = activeSessionId()) => {
     // Background completions must not invalidate a pending refresh for the
     // currently focused tab.

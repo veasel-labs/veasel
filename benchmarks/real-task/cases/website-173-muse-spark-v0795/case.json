@@ -21,7 +21,7 @@
   "runtime": {
     "veasel_version": "Veasel Code 0.79.5-next.0",
     "veasel_binary_sha256": "93f0726e998ee7234e0d2cc7d7019471e5c1c1202b35992a703bd7afd3233a7e",
-    "opencode_shell_sandbox_sha256": "338fc0a17cf62688d5209b4b51da275bbb9ef4497645b38afcf523fed89f2166"
+    "opencode_shell_sandbox_sha256": "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
   },
   "permissions": {
     "edit": "autonomous inside a disposable Bubblewrap sandbox",

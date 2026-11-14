@@ -47,8 +47,8 @@ IMPORTED_PRIOR_SPEND_NOTE = (
     "raw source was not available for independent verification. Treated as consumed and never refunded."
 )
 OPEN_CODE_SHELL_WRAPPER = ROOT / "opencode-shell-sandbox.sh"
-OPEN_CODE_SHELL_WRAPPER_SHA256 = "338fc0a17cf62688d5209b4b51da275bbb9ef4497645b38afcf523fed89f2166"
-REMOTE_CASE_SHA256 = "35ab4f629c82b9001775b62f1fd81a71b76eea2fd071a550385b9e82a88bf49c"
+OPEN_CODE_SHELL_WRAPPER_SHA256 = "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
+REMOTE_CASE_SHA256 = "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af"
 REMOTE_CASE_MODEL = "muse-spark-1.3-contributor"
 REMOTE_CASE_PROVIDER = "meta"
 REMOTE_CASE_BASE_URL = "https://api.meta.ai/v1"

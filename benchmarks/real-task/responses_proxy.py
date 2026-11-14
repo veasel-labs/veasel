@@ -1,7 +1,10 @@
-"""Small, single-purpose budget proxy for matched Responses API benchmarks.
+"""Fail-closed Responses proxy with per-call token and spend reservations.
 
-The proxy intentionally supports only one model and one POST route. It does
-not retry, follow redirects, log request bodies, or expose a metrics endpoint.
+The local OpenCode adapter is deliberately limited to the observed 2.2.7
+client-side function-tool request shape. Every generation is pre-counted by
+Meta's input-token endpoint, reserves a context/output worst case atomically,
+and must return final usage before any reservation is released. This module
+never logs request bodies, credentials, or provider responses.
 """
 
 from __future__ import annotations
@@ -9,11 +12,27 @@ from __future__ import annotations
 import hmac
 import json
 import threading
+from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from typing import Any
+
+
+_OPEN_CODE_TOP_LEVEL_KEYS = {
+    "model", "input", "instructions", "stream", "max_output_tokens", "store",
+    "prompt_cache_key", "include", "tools",
+}
+_OPEN_CODE_TOOLS = {
+    "edit", "glob", "grep", "opencode_worktree_remove", "read", "shell", "skill", "write",
+}
+_REASONING_INCLUDE = ["reasoning.encrypted_content"]
+_JSON_SCHEMA_KEYS = {
+    "type", "properties", "required", "additionalProperties", "description", "items",
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength",
+    "minItems", "maxItems", "enum", "default",
+}
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -23,11 +42,18 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 class BudgetProxy:
+    MAX_REQUEST_BODY_BYTES = 32 * 1024
+    MAX_COUNT_RESPONSE_BYTES = 64 * 1024
     MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+    UPSTREAM_TIMEOUT_SECONDS = 300
+    DRAIN_TIMEOUT_SECONDS = 2.0
 
     def __init__(self, upstream_base_url: str, api_key: str, model: str,
                  max_requests: int, context_tokens: int, output_tokens: int,
-                 client_api_key: str, max_request_body_bytes: int | None = None) -> None:
+                 client_api_key: str, max_request_body_bytes: int | None = None,
+                 max_run_cost_usd: str | Decimal = "0.11",
+                 input_usd_per_million_tokens: str | Decimal = "0.1",
+                 output_usd_per_million_tokens: str | Decimal = "0.2") -> None:
         parsed = urlsplit(upstream_base_url)
         local_fixture = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
         if (parsed.scheme != "https" and not (parsed.scheme == "http" and local_fixture)) \
@@ -41,22 +67,49 @@ class BudgetProxy:
             raise ValueError("provider credential, client credential, and model are required")
         if any(value <= 0 for value in (max_requests, context_tokens, output_tokens)):
             raise ValueError("request and token budgets must be positive")
+        try:
+            run_cap = Decimal(str(max_run_cost_usd))
+            input_rate = Decimal(str(input_usd_per_million_tokens))
+            output_rate = Decimal(str(output_usd_per_million_tokens))
+        except InvalidOperation as exc:
+            raise ValueError("run budget and token rates must be valid decimals") from exc
+        if not all(value.is_finite() and value > 0 for value in (run_cap, input_rate, output_rate)):
+            raise ValueError("run budget and token rates must be positive finite decimals")
+
         self._upstream_base_url = upstream_base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
         self._max_requests = max_requests
         self._context_tokens = context_tokens
         self._output_tokens = output_tokens
-        # The body byte cap bounds transport size, not provider-billed tokens:
-        # structured Responses framing and provider tokenization may add usage
-        # not represented by UTF-8 body bytes. Non-text modalities are rejected
-        # because remote media can expand beyond the request bytes.
-        self._max_request_body_bytes = context_tokens if max_request_body_bytes is None else max_request_body_bytes
-        if self._max_request_body_bytes <= 0:
-            raise ValueError("request body byte cap must be positive")
+        self._input_rate = input_rate / Decimal(1_000_000)
+        self._output_rate = output_rate / Decimal(1_000_000)
+        self._max_run_cost = run_cap
+        self._worst_case_per_call = (Decimal(context_tokens) * self._input_rate
+                                     + Decimal(output_tokens) * self._output_rate)
+        self._max_request_body_bytes = (self.MAX_REQUEST_BODY_BYTES if max_request_body_bytes is None
+                                        else max_request_body_bytes)
+        if not 1 <= self._max_request_body_bytes <= self.MAX_REQUEST_BODY_BYTES:
+            raise ValueError("request body byte cap must be between 1 and 32768")
+        if self._worst_case_per_call > run_cap:
+            raise ValueError("run budget cannot fund one context/output-bounded call")
+
         self._client_api_key = client_api_key.encode()
         self._lock = threading.Lock()
+        self._state_changed = threading.Condition(self._lock)
+        self._closing = False
+        self._reservation_sequence = 0
+        self._generation_reservations: dict[int, str] = {}
         self._attempts_reserved = 0
+        self._settled_cost = Decimal(0)
+        self._reserved_cost = Decimal(0)
+        self._input_prechecks = 0
+        self._precheck_attempts = 0
+        self._max_input_tokens_seen = 0
+        self._uncertain_responses = 0
+        self._over_budget_responses = 0
+        self._budget_rejections = 0
+        self._blocked = False
         self._max_request_body_bytes_seen = 0
         self._oversized_requests_rejected = 0
         self._httpd: ThreadingHTTPServer | None = None
@@ -75,13 +128,17 @@ class BudgetProxy:
                 pass
 
             def _respond(self, status: int, payload: bytes) -> None:
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Connection", "close")
-                self.end_headers()
-                self.wfile.write(payload)
-                self.close_connection = True
+                try:
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(payload)
+                except OSError:
+                    pass
+                finally:
+                    self.close_connection = True
 
             def do_GET(self) -> None:
                 self._respond(405, b'{"error":"method_not_allowed"}')
@@ -113,74 +170,154 @@ class BudgetProxy:
                     self._respond(400, b'{"error":"incomplete_request"}')
                     return
                 try:
-                    payload = json.loads(body)
-                except (UnicodeDecodeError, json.JSONDecodeError):
+                    payload = json.loads(body, object_pairs_hook=_unique_object_pairs)
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                     self._respond(400, b'{"error":"invalid_json"}')
                     return
-                if not isinstance(payload, dict) or payload.get("model") != proxy._model:
-                    self._respond(400, b'{"error":"model_not_allowed"}')
+                if not _valid_opencode_payload(payload, proxy._model, proxy._output_tokens):
+                    self._respond(400, b'{"error":"unsupported_responses_payload"}')
                     return
-                output = payload.get("max_output_tokens")
-                if not isinstance(output, int) or isinstance(output, bool) or not 0 < output <= proxy._output_tokens:
-                    self._respond(400, b'{"error":"output_budget_exceeded"}')
-                    return
-                if not _text_only_payload(payload):
-                    self._respond(400, b'{"error":"non_text_input_not_allowed"}')
-                    return
-                if not proxy._reserve_attempt():
+                canonical_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+                if not proxy._reserve_precheck():
                     self._respond(429, b'{"error":"request_budget_exhausted"}')
                     return
-                request = Request(
-                    proxy._upstream_base_url + "/responses",
-                    data=body,
+
+                count_request = Request(
+                    proxy._upstream_base_url + "/responses/input_tokens",
+                    data=json.dumps(_input_token_payload(payload), separators=(",", ":")).encode(),
                     headers={"Authorization": f"Bearer {proxy._api_key}",
-                             "Content-Type": "application/json", "Accept": "text/event-stream, application/json"},
+                             "Content-Type": "application/json", "Accept": "application/json"},
                     method="POST",
                 )
                 try:
-                    with proxy._opener.open(request, timeout=300) as response:
+                    with proxy._opener.open(count_request, timeout=proxy.UPSTREAM_TIMEOUT_SECONDS) as response:
+                        if response.status != 200:
+                            self._respond(502, b'{"error":"input_token_precheck_failed"}')
+                            return
+                        count_body = response.read(proxy.MAX_COUNT_RESPONSE_BYTES + 1)
+                        if len(count_body) > proxy.MAX_COUNT_RESPONSE_BYTES:
+                            self._respond(502, b'{"error":"input_token_precheck_invalid"}')
+                            return
+                except HTTPError as error:
+                    error.close()
+                    self._respond(502, b'{"error":"input_token_precheck_failed"}')
+                    return
+                except Exception:
+                    self._respond(502, b'{"error":"input_token_precheck_failed"}')
+                    return
+                try:
+                    count_result = json.loads(count_body, object_pairs_hook=_unique_object_pairs)
+                except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                    self._respond(502, b'{"error":"input_token_precheck_invalid"}')
+                    return
+                input_tokens = count_result.get("input_tokens") if isinstance(count_result, dict) else None
+                if not isinstance(count_result, dict) or count_result.get("object") != "response.input_tokens":
+                    self._respond(502, b'{"error":"input_token_precheck_invalid"}')
+                    return
+                if not isinstance(input_tokens, int) or isinstance(input_tokens, bool) or input_tokens < 0:
+                    self._respond(502, b'{"error":"input_token_precheck_invalid"}')
+                    return
+                if input_tokens > proxy._context_tokens:
+                    proxy._record_precheck(input_tokens)
+                    self._respond(413, b'{"error":"context_budget_exceeded"}')
+                    return
+                proxy._record_precheck(input_tokens)
+                attempt_id = proxy._reserve_attempt()
+                if attempt_id is None:
+                    self._respond(429, b'{"error":"run_budget_exhausted"}')
+                    return
+
+                request = Request(
+                    proxy._upstream_base_url + "/responses",
+                    data=canonical_body,
+                    headers={"Authorization": f"Bearer {proxy._api_key}",
+                             "Content-Type": "application/json",
+                             "Accept": "text/event-stream, application/json"},
+                    method="POST",
+                )
+                try:
+                    with proxy._opener.open(request, timeout=proxy.UPSTREAM_TIMEOUT_SECONDS) as response:
                         if int(response.headers.get("Content-Length", "0") or "0") > proxy.MAX_RESPONSE_BYTES:
+                            proxy._mark_uncertain(attempt_id)
                             self._respond(502, b'{"error":"upstream_response_too_large"}')
                             return
                         forwarded_body = response.read(proxy.MAX_RESPONSE_BYTES + 1)
                         if len(forwarded_body) > proxy.MAX_RESPONSE_BYTES:
+                            proxy._mark_uncertain(attempt_id)
                             self._respond(502, b'{"error":"upstream_response_too_large"}')
                             return
                         status = response.status
                         content_type = response.headers.get("Content-Type", "application/json")
-                except HTTPError as error:
-                    try:
-                        forwarded_body = error.read(65536)
-                        status = error.code
-                        content_type = "application/json"
-                    finally:
-                        error.close()
+                except HTTPError:
+                    proxy._mark_uncertain(attempt_id)
+                    self._respond(502, b'{"error":"upstream_request_failed"}')
+                    return
                 except Exception:
+                    proxy._mark_uncertain(attempt_id)
                     self._respond(502, b'{"error":"upstream_request_failed"}')
                     return
                 if 300 <= status < 400:
+                    proxy._mark_uncertain(attempt_id)
                     self._respond(502, b'{"error":"upstream_redirect_rejected"}')
                     return
+                usage = _final_usage(forwarded_body, content_type)
+                if status < 200 or status >= 300 or usage is None:
+                    proxy._mark_uncertain(attempt_id)
+                    self._respond(502, b'{"error":"final_usage_missing_or_ambiguous"}')
+                    return
+                if not proxy._settle_attempt(attempt_id, usage):
+                    self._respond(502, b'{"error":"reported_usage_exceeded_reserved_limit"}')
+                    return
+
                 self.send_response(status)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(forwarded_body)))
                 self.send_header("Connection", "close")
                 self.end_headers()
-                self.wfile.write(forwarded_body)
+                try:
+                    self.wfile.write(forwarded_body)
+                except OSError:
+                    # The client may disconnect after generation completed.
+                    # Usage is already settled from the provider's final event.
+                    pass
                 self.close_connection = True
 
         self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._httpd.daemon_threads = True
+        # close() performs its own bounded handler drain. Do not let
+        # ThreadingMixIn.server_close() turn an unresolved upstream request
+        # into an unbounded join after that deadline.
+        self._httpd.block_on_close = False
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
         return f"http://127.0.0.1:{self._httpd.server_port}/v1"
 
-    def _reserve_attempt(self) -> bool:
+    def _reserve_attempt(self) -> int | None:
         with self._lock:
-            if self._attempts_reserved >= self._max_requests:
-                return False
+            if self._closing or self._blocked or self._attempts_reserved >= self._max_requests \
+                    or self._settled_cost + self._reserved_cost + self._worst_case_per_call > self._max_run_cost:
+                self._budget_rejections += 1
+                return None
             self._attempts_reserved += 1
+            self._reserved_cost += self._worst_case_per_call
+            self._reservation_sequence += 1
+            attempt_id = self._reservation_sequence
+            self._generation_reservations[attempt_id] = "in_flight"
+            return attempt_id
+
+    def _reserve_precheck(self) -> bool:
+        """Count every token-count request before making it, including failures."""
+        with self._lock:
+            if self._closing or self._precheck_attempts >= self._max_requests:
+                self._budget_rejections += 1
+                return False
+            self._precheck_attempts += 1
             return True
+
+    def _record_precheck(self, input_tokens: int) -> None:
+        with self._lock:
+            self._input_prechecks += 1
+            self._max_input_tokens_seen = max(self._max_input_tokens_seen, input_tokens)
 
     def _record_body_size(self, size: int, rejected: bool) -> None:
         with self._lock:
@@ -189,18 +326,92 @@ class BudgetProxy:
             if rejected:
                 self._oversized_requests_rejected += 1
 
-    def metrics(self) -> dict[str, int]:
+    def _mark_uncertain(self, attempt_id: int) -> None:
+        with self._state_changed:
+            if self._generation_reservations.get(attempt_id) != "in_flight":
+                return
+            self._generation_reservations[attempt_id] = "uncertain"
+            self._uncertain_responses += 1
+            self._blocked = True
+            self._state_changed.notify_all()
+
+    def _settle_attempt(self, attempt_id: int, usage: dict[str, int]) -> bool:
+        input_tokens = usage["input_tokens"]
+        output_tokens = usage["output_tokens"]
+        cached_tokens = usage["cached_tokens"]
+        if input_tokens > self._context_tokens or output_tokens > self._output_tokens \
+                or cached_tokens > input_tokens:
+            with self._state_changed:
+                if self._generation_reservations.get(attempt_id) != "in_flight":
+                    return False
+                self._generation_reservations[attempt_id] = "uncertain"
+                self._over_budget_responses += 1
+                self._uncertain_responses += 1
+                self._blocked = True
+                self._state_changed.notify_all()
+            return False
+        # Count all input at the uncached rate. This over-reserves cached input
+        # and avoids relying on cache accounting or discounts for the cap.
+        actual_cost = Decimal(input_tokens) * self._input_rate + Decimal(output_tokens) * self._output_rate
+        with self._state_changed:
+            if self._generation_reservations.get(attempt_id) != "in_flight":
+                return False
+            if actual_cost > self._worst_case_per_call:
+                self._generation_reservations[attempt_id] = "uncertain"
+                self._over_budget_responses += 1
+                self._uncertain_responses += 1
+                self._blocked = True
+                self._settled_cost += actual_cost
+                self._state_changed.notify_all()
+                return False
+            self._reserved_cost -= self._worst_case_per_call
+            self._generation_reservations[attempt_id] = "settled"
+            self._settled_cost += actual_cost
+            self._state_changed.notify_all()
+        return True
+
+    def metrics(self) -> dict[str, Any]:
         with self._lock:
-            return {"upstream_attempts_reserved": self._attempts_reserved,
-                    "upstream_attempt_limit": self._max_requests,
-                    "max_request_body_bytes_seen": self._max_request_body_bytes_seen,
-                    "oversized_requests_rejected": self._oversized_requests_rejected}
+            return {
+                "upstream_generation_attempts": self._attempts_reserved,
+                "upstream_generation_attempt_limit": self._max_requests,
+                "input_token_prechecks": self._input_prechecks,
+                "input_token_precheck_attempts": self._precheck_attempts,
+                "max_prechecked_input_tokens": self._max_input_tokens_seen,
+                "per_call_worst_case_cost_usd": _money(self._worst_case_per_call),
+                "run_cost_cap_usd": _money(self._max_run_cost),
+                "generation_cost_reserved_usd": _money(self._reserved_cost),
+                "generation_cost_settled_usd": _money(self._settled_cost),
+                "generation_cost_in_flight": sum(
+                    state == "in_flight" for state in self._generation_reservations.values()),
+                "generation_cost_uncertain": sum(
+                    state == "uncertain" for state in self._generation_reservations.values()),
+                "uncertain_responses": self._uncertain_responses,
+                "over_budget_responses": self._over_budget_responses,
+                "budget_rejections": self._budget_rejections,
+                "blocked_after_uncertain_usage": self._blocked,
+                "max_request_body_bytes_seen": self._max_request_body_bytes_seen,
+                "oversized_requests_rejected": self._oversized_requests_rejected,
+            }
 
     def close(self) -> None:
         httpd = self._httpd
         if httpd is None:
             return
+        with self._state_changed:
+            self._closing = True
         httpd.shutdown()
+        with self._state_changed:
+            self._state_changed.wait_for(
+                lambda: not any(state == "in_flight" for state in self._generation_reservations.values()),
+                timeout=self.DRAIN_TIMEOUT_SECONDS,
+            )
+            for attempt_id, state in list(self._generation_reservations.items()):
+                if state == "in_flight":
+                    self._generation_reservations[attempt_id] = "uncertain"
+                    self._uncertain_responses += 1
+                    self._blocked = True
+            self._state_changed.notify_all()
         httpd.server_close()
         if self._thread is not None:
             self._thread.join(timeout=2)
@@ -208,15 +419,173 @@ class BudgetProxy:
         self._thread = None
 
 
-def _text_only_payload(value: Any) -> bool:
-    """Reject remote media or non-text content that bypasses byte accounting."""
-    if isinstance(value, dict):
-        if any(any(kind in key.lower() for kind in ("image", "audio", "video", "file")) for key in value):
+def _money(value: Decimal) -> str:
+    return format(value.quantize(Decimal("0.00000001")), ".8f")
+
+
+def _input_token_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fields that affect the rendered input, matching the upstream count API."""
+    return {key: payload[key] for key in ("model", "input", "instructions", "tools") if key in payload}
+
+
+def _unique_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _valid_opencode_payload(payload: Any, model: str, output_limit: int) -> bool:
+    if not isinstance(payload, dict) or set(payload) != _OPEN_CODE_TOP_LEVEL_KEYS:
+        return False
+    if payload.get("model") != model or payload.get("stream") is not True or payload.get("store") is not False:
+        return False
+    output = payload.get("max_output_tokens")
+    if not isinstance(output, int) or isinstance(output, bool) or not 16 <= output <= output_limit:
+        return False
+    if not isinstance(payload.get("instructions"), str) or not isinstance(payload.get("prompt_cache_key"), str) \
+            or len(payload["prompt_cache_key"]) > 64 or payload.get("include") != _REASONING_INCLUDE:
+        return False
+    if not _valid_input_items(payload.get("input")):
+        return False
+    tools = payload.get("tools")
+    if not isinstance(tools, list) or len(tools) != len(_OPEN_CODE_TOOLS):
+        return False
+    names: set[str] = set()
+    for tool in tools:
+        if not isinstance(tool, dict) or set(tool) != {"type", "name", "description", "parameters", "strict"}:
             return False
-        content_type = value.get("type")
-        if isinstance(content_type, str) and any(part in content_type.lower() for part in ("image", "audio", "video", "file")):
+        name = tool.get("name")
+        if tool.get("type") != "function" or name not in _OPEN_CODE_TOOLS or name in names \
+                or not isinstance(tool.get("description"), str) or tool.get("strict") is not False \
+                or not _valid_json_schema(tool.get("parameters"), 0):
             return False
-        return all(_text_only_payload(item) for item in value.values())
-    if isinstance(value, list):
-        return all(_text_only_payload(item) for item in value)
+        names.add(name)
+    return names == _OPEN_CODE_TOOLS
+
+
+def _valid_input_items(value: Any) -> bool:
+    if not isinstance(value, list) or not value or len(value) > 128:
+        return False
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str):
+            return False
+        kind = item["type"]
+        if kind == "message":
+            if set(item) != {"type", "role", "content"} or item.get("role") not in {"user", "assistant"}:
+                return False
+            content = item.get("content")
+            if not isinstance(content, list) or not content or len(content) > 128:
+                return False
+            for part in content:
+                if not isinstance(part, dict) or set(part) != {"type", "text"} \
+                        or part.get("type") not in {"input_text", "output_text"} \
+                        or not isinstance(part.get("text"), str):
+                    return False
+        elif kind == "function_call":
+            if set(item) != {"type", "call_id", "name", "arguments"} \
+                    or not all(isinstance(item.get(key), str) for key in ("call_id", "name", "arguments")) \
+                    or item["name"] not in _OPEN_CODE_TOOLS:
+                return False
+            try:
+                arguments = json.loads(item["arguments"])
+            except json.JSONDecodeError:
+                return False
+            if not isinstance(arguments, dict):
+                return False
+        elif kind == "function_call_output":
+            if set(item) != {"type", "call_id", "output"} \
+                    or not isinstance(item.get("call_id"), str) \
+                    or not isinstance(item.get("output"), str):
+                return False
+        elif kind == "reasoning":
+            if not set(item).issubset({"type", "encrypted_content", "id", "summary", "status"}) \
+                    or not isinstance(item.get("encrypted_content"), str):
+                return False
+        else:
+            return False
     return True
+
+
+def _valid_json_schema(value: Any, depth: int) -> bool:
+    if depth > 8 or not isinstance(value, dict) or not set(value).issubset(_JSON_SCHEMA_KEYS):
+        return False
+    if value.get("type") not in {"object", "array", "string", "integer", "number", "boolean"}:
+        return False
+    properties = value.get("properties", {})
+    if not isinstance(properties, dict) or len(properties) > 64:
+        return False
+    for name, schema in properties.items():
+        if not isinstance(name, str) or not _valid_json_schema(schema, depth + 1):
+            return False
+    if "required" in value and (not isinstance(value["required"], list)
+                                or any(not isinstance(name, str) or name not in properties for name in value["required"])):
+        return False
+    if "additionalProperties" in value and value["additionalProperties"] is not False:
+        return False
+    if "items" in value and not _valid_json_schema(value["items"], depth + 1):
+        return False
+    for key in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"):
+        if key in value and (not isinstance(value[key], (int, float)) or isinstance(value[key], bool)):
+            return False
+    for key in ("minLength", "maxLength", "minItems", "maxItems"):
+        if key in value and (not isinstance(value[key], int) or isinstance(value[key], bool) or value[key] < 0):
+            return False
+    if "enum" in value and (not isinstance(value["enum"], list) or len(value["enum"]) > 64):
+        return False
+    if "description" in value and not isinstance(value["description"], str):
+        return False
+    if "default" in value and not isinstance(value["default"], (str, int, float, bool, type(None), list, dict)):
+        return False
+    return True
+
+
+def _final_usage(body: bytes, content_type: str) -> dict[str, int] | None:
+    """Return usage only from a complete terminal response, never an SSE delta."""
+    final_response: dict[str, Any] | None = None
+    if "text/event-stream" in content_type.lower():
+        terminal_types = {"response.completed", "response.incomplete", "response.failed"}
+        for raw_event in body.replace(b"\r\n", b"\n").split(b"\n\n"):
+            event_name = ""
+            data_lines: list[bytes] = []
+            for line in raw_event.splitlines():
+                if line.startswith(b"event:"):
+                    event_name = line[6:].strip().decode("ascii", "ignore")
+                elif line.startswith(b"data:"):
+                    data_lines.append(line[5:].lstrip())
+            if event_name not in terminal_types or not data_lines:
+                continue
+            try:
+                event = json.loads(b"\n".join(data_lines), object_pairs_hook=_unique_object_pairs)
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+                return None
+            if not isinstance(event, dict) or event.get("type") != event_name:
+                return None
+            response = event.get("response")
+            if not isinstance(response, dict) or response.get("status") not in {"completed", "incomplete", "failed"}:
+                return None
+            if final_response is not None:
+                return None
+            final_response = response
+    else:
+        try:
+            response = json.loads(body, object_pairs_hook=_unique_object_pairs)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            return None
+        if isinstance(response, dict) and response.get("object") == "response":
+            final_response = response
+    if final_response is None:
+        return None
+    usage = final_response.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    details = usage.get("input_tokens_details", {})
+    cached_tokens = details.get("cached_tokens", 0) if isinstance(details, dict) else None
+    values = (input_tokens, output_tokens, cached_tokens)
+    if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values):
+        return None
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens, "cached_tokens": cached_tokens}

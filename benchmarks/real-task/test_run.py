@@ -710,6 +710,7 @@ class PreflightTests(unittest.TestCase):
                 )
                 with (patch.object(runner, "create_task_clone", return_value=workspace),
                       patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
+                      patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
                       patch.object(runner.subprocess, "Popen", return_value=process) as popen):
                     self.assertEqual(runner.run_case(args), 0)
                 launched_command = popen.call_args.args[0]
@@ -894,6 +895,7 @@ class PreflightTests(unittest.TestCase):
                 patch.object(runner, "available_resources", return_value=(8 * runner.GIB, 2 * runner.GIB)),
                 patch.object(runner, "process_tree_resources", return_value={"process_count": 2, "cpu_time_ms": 42, "rss_bytes": 900}),
                 patch.object(runner, "gpu_memory_used_mib", return_value=[6000]),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
                 patch.object(runner.time, "sleep"),
                 patch.object(runner, "create_task_clone", return_value=workspace),
                 patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
@@ -1108,6 +1110,7 @@ class PreflightTests(unittest.TestCase):
                 if process.poll() is None:
                     runner.terminate_process_group(process, grace_seconds=0.1)
 
+    @patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap"))
     @patch.object(runner.shutil, "which", return_value="/usr/bin/opencode")
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")
@@ -1118,7 +1121,7 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "project_open_code_config_paths", return_value=[])
     @patch.object(runner, "managed_open_code_config_paths", return_value=[])
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB))
-    def test_opencode_preflight_uses_same_pinned_case(self, _resources, _managed, _project, _version, _gpu_info, _placement, _ollama, _model, _git, _which):
+    def test_opencode_preflight_uses_same_pinned_case(self, _resources, _managed, _project, _version, _gpu_info, _placement, _ollama, _model, _git, _which, _bwrap):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",

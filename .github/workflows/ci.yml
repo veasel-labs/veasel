@@ -654,8 +654,8 @@ jobs:
               gh release upload "$RELEASE_TAG" release-assets/* SHA256SUMS release.json --clobber
               exit 0
             fi
-            echo "Release $RELEASE_TAG already exists for $existing; skipping duplicate publish of $RELEASE_COMMIT."
-            exit 0
+            echo "::error::Release tag collision: $RELEASE_TAG points to $existing, but this verified build is for $RELEASE_COMMIT. Re-run CI after the existing release is visible to the version planner."
+            exit 1
           fi
           gh release create "$RELEASE_TAG" release-assets/* SHA256SUMS release.json \
             --target "$RELEASE_COMMIT" --title "Veasel Code $RELEASE_VERSION" \

@@ -81,6 +81,18 @@ export function approvedShellSandboxWarning(
   return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox because VEASEL_SHELL_SANDBOX=off was explicitly set. Review every effect before approval."
 }
 
+function compactShellSandboxWarning(
+  capability: ApprovedShellSandboxCapability,
+  preview?: ReviewSandboxPreview,
+): string {
+  if (capability === "bubblewrap") return "Sandboxed: Bubblewrap."
+  if (capability === "seatbelt") return "Sandboxed: Seatbelt."
+  if (capability === "windows") return "Sandboxed: AppContainer."
+  if (preview?.mode === "require") return "Required sandbox unavailable."
+  if (preview?.mode === "auto") return "No sandbox: host access."
+  return "Unsandboxed: host access."
+}
+
 export function formatShellReview(input: {
   command: string
   cwd: string
@@ -92,6 +104,8 @@ export function formatShellReview(input: {
   maxLines: number
   sandbox?: ReviewSandboxPreview
   sandboxCapability?: ApprovedShellSandboxCapability
+  /** Use a concise disclosure so small terminals can show the command before approval. */
+  compactWarning?: boolean
   /** @deprecated Prefer sandboxCapability. */
   bubblewrapCapable?: boolean
 }): string {
@@ -104,13 +118,15 @@ export function formatShellReview(input: {
   // are approval payloads: truncating one can hide the effect being authorized.
   // The backend caps commands at 8 KiB; the scrollable panel renders them whole.
   const command = input.command
+  const fullWarning = approvedShellSandboxWarning(capability, input.sandbox)
   const parts = [
-    approvedShellSandboxWarning(capability, input.sandbox),
-    ...(command ? [`Command:\n${command}`] : []),
+    input.compactWarning ? compactShellSandboxWarning(capability, input.sandbox) : fullWarning,
+    ...(command ? [input.compactWarning ? command : `Command:\n${command}`] : []),
+    ...(input.compactWarning ? [fullWarning] : []),
     `CWD: ${input.cwd} · timeout ${input.timeoutSeconds}s`,
     `Runner: ${input.runner} · non-interactive stdin`,
   ]
-  const previewLine = formatSandboxPreviewLine(input.sandbox)
+  const previewLine = input.compactWarning ? null : formatSandboxPreviewLine(input.sandbox)
   if (previewLine) parts.push(previewLine)
   if (input.pending) parts.push(`Type /command approve ${input.id} or /command reject ${input.id}.`)
   if (!input.pending && input.output) {

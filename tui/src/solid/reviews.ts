@@ -117,7 +117,7 @@ export function reviewSummaryLine(item: SolidReviewItem): string {
 /** Body text for segment / fallback rendering (not used when split DiffRenderable owns the hunk). */
 export function formatSolidReviewBody(
   item: SolidReviewItem,
-  options: { terminalRows?: number; hunkIndex?: number; lineOffset?: number } = {},
+  options: { terminalRows?: number; terminalColumns?: number; hunkIndex?: number; lineOffset?: number } = {},
 ): string {
   const rows = options.terminalRows ?? 40
   if (item.kind === "patch") {
@@ -139,6 +139,7 @@ export function formatSolidReviewBody(
       output: item.output ?? "",
       maxLines: shellReviewLineBudget(rows),
       sandbox: item.sandbox,
+      compactWarning: rows <= 12 || (options.terminalColumns ?? 80) < 44,
     })
   }
   return formatMcpReview({

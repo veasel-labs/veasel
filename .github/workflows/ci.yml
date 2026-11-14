@@ -325,7 +325,7 @@ jobs:
           v test plugin_mcp_transport_test.v
           v test plugin_mcp_http_transport_test.v
           v test plugin_mcp_cancel_test.v
-          v test agent_runtime_test.v
+          VEASEL_AGENT_PARENT_TOKEN_BUDGET=3000000 v test agent_runtime_test.v
           v test shell_commands_test.v
           v test session_compaction_test.v
           v test repository_map_test.v

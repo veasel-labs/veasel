@@ -162,6 +162,14 @@ fn agent_code_change_acceptance_review_available(explicit_request bool, applied_
 		&& (!verification_required || verification_succeeded)
 }
 
+fn agent_code_change_acceptance_review_response_count(current int, tool_call_count int) int {
+	// Review searches, reads, and edits are work in progress, not final review answers.
+	if tool_call_count > 0 {
+		return current
+	}
+	return current + 1
+}
+
 fn agent_code_change_acceptance_review_context(request string, diffs []string,
 	verification_required bool, verification_succeeded bool) string {
 	mut context := '${agent_code_change_acceptance_review_prompt}\n\nOriginal user request:\n${request}\n\nVerification: '
@@ -1152,7 +1160,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 	mut verification_prompt_issued := false
 	mut applied_workspace_diffs := []string{}
 	mut acceptance_review_started := false
-	mut acceptance_review_rounds := 0
+	mut acceptance_review_responses := 0
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
 	for round in 0 .. max_agent_turn_rounds {
@@ -1181,9 +1189,6 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 			failed_edit_proposals)
 		turn_tools = agent_code_change_verification_tools(turn_tools, verification_required,
 			workspace_effect_applied, verification_succeeded, verification_failed)
-		if acceptance_review_started {
-			acceptance_review_rounds++
-		}
 		buffer_provider_text := (code_change_request && !workspace_effect_applied)
 			|| agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools,
 				followthrough_retries, edit_proposal_attempted, request_deadline)
@@ -1214,11 +1219,12 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 		if has_provider_usage_data(output.usage) {
 			trace_usage = add_provider_usage(trace_usage, output.usage)
 		}
+		if acceptance_review_started {
+			acceptance_review_responses = agent_code_change_acceptance_review_response_count(acceptance_review_responses, output.tool_calls.len)
+		}
 		if output.tool_calls.len > 0
-			&& ((acceptance_review_started
-				&& acceptance_review_rounds >= max_agent_code_change_acceptance_review_rounds)
-				|| (round == max_agent_turn_rounds - 1 && code_change_request
-					&& applied_workspace_diffs.len > 0)) {
+			&& (round == max_agent_turn_rounds - 1 && code_change_request
+				&& applied_workspace_diffs.len > 0) {
 			incomplete := agent_final_response_for_acceptance_review('Acceptance review reached its bounded follow-up limit before confirming completion.',
 				true, false)
 			on_text_delta(incomplete)!
@@ -1310,7 +1316,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				continue
 			}
 			if acceptance_review_started && !review_passed
-				&& acceptance_review_rounds < max_agent_code_change_acceptance_review_rounds
+				&& acceptance_review_responses < max_agent_code_change_acceptance_review_rounds
 				&& agent_has_agent_turn_round_after(round) {
 				messages << ChatMessage{
 					role:    'assistant'

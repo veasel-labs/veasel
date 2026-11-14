@@ -1628,6 +1628,10 @@ def run_case(args: argparse.Namespace) -> int:
         if args.agent == "opencode" and case["model"].get("provider") != "ollama" and proxy is not None:
             try:
                 proxy.close()
+            except KeyboardInterrupt:
+                proxy_close_error_type = "KeyboardInterrupt"
+                if outcome == "completed":
+                    outcome = "proxy_close_interrupted"
             except Exception as exc:
                 proxy_close_error_type = type(exc).__name__
                 if outcome == "completed":

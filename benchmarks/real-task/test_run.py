@@ -1001,7 +1001,7 @@ class PreflightTests(unittest.TestCase):
         self.assertTrue(report["agent_process_group_orphaned"])
         self.assertTrue(report["artifacts"]["candidate"]["dirty"])
 
-    def test_proxy_close_error_still_preserves_candidate_and_writes_report(self):
+    def _run_proxy_close_failure_case(self, close_exception):
         case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
@@ -1016,7 +1016,7 @@ class PreflightTests(unittest.TestCase):
             process.wait.return_value = 0
             proxy = Mock()
             proxy.start.return_value = "http://127.0.0.1:43210/v1"
-            proxy.close.side_effect = RuntimeError("fixture close failure")
+            proxy.close.side_effect = close_exception
             proxy.metrics.return_value = {
                 "uncertain_responses": 0, "over_budget_responses": 0,
                 "generation_cost_in_flight": 0, "generation_cost_reserved_usd": "0.00000000",
@@ -1056,8 +1056,19 @@ class PreflightTests(unittest.TestCase):
             proxy.close.assert_called_once_with()
             preserve.assert_called_once()
             report = json.loads((artifacts / "attempt.json").read_text())
+        return report
+
+    def test_proxy_close_error_still_preserves_candidate_and_writes_report(self):
+        report = self._run_proxy_close_failure_case(RuntimeError("fixture close failure"))
         self.assertEqual(report["outcome"], "proxy_close_error")
         self.assertEqual(report["proxy_close_error_type"], "RuntimeError")
+        self.assertTrue(report["artifacts"]["candidate"]["dirty"])
+        self.assertEqual(report["aggregate_spend"]["status"], "reserved_uncertain")
+
+    def test_second_ctrl_c_during_proxy_close_still_writes_recovery_report(self):
+        report = self._run_proxy_close_failure_case(KeyboardInterrupt())
+        self.assertEqual(report["outcome"], "proxy_close_interrupted")
+        self.assertEqual(report["proxy_close_error_type"], "KeyboardInterrupt")
         self.assertTrue(report["artifacts"]["candidate"]["dirty"])
         self.assertEqual(report["aggregate_spend"]["status"], "reserved_uncertain")
 

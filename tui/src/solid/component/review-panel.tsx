@@ -361,8 +361,10 @@ export function ReviewPanel(props: ReviewPanelProps) {
             <Show when={!busy() && hotkeyHint()}>
               {(hint) => (
                 <text fg={colors.muted} minHeight={1} wrapMode="none">
-                  {dimensions().width < 44 && current()?.kind === "command"
-                    ? "PgUp/Dn a approve x reject"
+                  {(current()?.kind === "command" || current()?.kind === "mcp")
+                    ? dimensions().width < 64
+                      ? "PgUp/Dn a approve x reject"
+                      : `PgUp/Dn scroll · a approve · x reject · A/X all · ]/[ next`
                     : current()?.kind === "patch"
                     ? `a approve · x reject · A/X · Space · ]/[ · {/} · ${diffSurface() === "split" ? "v word-diff" : "v split view"}`
                     : hint()}

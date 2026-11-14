@@ -163,6 +163,7 @@ describe("Solid review panel", () => {
     setup.mockInput.pressKey("]")
     await setup.renderOnce()
     expect(setup.captureCharFrame()).toContain("Shell command")
+    expect(setup.captureCharFrame()).toContain("PgUp/Dn scroll")
   })
 
   test("v toggles split DiffRenderable chrome for patch reviews", async () => {

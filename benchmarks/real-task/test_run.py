@@ -227,6 +227,42 @@ class ProviderUsageTests(unittest.TestCase):
         self.assertIsNone(usage["input_tokens"])
         self.assertIsNone(usage["output_tokens"])
 
+    def test_veasel_cli_usage_is_used_when_atif_trajectory_is_missing(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            stdout = Path(temp_dir) / "stdout.log"
+            stdout.write_text(json.dumps({
+                "status": "failed",
+                "error": "unable to persist the ATIF trajectory",
+                "session_usage_reported": True,
+                "session_reported_turns": 1,
+                "session_input_tokens": 68296,
+                "session_output_tokens": 3621,
+                "session_cache_read_tokens": 9322,
+            }))
+            usage = runner.provider_reported_usage(
+                "veasel", Path(temp_dir) / "missing-trace.json", stdout,
+            )
+        self.assertTrue(usage["reported"])
+        self.assertEqual(usage["source"], "veasel_cli_session_summary")
+        self.assertEqual(usage["reported_turn_count"], 1)
+        self.assertEqual(usage["input_tokens"], 68296)
+        self.assertEqual(usage["output_tokens"], 3621)
+        self.assertEqual(usage["cache_read_tokens"], 9322)
+        self.assertIsNone(usage["cache_write_tokens"])
+
+    def test_veasel_cli_usage_ignores_untrusted_or_invalid_counters(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            stdout = Path(temp_dir) / "stdout.log"
+            stdout.write_text(json.dumps({
+                "session_usage_reported": True,
+                "session_input_tokens": True,
+                "session_output_tokens": -1,
+            }))
+            usage = runner.veasel_cli_usage_summary(stdout)
+        self.assertFalse(usage["reported"])
+        self.assertIsNone(usage["input_tokens"])
+        self.assertIsNone(usage["output_tokens"])
+
     def test_opencode_usage_sums_only_step_finish_events(self):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             stdout = Path(temp_dir) / "stdout.log"
@@ -283,9 +319,14 @@ class RemoteCasePinTests(unittest.TestCase):
                     runner.preflight(case_path, root, "unused", root / "state", approved_spend_usd="5")
 
     def test_exact_reviewed_remote_case_matches_fixed_model_rate_and_budget_pins(self):
-        path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
-        case, _prompt, _digest = runner.load_case(path)
-        self.assertEqual(runner.validate_remote_case_pin(path, case), runner.REMOTE_CASE_SHA256)
+        for version in ("v0795", "v0798"):
+            with self.subTest(version=version):
+                path = SCRIPT.parent / f"cases/website-173-muse-spark-{version}/case.json"
+                case, _prompt, _digest = runner.load_case(path)
+                self.assertEqual(
+                    runner.validate_remote_case_pin(path, case),
+                    runner.REMOTE_CASE_SHA256S[case["id"]],
+                )
 
 
 class PreflightTests(unittest.TestCase):

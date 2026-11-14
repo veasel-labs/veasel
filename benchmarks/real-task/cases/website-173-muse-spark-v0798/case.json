@@ -1,0 +1,65 @@
+{
+  "schema": "veasel.real-task-case.v1",
+  "id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.8",
+  "repository": "https://github.com/veasel-labs/website.git",
+  "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_file": "prompt.md",
+  "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+  "model": {
+    "provider": "meta",
+    "name": "muse-spark-1.3-contributor",
+    "context_tokens": 8192,
+    "output_tokens": 2048
+  },
+  "provider_config": {
+    "mode": "veasel-profile",
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "base_url": "https://api.meta.ai/v1",
+    "credential": "saved-profile"
+  },
+  "runtime": {
+    "veasel_version": "Veasel Code 0.79.8-next.0",
+    "veasel_binary_sha256": "78164aaf24db5f33c9059db5398aa9af6efe13831bca55c6c92f067f4245fffe",
+    "opencode_shell_sandbox_sha256": "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
+  },
+  "permissions": {
+    "edit": "autonomous inside a disposable Bubblewrap sandbox",
+    "shell": "autonomous inside a disposable Bubblewrap sandbox",
+    "mcp": "disabled",
+    "tool_allowlist": [
+      "read",
+      "edit",
+      "glob",
+      "grep",
+      "list",
+      "shell"
+    ],
+    "web": false,
+    "subagents": false
+  },
+  "budgets": {
+    "wall_seconds": 330,
+    "minimum_startup_available_memory_bytes": 5368709120,
+    "minimum_available_memory_bytes": 4831838208,
+    "minimum_free_swap_bytes": 0
+  },
+  "cost_budget": {
+    "max_cost_usd": 0.11,
+    "input_usd_per_million_tokens": 0.1,
+    "cached_input_usd_per_million_tokens": 0.002,
+    "output_usd_per_million_tokens": 0.2,
+    "max_model_requests": 84,
+    "max_request_body_bytes": 32768,
+    "request_cap_basis": "Veasel and OpenCode are each limited to 84 generation attempts. Before every OpenCode inference, the proxy calls Meta POST /v1/responses/input_tokens with the exact supported input, instructions, and function tools; it fails closed above 8192 context tokens. The proxy atomically reserves 8192 uncached input tokens plus 2048 output tokens per inference at pinned rates, settles from final response usage, and retains the full reservation on ambiguity. Hosted tools, server-managed history, media, and unknown payload shapes are rejected. Worst-case OpenCode generation cost is USD 0.10321920 under the USD 0.11 case ceiling. The token-count endpoint validates context fit and is not treated as a billing estimate.",
+    "worst_case_cost_note": "Each client-side generation attempt reserves the pinned context input ceiling at the uncached rate and the full output cap. The cap assumes one non-hosted model generation per POST and provider enforcement of context and max_output_tokens. Missing usage retains the reservation and blocks further generations."
+  },
+  "oracle": "Externally compare the patch with the merged website#173 change, run the repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior. A completed model turn alone is not success.",
+  "comparators": {
+    "opencode_version": "opencode v2.2.7",
+    "opencode_binary_sha256": "0fcb4a3248b4485feea193ceba9ba233a812790abe679aa4221d4b0820bb06cb",
+    "opencode_model": "museproxy/muse-spark-1.3-contributor",
+    "opencode_agent": "build",
+    "opencode_auto_approve": true
+  }
+}

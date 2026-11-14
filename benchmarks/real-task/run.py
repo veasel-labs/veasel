@@ -48,7 +48,12 @@ IMPORTED_PRIOR_SPEND_NOTE = (
 )
 OPEN_CODE_SHELL_WRAPPER = ROOT / "opencode-shell-sandbox.sh"
 OPEN_CODE_SHELL_WRAPPER_SHA256 = "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
-REMOTE_CASE_SHA256 = "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af"
+REMOTE_CASE_SHA256S = {
+    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5":
+        "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af",
+    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.8":
+        "eec274a8a5cc71f6e03c50c2f449b59baaa0abe97cdd9c5f08d3f74bdb3e09c7",
+}
 REMOTE_CASE_MODEL = "muse-spark-1.3-contributor"
 REMOTE_CASE_PROVIDER = "meta"
 REMOTE_CASE_BASE_URL = "https://api.meta.ai/v1"
@@ -71,8 +76,8 @@ def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | Non
         disk_case = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("remote benchmark case is not valid pinned JSON") from exc
+    approved_digest = REMOTE_CASE_SHA256S.get(disk_case.get("id"))
     expected = {
-        "id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5",
         "model": {
             "provider": REMOTE_CASE_PROVIDER,
             "name": REMOTE_CASE_MODEL,
@@ -92,7 +97,7 @@ def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | Non
             "max_request_body_bytes": REMOTE_CASE_MAX_BODY_BYTES,
         },
     }
-    if digest != REMOTE_CASE_SHA256 or disk_case != case:
+    if approved_digest != digest or disk_case != case:
         raise ValueError("remote benchmark case hash is not in the reviewed allowlist")
     for key, value in expected.items():
         actual = disk_case.get(key)
@@ -271,18 +276,15 @@ def provider_reported_usage(agent: str, trace_path: Path, stdout_path: Path) -> 
         try:
             trajectory = json.loads(trace_path.read_text())
         except (OSError, json.JSONDecodeError):
-            return {"reported": False, "source": source, "trace_step_count": None,
-                    "reported_agent_cost_usd": None, **fields}
+            return veasel_cli_usage_summary(stdout_path)
         if not isinstance(trajectory, dict):
-            return {"reported": False, "source": source, "trace_step_count": None,
-                    "reported_agent_cost_usd": None, **fields}
+            return veasel_cli_usage_summary(stdout_path)
         extra = trajectory.get("extra", {})
         extra = extra if isinstance(extra, dict) else {}
         steps = trajectory.get("steps", [])
         step_count = len(steps) if isinstance(steps, list) else None
         if extra.get("token_usage") != "reported":
-            return {"reported": False, "source": source, "trace_step_count": step_count,
-                    "reported_agent_cost_usd": None, **fields}
+            return veasel_cli_usage_summary(stdout_path, step_count)
         metrics = trajectory.get("final_metrics", {})
         metrics = metrics if isinstance(metrics, dict) else {}
         values = {
@@ -346,6 +348,61 @@ def provider_reported_usage(agent: str, trace_path: Path, stdout_path: Path) -> 
         "usage_event_count": step_count,
         "reported_agent_cost_usd": reported_agent_cost_usd,
         "cost_note": "OpenCode-reported cost; local-model zero may mean no configured price",
+        **fields,
+    }
+
+
+def veasel_cli_usage_summary(stdout_path: Path, trace_step_count: int | None = None) -> dict[str, Any]:
+    """Use Veasel's final JSON usage summary when the ATIF trajectory was not persisted."""
+    fields = {
+        "input_tokens": None,
+        "output_tokens": None,
+        "reasoning_tokens": None,
+        "cache_read_tokens": None,
+        "cache_write_tokens": None,
+    }
+    summary: dict[str, Any] | None = None
+    try:
+        with stdout_path.open(errors="replace") as stdout:
+            for line in stdout:
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(value, dict) and value.get("session_usage_reported") is True:
+                    summary = value
+    except OSError:
+        pass
+
+    if summary is None:
+        return {
+            "reported": False,
+            "source": "veasel_cli_session_summary",
+            "trace_step_count": trace_step_count,
+            "reported_turn_count": None,
+            "reported_agent_cost_usd": None,
+            "cost_note": "Veasel CLI reported no session usage summary",
+            **fields,
+        }
+
+    keys = {
+        "input_tokens": "session_input_tokens",
+        "output_tokens": "session_output_tokens",
+        "reasoning_tokens": "session_reasoning_tokens",
+        "cache_read_tokens": "session_cache_read_tokens",
+        "cache_write_tokens": "session_cache_write_tokens",
+    }
+    for field, key in keys.items():
+        value = summary.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            fields[field] = value
+    return {
+        "reported": fields["input_tokens"] is not None or fields["output_tokens"] is not None,
+        "source": "veasel_cli_session_summary",
+        "trace_step_count": trace_step_count,
+        "reported_turn_count": summary.get("session_reported_turns"),
+        "reported_agent_cost_usd": None,
+        "cost_note": "Veasel CLI session token counters; cost must be estimated from pinned rates",
         **fields,
     }
 

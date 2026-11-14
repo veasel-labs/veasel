@@ -843,6 +843,7 @@ class PreflightTests(unittest.TestCase):
             with patch.dict(runner.os.environ, {"ANTHROPIC_API_KEY": "test-secret"}):
                 with (patch.object(runner, "create_task_clone", return_value=workspace),
                       patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
+                      patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
                       patch.object(runner.subprocess, "Popen", return_value=process) as popen):
                     self.assertEqual(runner.run_case(args), 0)
             launched_command = popen.call_args.args[0]

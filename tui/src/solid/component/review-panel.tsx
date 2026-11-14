@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid"
-import type { DiffRenderable, KeyEvent } from "@opentui/core"
+import type { DiffRenderable, KeyEvent, ScrollBoxRenderable } from "@opentui/core"
 import {
   moveActiveReviewIndex,
   reviewHotkey,
@@ -89,6 +89,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
   const [selectedKeys, setSelectedKeys] = createSignal<Set<string>>(new Set())
   const [diffSurface, setDiffSurface] = createSignal<ReviewDiffSurface>("segments")
   const [syntaxStyle, setSyntaxStyle] = createSignal<ReturnType<typeof createDiffSyntaxStyle>>()
+  let bodyScroll: ScrollBoxRenderable | undefined
   createEffect(() => {
     if (diffSurface() !== "split") return
     // In OpenTUI 0.7, CodeRenderable can attempt syntax highlighting before
@@ -197,6 +198,10 @@ export function ReviewPanel(props: ReviewPanelProps) {
   })
 
   const bodySegments = createMemo(() => noticeSegments(bodyText(), { cols: dimensions().width }))
+  const bodyViewportHeight = () => dimensions().height <= 12
+    ? Math.max(4, dimensions().height - 8)
+    : Math.max(8, dimensions().height - 14)
+  const bodyPageStep = () => Math.max(1, bodyViewportHeight() - 1)
 
   const diffTheme = () => diffRenderableTheme(colors)
 
@@ -227,6 +232,29 @@ export function ReviewPanel(props: ReviewPanelProps) {
   }
 
   useKeyboard((key: KeyEvent) => {
+    // Shell/MCP bodies use the native scrollbox. Preserve the patch diff's
+    // existing PageUp/PageDown behavior instead of intercepting those keys.
+    const bodyCanPage = current()?.kind !== "patch"
+    if (bodyCanPage && key.name === "pageup") {
+      key.preventDefault()
+      bodyScroll?.scrollBy(-bodyPageStep())
+      return
+    }
+    if (bodyCanPage && key.name === "pagedown") {
+      key.preventDefault()
+      bodyScroll?.scrollBy(bodyPageStep())
+      return
+    }
+    if (bodyCanPage && key.name === "home") {
+      key.preventDefault()
+      bodyScroll?.scrollTo(0)
+      return
+    }
+    if (bodyCanPage && key.name === "end") {
+      key.preventDefault()
+      bodyScroll?.scrollTo(Number.MAX_SAFE_INTEGER)
+      return
+    }
     // Toggle closed with the same chord that opened the panel.
     if (key.ctrl && key.name === reviewShortcut.name && !key.meta) {
       key.preventDefault()
@@ -334,7 +362,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
               {(hint) => (
                 <text fg={colors.muted} minHeight={1} wrapMode="none">
                   {dimensions().width < 44 && current()?.kind === "command"
-                    ? "a approve · x reject"
+                    ? "PgUp/Dn a approve x reject"
                     : current()?.kind === "patch"
                     ? `a approve · x reject · A/X · Space · ]/[ · {/} · ${diffSurface() === "split" ? "v word-diff" : "v split view"}`
                     : hint()}
@@ -348,12 +376,11 @@ export function ReviewPanel(props: ReviewPanelProps) {
               when={item().kind === "patch" && diffSurface() === "split"}
               fallback={
                 <scrollbox
+                  ref={(next: ScrollBoxRenderable) => { bodyScroll = next }}
                   width="100%"
                   flexGrow={1}
                   stickyScroll={false}
-                  maxHeight={dimensions().height <= 12
-                    ? Math.max(4, dimensions().height - 8)
-                    : Math.max(8, dimensions().height - 14)}
+                  maxHeight={bodyViewportHeight()}
                 >
                   <text>
                     <For each={bodySegments()}>{(segment) => <SegmentSpan segment={segment} />}</For>

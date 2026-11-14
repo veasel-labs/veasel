@@ -65,6 +65,56 @@ describe("Solid review panel", () => {
     expect(setup.captureCharFrame()).toContain("Hunk 2/2")
   })
 
+  test("a short terminal can page through the complete shell approval payload", async () => {
+    const command = [
+      "HEAD_APPROVAL_PAYLOAD",
+      ...Array.from({ length: 18 }, (_, index) => `step_${index + 1}: echo reviewed`),
+      "TAIL_APPROVAL_PAYLOAD",
+    ].join("\n")
+    const setup = await testRender(
+      () => <App initialMessages={[]} initialReviews={[{
+        kind: "command",
+        id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        pending: true,
+        command,
+        cwd: "/tmp",
+        timeoutSeconds: 30,
+        runner: "shell",
+        sandbox: {
+          mode: "auto",
+          will_wrap: true,
+          backend: "bubblewrap",
+          network: "deny",
+        },
+      }]} />,
+      { width: 32, height: 12, kittyKeyboard: true },
+    )
+    setups.push(setup)
+    await setup.renderOnce()
+
+    setup.mockInput.pressKey("r", { ctrl: true })
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("PgUp/Dn")
+    expect(setup.captureCharFrame()).toContain("HEAD_APPROVAL")
+
+    // The mock key helper maps printable names to text. Send kitty keyboard
+    // protocol codes here so the test exercises terminal PageDown/PageUp keys.
+    let reachedTail = false
+    for (let page = 0; page < 8; page++) {
+      setup.mockInput.pressKeys(["\u001b[57355u"])
+      await setup.renderOnce()
+      reachedTail ||= setup.captureCharFrame().includes("TAIL_APPROVAL")
+    }
+    expect(reachedTail).toBe(true)
+
+    for (let page = 0; page < 8; page++) {
+      setup.mockInput.pressKeys(["\u001b[57354u"])
+      await setup.renderOnce()
+    }
+    expect(setup.captureCharFrame()).toContain("HEAD_APPROVAL")
+    expect(setup.captureCharFrame()).toContain("a approve")
+  })
+
   test("a approves the current review and advances the queue", async () => {
     const decided: Array<{ decision: ReviewDecision; targets: ActiveReview[] }> = []
     const setup = await testRender(

@@ -25,8 +25,13 @@ const agent_code_change_system_instruction = 'For an explicit code-change reques
 const agent_code_change_exploration_nudge_after = 4
 const max_agent_code_change_followthrough_retries = 2
 const max_agent_code_change_acceptance_review_rounds = 3
+// Acceptance review needs room to inspect an applied diff and verification
+// output. Those tool-bearing review calls must not consume the ordinary tool
+// round budget before the model can return a terminal acceptance result.
+const max_agent_code_change_acceptance_review_tool_rounds = 12
 const max_agent_code_change_acceptance_diff_bytes = 96_000
-const max_agent_turn_rounds = max_agent_tool_rounds + max_agent_code_change_acceptance_review_rounds
+const max_agent_base_turn_rounds = max_agent_tool_rounds + max_agent_code_change_acceptance_review_rounds
+const max_agent_turn_rounds = max_agent_base_turn_rounds + max_agent_code_change_acceptance_review_tool_rounds + max_agent_code_change_acceptance_review_rounds
 const max_agent_code_change_edit_recovery_attempts = 1
 const max_agent_tool_result_bytes = 1_000_000
 const max_agent_tool_argument_bytes = max_workspace_edit_bytes + 4_096
@@ -208,6 +213,22 @@ fn agent_final_response_for_acceptance_review(content string, review_started boo
 		return 'The requested changes passed the acceptance review.'
 	}
 	return lines[..lines.len - 1].join('\n').trim_space()
+}
+
+fn agent_acceptance_review_incomplete_completion(output CompletionOutput, reason string) CompletionOutput {
+	return CompletionOutput{
+		provider: output.provider
+		model:    output.model
+		content:  agent_incomplete_code_change_response(true, reason)
+		usage:    output.usage
+	}
+}
+
+fn agent_incomplete_code_change_response(review_started bool, reason string) string {
+	if review_started {
+		return agent_final_response_for_acceptance_review(reason, true, false)
+	}
+	return 'The requested code change was applied, but ${reason} This task is not complete.'
 }
 
 fn agent_content_has_terminal_acceptance_marker(content string) bool {
@@ -1161,6 +1182,7 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 	mut applied_workspace_diffs := []string{}
 	mut acceptance_review_started := false
 	mut acceptance_review_responses := 0
+	mut acceptance_review_tool_rounds := 0
 	mut read_only_tool_calls := 0
 	mut exploration_nudged := false
 	for round in 0 .. max_agent_turn_rounds {
@@ -1222,27 +1244,58 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 		if acceptance_review_started {
 			acceptance_review_responses = agent_code_change_acceptance_review_response_count(acceptance_review_responses, output.tool_calls.len)
 		}
+		if acceptance_review_started && output.tool_calls.len > 0 {
+			review_tool_limit_reached := round >= max_agent_base_turn_rounds
+				&& acceptance_review_tool_rounds >= max_agent_code_change_acceptance_review_tool_rounds
+			if review_tool_limit_reached
+				|| round >= max_agent_turn_rounds - max_agent_code_change_acceptance_review_rounds {
+				incomplete := agent_acceptance_review_incomplete_completion(output,
+					'Acceptance review reached its bounded tool follow-up limit.')
+				on_text_delta(incomplete.content)!
+				if collect_trace {
+					trace_steps << ATIFStep{
+						step_id:    trace_steps.len + 1
+						source:     'agent'
+						model_name: incomplete.model
+						message:    incomplete.content
+					}
+				}
+				return AgentTraceResult{
+					output: incomplete
+					steps:  trace_steps
+					usage:  trace_usage
+				}
+			}
+			if round >= max_agent_base_turn_rounds {
+				acceptance_review_tool_rounds++
+			}
+		}
 		if output.tool_calls.len > 0
-			&& (round == max_agent_turn_rounds - 1 && code_change_request
+			&& ((round == max_agent_turn_rounds - 1 || (round == max_agent_base_turn_rounds - 1
+				&& !acceptance_review_started)) && code_change_request
 				&& applied_workspace_diffs.len > 0) {
-			incomplete := agent_final_response_for_acceptance_review('Acceptance review reached its bounded follow-up limit before confirming completion.',
-				true, false)
-			on_text_delta(incomplete)!
+			reason := if acceptance_review_started {
+				'Acceptance review reached its bounded follow-up limit before confirming completion.'
+			} else {
+				'The bounded tool follow-through budget was exhausted before completion could be confirmed.'
+			}
+			incomplete := CompletionOutput{
+				provider: output.provider
+				model:    output.model
+				content:  agent_incomplete_code_change_response(acceptance_review_started, reason)
+				usage:    output.usage
+			}
+			on_text_delta(incomplete.content)!
 			if collect_trace {
 				trace_steps << ATIFStep{
 					step_id:    trace_steps.len + 1
 					source:     'agent'
-					model_name: output.model
-					message:    incomplete
+					model_name: incomplete.model
+					message:    incomplete.content
 				}
 			}
 			return AgentTraceResult{
-				output: CompletionOutput{
-					provider: output.provider
-					model:    output.model
-					content:  incomplete
-					usage:    output.usage
-				}
+				output: incomplete
 				steps:  trace_steps
 				usage:  trace_usage
 			}
@@ -1378,7 +1431,8 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 				on_text_delta, mut trace_steps, mut trace_usage, collect_trace, request_deadline,
 				provider_pool, model_config_override)
 		}
-		if round == max_agent_turn_rounds - 1 {
+		if round == max_agent_turn_rounds - 1
+			|| (round == max_agent_base_turn_rounds - 1 && !acceptance_review_started) {
 			if buffer_provider_text && buffered_text.len > 0 {
 				on_text_delta(buffered_text)!
 			}

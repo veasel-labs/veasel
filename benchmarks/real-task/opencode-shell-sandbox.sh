@@ -83,7 +83,7 @@ esac
 # provider/proxy credentials. They must never reach the child command or its
 # isolated /proc. The untrusted command remains a distinct argv element.
 exec /usr/bin/env -i \
-	PATH=/usr/local/bin:/usr/bin:/bin \
+	PATH=/usr/bin:/bin \
 	HOME=/root \
 	LANG=C \
 	TERM=dumb \
@@ -91,7 +91,16 @@ exec /usr/bin/env -i \
 	--unshare-all \
 	--die-with-parent \
 	--new-session \
-	--ro-bind / / \
+	--dir /usr \
+	--ro-bind /usr/bin /usr/bin \
+	--ro-bind /usr/lib /usr/lib \
+	--dir /usr/share \
+	--dir /usr/share/git-core \
+	--ro-bind-try /usr/share/git-core/templates /usr/share/git-core/templates \
+	--symlink usr/bin /bin \
+	--symlink usr/bin /sbin \
+	--symlink usr/lib /lib \
+	--symlink usr/lib /lib64 \
 	--proc /proc \
 	--dev /dev \
 	--tmpfs /tmp \
@@ -104,7 +113,7 @@ exec /usr/bin/env -i \
 	--bind "$task_root" /tmp/workspace \
 	--chdir "/tmp/workspace${relative_cwd:+/$relative_cwd}" \
 	--clearenv \
-	--setenv PATH /usr/local/bin:/usr/bin:/bin \
+	--setenv PATH /usr/bin:/bin \
 	--setenv HOME /root \
 	--setenv TMPDIR /root/tmp \
 	--setenv LANG C \

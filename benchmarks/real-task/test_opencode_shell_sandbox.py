@@ -26,6 +26,7 @@ SECRET_KEYS = (
     "VEASEL_MODEL_API_KEY",
 )
 INVALID_ROOT_PROBE = shutil.which("true") or "/usr/bin/true"
+HOST_FILESYSTEM_CANARY = Path("/etc/hostname")
 
 
 @contextlib.contextmanager
@@ -238,9 +239,42 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
             outside_sentinel.unlink()
 
     @unittest.skipUnless(platform.system() == "Linux" and shutil.which("bwrap"), "requires Linux bubblewrap")
+    def test_minimal_runtime_supports_git_and_installed_language_runtimes(self):
+        with persistent_workspace() as (workspace_parent, workspace):
+            command = r'''set -eu
+git --version >/dev/null
+git -c init.defaultBranch=main init -q .
+git status --short >/dev/null
+if [ -x /usr/bin/python3 ]; then python3 -c 'assert 1 + 1 == 2'; fi
+if [ -x /usr/bin/node ]; then node --eval 'if (1 + 1 !== 2) process.exit(1)'; fi
+if [ -x /usr/bin/npm ]; then npm --version >/dev/null; fi
+printf runtime-ok
+'''
+            result = subprocess.run(
+                [str(LAUNCHER), "-c", command],
+                cwd=workspace,
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "VEASEL_REAL_TASK_ROOT": str(workspace),
+                    "VEASEL_REAL_TASK_PARENT": str(workspace_parent),
+                    "VEASEL_BWRAP": shutil.which("bwrap") or "",
+                },
+                text=True,
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, "runtime-ok")
+
+    @unittest.skipUnless(platform.system() == "Linux" and shutil.which("bwrap"), "requires Linux bubblewrap")
     def test_tool_process_cannot_read_proxy_token_or_reach_loopback_proxy(self):
         if not Path("/proc").is_dir():
             self.skipTest("requires Linux procfs")
+        if not Path("/usr/bin/python3").is_file():
+            self.skipTest("requires /usr/bin/python3 in the reviewed runtime allowlist")
+        self.assertTrue(HOST_FILESYSTEM_CANARY.is_file())
+        self.assertTrue(HOST_FILESYSTEM_CANARY.read_bytes())
         with persistent_workspace() as (workspace_parent, workspace):
             nested = workspace / "src"
             nested.mkdir(parents=True)
@@ -278,9 +312,15 @@ with open("/proc/net/route") as routes:
     assert all(line.split()[1] != "00000000" for line in routes.readlines()[1:])
 assert os.getcwd() == "/tmp/workspace/src", os.getcwd()
 open("child-result.txt", "w").write("isolated-write-ok")
-assert os.statvfs("/etc").f_flag & os.ST_RDONLY, "host root filesystem is writable"
+try:
+    with open("/etc/hostname", "rb") as canary:
+        canary.read()
+except OSError:
+    pass
+else:
+    raise SystemExit("isolated shell read the host filesystem canary")
 '''.replace("PORT", str(port))
-            command = f'{Path(sys.executable).resolve()} -c {shlex.quote(python_probe)}'
+            command = f'/usr/bin/python3 -c {shlex.quote(python_probe)}'
             env = dict(os.environ)
             env.update({key: SECRET for key in SECRET_KEYS})
             env["VEASEL_REAL_TASK_ROOT"] = str(workspace)

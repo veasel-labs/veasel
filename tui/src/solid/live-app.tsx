@@ -715,6 +715,7 @@ function LiveAppShell(props: LiveAppProps) {
     target?: { kind: ActiveReviewKind; id: string },
     automatic = false,
   ) => {
+    if (automatic && explicitReviewOpenPending) return
     const sessionId = activeSessionId()
     if (!sessionId) {
       toast.info("Open a session to review pending proposals", "Reviews")
@@ -722,15 +723,16 @@ function LiveAppShell(props: LiveAppProps) {
     }
     if (!automatic) setComposerFocused(false)
     const openRevision = ++pendingReviewOpenRevision
+    if (!automatic) explicitReviewOpenPending = true
     const inventoryRevision = pendingReviewRevision
     try {
-      const reviews = await loadPendingSolidReviews(props.api, sessionId)
+      let reviews = await loadPendingSolidReviews(props.api, sessionId)
       if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
       if (automatic && dialog.open()) return
       if (inventoryRevision !== pendingReviewRevision) {
-        toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
-        setComposerFocused(true)
-        return
+        if (automatic) return
+        reviews = await loadPendingSolidReviews(props.api, sessionId)
+        if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
       }
       setPendingReviewItems(reviews)
       setPendingReviewSessionId(sessionId)
@@ -786,6 +788,10 @@ function LiveAppShell(props: LiveAppProps) {
         setPendingReviewInventoryError(true)
         toast.info(pendingReviewInventoryFailureNotice(), "Reviews")
         setComposerFocused(true)
+      }
+    } finally {
+      if (!automatic && openRevision === pendingReviewOpenRevision) {
+        explicitReviewOpenPending = false
       }
     }
   }
@@ -1033,8 +1039,9 @@ function LiveAppShell(props: LiveAppProps) {
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
   let pendingReviewRevision = 0
   let pendingReviewOpenRevision = 0
+  let explicitReviewOpenPending = false
   const knownPendingReviewIds = new Map<string, Set<string>>()
-  const turnPendingReviewBaselines = new Map<string, Set<string>>()
+  const turnPendingReviewBaselines = new Map<string, Set<string> | null>()
   const refreshPendingReviews = async (sessionId = activeSessionId(), detectNew = false) => {
     // Background completions must not invalidate a pending refresh for the
     // currently focused tab.
@@ -1056,9 +1063,14 @@ function LiveAppShell(props: LiveAppProps) {
       const items = await loadPendingSolidReviews(props.api, sessionId)
       if (revision !== pendingReviewRevision || sessionId !== activeSessionId()) return undefined
       const previousIds = knownPendingReviewIds.get(sessionId)
-      const baseline = detectNew ? turnPendingReviewBaselines.get(sessionId) ?? previousIds : undefined
-      const newReview = baseline
-        ? items.find((item) => !baseline.has(`${item.kind}:${item.id}`))
+      const hasTurnBaseline = turnPendingReviewBaselines.has(sessionId)
+      const baseline = detectNew
+        ? (hasTurnBaseline ? turnPendingReviewBaselines.get(sessionId) : previousIds)
+        : undefined
+      const newReview = detectNew
+        ? baseline
+          ? items.find((item) => !baseline.has(`${item.kind}:${item.id}`))
+          : items[0]
         : undefined
       knownPendingReviewIds.set(sessionId, new Set(items.map((item) => `${item.kind}:${item.id}`)))
       setPendingReviewItems(items)
@@ -2004,13 +2016,10 @@ function LiveAppShell(props: LiveAppProps) {
       }
       return
     }
-    if (!knownPendingReviewIds.has(sessionId)) {
-      await refreshPendingReviews(sessionId)
-    }
     const operationId = crypto.randomUUID()
     const knownReviews = knownPendingReviewIds.get(sessionId)
     if (knownReviews) turnPendingReviewBaselines.set(sessionId, new Set(knownReviews))
-    else turnPendingReviewBaselines.delete(sessionId)
+    else turnPendingReviewBaselines.set(sessionId, null)
     streamDeltaBatch.clear()
     setSending(true)
     setActiveTurnId(operationId)

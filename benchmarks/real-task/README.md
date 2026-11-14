@@ -195,14 +195,19 @@ complete usage is available; interrupted runs and ambiguous usage keep their
 full reservation across restarts. The ledger reports the imported uncertainty.
 
 `test_opencode_responses_fixture.py` optionally drives the pinned OpenCode CLI
-through the proxy into a deterministic local Responses fixture. It proves the
-actual endpoint, model, streaming protocol, usage parsing, and credential
-replacement without contacting Meta. This fixture is not real-model success.
-The real run remains blocked until both the reviewed operator wrapper proves
-that OpenCode shell tools cannot read the proxy token, reach the proxy directly,
-or bypass it to contact Meta, and the input billing bound is validated. The
-runner's current preflight fails these gates by design; do not remove them to
-force a live run.
+through the proxy into a deterministic local Responses fixture. The local suite
+also exercises the real Bubblewrap shell launcher and verifies that tool
+commands cannot read the proxy token or reach the loopback proxy. Together these
+tests cover endpoint/model routing, streaming, usage parsing, credential
+replacement, and the shell boundary without contacting Meta; they are not
+real-model success and do not validate Meta's live billing behavior. The live
+run still requires the separately reviewed outer isolation wrapper, a passing
+no-network preflight, and sufficient host memory for the paired Veasel attempt.
+The configured per-generation reservation is USD 0.00122880 (8,192 input and
+2,048 output tokens at the pinned uncached rates); 84 requests reserve at most
+USD 0.10321920 under the USD 0.11 case ceiling. This is a conservative bound
+assuming Meta enforces the context and output limits described above, not an
+invoice guarantee. Do not remove preflight gates to force a live run.
 
 ## Current quality scoreboard
 

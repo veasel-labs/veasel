@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import platform
+import secrets
 import shutil
 import signal
 import socket
@@ -20,6 +21,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+
+from responses_proxy import BudgetProxy
 
 
 ROOT = Path(__file__).resolve().parent
@@ -430,6 +433,40 @@ def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[
         return report, checks
 
 
+def responses_proxy_budget(case: dict[str, Any]) -> dict[str, Any]:
+    """Derive an upstream attempt cap from the proxy's byte and output limits."""
+    budget = case["cost_budget"]
+    max_body_bytes = budget["max_request_body_bytes"]
+    configured_attempts = budget["max_model_requests"]
+    context_tokens = case["model"]["context_tokens"]
+    output_tokens = case["model"]["output_tokens"]
+    input_rate = Decimal(str(budget["input_usd_per_million_tokens"]))
+    output_rate = Decimal(str(budget["output_usd_per_million_tokens"]))
+    ceiling = Decimal(str(budget["max_cost_usd"]))
+    if any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in
+           (max_body_bytes, configured_attempts, context_tokens, output_tokens)):
+        raise ValueError("Responses proxy token, body, and attempt limits must be positive integers")
+    if max_body_bytes < context_tokens:
+        raise ValueError("Responses body cap must cover the configured input context")
+    per_attempt = (Decimal(max_body_bytes) * input_rate + Decimal(output_tokens) * output_rate) / Decimal(1_000_000)
+    if per_attempt <= 0 or ceiling <= 0:
+        raise ValueError("Responses proxy cost rates and ceiling must be positive")
+    cost_attempt_limit = int(ceiling // per_attempt)
+    attempt_limit = min(configured_attempts, cost_attempt_limit)
+    if attempt_limit <= 0:
+        raise ValueError("Responses proxy cost ceiling cannot fund one bounded request")
+    return {
+        "max_request_body_bytes": max_body_bytes,
+        "max_input_tokens_per_attempt": max_body_bytes,
+        "max_output_tokens_per_attempt": output_tokens,
+        "configured_attempt_limit": configured_attempts,
+        "upstream_attempt_limit": attempt_limit,
+        "estimated_cost_usd": str((per_attempt * attempt_limit).quantize(Decimal("0.00000001"))),
+        "max_cost_usd": str(ceiling),
+        "cost_basis": "estimate only: serialized request-body bytes are treated as uncached input tokens and every attempt uses the full output cap; provider-side framing/tokenization is not bounded",
+    }
+
+
 def safe_endpoint(value: Any) -> bool:
     """Accept HTTP(S) endpoints without URL-carried credentials or query secrets."""
     if not isinstance(value, str) or not value or any(ord(char) < 0x20 for char in value):
@@ -517,7 +554,7 @@ def binary_sha256(binary: str) -> str | None:
         return None
 
 
-def open_code_config(case: dict[str, Any]) -> dict[str, Any]:
+def open_code_config(case: dict[str, Any], responses_base_url: str | None = None) -> dict[str, Any]:
     model_name = case["model"]["name"]
     model_id = case["comparators"]["opencode_model"]
     permissions = [{"action": "*", "resource": "*", "effect": "deny"}]
@@ -526,17 +563,56 @@ def open_code_config(case: dict[str, Any]) -> dict[str, Any]:
         for action in case["permissions"]["tool_allowlist"]
     )
     permissions.append({"action": "external_directory", "resource": "*", "effect": "deny"})
+    provider = case["model"].get("provider")
+    if provider == "ollama":
+        config = {
+            "$schema": "https://opencode.ai/config.json",
+            "model": model_id,
+            "providers": {
+                "ollama": {
+                    "settings": {"baseURL": case["provider_config"]["base_url"]},
+                    "models": {
+                        model_name: {
+                            "name": model_name,
+                            "limit": {
+                                "context": case["model"]["context_tokens"],
+                                "output": case["model"]["output_tokens"],
+                            },
+                        },
+                    },
+                },
+            },
+            "agents": {"build": {"permissions": permissions}},
+        }
+        if config["model"] != f"ollama/{model_name}":
+            raise ValueError("OpenCode model ID must point to the pinned local Ollama model")
+        return config
+    if not responses_base_url:
+        responses_base_url = "http://127.0.0.1:1/v1"
+    if not safe_endpoint(responses_base_url) or urlsplit(responses_base_url).hostname not in {
+        "127.0.0.1", "localhost", "::1",
+    }:
+        raise ValueError("Responses provider must use a loopback budget proxy")
     config = {
         "$schema": "https://opencode.ai/config.json",
         "model": model_id,
         "providers": {
-            "ollama": {
-                "settings": {"baseURL": case["provider_config"]["base_url"]},
+            "museproxy": {
+                "name": "Muse (budget proxy)",
+                "env": ["VEASEL_BENCHMARK_PROXY_KEY"],
+                "package": "@opencode/ai/providers/openai-compatible/responses",
+                "settings": {
+                    "baseURL": responses_base_url,
+                    "encoding": "none",
+                    "timeout": 300000,
+                },
                 "models": {
                     model_name: {
                         "name": model_name,
+                        "modelID": model_name,
                         "limit": {
                             "context": case["model"]["context_tokens"],
+                            "input": case["model"]["context_tokens"],
                             "output": case["model"]["output_tokens"],
                         },
                     },
@@ -545,14 +621,15 @@ def open_code_config(case: dict[str, Any]) -> dict[str, Any]:
         },
         "agents": {"build": {"permissions": permissions}},
     }
-    if config["model"] != f"ollama/{model_name}":
-        raise ValueError("OpenCode model ID must point to the pinned local Ollama model")
+    if config["model"] != f"museproxy/{model_name}":
+        raise ValueError("OpenCode model ID must point to the pinned Responses proxy model")
     return config
 
 
-def prepare_open_code_config(case: dict[str, Any], data_dir: Path) -> Path:
+def prepare_open_code_config(case: dict[str, Any], data_dir: Path,
+                             responses_base_url: str | None = None) -> Path:
     config_path = data_dir / "benchmark-opencode.json"
-    content = json.dumps(open_code_config(case), indent=2) + "\n"
+    content = json.dumps(open_code_config(case, responses_base_url), indent=2) + "\n"
     if config_path.exists() and config_path.read_text() != content:
         raise RuntimeError(f"Refusing to overwrite a different OpenCode config: {config_path}")
     private_directory(data_dir)
@@ -721,8 +798,63 @@ def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path,
             # This records the limit explicitly: config readiness is not a
             # network probe or proof that the provider hosts the model.
             check("provider_live_readiness", True, "not_probed", "live provider/model availability is unverified")
-        else:
-            check("opencode_non_ollama_target", False, "unsupported", "Veasel configured-profile adapter")
+        elif agent == "opencode":
+            expected_version = case.get("comparators", {}).get("opencode_version")
+            expected_model_id = case.get("comparators", {}).get("opencode_model")
+            try:
+                generated_config = open_code_config(case)
+                check("opencode_responses_route", generated_config["model"] == expected_model_id
+                      and generated_config["providers"]["museproxy"]["package"]
+                      == "@opencode/ai/providers/openai-compatible/responses",
+                      {"model": generated_config["model"],
+                       "package": generated_config["providers"]["museproxy"]["package"]},
+                      {"model": expected_model_id,
+                       "package": "@opencode/ai/providers/openai-compatible/responses"})
+                config_path = data_dir / "benchmark-opencode.json"
+                expected_config_text = json.dumps(generated_config, indent=2) + "\n"
+                config_matches = not config_path.exists() or config_path.read_text() == expected_config_text
+                check("opencode_private_config", config_matches,
+                      "matched_or_absent" if config_matches else "different_config_present",
+                      "runner-generated private Responses proxy config")
+            except (KeyError, OSError, ValueError) as exc:
+                check("opencode_responses_route", False, type(exc).__name__, "pinned Responses proxy route")
+            _actual, provider_checks = configured_provider_target(case, data_dir)
+            checks.extend(provider_checks)
+            try:
+                proxy_budget = responses_proxy_budget(case)
+                check("responses_proxy_request_limits", proxy_budget["upstream_attempt_limit"] > 0
+                      and Decimal(proxy_budget["estimated_cost_usd"])
+                      <= Decimal(proxy_budget["max_cost_usd"]), proxy_budget,
+                      "bounded attempts, request bytes and output tokens; cost shown as an estimate")
+            except (KeyError, InvalidOperation, TypeError, ValueError) as exc:
+                check("responses_proxy_request_limits", False, type(exc).__name__, "bounded proxy request limits")
+            check("responses_proxy_cost_bound", False, "not_reviewed",
+                  "provider-verified billing/tokenization bound for the exact accepted Responses payload shape")
+            try:
+                project_configs = project_open_code_config_paths(workspace, revision)
+                check("opencode_project_config", not project_configs, project_configs, [])
+            except (OSError, subprocess.CalledProcessError) as exc:
+                check("opencode_project_config", False, type(exc).__name__, [])
+            managed_configs = managed_open_code_config_paths()
+            check("opencode_managed_config", not managed_configs, [str(path) for path in managed_configs], [])
+            binary = shutil.which(agent_binary)
+            if not binary:
+                check("opencode_version", False, "not_installed", expected_version)
+            else:
+                try:
+                    actual_version = open_code_version(binary)
+                    check("opencode_version", actual_version == expected_version, actual_version, expected_version)
+                    expected_hash = case.get("comparators", {}).get("opencode_binary_sha256")
+                    if expected_hash:
+                        actual_hash = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
+                        check("opencode_binary_sha256", actual_hash == expected_hash,
+                              actual_hash, expected_hash)
+                except (OSError, subprocess.CalledProcessError) as exc:
+                    check("opencode_version", False, type(exc).__name__, expected_version)
+            # This launcher's exact network/token boundary must be externally
+            # reviewed before live use; preflight never probes Meta.
+            check("responses_proxy_live_isolation", False, "not_reviewed",
+                  "reviewed wrapper denies direct egress and restricts proxy access to OpenCode")
     if is_ollama:
         expected = model["digest"]
         if ollama_target_safe:
@@ -838,69 +970,98 @@ def run_case(args: argparse.Namespace) -> int:
         env["VEASEL_ALLOW_AUTONOMOUS_EXECUTION"] = "1"
         command = build_command(args.agent, agent_binary, case, workspace, prompt, trace_path)
     else:
-        opencode_config = prepare_open_code_config(case, data_dir)
-        env["OPENCODE_CONFIG"] = str(opencode_config)
-        for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
-            env[key] = str(private_directory(data_dir / name))
-        command = build_command(args.agent, agent_binary, case, workspace, prompt, trace_path)
+        proxy: BudgetProxy | None = None
+        try:
+            if case["model"].get("provider") != "ollama":
+                upstream_key = private_profile_key(data_dir)
+                client_key = secrets.token_urlsafe(32)
+                remove_profile_key_from_disk(data_dir)
+                proxy_budget = responses_proxy_budget(case)
+                proxy = BudgetProxy(
+                    upstream_base_url=case["provider_config"]["base_url"],
+                    api_key=upstream_key,
+                    model=case["model"]["name"],
+                    max_requests=proxy_budget["upstream_attempt_limit"],
+                    context_tokens=case["model"]["context_tokens"],
+                    output_tokens=case["model"]["output_tokens"],
+                    client_api_key=client_key,
+                    max_request_body_bytes=proxy_budget["max_request_body_bytes"],
+                )
+                proxy_base_url = proxy.start()
+                env["VEASEL_BENCHMARK_PROXY_KEY"] = client_key
+            else:
+                proxy_base_url = None
+            opencode_config = prepare_open_code_config(case, data_dir, proxy_base_url)
+            env["OPENCODE_CONFIG"] = str(opencode_config)
+            for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
+                env[key] = str(private_directory(data_dir / name))
+            command = build_command(args.agent, agent_binary, case, workspace, prompt, trace_path)
+        except Exception:
+            if proxy is not None:
+                proxy.close()
+            raise
     command = wrapped_command(isolation_wrapper, command)
     started = time.monotonic()
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
     samples: list[dict[str, Any]] = []
     outcome = "completed"
-    with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
-        stdout_path.chmod(0o600)
-        stderr_path.chmod(0o600)
-        process = subprocess.Popen(command, cwd=workspace, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
-        while process.poll() is None:
-            sampled_at = time.monotonic()
-            available, swap = available_resources()
-            sample: dict[str, Any] = {
-                "elapsed_ms": int((sampled_at - started) * 1000),
-                "available_memory": available,
-                "free_swap": swap,
-            }
-            process_resources = process_tree_resources(process.pid)
-            if process_resources is not None:
-                sample["agent_process_count"] = process_resources["process_count"]
-                sample["agent_process_tree_cpu_time_ms"] = process_resources["cpu_time_ms"]
-                sample["agent_process_tree_rss_bytes"] = process_resources["rss_bytes"]
-            sample["gpu_memory_used_mib"] = gpu_memory_used_mib()
-            sample["sampling_overhead_ms"] = int((time.monotonic() - sampled_at) * 1000)
-            samples.append(sample)
-            if available < min_memory or swap < min_swap:
-                outcome = "resource_aborted"
-                try:
-                    os.killpg(process.pid, signal.SIGINT)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
+    try:
+        with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
+            stdout_path.chmod(0o600)
+            stderr_path.chmod(0o600)
+            process = subprocess.Popen(command, cwd=workspace, env=env, stdout=stdout, stderr=stderr, start_new_session=True)
+            while process.poll() is None:
+                sampled_at = time.monotonic()
+                available, swap = available_resources()
+                sample: dict[str, Any] = {
+                    "elapsed_ms": int((sampled_at - started) * 1000),
+                    "available_memory": available,
+                    "free_swap": swap,
+                }
+                process_resources = process_tree_resources(process.pid)
+                if process_resources is not None:
+                    sample["agent_process_count"] = process_resources["process_count"]
+                    sample["agent_process_tree_cpu_time_ms"] = process_resources["cpu_time_ms"]
+                    sample["agent_process_tree_rss_bytes"] = process_resources["rss_bytes"]
+                sample["gpu_memory_used_mib"] = gpu_memory_used_mib()
+                sample["sampling_overhead_ms"] = int((time.monotonic() - sampled_at) * 1000)
+                samples.append(sample)
+                if available < min_memory or swap < min_swap:
+                    outcome = "resource_aborted"
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
+                        os.killpg(process.pid, signal.SIGINT)
                     except ProcessLookupError:
                         pass
-                break
-            if time.monotonic() - started >= case["budgets"]["wall_seconds"]:
-                outcome = "timeout"
-                try:
-                    os.killpg(process.pid, signal.SIGINT)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    break
+                if time.monotonic() - started >= case["budgets"]["wall_seconds"]:
+                    outcome = "timeout"
+                    try:
+                        os.killpg(process.pid, signal.SIGINT)
                     except ProcessLookupError:
                         pass
-                break
-            sample_delay = 1 - (time.monotonic() - sampled_at)
-            if sample_delay > 0:
-                time.sleep(sample_delay)
-        return_code = process.wait()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    break
+                sample_delay = 1 - (time.monotonic() - sampled_at)
+                if sample_delay > 0:
+                    time.sleep(sample_delay)
+            return_code = process.wait()
+    finally:
+        if args.agent == "opencode" and case["model"].get("provider") != "ollama" and proxy is not None:
+            proxy.close()
     if outcome == "completed" and return_code != 0:
         outcome = "agent_error"
     usage = provider_reported_usage(args.agent, trace_path, stdout_path)
@@ -937,6 +1098,7 @@ def run_case(args: argparse.Namespace) -> int:
         "resource_samples": samples,
         "resource_measurements": resource_measurement_summary(samples),
         "provider_usage": usage,
+        "provider_proxy_metrics": proxy.metrics() if args.agent == "opencode" and case["model"].get("provider") != "ollama" else None,
         "estimated_provider_cost_usd": estimate_provider_cost(case, usage),
         "artifacts": {"trace": trace_path.name if args.agent == "veasel" else None,
                       "stdout": stdout_path.name, "stderr": stderr_path.name},

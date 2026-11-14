@@ -1,0 +1,27 @@
+{
+  "schema": "veasel.real-task-fixture-attempt.v1",
+  "case_id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5",
+  "case_sha256": "1204aa5a0b0bf1d07c141056ac17cdfa923a0ec7fba412bc2dd8d814339ddf76",
+  "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+  "agent": "opencode",
+  "agent_version": "opencode v2.2.7",
+  "agent_binary_sha256": "0fcb4a3248b4485feea193ceba9ba233a812790abe679aa4221d4b0820bb06cb",
+  "provider": "local deterministic Responses HTTP fixture",
+  "provider_called": false,
+  "provider_route": "/v1/responses",
+  "requested_model": "muse-spark-1.3-contributor",
+  "streaming": true,
+  "upstream_attempts_reserved": 1,
+  "upstream_attempt_limit": 29,
+  "max_request_body_bytes_seen": 21311,
+  "oversized_requests_rejected": 0,
+  "fixture_usage": {
+    "input_tokens": 10,
+    "output_tokens": 4,
+    "total_tokens": 14
+  },
+  "return_code": 0,
+  "wall_ms": 1646,
+  "outcome": "fixture_route_and_usage_verified",
+  "score": "not a real-model coding attempt; no task patch or oracle outcome"
+}

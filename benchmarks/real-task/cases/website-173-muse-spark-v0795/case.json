@@ -1,0 +1,65 @@
+{
+  "schema": "veasel.real-task-case.v1",
+  "id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5",
+  "repository": "https://github.com/veasel-labs/website.git",
+  "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+  "prompt_file": "prompt.md",
+  "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+  "model": {
+    "provider": "meta",
+    "name": "muse-spark-1.3-contributor",
+    "context_tokens": 8192,
+    "output_tokens": 2048
+  },
+  "provider_config": {
+    "mode": "veasel-profile",
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "base_url": "https://api.meta.ai/v1",
+    "credential": "saved-profile"
+  },
+  "runtime": {
+    "veasel_version": "Veasel Code 0.79.5-next.0",
+    "veasel_binary_sha256": "93f0726e998ee7234e0d2cc7d7019471e5c1c1202b35992a703bd7afd3233a7e"
+  },
+  "permissions": {
+    "edit": "autonomous inside a disposable Bubblewrap sandbox",
+    "shell": "autonomous inside a disposable Bubblewrap sandbox",
+    "mcp": "disabled",
+    "tool_allowlist": [
+      "read",
+      "edit",
+      "glob",
+      "grep",
+      "list",
+      "shell"
+    ],
+    "web": false,
+    "subagents": false
+  },
+  "budgets": {
+    "wall_seconds": 330,
+    "minimum_startup_available_memory_bytes": 5368709120,
+    "minimum_available_memory_bytes": 4831838208,
+    "minimum_free_swap_bytes": 0
+  },
+  "cost_budget": {
+    "max_cost_usd": 0.11,
+    "input_usd_per_million_tokens": 0.1,
+    "cached_input_usd_per_million_tokens": 0.002,
+    "output_usd_per_million_tokens": 0.2,
+    "max_model_requests": 84,
+    "max_request_body_bytes": 32768,
+    "request_cap_basis": "Veasel is limited to 84 attempts at 8192 input / 2048 output tokens. OpenCode is limited to 29 upstream attempts, 32768 serialized UTF-8 request bytes per POST, and 2048 output tokens per request. The resulting USD 0.10690560 is an estimate only; serialized bytes do not prove provider-billed input tokens because Responses framing/tokenization has not been bounded.",
+    "estimated_cost_note": "Assumes request-body bytes equal uncached input tokens and every request uses the full output cap; this assumption is not a provider-verified billing bound.",
+    "billing_bound_reviewed": false
+  },
+  "oracle": "Externally compare the patch with the merged website#173 change, run the repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior. A completed model turn alone is not success.",
+  "comparators": {
+    "opencode_version": "opencode v2.2.7",
+    "opencode_binary_sha256": "0fcb4a3248b4485feea193ceba9ba233a812790abe679aa4221d4b0820bb06cb",
+    "opencode_model": "museproxy/muse-spark-1.3-contributor",
+    "opencode_agent": "build",
+    "opencode_auto_approve": true
+  }
+}

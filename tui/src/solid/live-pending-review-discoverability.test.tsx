@@ -15,6 +15,8 @@ function reviewServer() {
     release: () => void
     started: Promise<void>
     start: () => void
+    finished: Promise<void>
+    finish: () => void
   } | undefined
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -55,6 +57,7 @@ function reviewServer() {
           deferredCommandInventory = undefined
           deferred.start()
           await deferred.gate
+          deferred.finish()
         }
         if (unavailable) return new Response("temporarily unavailable", { status: 503 })
         return Response.json(snapshot)
@@ -91,10 +94,12 @@ function reviewServer() {
     deferNextCommandInventory() {
       let release!: () => void
       let start!: () => void
+      let finish!: () => void
       const gate = new Promise<void>((resolve) => { release = resolve })
       const started = new Promise<void>((resolve) => { start = resolve })
-      deferredCommandInventory = { gate, release, started, start }
-      return { started, release }
+      const finished = new Promise<void>((resolve) => { finish = resolve })
+      deferredCommandInventory = { gate, release, started, start, finished, finish }
+      return { started, release, finished }
     },
     completeTurn() {
       if (!eventStream || !submittedOperationId) throw new Error("Turn was not submitted")
@@ -129,6 +134,9 @@ test("LiveApp exposes pending shell reviews and approves only through the review
     await until(setup, "HTML request")
     setup.mockInput.pressEnter()
     await until(setup, "Message Veasel")
+    for (let attempt = 0; attempt < 120 && !requests.includes("GET /v1/sessions/session-1/workspace/commands"); attempt++) {
+      await Bun.sleep(5)
+    }
     await setup.mockInput.typeText("Create the requested HTML file")
     setup.mockInput.pressEnter()
     for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
@@ -136,8 +144,11 @@ test("LiveApp exposes pending shell reviews and approves only through the review
     }
     expect(requests).toContain("POST /v1/sessions/session-1/messages")
     completeTurn()
-    await until(setup, "1 pending · Ctrl+R")
-    expect(setup.captureCharFrame()).toContain("Ctrl+R reviews")
+    await until(setup, "Shell command")
+    await until(setup, "/tmp/veasel-code.html")
+    expect(setup.captureCharFrame()).toContain("a approve")
+    expect(requests).not.toContain("POST /v1/sessions/session-1/workspace/commands/command-1/approve")
+    setup.mockInput.pressEscape()
 
     // A failed refresh after known pending work must not erase the cue.
     setInventoryUnavailable(true)
@@ -177,7 +188,7 @@ test("LiveApp exposes pending shell reviews and approves only through the review
   }
 })
 
-test("compact LiveApp keeps the review shortcut discoverable beside pending work", async () => {
+test("compact LiveApp opens a newly pending review without hiding the review shortcut", async () => {
   const controller = new AbortController()
   const { server, requests, completeTurn } = reviewServer()
   const setup = await testRender(
@@ -188,6 +199,9 @@ test("compact LiveApp keeps the review shortcut discoverable beside pending work
     await until(setup, "HTML request")
     setup.mockInput.pressEnter()
     await until(setup, "Message Veasel")
+    for (let attempt = 0; attempt < 120 && !requests.includes("GET /v1/sessions/session-1/workspace/commands"); attempt++) {
+      await Bun.sleep(5)
+    }
     await setup.mockInput.typeText("Create the requested HTML file")
     setup.mockInput.pressEnter()
     for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
@@ -195,7 +209,12 @@ test("compact LiveApp keeps the review shortcut discoverable beside pending work
     }
     expect(requests).toContain("POST /v1/sessions/session-1/messages")
     completeTurn()
-    await until(setup, "pending")
+    await until(setup, "Shell command")
+    await until(setup, "veasel-code.")
+    expect(setup.captureCharFrame()).toContain("a approve")
+    expect(requests).not.toContain("POST /v1/sessions/session-1/workspace/commands/command-1/approve")
+    setup.mockInput.pressEscape()
+    await until(setup, "▲ 1 pending")
     const frame = setup.captureCharFrame()
     expect(frame).toContain("Ctrl+R reviews")
     const statusLine = frame.split("\n").find((line) => line.includes("VEASEL / CODE"))
@@ -207,7 +226,7 @@ test("compact LiveApp keeps the review shortcut discoverable beside pending work
   }
 })
 
-test("pending shell approval is inspectable from the review panel at supported terminal sizes", async () => {
+test("new shell approvals open for inspection at supported terminal sizes without executing", async () => {
   for (const size of [
     { width: 32, height: 12 },
     { width: 80, height: 24 },
@@ -223,6 +242,9 @@ test("pending shell approval is inspectable from the review panel at supported t
       await until(setup, "HTML request")
       setup.mockInput.pressEnter()
       await until(setup, "Message Veasel")
+      for (let attempt = 0; attempt < 120 && !requests.includes("GET /v1/sessions/session-1/workspace/commands"); attempt++) {
+        await Bun.sleep(5)
+      }
       await setup.mockInput.typeText("Create the requested HTML file")
       setup.mockInput.pressEnter()
       for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
@@ -230,8 +252,6 @@ test("pending shell approval is inspectable from the review panel at supported t
       }
       expect(requests).toContain("POST /v1/sessions/session-1/messages")
       completeTurn()
-      await until(setup, "pending")
-      setup.mockInput.pressKey("r", { ctrl: true })
       await until(setup, "Shell command")
       await until(setup, "veasel-code.")
 
@@ -250,6 +270,41 @@ test("pending shell approval is inspectable from the review panel at supported t
       controller.abort()
       server.stop(true)
     }
+  }
+})
+
+test("a slow initial approval refresh cannot hide a proposal created during the turn", async () => {
+  const controller = new AbortController()
+  const { server, requests, completeTurn, deferNextCommandInventory } = reviewServer()
+  const delayedInventory = deferNextCommandInventory()
+  const setup = await testRender(
+    () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />,
+    { width: 100, height: 35, kittyKeyboard: true },
+  )
+  try {
+    await until(setup, "HTML request")
+    setup.mockInput.pressEnter()
+    await until(setup, "Message Veasel")
+    await delayedInventory.started
+    await setup.mockInput.typeText("Create the requested HTML file")
+    setup.mockInput.pressEnter()
+    for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
+      await Bun.sleep(5)
+    }
+    expect(requests).toContain("POST /v1/sessions/session-1/messages")
+    completeTurn()
+    await until(setup, "Shell command")
+    await until(setup, "/tmp/veasel-code.html")
+    expect(requests).not.toContain("POST /v1/sessions/session-1/workspace/commands/command-1/approve")
+    delayedInventory.release()
+    await delayedInventory.finished
+    expect(setup.captureCharFrame()).toContain("a approve")
+    expect(setup.captureCharFrame()).not.toContain("No pending edits, shell commands, or MCP calls.")
+  } finally {
+    delayedInventory.release()
+    setup.renderer.destroy()
+    controller.abort()
+    server.stop(true)
   }
 })
 
@@ -349,12 +404,12 @@ test("a stale explicit empty review result cannot open a false empty-state dialo
     await api.sendMessage("session-1", "Create the requested HTML file", "operation-race")
     expect(requests).toContain("POST /v1/sessions/session-1/messages")
     completeTurn()
-    await until(setup, "1 pending · Ctrl+R")
+    await until(setup, "Review · Shell command")
     expect(requests.filter((request) => request === "GET /v1/sessions/session-1/workspace/commands").length)
       .toBeGreaterThan(commandReadsBefore + 1)
 
     delayedInventory.release()
-    await until(setup, "review queue changed while loading")
+    await delayedInventory.finished
     const frame = setup.captureCharFrame()
     expect(frame).not.toContain("No pending edits, shell commands, or MCP calls.")
   } finally {

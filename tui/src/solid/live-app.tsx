@@ -711,27 +711,40 @@ function LiveAppShell(props: LiveAppProps) {
     }
   }
 
-  const openLiveReviews = async (target?: { kind: ActiveReviewKind; id: string }) => {
+  const openLiveReviews = async (
+    target?: { kind: ActiveReviewKind; id: string },
+    automatic = false,
+  ) => {
+    if (automatic && explicitReviewOpenPending) return
     const sessionId = activeSessionId()
     if (!sessionId) {
       toast.info("Open a session to review pending proposals", "Reviews")
       return
     }
-    setComposerFocused(false)
+    if (!automatic) setComposerFocused(false)
     const openRevision = ++pendingReviewOpenRevision
+    if (!automatic) explicitReviewOpenPending = true
     const inventoryRevision = pendingReviewRevision
     try {
-      const reviews = await loadPendingSolidReviews(props.api, sessionId)
+      let reviews = await loadPendingSolidReviews(props.api, sessionId)
       if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
+      if (automatic && dialog.open()) return
       if (inventoryRevision !== pendingReviewRevision) {
-        toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
-        setComposerFocused(true)
-        return
+        if (automatic) return
+        const retryRevision = pendingReviewRevision
+        reviews = await loadPendingSolidReviews(props.api, sessionId)
+        if (openRevision !== pendingReviewOpenRevision || sessionId !== activeSessionId()) return
+        if (retryRevision !== pendingReviewRevision) {
+          toast.info("The review queue changed while loading. Press Ctrl+R to retry.", "Reviews")
+          setComposerFocused(true)
+          return
+        }
       }
       setPendingReviewItems(reviews)
       setPendingReviewSessionId(sessionId)
       setPendingReviewInventoryError(false)
       if (reviews.length === 0) {
+        if (automatic) return
         openDialogAlert(dialog, {
           title: "Reviews",
           message: "No pending edits, shell commands, or MCP calls.",
@@ -743,10 +756,12 @@ function LiveAppShell(props: LiveAppProps) {
         ? reviews.findIndex((item) => item.kind === target.kind && item.id === target.id)
         : 0
       if (target && targetIndex < 0) {
+        if (automatic) return
         toast.info(`Review ${target.kind}:${target.id.slice(0, 8)} is no longer pending`, "Reviews")
         setComposerFocused(true)
         return
       }
+      setComposerFocused(false)
       openReviewPanel(dialog, {
         reviews,
         initialIndex: Math.max(0, targetIndex),
@@ -779,6 +794,10 @@ function LiveAppShell(props: LiveAppProps) {
         setPendingReviewInventoryError(true)
         toast.info(pendingReviewInventoryFailureNotice(), "Reviews")
         setComposerFocused(true)
+      }
+    } finally {
+      if (!automatic && openRevision === pendingReviewOpenRevision) {
+        explicitReviewOpenPending = false
       }
     }
   }
@@ -1026,7 +1045,10 @@ function LiveAppShell(props: LiveAppProps) {
   const [reviewArgumentItems, setReviewArgumentItems] = createSignal<SolidReviewItem[]>([])
   let pendingReviewRevision = 0
   let pendingReviewOpenRevision = 0
-  const refreshPendingReviews = async (sessionId = activeSessionId()) => {
+  let explicitReviewOpenPending = false
+  const knownPendingReviewIds = new Map<string, Set<string>>()
+  const turnPendingReviewBaselines = new Map<string, Set<string> | null>()
+  const refreshPendingReviews = async (sessionId = activeSessionId(), detectNew = false) => {
     // Background completions must not invalidate a pending refresh for the
     // currently focused tab.
     if (sessionId && sessionId !== activeSessionId()) return
@@ -1035,7 +1057,7 @@ function LiveAppShell(props: LiveAppProps) {
       setPendingReviewItems([])
       setPendingReviewSessionId(undefined)
       setPendingReviewInventoryError(false)
-      return
+      return undefined
     }
     if (pendingReviewSessionId() !== sessionId) {
       setPendingReviewItems([])
@@ -1045,15 +1067,28 @@ function LiveAppShell(props: LiveAppProps) {
     const revision = ++pendingReviewRevision
     try {
       const items = await loadPendingSolidReviews(props.api, sessionId)
-      if (revision !== pendingReviewRevision || sessionId !== activeSessionId()) return
+      if (revision !== pendingReviewRevision || sessionId !== activeSessionId()) return undefined
+      const previousIds = knownPendingReviewIds.get(sessionId)
+      const hasTurnBaseline = turnPendingReviewBaselines.has(sessionId)
+      const baseline = detectNew
+        ? (hasTurnBaseline ? turnPendingReviewBaselines.get(sessionId) : previousIds)
+        : undefined
+      const newReview = detectNew
+        ? baseline
+          ? items.find((item) => !baseline.has(`${item.kind}:${item.id}`))
+          : items[0]
+        : undefined
+      knownPendingReviewIds.set(sessionId, new Set(items.map((item) => `${item.kind}:${item.id}`)))
       setPendingReviewItems(items)
       setPendingReviewInventoryError(false)
+      return newReview
     } catch {
       if (revision === pendingReviewRevision && sessionId === activeSessionId()) {
         // Preserve known pending work during transient inventory failures and
         // show an explicit unavailable cue if this session has no prior view.
         setPendingReviewInventoryError(true)
       }
+      return undefined
     }
   }
   const currentPendingReviewItems = () =>
@@ -1601,7 +1636,8 @@ function LiveAppShell(props: LiveAppProps) {
     } catch {
       // History reload is best-effort; reopen still works.
     }
-    await refreshPendingReviews(sessionId)
+    const newReview = await refreshPendingReviews(sessionId, focused)
+    turnPendingReviewBaselines.delete(sessionId)
     if (activeTurnId() === operationId) {
       setActiveTurnId(undefined)
       activeTurnSessionId = undefined
@@ -1642,6 +1678,9 @@ function LiveAppShell(props: LiveAppProps) {
         completion.status ?? "",
         sessions().find((session) => session.id === sessionId)?.title,
       )
+    }
+    if (newReview && focused && activeSessionId() === sessionId && !dialog.open()) {
+      void openLiveReviews({ kind: newReview.kind, id: newReview.id }, true)
     }
   }
 
@@ -1984,6 +2023,9 @@ function LiveAppShell(props: LiveAppProps) {
       return
     }
     const operationId = crypto.randomUUID()
+    const knownReviews = knownPendingReviewIds.get(sessionId)
+    if (knownReviews) turnPendingReviewBaselines.set(sessionId, new Set(knownReviews))
+    else turnPendingReviewBaselines.set(sessionId, null)
     streamDeltaBatch.clear()
     setSending(true)
     setActiveTurnId(operationId)
@@ -2007,7 +2049,8 @@ function LiveAppShell(props: LiveAppProps) {
       if (!disposed && activeSessionId() === sessionId) {
         applyHistoryPage(result.messages, "replace")
       }
-      await refreshPendingReviews(sessionId)
+      const newReview = await refreshPendingReviews(sessionId, true)
+      turnPendingReviewBaselines.delete(sessionId)
       setStreaming(false)
       setStreamingText("")
       setSending(false)
@@ -2017,7 +2060,11 @@ function LiveAppShell(props: LiveAppProps) {
       turnController = undefined
       setStatus("● connected  ·  listening for activity")
       setComposerFocused(true)
+      if (newReview && activeSessionId() === sessionId && !dialog.open()) {
+        void openLiveReviews({ kind: newReview.kind, id: newReview.id }, true)
+      }
     } catch (error) {
+      turnPendingReviewBaselines.delete(sessionId)
       streamDeltaBatch.flush()
       if (turnController?.signal.aborted) {
         setStatus("▲ response cancelled")

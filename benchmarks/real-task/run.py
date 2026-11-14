@@ -43,6 +43,7 @@ PINNED_VEASEL_RUNTIME_MODEL_ROUNDS = {
     ("Veasel Code 0.79.5-next.0", "93f0726e998ee7234e0d2cc7d7019471e5c1c1202b35992a703bd7afd3233a7e"): 28,
     ("Veasel Code 0.79.8-next.0", "78164aaf24db5f33c9059db5398aa9af6efe13831bca55c6c92f067f4245fffe"): 28,
     ("Veasel Code 0.79.11-next.0", "b2d03e4d04d72e3af22d3aab78dbd51e623ccd72df4c004edaf7c92f22af6ac6"): 42,
+    ("Veasel Code 0.79.13-next.0", "b1a11d3179aff4d75b271a81e0aadfe76e8ac52cc22b4365dee9b2710e52dd21"): 42,
 }
 AUTHORIZED_AGGREGATE_SPEND_USD = Decimal("5.00")
 IMPORTED_PRIOR_SPEND_USD = Decimal("0.35444")
@@ -67,6 +68,12 @@ REMOTE_CASE_PINS = {
     },
     "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.11": {
         "case_sha256": "22bd53fc52f182f79ef51eebb78d8249e443fed61d6ca29833f6a173c7422358",
+        "max_cost_usd": Decimal("0.16"),
+        "max_model_requests": 126,
+        "max_request_body_bytes": 32768,
+    },
+    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.13": {
+        "case_sha256": "2b9960e190472b7f37b049f48071816c36969903802ce93da33f30f81a3c336d",
         "max_cost_usd": Decimal("0.16"),
         "max_model_requests": 126,
         "max_request_body_bytes": 32768,

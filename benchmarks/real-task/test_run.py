@@ -324,7 +324,7 @@ class RemoteCasePinTests(unittest.TestCase):
                     runner.preflight(case_path, root, "unused", root / "state", approved_spend_usd="5")
 
     def test_exact_reviewed_remote_case_matches_fixed_model_rate_and_budget_pins(self):
-        for version in ("v0795", "v0798", "v07911"):
+        for version in ("v0795", "v0798", "v07911", "v07913"):
             with self.subTest(version=version):
                 path = SCRIPT.parent / f"cases/website-173-muse-spark-{version}/case.json"
                 case, _prompt, _digest = runner.load_case(path)
@@ -623,6 +623,16 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(report["conservative_max_cost_usd"], "0.15482880")
         self.assertEqual(runner.responses_proxy_budget(case, "5")["upstream_attempt_limit"], 126)
         self.assertFalse(runner.provider_cost_bound(case, "0.15")[1][0]["passed"])
+
+    def test_v07913_runtime_has_the_reviewed_request_and_cost_reservation(self):
+        path = SCRIPT.parent / "cases/website-173-muse-spark-v07913/case.json"
+        case, _prompt, _digest = runner.load_case(path)
+        report, checks = runner.provider_cost_bound(case, "5")
+        self.assertTrue(checks[0]["passed"], checks)
+        self.assertEqual(report["pinned_runtime_max_model_rounds"], 42)
+        self.assertEqual(report["pinned_runtime_max_model_requests"], 126)
+        self.assertEqual(report["conservative_max_cost_usd"], "0.15482880")
+        self.assertEqual(runner.responses_proxy_budget(case, "5")["upstream_attempt_limit"], 126)
 
     def test_reported_provider_cost_uses_pinned_rates_and_cached_input(self):
         case = {

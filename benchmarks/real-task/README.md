@@ -125,6 +125,11 @@ binary and reserves for its expanded follow-through limits. This case is a
 real-model run candidate; no deterministic fixture result is counted as a
 coding success. Its live outcome will be recorded only after the independent
 repository oracle is run.
+The `website-173-muse-spark-v07913` case pins the installed 0.79.13 release
+binary hash while preserving the same task, model, permissions, 42-round
+follow-through budget, and USD 0.16 per-attempt ceiling. Use it for the next
+authorized live attempt; the 0.79.11 pin must not be reused with the newer
+binary.
 The OpenCode adapter uses the documented OpenAI-compatible Responses runtime
 and sends requests through `responses_proxy.py`, which in live mode accepts only
 the pinned Meta host (the local fixture mode accepts loopback only), one

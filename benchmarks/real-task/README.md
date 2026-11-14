@@ -112,17 +112,62 @@ permissions, and wall/resource limits for Veasel 0.79.5 and OpenCode 2.2.7.
 The OpenCode adapter uses the documented OpenAI-compatible Responses runtime
 and sends requests through `responses_proxy.py`, which in live mode accepts only
 the pinned Meta host (the local fixture mode accepts loopback only), one
-`/v1/responses` route, the exact model, text-only JSON, and bounded output. It
-counts every client retry as an upstream attempt, rejects redirects,
-replaces the local bearer token with the saved provider credential, and emits
-only aggregate metrics. The case caps OpenCode request bodies at 32 KiB and
-allows at most 29 upstream attempts. USD 0.10690560 is an estimate under the
-case's USD 0.11 limit, not a guaranteed billing ceiling: treating serialized
-request bytes as input tokens does not account for provider-side framing or
-tokenization of structured Responses payloads. Preflight marks the billing
-bound unreviewed and fails closed until that exact payload shape has a
-provider-verified bound. The authorized USD 5 aggregate budget remains the
-operator ceiling; it does not turn this per-case estimate into a guarantee.
+`/v1/responses` route, the exact model, a pinned OpenCode 2.2.7 request shape,
+client-side function tools, and bounded output. Unknown top-level fields,
+hosted tools, server-managed history, media, and unsupported input items are
+rejected. Before each inference, the proxy sends the exact rendered input,
+instructions, and function schemas to Meta's `/v1/responses/input_tokens`
+endpoint, and stops if the returned context count exceeds 8,192. Meta documents
+that the count includes the fully rendered request and is for context-window
+fit, not billing estimation; the endpoint does not generate a response or
+record generation usage. The proxy does not use its count as an estimated
+charge. Hosted tools can produce cumulative input usage across multiple model
+iterations, so this case rejects hosted tools and uses one client-side model
+generation per request. [Meta token counting](https://dev.meta.ai/docs/token-counting),
+[Responses usage](https://dev.meta.ai/docs/protocols/responses), and
+[API billing](https://dev.meta.ai/help/billing/api-bill) document these boundaries.
+
+Every inference attempt atomically reserves the worst-case charge for one
+8,192-token context and 2,048 output tokens at the pinned uncached input and
+output rates. The 84-attempt cap therefore reserves at most USD 0.10321920,
+within this case's USD 0.11 ceiling and the operator-authorized USD 5 limit.
+After a terminal streaming response, the proxy settles the reservation using
+reported usage and still charges all input at the uncached rate for the cap.
+If final usage is missing or ambiguous, it keeps the reservation and blocks
+further generations. Each retry is a new reserved attempt. This bound assumes
+one non-hosted model generation per POST and that Meta enforces the context and
+`max_output_tokens` limits for that generation; hosted tools are rejected
+because their cumulative input usage can exceed one context window. The local
+OpenCode fixture proves routing and the count/usage protocol without contacting
+Meta; it does not prove provider billing behavior or real-model success.
+
+Both agents run from a new `--no-hardlinks` clone at
+`<data-dir>/workspaces/veasel-real-task-*`; the user-provided baseline checkout
+is left clean. The data directory and `workspaces` parent must be persistent,
+owned by the current user, mode 0700, and outside `/tmp` and `/var/tmp`. Task
+clones remain there after runner interruption or reboot so dirty candidate
+changes can be recovered; they are never auto-deleted. The shell launcher accepts
+only a direct task child of the explicitly supplied `VEASEL_REAL_TASK_PARENT`,
+checks that parent ownership and permissions, rejects temporary roots, and
+continues to bind only the task clone writable.
+OpenCode's generated config points its shell tool at the SHA-256-pinned
+`opencode-shell-sandbox.sh` wrapper, which starts Bubblewrap with a private
+network/PID namespace and binds only the task clone writable. The proxy token
+and upstream credential are not passed to that shell process. The runner also
+requires a separately operator-reviewed outer wrapper whose path and SHA-256
+are supplied at launch. Preflight fails closed unless Linux, the pinned shell
+wrapper, executable Bubblewrap, a matching task clone, and the outer wrapper
+are all wired. The wrapper digest identifies its bytes; its behavior still
+requires operator review.
+
+The private mode-0600 aggregate spend ledger enforces the user's USD 5 total
+authorization across runs and concurrent runner processes. It imports USD
+0.35444 as already consumed from the previous-session handoff, explicitly
+marked approximate because its raw source was unavailable; this imported
+amount is never refunded. Each remote run reserves its complete worst-case
+ceiling before launch. A successful run releases the unused reserve only when
+complete usage is available; interrupted runs and ambiguous usage keep their
+full reservation across restarts. The ledger reports the imported uncertainty.
 
 `test_opencode_responses_fixture.py` optionally drives the pinned OpenCode CLI
 through the proxy into a deterministic local Responses fixture. It proves the
@@ -241,8 +286,9 @@ reports. Endpoints with URL userinfo, query strings, or fragments fail
 preflight; path components are also never copied into reports.
 
 Paid configured-provider cases pin input/output rates, a maximum model request
-count, and a case cost ceiling. The operator must also pass
-`--approved-spend-usd`; otherwise preflight fails before the provider is called.
+count, and a case cost ceiling. The aggregate ledger is scoped to the existing
+USD 5 authorization; `--approved-spend-usd` cannot exceed that total. Preflight
+fails before a provider call if the ledger cannot reserve a full run.
 The runner computes a conservative upper bound using the full context and output
 limit on every allowed request and bills all input at the uncached rate. Pin the
 Veasel version whose runtime enforces that request bound. This bounds declared
@@ -259,9 +305,8 @@ conservative worst-case estimate is USD 0.1032192. An earlier preflight
 incorrectly omitted that summary completion and reported a USD 0.10 cap; the
 attempts below are audited with the corrected USD 0.11 reserve. The runtime
 version and binary hash are pinned because the request count follows these
-bounded retry limits. For a five-dollar total authorization, reserve USD 0.11
-for each run whose provider usage is unavailable; the operator's remaining
-approved amount is still required explicitly. The original case retains its
+bounded retry limits. For each run whose provider usage is unavailable, reserve
+its full worst-case USD 0.10321920 cap in the aggregate ledger. The original case retains its
 0.79.2 binary pin for replay. The separate
 [`website-173-muse-spark-v0793`](cases/website-173-muse-spark-v0793/case.json)
 case pins Veasel `0.79.3-next.0`, binary SHA-256

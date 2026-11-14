@@ -20,7 +20,8 @@
   },
   "runtime": {
     "veasel_version": "Veasel Code 0.79.5-next.0",
-    "veasel_binary_sha256": "93f0726e998ee7234e0d2cc7d7019471e5c1c1202b35992a703bd7afd3233a7e"
+    "veasel_binary_sha256": "93f0726e998ee7234e0d2cc7d7019471e5c1c1202b35992a703bd7afd3233a7e",
+    "opencode_shell_sandbox_sha256": "338fc0a17cf62688d5209b4b51da275bbb9ef4497645b38afcf523fed89f2166"
   },
   "permissions": {
     "edit": "autonomous inside a disposable Bubblewrap sandbox",
@@ -50,9 +51,8 @@
     "output_usd_per_million_tokens": 0.2,
     "max_model_requests": 84,
     "max_request_body_bytes": 32768,
-    "request_cap_basis": "Veasel is limited to 84 attempts at 8192 input / 2048 output tokens. OpenCode is limited to 29 upstream attempts, 32768 serialized UTF-8 request bytes per POST, and 2048 output tokens per request. The resulting USD 0.10690560 is an estimate only; serialized bytes do not prove provider-billed input tokens because Responses framing/tokenization has not been bounded.",
-    "estimated_cost_note": "Assumes request-body bytes equal uncached input tokens and every request uses the full output cap; this assumption is not a provider-verified billing bound.",
-    "billing_bound_reviewed": false
+    "request_cap_basis": "Veasel and OpenCode are each limited to 84 generation attempts. Before every OpenCode inference, the proxy calls Meta POST /v1/responses/input_tokens with the exact supported input, instructions, and function tools; it fails closed above 8192 context tokens. The proxy atomically reserves 8192 uncached input tokens plus 2048 output tokens per inference at pinned rates, settles from final response usage, and retains the full reservation on ambiguity. Hosted tools, server-managed history, media, and unknown payload shapes are rejected. Worst-case OpenCode generation cost is USD 0.10321920 under the USD 0.11 case ceiling. The token-count endpoint validates context fit and is not treated as a billing estimate.",
+    "worst_case_cost_note": "Each client-side generation attempt reserves the pinned context input ceiling at the uncached rate and the full output cap. The cap assumes one non-hosted model generation per POST and provider enforcement of context and max_output_tokens. Missing usage retains the reservation and blocks further generations."
   },
   "oracle": "Externally compare the patch with the merged website#173 change, run the repository checks, and verify responsive accessibility, search, resizing, dark mode, reduced motion, and no-JavaScript behavior. A completed model turn alone is not success.",
   "comparators": {

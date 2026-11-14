@@ -3,8 +3,12 @@ import importlib.util
 import argparse
 import json
 import stat
+import subprocess
+import shutil
 import sys
+import tarfile
 import tempfile
+import threading
 import unittest
 from decimal import Decimal
 from pathlib import Path
@@ -30,7 +34,7 @@ def make_isolation_wrapper(root: Path) -> tuple[Path, str]:
 
 class IsolationWrapperTests(unittest.TestCase):
     def test_wrapper_is_required_and_sha256_must_match(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
             wrapper, digest = make_isolation_wrapper(root)
             with self.assertRaisesRegex(ValueError, "required"):
@@ -50,6 +54,70 @@ class IsolationWrapperTests(unittest.TestCase):
             runner.wrapped_command(Path("/opt/benchmark/isolate"), ["/usr/bin/veasel", "run"]),
             ["/opt/benchmark/isolate", "--", "/usr/bin/veasel", "run"],
         )
+
+    def test_remote_opencode_live_preflight_requires_every_isolation_component(self):
+        case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        case, _prompt, _digest = runner.load_case(case_path)
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            wrapper, wrapper_hash = make_isolation_wrapper(root)
+            task_parent = runner.persistent_private_directory(root / "state" / "workspaces")
+            task_root = task_parent / "veasel-real-task-test"
+            task_root.mkdir(mode=0o700)
+            self.addCleanup(lambda: shutil.rmtree(task_root, ignore_errors=True))
+            data_dir = root / "state"
+            expected_config = runner.configured_model
+            configured = {
+                "provider": case["model"]["provider"], "model": case["model"]["name"],
+                "base_url": case["provider_config"]["base_url"],
+                "max_output_tokens": case["model"]["output_tokens"], "api_key_saved": True,
+            }
+
+            def git_result(_workspace, *args):
+                if args[:2] == ("remote", "get-url"):
+                    return case["repository"]
+                if args[:2] == ("rev-parse", "HEAD"):
+                    return case["base_commit"]
+                return ""
+
+            def validate_task_root(value, _commit, _parent):
+                if value is None:
+                    raise ValueError("task clone was not supplied")
+                return task_root
+
+            common_patches = (
+                patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0)),
+                patch.object(runner, "git", side_effect=git_result),
+                patch.object(runner, "configured_model", return_value=configured),
+                patch.object(runner, "project_open_code_config_paths", return_value=[]),
+                patch.object(runner, "managed_open_code_config_paths", return_value=[]),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/opencode"),
+                patch.object(runner, "open_code_version", return_value=case["comparators"]["opencode_version"]),
+                patch.object(runner, "validate_task_clone", side_effect=validate_task_root),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
+                patch.object(runner.platform, "system", return_value="Linux"),
+            )
+            for mock_patch in common_patches:
+                mock_patch.start()
+            self.addCleanup(lambda: [mock_patch.stop() for mock_patch in reversed(common_patches)])
+            with patch.object(runner, "install_opencode_shell_wrapper",
+                              return_value=(runner.OPEN_CODE_SHELL_WRAPPER,
+                                            runner.OPEN_CODE_SHELL_WRAPPER_SHA256)):
+                complete = runner.preflight(
+                    case_path, root, "unused", data_dir, "opencode", "opencode", "5", "/usr/bin/bwrap",
+                    wrapper, wrapper_hash, task_root,
+                )
+            check = next(item for item in complete["checks"] if item["name"] == "responses_proxy_live_isolation")
+            self.assertTrue(check["passed"], check)
+            with patch.object(runner, "install_opencode_shell_wrapper",
+                              return_value=(runner.OPEN_CODE_SHELL_WRAPPER,
+                                            runner.OPEN_CODE_SHELL_WRAPPER_SHA256)):
+                missing_root = runner.preflight(
+                    case_path, root, "unused", data_dir, "opencode", "opencode", "5", "/usr/bin/bwrap",
+                    wrapper, wrapper_hash, None,
+                )
+            failed = next(item for item in missing_root["checks"] if item["name"] == "responses_proxy_live_isolation")
+            self.assertFalse(failed["passed"])
 
     def test_run_refuses_to_preflight_or_launch_without_wrapper(self):
         args = argparse.Namespace()
@@ -72,7 +140,7 @@ class ResourceSamplerTests(unittest.TestCase):
         self.assertEqual(runner.parse_proc_stat(stat, 4096), (5, 100, 12 * 4096))
 
     def test_process_tree_resources_sums_root_and_descendants(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             proc_root = Path(temp_dir)
             processes = {
                 100: self.proc_stat(100, 1, 20, 10, 100, "veasel"),
@@ -90,7 +158,7 @@ class ResourceSamplerTests(unittest.TestCase):
         self.assertEqual(metrics["rss_bytes"], 300 * runner.os.sysconf("SC_PAGE_SIZE"))
 
     def test_process_tree_resources_returns_none_for_missing_root(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             self.assertIsNone(runner.process_tree_resources(99, Path(temp_dir)))
 
     @patch.object(runner.subprocess, "check_output", return_value="1400\n 1700\n")
@@ -124,7 +192,7 @@ class ResourceSamplerTests(unittest.TestCase):
 
 class ProviderUsageTests(unittest.TestCase):
     def test_veasel_usage_reads_provider_reported_atif_metrics(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             trace = Path(temp_dir) / "trace.json"
             stdout = Path(temp_dir) / "stdout.log"
             trace.write_text(json.dumps({
@@ -149,7 +217,7 @@ class ProviderUsageTests(unittest.TestCase):
         self.assertEqual(usage["cache_write_tokens"], 100)
 
     def test_veasel_unreported_usage_is_not_recorded_as_zero(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             trace = Path(temp_dir) / "trace.json"
             trace.write_text(json.dumps({"steps": [{"step_id": 1}], "final_metrics": {},
                                          "extra": {"token_usage": "unavailable"}}))
@@ -159,7 +227,7 @@ class ProviderUsageTests(unittest.TestCase):
         self.assertIsNone(usage["output_tokens"])
 
     def test_opencode_usage_sums_only_step_finish_events(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             stdout = Path(temp_dir) / "stdout.log"
             stdout.write_text("\n".join([
                 json.dumps({"type": "text", "part": {"text": "done"}}),
@@ -185,7 +253,7 @@ class ProviderUsageTests(unittest.TestCase):
         self.assertAlmostEqual(usage["reported_agent_cost_usd"], 0.007)
 
     def test_missing_opencode_step_finish_keeps_usage_unavailable(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             stdout = Path(temp_dir) / "stdout.log"
             stdout.write_text(json.dumps({"type": "text", "part": {"text": "done"}}))
             usage = runner.provider_reported_usage("opencode", Path(temp_dir) / "trace.json", stdout)
@@ -196,6 +264,114 @@ class ProviderUsageTests(unittest.TestCase):
 
 
 class PreflightTests(unittest.TestCase):
+    def test_disposable_task_clone_preserves_tracked_and_untracked_candidate_content(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            source.mkdir()
+            subprocess.run(["git", "init", "--quiet", str(source)], check=True)
+            subprocess.run(["git", "-C", str(source), "config", "user.email", "fixture@example.test"], check=True)
+            subprocess.run(["git", "-C", str(source), "config", "user.name", "Fixture"], check=True)
+            tracked = source / "tracked.txt"
+            tracked.write_text("baseline\n")
+            subprocess.run(["git", "-C", str(source), "add", "tracked.txt"], check=True)
+            subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-m", "baseline"], check=True)
+            base_commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+            attacker_home = root / "attacker-home"
+            attacker_home.mkdir()
+            sentinel = root / "global-filter-ran"
+            global_config = attacker_home / ".gitconfig"
+            global_config.write_text(
+                '[filter "hostile"]\n'
+                f'  smudge = sh -c "touch {sentinel}; cat"\n'
+            )
+            (source / ".gitattributes").write_text("filtered.txt filter=hostile\n")
+            (source / "filtered.txt").write_text("filter payload\n")
+            subprocess.run(["git", "-C", str(source), "add", ".gitattributes", "filtered.txt"], check=True)
+            subprocess.run(["git", "-C", str(source), "commit", "--quiet", "-m", "filter fixture"], check=True)
+            base_commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+            task_parent = runner.persistent_private_directory(root / "state" / "workspaces")
+            with patch.dict(runner.os.environ, {"HOME": str(attacker_home), "GIT_CONFIG_GLOBAL": str(global_config)}):
+                clone = runner.create_task_clone(source, base_commit, root / "private-git-home", task_parent)
+            self.addCleanup(lambda: shutil.rmtree(clone, ignore_errors=True))
+            self.assertFalse(sentinel.exists())
+            self.assertEqual((clone / "filtered.txt").read_text(), "filter payload\n")
+            self.assertNotEqual(clone.resolve(), source.resolve())
+            self.assertEqual(clone.parent, task_parent)
+            self.assertEqual((clone / "tracked.txt").stat().st_ino != tracked.stat().st_ino, True)
+
+            (clone / "tracked.txt").write_text("candidate edit\n")
+            untracked = clone / "new file.txt"
+            untracked.write_text("new candidate content\n")
+            artifacts = root / "artifacts"
+            artifacts.mkdir(mode=0o700)
+            result = runner.preserve_candidate_changes(clone, base_commit, artifacts)
+            self.assertTrue(result["dirty"])
+            self.assertIn(b"candidate edit", (artifacts / result["patch_artifact"]).read_bytes())
+            with tarfile.open(artifacts / result["untracked_archive"]) as archive:
+                self.assertEqual(archive.extractfile("new file.txt").read(), b"new candidate content\n")
+            self.assertEqual((clone / "tracked.txt").read_text(), "candidate edit\n")
+
+            # A later runner process can rediscover the task by its durable path;
+            # its unintegrated candidate changes survive runner interruption.
+            recovered = runner.validate_task_clone(clone, base_commit, task_parent)
+            self.assertEqual(recovered, clone)
+            self.assertEqual((recovered / "tracked.txt").read_text(), "candidate edit\n")
+            self.assertTrue((recovered / "new file.txt").is_file())
+
+    def test_persistent_workspace_parent_rejects_temporary_roots(self):
+        for path in (Path("/tmp/veasel-real-task-state"), Path("/var/tmp/veasel-real-task-state")):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "outside /tmp"):
+                runner.persistent_private_directory(path)
+
+    def test_aggregate_ledger_imports_prior_spend_and_reserves_concurrently(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            data_dir = Path(temp_dir) / "state"
+            initial, provenance = runner.aggregate_ledger_snapshot(data_dir)
+            self.assertEqual(initial["authorized_total_usd"], "5.00")
+            self.assertEqual(initial["settled_spend_usd"], "0.35444")
+            self.assertEqual(initial["remaining_usd"], "4.64556")
+            self.assertIn("Approximate", provenance)
+            self.assertTrue(initial["prior_spend_is_approximate"] == "true")
+
+            barrier = threading.Barrier(3)
+            outcomes: list[tuple[str, str]] = []
+            outcome_lock = threading.Lock()
+
+            def reserve(run_id: str) -> None:
+                barrier.wait()
+                try:
+                    runner.reserve_aggregate_run(data_dir, run_id, "fixture", Decimal("4"))
+                    result = (run_id, "reserved")
+                except RuntimeError:
+                    result = (run_id, "rejected")
+                with outcome_lock:
+                    outcomes.append(result)
+
+            workers = [threading.Thread(target=reserve, args=(f"run-{index}",)) for index in range(2)]
+            for worker in workers:
+                worker.start()
+            barrier.wait()
+            for worker in workers:
+                worker.join(timeout=5)
+            self.assertTrue(all(not worker.is_alive() for worker in workers))
+            self.assertCountEqual([status for _run_id, status in outcomes], ["reserved", "rejected"])
+            winner = next(run_id for run_id, status in outcomes if status == "reserved")
+            held = runner.aggregate_ledger_snapshot(data_dir)[0]
+            self.assertEqual(held["reserved_usd"], "4")
+            self.assertEqual(held["remaining_usd"], "0.64556")
+
+            settled = runner.settle_aggregate_run(data_dir, winner, Decimal("0.01"))
+            self.assertEqual(settled["reserved_usd"], "0")
+            self.assertEqual(settled["settled_spend_usd"], "0.36444")
+            uncertain_id = "run-uncertain"
+            runner.reserve_aggregate_run(data_dir, uncertain_id, "fixture", Decimal("0.1"))
+            after_interrupt = runner.settle_aggregate_run(data_dir, uncertain_id, None)
+            self.assertEqual(after_interrupt["reserved_usd"], "0.1")
+            restarted = runner.aggregate_ledger_snapshot(data_dir)[0]
+            self.assertEqual(restarted["reserved_usd"], "0.1")
+            self.assertEqual(restarted["settled_spend_usd"], "0.36444")
+
     @staticmethod
     def configured_case(root: Path) -> Path:
         case_dir = root / "case"
@@ -261,14 +437,15 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(provider["models"][case["model"]["name"]]["limit"]["context"], 8192)
         self.assertEqual(provider["models"][case["model"]["name"]]["limit"]["output"], 2048)
         self.assertNotIn("api_key", json.dumps(config).lower())
-        budget = runner.responses_proxy_budget(case)
-        self.assertEqual(budget["upstream_attempt_limit"], 29)
+        budget = runner.responses_proxy_budget(case, "5")
+        self.assertEqual(budget["upstream_attempt_limit"], 84)
         self.assertEqual(budget["max_request_body_bytes"], 32768)
-        self.assertEqual(budget["estimated_cost_usd"], "0.10690560")
-        self.assertIn("estimate only", budget["cost_basis"])
+        self.assertEqual(budget["max_input_tokens_per_attempt"], 8192)
+        self.assertEqual(budget["enforced_run_cost_cap_usd"], "0.10321920")
+        self.assertIn("context input ceiling", budget["cost_basis"])
 
     def test_non_ollama_profile_preflight_checks_model_endpoint_budget_and_saved_credential(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             case_path = self.configured_case(Path(temp_dir))
             with patch.object(runner, "configured_model", return_value={
                 "provider": "anthropic", "model": "claude-example",
@@ -282,7 +459,7 @@ class PreflightTests(unittest.TestCase):
         self.assertNotIn("api_key", actual)
 
     def test_non_ollama_profile_fails_closed_on_missing_or_mismatched_credentials(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             case_path = self.configured_case(Path(temp_dir))
             with patch.object(runner, "configured_model", return_value={
                 "provider": "openai-compatible", "model": "other-model",
@@ -297,7 +474,7 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 0))
     @patch.object(runner, "git", side_effect=["https://github.com/example/repo.git", "a" * 40, ""] * 4)
     def test_non_ollama_preflight_does_not_probe_ollama_or_claim_live_model_readiness(self, _git, _resources):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             case_path = self.configured_case(Path(temp_dir))
             with patch.object(runner, "configured_model", return_value={
                 "provider": "anthropic", "model": "claude-example",
@@ -312,7 +489,7 @@ class PreflightTests(unittest.TestCase):
         self.assertLess(Decimal(result["cost_budget"]["conservative_max_cost_usd"]), Decimal("5"))
 
     def test_configured_provider_preflight_fails_without_budget_authorization_or_when_bound_exceeds_ceiling(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             case_path = self.configured_case(Path(temp_dir))
             case, _prompt, _digest = runner.load_case(case_path)
             report, checks = runner.provider_cost_bound(case, "0")
@@ -362,7 +539,7 @@ class PreflightTests(unittest.TestCase):
         "https://origin-user:origin-token@github.com/example/repo.git", "a" * 40, "",
     ])
     def test_preflight_never_serializes_repository_url_credentials(self, _git, _resources):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
             case_path = self.configured_case(root)
             case = json.loads(case_path.read_text())
@@ -387,7 +564,7 @@ class PreflightTests(unittest.TestCase):
         "https://github.com/example/repo.git?access_token=remote-secret", "a" * 40, "",
     ])
     def test_preflight_rejects_and_redacts_repository_url_query_secrets(self, _git, _resources):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
             case_path = self.configured_case(root)
             case = json.loads(case_path.read_text())
@@ -414,7 +591,7 @@ class PreflightTests(unittest.TestCase):
             ("https://example.invalid/secret-path-token/v1", True),
         ]
         for endpoint, expected_pass in endpoint_cases:
-            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory() as temp_dir:
+            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
                 case_path = self.configured_case(Path(temp_dir))
                 case = json.loads(case_path.read_text())
                 case["provider_config"]["base_url"] = endpoint
@@ -435,7 +612,7 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "configured_model", side_effect=OSError("profile unreadable"))
     @patch.object(runner, "model_digest", return_value="pinned-digest")
     def test_ollama_profile_read_error_does_not_serialize_expected_endpoint(self, _digest, _config, _git, _resources):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             case_path = self.configured_case(Path(temp_dir))
             case = json.loads(case_path.read_text())
             case["model"].update({"provider": "ollama", "name": "qwen3:8b", "digest": "pinned-digest"})
@@ -473,7 +650,7 @@ class PreflightTests(unittest.TestCase):
             "https://example.invalid/secret-path-token/v1",
         ]
         for endpoint in endpoint_cases:
-            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory() as temp_dir:
+            with self.subTest(endpoint_kind=endpoint.split(":", 1)[0]), tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
                 root = Path(temp_dir)
                 case_path = self.configured_case(root)
                 case = json.loads(case_path.read_text())
@@ -501,7 +678,9 @@ class PreflightTests(unittest.TestCase):
                     isolation_wrapper=wrapper, isolation_wrapper_sha256=wrapper_sha256,
                     approved_spend_usd="5",
                 )
-                with patch.object(runner.subprocess, "Popen", return_value=process) as popen:
+                with (patch.object(runner, "create_task_clone", return_value=workspace),
+                      patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
+                      patch.object(runner.subprocess, "Popen", return_value=process) as popen):
                     self.assertEqual(runner.run_case(args), 0)
                 launched_command = popen.call_args.args[0]
                 self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
@@ -525,7 +704,7 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(env, {"PATH": "/usr/bin", "LANG": "C.UTF-8"})
 
     def test_config_projection_never_returns_saved_api_key(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             settings_path = Path(temp_dir) / "model-settings.json"
             settings_path.write_text(json.dumps({
                 "active_provider": "ollama",
@@ -543,7 +722,7 @@ class PreflightTests(unittest.TestCase):
     def test_config_projection_requires_nonblank_string_api_key(self):
         for api_key in ("   ", 123, ["present"]):
             with self.subTest(api_key_type=type(api_key).__name__):
-                with tempfile.TemporaryDirectory() as temp_dir:
+                with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
                     settings_path = Path(temp_dir) / "model-settings.json"
                     settings_path.write_text(json.dumps({
                         "active_provider": "anthropic",
@@ -568,7 +747,7 @@ class PreflightTests(unittest.TestCase):
     def test_opencode_config_is_private_and_refuses_drift(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         case, _prompt, _digest = runner.load_case(case_path)
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             data_dir = Path(temp_dir) / "isolated-state"
             config_path = runner.prepare_open_code_config(case, data_dir)
             self.assertEqual(stat.S_IMODE(data_dir.stat().st_mode), 0o700)
@@ -607,7 +786,7 @@ class PreflightTests(unittest.TestCase):
     def test_opencode_launcher_records_private_unscored_attempt_without_model_call(self, _version, _which, _preflight):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         _case, _prompt, _digest = runner.load_case(case_path)
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
             workspace = root / "workspace"
             workspace.mkdir()
@@ -631,7 +810,9 @@ class PreflightTests(unittest.TestCase):
                 approved_spend_usd="0",
             )
             with patch.dict(runner.os.environ, {"ANTHROPIC_API_KEY": "test-secret"}):
-                with patch.object(runner.subprocess, "Popen", return_value=process) as popen:
+                with (patch.object(runner, "create_task_clone", return_value=workspace),
+                      patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
+                      patch.object(runner.subprocess, "Popen", return_value=process) as popen):
                     self.assertEqual(runner.run_case(args), 0)
             launched_command = popen.call_args.args[0]
             launched_env = popen.call_args.kwargs["env"]
@@ -650,7 +831,7 @@ class PreflightTests(unittest.TestCase):
 
     def test_launcher_records_agent_and_gpu_resource_samples(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             root = Path(temp_dir)
             workspace = root / "workspace"
             workspace.mkdir()
@@ -684,6 +865,8 @@ class PreflightTests(unittest.TestCase):
                 patch.object(runner, "process_tree_resources", return_value={"process_count": 2, "cpu_time_ms": 42, "rss_bytes": 900}),
                 patch.object(runner, "gpu_memory_used_mib", return_value=[6000]),
                 patch.object(runner.time, "sleep"),
+                patch.object(runner, "create_task_clone", return_value=workspace),
+                patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
             ):
                 self.assertEqual(runner.run_case(args), 0)
             report = json.loads((artifacts / "attempt.json").read_text())
@@ -708,8 +891,9 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB))
     def test_opencode_preflight_uses_same_pinned_case(self, _resources, _managed, _project, _version, _gpu_info, _placement, _ollama, _model, _git, _which):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
-        result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",
-                                  Path("/tmp/opencode-state"), "opencode", "opencode")
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",
+                                      Path(temp_dir) / "opencode-state", "opencode", "opencode")
         self.assertTrue(result["passed"], result["checks"])
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
@@ -721,7 +905,8 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB))
     def test_preflight_passes_only_when_pins_and_resources_match(self, _resources, _config, _gpu_info, _placement, _ollama, _model, _git):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
-        result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path("/tmp/isolated-veasel"))
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path(temp_dir) / "isolated-veasel")
         self.assertTrue(result["passed"])
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
@@ -733,7 +918,8 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "available_resources", return_value=(5 * runner.GIB, 0))
     def test_preflight_blocks_launch_without_observed_startup_headroom(self, _resources, _config, _gpu_info, _placement, _ollama, _model, _git):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
-        result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path("/tmp/isolated-veasel"))
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path(temp_dir) / "isolated-veasel")
         failed = {check["name"] for check in result["checks"] if not check["passed"]}
         self.assertEqual(failed, {"startup_memory_headroom"})
         startup_check = next(check for check in result["checks"] if check["name"] == "startup_memory_headroom")
@@ -748,7 +934,8 @@ class PreflightTests(unittest.TestCase):
     @patch.object(runner, "available_resources", return_value=(8 * runner.GIB, runner.GIB))
     def test_resource_or_model_mismatch_blocks_attempt(self, _resources, _config, _gpu_info, _placement, _ollama, _model, _git):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
-        result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11434", Path("/tmp/isolated-veasel"))
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11434", Path(temp_dir) / "isolated-veasel")
         failed = {check["name"] for check in result["checks"] if not check["passed"]}
         self.assertEqual(failed, {"ollama_endpoint", "model_digest", "ollama_model_gpu_placement"})
 

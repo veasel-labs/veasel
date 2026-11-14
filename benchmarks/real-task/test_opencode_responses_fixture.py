@@ -43,7 +43,16 @@ class _ResponsesFixtureHandler(BaseHTTPRequestHandler):
                 "model": payload.get("model"),
                 "stream": payload.get("stream"),
                 "authorization": self.headers.get("Authorization"),
+                "payload_keys": sorted(payload),
             })
+        if self.path == "/v1/responses/input_tokens":
+            body = json.dumps({"object": "response.input_tokens", "input_tokens": 4096}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         model = payload["model"]
         response = {
             "id": "resp_local_fixture", "object": "response", "status": "completed", "model": model,
@@ -79,7 +88,7 @@ class OpenCodeResponsesFixtureTests(unittest.TestCase):
         upstream = ThreadingHTTPServer(("127.0.0.1", 0), _ResponsesFixtureHandler)
         upstream_thread = threading.Thread(target=upstream.serve_forever, daemon=True)
         upstream_thread.start()
-        budget = runner.responses_proxy_budget(CASE)
+        budget = runner.responses_proxy_budget(CASE, "5")
         proxy = BudgetProxy(
             upstream_base_url=f"http://127.0.0.1:{upstream.server_port}/v1",
             api_key="fixture-upstream-secret",
@@ -89,6 +98,9 @@ class OpenCodeResponsesFixtureTests(unittest.TestCase):
             output_tokens=CASE["model"]["output_tokens"],
             client_api_key="fixture-local-secret",
             max_request_body_bytes=budget["max_request_body_bytes"],
+            max_run_cost_usd=budget["enforced_run_cost_cap_usd"],
+            input_usd_per_million_tokens=CASE["cost_budget"]["input_usd_per_million_tokens"],
+            output_usd_per_million_tokens=CASE["cost_budget"]["output_usd_per_million_tokens"],
         )
         proxy_url = proxy.start()
         try:
@@ -115,12 +127,19 @@ class OpenCodeResponsesFixtureTests(unittest.TestCase):
             self.assertIn('"output":4', result.stdout)
             with _ResponsesFixtureHandler.lock:
                 calls = list(_ResponsesFixtureHandler.requests)
-            self.assertEqual(len(calls), 1, calls)
-            self.assertEqual(calls[0]["path"], "/v1/responses")
+            self.assertEqual([call["path"] for call in calls], [
+                "/v1/responses/input_tokens", "/v1/responses",
+            ], calls)
             self.assertEqual(calls[0]["model"], CASE["model"]["name"])
-            self.assertTrue(calls[0]["stream"])
+            self.assertEqual(calls[0]["payload_keys"], ["input", "instructions", "model", "tools"])
             self.assertEqual(calls[0]["authorization"], "Bearer fixture-upstream-secret")
-            self.assertLessEqual(proxy.metrics()["upstream_attempts_reserved"], budget["upstream_attempt_limit"])
+            self.assertEqual(calls[1]["model"], CASE["model"]["name"])
+            self.assertTrue(calls[1]["stream"])
+            self.assertEqual(calls[1]["authorization"], "Bearer fixture-upstream-secret")
+            metrics = proxy.metrics()
+            self.assertEqual(metrics["upstream_generation_attempts"], 1)
+            self.assertEqual(metrics["input_token_prechecks"], 1)
+            self.assertLessEqual(metrics["upstream_generation_attempts"], budget["upstream_attempt_limit"])
             self.assertGreater(proxy.metrics()["max_request_body_bytes_seen"], 0)
         finally:
             proxy.close()

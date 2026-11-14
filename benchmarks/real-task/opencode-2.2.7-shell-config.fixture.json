@@ -1,0 +1,23 @@
+{
+  "schema": "veasel.real-task-opencode-shell-fixture.v1",
+  "upstream": {
+    "repository": "https://github.com/anomalyco/opencode.git",
+    "tag": "v2.2.7",
+    "commit": "fedc6f208aa2bd54c1019227214568083f6380ad",
+    "source_sha256": {
+      "packages/schema/src/config.ts": "807a70bae2c0d83812fe9722a6e1312ae2974a036d27e3b973c415291ecab1a5",
+      "packages/core/src/shell/select.ts": "87a676584a275cd72f7dd793de7eb65db55fcf5ae18ebcdc94acea6f6c891085",
+      "packages/core/src/shell.ts": "e4b187e0fa25294c3fce67e75f45f20ec65eac30d56a3eb0d6644e1171ec47a1"
+    }
+  },
+  "config": {
+    "shell": "/benchmark/opencode-shell-sandbox.sh"
+  },
+  "shell_select_invocation": {
+    "executable": "/benchmark/opencode-shell-sandbox.sh",
+    "argv": [
+      "-c",
+      "printf opencode-2.2.7-shell-ok"
+    ]
+  }
+}

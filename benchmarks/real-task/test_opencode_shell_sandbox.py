@@ -1,6 +1,7 @@
 """Tests for the Linux-only shell boundary used by OpenCode v2.2.7."""
 
 import json
+import contextlib
 import os
 import platform
 import shlex
@@ -25,6 +26,16 @@ SECRET_KEYS = (
     "VEASEL_MODEL_API_KEY",
 )
 INVALID_ROOT_PROBE = shutil.which("true") or "/usr/bin/true"
+
+
+@contextlib.contextmanager
+def persistent_workspace():
+    with tempfile.TemporaryDirectory(prefix=".veasel-shell-test-", dir=Path.home()) as temp:
+        parent = Path(temp) / "workspaces"
+        parent.mkdir(mode=0o700)
+        root = parent / "veasel-real-task-test"
+        root.mkdir(mode=0o700)
+        yield parent, root
 
 
 class OpenCode227CompatibilityTests(unittest.TestCase):
@@ -56,14 +67,14 @@ class OpenCode227CompatibilityTests(unittest.TestCase):
         invocation = fixture["shell_select_invocation"]
         # Replace the fixture's deployment path with this checkout's executable.
         command = [str(LAUNCHER), *invocation["argv"]]
-        with tempfile.TemporaryDirectory(prefix="veasel-real-task-", dir="/tmp") as temp:
-            root = Path(temp)
+        with persistent_workspace() as (parent, root):
             result = subprocess.run(
                 command,
                 cwd=root,
                 env={
                     **os.environ,
                     "VEASEL_REAL_TASK_ROOT": str(root),
+                    "VEASEL_REAL_TASK_PARENT": str(parent),
                     "VEASEL_BWRAP": shutil.which("bwrap") or "",
                 },
                 text=True,
@@ -76,8 +87,7 @@ class OpenCode227CompatibilityTests(unittest.TestCase):
 
 class OpenCodeShellSandboxTests(unittest.TestCase):
     def test_fails_closed_for_missing_configuration_and_outside_workspace(self):
-        with tempfile.TemporaryDirectory(prefix="veasel-real-task-", dir="/tmp") as temp:
-            root = Path(temp)
+        with persistent_workspace() as (parent, root):
             env = {"PATH": os.environ.get("PATH", "")}
             missing = subprocess.run(
                 [str(LAUNCHER), "-c", "true"], cwd=root, env=env, text=True, capture_output=True, check=False
@@ -88,7 +98,8 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
             outside = subprocess.run(
                 [str(LAUNCHER), "-c", "true"],
                 cwd=root,
-                env={**env, "VEASEL_REAL_TASK_ROOT": str(root / "other"), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
+                env={**env, "VEASEL_REAL_TASK_ROOT": str(root / "other"),
+                     "VEASEL_REAL_TASK_PARENT": str(parent), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
                 text=True,
                 capture_output=True,
                 check=False,
@@ -106,6 +117,7 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
                     **env,
                     "HOME": str(fake_home),
                     "VEASEL_REAL_TASK_ROOT": str(ssh_dir),
+                    "VEASEL_REAL_TASK_PARENT": str(parent),
                     "VEASEL_BWRAP": INVALID_ROOT_PROBE,
                 },
                 text=True,
@@ -113,7 +125,7 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
                 check=False,
             )
             self.assertNotEqual(ssh.returncode, 0)
-            self.assertIn("direct child of /tmp or /var/tmp", ssh.stderr)
+            self.assertIn("direct child", ssh.stderr)
 
             alias = root.parent / f"{root.name}-alias"
             alias.symlink_to(ssh_dir)
@@ -121,7 +133,8 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
                 symlink_root = subprocess.run(
                     [str(LAUNCHER), "-c", "true"],
                     cwd=root,
-                    env={**env, "VEASEL_REAL_TASK_ROOT": str(alias), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
+                    env={**env, "VEASEL_REAL_TASK_ROOT": str(alias),
+                         "VEASEL_REAL_TASK_PARENT": str(parent), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
                     text=True,
                     capture_output=True,
                     check=False,
@@ -129,31 +142,61 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
             finally:
                 alias.unlink()
             self.assertNotEqual(symlink_root.returncode, 0)
-            self.assertIn("direct child of /tmp or /var/tmp", symlink_root.stderr)
+            self.assertIn("direct child", symlink_root.stderr)
 
             repository = subprocess.run(
                 [str(LAUNCHER), "-c", "true"],
                 cwd=root,
-                env={**env, "VEASEL_REAL_TASK_ROOT": str(REPOSITORY_ROOT), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
+                env={**env, "VEASEL_REAL_TASK_ROOT": str(REPOSITORY_ROOT),
+                     "VEASEL_REAL_TASK_PARENT": str(parent), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
                 text=True,
                 capture_output=True,
                 check=False,
             )
             self.assertNotEqual(repository.returncode, 0)
-            self.assertIn("veasel-real-task-* basename", repository.stderr)
+            self.assertIn("direct child", repository.stderr)
 
-            nested_root = root / "arbitrary-tmp-parent" / "veasel-real-task-nested"
+            nested_root = root / "arbitrary-nested-parent" / "veasel-real-task-nested"
             nested_root.mkdir(parents=True)
             nested = subprocess.run(
                 [str(LAUNCHER), "-c", "true"],
                 cwd=root,
-                env={**env, "VEASEL_REAL_TASK_ROOT": str(nested_root), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
+                env={**env, "VEASEL_REAL_TASK_ROOT": str(nested_root),
+                     "VEASEL_REAL_TASK_PARENT": str(parent), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
                 text=True,
                 capture_output=True,
                 check=False,
             )
             self.assertNotEqual(nested.returncode, 0)
-            self.assertIn("direct child of /tmp or /var/tmp", nested.stderr)
+            self.assertIn("direct child", nested.stderr)
+
+            temporary_parent = subprocess.run(
+                [str(LAUNCHER), "-c", "true"],
+                cwd=root,
+                env={**env, "VEASEL_REAL_TASK_ROOT": str(root),
+                     "VEASEL_REAL_TASK_PARENT": "/tmp", "VEASEL_BWRAP": INVALID_ROOT_PROBE},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(temporary_parent.returncode, 0)
+            self.assertIn("persistent", temporary_parent.stderr)
+
+            parent.chmod(0o755)
+            try:
+                permissive_parent = subprocess.run(
+                    [str(LAUNCHER), "-c", "true"],
+                    cwd=root,
+                    env={**env, "VEASEL_REAL_TASK_ROOT": str(root),
+                         "VEASEL_REAL_TASK_PARENT": str(parent), "VEASEL_BWRAP": INVALID_ROOT_PROBE},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+            finally:
+                parent.chmod(0o700)
+            self.assertNotEqual(permissive_parent.returncode, 0)
+            self.assertIn("mode 0700", permissive_parent.stderr)
 
     def test_rejects_non_opencode_invocation_shape(self):
         result = subprocess.run(
@@ -166,23 +209,22 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
         self.assertIn("expected OpenCode shell invocation", result.stderr)
 
     def test_rejects_hardlinks_inside_git_without_modifying_outside_inode(self):
-        with tempfile.TemporaryDirectory(prefix="veasel-real-task-", dir="/tmp") as workspace_temp:
-            with tempfile.TemporaryDirectory(prefix="veasel-hardlink-sentinel-", dir="/tmp") as outside_temp:
-                workspace = Path(workspace_temp)
-                outside_sentinel = Path(outside_temp) / "outside-sentinel.txt"
-                outside_sentinel.write_text("outside-content-preserved")
-                git_object = workspace / ".git" / "objects" / "hardlinked-object"
-                git_object.parent.mkdir(parents=True)
-                os.link(outside_sentinel, git_object)
+        with persistent_workspace() as (workspace_parent, workspace):
+            outside_sentinel = workspace_parent / "outside-sentinel.txt"
+            outside_sentinel.write_text("outside-content-preserved")
+            git_object = workspace / ".git" / "objects" / "hardlinked-object"
+            git_object.parent.mkdir(parents=True)
+            os.link(outside_sentinel, git_object)
 
-                self.assertEqual(os.stat(workspace).st_dev, os.stat(outside_sentinel).st_dev)
-                self.assertEqual(os.stat(git_object).st_nlink, 2)
-                result = subprocess.run(
+            self.assertEqual(os.stat(workspace).st_dev, os.stat(outside_sentinel).st_dev)
+            self.assertEqual(os.stat(git_object).st_nlink, 2)
+            result = subprocess.run(
                     [str(LAUNCHER), "-c", "printf changed > .git/objects/hardlinked-object"],
                     cwd=workspace,
                     env={
                         "PATH": os.environ.get("PATH", ""),
                         "VEASEL_REAL_TASK_ROOT": str(workspace),
+                        "VEASEL_REAL_TASK_PARENT": str(workspace_parent),
                         "VEASEL_BWRAP": INVALID_ROOT_PROBE,
                     },
                     text=True,
@@ -190,16 +232,16 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
                     check=False,
                 )
 
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("hard-linked regular file", result.stderr)
-                self.assertEqual(outside_sentinel.read_text(), "outside-content-preserved")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("hard-linked regular file", result.stderr)
+            self.assertEqual(outside_sentinel.read_text(), "outside-content-preserved")
+            outside_sentinel.unlink()
 
     @unittest.skipUnless(platform.system() == "Linux" and shutil.which("bwrap"), "requires Linux bubblewrap")
     def test_tool_process_cannot_read_proxy_token_or_reach_loopback_proxy(self):
         if not Path("/proc").is_dir():
             self.skipTest("requires Linux procfs")
-        with tempfile.TemporaryDirectory(prefix="veasel-real-task-", dir="/tmp") as temp:
-            workspace = Path(temp)
+        with persistent_workspace() as (workspace_parent, workspace):
             nested = workspace / "src"
             nested.mkdir(parents=True)
 
@@ -242,6 +284,7 @@ assert os.statvfs("/etc").f_flag & os.ST_RDONLY, "host root filesystem is writab
             env = dict(os.environ)
             env.update({key: SECRET for key in SECRET_KEYS})
             env["VEASEL_REAL_TASK_ROOT"] = str(workspace)
+            env["VEASEL_REAL_TASK_PARENT"] = str(workspace_parent)
             env["VEASEL_BWRAP"] = shutil.which("bwrap") or ""
             try:
                 result = subprocess.run(

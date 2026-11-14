@@ -16,6 +16,7 @@ fi
 command=$2
 
 : "${VEASEL_REAL_TASK_ROOT:?VEASEL_REAL_TASK_ROOT is required}"
+: "${VEASEL_REAL_TASK_PARENT:?VEASEL_REAL_TASK_PARENT is required}"
 : "${VEASEL_BWRAP:?VEASEL_BWRAP is required}"
 
 case "$VEASEL_BWRAP" in
@@ -33,13 +34,35 @@ task_root=$(CDPATH='' cd -- "$VEASEL_REAL_TASK_ROOT" 2>/dev/null && pwd -P) || {
 }
 task_parent=${task_root%/*}
 task_name=${task_root##*/}
-case "$task_parent" in
-	/tmp|/var/tmp) ;;
-	*) printf '%s\n' 'VEASEL_REAL_TASK_ROOT must be a direct child of /tmp or /var/tmp' >&2; exit 64 ;;
+workspace_parent=$(CDPATH='' cd -- "$VEASEL_REAL_TASK_PARENT" 2>/dev/null && pwd -P) || {
+	printf '%s\n' 'VEASEL_REAL_TASK_PARENT must be an existing directory' >&2
+	exit 64
+}
+case "$workspace_parent" in
+	/tmp|/tmp/*|/var/tmp|/var/tmp/*)
+		printf '%s\n' 'VEASEL_REAL_TASK_PARENT must be persistent and outside temporary directories' >&2
+		exit 64
+		;;
 esac
+if [ "$task_parent" != "$workspace_parent" ]; then
+	printf '%s\n' 'task workspace must be a direct child of VEASEL_REAL_TASK_PARENT' >&2
+	exit 64
+fi
+parent_uid=$(/usr/bin/stat -c '%u' "$workspace_parent" 2>/dev/null) || {
+	printf '%s\n' 'cannot verify workspace parent ownership' >&2
+	exit 64
+}
+parent_mode=$(/usr/bin/stat -c '%a' "$workspace_parent" 2>/dev/null) || {
+	printf '%s\n' 'cannot verify workspace parent permissions' >&2
+	exit 64
+}
+if [ "$parent_uid" != "$(/usr/bin/id -u)" ] || [ "$parent_mode" != 700 ]; then
+	printf '%s\n' 'workspace parent must be owned by the current user with mode 0700' >&2
+	exit 64
+fi
 case "$task_name" in
 	veasel-real-task-?*) ;;
-	*) printf '%s\n' 'VEASEL_REAL_TASK_ROOT must use the veasel-real-task-* basename' >&2; exit 64 ;;
+	*) printf '%s\n' 'task workspace must use the veasel-real-task-* basename' >&2; exit 64 ;;
 esac
 hardlinked_file=$(/usr/bin/find -P "$task_root" -type f -links +1 -print -quit 2>/dev/null) || {
 	printf '%s\n' 'cannot inspect all task workspace files for hard links' >&2

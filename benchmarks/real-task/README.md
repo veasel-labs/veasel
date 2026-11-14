@@ -120,6 +120,11 @@ completed the provider turn but failed the independent task oracle: one changed
 only mobile CSS, and the other removed the existing search behavior while
 leaving acceptance unconfirmed. The sanitized measurements are in
 [`real-task-repeat-website-173-muse-spark-2026-11-14.json`](../reports/real-task-repeat-website-173-muse-spark-2026-11-14.json).
+A separate `website-173-muse-spark-v07911` case pins the installed 0.79.11
+binary and reserves for its expanded follow-through limits. This case is a
+real-model run candidate; no deterministic fixture result is counted as a
+coding success. Its live outcome will be recorded only after the independent
+repository oracle is run.
 The OpenCode adapter uses the documented OpenAI-compatible Responses runtime
 and sends requests through `responses_proxy.py`, which in live mode accepts only
 the pinned Meta host (the local fixture mode accepts loopback only), one
@@ -314,16 +319,20 @@ or account-level controls. Attempt reports include a separate cost estimate
 from reported token usage, and keep missing usage unknown.
 
 The `website-173-muse-spark` case pins Meta's `muse-spark-1.3-contributor`, the
-published Contributor rates, a USD 0.11 ceiling per attempt, 8,192 context /
-2,048 output tokens, and 84 maximum HTTP attempts. This allows up to three
-provider attempts per each of Veasel 0.79.2's 24 tool rounds, three edit-review
-rounds, and one possible terminal tool-budget summary completion. Its
-conservative worst-case estimate is USD 0.1032192. An earlier preflight
-incorrectly omitted that summary completion and reported a USD 0.10 cap; the
-attempts below are audited with the corrected USD 0.11 reserve. The runtime
-version and binary hash are pinned because the request count follows these
-bounded retry limits. For each run whose provider usage is unavailable, reserve
-its full worst-case USD 0.10321920 cap in the aggregate ledger. The original case retains its
+published Contributor rates, 8,192 context / 2,048 output tokens, and a maximum
+HTTP request count derived from the exact Veasel runtime version and binary.
+The two allowlisted historical 0.79.5 and 0.79.8 cases allow 84 requests and
+conservatively reserve USD 0.10321920 under a USD 0.11 ceiling. The 0.79.11
+case allows 42 model rounds (24 ordinary, 3 edit-acceptance, 12 bounded post-edit
+follow-through, and 3 final acceptance-review rounds), or 126 HTTP attempts
+including up to two retries per round. Its worst-case reservation is USD
+0.15482880 under a USD 0.16 ceiling. An earlier preflight for the historical
+cases incorrectly omitted the terminal tool-budget summary completion and
+reported USD 0.10; those attempts are audited with the corrected USD 0.11
+reserve. The runtime version and binary hash are pinned because the request
+count follows these bounded retry limits. For each run whose provider usage is
+unavailable, reserve its full case-specific worst-case cap in the aggregate
+ledger. The original case retains its
 0.79.2 binary pin for replay. The separate
 [`website-173-muse-spark-v0793`](cases/website-173-muse-spark-v0793/case.json)
 case pins Veasel `0.79.3-next.0`, binary SHA-256

@@ -207,6 +207,52 @@ test("compact LiveApp keeps the review shortcut discoverable beside pending work
   }
 })
 
+test("pending shell approval is inspectable from the review panel at supported terminal sizes", async () => {
+  for (const size of [
+    { width: 32, height: 12 },
+    { width: 80, height: 24 },
+    { width: 120, height: 40 },
+  ]) {
+    const controller = new AbortController()
+    const { server, requests, completeTurn } = reviewServer()
+    const setup = await testRender(
+      () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />,
+      { ...size, kittyKeyboard: true },
+    )
+    try {
+      await until(setup, "HTML request")
+      setup.mockInput.pressEnter()
+      await until(setup, "Message Veasel")
+      await setup.mockInput.typeText("Create the requested HTML file")
+      setup.mockInput.pressEnter()
+      for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
+        await Bun.sleep(5)
+      }
+      expect(requests).toContain("POST /v1/sessions/session-1/messages")
+      completeTurn()
+      await until(setup, "pending")
+      setup.mockInput.pressKey("r", { ctrl: true })
+      await until(setup, "Shell command")
+      await until(setup, "veasel-code.")
+
+      const frame = setup.captureCharFrame()
+      expect(frame).toContain("a approve")
+      expect(frame).toContain("x reject")
+      if (size.width === 32) {
+        expect(frame).toContain("veasel-code.")
+        expect(frame).toMatch(/│ html\s+│/)
+      } else {
+        expect(frame).toContain("/tmp/veasel-code.html")
+      }
+      expect(requests).not.toContain("POST /v1/sessions/session-1/workspace/commands/command-1/approve")
+    } finally {
+      setup.renderer.destroy()
+      controller.abort()
+      server.stop(true)
+    }
+  }
+})
+
 test("LiveApp distinguishes an unavailable review inventory and lets Ctrl+R retry it", async () => {
   const controller = new AbortController()
   const { server, requests, completeTurn, setInventoryUnavailable } = reviewServer()

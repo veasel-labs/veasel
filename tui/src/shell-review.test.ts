@@ -98,6 +98,24 @@ describe("formatShellReview", () => {
     expect(text).toContain("VEASEL_SHELL_SANDBOX=off only if you intentionally accept")
   })
 
+  test("uses concise security disclosure before the command on compact terminals", () => {
+    const text = formatShellReview({
+      command: "printf '<html>Veasel</html>' > /tmp/veasel-code.html",
+      cwd: "/tmp",
+      timeoutSeconds: 30,
+      runner: "/bin/sh",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pending: true,
+      output: "",
+      maxLines: 6,
+      compactWarning: true,
+    })
+    expect(text).toContain("Unsandboxed: host access.")
+    expect(text.indexOf("Unsandboxed:")).toBeLessThan(text.indexOf("printf"))
+    expect(text).toContain("/tmp/veasel-code.html")
+    expect(text).toContain("inherits its environment")
+  })
+
   test("keeps the entire command available when it exceeds the terminal", () => {
     expect(shellReviewLineBudget(40)).toBe(20)
     const command = longCommand()

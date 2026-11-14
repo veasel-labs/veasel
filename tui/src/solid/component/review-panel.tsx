@@ -190,6 +190,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
     }
     return formatSolidReviewBody(item, {
       terminalRows: dimensions().height,
+      terminalColumns: dimensions().width,
       hunkIndex: hunkIndex(),
       lineOffset: diffLineOffset(),
     })
@@ -302,7 +303,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
   })
 
   return (
-    <box width="100%" flexDirection="column" gap={1}>
+    <box width="100%" flexDirection="column" gap={dimensions().height <= 12 ? 0 : 1}>
       <DialogHeader
         title={reviewPanelTitle(current(), pending().length)}
         hint={`${reviewShortcut.label} · Esc`}
@@ -332,7 +333,9 @@ export function ReviewPanel(props: ReviewPanelProps) {
             <Show when={!busy() && hotkeyHint()}>
               {(hint) => (
                 <text fg={colors.muted} minHeight={1} wrapMode="none">
-                  {current()?.kind === "patch"
+                  {dimensions().width < 44 && current()?.kind === "command"
+                    ? "a approve · x reject"
+                    : current()?.kind === "patch"
                     ? `a approve · x reject · A/X · Space · ]/[ · {/} · ${diffSurface() === "split" ? "v word-diff" : "v split view"}`
                     : hint()}
                 </text>
@@ -348,7 +351,9 @@ export function ReviewPanel(props: ReviewPanelProps) {
                   width="100%"
                   flexGrow={1}
                   stickyScroll={false}
-                  maxHeight={Math.max(8, dimensions().height - 14)}
+                  maxHeight={dimensions().height <= 12
+                    ? Math.max(4, dimensions().height - 8)
+                    : Math.max(8, dimensions().height - 14)}
                 >
                   <text>
                     <For each={bodySegments()}>{(segment) => <SegmentSpan segment={segment} />}</For>

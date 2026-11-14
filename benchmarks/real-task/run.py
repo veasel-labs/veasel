@@ -38,8 +38,12 @@ from responses_proxy import BudgetProxy
 
 ROOT = Path(__file__).resolve().parent
 GIB = 1024**3
-PINNED_VEASEL_MAX_MODEL_ROUNDS = 28
 PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND = 3
+PINNED_VEASEL_RUNTIME_MODEL_ROUNDS = {
+    ("Veasel Code 0.79.5-next.0", "93f0726e998ee7234e0d2cc7d7019471e5c1c1202b35992a703bd7afd3233a7e"): 28,
+    ("Veasel Code 0.79.8-next.0", "78164aaf24db5f33c9059db5398aa9af6efe13831bca55c6c92f067f4245fffe"): 28,
+    ("Veasel Code 0.79.11-next.0", "b2d03e4d04d72e3af22d3aab78dbd51e623ccd72df4c004edaf7c92f22af6ac6"): 42,
+}
 AUTHORIZED_AGGREGATE_SPEND_USD = Decimal("5.00")
 IMPORTED_PRIOR_SPEND_USD = Decimal("0.35444")
 IMPORTED_PRIOR_SPEND_NOTE = (
@@ -48,11 +52,25 @@ IMPORTED_PRIOR_SPEND_NOTE = (
 )
 OPEN_CODE_SHELL_WRAPPER = ROOT / "opencode-shell-sandbox.sh"
 OPEN_CODE_SHELL_WRAPPER_SHA256 = "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
-REMOTE_CASE_SHA256S = {
-    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5":
-        "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af",
-    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.8":
-        "eec274a8a5cc71f6e03c50c2f449b59baaa0abe97cdd9c5f08d3f74bdb3e09c7",
+REMOTE_CASE_PINS = {
+    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5": {
+        "case_sha256": "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af",
+        "max_cost_usd": Decimal("0.11"),
+        "max_model_requests": 84,
+        "max_request_body_bytes": 32768,
+    },
+    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.8": {
+        "case_sha256": "eec274a8a5cc71f6e03c50c2f449b59baaa0abe97cdd9c5f08d3f74bdb3e09c7",
+        "max_cost_usd": Decimal("0.11"),
+        "max_model_requests": 84,
+        "max_request_body_bytes": 32768,
+    },
+    "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.11": {
+        "case_sha256": "22bd53fc52f182f79ef51eebb78d8249e443fed61d6ca29833f6a173c7422358",
+        "max_cost_usd": Decimal("0.16"),
+        "max_model_requests": 126,
+        "max_request_body_bytes": 32768,
+    },
 }
 REMOTE_CASE_MODEL = "muse-spark-1.3-contributor"
 REMOTE_CASE_PROVIDER = "meta"
@@ -61,9 +79,6 @@ REMOTE_CASE_CONTEXT_TOKENS = 8192
 REMOTE_CASE_OUTPUT_TOKENS = 2048
 REMOTE_CASE_INPUT_USD_PER_MILLION = Decimal("0.1")
 REMOTE_CASE_OUTPUT_USD_PER_MILLION = Decimal("0.2")
-REMOTE_CASE_MAX_COST_USD = Decimal("0.11")
-REMOTE_CASE_MAX_REQUESTS = 84
-REMOTE_CASE_MAX_BODY_BYTES = 32768
 
 
 def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | None:
@@ -76,7 +91,8 @@ def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | Non
         disk_case = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("remote benchmark case is not valid pinned JSON") from exc
-    approved_digest = REMOTE_CASE_SHA256S.get(disk_case.get("id"))
+    remote_pin = REMOTE_CASE_PINS.get(disk_case.get("id"))
+    approved_digest = remote_pin.get("case_sha256") if remote_pin else None
     expected = {
         "model": {
             "provider": REMOTE_CASE_PROVIDER,
@@ -90,11 +106,11 @@ def validate_remote_case_pin(case_path: Path, case: dict[str, Any]) -> str | Non
             "base_url": REMOTE_CASE_BASE_URL,
         },
         "cost_budget": {
-            "max_cost_usd": float(REMOTE_CASE_MAX_COST_USD),
+            "max_cost_usd": float(remote_pin["max_cost_usd"]) if remote_pin else None,
             "input_usd_per_million_tokens": float(REMOTE_CASE_INPUT_USD_PER_MILLION),
             "output_usd_per_million_tokens": float(REMOTE_CASE_OUTPUT_USD_PER_MILLION),
-            "max_model_requests": REMOTE_CASE_MAX_REQUESTS,
-            "max_request_body_bytes": REMOTE_CASE_MAX_BODY_BYTES,
+            "max_model_requests": remote_pin["max_model_requests"] if remote_pin else None,
+            "max_request_body_bytes": remote_pin["max_request_body_bytes"] if remote_pin else None,
         },
     }
     if approved_digest != digest or disk_case != case:
@@ -806,9 +822,12 @@ def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[
         valid_numbers = all(value.is_finite() and value >= 0 for value in numeric_values)
         valid_counts = all(isinstance(value, int) and not isinstance(value, bool) and value > 0
                            for value in (request_cap, context_tokens, output_tokens))
-        request_cap_matches_runtime = request_cap == (
-            PINNED_VEASEL_MAX_MODEL_ROUNDS * PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND
-        )
+        runtime = case.get("runtime", {})
+        runtime_key = (runtime.get("veasel_version"), runtime.get("veasel_binary_sha256"))
+        pinned_rounds = PINNED_VEASEL_RUNTIME_MODEL_ROUNDS.get(runtime_key)
+        pinned_requests = (pinned_rounds * PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND
+                           if pinned_rounds is not None else None)
+        request_cap_matches_runtime = pinned_requests is not None and request_cap == pinned_requests
         bound = (Decimal(request_cap) * (Decimal(context_tokens) * input_rate
                                          + Decimal(output_tokens) * output_rate) / Decimal(1_000_000)
                  if valid_numbers and valid_counts else None)
@@ -818,7 +837,8 @@ def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[
             "approved_spend_usd": str(approved) if approved.is_finite() else "invalid",
             "max_cost_usd": str(ceiling) if ceiling.is_finite() else "invalid",
             "max_model_requests": request_cap if valid_counts else None,
-            "pinned_runtime_max_model_requests": PINNED_VEASEL_MAX_MODEL_ROUNDS * PINNED_PROVIDER_HTTP_ATTEMPTS_PER_ROUND,
+            "pinned_runtime_max_model_rounds": pinned_rounds,
+            "pinned_runtime_max_model_requests": pinned_requests,
             "input_usd_per_million_tokens": str(input_rate) if input_rate.is_finite() else "invalid",
             "output_usd_per_million_tokens": str(output_rate) if output_rate.is_finite() else "invalid",
             "worst_case_input_tokens": request_cap * context_tokens if valid_counts else None,
@@ -827,7 +847,7 @@ def provider_cost_bound(case: dict[str, Any], approved_spend_usd: str) -> tuple[
             "cost_basis": "all input billed at uncached rate; every request uses full context and output caps",
         }
         check("approved_cost_ceiling", safe, report,
-              "model request cap matches pinned runtime (28 rounds including the tool-budget summary x 3 HTTP attempts); positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling")
+              "model request cap matches the exact version/binary runtime round pin x 3 bounded HTTP attempts; positive operator authorization; ceiling <= authorization; worst-case token cost <= ceiling")
         return report, checks
     except (KeyError, InvalidOperation, TypeError, ValueError):
         report = {"cost_basis": "missing or invalid configured-provider cost budget"}
@@ -1202,7 +1222,19 @@ def preserve_candidate_changes(task_root: Path, base_commit: str, artifact_dir: 
     }
 
 
-def preflight(case_path: Path, workspace: Path, ollama_url: str, data_dir: Path, agent: str = "veasel", agent_binary: str = "opencode", approved_spend_usd: str = "0", bwrap_path: str | Path = "/usr/bin/bwrap", isolation_wrapper_path: str | Path | None = None, isolation_wrapper_sha256: str | None = None, task_root_value: str | Path | None = None) -> dict[str, Any]:
+def preflight(
+    case_path: Path,
+    workspace: Path,
+    ollama_url: str,
+    data_dir: Path,
+    agent: str = "veasel",
+    agent_binary: str = "veasel",
+    approved_spend_usd: str = "0",
+    bwrap_path: str | Path = "/usr/bin/bwrap",
+    isolation_wrapper_path: str | Path | None = None,
+    isolation_wrapper_sha256: str | None = None,
+    task_root_value: str | Path | None = None,
+) -> dict[str, Any]:
     case, _prompt_path, prompt_hash = load_case(case_path)
     validate_remote_case_pin(case_path, case)
     model = case["model"]
@@ -1567,7 +1599,7 @@ def run_case(args: argparse.Namespace) -> int:
                     upstream_base_url=REMOTE_CASE_BASE_URL,
                     api_key=upstream_key,
                     model=REMOTE_CASE_MODEL,
-                    max_requests=min(proxy_budget["upstream_attempt_limit"], REMOTE_CASE_MAX_REQUESTS),
+                    max_requests=min(proxy_budget["upstream_attempt_limit"], case["cost_budget"]["max_model_requests"]),
                     context_tokens=REMOTE_CASE_CONTEXT_TOKENS,
                     output_tokens=REMOTE_CASE_OUTPUT_TOKENS,
                     client_api_key=client_key,

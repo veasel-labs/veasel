@@ -25,6 +25,11 @@ runner = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(runner)
 
+SAFE_PREFLIGHT_COST = (
+    {"conservative_max_cost_usd": "0.08601600"},
+    [{"name": "approved_cost_ceiling", "passed": True}],
+)
+
 
 def make_isolation_wrapper(root: Path) -> tuple[Path, str]:
     wrapper = root / "operator-isolation-wrapper"
@@ -319,13 +324,13 @@ class RemoteCasePinTests(unittest.TestCase):
                     runner.preflight(case_path, root, "unused", root / "state", approved_spend_usd="5")
 
     def test_exact_reviewed_remote_case_matches_fixed_model_rate_and_budget_pins(self):
-        for version in ("v0795", "v0798"):
+        for version in ("v0795", "v0798", "v07911"):
             with self.subTest(version=version):
                 path = SCRIPT.parent / f"cases/website-173-muse-spark-{version}/case.json"
                 case, _prompt, _digest = runner.load_case(path)
                 self.assertEqual(
                     runner.validate_remote_case_pin(path, case),
-                    runner.REMOTE_CASE_SHA256S[case["id"]],
+                    runner.REMOTE_CASE_PINS[case["id"]]["case_sha256"],
                 )
 
 
@@ -461,7 +466,14 @@ class PreflightTests(unittest.TestCase):
             "provider_config": {"mode": "veasel-profile", "provider": "anthropic",
                                 "model": "claude-example", "base_url": "https://api.anthropic.com/v1",
                                 "credential": "saved-profile"},
-            "runtime": {},
+            "runtime": {
+                "veasel_version": "Veasel Code 0.79.8-next.0",
+                "veasel_binary_sha256": hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),
+            },
+            "comparators": {"opencode_version": "opencode v2.2.7",
+                             "opencode_model": "museproxy/muse-spark-1.3-contributor",
+                             "opencode_agent": "build", "opencode_auto_approve": True,
+                             "opencode_binary_sha256": "0fcb4a3248b4485feea193ceba9ba233a812790abe679aa4221d4b0820bb06cb"},
             "permissions": {"tool_allowlist": ["read", "edit", "shell"]},
             "budgets": {"wall_seconds": 60, "minimum_available_memory_bytes": 0,
                         "minimum_free_swap_bytes": 0},
@@ -551,9 +563,12 @@ class PreflightTests(unittest.TestCase):
                 "provider": "anthropic", "model": "claude-example",
                 "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
                 "api_key_saved": True,
-            }), patch.object(runner, "model_digest", side_effect=AssertionError("must not probe Ollama")):
+            }), patch.object(runner, "model_digest", side_effect=AssertionError("must not probe Ollama")), \
+                    patch.object(runner, "veasel_version", return_value="Veasel Code 0.79.8-next.0"), \
+                    patch.object(runner, "provider_cost_bound", return_value=SAFE_PREFLIGHT_COST):
                 result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435",
-                                          Path(temp_dir) / "state", approved_spend_usd="5")
+                                          Path(temp_dir) / "state", agent_binary=sys.executable,
+                                          approved_spend_usd="5")
         self.assertTrue(result["passed"], result["checks"])
         readiness = next(item for item in result["checks"] if item["name"] == "provider_live_readiness")
         self.assertEqual(readiness["actual"], "not_probed")
@@ -576,6 +591,11 @@ class PreflightTests(unittest.TestCase):
 
     def test_configured_provider_bound_includes_terminal_tool_budget_summary(self):
         case = {
+            "id": "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.8",
+            "runtime": {
+                "veasel_version": "Veasel Code 0.79.8-next.0",
+                "veasel_binary_sha256": "78164aaf24db5f33c9059db5398aa9af6efe13831bca55c6c92f067f4245fffe",
+            },
             "model": {"context_tokens": 8192, "output_tokens": 2048},
             "cost_budget": {
                 "max_cost_usd": 0.11,
@@ -591,6 +611,18 @@ class PreflightTests(unittest.TestCase):
         case["cost_budget"]["max_cost_usd"] = 0.10
         _report, checks = runner.provider_cost_bound(case, "5")
         self.assertFalse(checks[0]["passed"])
+
+
+    def test_followthrough_runtime_has_its_own_request_and_cost_reservation(self):
+        path = SCRIPT.parent / "cases/website-173-muse-spark-v07911/case.json"
+        case, _prompt, _digest = runner.load_case(path)
+        report, checks = runner.provider_cost_bound(case, "5")
+        self.assertTrue(checks[0]["passed"], checks)
+        self.assertEqual(report["pinned_runtime_max_model_rounds"], 42)
+        self.assertEqual(report["pinned_runtime_max_model_requests"], 126)
+        self.assertEqual(report["conservative_max_cost_usd"], "0.15482880")
+        self.assertEqual(runner.responses_proxy_budget(case, "5")["upstream_attempt_limit"], 126)
+        self.assertFalse(runner.provider_cost_bound(case, "0.15")[1][0]["passed"])
 
     def test_reported_provider_cost_uses_pinned_rates_and_cached_input(self):
         case = {
@@ -620,8 +652,10 @@ class PreflightTests(unittest.TestCase):
                 "provider": "anthropic", "model": "claude-example",
                 "base_url": "https://api.anthropic.com/v1", "max_output_tokens": 1024,
                 "api_key_saved": True,
-            }):
-                result = runner.preflight(case_path, root, "unused", root / "state", approved_spend_usd="5")
+            }), patch.object(runner, "veasel_version", return_value="Veasel Code 0.79.8-next.0"), \
+                    patch.object(runner, "provider_cost_bound", return_value=SAFE_PREFLIGHT_COST):
+                result = runner.preflight(case_path, root, "unused", root / "state",
+                                          agent_binary=sys.executable, approved_spend_usd="5")
         self.assertTrue(result["passed"], result["checks"])
         serialized = json.dumps(result)
         for sentinel in ("origin-user", "origin-token", "case-user", "case-token"):
@@ -670,9 +704,11 @@ class PreflightTests(unittest.TestCase):
                 with patch.object(runner, "configured_model", return_value={
                     "provider": "anthropic", "model": "claude-example", "base_url": endpoint,
                     "max_output_tokens": 1024, "api_key_saved": True,
-                }):
+                }), patch.object(runner, "veasel_version", return_value="Veasel Code 0.79.8-next.0"), \
+                        patch.object(runner, "provider_cost_bound", return_value=SAFE_PREFLIGHT_COST):
                     result = runner.preflight(case_path, Path(temp_dir), "http://127.0.0.1:11435",
-                                              Path(temp_dir) / "state", approved_spend_usd="5")
+                                              Path(temp_dir) / "state", agent_binary=sys.executable,
+                                              approved_spend_usd="5")
                 serialized = json.dumps(result)
                 self.assertEqual(result["passed"], expected_pass)
                 for sentinel in ("userinfo-secret", "query-secret", "fragment-secret", "secret-path-token"):

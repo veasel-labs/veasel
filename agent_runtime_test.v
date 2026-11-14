@@ -137,6 +137,19 @@ fn test_post_edit_acceptance_review_requires_an_applied_diff_and_successful_requ
 	assert !agent_has_agent_turn_round_after(max_agent_turn_rounds - 1)
 }
 
+fn test_acceptance_review_response_budget_counts_only_final_responses() {
+	mut responses := 0
+	responses = agent_code_change_acceptance_review_response_count(responses, 2)
+	responses = agent_code_change_acceptance_review_response_count(responses, 1)
+	assert responses == 0
+	responses = agent_code_change_acceptance_review_response_count(responses, 0)
+	assert responses == 1
+	responses = agent_code_change_acceptance_review_response_count(responses, 3)
+	assert responses == 1
+	responses = agent_code_change_acceptance_review_response_count(responses, 0)
+	assert responses == 2
+}
+
 fn test_failed_requested_verification_prevents_acceptance_review_and_success_claim() {
 	diff := ['--- a/src/main.ts\n+++ b/src/main.ts\n+button.addEventListener(...)']
 	assert !agent_code_change_acceptance_review_available(true, diff, true, false, false)

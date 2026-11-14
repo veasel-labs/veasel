@@ -1,0 +1,118 @@
+{
+  "schema": "veasel.real-task-repeat@1",
+  "recorded_date": "2026-11-14",
+  "classification": "two repeated real-model attempts; no verified task success; not a provider comparison",
+  "task": {
+    "id": "veasel-labs/website#173",
+    "repository": "https://github.com/veasel-labs/website",
+    "base_commit": "184c7d86911d4a760ec89c6ddc9097682e65da44",
+    "prompt_sha256": "5e2a8cede2b2f2736cfcda848294b1f488e1fdf43961bc4efa565282b0ea918e",
+    "oracle": "Compare against merged website PR #173 (merge commit 60e27e97ded17f3b18c615fa9a45345dd642333b), then verify the responsive navigation, Browse sections interaction, aria-expanded state, search reveal, desktop resize, accessibility preferences, and task-specific tests.",
+    "expected_change": "Accessible responsive docs navigation that preserves search, active-page semantics, focus, dark mode, reduced motion, and progressive enhancement."
+  },
+  "controls": {
+    "provider": "meta",
+    "model": "muse-spark-1.3-contributor",
+    "context_tokens": 8192,
+    "max_output_tokens_per_call": 2048,
+    "wall_timeout_seconds": 330,
+    "permissions": "Autonomous edits and shell only inside disposable Bubblewrap task clones; shell network denied; MCP, web, and subagents disabled.",
+    "platform": "Linux x86_64",
+    "veasel_artifact": {
+      "version": "0.79.8-next.0",
+      "binary_sha256": "78164aaf24db5f33c9059db5398aa9af6efe13831bca55c6c92f067f4245fffe"
+    },
+    "resource_measurements": "One-second sampled process-tree RSS/CPU and device-wide GPU memory; values below are sampled maxima, not guaranteed peaks."
+  },
+  "attempts": [
+    {
+      "agent": "Veasel Code",
+      "version": "0.79.8-next.0",
+      "status": "completed",
+      "elapsed_seconds": 45.053,
+      "operation_exit_code": 0,
+      "provider": "meta",
+      "model": "muse-spark-1.3-contributor",
+      "tool_calls": 10,
+      "reported_usage": {
+        "complete": true,
+        "input_tokens": 94353,
+        "output_tokens": 4384,
+        "reasoning_tokens": 3074,
+        "cache_read_tokens": 4300,
+        "cache_write_tokens": 0,
+        "cost": {
+          "amount_usd": 0.00989070,
+          "kind": "estimated",
+          "basis": "Provider-reported token usage priced at the pinned case rates; the provider did not report a cost."
+        }
+      },
+      "changed_files": [
+        "src/styles/global.css"
+      ],
+      "edit_summary": "Adjusted the mobile docs navigation list layout only. No Browse sections control, aria-expanded state, search reveal behavior, or responsive interaction was added.",
+      "checks": {
+        "command": "npm test -- --run",
+        "shell_exit_code": 0,
+        "interpretation": "The generic repository test command exited successfully, but it did not establish the requested navigation behavior."
+      },
+      "sampled_resources": {
+        "process_tree_rss_max_bytes": 31911936,
+        "process_tree_cpu_max_ms": 150,
+        "device_wide_gpu_memory_sampled_max_mib": [450]
+      },
+      "oracle_pass": false,
+      "failure_class": "partial-responsive-css-without-requested-interaction"
+    },
+    {
+      "agent": "Veasel Code",
+      "version": "0.79.8-next.0",
+      "status": "completed_with_acceptance_unconfirmed",
+      "elapsed_seconds": 37.146,
+      "operation_exit_code": 0,
+      "provider": "meta",
+      "model": "muse-spark-1.3-contributor",
+      "tool_calls": 11,
+      "reported_usage": {
+        "complete": true,
+        "input_tokens": 74644,
+        "output_tokens": 3565,
+        "reasoning_tokens": 1815,
+        "cache_read_tokens": 7018,
+        "cache_write_tokens": 0,
+        "cost": {
+          "amount_usd": 0.00748964,
+          "kind": "estimated",
+          "basis": "Provider-reported token usage priced at the pinned case rates; the provider did not report a cost."
+        }
+      },
+      "changed_files": [
+        "src/layouts/DocsLayout.astro"
+      ],
+      "edit_summary": "Replaced the existing docs navigation/search layout with a details-based list. This removed the search control and did not add the requested aria-expanded interaction. The agent's final acceptance response stated that completion was not confirmed.",
+      "checks": {
+        "command": "npm test -- --run src/scripts/marketing-claims.test.js 2>&1 | head -n 100",
+        "shell_exit_code": 0,
+        "interpretation": "The pipeline's exit code is the status of head, so it does not prove that npm test succeeded. No task-specific tests were added."
+      },
+      "sampled_resources": {
+        "process_tree_rss_max_bytes": 127844352,
+        "process_tree_cpu_max_ms": 260,
+        "device_wide_gpu_memory_sampled_max_mib": [449]
+      },
+      "oracle_pass": false,
+      "failure_class": "destructive-navigation-rewrite-with-acceptance-unconfirmed"
+    }
+  ],
+  "interpretation": "Neither of two repeated Veasel runs passed the independent oracle. One made a small CSS-only change; the other removed the existing search behavior and ended with acceptance unconfirmed. Both spent less than USD 0.01 in estimated provider cost. These results show a follow-through gap on this task and do not establish comparative speed or general model quality.",
+  "accounting": {
+    "two_attempts_estimated_cost_usd": 0.01738034,
+    "total_authorized_spend_usd": 5.0,
+    "cumulative_settled_spend_usd": 0.37846058,
+    "remaining_authorized_spend_usd": 4.62153942,
+    "prior_spend_imported_from_previous_session_is_approximate": true,
+    "raw_traces_or_credentials_published": false
+  },
+  "trace_capture": "Private traces and workspace changes remain in the local owner-only benchmark state. This report contains sanitized outcomes only.",
+  "follow_up": "Fix the acceptance-review tool-round budget, then rerun the pinned real task on the next installed release. Keep the OpenCode same-model comparison open until its reviewed isolation wrapper can enforce the same task and cost boundary."
+}

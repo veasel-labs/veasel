@@ -48,9 +48,11 @@ its sandbox semantics; the operator must review that the pinned wrapper applies
 the intended filesystem, process, and network boundaries. The wrapper's digest
 is recorded in `attempt.json`. It should `exec` the child so the monitored PID,
 signals, and process tree continue to cover Veasel/OpenCode, and it must never
-log command arguments or environment variables. The local Veasel provider
-configuration must already point at the pinned local model. No paid API is
-used.
+log command arguments or environment variables. For the local Qwen case, the
+Veasel provider configuration must point at the pinned local model; no paid API
+is used. The configured Muse case uses a remote provider and must only be run
+with explicit operator authorization and the aggregate USD budget controls
+described below.
 
 ```sh
 ISOLATION_WRAPPER=/absolute/path/to/reviewed-isolation-wrapper
@@ -109,6 +111,15 @@ outcomes are externally scored against the same oracle.
 `cases/website-173-muse-spark-v0795/case.json` pins the same website issue,
 base commit, prompt hash, Muse Spark 1.3 Contributor model, output ceiling,
 permissions, and wall/resource limits for Veasel 0.79.5 and OpenCode 2.2.7.
+`cases/website-173-muse-spark-v0798/case.json` preserves the task, model,
+permission, and budget pins while requiring the Veasel 0.79.8 release binary
+SHA-256. This is a Veasel-only replay pin; the OpenCode live baseline remains
+blocked on the separately documented shell/proxy isolation review.
+Two attempts on the installed v0.79.8 binary were run on 2026-11-14. Both
+completed the provider turn but failed the independent task oracle: one changed
+only mobile CSS, and the other removed the existing search behavior while
+leaving acceptance unconfirmed. The sanitized measurements are in
+[`real-task-repeat-website-173-muse-spark-2026-11-14.json`](../reports/real-task-repeat-website-173-muse-spark-2026-11-14.json).
 The OpenCode adapter uses the documented OpenAI-compatible Responses runtime
 and sends requests through `responses_proxy.py`, which in live mode accepts only
 the pinned Meta host (the local fixture mode accepts loopback only), one
@@ -180,6 +191,12 @@ runner's current preflight fails these gates by design; do not remove them to
 force a live run.
 
 ## Current quality scoreboard
+
+Updated 2026-11-14: the installed Veasel Code 0.79.8 Muse Spark replay scored
+0/2 on the real website#173 task. The attempts cost an estimated USD 0.01738034
+combined from provider-reported token counts and the pinned rates. A passing
+assistant turn or generic repository test command is not task success; the
+external navigation oracle remains unmet. See the [sanitized repeat report](../reports/real-task-repeat-website-173-muse-spark-2026-11-14.json).
 
 As of 2026-11-12, the only real coding task in the corpus is website#173 at
 base `184c7d8`, using the pinned Qwen3:8b digest, Ollama 0.40.15, CUDA on an

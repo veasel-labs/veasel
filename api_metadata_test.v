@@ -1,5 +1,21 @@
 module main
 
+import os
+
+fn test_openapi_documents_subagent_and_context_handoff_routes() {
+	openapi := os.read_file('docs/openapi.yaml') or { panic(err) }
+	for operation_id in ['listSessionSubagents', 'createSessionSubagent',
+		'getSessionSubagent', 'cancelSessionSubagent', 'integrateSessionSubagent',
+		'listSessionContextHandoffs'] {
+		assert openapi.contains('operationId: ${operation_id}'), operation_id
+	}
+	for schema in ['SubagentRun', 'SubagentCreateInput', 'SubagentTargetInput',
+		'SubagentIntegrationResponse', 'SubagentIntegrationConflict',
+		'ContextHandoffArtifact', 'ContextHandoffMessage'] {
+		assert openapi.contains('${schema}:'), schema
+	}
+}
+
 fn test_model_catalog_error_message_explains_provider_auth_rejection() {
 	message := model_catalog_error_message('openai', 'model catalog endpoint returned HTTP 401')
 	assert message.contains('rejected the API key')

@@ -531,6 +531,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/plugins/library:
+    get:
+      operationId: listPluginLibrary
+      description: Lists the integrated plugin Library from the generated catalog at `$VEASEL_CATALOG_PATH` (veasel-labs/agent-toolkit `generated/veasel-catalog.json`). Entries show trust, review state, the catalog-declared permission surface, and fail-closed installability; pending/revoked/experimental entries are never installable. Installed state comes from the existing plugin-link loader.
+      responses:
+        '200':
+          description: Library catalog entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryCatalogView'
+        '500':
+          description: Catalog not configured or unreadable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/plugins/library/{id}/install:
+    post:
+      operationId: installPluginLibraryEntry
+      description: Installs one reviewed Library entry through the existing plugin-link loader. Community entries require `allow_community`; entries declaring dangerous permissions require `accept_dangerous`. GitHub entries are cloned at the exact pinned commit and the resolved HEAD must equal the catalog sha. `update` replaces an existing link that points elsewhere.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryInstallInput'
+      responses:
+        '200':
+          description: Installed plugin link.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginLink'
+        '400':
+          description: Entry not installable, opt-in or acknowledgement missing, or package invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Library entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /v1/plugins/library/{id}:
+    delete:
+      operationId: removePluginLibraryEntry
+      description: Removes an installed Library plugin link by catalog id. Refuses to delete a non-link package directory.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Link removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PluginLinkRemoval'
+        '404':
+          description: Link not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/skills:
     get:
       operationId: listDiscoveredSkills
@@ -2915,6 +2988,34 @@ components:
       required: [removed]
       properties:
         removed: { type: string }
+    LibraryInstallInput:
+      type: object
+      properties:
+        allow_community: { type: boolean, default: false }
+        accept_dangerous: { type: boolean, default: false }
+        update: { type: boolean, default: false }
+    LibraryEntryView:
+      type: object
+      required: [id, version, license, trust, review, installable, installable_reason, opt_in_required, permissions_summary, installed]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        license: { type: string }
+        trust: { type: string }
+        review: { type: string }
+        installable: { type: boolean }
+        installable_reason: { type: string }
+        opt_in_required: { type: boolean }
+        permissions_summary: { type: string }
+        installed: { type: boolean }
+    LibraryCatalogView:
+      type: object
+      required: [name, entries]
+      properties:
+        name: { type: string }
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/LibraryEntryView' }
     SkillsCatalog:
       type: object
       required: [skills, diagnostics, roots]

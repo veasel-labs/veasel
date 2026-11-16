@@ -1110,6 +1110,62 @@ pub fn (app &App) remove_plugin_link_route(mut ctx Context, name string) veb.Res
 	})
 }
 
+@['/v1/plugins/library'; get]
+pub fn (app &App) list_plugin_library(mut ctx Context) veb.Result {
+	catalog_path := library_catalog_path()
+	if catalog_path.len == 0 {
+		return json_server_error(mut ctx, 'VEASEL_CATALOG_PATH is not configured')
+	}
+	view := library_catalog_view(app.plugin_directory, app.store.plugin_links_path(),
+		catalog_path) or { return json_server_error(mut ctx, err.msg()) }
+	return ctx.json(view)
+}
+
+@['/v1/plugins/library/:id/install'; post]
+pub fn (app &App) install_plugin_library_entry(mut ctx Context, id string) veb.Result {
+	catalog_path := library_catalog_path()
+	if catalog_path.len == 0 {
+		return json_server_error(mut ctx, 'VEASEL_CATALOG_PATH is not configured')
+	}
+	input := decode_library_install_input(ctx.req.data) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	catalog := load_library_catalog(catalog_path) or {
+		return json_server_error(mut ctx, err.msg())
+	}
+	entry := catalog.entry(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'library entry not found'
+		})
+	}
+	link := install_library_entry(app.plugin_directory, app.store.plugin_links_path(),
+		os.dir(catalog_path), entry, LibraryInstallOptions{
+			allow_community:  input.allow_community
+			accept_dangerous: input.accept_dangerous
+			update:           input.update
+			cache_directory:  os.join_path(os.dir(os.real_path(app.plugin_directory)),
+				'library-cache')
+		}) or { return json_request_error(mut ctx, err.msg()) }
+	return ctx.json(link)
+}
+
+@['/v1/plugins/library/:id'; delete]
+pub fn (app &App) remove_plugin_library_entry(mut ctx Context, id string) veb.Result {
+	remove_plugin_link(app.plugin_directory, app.store.plugin_links_path(), id) or {
+		if err.msg() == 'plugin link not found' {
+			ctx.res.set_status(.not_found)
+			return ctx.json(APIError{
+				error: err.msg()
+			})
+		}
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(PluginLinkRemoval{
+		removed: id
+	})
+}
+
 @['/v1/skills'; get]
 pub fn (app &App) list_discovered_skills(mut ctx Context) veb.Result {
 	project_directory := project_directory_for_skills(ctx.query['directory'] or { '' })

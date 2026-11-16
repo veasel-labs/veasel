@@ -15,21 +15,26 @@ enum HeadlessPluginsAction {
 	links_list
 	links_add
 	links_remove
+	library_list
+	library_install
+	library_remove
 }
 
 struct HeadlessPluginsOptions {
 mut:
-	action  HeadlessPluginsAction
-	plugin  string
-	kind    string
-	name    string
-	path    string
-	replace bool
-	json    bool
+	action           HeadlessPluginsAction
+	plugin           string
+	kind             string
+	name             string
+	path             string
+	replace          bool
+	json             bool
+	allow_community  bool
+	accept_dangerous bool
 }
 
 fn print_headless_plugins_help() {
-	println('Usage: veasel plugins <components|links> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add [--replace] <absolute-package-path>\n  links remove <name>\n\nOptions:\n      --replace  Retarget an existing managed link that points elsewhere\n      --json     Emit machine-readable JSON\n  -h, --help     Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR and record targets in \$VEASEL_DATA_DIR/plugin-links.json; list restores a missing symlink when the registered package still validates. PLUGIN_DATA stays keyed by plugin name.')
+	println('Usage: veasel plugins <components|links|library> …\n\nCommands:\n  components list [--json]\n  components enable <plugin> <skill|mcp> <name>\n  components disable <plugin> <skill|mcp> <name>\n  links list [--json]\n  links add [--replace] <absolute-package-path>\n  links remove <name>\n  library list [--json]\n  library install [--opt-in] [--accept-dangerous] [--replace] <catalog-id>\n  library remove <catalog-id>\n\nOptions:\n      --replace          Retarget an existing managed link that points elsewhere\n      --opt-in           Explicitly opt in to a community Library entry\n      --accept-dangerous Acknowledge a Library entry declaring dangerous permissions\n      --json             Emit machine-readable JSON\n  -h, --help             Show this help\n\nComponents persist in \$VEASEL_DATA_DIR/plugin-components.json.\nLinks create symlinks under \$VEASEL_PLUGIN_DIR and record targets in \$VEASEL_DATA_DIR/plugin-links.json; list restores a missing symlink when the registered package still validates. PLUGIN_DATA stays keyed by plugin name.\nLibrary reads the generated catalog at \$VEASEL_CATALOG_PATH and installs through the same plugin-link loader; pending/revoked entries fail closed.')
 }
 
 fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
@@ -43,7 +48,7 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 	if group in ['--help', '-h', 'help'] {
 		return error('help')
 	}
-	if group !in ['components', 'links'] {
+	if group !in ['components', 'links', 'library'] {
 		return error('unknown plugins command: ${group}')
 	}
 	if index >= args.len {
@@ -90,6 +95,25 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 				}
 			}
 		}
+		'library' {
+			match action {
+				'list' {
+					options.action = .library_list
+				}
+				'install' {
+					options.action = .library_install
+				}
+				'remove' {
+					options.action = .library_remove
+				}
+				'--help', '-h', 'help' {
+					return error('help')
+				}
+				else {
+					return error('unknown plugins library command: ${action}')
+				}
+			}
+		}
 		else {
 			return error('unknown plugins command: ${group}')
 		}
@@ -102,10 +126,22 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 				options.json = true
 			}
 			'--replace' {
-				if options.action != .links_add {
-					return error('--replace is only valid for plugins links add')
+				if options.action !in [.links_add, .library_install] {
+					return error('--replace is only valid for plugins links add or library install')
 				}
 				options.replace = true
+			}
+			'--opt-in' {
+				if options.action != .library_install {
+					return error('--opt-in is only valid for plugins library install')
+				}
+				options.allow_community = true
+			}
+			'--accept-dangerous' {
+				if options.action != .library_install {
+					return error('--accept-dangerous is only valid for plugins library install')
+				}
+				options.accept_dangerous = true
 			}
 			'--help', '-h' {
 				return error('help')
@@ -120,10 +156,22 @@ fn parse_headless_plugins_args(args []string) !HeadlessPluginsOptions {
 		index++
 	}
 	match options.action {
-		.components_list, .links_list {
+		.components_list, .links_list, .library_list {
 			if positional.len > 0 {
 				return error('plugins list does not take positional arguments')
 			}
+		}
+		.library_install {
+			if positional.len != 1 {
+				return error('plugins library install expects <catalog-id>')
+			}
+			options.name = positional[0]
+		}
+		.library_remove {
+			if positional.len != 1 {
+				return error('plugins library remove expects <catalog-id>')
+			}
+			options.name = positional[0]
 		}
 		.components_enable, .components_disable {
 			if positional.len != 3 {
@@ -277,6 +325,61 @@ fn execute_headless_plugins_links_remove(port int, options HeadlessPluginsOption
 	return 'Removed plugin link ${removal.removed}'
 }
 
+fn execute_headless_plugins_library_list(port int, options HeadlessPluginsOptions) !string {
+	response := headless_json_request(port, .get, '/v1/plugins/library', '', false, '')!
+	if response.status_code != 200 {
+		return error(headless_plugins_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	view := json2.decode[LibraryCatalogView](response.body)!
+	mut lines := []string{cap: view.entries.len + 1}
+	lines << 'Plugin library (${view.entries.len})'
+	for entry in view.entries {
+		state := if entry.installed {
+			'installed'
+		} else if entry.installable {
+			'available'
+		} else {
+			'not-installable (${entry.installable_reason})'
+		}
+		lines << '${entry.id}  v${entry.version}  ${entry.trust}/${entry.review}  ${state}  ${entry.permissions_summary}'
+	}
+	return lines.join('\n')
+}
+
+fn execute_headless_plugins_library_install(port int, options HeadlessPluginsOptions) !string {
+	payload := LibraryInstallInput{
+		allow_community:  options.allow_community
+		accept_dangerous: options.accept_dangerous
+		update:           options.replace
+	}
+	path := '/v1/plugins/library/${urllib.path_escape(options.name)}/install'
+	response := headless_json_request(port, .post, path, json2.encode(payload), false, '')!
+	if response.status_code != 200 {
+		return error(headless_plugins_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	link := json2.decode[PluginLink](response.body)!
+	return 'Installed ${link.name}  ->  ${link.path}  skills=${link.skill_count} mcp=${link.mcp_server_count}'
+}
+
+fn execute_headless_plugins_library_remove(port int, options HeadlessPluginsOptions) !string {
+	path := '/v1/plugins/library/${urllib.path_escape(options.name)}'
+	response := headless_json_request(port, .delete, path, '', false, '')!
+	if response.status_code != 200 {
+		return error(headless_plugins_api_error(response))
+	}
+	if options.json {
+		return response.body
+	}
+	removal := json2.decode[PluginLinkRemoval](response.body)!
+	return 'Removed library plugin ${removal.removed}'
+}
+
 fn execute_headless_plugins_command(port int, args []string) {
 	options := parse_headless_plugins_args(args) or {
 		if err.msg() == 'help' {
@@ -324,6 +427,24 @@ fn execute_headless_plugins_command(port int, args []string) {
 		}
 		.links_remove {
 			execute_headless_plugins_links_remove(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.library_list {
+			execute_headless_plugins_library_list(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.library_install {
+			execute_headless_plugins_library_install(port, options) or {
+				eprintln('veasel: ${err.msg()}')
+				exit(1)
+			}
+		}
+		.library_remove {
+			execute_headless_plugins_library_remove(port, options) or {
 				eprintln('veasel: ${err.msg()}')
 				exit(1)
 			}

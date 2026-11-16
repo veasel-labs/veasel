@@ -108,4 +108,35 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(providers).toHaveLength(3);
     expect(providers.every((provider) => provider.auth === 'unknown')).toBe(true);
   });
+
+  it('maps server provider facts without ever claiming a verified sign-in', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/providers/cli': [
+          {
+            id: 'codex', name: 'OpenAI Codex', exec: 'codex', protocol: 'app-server',
+            installed: true, version: 'codex-cli 0.169.0', auth_probe_present: true,
+            auth_state: 'probe-present', permission_modes: ['ask'],
+            session_resume_verified: true, usage_reporting: 'not-published',
+          },
+          {
+            id: 'opencode', name: 'OpenCode', exec: 'opencode', protocol: 'acp',
+            installed: false, version: '', auth_probe_present: false,
+            auth_state: 'probe-missing', permission_modes: ['ask'],
+            session_resume_verified: true, usage_reporting: 'adapter-reported',
+          },
+        ],
+      }),
+    });
+    const providers = await bridge.providers();
+    const codex = providers.find((provider) => provider.id === 'codex');
+    expect(codex?.installed).toBe(true);
+    expect(codex?.version).toBe('codex-cli 0.169.0');
+    expect(codex?.auth).toBe('unknown');
+    expect(codex?.capabilities.sessions).toBe(true);
+    const opencode = providers.find((provider) => provider.id === 'opencode');
+    expect(opencode?.auth).toBe('signed-out');
+    expect(opencode?.capabilities.sessions).toBe(false);
+  });
 });

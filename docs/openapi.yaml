@@ -710,6 +710,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/providers/cli:
+    get:
+      operationId: listCliProviders
+      description: Lists installed-CLI providers (dual provider plane) with honest status facts — PATH install state, the binary's own --version output, and a presence-only auth probe. Credential contents are never read; auth_state is probe-present/probe-missing/unknown, never a verified sign-in. Usage stays adapter-reported or not-published per provider, never estimated.
+      responses:
+        '200':
+          description: Registry-ordered installed-CLI provider statuses.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ProviderCliStatus' }
   /v1/usage:
     get:
       operationId: getUsage
@@ -3444,6 +3456,23 @@ components:
         created_at:
           type: string
           description: SQLite timestamp formatted as YYYY-MM-DD HH:MM:SS.
+    ProviderCliStatus:
+      type: object
+      required: [id, name, exec, protocol, installed, version, auth_probe_present, auth_state, permission_modes, session_resume_verified, usage_reporting]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        exec: { type: string }
+        protocol: { type: string }
+        installed: { type: boolean }
+        version: { type: string }
+        auth_probe_present: { type: boolean }
+        auth_state: { type: string, enum: [probe-present, probe-missing, unknown] }
+        permission_modes:
+          type: array
+          items: { type: string }
+        session_resume_verified: { type: boolean }
+        usage_reporting: { type: string }
     GlobalUsageSummary:
       type: object
       required: [sessions, completed_turns, reported_turns, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, allowance_usd, allowance_reported, cost, models]

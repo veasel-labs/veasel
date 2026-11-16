@@ -2554,6 +2554,11 @@ pub fn (app &App) delete_session(mut ctx Context, id string) veb.Result {
 	})
 }
 
+@['/v1/providers/cli'; get]
+pub fn (app &App) list_cli_providers(mut ctx Context) veb.Result {
+	return ctx.json(provider_cli_statuses())
+}
+
 @['/v1/usage'; get]
 pub fn (app &App) get_usage(mut ctx Context) veb.Result {
 	mut store := app.store

@@ -2,10 +2,20 @@ import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } fr
 import { Button, type ButtonVariant } from './primitives';
 import styles from './ui.module.css';
 
+/** A control inside a closing dialog must not keep focus: a focused text field swallows the palette shortcut. */
+function blurWithin(dialog: HTMLDialogElement): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && dialog.contains(active)) active.blur();
+}
+
 function restoreFocus(returnFocus: { current: HTMLElement | null }): void {
   const target = returnFocus.current;
   returnFocus.current = null;
-  if (target?.isConnected) target.focus();
+  if (!target?.isConnected) return;
+  // Focus must not land in a dialog that is closed (its controls are hidden).
+  const owner = target.closest('dialog');
+  if (owner && !owner.open) return;
+  target.focus();
 }
 
 /**
@@ -41,26 +51,37 @@ export function Dialog({
   const descriptionId = useId();
   const returnFocus = useRef<HTMLElement | null>(null);
 
+  // Runs on every render, not only when `open` changes: the native dialog can
+  // close on its own (Escape) while the parent still says open. Opening again
+  // must then reopen it, even though the prop did not change.
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) {
-      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      // Never return focus into another dialog: opened from the palette, the
+      // previous focus was the palette's own filter, and restoring into it
+      // would leave a text field focused, which swallows the palette shortcut.
+      const active = document.activeElement;
+      returnFocus.current = active instanceof HTMLElement && !active.closest('dialog') ? active : null;
       dialog.showModal();
       initialFocus?.current?.focus();
     } else if (!open && dialog.open) {
+      blurWithin(dialog);
       dialog.close();
       restoreFocus(returnFocus);
     }
-  }, [open, initialFocus]);
+  });
 
   // Escape (or any native close) while the parent still says open.
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     const handleClose = () => {
-      if (returnFocus.current === null) return;
-      restoreFocus(returnFocus);
+      // The native close event is queued: if the dialog was reopened before it ran,
+      // this event is stale and must not close the new session.
+      if (dialog.open) return;
+      blurWithin(dialog);
+      if (returnFocus.current !== null) restoreFocus(returnFocus);
       onClose();
     };
     dialog.addEventListener('close', handleClose);
@@ -70,12 +91,16 @@ export function Dialog({
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    const preventCancel = (event: Event) => {
-      if (closeDisabled) event.preventDefault();
+    const handleCancel = (event: Event) => {
+      // Keep Escape under React state control. Letting the browser close the
+      // native dialog first can race the next render and reopen a still-owned
+      // dialog before its queued `close` event reaches the parent.
+      event.preventDefault();
+      if (!closeDisabled) onClose();
     };
-    dialog.addEventListener('cancel', preventCancel);
-    return () => dialog.removeEventListener('cancel', preventCancel);
-  }, [closeDisabled]);
+    dialog.addEventListener('cancel', handleCancel);
+    return () => dialog.removeEventListener('cancel', handleCancel);
+  }, [closeDisabled, onClose]);
 
   return (
     <dialog

@@ -6,13 +6,13 @@ import { execFileSync } from 'node:child_process';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(here, '..');
 const destDir = path.resolve(appDir, 'resources', 'bin');
-const exe = process.platform === 'win32' ? 'agent-toolkit.exe' : 'agent-toolkit';
+const exe = process.platform === 'win32' ? 'veasel.exe' : 'veasel';
 
 /** Resolve the V backend binary: explicit path, release dist, or PATH. */
 function resolveSource() {
-  const explicit = process.env.ATK_BACKEND_BIN;
+  const explicit = process.env.VEASEL_BACKEND_BIN;
   if (explicit && fs.existsSync(explicit)) return explicit;
-  const repoDist = path.resolve(appDir, '..', '..', 'dist', 'agent-toolkit');
+  const repoDist = path.resolve(appDir, '..', 'dist', 'veasel');
   if (fs.existsSync(repoDist)) return repoDist;
   try {
     const found = execFileSync(process.platform === 'win32' ? 'where' : 'which', [exe], {
@@ -24,7 +24,7 @@ function resolveSource() {
   } catch {
     // fall through
   }
-  throw new Error('no agent-toolkit backend found (set ATK_BACKEND_BIN, build dist/, or install on PATH)');
+  throw new Error('no veasel backend found (set VEASEL_BACKEND_BIN, build dist/, or install on PATH)');
 }
 
 const source = resolveSource();

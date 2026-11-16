@@ -51,3 +51,9 @@ const bridge: AtkBridge = {
 };
 
 contextBridge.exposeInMainWorld('atk', bridge);
+
+// Veasel Desktop shell bridge: only the loopback backend URL crosses.
+// No Node, no filesystem, no generic IPC (ADR-0001 decision 10).
+contextBridge.exposeInMainWorld('veaselDesktop', {
+  getBackendUrl: () => ipcRenderer.invoke('veasel:backend-url'),
+});

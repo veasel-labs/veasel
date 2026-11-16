@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BackendSupervisor, type BackendState } from './backend';
+import { VeaselBackendSupervisor } from './veasel-backend';
 import { HarnessController } from './harness-controller';
 import { HARNESS_STORE_FILE, HarnessStore } from './harness-store';
 import { registerIpc } from './ipc';
@@ -11,6 +12,7 @@ import { TerminalService } from './terminal';
 
 let mainWindow: BrowserWindow | null = null;
 let backend: BackendSupervisor | null = null;
+let veaselBackend: VeaselBackendSupervisor | null = null;
 let terminals: TerminalService | null = null;
 let harness: HarnessController | null = null;
 let mcpSecrets: McpSecretStore | null = null;
@@ -104,7 +106,7 @@ async function createWindow(): Promise<void> {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    title: 'Agent Toolkit',
+    title: 'Veasel',
     backgroundColor: '#f6ebd7',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -121,6 +123,17 @@ async function createWindow(): Promise<void> {
     mainWindow = null;
   });
 
+  if (!veaselBackend) {
+    veaselBackend = new VeaselBackendSupervisor({
+      userDataDir: app.getPath('userData'),
+      resourcesDir: process.resourcesPath,
+    });
+    // Same-origin proxy target for /v1/* (renderer never fetches the
+    // backend cross-origin).
+    veaselBackend.onState((veaselState) => rendererServer?.setBackendTarget(veaselState.url));
+    ipcMain.handle('veasel:backend-url', () => veaselBackend?.snapshot().url ?? null);
+  }
+
   if (!ipcRegistered) {
     registerIpc({
       getBackend: () => backend,
@@ -135,6 +148,12 @@ async function createWindow(): Promise<void> {
   }
 
   terminals.attachWindow(() => mainWindow);
+
+  // Navigation stays on the shell's own loopback origin; anything else
+  // is denied here (external links go through the open handler below).
+  mainWindow.webContents.on('will-navigate', (event, target) => {
+    if (new URL(target).origin !== new URL(url).origin) event.preventDefault();
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {
     try {
@@ -164,12 +183,15 @@ async function createWindow(): Promise<void> {
   }
   if (shuttingDown || window.isDestroyed() || backend !== supervisor) return;
 
-  // Start the bundled V backend after the window exists so failures are visible.
+  // Start the Veasel V backend (the only runtime) after the window
+  // exists so failures are visible. The legacy ATK supervisor is
+  // constructed for IPC compatibility but never started in Veasel
+  // Desktop; its destinations stay inert until wired or removed.
   const startupHarness = harnessController.resolve();
   if (startupHarness.source === 'fallback') {
     fs.mkdirSync(startupHarness.path, { recursive: true });
   }
-  await supervisor.start();
+  if (veaselBackend) await veaselBackend.start();
   if (shuttingDown || window.isDestroyed() || backend !== supervisor) return;
   onBackendState(supervisor.snapshot());
 }
@@ -210,6 +232,8 @@ async function shutdown(): Promise<void> {
   shutdownTask = (async () => {
     terminals?.dispose();
     terminals = null;
+    if (veaselBackend) await veaselBackend.stop();
+    veaselBackend = null;
     const activeBackend = backend;
     backend = null;
     if (activeBackend) await activeBackend.stop();

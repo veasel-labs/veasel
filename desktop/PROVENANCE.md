@@ -33,3 +33,20 @@ were copied as-is to preserve working code and tests. Features that
 have no Veasel backend contract yet stay inert until explicitly wired
 or removed by a reviewed follow-up; the Focus feature is the first
 adaptation target (issue #692).
+
+## Focus feature addition (2026-11-16, stacked on the COPY-ONLY transfer)
+
+The Focus feature set (`src/features/focus/`, `src/data/focus.tsx`,
+`src/data/focus.test.ts`, `src/types/focus.d.ts`) does not exist in
+Agent Toolkit Desktop `main` (`cfebbb7a`); it was copied verbatim the
+same way from the Focus branch:
+
+- Repository: `ulises-jeremias/agent-toolkit` (MIT)
+- Source commit: `ac2cd125` (`fix(desktop): scope Codex experimental API to Plan`)
+- Source paths: `apps/desktop/src/features/focus/`, `apps/desktop/src/data/focus.tsx`,
+  `apps/desktop/src/data/focus.test.ts`, `apps/desktop/src/types/focus.d.ts`
+- Verification: recursive diff against a fresh `git archive ac2cd125`
+  extraction reported zero differences at copy time.
+
+This matches the earlier step-1 Focus copy already in `gui/focus/`
+(veasel PR #702), which came from the same source commit.

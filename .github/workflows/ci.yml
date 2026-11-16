@@ -310,7 +310,9 @@ jobs:
           Remove-Item Env:VEASEL_DATA_DIR
       - name: Run Linux domain tests
         if: runner.os == 'Linux'
-        timeout-minutes: 20
+        # Each listed file compiles the whole module (~1 min); the list
+        # outgrew 20 minutes as provider CLI suites were added.
+        timeout-minutes: 35
         run: |
           if ! command -v bwrap >/dev/null 2>&1; then
             sudo apt-get install -y bubblewrap

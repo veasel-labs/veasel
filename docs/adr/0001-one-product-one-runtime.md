@@ -71,7 +71,25 @@ Option A. Sub-decisions:
 6. **Toolkit boundary:** skills/agents/packs/schemas (Markdown/YAML/JSON,
    MIT) are consumed verbatim; Toolkit CLI/catalog and installs stay;
    Desktop retires only after Veasel GUI parity + compatibility shims.
-7. **Hornero boundary:** Veasel registers as an external AgentSpec
+8. **Official plugin distribution:** `veasel-labs/agent-toolkit` is the
+   official Veasel plugin distribution and community marketplace —
+   curated official plugins, a Git-backed registry of externally
+   maintained community plugins (referenced by repo+ref+sha, never
+   vendored), provenance, review policy, version pinning, and generated
+   client marketplace manifests (Claude Code/Cursor/Codex/Copilot/
+   Veasel). It reuses the personal toolkit's canonical schemas,
+   product manifests, validators, and bundles copy-first (seeded from
+   `ulises-jeremias/agent-toolkit@ec993aa5`, see that repo's
+   ATTRIBUTION.md). `ulises-jeremias/agent-toolkit` remains the
+   maintainer's personal, portable collection: independent, and free
+   to publish its plugins into the Veasel catalog by reference without
+   duplicating source. No second CLI, plugin runtime, or catalog
+   implementation may be built in either repo; runtime/session/security
+   ownership stays exclusively in `veasel-labs/veasel`. Veasel's
+   TUI/Desktop exposes ONE integrated plugin Library (bundled minimal
+   offline skills, discovery, install, update, permission review,
+   removal) consuming this catalog.
+9. **Hornero boundary:** Veasel registers as an external AgentSpec
    (`horneroctl agent list|status|doctor`, dry-run launch), keeps its own
    security model (no ABAC inheritance), acts on the OS only via typed
    `horneroctl` contracts. Hermes stays until functional AND security

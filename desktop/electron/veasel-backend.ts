@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 
 /**
@@ -24,6 +25,8 @@ export interface VeaselBackendOptions {
   userDataDir: string;
   resourcesDir?: string;
   env?: NodeJS.ProcessEnv;
+  /** Test seam; production uses the canonical Veasel data dir. */
+  dataDir?: string;
 }
 
 const HEALTH_TIMEOUT_MS = 30_000;
@@ -50,13 +53,43 @@ export function veaselBackendBinaryCandidates(options: VeaselBackendOptions): st
   return candidates;
 }
 
-async function isHealthy(url: string): Promise<boolean> {
+export interface VeaselBackendIdentity {
+  version: string;
+  pid: number;
+}
+
+/**
+ * Canonical Veasel data dir, mirroring `default_data_dir()` in main.v:
+ * `$VEASEL_DATA_DIR` or `~/.local/share/veasel`. Desktop-spawned backends
+ * must use the same store as the TUI/CLI (one runtime, shared sessions),
+ * never a Desktop-private directory.
+ */
+export function canonicalVeaselDataDir(env: NodeJS.ProcessEnv = process.env, homeDir: string = os.homedir()): string {
+  return env.VEASEL_DATA_DIR ?? path.join(homeDir, '.local', 'share', 'veasel');
+}
+
+/** Identity is proven only by the Veasel health payload, never a bare 200. */
+export function veaselHealthIdentity(body: unknown): VeaselBackendIdentity | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const health = body as Record<string, unknown>;
+  if (health.healthy !== true) return null;
+  if (typeof health.version !== 'string' || health.version.length === 0) return null;
+  if (typeof health.pid !== 'number' || !Number.isInteger(health.pid) || health.pid <= 0) return null;
+  return { version: health.version, pid: health.pid };
+}
+
+export async function probeVeaselBackend(url: string): Promise<VeaselBackendIdentity | null> {
   try {
     const response = await fetch(`${url}/v1/health`);
-    return response.status === 200;
+    if (response.status !== 200) return null;
+    return veaselHealthIdentity(await response.json());
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function isHealthy(url: string): Promise<boolean> {
+  return (await probeVeaselBackend(url)) !== null;
 }
 
 export class VeaselBackendSupervisor {
@@ -95,7 +128,9 @@ export class VeaselBackendSupervisor {
     }
     const port = await freePort();
     const url = `http://127.0.0.1:${port}`;
-    const dataDir = path.join(this.options.userDataDir, 'backend');
+    // Same canonical store the TUI/CLI use: Desktop-first and TUI-first
+    // startups share sessions/profile instead of splitting SQLite stores.
+    const dataDir = this.options.dataDir ?? canonicalVeaselDataDir(this.options.env ?? process.env);
     fs.mkdirSync(dataDir, { recursive: true });
     const env = {
       ...(this.options.env ?? process.env),
@@ -115,6 +150,7 @@ export class VeaselBackendSupervisor {
         lastError = error instanceof Error ? error.message : String(error);
         continue;
       }
+      this.watchChild(this.child);
       const started = await this.waitHealthy(url);
       if (started) {
         this.setState({ status: 'ready', url, problem: null });
@@ -127,9 +163,33 @@ export class VeaselBackendSupervisor {
     return this.state;
   }
 
+  private stopping = false;
+  private childFailed = false;
+
+  private watchChild(child: ChildProcess): void {
+    this.childFailed = false;
+    child.once('error', () => {
+      this.childFailed = true;
+    });
+    child.once('exit', (code, signal) => {
+      if (this.child === child) this.child = null;
+      // A spawned backend that dies after ready must not leave the shell
+      // believing a dead URL is live. Attached backends are not ours to
+      // supervise, and stop() suppresses its own termination.
+      if (!this.stopping && !this.attached && this.state.status === 'ready') {
+        this.setState({
+          status: 'failed',
+          url: null,
+          problem: `veasel backend exited unexpectedly (${signal ?? `code ${code ?? 'unknown'}`})`,
+        });
+      }
+    });
+  }
+
   private async waitHealthy(url: string): Promise<boolean> {
     const deadline = Date.now() + HEALTH_TIMEOUT_MS;
     while (Date.now() < deadline) {
+      if (this.childFailed) return false;
       if (this.child && this.child.exitCode !== null) return false;
       if (await isHealthy(url)) return true;
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -143,6 +203,7 @@ export class VeaselBackendSupervisor {
   }
 
   async stop(): Promise<void> {
+    this.stopping = true;
     // Never kill a backend we merely attached to (the TUI may own it).
     if (!this.attached) this.killChild();
     this.attached = false;

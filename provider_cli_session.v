@@ -264,7 +264,7 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 	// when the approval layer lands (#691 follow-up).
 	permission_mode := os.getenv_opt('VEASEL_CLI_PERMISSION_MODE') or { 'ask' }
 	spec := validate_provider_cli_launch(config.provider, permission_mode)!
-	if spec.protocol !in ['stream-json', 'app-server'] {
+	if spec.protocol !in ['stream-json', 'app-server', 'acp'] {
 		return error('installed-CLI protocol ${spec.protocol} is not yet wired for session turns')
 	}
 	prompt := cli_transcript_prompt(messages)
@@ -282,6 +282,20 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 		}
 		if remaining < timeout_ms {
 			timeout_ms = remaining
+		}
+	}
+	if spec.protocol == 'acp' {
+		acp_turn := run_opencode_cli_turn(spec.exec, cwd, config.model, prompt,
+			timeout_ms, on_text_delta, decide)!
+		if acp_turn.outcome != 'completed' {
+			return error('installed CLI ${spec.name} turn ${acp_turn.outcome}')
+		}
+		return CompletionOutput{
+			provider:          config.provider
+			model:             config.model
+			content:           acp_turn.text
+			usage:             acp_turn.usage
+			provider_attempts: 1
 		}
 	}
 	if spec.protocol == 'app-server' {

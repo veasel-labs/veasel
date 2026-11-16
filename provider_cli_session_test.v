@@ -134,13 +134,13 @@ fn test_cli_transcript_prompt_flattens_history() {
 			content: 'hi'
 		},
 	], ModelConfig{
-		provider: 'opencode'
+		provider: 'muse'
 		model:    'default'
 	}, os.getwd(), ignore_provider_text_delta) or {
-		assert err.msg().contains('not yet wired')
+		assert err.msg().contains('not verified')
 		return
 	}
-	panic('opencode must fail closed until its runner is wired, got ${unsupported}')
+	panic('muse must fail closed while its protocol is unverified, got ${unsupported}')
 }
 
 fn test_cli_permission_mode_gate_rejects_unknown_mode() {

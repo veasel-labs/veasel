@@ -41,6 +41,20 @@ export interface VeaselMessage {
   created_at?: string;
 }
 
+export interface VeaselCliProviderStatus {
+  id: string;
+  name: string;
+  exec: string;
+  protocol: string;
+  installed: boolean;
+  version: string;
+  auth_probe_present: boolean;
+  auth_state: string;
+  permission_modes: string[];
+  session_resume_verified: boolean;
+  usage_reporting: string;
+}
+
 export interface VeaselCliApproval {
   id: string;
   tool_name: string;
@@ -203,22 +217,54 @@ export function createVeaselFocusBridge(options: {
   }
 
   return {
-    // No provider-status route exists yet: report unknown, never "ready".
+    // Provider facts come from GET /v1/providers/cli. The server probe is
+    // presence-only, so a present auth file still maps to Focus 'unknown'
+    // (never 'ready' — sign-in is not verified), a missing one to
+    // 'signed-out', and any route failure to the honest static fallback.
     async providers(): Promise<FocusProviderStatus[]> {
       const checkedAt = new Date().toISOString();
-      return PROVIDER_IDS.map((id) => ({
+      const fallback: FocusProviderStatus[] = PROVIDER_IDS.map((id) => ({
         id,
         label: id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : 'OpenCode',
         installed: false,
         binary: null,
         version: null,
         auth: 'unknown' as const,
-        authDetail: 'Provider status is not exposed by the Veasel API yet.',
+        authDetail: 'Provider status route is unavailable.',
         signInHint: null,
         models: [],
         capabilities: { sessions: true, approvals: true, interrupt: true, resume: true, modelSwitch: false },
         checkedAt,
       }));
+      const statuses = await request<VeaselCliProviderStatus[]>('/v1/providers/cli').catch(
+        () => null,
+      );
+      if (!statuses || !Array.isArray(statuses)) return fallback;
+      return fallback.map((base) => {
+        const status = statuses.find(
+          (entry) => entry.id === base.id || (entry.id === 'claude-code' && base.id === 'claude'),
+        );
+        if (!status) return base;
+        return {
+          ...base,
+          installed: status.installed,
+          binary: status.installed ? status.exec : null,
+          version: status.version || null,
+          auth: status.auth_state === 'probe-missing' ? ('signed-out' as const) : ('unknown' as const),
+          authDetail:
+            status.auth_state === 'probe-present'
+              ? 'Auth file present; sign-in is not verified by the Veasel API.'
+              : status.auth_state === 'probe-missing'
+                ? 'No auth file found for this CLI.'
+                : 'Auth state is unknown.',
+          capabilities: {
+            ...base.capabilities,
+            // Only wired protocols may claim structured sessions.
+            sessions: status.protocol === 'stream-json' || status.protocol === 'app-server',
+            resume: status.session_resume_verified,
+          },
+        };
+      });
     },
 
     async listThreads(): Promise<FocusThread[]> {

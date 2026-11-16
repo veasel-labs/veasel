@@ -56,11 +56,11 @@ pub fn provider_cli_registry() []ProviderCliSpec {
 			id:                      'muse'
 			name:                    'Muse Code'
 			exec:                    'muse'
-			protocol:                'unknown' // MSP wire protocol not verified as ACP/MCP
+			protocol:                'acp' // `muse acp`, verified live against Muse Code 1.4.20 (initialize + session/new)
 			auth_probe_path:         '~/.config/muse/auth.json'
-			permission_modes:        ['ask']
-			session_resume_verified: false
-			usage_reporting:         'unknown'
+			permission_modes:        ['ask'] // runner forces mode=onRequest; Muse defaults sessions to allowAll
+			session_resume_verified: false     // loadSession advertised live, resume path not yet exercised
+			usage_reporting:         'unknown' // prompt-result usage not yet measured for Muse
 		},
 	]
 }

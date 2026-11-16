@@ -6,10 +6,10 @@ fn test_provider_cli_registry_is_truthful() {
 	for spec in registry {
 		assert spec.exec.len > 0
 		assert spec.permission_modes.len > 0
-		// Muse is registered but must stay unverified until its wire
-		// protocol is measured; it must never look launchable.
+		// Muse ACP was measured live (1.4.20), so it is launchable in
+		// ask mode; resume and usage stay unverified until exercised.
 		if spec.id == 'muse' {
-			assert spec.protocol == 'unknown'
+			assert spec.protocol == 'acp'
 			assert !spec.session_resume_verified
 			assert spec.usage_reporting == 'unknown'
 		}
@@ -24,8 +24,10 @@ fn test_validate_provider_cli_launch_fails_closed() {
 		ProviderCliSpec{}
 	}
 	assert opencode_bypass.id == '' // rejected above
-	if _ := validate_provider_cli_launch('muse', 'ask') {
-		panic('muse must refuse to launch: protocol unverified')
+	muse := validate_provider_cli_launch('muse', 'ask') or { panic(err) }
+	assert muse.protocol == 'acp'
+	if _ := validate_provider_cli_launch('muse', 'bypass') {
+		panic('muse must refuse non-ask permission modes')
 	}
 	if _ := validate_provider_cli_launch('nope', 'ask') {
 		panic('unknown provider must refuse to launch')

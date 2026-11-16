@@ -284,9 +284,18 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 			timeout_ms = remaining
 		}
 	}
+	// Veasel's placeholder model 'default' means "the CLI's own default";
+	// never forward it as a literal model id (Muse rejects it, Codex
+	// would too).
+	cli_model := if config.model == 'default' { '' } else { config.model }
 	if spec.protocol == 'acp' {
-		acp_turn := run_opencode_cli_turn(spec.exec, cwd, config.model, prompt,
-			timeout_ms, on_text_delta, decide)!
+		acp_turn := if spec.id == 'muse' {
+			run_muse_cli_turn(spec.exec, cwd, cli_model, prompt, timeout_ms,
+				on_text_delta, decide)!
+		} else {
+			run_opencode_cli_turn(spec.exec, cwd, cli_model, prompt, timeout_ms,
+				on_text_delta, decide)!
+		}
 		if acp_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${acp_turn.outcome}')
 		}
@@ -300,7 +309,7 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 	}
 	if spec.protocol == 'app-server' {
 		codex_turn := run_codex_cli_turn(spec.exec, cwd, permission_mode,
-			config.model, prompt, timeout_ms, on_text_delta, decide)!
+			cli_model, prompt, timeout_ms, on_text_delta, decide)!
 		if codex_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${codex_turn.outcome}')
 		}

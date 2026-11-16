@@ -52,14 +52,59 @@ fn opencode_rpc(id int, method string, params string) string {
 	return '{"jsonrpc":"2.0","id":${id},"method":"${method}","params":${params}}'
 }
 
-// run_opencode_cli_turn runs one prompt to its session/prompt result.
-// Returns an error only for spawn/timeout/transport failures;
-// provider-reported failure is outcome='failed'.
+pub struct AcpSessionConfig {
+pub:
+	config_id string
+	value     string
+}
+
+// run_opencode_cli_turn runs one OpenCode ACP prompt (spawn: `acp`,
+// optional model config option).
 pub fn run_opencode_cli_turn(command string, cwd string, model string,
 	user_text string, timeout_ms int, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
+	configs := if model.len > 0 {
+		[AcpSessionConfig{
+			config_id: 'model'
+			value:     model
+		}]
+	} else {
+		[]AcpSessionConfig{}
+	}
+	return run_acp_cli_turn(command, ['acp'], cwd, configs, user_text, timeout_ms,
+		on_text_delta, decide)
+}
+
+// run_muse_cli_turn runs one Muse ACP prompt (spawn: `muse acp`).
+// Muse session/new defaults its mode config to allowAll, so the
+// runner ALWAYS forces mode=onRequest before prompting and fails the
+// turn if the server refuses — a Muse turn never runs under allowAll.
+pub fn run_muse_cli_turn(command string, cwd string, model string,
+	user_text string, timeout_ms int, on_text_delta ProviderTextDeltaFn,
+	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
+	mut configs := [AcpSessionConfig{
+		config_id: 'mode'
+		value:     'onRequest'
+	}]
+	if model.len > 0 {
+		configs << AcpSessionConfig{
+			config_id: 'model'
+			value:     model
+		}
+	}
+	return run_acp_cli_turn(command, ['acp'], cwd, configs, user_text, timeout_ms,
+		on_text_delta, decide)
+}
+
+// run_acp_cli_turn runs one ACP prompt to its session/prompt result,
+// applying config_options (in order) after session/new. Returns an
+// error only for spawn/timeout/transport failures; provider-reported
+// failure is outcome='failed'.
+pub fn run_acp_cli_turn(command string, spawn_args []string, cwd string,
+	config_options []AcpSessionConfig, user_text string, timeout_ms int,
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
 	mut process := os.new_process(command)
-	process.set_args(['acp'])
+	process.set_args(spawn_args)
 	if cwd.len > 0 {
 		process.set_work_folder(cwd)
 	}
@@ -96,7 +141,8 @@ pub fn run_opencode_cli_turn(command string, cwd string, model string,
 	mut approvals_denied := 0
 	mut approvals_approved := 0
 	mut phase := 0 // 0=initialize, 1=session/new, 2=config, 3=prompt
-	prompt_rpc_id := if model.len > 0 { 4 } else { 3 }
+	mut config_index := 0
+	prompt_rpc_id := 3 + config_options.len
 	mut buffer := ''
 	for {
 		if time.since(started).milliseconds() > timeout {
@@ -133,10 +179,12 @@ pub fn run_opencode_cli_turn(command string, cwd string, model string,
 						if session_id.len == 0 {
 							return error('installed CLI did not return a session')
 						}
-						if model.len > 0 {
+						if config_options.len > 0 {
+							option := config_options[0]
 							process.stdin_write(opencode_rpc(3, 'session/set_config_option',
-								'{"sessionId":${json2.encode(session_id)},"configId":"model","value":${json2.encode(model)}}') +
+								'{"sessionId":${json2.encode(session_id)},"configId":${json2.encode(option.config_id)},"value":${json2.encode(option.value)}}') +
 								'\n')
+							config_index = 1
 							phase = 2
 						} else {
 							process.stdin_write(opencode_rpc(prompt_rpc_id, 'session/prompt',
@@ -145,10 +193,19 @@ pub fn run_opencode_cli_turn(command string, cwd string, model string,
 							phase = 3
 						}
 					} else if phase == 2 {
-						process.stdin_write(opencode_rpc(prompt_rpc_id, 'session/prompt',
-							'{"sessionId":${json2.encode(session_id)},"prompt":[{"type":"text","text":${json2.encode(user_text)}}]}') +
-							'\n')
-						phase = 3
+						if config_index < config_options.len {
+							option := config_options[config_index]
+							process.stdin_write(opencode_rpc(2 + config_index + 1,
+								'session/set_config_option',
+								'{"sessionId":${json2.encode(session_id)},"configId":${json2.encode(option.config_id)},"value":${json2.encode(option.value)}}') +
+								'\n')
+							config_index += 1
+						} else {
+							process.stdin_write(opencode_rpc(prompt_rpc_id, 'session/prompt',
+								'{"sessionId":${json2.encode(session_id)},"prompt":[{"type":"text","text":${json2.encode(user_text)}}]}') +
+								'\n')
+							phase = 3
+						}
 					} else if phase == 3 {
 						outcome := parse_opencode_prompt_result(result)
 						return OpencodeCliTurnResult{

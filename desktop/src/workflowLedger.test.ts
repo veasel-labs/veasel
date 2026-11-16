@@ -21,26 +21,25 @@ describe('Desktop workflow ledger (docs/desktop/workflows.yaml)', () => {
     for (const journey of journeys) {
       expect(['ok', 'partial', 'blocked', 'not-implemented']).toContain(journey.status);
     }
-    // CRUD and import now have Electron coverage with reviewed screenshots;
-    // starting a Person still lacks durable AgentSession recovery semantics.
-    for (const id of ['people-crud', 'people-import-review']) {
-      const journey = journeys.find((j) => j.id === id);
-      expect(journey, id).toBeDefined();
-      expect(journey!.status).toBe('ok');
-    }
-    for (const id of ['people-start-session']) {
+    // Veasel Desktop journeys (#689): none may claim `ok` until a packaged
+    // build records the evidence named in the ledger. Pin the current
+    // honest states so a status bump without evidence fails here.
+    for (const id of ['desktop-proxy-trust-boundary', 'focus-provider-turn', 'focus-approvals']) {
       const journey = journeys.find((j) => j.id === id);
       expect(journey, id).toBeDefined();
       expect(journey!.status).toBe('partial');
     }
-    for (const id of ['swarm-role-picker']) {
+    for (const id of ['tui-desktop-continuity', 'linux-packaging']) {
       const journey = journeys.find((j) => j.id === id);
       expect(journey, id).toBeDefined();
-      expect(journey!.status).toBe('partial');
+      expect(journey!.status).toBe('not-implemented');
     }
+    const release = journeys.find((j) => j.id === 'verified-release');
+    expect(release, 'verified-release').toBeDefined();
+    expect(release!.status).toBe('blocked');
   });
 });
 
 function readLedger(): string {
-  return readFileSync(resolve(__dirname, '../../../docs/desktop/workflows.yaml'), 'utf-8');
+  return readFileSync(resolve(__dirname, '../../docs/desktop/workflows.yaml'), 'utf-8');
 }

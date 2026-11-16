@@ -1,0 +1,26 @@
+# Veasel Desktop journey ledger (epic #689).
+#
+# A journey is `ok` only with recorded evidence at a named build (packaged
+# artifact hash + run record). Anything else stays partial, blocked, or
+# not-implemented. Update the status and the evidence note together; the
+# guard test in desktop/src/workflowLedger.test.ts pins the journeys that
+# must not be over-claimed.
+journeys:
+  - id: desktop-proxy-trust-boundary
+    status: partial
+    evidence: "PR #720 adversarial proxy tests pass locally; not yet in a packaged build."
+  - id: focus-provider-turn
+    status: partial
+    evidence: "Bridge send contract repaired in PR #722 with unit tests; no live provider turn recorded from Desktop yet."
+  - id: focus-approvals
+    status: partial
+    evidence: "Desktop-spawned backend enables interactive approvals (PR #722); no packaged approve/deny journey recorded yet."
+  - id: tui-desktop-continuity
+    status: not-implemented
+    evidence: "Same-store spawn/attach landed in PR #721; no TUI<->Desktop same-session E2E recorded yet."
+  - id: linux-packaging
+    status: not-implemented
+    evidence: "electron-builder config exists; no AppImage/DEB built, installed, or launched yet."
+  - id: verified-release
+    status: blocked
+    evidence: "v0.91.0-next.0 points at e56b6b8, not main 89f6e7d (run 43921368447 tag collision); no release from current main yet."

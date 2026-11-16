@@ -131,6 +131,7 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 
 	mut events := []ClaudeCliEvent{}
 	mut text := ''
+	mut fallback_text := ''
 	mut model := ''
 	mut approvals_denied := 0
 	mut buffer := ''
@@ -156,6 +157,11 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 						text += event.text
 						on_text_delta(event.text) or {}
 					}
+					'assistant_text' {
+						// Final-text fallback when the CLI emits no
+						// partial deltas (verified claude 2.1.325).
+						fallback_text = event.text
+					}
 					'approval_request' {
 						// Fail closed: deny in-band, record for the caller.
 						process.stdin_write(json2.encode(ClaudeCliControlResponse{
@@ -174,7 +180,13 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 					'result' {
 						return ProviderCliTurnResult{
 							events:            events
-							text:              text
+							text:              if text.len > 0 {
+								text
+							} else if fallback_text.len > 0 {
+								fallback_text
+							} else {
+								event.text
+							}
 							outcome:           event.outcome
 							session_id:        event.session_id
 							model:             model

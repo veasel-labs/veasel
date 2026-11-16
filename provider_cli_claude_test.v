@@ -68,3 +68,14 @@ fn test_claude_cli_args_fail_closed() {
 	assert !is_safe_claude_session_id('a/b')
 	assert is_safe_claude_session_id('abc-123_X.y')
 }
+
+fn test_parse_claude_cli_assistant_text_and_result_fallback() {
+	assistant := parse_claude_cli_line('{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"final answer"}]}}')
+	assert assistant.kind == 'assistant_text'
+	assert assistant.text == 'final answer'
+	result := parse_claude_cli_line('{"type":"result","subtype":"success","result":"done","usage":{"input_tokens":1,"output_tokens":2},"session_id":"s1"}')
+	assert result.kind == 'result'
+	assert result.text == 'done'
+	args := claude_cli_args('ask', '')
+	assert args.contains('--include-partial-messages')
+}

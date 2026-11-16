@@ -12,7 +12,7 @@ import x.json2
 
 pub struct ClaudeCliEvent {
 pub:
-	kind              string // init|text_delta|tool_use|approval_request|result|other
+	kind              string // init|text_delta|assistant_text|tool_use|approval_request|result|other
 	session_id        string
 	model             string
 	text              string
@@ -89,6 +89,7 @@ pub fn parse_claude_cli_line(line string) ClaudeCliEvent {
 			message := claude_cli_map(frame, 'message')
 			if content := message['content'] {
 				if content is []json2.Any {
+					mut text_parts := []string{}
 					for entry in content {
 						if entry is map[string]json2.Any {
 							if claude_cli_string(entry, 'type') == 'tool_use' {
@@ -98,6 +99,17 @@ pub fn parse_claude_cli_line(line string) ClaudeCliEvent {
 									tool_name: claude_cli_string(entry, 'name')
 								}
 							}
+							if claude_cli_string(entry, 'type') == 'text' {
+								text_parts << claude_cli_string(entry, 'text')
+							}
+						}
+					}
+					// Without --include-partial-messages the final text
+					// only exists here (verified against claude 2.1.325).
+					if text_parts.len > 0 {
+						return ClaudeCliEvent{
+							kind: 'assistant_text'
+							text: text_parts.join('')
 						}
 					}
 				}
@@ -119,6 +131,7 @@ pub fn parse_claude_cli_line(line string) ClaudeCliEvent {
 				kind:       'result'
 				session_id: claude_cli_string(frame, 'session_id')
 				outcome:    if failed { 'failed' } else { 'completed' }
+				text:       claude_cli_string(frame, 'result')
 			}
 			if _ := frame['usage'] {
 				usage := claude_cli_map(frame, 'usage')
@@ -189,6 +202,7 @@ pub fn claude_cli_args(permission_mode string, resume_session_id string) []strin
 		'--input-format',
 		'stream-json',
 		'--verbose',
+		'--include-partial-messages',
 		'--permission-prompt-tool',
 		'stdio',
 		'--permission-mode',

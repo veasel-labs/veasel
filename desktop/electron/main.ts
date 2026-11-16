@@ -7,7 +7,7 @@ import { HarnessController } from './harness-controller';
 import { HARNESS_STORE_FILE, HarnessStore } from './harness-store';
 import { registerIpc } from './ipc';
 import { electronStorageName, McpSecretStore, mcpSecretStorePath } from './mcp-secrets';
-import { startRendererServer, type RendererServer } from './renderer-server';
+import { PROXY_TOKEN_HEADER, startRendererServer, type RendererServer } from './renderer-server';
 import { TerminalService } from './terminal';
 
 let mainWindow: BrowserWindow | null = null;
@@ -116,6 +116,17 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = window;
+
+  // Inject the renderer proxy capability in the main process for this exact
+  // loopback origin only. The token never enters renderer JS, the page URL,
+  // logs, or persisted state (see renderer-server.ts trust boundary).
+  if (rendererServer && url === rendererServer.url) {
+    const activeRendererServer = rendererServer;
+    window.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`${url}/*`] }, (details, callback) => {
+      details.requestHeaders[PROXY_TOKEN_HEADER] = activeRendererServer.proxyToken;
+      callback({ requestHeaders: details.requestHeaders });
+    });
+  }
 
   // Drop the reference as soon as the window closes so later sends and
   // backend-startup paths never touch a destroyed BrowserWindow.

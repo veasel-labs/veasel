@@ -66,7 +66,7 @@ describe('NewSession', () => {
   });
 
   it('explains the sign-in blocker beside the provider choices and disabled start action', () => {
-    window.atk = { focus: {} as FocusBridge } as AtkBridge;
+    window.atk = { focus: {} as FocusBridge } as unknown as AtkBridge;
     const signedOut = {
       ...provider,
       auth: 'signed-out' as const,
@@ -102,7 +102,7 @@ describe('NewSession', () => {
       () => new Promise<Awaited<ReturnType<FocusBridge['createThread']>>>((resolve) => (finishCreate = resolve)),
     );
     const send = vi.fn(async () => ({ ok: true as const, value: true as const }));
-    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as AtkBridge;
+    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as unknown as AtkBridge;
     const onStarted = vi.fn();
     const user = userEvent.setup();
 
@@ -132,7 +132,7 @@ describe('NewSession', () => {
   it('keeps an unavailable explicit project blocked instead of substituting another repository', async () => {
     const createThread = vi.fn();
     const send = vi.fn();
-    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as AtkBridge;
+    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as unknown as AtkBridge;
     const onStarted = vi.fn();
     const user = userEvent.setup();
 
@@ -160,7 +160,7 @@ describe('NewSession', () => {
   it('retains the task and project when provider dispatch returns an error', async () => {
     const createThread = vi.fn(async () => ({ ok: true as const, value: created }));
     const send = vi.fn(async () => ({ ok: false as const, error: 'Provider rejected the task.' }));
-    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as AtkBridge;
+    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as unknown as AtkBridge;
     const onStarted = vi.fn();
     const user = userEvent.setup();
 
@@ -193,7 +193,7 @@ describe('NewSession', () => {
       throw new Error('Desktop bridge disconnected.');
     });
     const send = vi.fn();
-    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as AtkBridge;
+    window.atk = { focus: { createThread, send } as unknown as FocusBridge } as unknown as AtkBridge;
     const onStarted = vi.fn();
     const user = userEvent.setup();
 

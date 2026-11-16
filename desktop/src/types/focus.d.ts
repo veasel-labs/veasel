@@ -8,7 +8,10 @@
  * build (whose rootDir is electron/) and the renderer bundle.
  */
 
-export type FocusProviderId = 'claude' | 'codex' | 'opencode';
+export type FocusProviderId = 'claude' | 'codex' | 'opencode' | 'muse';
+
+/** Provider attached to an existing thread; canonical sessions may not record one. */
+export type FocusThreadProviderId = FocusProviderId | 'unknown';
 
 /** How much the agent may do without asking. Mapped per provider. */
 export type FocusPermissionMode = 'ask' | 'accept-edits' | 'plan' | 'bypass';
@@ -67,7 +70,7 @@ export interface FocusThread {
   workspace: string;
   projectName: string | null;
   cwd: string;
-  provider: FocusProviderId;
+  provider: FocusThreadProviderId;
   /** The model the user picked; null means the provider's default. */
   model: string | null;
   /** The model the provider reported it is actually using. */

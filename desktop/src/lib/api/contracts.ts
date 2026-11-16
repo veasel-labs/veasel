@@ -133,6 +133,55 @@ export interface PersonBindingsResponse {
   roles: Array<{ role: string; person_id: string; preferred_people: string[] }>;
 }
 
+export interface GitFileChange {
+  path: string;
+  code: string;
+}
+
+export interface ProjectGitStatusResponse {
+  ok: boolean;
+  project: string;
+  branch: string;
+  staged: GitFileChange[];
+  unstaged: GitFileChange[];
+  untracked: GitFileChange[];
+  detail: string;
+}
+
+export interface ProjectGitDiffResponse {
+  ok: boolean;
+  project: string;
+  path: string;
+  staged: boolean;
+  diff: string;
+  truncated: boolean;
+  detail: string;
+}
+
+export interface GitCommitInfo {
+  hash: string;
+  short: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+export interface ProjectGitLogResponse {
+  ok: boolean;
+  project: string;
+  commits: GitCommitInfo[];
+  detail: string;
+}
+
+export interface ProjectGitShowResponse {
+  ok: boolean;
+  project: string;
+  hash: string;
+  diff: string;
+  truncated: boolean;
+  detail: string;
+}
+
 export type PersonSession = components['schemas']['PersonSession'];
 export type PersonSessionsResponse = components['schemas']['PersonSessionsResponse'];
 export type PersonSessionResponse = components['schemas']['PersonSessionResponse'];

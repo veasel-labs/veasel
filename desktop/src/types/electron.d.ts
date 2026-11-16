@@ -131,6 +131,8 @@ export interface PtyExitEvent {
 export type Unsubscribe = () => void;
 
 export interface AtkBridge {
+  /** Legacy Focus runtime slot; Veasel Desktop injects a FocusStore instead. */
+  focus?: import('./focus').FocusBridge;
   backendStatus: () => Promise<BackendState | null>;
   backendRestart: () => Promise<boolean>;
   mcpSecretStatus: () => Promise<McpSecretStatus>;
@@ -174,6 +176,10 @@ export type McpSecretMutationResult = { ok: true } | { ok: false; message: strin
 declare global {
   interface Window {
     atk?: AtkBridge;
+    /** Veasel Desktop shell bridge (mirrors electron/preload.ts). */
+    veaselDesktop?: {
+      getBackendUrl: () => Promise<string | null>;
+    };
   }
 }
 

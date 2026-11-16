@@ -44,7 +44,7 @@ function setup(current: FocusThread, events: FocusEvent[], providerStatus = prov
     interrupt: vi.fn(async () => ({ ok: true as const, value: true as const })),
     onUpdate: vi.fn(() => () => undefined),
   };
-  window.atk = { focus: api as unknown as FocusBridge } as AtkBridge;
+  window.atk = { focus: api as unknown as FocusBridge } as unknown as AtkBridge;
   const onError = vi.fn();
   const store = new FocusStore(api as unknown as FocusBridge);
   const view = render(

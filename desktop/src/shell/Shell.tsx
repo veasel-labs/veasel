@@ -1,45 +1,18 @@
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense } from 'react';
 import { HashRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router';
 import { useBackend, useHealth } from '../data/backend';
-import { activeJobIds, useJobs } from '../data/jobs';
+import { FocusProvider } from '../data/focus';
+import { useVeaselFocusStore } from '../data/veasel-focus';
 import { LiveProvider } from '../data/live';
 import { TerminalProvider } from '../data/terminal';
-import { Onboarding } from '../features/onboarding/Onboarding';
-import { REPLAY_ONBOARDING_EVENT, shouldRunOnboarding } from '../features/onboarding/complete';
-import { useAttention } from '../features/office/useAttention';
 import { DestinationBoundary, LoadingState, ReceiptsProvider } from '../ui';
-import { CommandPalette } from './CommandPalette';
-import { ContextBar } from './ContextBar';
 import { DESTINATIONS } from './destinations';
 import { HOME_PATH } from './home';
-import { LiveIndicator, StaleNotice } from './LiveIndicator';
-import { TerminalDock } from './TerminalDock';
 import { useSessionContext } from './useSessionContext';
 import styles from './shell.module.css';
 
-function NavCount({ path }: { path: string }) {
-  const jobs = useJobs();
-  if (path === '/office') {
-    return <AttentionNavCount />;
-  }
-  if (path !== '/operations') return null;
-  const active = activeJobIds(jobs.data).length;
-  if (active === 0) return null;
-  return (
-    <span className={styles.navCount} aria-label={`${active} running`}>
-      {active}
-    </span>
-  );
-}
-
-function AttentionNavCount() {
-  const { items } = useAttention();
-  if (items.length === 0) return null;
-  return (
-    <span className={styles.navCount} aria-label={`${items.length} need you`}>
-      {items.length}
-    </span>
-  );
+function NavCount(_props: { path: string }) {
+  return null;
 }
 
 function Hud() {
@@ -52,9 +25,9 @@ function Hud() {
     <nav className={styles.hud} aria-label="Destinations">
       <div className={styles.brand}>
         <span className={styles.brandMark} aria-hidden="true">
-          A
+          V
         </span>
-        <span className={styles.brandName}>Agent Toolkit</span>
+        <span className={styles.brandName}>Veasel</span>
       </div>
       <ul className={styles.navList}>
         {DESTINATIONS.map((destination) => (
@@ -72,8 +45,7 @@ function Hud() {
         ))}
       </ul>
       <div className={styles.hudStatus}>
-        <LiveIndicator />
-        <p className={styles.version}>{version ? `agent-toolkit ${version}` : 'agent-toolkit version unknown'}</p>
+        <p className={styles.version}>{version ? `veasel ${version}` : 'Veasel'}</p>
       </div>
     </nav>
   );
@@ -92,9 +64,7 @@ function ShellFrame() {
         Skip to content
       </a>
       <Hud />
-      <ContextBar />
       <div className={styles.main}>
-        <StaleNotice />
         <main id="main" className={styles.content} tabIndex={-1}>
           <Routes>
             <Route path="/" element={<RedirectTo path={HOME_PATH} />} />
@@ -114,28 +84,19 @@ function ShellFrame() {
             <Route path="*" element={<RedirectTo path={HOME_PATH} />} />
           </Routes>
         </main>
-        <TerminalDock />
       </div>
-      <CommandPalette />
     </div>
   );
 }
 
-function useOnboardingGate() {
-  const [active, setActive] = useState(shouldRunOnboarding);
-  useEffect(() => {
-    const replay = () => setActive(true);
-    window.addEventListener(REPLAY_ONBOARDING_EVENT, replay);
-    return () => window.removeEventListener(REPLAY_ONBOARDING_EVENT, replay);
-  }, []);
-  const complete = useCallback(() => setActive(false), []);
-  return { active, complete };
-}
-
 function ShellRoot() {
-  const { active, complete } = useOnboardingGate();
-  if (active) return <Onboarding onComplete={complete} />;
-  return <ShellFrame />;
+  const veaselStore = useVeaselFocusStore();
+  if (!veaselStore) return <LoadingState label="Connecting to the Veasel backend" />;
+  return (
+    <FocusProvider store={veaselStore}>
+      <ShellFrame />
+    </FocusProvider>
+  );
 }
 
 export default function Shell() {

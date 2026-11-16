@@ -37,6 +37,11 @@ export class FocusStore {
     return this.bridge !== undefined;
   }
 
+  /** The bridge this store mirrors (Veasel bridge in Desktop). */
+  get focusBridge(): FocusBridge | undefined {
+    return this.bridge;
+  }
+
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -185,10 +190,7 @@ const FocusContext = createContext<FocusStore | null>(null);
 
 export function FocusProvider({ children, store }: { children: ReactNode; store?: FocusStore }) {
   const { backend } = useBackend();
-  const owned = useMemo(
-    () => store ?? new FocusStore(typeof window !== 'undefined' ? window.atk?.focus : undefined),
-    [store],
-  );
+  const owned = useMemo(() => store ?? new FocusStore(undefined), [store]);
   useEffect(() => owned.connect(), [owned]);
   // Threads are journaled per workspace; follow the workspace the backend runs in.
   const workspace = backend?.harness?.path ?? null;
@@ -205,6 +207,9 @@ export function useFocusStore(): FocusStore {
 }
 
 export function useFocusBridge(): FocusBridge | undefined {
+  const store = useContext(FocusContext);
+  if (store) return store.focusBridge;
+  // Plain-browser/test fallback: the legacy ATK bridge slot.
   return typeof window !== 'undefined' ? window.atk?.focus : undefined;
 }
 

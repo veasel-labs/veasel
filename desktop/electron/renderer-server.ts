@@ -106,7 +106,9 @@ export async function startRendererServer(distDir: string): Promise<RendererServ
 
   const server = http.createServer((req, res) => {
     const url = req.url ?? '/';
-    if (url === '/api' || url.startsWith('/api/')) {
+    // Veasel API surface is proxied same-origin too (no CORS, no LAN):
+    // the renderer only ever talks to this loopback server.
+    if (url === '/api' || url.startsWith('/api/') || url === '/v1' || url.startsWith('/v1/')) {
       if (!backendBase) {
         res.writeHead(503, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'backend not ready' }));

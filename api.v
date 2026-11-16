@@ -398,6 +398,21 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	}
 	config.request_deadline = request_deadline
 	config.require_tool_choice = require_tool_choice
+	// Installed-CLI providers (ADR-0001 dual plane) run their own agent
+	// loop inside the CLI: route the whole session turn there instead of
+	// the HTTP completion loop. The canonical Veasel history is flattened
+	// into the prompt, streamed text reuses on_text_delta, and the
+	// returned CompletionOutput is persisted by the same agent loop, so
+	// sessions/events/usage stay single-sourced. API token-budget
+	// reservation does not apply (no API call); actual usage is still
+	// reported. Approvals are fail-closed inside the runner until the
+	// interactive approval layer owns decisions.
+	if _ := provider_cli_by_id(config.provider) {
+		mut cli_store := app.store
+		session := cli_store.get_session(session_id)!
+		return complete_cli_provider_turn(messages, config, session.directory,
+			on_text_delta)!
+	}
 	policy := agent_token_budget_policy()!
 	reservation_tokens := provider_call_reservation_tokens(messages, tools, config)
 	mut store := app.store

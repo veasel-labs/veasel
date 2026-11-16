@@ -18,6 +18,7 @@ pub:
 	text              string
 	outcome           string // completed|failed|interrupted
 	session_id        string
+	model             string
 	usage             ProviderUsage
 	usage_reported    bool
 	reported_cost_usd ?f64
@@ -81,7 +82,8 @@ pub:
 // by claude_cli_args. Returns an error only for spawn/timeout/protocol
 // transport failures; provider-reported failures are outcome='failed'.
 pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
-	resume_session_id string, user_text string, timeout_ms int) !ProviderCliTurnResult {
+	resume_session_id string, user_text string, timeout_ms int,
+	on_text_delta ProviderTextDeltaFn) !ProviderCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(claude_cli_args(permission_mode, resume_session_id))
 	if cwd.len > 0 {
@@ -129,6 +131,7 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 
 	mut events := []ClaudeCliEvent{}
 	mut text := ''
+	mut model := ''
 	mut approvals_denied := 0
 	mut buffer := ''
 	started := time.now()
@@ -146,8 +149,12 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 				event := parse_claude_cli_line(line)
 				events << event
 				match event.kind {
+					'init' {
+						model = event.model
+					}
 					'text_delta' {
 						text += event.text
+						on_text_delta(event.text) or {}
 					}
 					'approval_request' {
 						// Fail closed: deny in-band, record for the caller.
@@ -170,6 +177,7 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 							text:              text
 							outcome:           event.outcome
 							session_id:        event.session_id
+							model:             model
 							usage:             event.usage
 							usage_reported:    event.usage_reported
 							reported_cost_usd: event.reported_cost_usd
@@ -187,4 +195,48 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 		time.sleep(5 * time.millisecond)
 	}
 	return error('installed CLI turn ended without a result frame')
+}
+
+// cli_transcript_prompt flattens the canonical Veasel conversation into
+// one prompt for a stateless CLI turn. Veasel's store stays the canonical
+// history (ADR-0001): CLI session resume is an optimization for later,
+// continuity never depends on the CLI's own session store.
+pub fn cli_transcript_prompt(messages []ChatMessage) string {
+	mut parts := []string{cap: messages.len}
+	for message in messages {
+		if message.content.trim_space().len == 0 {
+			continue
+		}
+		parts << '${message.role}: ${message.content}'
+	}
+	return parts.join('\n\n')
+}
+
+// complete_cli_provider_turn runs one installed-CLI turn for a session
+// completion request and maps it onto the canonical CompletionOutput so
+// the agent loop persists content/usage exactly like an HTTP provider
+// turn. Only the stream-json protocol (Claude Code) is wired; other
+// protocols fail closed until their runners land.
+pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
+	cwd string, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	spec := validate_provider_cli_launch(config.provider, 'ask')!
+	if spec.protocol != 'stream-json' {
+		return error('installed-CLI protocol ${spec.protocol} is not yet wired for session turns')
+	}
+	prompt := cli_transcript_prompt(messages)
+	if prompt.trim_space().len == 0 {
+		return error('installed-CLI turn requires a non-empty conversation')
+	}
+	turn := run_claude_cli_turn(spec.exec, cwd, 'ask', '', prompt, 120_000,
+		on_text_delta)!
+	if turn.outcome != 'completed' {
+		return error('installed CLI ${spec.name} turn ${turn.outcome}')
+	}
+	return CompletionOutput{
+		provider:          config.provider
+		model:             if turn.model.len > 0 { turn.model } else { config.model }
+		content:           turn.text
+		usage:             turn.usage
+		provider_attempts: 1
+	}
 }

@@ -277,6 +277,20 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	profile := state.settings.profiles[provider] or { ModelProfile{} }
 	state.mu.unlock()
 	model := if profile.model.len > 0 { profile.model } else { fallback_model }
+	// Installed-CLI providers (ADR-0001 dual plane) have no HTTP endpoint
+	// or API key: auth lives in the CLI itself. Resolve them here so they
+	// are selectable exactly like catalog providers; the turn dispatch
+	// routes them to the CLI runner, never to the HTTP adapters.
+	if _ := provider_cli_by_id(provider) {
+		cli_model := model.trim_space()
+		if cli_model.len > 200 || model_settings_text_has_unsafe_controls(cli_model) {
+			return error('model settings are invalid')
+		}
+		return ModelConfig{
+			provider: provider
+			model:    if cli_model.len > 0 { cli_model } else { 'default' }
+		}
+	}
 	// Precedence: transient override → saved profile key → environment → none.
 	// Clearing a saved key intentionally falls back to environment only.
 	api_key := if key_override.len > 0 {

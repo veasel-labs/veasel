@@ -2,6 +2,11 @@ module main
 
 import os
 
+struct StreamedSink {
+pub mut:
+	text string
+}
+
 // E2E against the scripted fake CLI copied verbatim in PR #697
 // (tests/focus_reference/testing/fake-claude.mjs, from
 // agent-toolkit@ac2cd125). Skips only when node is unavailable, so CI
@@ -33,7 +38,7 @@ fn test_run_claude_cli_turn_against_fake_fixture() {
 	defer {
 		os.rm(shim) or {}
 	}
-	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'hello', 30_000) or {
+	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'hello', 30_000, ignore_provider_text_delta) or {
 		panic(err)
 	}
 	assert turn.outcome == 'completed'
@@ -59,7 +64,80 @@ fn test_run_claude_cli_turn_denies_approvals_fail_closed() {
 		os.rm(shim) or {}
 	}
 	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'please edit the file',
-		30_000) or { panic(err) }
+		30_000, ignore_provider_text_delta) or { panic(err) }
 	assert turn.approvals_denied >= 1 // never auto-approved
 	assert turn.outcome == 'completed' // fake completes after denial
+}
+
+fn test_complete_cli_provider_turn_against_fake_fixture() {
+	if !node_available() {
+		return
+	}
+	fixture := os.join_path('tests', 'focus_reference', 'testing', 'fake-claude.mjs')
+	if !os.exists(fixture) {
+		return
+	}
+	// The runner spawns spec.exec from the registry (PATH lookup), so
+	// point PATH at a shim named after the real CLI for this test only.
+	shim_dir := os.join_path(os.temp_dir(), 'veasel-cli-path-test')
+	os.mkdir_all(shim_dir) or { panic(err) }
+	shim := os.join_path(shim_dir, 'claude')
+	os.write_file(shim, '#!/bin/sh\nexec node "${fixture}" "\$@"\n') or { panic(err) }
+	os.chmod(shim, 0o755) or { panic(err) }
+	old_path := os.getenv('PATH')
+	os.setenv('PATH', shim_dir + ':' + old_path, true)
+	defer {
+		os.setenv('PATH', old_path, true)
+		os.rm(shim) or {}
+	}
+	mut sink := &StreamedSink{}
+	output := complete_cli_provider_turn([
+		ChatMessage{
+			role:    'user'
+			content: 'hello'
+		},
+	], ModelConfig{
+		provider: 'claude-code'
+		model:    'default'
+	}, os.getwd(), fn [mut sink] (delta string) ! {
+		sink.text += delta
+	}) or { panic(err) }
+	streamed := sink.text
+	assert output.provider == 'claude-code'
+	assert output.model == 'fake-model-1' // reported by the CLI init frame
+	assert output.content.contains('user: hello')
+	assert output.usage.reported
+	assert output.provider_attempts == 1
+	assert streamed == output.content // streaming reuses the session delta path
+}
+
+fn test_cli_transcript_prompt_flattens_history() {
+	prompt := cli_transcript_prompt([
+		ChatMessage{
+			role:    'system'
+			content: 'be brief'
+		},
+		ChatMessage{
+			role:    'user'
+			content: 'hi'
+		},
+		ChatMessage{
+			role:    'assistant'
+			content: 'hello'
+		},
+	])
+	assert prompt == 'system: be brief\n\nuser: hi\n\nassistant: hello'
+	unsupported := complete_cli_provider_turn([
+		ChatMessage{
+			role:    'user'
+			content: 'hi'
+		},
+	], ModelConfig{
+		provider: 'codex'
+		model:    'default'
+	}, os.getwd(), ignore_provider_text_delta) or {
+		assert err.msg().contains('not yet wired')
+		return
+	}
+	panic('codex must fail closed until its runner is wired, got ${unsupported}')
 }

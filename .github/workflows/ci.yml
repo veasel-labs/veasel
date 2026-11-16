@@ -335,6 +335,7 @@ jobs:
           v test provider_cli_codex_session_test.v
           v test provider_cli_opencode_session_test.v
           v test provider_cli_muse_session_test.v
+          v test provider_cli_resume_test.v
           v test headless_cli_test.v
           v test headless_config_test.v
           v test workspace_tools_test.v

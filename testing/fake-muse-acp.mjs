@@ -26,6 +26,11 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         { id: 'model', category: 'model', currentValue: 'muse-wonder-1.0', options: [{ value: 'muse-wonder-1.0' }] },
       ],
     });
+  } else if (frame.method === 'session/load') {
+    // A loaded session starts again from the CLI default mode, so the
+    // runner must re-force onRequest after load as well.
+    mode = 'allowAll';
+    reply({ sessionId: frame.params.sessionId });
   } else if (frame.method === 'session/set_config_option') {
     if (frame.params.configId === 'mode') mode = frame.params.value;
     reply({});

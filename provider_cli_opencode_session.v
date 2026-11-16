@@ -58,21 +58,33 @@ pub:
 	value     string
 }
 
+// acp_session_configs builds the ordered config options for one ACP
+// provider. Muse always gets mode=onRequest first (its sessions
+// default to allowAll); a model option follows when one is selected.
+pub fn acp_session_configs(provider_id string, model string) []AcpSessionConfig {
+	mut configs := []AcpSessionConfig{}
+	if provider_id == 'muse' {
+		configs << AcpSessionConfig{
+			config_id: 'mode'
+			value:     'onRequest'
+		}
+	}
+	if model.len > 0 {
+		configs << AcpSessionConfig{
+			config_id: 'model'
+			value:     model
+		}
+	}
+	return configs
+}
+
 // run_opencode_cli_turn runs one OpenCode ACP prompt (spawn: `acp`,
 // optional model config option).
 pub fn run_opencode_cli_turn(command string, cwd string, model string,
 	user_text string, timeout_ms int, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
-	configs := if model.len > 0 {
-		[AcpSessionConfig{
-			config_id: 'model'
-			value:     model
-		}]
-	} else {
-		[]AcpSessionConfig{}
-	}
-	return run_acp_cli_turn(command, ['acp'], cwd, configs, user_text, timeout_ms,
-		on_text_delta, decide)
+	return run_acp_cli_turn(command, ['acp'], cwd, acp_session_configs('opencode',
+		model), '', user_text, timeout_ms, on_text_delta, decide)
 }
 
 // run_muse_cli_turn runs one Muse ACP prompt (spawn: `muse acp`).
@@ -82,27 +94,20 @@ pub fn run_opencode_cli_turn(command string, cwd string, model string,
 pub fn run_muse_cli_turn(command string, cwd string, model string,
 	user_text string, timeout_ms int, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
-	mut configs := [AcpSessionConfig{
-		config_id: 'mode'
-		value:     'onRequest'
-	}]
-	if model.len > 0 {
-		configs << AcpSessionConfig{
-			config_id: 'model'
-			value:     model
-		}
-	}
-	return run_acp_cli_turn(command, ['acp'], cwd, configs, user_text, timeout_ms,
-		on_text_delta, decide)
+	return run_acp_cli_turn(command, ['acp'], cwd, acp_session_configs('muse',
+		model), '', user_text, timeout_ms, on_text_delta, decide)
 }
 
 // run_acp_cli_turn runs one ACP prompt to its session/prompt result,
-// applying config_options (in order) after session/new. Returns an
-// error only for spawn/timeout/transport failures; provider-reported
-// failure is outcome='failed'.
+// applying config_options (in order) after session/new (or session/load
+// when resume_session_id is set; config options are re-applied after a
+// load so a resumed Muse session never keeps an allowAll mode).
+// Returns an error only for spawn/timeout/transport failures;
+// provider-reported failure is outcome='failed'.
 pub fn run_acp_cli_turn(command string, spawn_args []string, cwd string,
-	config_options []AcpSessionConfig, user_text string, timeout_ms int,
-	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
+	config_options []AcpSessionConfig, resume_session_id string, user_text string,
+	timeout_ms int, on_text_delta ProviderTextDeltaFn,
+	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(spawn_args)
 	if cwd.len > 0 {
@@ -166,16 +171,31 @@ pub fn run_acp_cli_turn(command string, spawn_args []string, cwd string,
 				if method.len == 0 {
 					if 'error' in frame {
 						err_obj := opencode_cli_map(frame, 'error')
-						return error('installed CLI request failed: ${opencode_cli_string(err_obj, 'message')}')
+						message := opencode_cli_string(err_obj, 'message')
+						if phase == 1 && resume_session_id.len > 0 {
+							return error('CLI resume failed: ${message}')
+						}
+						return error('installed CLI request failed: ${message}')
 					}
 					result := opencode_cli_map(frame, 'result')
 					if phase == 0 {
 						process.stdin_write('{"jsonrpc":"2.0","method":"initialized","params":{}}' + '\n')
-						process.stdin_write(opencode_rpc(2, 'session/new',
-							'{"cwd":${json2.encode(cwd)},"mcpServers":[]}') + '\n')
+						if resume_session_id.len > 0 {
+							process.stdin_write(opencode_rpc(2, 'session/load',
+								'{"sessionId":${json2.encode(resume_session_id)},"cwd":${json2.encode(cwd)},"mcpServers":[]}') +
+								'\n')
+						} else {
+							process.stdin_write(opencode_rpc(2, 'session/new',
+								'{"cwd":${json2.encode(cwd)},"mcpServers":[]}') + '\n')
+						}
 						phase = 1
 					} else if phase == 1 {
 						session_id = opencode_cli_string(result, 'sessionId')
+						if session_id.len == 0 {
+							// session/load may not echo the id; the loaded
+							// session is the one we asked for.
+							session_id = resume_session_id
+						}
 						if session_id.len == 0 {
 							return error('installed CLI did not return a session')
 						}

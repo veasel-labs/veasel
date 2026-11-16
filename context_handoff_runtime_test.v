@@ -319,10 +319,12 @@ fn test_context_handoff_migration_copies_legacy_event_artifacts_into_retained_ta
 		ExecutionPolicyTurn{ mode: .ask, interactive: true }, 'parent_turn') or { panic(err) }
 	store.db.exec('DROP TABLE context_handoffs') or { panic(err) }
 	store.db.exec('DROP TABLE agent_token_budget_reservations') or { panic(err) }
+	store.db.exec('DROP TABLE session_cli_resume') or { panic(err) }
 	store.db.exec('DROP TABLE cli_tool_approvals') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 27') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 28') or { panic(err) }
 	store.db.exec('DELETE FROM schema_migrations WHERE version = 29') or { panic(err) }
+	store.db.exec('DELETE FROM schema_migrations WHERE version = 30') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(database) or { panic(err) }
 	defer { migrated.close() or {} }

@@ -66,8 +66,8 @@ fn codex_rpc_request(id int, method string, params string) string {
 // Returns an error only for spawn/timeout/transport failures;
 // provider-reported turn failure is outcome='failed'.
 pub fn run_codex_cli_turn(command string, cwd string, permission_mode string,
-	model string, user_text string, timeout_ms int, on_text_delta ProviderTextDeltaFn,
-	decide CliApprovalDecisionFn) !CodexCliTurnResult {
+	model string, resume_thread_id string, user_text string, timeout_ms int,
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !CodexCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(['app-server'])
 	if cwd.len > 0 {
@@ -133,14 +133,24 @@ pub fn run_codex_cli_turn(command string, cwd string, permission_mode string,
 					result := codex_cli_map(frame, 'result')
 					if 'error' in frame {
 						err_obj := codex_cli_map(frame, 'error')
-						return error('installed CLI request failed: ${codex_cli_string(err_obj, 'message')}')
+						message := codex_cli_string(err_obj, 'message')
+						if phase == 1 && resume_thread_id.len > 0 {
+							return error('CLI resume failed: ${message}')
+						}
+						return error('installed CLI request failed: ${message}')
 					}
 					if phase == 0 {
 						process.stdin_write('{"method":"initialized"}\n')
 						model_json := if model.len > 0 { json2.encode(model) } else { 'null' }
-						thread_params := '{"cwd":${json2.encode(cwd)},"approvalPolicy":"${policy.approval_policy}","approvalsReviewer":"user","sandbox":"${policy.sandbox}","model":${model_json}}'
-						process.stdin_write(codex_rpc_request(2, 'thread/start',
-							thread_params) + '\n')
+						common := '"cwd":${json2.encode(cwd)},"approvalPolicy":"${policy.approval_policy}","approvalsReviewer":"user","sandbox":"${policy.sandbox}","model":${model_json}'
+						if resume_thread_id.len > 0 {
+							process.stdin_write(codex_rpc_request(2, 'thread/resume',
+								'{"threadId":${json2.encode(resume_thread_id)},"excludeTurns":true,${common}}') +
+								'\n')
+						} else {
+							process.stdin_write(codex_rpc_request(2, 'thread/start',
+								'{${common}}') + '\n')
+						}
 						phase = 1
 					} else if phase == 1 {
 						thread_obj := codex_cli_map(result, 'thread')

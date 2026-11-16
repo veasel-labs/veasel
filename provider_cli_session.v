@@ -1,0 +1,190 @@
+module main
+
+import os
+import time
+import x.json2
+
+// Installed-CLI session runner (Claude Code), wiring slice for #691:
+// spawns the CLI with the argv from provider_cli_claude.v, speaks
+// stream-json over stdio, and reduces frames with parse_claude_cli_line.
+// Approvals are NEVER auto-approved in this layer: every can_use_tool
+// request is denied in-band (fail closed) and surfaced in the returned
+// events so a future UI/API layer can own the decision. Cancellation is
+// the caller's process kill; timeout kills the process.
+
+pub struct ProviderCliTurnResult {
+pub:
+	events            []ClaudeCliEvent
+	text              string
+	outcome           string // completed|failed|interrupted
+	session_id        string
+	usage             ProviderUsage
+	usage_reported    bool
+	reported_cost_usd ?f64
+	approvals_denied  int
+}
+
+struct ClaudeCliUserContent {
+pub:
+	typ  string @[json: 'type']
+	text string
+}
+
+struct ClaudeCliUserMessageBody {
+pub:
+	role    string
+	content []ClaudeCliUserContent
+}
+
+struct ClaudeCliUserMessage {
+pub:
+	typ                string @[json: 'type']
+	message            ClaudeCliUserMessageBody
+	parent_tool_use_id ?string
+	session_id         string
+}
+
+struct ClaudeCliDenyResponse {
+pub:
+	behavior string
+	message  string
+}
+
+struct ClaudeCliControlResponseBody {
+pub:
+	subtype    string
+	request_id string
+	response   ClaudeCliDenyResponse
+}
+
+struct ClaudeCliControlResponse {
+pub:
+	typ      string @[json: 'type']
+	response ClaudeCliControlResponseBody
+}
+
+struct ClaudeCliInitRequest {
+pub:
+	subtype string
+	hooks   ?string
+}
+
+struct ClaudeCliInit {
+pub:
+	typ        string @[json: 'type']
+	request_id string
+	request    ClaudeCliInitRequest
+}
+
+// run_claude_cli_turn runs one user turn to its result frame.
+// command is the CLI executable (PATH-resolved by the OS), args are built
+// by claude_cli_args. Returns an error only for spawn/timeout/protocol
+// transport failures; provider-reported failures are outcome='failed'.
+pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
+	resume_session_id string, user_text string, timeout_ms int) !ProviderCliTurnResult {
+	mut process := os.new_process(command)
+	process.set_args(claude_cli_args(permission_mode, resume_session_id))
+	if cwd.len > 0 {
+		process.set_work_folder(cwd)
+	}
+	process.set_redirect_stdio()
+	process.run()
+	if process.status != .running {
+		process.close()
+		return error('unable to start installed CLI: ${command}')
+	}
+	defer {
+		if process.is_alive() {
+			process.signal_term()
+			for _ in 0 .. 20 {
+				if !process.is_alive() {
+					break
+				}
+				time.sleep(10 * time.millisecond)
+			}
+			if process.is_alive() {
+				process.signal_kill()
+			}
+		}
+		process.close()
+	}
+	process.stdin_write(json2.encode(ClaudeCliInit{
+		typ:        'control_request'
+		request_id: 'veasel-init'
+		request:    ClaudeCliInitRequest{
+			subtype: 'initialize'
+		}
+	}) + '\n')
+	process.stdin_write(json2.encode(ClaudeCliUserMessage{
+		typ:        'user'
+		message:    ClaudeCliUserMessageBody{
+			role:    'user'
+			content: [ClaudeCliUserContent{
+				typ:  'text'
+				text: user_text
+			}]
+		}
+		session_id: resume_session_id
+	}) + '\n')
+
+	mut events := []ClaudeCliEvent{}
+	mut text := ''
+	mut approvals_denied := 0
+	mut buffer := ''
+	started := time.now()
+	timeout := if timeout_ms > 0 { timeout_ms } else { 120_000 }
+	for {
+		if time.since(started).milliseconds() > timeout {
+			return error('installed CLI turn timed out after ${timeout}ms')
+		}
+		if process.is_pending(.stdout) {
+			buffer += process.stdout_read()
+			for {
+				newline := buffer.index('\n') or { break }
+				line := buffer[..newline]
+				buffer = buffer[newline + 1..]
+				event := parse_claude_cli_line(line)
+				events << event
+				match event.kind {
+					'text_delta' {
+						text += event.text
+					}
+					'approval_request' {
+						// Fail closed: deny in-band, record for the caller.
+						process.stdin_write(json2.encode(ClaudeCliControlResponse{
+							typ:      'control_response'
+							response: ClaudeCliControlResponseBody{
+								subtype:    'success'
+								request_id: event.request_id
+								response:   ClaudeCliDenyResponse{
+									behavior: 'deny'
+									message:  'Denied by Veasel policy: approvals are not auto-approved.'
+								}
+							}
+						}) + '\n')
+						approvals_denied += 1
+					}
+					'result' {
+						return ProviderCliTurnResult{
+							events:            events
+							text:              text
+							outcome:           event.outcome
+							session_id:        event.session_id
+							usage:             event.usage
+							usage_reported:    event.usage_reported
+							reported_cost_usd: event.reported_cost_usd
+							approvals_denied:  approvals_denied
+						}
+					}
+					else {}
+				}
+			}
+			continue
+		}
+		if !process.is_alive() {
+			return error('installed CLI exited before a result frame')
+		}
+		time.sleep(5 * time.millisecond)
+	}
+	return error('installed CLI turn ended without a result frame')
+}

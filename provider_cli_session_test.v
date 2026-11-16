@@ -141,3 +141,34 @@ fn test_cli_transcript_prompt_flattens_history() {
 	}
 	panic('codex must fail closed until its runner is wired, got ${unsupported}')
 }
+
+fn test_cli_permission_mode_gate_rejects_unknown_mode() {
+	os.setenv('VEASEL_CLI_PERMISSION_MODE', 'nonsense-mode', true)
+	defer {
+		os.unsetenv('VEASEL_CLI_PERMISSION_MODE')
+	}
+	if _ := complete_cli_provider_turn([
+		ChatMessage{
+			role:    'user'
+			content: 'hi'
+		},
+	], ModelConfig{
+		provider: 'claude-code'
+		model:    'default'
+	}, os.getwd(), ignore_provider_text_delta) {
+		panic('unknown permission mode must fail closed before spawning')
+	}
+	// OpenCode is ask-only: accept-edits must be rejected pre-launch too.
+	os.setenv('VEASEL_CLI_PERMISSION_MODE', 'accept-edits', true)
+	if _ := complete_cli_provider_turn([
+		ChatMessage{
+			role:    'user'
+			content: 'hi'
+		},
+	], ModelConfig{
+		provider: 'opencode'
+		model:    'default'
+	}, os.getwd(), ignore_provider_text_delta) {
+		panic('opencode accept-edits must fail closed (ask-only approvals)')
+	}
+}

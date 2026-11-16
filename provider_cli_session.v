@@ -219,7 +219,14 @@ pub fn cli_transcript_prompt(messages []ChatMessage) string {
 // protocols fail closed until their runners land.
 pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 	cwd string, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
-	spec := validate_provider_cli_launch(config.provider, 'ask')!
+	// Permission mode is the user's explicit session-level approval
+	// choice (default 'ask': every tool approval is denied in-band by
+	// the runner). 'accept-edits' means the user explicitly opted into
+	// the CLI applying file edits without per-tool prompts; it is never
+	// inferred. Interactive per-tool approvals replace the deny path
+	// when the approval layer lands (#691 follow-up).
+	permission_mode := os.getenv_opt('VEASEL_CLI_PERMISSION_MODE') or { 'ask' }
+	spec := validate_provider_cli_launch(config.provider, permission_mode)!
 	if spec.protocol != 'stream-json' {
 		return error('installed-CLI protocol ${spec.protocol} is not yet wired for session turns')
 	}
@@ -227,8 +234,8 @@ pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 	if prompt.trim_space().len == 0 {
 		return error('installed-CLI turn requires a non-empty conversation')
 	}
-	turn := run_claude_cli_turn(spec.exec, cwd, 'ask', '', prompt, 120_000,
-		on_text_delta)!
+	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, '', prompt,
+		120_000, on_text_delta)!
 	if turn.outcome != 'completed' {
 		return error('installed CLI ${spec.name} turn ${turn.outcome}')
 	}

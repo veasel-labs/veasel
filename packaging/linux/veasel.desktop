@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Veasel Code
+GenericName=AI Coding Agent
+Comment=Local AI coding agent (TUI + API on 127.0.0.1)
+Exec=veasel
+Terminal=true
+Categories=Development;IDE;
+Keywords=ai;agent;coding;llm;
+StartupNotify=false

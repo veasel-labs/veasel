@@ -27,6 +27,8 @@ copy time and recorded in the copy PR.
 | toolkit `modules/agent_toolkit_core/*.v`, `modules/agent_toolkit_server/*.v`, `cmd/agent-toolkit/main.v` | toolkit (stay); veasel consumes via HTTP/library | No copy — prevents a second V runtime fork |
 | hornero `agent_registry.v`, `assistant_policy.v`, `plugin_broker.v` @daa6b67a | hornero-side `AgentSpec id=veasel` | No code copy into Veasel; NDJSON ask/tool contract only |
 | shell @4160b14921d2 | shell-side `.desktop`/launcher/`qs ipc` surface only | No copy |
+| toolkit `schemas/agent-plugins/1.0.0/*`, `schemas/{products,upstream,upstream-lock,install-receipt,release-manifest}*`, `distributions/products.yaml`, `capabilities/targets/registry.yaml`, `LICENSE` @ec993aa5 | `veasel-labs/agent-toolkit` (official distribution, ADR-0001 decision 8) @c00e735d4014 | Verbatim copy-first seed (ATTRIBUTION.md, checksums verified); reference files suffixed `.reference.yaml`; adaptation separate |
+| personal toolkit plugins (e.g. `plugins/agent-toolkit-core`) | Veasel catalog via `registry/registry.yaml` entry | By reference only (repo+ref+sha) — source never duplicated |
 
 ## P0 (backlog integrity + safety gates)
 
@@ -51,6 +53,24 @@ copy time and recorded in the copy PR.
 10. Hornero: `AgentSpec id=veasel`, typed-action-only OS access, Hermes
     fallback retained; shell launcher surface.
 11. Toolkit compatibility shims + CLI/catalog preservation.
+
+## P1b (official plugin distribution, ADR-0001 decision 8)
+
+13. `veasel-labs/agent-toolkit`: registry validator CI (schema + pin +
+    trust checks), multi-client manifest generator (Claude/Cursor/
+    Codex/Copilot/Veasel) from `registry/registry.yaml`, drift-detection
+    job opening reviewed version-bump PRs, first curated official
+    plugins under `plugins/`. Estimates (T-shirt): validator S,
+    generator M, drift job S, curated plugins M each.
+14. Veasel Library: one integrated TUI/Desktop plugin Library —
+    bundled minimal offline skills, catalog discovery, install,
+    update, permission review (catalog-declared surface, runtime
+    enforced here), removal. Estimate L; depends on #691 wiring and
+    item 13 generator output. No second plugin runtime: installs land
+    in the existing Veasel plugin/skill machinery.
+15. Personal toolkit (optional, independent): publish-by-reference
+    flow documenting how `ulises-jeremias/agent-toolkit` plugins enter
+    the Veasel catalog via registry PR. Estimate S.
 
 ## P2 (parity tail)
 

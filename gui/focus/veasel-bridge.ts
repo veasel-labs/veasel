@@ -18,6 +18,7 @@ import type {
   FocusBridge,
   FocusCreateThreadInput,
   FocusEvent,
+  FocusLiveUpdate,
   FocusProviderId,
   FocusProviderStatus,
   FocusResult,
@@ -68,6 +69,92 @@ export type FetchLike = (input: string, init?: RequestInit) => Promise<{
   status: number;
   json: () => Promise<unknown>;
 }>;
+
+export interface VeaselServerEvent {
+  id: number;
+  type: string;
+  session_id: string;
+  created_at?: string;
+  data: {
+    operation_id?: string;
+    delta?: string;
+    status?: string;
+    error?: string;
+    usage_reported?: boolean;
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_tokens?: number;
+  };
+}
+
+/** Subscribe to a server-sent event stream; returns an unsubscribe fn. */
+export type EventStreamFactory = (
+  url: string,
+  onEvent: (type: string, data: string) => void,
+) => () => void;
+
+/**
+ * Maps one canonical Veasel SSE event to a Focus live update. Deltas are
+ * live-only (history still comes from readThread); unknown or heartbeat
+ * events map to null — nothing is invented. Turn outcomes map from the
+ * recorded status; cost stays null because the event stream never
+ * reports it.
+ */
+export function veaselEventToLiveUpdate(event: VeaselServerEvent): FocusLiveUpdate | null {
+  if (!event || typeof event.session_id !== 'string' || event.session_id.length === 0) return null;
+  if (event.type === 'assistant.delta') {
+    if (!event.data || typeof event.data.delta !== 'string' || event.data.delta.length === 0) return null;
+    return {
+      kind: 'delta',
+      threadId: event.session_id,
+      itemId: event.data.operation_id ?? 'assistant',
+      channel: 'assistant',
+      text: event.data.delta,
+    };
+  }
+  if (event.type === 'session.turn_completed') {
+    const status = event.data?.status ?? '';
+    const outcome = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'interrupted';
+    return {
+      kind: 'event',
+      threadId: event.session_id,
+      event: {
+        seq: event.id,
+        at: event.created_at ?? '',
+        turn: 1,
+        type: 'turn.finished',
+        outcome,
+        detail: event.data?.error ?? null,
+        durationMs: null,
+        usage: event.data?.usage_reported
+          ? {
+              inputTokens: event.data.input_tokens ?? 0,
+              cachedInputTokens: event.data.cache_read_tokens ?? 0,
+              outputTokens: event.data.output_tokens ?? 0,
+              costUsd: null,
+            }
+          : null,
+      },
+    };
+  }
+  return null;
+}
+
+function defaultEventStream(url: string, onEvent: (type: string, data: string) => void): () => void {
+  const EventSourceCtor = (globalThis as { EventSource?: typeof EventSource }).EventSource;
+  if (!EventSourceCtor) return () => {};
+  const source = new EventSourceCtor(url);
+  const types = ['assistant.delta', 'session.turn_completed'];
+  const listeners = types.map((type) => {
+    const listener = (message: MessageEvent) => onEvent(type, String(message.data ?? ''));
+    source.addEventListener(type, listener);
+    return { type, listener };
+  });
+  return () => {
+    for (const { type, listener } of listeners) source.removeEventListener(type, listener);
+    source.close();
+  };
+}
 
 const PROVIDER_IDS: FocusProviderId[] = ['claude', 'codex', 'opencode'];
 
@@ -166,6 +253,7 @@ export function createVeaselFocusBridge(options: {
   baseUrl: string;
   fetch?: FetchLike;
   provider?: FocusProviderId;
+  createEventStream?: EventStreamFactory;
 }): FocusBridge {
   const base = options.baseUrl.replace(/\/$/, '');
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
@@ -347,10 +435,21 @@ export function createVeaselFocusBridge(options: {
       });
     },
 
-    onUpdate(): () => void {
-      // Live SSE wiring (`/v1/events`) is a follow-up; polling readThread is
-      // the honest interim. Return an unsubscribe no-op, never fake deltas.
-      return () => {};
+    onUpdate(listener: (update: FocusLiveUpdate) => void): () => void {
+      // Live updates ride the canonical /v1/events SSE stream. Without an
+      // EventSource (non-browser host, tests without a factory) this is
+      // an honest no-op: readThread polling remains correct, just slower.
+      const createStream = options.createEventStream ?? defaultEventStream;
+      return createStream(`${base}/v1/events`, (_type, raw) => {
+        let parsed: VeaselServerEvent;
+        try {
+          parsed = JSON.parse(raw) as VeaselServerEvent;
+        } catch {
+          return;
+        }
+        const update = veaselEventToLiveUpdate(parsed);
+        if (update) listener(update);
+      });
     },
   };
 }

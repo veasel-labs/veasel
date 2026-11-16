@@ -772,6 +772,179 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /v1/sessions/{id}/subagents:
+    get:
+      operationId: listSessionSubagents
+      description: Lists durable child agent runs delegated from this session.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Child agent runs for the session.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SubagentRun' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    post:
+      operationId: createSessionSubagent
+      description: Delegates an async child task in an isolated worktree. Only mode "async" and workspace "isolated-worktree" are accepted.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubagentCreateInput' }
+      responses:
+        '202':
+          description: Child agent run accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubagentRun' }
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Child task could not be delegated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Child agent capacity or limit reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/subagents/{run_id}:
+    get:
+      operationId: getSessionSubagent
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The child agent run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubagentRun' }
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/subagents/{run_id}/cancel:
+    post:
+      operationId: cancelSessionSubagent
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The cancelled child agent run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubagentRun' }
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/subagents/{run_id}/integrate:
+    post:
+      operationId: integrateSessionSubagent
+      description: Creates ordinary parent workspace edit proposals from a terminal implementer child run. Never writes the parent checkout; each proposal still requires approval through the workspace edit API.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: run_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Integration proposals and conflicts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SubagentIntegrationResponse' }
+        '400':
+          description: Invalid request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Child run is not in a terminal state or is not an implementer run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/context-handoffs:
+    get:
+      operationId: listSessionContextHandoffs
+      description: Lists retained bounded context handoff artifacts for provider switching. Hidden reasoning is never transferred.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Retained context handoffs for the session.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ContextHandoffArtifact' }
+        '404':
+          description: Not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/messages:
     parameters:
       - in: path
@@ -3343,6 +3516,117 @@ components:
           description: True only when the provider supplied a reasoning token counter.
         created_at: { type: string }
         updated_at: { type: string }
+    SubagentTargetInput:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: { type: string, maxLength: 100 }
+        model: { type: string, maxLength: 200 }
+    SubagentCreateInput:
+      type: object
+      required: [request_id, agent_id, task]
+      properties:
+        parent_operation_id: { type: string, format: uuid }
+        request_id: { type: string, maxLength: 128 }
+        agent_id: { type: string, maxLength: 128 }
+        task: { type: string, maxLength: 8192 }
+        target: { $ref: '#/components/schemas/SubagentTargetInput' }
+        mode: { type: string, enum: [async], default: async }
+        workspace: { type: string, enum: [isolated-worktree], default: isolated-worktree }
+    SubagentRun:
+      type: object
+      required: [id, request_id, parent_session_id, agent_id, task, depth, status, cancel_requested, outcome_claimed, workspace_ready, workspace_started, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, cost_reported]
+      properties:
+        id: { type: string, format: uuid }
+        request_id: { type: string }
+        parent_session_id: { type: string, format: uuid }
+        parent_operation_id: { type: string }
+        child_session_id: { type: string }
+        child_operation_id: { type: string }
+        agent_id: { type: string }
+        requested_title: { type: string }
+        task: { type: string }
+        target_provider: { type: string }
+        target_model: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        depth: { type: integer, minimum: 0, maximum: 2 }
+        status: { type: string }
+        result: { type: string, description: Bounded to 65536 bytes. }
+        error: { type: string, description: Bounded to 4096 bytes. }
+        cancel_requested: { type: boolean }
+        outcome_claimed: { type: boolean }
+        workspace_ready: { type: boolean }
+        workspace_started: { type: boolean }
+        workspace_base_commit: { type: string }
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        usage_reported: { type: boolean, description: True only when usage came from the provider adapter; never estimated. }
+        cache_read_tokens: { type: integer, minimum: 0 }
+        cache_creation_tokens: { type: integer, minimum: 0 }
+        cache_reported: { type: boolean }
+        reasoning_tokens: { type: integer, minimum: 0 }
+        reasoning_reported: { type: boolean }
+        reported_cost_usd: { type: number, description: Present only when the provider reported actual cost. }
+        cost_reported: { type: boolean }
+    SubagentIntegrationConflict:
+      type: object
+      required: [path, reason]
+      properties:
+        path: { type: string }
+        reason: { type: string }
+    SubagentIntegrationResponse:
+      type: object
+      required: [run_id, status, proposals, conflicts]
+      properties:
+        run_id: { type: string, format: uuid }
+        status: { type: string }
+        proposals:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceEditProposal' }
+        conflicts:
+          type: array
+          items: { $ref: '#/components/schemas/SubagentIntegrationConflict' }
+    ContextHandoffMessage:
+      type: object
+      required: [message_id, role, content, truncated]
+      properties:
+        message_id: { type: integer }
+        role: { type: string }
+        content: { type: string }
+        truncated: { type: boolean }
+    ContextHandoffArtifact:
+      type: object
+      required: [artifact_id, session_id, source_operation_id, next_operation_id, source_provider, source_model, target_provider, target_model, context_mode, transcript, transcript_bytes, omitted_message_count, transcript_complete, hidden_reasoning_transferred, created_at]
+      properties:
+        artifact_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        source_operation_id: { type: string }
+        next_operation_id: { type: string }
+        source_provider: { type: string }
+        source_model: { type: string }
+        target_provider: { type: string }
+        target_model: { type: string }
+        context_mode: { type: string }
+        base_message_id: { type: integer }
+        first_message_id: { type: integer }
+        through_message_id: { type: integer }
+        transcript:
+          type: array
+          maxItems: 64
+          items: { $ref: '#/components/schemas/ContextHandoffMessage' }
+        transcript_bytes: { type: integer, maximum: 32768 }
+        omitted_message_count: { type: integer, minimum: 0 }
+        transcript_complete: { type: boolean }
+        fallback_reason: { type: string }
+        workspace_snapshot_ref: { type: string }
+        workspace_snapshot_scope: { type: string }
+        permission_policy_source: { type: string }
+        permission_policy_mode: { type: string }
+        permission_interactive: { type: boolean }
+        permissions_inherited: { type: boolean }
+        hidden_reasoning_transferred: { type: boolean, description: Always false; hidden reasoning is never transferred. }
+        created_at: { type: string }
     GlobalSessionOperation:
       type: object
       required: [operation, session_title]

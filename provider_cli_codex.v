@@ -11,7 +11,7 @@ import x.json2
 
 pub struct CodexCliEvent {
 pub:
-	kind       string // text_delta|reasoning_delta|turn_started|turn_completed|approval_request|user_input_request|usage_not_published|other
+	kind       string // text_delta|reasoning_delta|assistant_text|turn_started|turn_completed|approval_request|user_input_request|usage_not_published|other
 	thread_id  string
 	turn_id    string
 	item_id    string
@@ -150,6 +150,20 @@ pub fn parse_codex_cli_line(line string, parent_thread_id string) CodexCliEvent 
 			return CodexCliEvent{
 				...event
 				kind: 'approval_request'
+			}
+		}
+		'item/completed' {
+			// Final agent text fallback for turns that emit no deltas.
+			item := codex_cli_map(params, 'item')
+			if codex_cli_string(item, 'type') == 'agentMessage' {
+				return CodexCliEvent{
+					...event
+					kind: 'assistant_text'
+					text: codex_cli_string(item, 'text')
+				}
+			}
+			return CodexCliEvent{
+				kind: 'other'
 			}
 		}
 		'item/tool/requestUserInput' {

@@ -245,8 +245,8 @@ pub fn cli_transcript_prompt(messages []ChatMessage) string {
 // complete_cli_provider_turn runs one installed-CLI turn for a session
 // completion request and maps it onto the canonical CompletionOutput so
 // the agent loop persists content/usage exactly like an HTTP provider
-// turn. Only the stream-json protocol (Claude Code) is wired; other
-// protocols fail closed until their runners land.
+// turn. The stream-json (Claude Code) and app-server (Codex) protocols
+// are wired; other protocols fail closed until their runners land.
 pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 	cwd string, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
 	return complete_cli_provider_turn_with_approvals(messages, config, cwd,
@@ -264,7 +264,7 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 	// when the approval layer lands (#691 follow-up).
 	permission_mode := os.getenv_opt('VEASEL_CLI_PERMISSION_MODE') or { 'ask' }
 	spec := validate_provider_cli_launch(config.provider, permission_mode)!
-	if spec.protocol != 'stream-json' {
+	if spec.protocol !in ['stream-json', 'app-server'] {
 		return error('installed-CLI protocol ${spec.protocol} is not yet wired for session turns')
 	}
 	prompt := cli_transcript_prompt(messages)
@@ -282,6 +282,23 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 		}
 		if remaining < timeout_ms {
 			timeout_ms = remaining
+		}
+	}
+	if spec.protocol == 'app-server' {
+		codex_turn := run_codex_cli_turn(spec.exec, cwd, permission_mode,
+			config.model, prompt, timeout_ms, on_text_delta, decide)!
+		if codex_turn.outcome != 'completed' {
+			return error('installed CLI ${spec.name} turn ${codex_turn.outcome}')
+		}
+		return CompletionOutput{
+			provider:          config.provider
+			model:             if codex_turn.model.len > 0 {
+				codex_turn.model
+			} else {
+				config.model
+			}
+			content:           codex_turn.text
+			provider_attempts: 1
 		}
 	}
 	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, '', prompt,

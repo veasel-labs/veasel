@@ -5,8 +5,10 @@ import {
   messagesToEvents,
   sessionToThread,
   toFocusProviderId,
+  veaselEventToLiveUpdate,
   type FetchLike,
 } from './veasel-bridge';
+import type { FocusLiveUpdate } from '../types/focus';
 
 describe('veasel Focus bridge mapping', () => {
   it('maps Veasel sessions to Focus threads without inventing usage cost', () => {
@@ -138,5 +140,66 @@ describe('veasel Focus bridge HTTP behavior', () => {
     const opencode = providers.find((provider) => provider.id === 'opencode');
     expect(opencode?.auth).toBe('signed-out');
     expect(opencode?.capabilities.sessions).toBe(false);
+  });
+});
+
+const sseFetch: FetchLike = async () => ({ ok: true, status: 200, json: async () => ({}) });
+
+describe('veasel SSE live updates', () => {
+  it('maps assistant deltas and turn completions, ignores everything else', () => {
+    const delta = veaselEventToLiveUpdate({
+      id: 7,
+      type: 'assistant.delta',
+      session_id: 's1',
+      created_at: '2026-11-16T00:00:00Z',
+      data: { operation_id: 'op-1', delta: 'hel' },
+    });
+    expect(delta).toEqual({
+      kind: 'delta', threadId: 's1', itemId: 'op-1', channel: 'assistant', text: 'hel',
+    });
+    const done = veaselEventToLiveUpdate({
+      id: 9,
+      type: 'session.turn_completed',
+      session_id: 's1',
+      created_at: '2026-11-16T00:01:00Z',
+      data: { operation_id: 'op-1', status: 'completed', usage_reported: true, input_tokens: 10, output_tokens: 5 },
+    });
+    expect(done?.kind).toBe('event');
+    if (done?.kind === 'event' && done.event.type === 'turn.finished') {
+      expect(done.event.outcome).toBe('completed');
+      expect(done.event.usage?.inputTokens).toBe(10);
+      expect(done.event.usage?.costUsd).toBeNull();
+    }
+    expect(veaselEventToLiveUpdate({ id: 1, type: 'heartbeat', session_id: 's1', data: {} })).toBeNull();
+    expect(veaselEventToLiveUpdate({ id: 2, type: 'assistant.delta', session_id: 's1', data: {} })).toBeNull();
+  });
+
+  it('delivers mapped updates through onUpdate and unsubscribes cleanly', async () => {
+    let handler: ((type: string, data: string) => void) | null = null;
+    let closed = false;
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: sseFetch,
+      createEventStream: (_url, onEvent) => {
+        handler = onEvent;
+        return () => { closed = true; };
+      },
+    });
+    const updates: FocusLiveUpdate[] = [];
+    const unsubscribe = bridge.onUpdate((update) => updates.push(update));
+    handler?.('assistant.delta', JSON.stringify({
+      id: 3, type: 'assistant.delta', session_id: 's9', created_at: '', data: { operation_id: 'op', delta: 'x' },
+    }));
+    expect(updates).toHaveLength(1);
+    expect(updates[0].kind).toBe('delta');
+    unsubscribe();
+    expect(closed).toBe(true);
+  });
+
+  it('stays an honest no-op without an event stream factory', () => {
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: sseFetch });
+    const unsubscribe = bridge.onUpdate(() => { throw new Error('must not fire'); });
+    expect(typeof unsubscribe).toBe('function');
+    unsubscribe();
   });
 });

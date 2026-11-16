@@ -1,6 +1,7 @@
 module main
 
 import os
+import time
 
 struct StreamedSink {
 pub mut:
@@ -170,5 +171,20 @@ fn test_cli_permission_mode_gate_rejects_unknown_mode() {
 		model:    'default'
 	}, os.getwd(), ignore_provider_text_delta) {
 		panic('opencode accept-edits must fail closed (ask-only approvals)')
+	}
+}
+
+fn test_cli_turn_deadline_already_exceeded_fails_before_launch() {
+	if _ := complete_cli_provider_turn([
+		ChatMessage{
+			role:    'user'
+			content: 'hi'
+		},
+	], ModelConfig{
+		provider:         'claude-code'
+		model:            'default'
+		request_deadline: time.now().add(-1 * time.second)
+	}, os.getwd(), ignore_provider_text_delta) {
+		panic('expired deadline must fail before spawning the CLI')
 	}
 }

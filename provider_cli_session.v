@@ -246,8 +246,21 @@ pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 	if prompt.trim_space().len == 0 {
 		return error('installed-CLI turn requires a non-empty conversation')
 	}
+	// Cancellation: the operation deadline bounds the CLI process. When
+	// it fires, the runner kills the process (term, then kill) and the
+	// turn errors instead of hanging a session worker forever.
+	mut timeout_ms := 120_000
+	if deadline := config.request_deadline {
+		remaining := int((deadline - time.now()) / time.millisecond)
+		if remaining < 1_000 {
+			return error('installed CLI turn cancelled before launch (deadline exceeded)')
+		}
+		if remaining < timeout_ms {
+			timeout_ms = remaining
+		}
+	}
 	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, '', prompt,
-		120_000, on_text_delta)!
+		timeout_ms, on_text_delta)!
 	if turn.outcome != 'completed' {
 		return error('installed CLI ${spec.name} turn ${turn.outcome}')
 	}

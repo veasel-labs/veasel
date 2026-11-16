@@ -945,6 +945,86 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/cli-approvals:
+    get:
+      operationId: listSessionCliApprovals
+      description: Lists pending interactive approvals for installed-CLI tool calls in this session. Only populated when the server runs with VEASEL_CLI_INTERACTIVE_APPROVALS=1; otherwise CLI approvals deny immediately and never appear here.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Pending CLI tool approvals.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CliToolApproval' }
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/cli-approvals/{approval_id}/approve:
+    post:
+      operationId: approveSessionCliApproval
+      description: Explicitly approves one pending CLI tool call. The blocked CLI turn resumes with the tool's own proposed input, verbatim.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: approval_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The decided approval.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CliToolApproval' }
+        '404':
+          description: Session or approval not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Approval already decided or expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /v1/sessions/{id}/cli-approvals/{approval_id}/reject:
+    post:
+      operationId: rejectSessionCliApproval
+      description: Explicitly denies one pending CLI tool call. The CLI receives a deny and continues without that tool.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: approval_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The decided approval.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CliToolApproval' }
+        '404':
+          description: Session or approval not found.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Approval already decided or expired.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /v1/sessions/{id}/messages:
     parameters:
       - in: path
@@ -3627,6 +3707,18 @@ components:
         permissions_inherited: { type: boolean }
         hidden_reasoning_transferred: { type: boolean, description: Always false; hidden reasoning is never transferred. }
         created_at: { type: string }
+    CliToolApproval:
+      type: object
+      required: [id, session_id, request_id, tool_name, input_json, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        request_id: { type: string, description: CLI control-request id, opaque. }
+        tool_name: { type: string }
+        input_json: { type: string, description: Exact tool input JSON proposed by the CLI; approved verbatim, never widened. }
+        status: { type: string, enum: [pending, approved, denied, expired] }
+        created_at: { type: string }
+        updated_at: { type: string }
     GlobalSessionOperation:
       type: object
       required: [operation, session_title]

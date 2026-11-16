@@ -39,7 +39,7 @@ fn test_run_claude_cli_turn_against_fake_fixture() {
 	defer {
 		os.rm(shim) or {}
 	}
-	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'hello', 30_000, ignore_provider_text_delta) or {
+	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'hello', 30_000, ignore_provider_text_delta, deny_all_cli_approvals) or {
 		panic(err)
 	}
 	assert turn.outcome == 'completed'
@@ -65,7 +65,7 @@ fn test_run_claude_cli_turn_denies_approvals_fail_closed() {
 		os.rm(shim) or {}
 	}
 	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'please edit the file',
-		30_000, ignore_provider_text_delta) or { panic(err) }
+		30_000, ignore_provider_text_delta, deny_all_cli_approvals) or { panic(err) }
 	assert turn.approvals_denied >= 1 // never auto-approved
 	assert turn.outcome == 'completed' // fake completes after denial
 }
@@ -187,4 +187,27 @@ fn test_cli_turn_deadline_already_exceeded_fails_before_launch() {
 	}, os.getwd(), ignore_provider_text_delta) {
 		panic('expired deadline must fail before spawning the CLI')
 	}
+}
+
+fn test_run_claude_cli_turn_with_explicit_approval() {
+	if !node_available() {
+		return
+	}
+	fixture := os.join_path('tests', 'focus_reference', 'testing', 'fake-claude.mjs')
+	if !os.exists(fixture) {
+		return
+	}
+	shim := os.join_path(os.temp_dir(), 'veasel-fake-claude-test3.sh')
+	os.write_file(shim, '#!/bin/sh\nexec node "${fixture}" "\$@"\n') or { panic(err) }
+	os.chmod(shim, 0o755) or { panic(err) }
+	defer {
+		os.rm(shim) or {}
+	}
+	turn := run_claude_cli_turn(shim, os.getwd(), 'ask', '', 'please edit the file',
+		30_000, ignore_provider_text_delta, fn (_ string, tool_name string, _ string) bool {
+			return tool_name == 'Edit'
+		}) or { panic(err) }
+	assert turn.approvals_approved == 1
+	assert turn.approvals_denied == 0
+	assert turn.text.contains('Fixed.')
 }

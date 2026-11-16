@@ -410,8 +410,34 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	if _ := provider_cli_by_id(config.provider) {
 		mut cli_store := app.store
 		session := cli_store.get_session(session_id)!
-		return complete_cli_provider_turn(messages, config, session.directory,
-			on_text_delta)!
+		mut decide := deny_all_cli_approvals
+		// Interactive approvals are opt-in (TUI sets this): each CLI tool
+		// request becomes a durable pending approval that the turn polls
+		// until a client decides via the cli-approvals API or the wait
+		// bound expires it. Without it, approvals deny immediately.
+		if os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS') or { '' } == '1' {
+			decide = fn [app, session_id, request_deadline] (request_id string, tool_name string, input_json string) bool {
+				mut store := app.store
+				approval := store.create_cli_tool_approval(session_id, request_id,
+					tool_name, input_json) or { return false }
+				wait_deadline := request_deadline
+				for time.now() < wait_deadline {
+					current := store.get_cli_tool_approval(approval.id) or {
+						return false
+					}
+					match current.status {
+						'approved' { return true }
+						'denied', 'expired' { return false }
+						else {}
+					}
+					time.sleep(200 * time.millisecond)
+				}
+				store.expire_cli_tool_approval(approval.id) or {}
+				return false
+			}
+		}
+		return complete_cli_provider_turn_with_approvals(messages, config,
+			session.directory, on_text_delta, decide)!
 	}
 	policy := agent_token_budget_policy()!
 	reservation_tokens := provider_call_reservation_tokens(messages, tools, config)
@@ -1630,6 +1656,54 @@ pub fn (app &App) get_session_operation(mut ctx Context, id string, operation_id
 		})
 	}
 	return ctx.json(operation)
+}
+
+@['/v1/sessions/:id/cli-approvals'; get]
+pub fn (app &App) list_session_cli_approvals(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut store := app.store
+	return ctx.json(store.list_pending_cli_tool_approvals(id) or {
+		return json_server_error(mut ctx, 'Unable to list CLI tool approvals')
+	})
+}
+
+@['/v1/sessions/:id/cli-approvals/:approval_id/approve'; post]
+pub fn (app &App) approve_session_cli_approval(mut ctx Context, id string,
+	approval_id string) veb.Result {
+	return app.decide_session_cli_approval(mut ctx, id, approval_id, true)
+}
+
+@['/v1/sessions/:id/cli-approvals/:approval_id/reject'; post]
+pub fn (app &App) reject_session_cli_approval(mut ctx Context, id string,
+	approval_id string) veb.Result {
+	return app.decide_session_cli_approval(mut ctx, id, approval_id, false)
+}
+
+fn (app &App) decide_session_cli_approval(mut ctx Context, id string,
+	approval_id string, approved bool) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut store := app.store
+	approval := store.decide_cli_tool_approval(id, approval_id, approved) or {
+		if err.msg().contains('not found') {
+			ctx.res.set_status(.not_found)
+		} else {
+			ctx.res.set_status(.conflict)
+		}
+		return ctx.json(APIError{
+			error: err.msg()
+		})
+	}
+	return ctx.json(approval)
 }
 
 @['/v1/sessions/:id/context-handoffs'; get]

@@ -12,17 +12,26 @@ import x.json2
 // events so a future UI/API layer can own the decision. Cancellation is
 // the caller's process kill; timeout kills the process.
 
+// CliApprovalDecisionFn decides ONE tool approval. Returning false (or
+// the absence of an interactive decider) denies the tool: fail closed.
+pub type CliApprovalDecisionFn = fn (request_id string, tool_name string, input_json string) bool
+
+pub fn deny_all_cli_approvals(_ string, _ string, _ string) bool {
+	return false
+}
+
 pub struct ProviderCliTurnResult {
 pub:
-	events            []ClaudeCliEvent
-	text              string
-	outcome           string // completed|failed|interrupted
-	session_id        string
-	model             string
-	usage             ProviderUsage
-	usage_reported    bool
-	reported_cost_usd ?f64
-	approvals_denied  int
+	events             []ClaudeCliEvent
+	text               string
+	outcome            string // completed|failed|interrupted
+	session_id         string
+	model              string
+	usage              ProviderUsage
+	usage_reported     bool
+	reported_cost_usd  ?f64
+	approvals_denied   int
+	approvals_approved int
 }
 
 struct ClaudeCliUserContent {
@@ -83,7 +92,7 @@ pub:
 // transport failures; provider-reported failures are outcome='failed'.
 pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 	resume_session_id string, user_text string, timeout_ms int,
-	on_text_delta ProviderTextDeltaFn) !ProviderCliTurnResult {
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !ProviderCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(claude_cli_args(permission_mode, resume_session_id))
 	if cwd.len > 0 {
@@ -134,6 +143,7 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 	mut fallback_text := ''
 	mut model := ''
 	mut approvals_denied := 0
+	mut approvals_approved := 0
 	mut buffer := ''
 	started := time.now()
 	timeout := if timeout_ms > 0 { timeout_ms } else { 120_000 }
@@ -163,37 +173,45 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 						fallback_text = event.text
 					}
 					'approval_request' {
-						// Fail closed: deny in-band, record for the caller.
-						process.stdin_write(json2.encode(ClaudeCliControlResponse{
-							typ:      'control_response'
-							response: ClaudeCliControlResponseBody{
-								subtype:    'success'
-								request_id: event.request_id
-								response:   ClaudeCliDenyResponse{
-									behavior: 'deny'
-									message:  'Denied by Veasel policy: approvals are not auto-approved.'
+						if decide(event.request_id, event.tool_name, event.input_json) {
+							// Explicit approval: allow with the CLI's own
+							// proposed input, verbatim. Never widen it.
+							process.stdin_write('{"type":"control_response","response":{"subtype":"success","request_id":"${event.request_id}","response":{"behavior":"allow","updatedInput":${event.input_json}}}}' + '\n')
+							approvals_approved += 1
+						} else {
+							// Fail closed: deny in-band, record for the caller.
+							process.stdin_write(json2.encode(ClaudeCliControlResponse{
+								typ:      'control_response'
+								response: ClaudeCliControlResponseBody{
+									subtype:    'success'
+									request_id: event.request_id
+									response:   ClaudeCliDenyResponse{
+										behavior: 'deny'
+										message:  'Denied by Veasel policy: approvals are not auto-approved.'
+									}
 								}
-							}
-						}) + '\n')
-						approvals_denied += 1
+							}) + '\n')
+							approvals_denied += 1
+						}
 					}
 					'result' {
 						return ProviderCliTurnResult{
-							events:            events
-							text:              if text.len > 0 {
+							events:             events
+							text:               if text.len > 0 {
 								text
 							} else if fallback_text.len > 0 {
 								fallback_text
 							} else {
 								event.text
 							}
-							outcome:           event.outcome
-							session_id:        event.session_id
-							model:             model
-							usage:             event.usage
-							usage_reported:    event.usage_reported
-							reported_cost_usd: event.reported_cost_usd
-							approvals_denied:  approvals_denied
+							outcome:            event.outcome
+							session_id:         event.session_id
+							model:              model
+							usage:              event.usage
+							usage_reported:     event.usage_reported
+							reported_cost_usd:  event.reported_cost_usd
+							approvals_denied:   approvals_denied
+							approvals_approved: approvals_approved
 						}
 					}
 					else {}
@@ -231,6 +249,13 @@ pub fn cli_transcript_prompt(messages []ChatMessage) string {
 // protocols fail closed until their runners land.
 pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 	cwd string, on_text_delta ProviderTextDeltaFn) !CompletionOutput {
+	return complete_cli_provider_turn_with_approvals(messages, config, cwd,
+		on_text_delta, deny_all_cli_approvals)
+}
+
+pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
+	config ModelConfig, cwd string, on_text_delta ProviderTextDeltaFn,
+	decide CliApprovalDecisionFn) !CompletionOutput {
 	// Permission mode is the user's explicit session-level approval
 	// choice (default 'ask': every tool approval is denied in-band by
 	// the runner). 'accept-edits' means the user explicitly opted into
@@ -260,7 +285,7 @@ pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 		}
 	}
 	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, '', prompt,
-		timeout_ms, on_text_delta)!
+		timeout_ms, on_text_delta, decide)!
 	if turn.outcome != 'completed' {
 		return error('installed CLI ${spec.name} turn ${turn.outcome}')
 	}

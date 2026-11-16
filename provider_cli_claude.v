@@ -19,6 +19,7 @@ pub:
 	tool_id           string
 	tool_name         string
 	request_id        string
+	input_json        string // raw tool input JSON (approval events)
 	outcome           string // completed|failed (result only)
 	usage             ProviderUsage
 	usage_reported    bool
@@ -118,10 +119,15 @@ pub fn parse_claude_cli_line(line string) ClaudeCliEvent {
 		'control_request' {
 			request := claude_cli_map(frame, 'request')
 			if claude_cli_string(request, 'subtype') == 'can_use_tool' {
+				mut input_json := '{}'
+				if input := request['input'] {
+					input_json = json2.encode(input)
+				}
 				return ClaudeCliEvent{
 					kind:       'approval_request'
 					request_id: claude_cli_string(frame, 'request_id')
 					tool_name:  claude_cli_string(request, 'tool_name')
+					input_json: input_json
 				}
 			}
 		}

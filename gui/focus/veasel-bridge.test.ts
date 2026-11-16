@@ -27,7 +27,12 @@ describe('veasel Focus bridge mapping', () => {
     expect(toFocusProviderId('claude-code')).toBe('claude');
     expect(toFocusProviderId('codex')).toBe('codex');
     expect(toFocusProviderId('opencode')).toBe('opencode');
-    expect(toFocusProviderId(null)).toBe('claude');
+    expect(toFocusProviderId('muse')).toBe('muse');
+    // Unknown providers are never silently mapped to Claude (decision 11).
+    expect(toFocusProviderId(null)).toBe('unknown');
+    expect(toFocusProviderId(undefined)).toBe('unknown');
+    expect(toFocusProviderId('anthropic')).toBe('unknown');
+    expect(toFocusProviderId('some-cli')).toBe('unknown');
   });
 
   it('projects persisted messages into one Focus turn per user message', () => {
@@ -107,7 +112,7 @@ describe('veasel Focus bridge HTTP behavior', () => {
   it('reports provider auth as unknown instead of ready', async () => {
     const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: fakeFetch({}) });
     const providers = await bridge.providers();
-    expect(providers).toHaveLength(3);
+    expect(providers).toHaveLength(4);
     expect(providers.every((provider) => provider.auth === 'unknown')).toBe(true);
   });
 
@@ -139,7 +144,32 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(codex?.capabilities.sessions).toBe(true);
     const opencode = providers.find((provider) => provider.id === 'opencode');
     expect(opencode?.auth).toBe('signed-out');
-    expect(opencode?.capabilities.sessions).toBe(false);
+    expect(opencode?.capabilities.sessions).toBe(true);
+  });
+
+  it('represents Muse as its own provider, never as Claude', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/providers/cli': [
+          {
+            id: 'muse', name: 'Muse Code', exec: 'muse', protocol: 'acp',
+            installed: true, version: 'Muse Code 1.4.20', auth_probe_present: true,
+            auth_state: 'probe-present', permission_modes: ['ask'],
+            session_resume_verified: false, usage_reporting: 'unknown',
+          },
+        ],
+      }),
+    });
+    const providers = await bridge.providers();
+    const muse = providers.find((provider) => provider.id === 'muse');
+    expect(muse?.label).toBe('Muse');
+    expect(muse?.installed).toBe(true);
+    expect(muse?.version).toBe('Muse Code 1.4.20');
+    expect(muse?.capabilities.sessions).toBe(true);
+    expect(muse?.capabilities.resume).toBe(false);
+    const thread = sessionToThread({ id: 's1', title: 'T', directory: '/p', created_at: '' });
+    expect(thread.provider).toBe('unknown');
   });
 });
 

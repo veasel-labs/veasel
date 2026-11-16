@@ -156,17 +156,18 @@ function defaultEventStream(url: string, onEvent: (type: string, data: string) =
   };
 }
 
-const PROVIDER_IDS: FocusProviderId[] = ['claude', 'codex', 'opencode'];
+const PROVIDER_IDS: FocusProviderId[] = ['claude', 'codex', 'opencode', 'muse'];
 
 /** Veasel CLI provider ids (`claude-code`, …) collapse to Focus provider ids. */
-export function toFocusProviderId(veaselProvider: string | null | undefined): FocusProviderId {
-  if (veaselProvider === 'codex' || veaselProvider === 'opencode') return veaselProvider;
-  return 'claude';
+export function toFocusProviderId(veaselProvider: string | null | undefined): FocusProviderId | 'unknown' {
+  if (veaselProvider === 'claude-code' || veaselProvider === 'claude') return 'claude';
+  if (veaselProvider === 'codex' || veaselProvider === 'opencode' || veaselProvider === 'muse') return veaselProvider;
+  return 'unknown';
 }
 
 export function sessionToThread(
   session: VeaselSession,
-  options: { provider?: FocusProviderId; turns?: number; usage?: FocusUsage | null } = {},
+  options: { provider?: FocusProviderId | 'unknown'; turns?: number; usage?: FocusUsage | null } = {},
 ): FocusThread {
   const cwd = session.directory ?? '';
   const projectName = cwd ? (cwd.split('/').filter(Boolean).pop() ?? null) : null;
@@ -176,7 +177,7 @@ export function sessionToThread(
     workspace: cwd,
     projectName,
     cwd,
-    provider: options.provider ?? 'claude',
+    provider: options.provider ?? 'unknown',
     model: null,
     resolvedModel: null,
     permissionMode: 'ask',
@@ -252,12 +253,12 @@ function asArray<T>(payload: unknown): T[] {
 export function createVeaselFocusBridge(options: {
   baseUrl: string;
   fetch?: FetchLike;
-  provider?: FocusProviderId;
+  provider?: FocusProviderId | 'unknown';
   createEventStream?: EventStreamFactory;
 }): FocusBridge {
   const base = options.baseUrl.replace(/\/$/, '');
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
-  const provider = options.provider ?? 'claude';
+  const provider = options.provider ?? 'unknown';
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await doFetch(`${base}${path}`, {
@@ -313,7 +314,7 @@ export function createVeaselFocusBridge(options: {
       const checkedAt = new Date().toISOString();
       const fallback: FocusProviderStatus[] = PROVIDER_IDS.map((id) => ({
         id,
-        label: id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : 'OpenCode',
+        label: id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : id === 'muse' ? 'Muse' : 'OpenCode',
         installed: false,
         binary: null,
         version: null,
@@ -348,7 +349,7 @@ export function createVeaselFocusBridge(options: {
           capabilities: {
             ...base.capabilities,
             // Only wired protocols may claim structured sessions.
-            sessions: status.protocol === 'stream-json' || status.protocol === 'app-server',
+            sessions: status.protocol === 'stream-json' || status.protocol === 'app-server' || status.protocol === 'acp',
             resume: status.session_resume_verified,
           },
         };

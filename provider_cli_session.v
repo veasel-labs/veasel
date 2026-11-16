@@ -220,6 +220,9 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 			continue
 		}
 		if !process.is_alive() {
+			if resume_session_id.len > 0 {
+				return error('CLI resume failed: installed CLI exited before a result frame')
+			}
 			return error('installed CLI exited before a result frame')
 		}
 		time.sleep(5 * time.millisecond)
@@ -256,6 +259,58 @@ pub fn complete_cli_provider_turn(messages []ChatMessage, config ModelConfig,
 pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 	config ModelConfig, cwd string, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn) !CompletionOutput {
+	return complete_cli_provider_turn_resumable(messages, config, cwd,
+		on_text_delta, decide, '')
+}
+
+// complete_cli_provider_turn_with_resume is the session-aware entry: it
+// resumes the CLI's native session for (session_id, provider) when a
+// safe stored id exists, persists the id the CLI reports back, and on a
+// resume failure clears the stale id and retries once with the full
+// flattened canonical transcript. Veasel's history stays canonical;
+// resume is only a continuation optimization.
+pub fn complete_cli_provider_turn_with_resume(mut store Store, session_id string,
+	messages []ChatMessage, config ModelConfig, cwd string,
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !CompletionOutput {
+	resume_id := store.get_cli_resume_id(session_id, config.provider)
+	mut streamed := &StreamedFlag{}
+	wrapped := fn [mut streamed, on_text_delta] (delta string) ! {
+		streamed.value = true
+		on_text_delta(delta)!
+	}
+	output := complete_cli_provider_turn_resumable(messages, config, cwd, wrapped,
+		decide, resume_id) or {
+		if resume_id.len == 0 || !err.msg().starts_with('CLI resume failed') {
+			return err
+		}
+		// Stale CLI session: clear it and retry once from the canonical
+		// transcript — but never after text already streamed, so the
+		// session journal cannot show a duplicated partial answer.
+		store.clear_cli_resume_id(session_id, config.provider) or {}
+		if streamed.value {
+			return err
+		}
+		fresh := complete_cli_provider_turn_resumable(messages, config, cwd,
+			on_text_delta, decide, '')!
+		if fresh.cli_session_id.len > 0 {
+			store.set_cli_resume_id(session_id, config.provider, fresh.cli_session_id) or {}
+		}
+		return fresh
+	}
+	if output.cli_session_id.len > 0 {
+		store.set_cli_resume_id(session_id, config.provider, output.cli_session_id) or {}
+	}
+	return output
+}
+
+struct StreamedFlag {
+pub mut:
+	value bool
+}
+
+fn complete_cli_provider_turn_resumable(messages []ChatMessage,
+	config ModelConfig, cwd string, on_text_delta ProviderTextDeltaFn,
+	decide CliApprovalDecisionFn, resume_id string) !CompletionOutput {
 	// Permission mode is the user's explicit session-level approval
 	// choice (default 'ask': every tool approval is denied in-band by
 	// the runner). 'accept-edits' means the user explicitly opted into
@@ -267,7 +322,15 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 	if spec.protocol !in ['stream-json', 'app-server', 'acp'] {
 		return error('installed-CLI protocol ${spec.protocol} is not yet wired for session turns')
 	}
-	prompt := cli_transcript_prompt(messages)
+	// Resuming sends only the latest user message (the CLI holds the
+	// earlier context); a fresh turn sends the full flattened canonical
+	// transcript. An unsafe stored id is treated as no resume.
+	safe_resume_id := if is_safe_cli_session_id(resume_id) { resume_id } else { '' }
+	prompt := if safe_resume_id.len > 0 {
+		cli_resume_prompt(messages)
+	} else {
+		cli_transcript_prompt(messages)
+	}
 	if prompt.trim_space().len == 0 {
 		return error('installed-CLI turn requires a non-empty conversation')
 	}
@@ -289,13 +352,9 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 	// would too).
 	cli_model := if config.model == 'default' { '' } else { config.model }
 	if spec.protocol == 'acp' {
-		acp_turn := if spec.id == 'muse' {
-			run_muse_cli_turn(spec.exec, cwd, cli_model, prompt, timeout_ms,
-				on_text_delta, decide)!
-		} else {
-			run_opencode_cli_turn(spec.exec, cwd, cli_model, prompt, timeout_ms,
-				on_text_delta, decide)!
-		}
+		acp_turn := run_acp_cli_turn(spec.exec, ['acp'], cwd,
+			acp_session_configs(spec.id, cli_model), safe_resume_id, prompt,
+			timeout_ms, on_text_delta, decide)!
 		if acp_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${acp_turn.outcome}')
 		}
@@ -304,12 +363,13 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 			model:             config.model
 			content:           acp_turn.text
 			usage:             acp_turn.usage
+			cli_session_id:    acp_turn.session_id
 			provider_attempts: 1
 		}
 	}
 	if spec.protocol == 'app-server' {
 		codex_turn := run_codex_cli_turn(spec.exec, cwd, permission_mode,
-			cli_model, prompt, timeout_ms, on_text_delta, decide)!
+			cli_model, safe_resume_id, prompt, timeout_ms, on_text_delta, decide)!
 		if codex_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${codex_turn.outcome}')
 		}
@@ -321,11 +381,12 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 				config.model
 			}
 			content:           codex_turn.text
+			cli_session_id:    codex_turn.thread_id
 			provider_attempts: 1
 		}
 	}
-	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, '', prompt,
-		timeout_ms, on_text_delta, decide)!
+	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, safe_resume_id,
+		prompt, timeout_ms, on_text_delta, decide)!
 	if turn.outcome != 'completed' {
 		return error('installed CLI ${spec.name} turn ${turn.outcome}')
 	}
@@ -334,6 +395,7 @@ pub fn complete_cli_provider_turn_with_approvals(messages []ChatMessage,
 		model:             if turn.model.len > 0 { turn.model } else { config.model }
 		content:           turn.text
 		usage:             turn.usage
+		cli_session_id:    turn.session_id
 		provider_attempts: 1
 	}
 }

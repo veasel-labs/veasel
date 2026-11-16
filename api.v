@@ -436,8 +436,9 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 				return false
 			}
 		}
-		return complete_cli_provider_turn_with_approvals(messages, config,
-			session.directory, on_text_delta, decide)!
+		mut resume_store := app.store
+		return complete_cli_provider_turn_with_resume(mut resume_store, session_id,
+			messages, config, session.directory, on_text_delta, decide)!
 	}
 	policy := agent_token_budget_policy()!
 	reservation_tokens := provider_call_reservation_tokens(messages, tools, config)

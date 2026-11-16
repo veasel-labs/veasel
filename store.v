@@ -1056,6 +1056,27 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit CLI tool approvals migration')
 		}
 	}
+	if current < 30 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin CLI session resume migration')
+		}
+		db.exec('CREATE TABLE session_cli_resume (session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, provider TEXT NOT NULL, cli_session_id TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (session_id, provider))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create CLI session resume table')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (30)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record CLI session resume migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit CLI session resume migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

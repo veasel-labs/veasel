@@ -42,7 +42,7 @@ fn test_run_codex_cli_turn_against_fake_fixture() {
 	}
 	defer { os.rm(shim) or {} }
 	mut sink := &CodexStreamedSink{}
-	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', 'scope', 30_000, fn [mut sink] (delta string) ! {
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'scope', 30_000, fn [mut sink] (delta string) ! {
 		sink.text += delta
 	}, deny_all_cli_approvals) or { panic(err) }
 	assert turn.outcome == 'completed'
@@ -60,7 +60,7 @@ fn test_run_codex_cli_turn_denies_approvals_fail_closed() {
 		return
 	}
 	defer { os.rm(shim) or {} }
-	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', 'approval', 30_000,
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'approval', 30_000,
 		ignore_provider_text_delta, deny_all_cli_approvals) or { panic(err) }
 	assert turn.outcome == 'completed'
 	assert turn.approvals_denied == 1
@@ -78,7 +78,7 @@ fn test_run_codex_cli_turn_allows_only_explicit_approval() {
 	allow := fn (request_id string, tool_name string, input_json string) bool {
 		return request_id.starts_with('codex-') && tool_name.len > 0 && input_json.contains('yes')
 	}
-	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', 'approval', 30_000,
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'approval', 30_000,
 		ignore_provider_text_delta, allow) or { panic(err) }
 	assert turn.outcome == 'completed'
 	assert turn.approvals_approved == 1
@@ -91,7 +91,7 @@ fn test_run_codex_cli_turn_usage_is_never_published() {
 		return
 	}
 	defer { os.rm(shim) or {} }
-	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', 'usage', 30_000,
+	turn := run_codex_cli_turn(shim, os.getwd(), 'ask', '', '', 'usage', 30_000,
 		ignore_provider_text_delta, deny_all_cli_approvals) or { panic(err) }
 	assert turn.outcome == 'completed'
 	assert !turn.usage_reported

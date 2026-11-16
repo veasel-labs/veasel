@@ -444,6 +444,10 @@ pub:
 	content          string
 	provider_context []string @[json: '-']
 	usage            ProviderUsage
+	// cli_session_id is the installed CLI's own session/thread id when a
+	// CLI runner produced this output; the session layer stores it for
+	// native resume. Empty for HTTP providers.
+	cli_session_id string @[omitempty]
 mut:
 	provider_attempts int @[json: '-']
 }

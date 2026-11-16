@@ -130,7 +130,8 @@ fn test_library_invalid_catalog_structures_rejected() {
 }
 
 fn test_library_headless_parse_requires_opt_in_flags_scoped() {
-	opts := parse_headless_plugins_args(['library', 'install', '--opt-in', '--accept-dangerous', 'essentials']) or { panic(err) }
+	opts := parse_headless_plugins_args(['library', 'install', '--opt-in', '--accept-dangerous',
+		'essentials']) or { panic(err) }
 	assert opts.action == .library_install
 	assert opts.allow_community
 	assert opts.accept_dangerous

@@ -1030,6 +1030,32 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit agent token budget migration')
 		}
 	}
+	if current < 29 {
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin CLI tool approvals migration')
+		}
+		db.exec("CREATE TABLE cli_tool_approvals (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, request_id TEXT NOT NULL, tool_name TEXT NOT NULL, input_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied', 'expired')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)") or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to create CLI tool approvals table')
+		}
+		db.exec('CREATE INDEX cli_tool_approvals_session_status ON cli_tool_approvals (session_id, status)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to index CLI tool approvals')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (29)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record CLI tool approvals migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit CLI tool approvals migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

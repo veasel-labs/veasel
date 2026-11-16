@@ -1,6 +1,7 @@
 # ADR-0001: One product, one runtime — Veasel owns the agent engine
 
-**Status:** Proposed
+**Status:** Accepted (owner decisions through 2026-11-16, incl. Desktop
+host, Focus provider model and plugin governance — decisions 10–12)
 
 ## Context
 
@@ -94,6 +95,45 @@ Option A. Sub-decisions:
    security model (no ABAC inheritance), acts on the OS only via typed
    `horneroctl` contracts. Hermes stays until functional AND security
    parity is independently proven. Javi stays native.
+10. **Desktop host (owner decision, 2026-11-16):** Veasel Desktop is a
+    first-party Electron + React/Vite application reusing the Agent
+    Toolkit Desktop Electron host (`apps/desktop` at
+    `ulises-jeremias/agent-toolkit@cfebbb7a`), its Focus UI, components,
+    styles, tests and packaging — copied verbatim first (with SHA,
+    checksums and attribution), adapted only in later commits. Electron
+    is a shell/client only: the Veasel V backend remains the sole
+    runtime for agents, sessions, approvals, plugins and orchestration,
+    and TUI and Desktop share the canonical API and SSE events. The
+    host must keep the upstream security posture — sandbox,
+    contextIsolation, disabled Node integration, narrow validated IPC,
+    denied navigation/new-window except audited external links, strict
+    CSP, loopback-only backend attach with Origin/Host validation — and
+    must never expose the backend on a LAN or via a privileged helper.
+    The personal Agent Toolkit Desktop retires only after verified
+    Desktop parity plus a reversible user-data migration.
+11. **Focus provider model (owner decision, 2026-11-16):** the GUI
+    represents exactly the installed-CLI providers `claude`, `codex`,
+    `opencode` and `muse` as distinct providers with their own install,
+    auth-probe and capability facts (from `/v1/providers/cli`). A
+    provider must never be silently mapped onto another (notably Muse
+    must never render as Claude), unknown providers render as
+    unsupported, and capabilities a protocol has not verified are
+    advertised as unavailable.
+12. **Plugin governance (owner decision, 2026-11-16):** first-party
+    Veasel plugin curation is authorized subject to validated
+    manifests, provenance, licenses, declared permissions and security
+    tests, with documented maintainer approval recorded per listing.
+    This is first-party curation, NOT independent third-party security
+    review, and must never be described as such. The registry stays
+    fail-closed: where policy requires a reviewer distinct from the
+    submitter, either that review genuinely happens or a transparent
+    first-party governance exception is proposed in
+    `veasel-labs/agent-toolkit` and approved by the owner before any
+    entry flips to installable — approvals and reviewer identity are
+    never fabricated. Personal/community entries stay pending until
+    their required review exists; their review never blocks Desktop or
+    other development. Explicit local opt-in imports are a separate,
+    clearly-labelled path from verified marketplace installation.
 
 ## Consequences
 

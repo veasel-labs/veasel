@@ -430,8 +430,7 @@ export function createVeaselFocusBridge(options: {
         // The backend requires provider and model together (or neither):
         // without a chosen model, inherit the session's configured default
         // instead of posting a provider-only turn it would reject.
-        const target =
-          veaselProvider && choice?.model ? { provider: veaselProvider, model: choice.model } : {};
+        const target = veaselProvider && choice?.model ? { provider: veaselProvider, model: choice.model } : {};
         await request(`/v1/sessions/${encodeURIComponent(id)}/messages`, {
           method: 'POST',
           body: JSON.stringify({ content: text, ...target }),

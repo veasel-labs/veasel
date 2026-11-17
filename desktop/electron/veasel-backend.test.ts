@@ -1,9 +1,16 @@
 // @vitest-environment node
+import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { canonicalVeaselDataDir, probeVeaselBackend, veaselHealthIdentity } from './veasel-backend';
+import {
+  canonicalVeaselDataDir,
+  probeVeaselBackend,
+  readBackendApiToken,
+  veaselHealthIdentity,
+} from './veasel-backend';
 
 describe('veaselHealthIdentity', () => {
   it('accepts only the real Veasel health payload', () => {
@@ -71,5 +78,51 @@ describe('probeVeaselBackend', () => {
     const url = await serve({ healthy: true, version: '1.0.0', pid: 1 }, 500);
     await expect(probeVeaselBackend(url)).resolves.toBeNull();
     await expect(probeVeaselBackend('http://127.0.0.1:1')).resolves.toBeNull();
+  });
+});
+
+const T1 = 'c'.repeat(64);
+
+describe('readBackendApiToken', () => {
+  it('prefers VEASEL_API_TOKEN, then a private api-token file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-token-'));
+    try {
+      expect(readBackendApiToken({}, dir)).toBeNull();
+      fs.writeFileSync(path.join(dir, 'api-token'), `${T1}\n`, { mode: 0o600 });
+      expect(readBackendApiToken({}, dir)).toBe(T1);
+      expect(readBackendApiToken({ VEASEL_API_TOKEN: 'env-token' }, dir)).toBe('env-token');
+      if (process.platform !== 'win32') {
+        fs.chmodSync(path.join(dir, 'api-token'), 0o644);
+        expect(readBackendApiToken({}, dir)).toBeNull();
+        fs.rmSync(path.join(dir, 'api-token'));
+        fs.writeFileSync(path.join(dir, 'real'), `${T1}\n`, { mode: 0o600 });
+        fs.symlinkSync(path.join(dir, 'real'), path.join(dir, 'api-token'));
+        expect(readBackendApiToken({}, dir)).toBeNull();
+      }
+      fs.rmSync(path.join(dir, 'api-token'), { force: true });
+      fs.writeFileSync(path.join(dir, 'api-token'), 'malformed\n', { mode: 0o600 });
+      expect(readBackendApiToken({}, dir)).toBeNull();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('sends the token on health probes so identity is disclosed only to it', async () => {
+    const seen: Array<string | undefined> = [];
+    const server = http.createServer((req, res) => {
+      seen.push(req.headers.authorization);
+      const body = req.headers.authorization === 'Bearer t0k' ? { healthy: true, version: '1.0.0', pid: 7 } : { healthy: true };
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(body));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      await expect(probeVeaselBackend(url)).resolves.toBeNull();
+      await expect(probeVeaselBackend(url, 't0k')).resolves.toEqual({ version: '1.0.0', pid: 7 });
+      expect(seen).toEqual([undefined, 'Bearer t0k']);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

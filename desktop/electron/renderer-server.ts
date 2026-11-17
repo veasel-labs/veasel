@@ -112,6 +112,7 @@ function proxyApi(
   req: IncomingMessage,
   res: ServerResponse,
   backendBase: string,
+  backendAuthorization: string | undefined,
 ): void {
   const target = new URL(req.url ?? '/', backendBase);
   const headers: http.OutgoingHttpHeaders = { ...req.headers, host: target.host };
@@ -122,6 +123,11 @@ function proxyApi(
   delete headers[PROXY_TOKEN_HEADER];
   delete headers['x-atk-desktop'];
   headers['x-atk-desktop'] = '1';
+  // The backend requires its own bearer token on every request. The proxy is
+  // the only holder: anything the renderer sent is discarded and the token is
+  // never reflected back (responses carry no Authorization).
+  delete headers.authorization;
+  if (backendAuthorization) headers.authorization = backendAuthorization;
 
   const upstream = http.request(
     {
@@ -185,6 +191,11 @@ export interface RendererServer {
 export interface RendererServerOptions {
   /** Test seam; production callers omit it and get a fresh random token. */
   proxyToken?: string;
+  /**
+   * Main-process-only source of the backend `Authorization` header value
+   * (`Bearer <token>`), read per request so rotation needs no restart.
+   */
+  backendAuthorization?: () => string | undefined;
 }
 
 const STATIC_HARDENING_HEADERS = {
@@ -243,7 +254,7 @@ export async function startRendererServer(
         res.end(JSON.stringify({ ok: false, error: 'backend not ready' }));
         return;
       }
-      proxyApi(req, res, backendBase);
+      proxyApi(req, res, backendBase, options.backendAuthorization?.());
       return;
     }
 

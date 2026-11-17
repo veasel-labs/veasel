@@ -34,6 +34,9 @@ export function classifyChanges(messages, paths) {
     return (
       path.endsWith(".v") ||
       path.startsWith("tui/src/") ||
+      // Desktop ships in the same prereleases (AppImage/DEB/DMG/NSIS), so
+      // desktop source changes are release-worthy even under ci/docs titles.
+      (path.startsWith("desktop/") && !path.includes(".test.")) ||
       ["tui/package.json", "tui/bun.lock", "v.mod", "v.sum"].includes(path)
     );
   });

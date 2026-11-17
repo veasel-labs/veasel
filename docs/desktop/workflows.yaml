@@ -8,19 +8,19 @@
 journeys:
   - id: desktop-proxy-trust-boundary
     status: partial
-    evidence: "PR #720 adversarial proxy tests pass locally; not yet in a packaged build."
+    evidence: "PR #720 merged with adversarial tests; packaged 0.92.0-next.0 AppImage proven live: token-less POST /v1/sessions and GET via the renderer proxy return 403 without backend contact. Direct-to-backend callers remain a documented follow-up."
   - id: focus-provider-turn
     status: partial
-    evidence: "Bridge send contract repaired in PR #722 with unit tests; no live provider turn recorded from Desktop yet."
+    evidence: "Packaged AppImage backend (0.92.0-next.0): Claude CLI turn in /tmp/journey-repo proposed the exact fix for a failing pytest; after approval the edit applied and independent pytest went red-to-green (1 passed). Driven via the backend API, not yet by clicking through Focus; the post-edit shell confirmation step failed in-turn."
   - id: focus-approvals
     status: partial
-    evidence: "Desktop-spawned backend enables interactive approvals (PR #722); no packaged approve/deny journey recorded yet."
+    evidence: "Same packaged run: Edit approval approved -> applied; a second turn's Edit approval rejected -> file unchanged, tests still green. Denial and approval both recorded as durable cli_tool_approvals rows."
   - id: tui-desktop-continuity
-    status: not-implemented
-    evidence: "Same-store spawn/attach landed in PR #721; no TUI<->Desktop same-session E2E recorded yet."
+    status: partial
+    evidence: "Packaged Desktop spawned its backend on the canonical store and served the existing session history; after app restart the journey session and full history appeared in the Desktop sidebar. Store-level continuity proven; a live TUI-side resume of the same session is not yet recorded."
   - id: linux-packaging
-    status: not-implemented
-    evidence: "electron-builder config exists; no AppImage/DEB built, installed, or launched yet."
+    status: partial
+    evidence: "AppImage sha256 b1a7c40cc107d78ea455371ce7a04ac72baac2784ff60478bbe9426cd86954f0 and DEB sha256 fae4c03663d19ec3d25fe45d162770452ece96e8ca61e75767f71f8b18480c1e built from merged main, installed user-level (~/.local/opt/veasel-desktop), launched with a healthy bundled 0.92.0-next.0 backend. Not yet attached to a GitHub release; artifacts unsigned."
   - id: verified-release
     status: blocked
-    evidence: "v0.91.0-next.0 points at e56b6b8, not main 89f6e7d (run 43921368447 tag collision); no release from current main yet."
+    evidence: "v0.92.0-next.0 published from intermediate commit f995621 (CLI/TUI assets only). A release from the current main tip (37d94b7+) with Desktop artifacts attached is still pending the serialized main CI queue."

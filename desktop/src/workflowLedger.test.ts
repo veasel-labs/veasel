@@ -32,7 +32,7 @@ describe('Desktop workflow ledger (docs/desktop/workflows.yaml)', () => {
     for (const id of ['tui-desktop-continuity', 'linux-packaging']) {
       const journey = journeys.find((j) => j.id === id);
       expect(journey, id).toBeDefined();
-      expect(journey!.status).toBe('not-implemented');
+      expect(journey!.status).toBe('partial');
     }
     const release = journeys.find((j) => j.id === 'verified-release');
     expect(release, 'verified-release').toBeDefined();

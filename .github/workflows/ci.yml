@@ -556,6 +556,8 @@ jobs:
         working-directory: desktop
       - run: pnpm test
         working-directory: desktop
+      - run: pnpm build:all
+        working-directory: desktop
 
   publish-prerelease:
     name: Publish verified prerelease

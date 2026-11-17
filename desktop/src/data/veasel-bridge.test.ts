@@ -88,9 +88,7 @@ describe('veasel Focus bridge HTTP behavior', () => {
       fetch: fakeFetch({
         '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
         '/v1/sessions/s1/messages': [{ id: 1, role: 'user', content: 'edit' }],
-        '/v1/sessions/s1/cli-approvals': [
-          { id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' },
-        ],
+        '/v1/sessions/s1/cli-approvals': [{ id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' }],
       }),
     });
     const snapshot = await bridge.readThread('s1');
@@ -121,16 +119,30 @@ describe('veasel Focus bridge HTTP behavior', () => {
       fetch: fakeFetch({
         '/v1/providers/cli': [
           {
-            id: 'codex', name: 'OpenAI Codex', exec: 'codex', protocol: 'app-server',
-            installed: true, version: 'codex-cli 0.169.0', auth_probe_present: true,
-            auth_state: 'probe-present', permission_modes: ['ask'],
-            session_resume_verified: true, usage_reporting: 'not-published',
+            id: 'codex',
+            name: 'OpenAI Codex',
+            exec: 'codex',
+            protocol: 'app-server',
+            installed: true,
+            version: 'codex-cli 0.169.0',
+            auth_probe_present: true,
+            auth_state: 'probe-present',
+            permission_modes: ['ask'],
+            session_resume_verified: true,
+            usage_reporting: 'not-published',
           },
           {
-            id: 'opencode', name: 'OpenCode', exec: 'opencode', protocol: 'acp',
-            installed: false, version: '', auth_probe_present: false,
-            auth_state: 'probe-missing', permission_modes: ['ask'],
-            session_resume_verified: true, usage_reporting: 'adapter-reported',
+            id: 'opencode',
+            name: 'OpenCode',
+            exec: 'opencode',
+            protocol: 'acp',
+            installed: false,
+            version: '',
+            auth_probe_present: false,
+            auth_state: 'probe-missing',
+            permission_modes: ['ask'],
+            session_resume_verified: true,
+            usage_reporting: 'adapter-reported',
           },
         ],
       }),
@@ -167,7 +179,13 @@ describe('veasel Focus bridge send contract', () => {
   it('omits provider when no model is chosen so the backend inherits its default', async () => {
     const sent: Array<{ path: string; body: unknown }> = [];
     const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: capturingFetch(sent) });
-    const created = await bridge.createThread({ cwd: '/p', projectName: 'p', provider: 'codex', model: null, permissionMode: 'ask' });
+    const created = await bridge.createThread({
+      cwd: '/p',
+      projectName: 'p',
+      provider: 'codex',
+      model: null,
+      permissionMode: 'ask',
+    });
     expect(created.ok).toBe(true);
     const outcome = await bridge.send('s1', 'fix it');
     expect(outcome.ok).toBe(true);
@@ -207,7 +225,11 @@ describe('veasel SSE live updates', () => {
       data: { operation_id: 'op-1', delta: 'hel' },
     });
     expect(delta).toEqual({
-      kind: 'delta', threadId: 's1', itemId: 'op-1', channel: 'assistant', text: 'hel',
+      kind: 'delta',
+      threadId: 's1',
+      itemId: 'op-1',
+      channel: 'assistant',
+      text: 'hel',
     });
     const done = veaselEventToLiveUpdate({
       id: 9,
@@ -234,14 +256,23 @@ describe('veasel SSE live updates', () => {
       fetch: sseFetch,
       createEventStream: (_url, onEvent) => {
         stream.handler = onEvent;
-        return () => { closed = true; };
+        return () => {
+          closed = true;
+        };
       },
     });
     const updates: FocusLiveUpdate[] = [];
     const unsubscribe = bridge.onUpdate((update) => updates.push(update));
-    stream.handler?.('assistant.delta', JSON.stringify({
-      id: 3, type: 'assistant.delta', session_id: 's9', created_at: '', data: { operation_id: 'op', delta: 'x' },
-    }));
+    stream.handler?.(
+      'assistant.delta',
+      JSON.stringify({
+        id: 3,
+        type: 'assistant.delta',
+        session_id: 's9',
+        created_at: '',
+        data: { operation_id: 'op', delta: 'x' },
+      }),
+    );
     expect(updates).toHaveLength(1);
     expect(updates[0]?.kind).toBe('delta');
     unsubscribe();
@@ -250,7 +281,9 @@ describe('veasel SSE live updates', () => {
 
   it('stays an honest no-op without an event stream factory', () => {
     const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: sseFetch });
-    const unsubscribe = bridge.onUpdate(() => { throw new Error('must not fire'); });
+    const unsubscribe = bridge.onUpdate(() => {
+      throw new Error('must not fire');
+    });
     expect(typeof unsubscribe).toBe('function');
     unsubscribe();
   });

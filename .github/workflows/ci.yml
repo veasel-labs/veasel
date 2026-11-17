@@ -12,10 +12,14 @@ permissions:
   contents: read
 
 concurrency:
-  # PRs: one group per PR number, cancel stale. Main: unique group per run_id so
-  # boolean cancel expressions cannot supersede an in-flight verified build.
-  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-main-{1}', github.workflow, github.run_id) }}
-  cancel-in-progress: true
+  # PRs: one group per PR number, cancel stale. Main runs SERIALIZE (never
+  # cancel, never overlap): the prerelease tag only materializes at publish
+  # time, so two overlapping main runs plan the same next version from the
+  # same last tag and the second publish fails on a tag collision (run
+  # 43921368447). A serialized queue makes each run's release-plan observe
+  # the previous run's published tag.
+  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-main-serial', github.workflow) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   release-plan:
@@ -531,6 +535,27 @@ jobs:
         working-directory: tui
       - run: bun audit --audit-level=high
         working-directory: tui
+
+  desktop:
+    name: Desktop client
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - name: Activate pinned pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+      - run: pnpm install --frozen-lockfile
+        working-directory: desktop
+      - run: pnpm type-check
+        working-directory: desktop
+      - run: pnpm test
+        working-directory: desktop
 
   publish-prerelease:
     name: Publish verified prerelease

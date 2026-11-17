@@ -15,13 +15,16 @@ describe('filterCommands', () => {
   });
 
   it('matches destination names and questions', () => {
+    // Veasel wires /focus as the only routed destination today; World places
+    // are reached through world-jump commands, not destination routes.
+    const focus = filterCommands(PALETTE_COMMANDS, 'focus');
+    expect(focus.map((command) => command.id)).toContain('go:/focus');
     const world = filterCommands(PALETTE_COMMANDS, 'world');
-    expect(world.map((command) => command.id)).toContain('go:/world');
+    expect(world.map((command) => command.id)).toContain('go:world-knowledge');
     const officeHits = filterCommands(PALETTE_COMMANDS, 'office');
-    expect(officeHits.map((command) => command.id)).toContain('go:/office');
-    const office = PALETTE_COMMANDS.find((command) => command.id === 'go:/office');
-    expect(office?.hint).toBe('What needs attention now?');
-    expect(office?.title).toBe('Go to Attention');
+    expect(officeHits.map((command) => command.id)).toContain('go:world-attention');
+    const attention = PALETTE_COMMANDS.find((command) => command.id === 'go:world-attention');
+    expect(attention?.title).toBe('Open attention (Needs you)');
   });
 
   it('matches keywords for the terminal dock and world terminal place', () => {
@@ -33,7 +36,9 @@ describe('filterCommands', () => {
 
   it('finds the terminal as a workstation place', () => {
     const hits = filterCommands(PALETTE_COMMANDS, 'workstation');
-    expect(hits.map((command) => command.id)).toEqual(expect.arrayContaining(['go:/terminal', 'session:new-terminal']));
+    expect(hits.map((command) => command.id)).toEqual(
+      expect.arrayContaining(['go:world-terminal', 'session:new-terminal']),
+    );
   });
 
   it('lists Next that needs me as a session command', () => {
@@ -52,9 +57,9 @@ describe('filterCommands', () => {
   });
 
   it('binds universal commands to typed canonical actions rather than parsing command ids', () => {
-    expect(PALETTE_COMMANDS.find((command) => command.id === 'go:/operations')?.action).toEqual({
+    expect(PALETTE_COMMANDS.find((command) => command.id === 'go:/focus')?.action).toEqual({
       type: 'navigate',
-      path: '/operations',
+      path: '/focus',
     });
     expect(PALETTE_COMMANDS.find((command) => command.id === 'session:start-swarm')?.action).toEqual({
       type: 'session',

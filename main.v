@@ -32,6 +32,9 @@ fn check_port_available(port int) ! {
 
 fn serve(port int, data_dir string) ! {
 	check_port_available(port)!
+	// Fail closed: no token, no server. Done before the store opens so a
+	// refused (e.g. group-readable) token file never starts a listener.
+	init_api_auth(data_dir)!
 	mut store := open_store(os.join_path(data_dir, 'veasel.sqlite3'))!
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }
@@ -48,8 +51,13 @@ fn serve(port int, data_dir string) ! {
 }
 
 fn backend_health(port int) ?Health {
+	mut header := http.new_header()
+	if authorization := api_auth_header(default_data_dir()) {
+		header.set(.authorization, authorization)
+	}
 	response := http.fetch(
 		url:           'http://127.0.0.1:${port}/v1/health'
+		header:        header
 		read_timeout:  500 * time.millisecond
 		write_timeout: 500 * time.millisecond
 		max_retries:   1
@@ -279,7 +287,10 @@ fn launch_tui(port int, data_dir string) {
 fn command_help(command string) string {
 	match command {
 		'serve' {
-			return 'Usage: veasel serve\n\nStart the local V backend only.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
+			return 'Usage: veasel serve\n\nStart the local V backend only.\n\nEvery API request except GET /v1/health needs "Authorization: Bearer <token>". The token lives in \$VEASEL_DATA_DIR/api-token (created 0600 on first start) or comes from VEASEL_API_TOKEN.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR, VEASEL_API_TOKEN'
+		}
+		'token' {
+			return 'Usage: veasel token <path|rotate>\n\n  path    Print the API token file location (never the token)\n  rotate  Replace the API token; clients holding the old one are rejected\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_API_TOKEN'
 		}
 		'tui' {
 			return 'Usage: veasel tui\n\nStart or reuse the local backend, then open the terminal UI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
@@ -311,7 +322,7 @@ fn main() {
 		default_port
 	}
 	if command in ['--help', '-h', 'help'] {
-		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n  plugins        Enable or disable Agent Plugin skill/MCP components\n  config         Show or update local model provider settings\n  worktrees      List, add, remove, lock, unlock, or prune git worktrees\n  skills         List discovered standalone SKILL.md packages\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel plugins components list\n  veasel plugins components disable demo mcp local\n  veasel plugins links list\n  veasel config model get\n  veasel config model set --provider meta --max-output-tokens 8192\n  veasel worktrees list\n  veasel skills list\n  veasel --version')
+		println('Veasel Code ${product_version}\n\nCommands:\n  veasel         Start or reuse the local V backend, then open the TUI\n  serve          Start the local V backend only\n  tui            Start the TUI, starting the backend if needed\n  run            Run a task non-interactively in a persisted session\n  mcp            List or manage configured MCP servers (user/project scope)\n  plugins        Enable or disable Agent Plugin skill/MCP components\n  config         Show or update local model provider settings\n  worktrees      List, add, remove, lock, unlock, or prune git worktrees\n  skills         List discovered standalone SKILL.md packages\n  token          Show the API token file path or rotate the API token\n\nOptions:\n  --help, -h       Show this help\n  --version, -v    Show the product version\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR\n\nExamples:\n  veasel\n  veasel serve\n  veasel tui\n  veasel run --prompt "Explain this codebase"\n  veasel mcp list\n  veasel mcp add stdio echo-tools true\n  veasel plugins components list\n  veasel plugins components disable demo mcp local\n  veasel plugins links list\n  veasel config model get\n  veasel config model set --provider meta --max-output-tokens 8192\n  veasel worktrees list\n  veasel skills list\n  veasel --version')
 		return
 	}
 	if command in ['--version', '-v', 'version'] {
@@ -327,6 +338,9 @@ fn main() {
 		}
 		'tui' {
 			launch_tui(port, data_dir)
+		}
+		'token' {
+			execute_token_command(port, data_dir, args[1..])
 		}
 		'run' {
 			execute_headless_command(port, args[1..])

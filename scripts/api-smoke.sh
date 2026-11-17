@@ -66,8 +66,33 @@ cold_server_pid=""
 
 # Every smoke request must fail with a useful error instead of hanging until the
 # GitHub Actions job timeout. Individual calls may override max-time when needed.
-curl() {
+# The backend requires "Authorization: Bearer <token>" on every route except
+# GET /v1/health. Smoke requests send the token the server created in its data
+# directory (re-read per call so rotation is honoured); anon_curl never does.
+# The token is passed through a curl config on stdin so it never appears in
+# the process list.
+anon_curl() {
 	command curl --connect-timeout 2 --max-time 30 "$@"
+}
+token_file() {
+	printf '%s' "${smoke_token_file:-$work_dir/data/api-token}"
+}
+# `timeout` runs the external curl, bypassing the function above, so streaming
+# calls pass the header explicitly.
+auth_header() {
+	printf 'Authorization: Bearer %s' "$(tr -d '\r\n' <"$(token_file)")"
+}
+curl() {
+	local token=""
+	if [[ -r "$(token_file)" ]]; then
+		token="$(tr -d '\r\n' <"$(token_file)")"
+	fi
+	if [[ -n "$token" && "$*" == *"$api/"* ]]; then
+		printf 'header = "Authorization: Bearer %s"\n' "$token" |
+			command curl --connect-timeout 2 --max-time 30 -K - "$@"
+	else
+		command curl --connect-timeout 2 --max-time 30 "$@"
+	fi
 }
 
 cleanup() {
@@ -258,6 +283,18 @@ grep -Fq 'Usage: veasel serve' "$work_dir/serve-help" || fail 'serve help is mis
 start_server
 expect_status 403 -H 'Host: attacker.example' "$api/v1/health"
 
+# Caller authentication: only the minimal liveness probe is anonymous.
+[[ "$(anon_curl -sS "$api/v1/health")" == '{"healthy":true}' ]] || fail 'anonymous health must be minimal liveness only'
+for anon_path in /v1/sessions /v1/capabilities /v1/events /v1/config/model /v1/mcp-servers /v1/plugins; do
+	anon_status="$(anon_curl -sS -o "$work_dir/response" -w '%{http_code}' "$api$anon_path")" || fail "anonymous request failed: $anon_path"
+	[[ "$anon_status" == 401 ]] || fail "anonymous $anon_path returned HTTP $anon_status instead of 401"
+done
+anon_status="$(anon_curl -sS -o "$work_dir/response" -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"title":"x","directory":"/"}' "$api/v1/sessions")"
+[[ "$anon_status" == 401 ]] || fail "anonymous session create returned HTTP $anon_status instead of 401"
+anon_status="$(anon_curl -sS -o "$work_dir/response" -w '%{http_code}' -H 'Authorization: Bearer 0000000000000000000000000000000000000000000000000000000000000000' "$api/v1/sessions")"
+[[ "$anon_status" == 401 ]] || fail "wrong token returned HTTP $anon_status instead of 401"
+[[ "$(stat -c '%a' "$(token_file)" 2>/dev/null || stat -f '%Lp' "$(token_file)")" == 600 ]] || fail 'token file must be mode 0600'
+
 grep -Fq '"healthy":true' "$work_dir/health" || fail 'health response is incorrect'
 grep -Fq "\"version\":\"$expected_version\"" "$work_dir/health" || fail 'health version does not match the CLI version'
 curl -fsS "$api/v1/capabilities" >"$work_dir/capabilities"
@@ -386,7 +423,7 @@ grep -Fq '"title":"API smoke"' "$work_dir/session" || fail 'session retrieval fa
 expect_status 404 "$api/v1/sessions/not-a-session"
 expect_status 400 -H 'Last-Event-ID: not-a-number' "$api/v1/events"
 
-timeout 2s curl -NsS -H 'Last-Event-ID: 0' "$api/v1/events" >"$work_dir/events" 2>/dev/null || [[ "$?" -eq 124 ]]
+timeout 2s curl -NsS -H "$(auth_header)" -H 'Last-Event-ID: 0' "$api/v1/events" >"$work_dir/events" 2>/dev/null || [[ "$?" -eq 124 ]]
 grep -Fq 'event: session.created' "$work_dir/events" || fail 'SSE did not replay the creation event'
 grep -Fq "$session_id" "$work_dir/events" || fail 'SSE event has the wrong session id'
 
@@ -723,7 +760,7 @@ PY
 	expect_status 200 -H 'content-type: application/json' -d '{"content":"Continue this session"}' \
 		"$api/v1/sessions/$session_id/messages"
 	grep -Fq "\"provider\":\"$provider\"" "$work_dir/response" || fail "$provider session response reported the wrong provider"
-	timeout 2s curl -NsS -H "Last-Event-ID: $event_cursor" "$api/v1/events" >"$work_dir/provider-events" 2>/dev/null || [[ "$?" -eq 124 ]]
+	timeout 2s curl -NsS -H "$(auth_header)" -H "Last-Event-ID: $event_cursor" "$api/v1/events" >"$work_dir/provider-events" 2>/dev/null || [[ "$?" -eq 124 ]]
 	grep -Fq 'event: assistant.delta' "$work_dir/provider-events" || fail "$provider did not persist assistant streaming events"
 	grep -Fq '"operation_id":"' "$work_dir/provider-events" || fail "$provider streaming events omitted the operation identifier"
 	grep -Fq '"delta":"Provider ' "$work_dir/provider-events" || fail "$provider streaming events omitted incremental text"

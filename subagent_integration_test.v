@@ -266,6 +266,7 @@ fn test_child_integration_http_route_returns_reviewable_proposals_without_parent
 	}
 	response := http.fetch(
 		url:           'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents/${run.id}/integrate'
+		header:        integration_test_auth_header()
 		method:        .post
 		read_timeout:  5 * time.second
 		write_timeout: 5 * time.second
@@ -279,6 +280,7 @@ fn test_child_integration_http_route_returns_reviewable_proposals_without_parent
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == before
 	retry := http.fetch(
 		url:           'http://127.0.0.1:${port}/v1/sessions/${parent.id}/subagents/${run.id}/integrate'
+		header:        integration_test_auth_header()
 		method:        .post
 		read_timeout:  5 * time.second
 		write_timeout: 5 * time.second
@@ -402,4 +404,13 @@ fn test_child_session_shell_commands_run_only_in_the_child_sandbox() {
 	assert result.output.contains('done'), result.output
 	assert os.read_file(os.join_path(child_directory, 'child.txt')) or { panic(err) } == 'child'
 	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'base\n'
+}
+
+// The API rejects every unauthenticated request, so HTTP fixtures install a
+// known token and send it like any real client.
+fn integration_test_auth_header() http.Header {
+	api_auth_state().configure('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '', true)
+	mut header := http.new_header()
+	header.set(.authorization, 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	return header
 }

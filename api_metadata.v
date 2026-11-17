@@ -11,6 +11,11 @@ pub:
 	pid     int
 }
 
+struct HealthLiveness {
+pub:
+	healthy bool
+}
+
 struct Capabilities {
 pub:
 	api_version string
@@ -19,6 +24,13 @@ pub:
 
 @['/v1/health'; get]
 pub fn (app &App) health(mut ctx Context) veb.Result {
+	// Unauthenticated liveness leaks nothing but "a server answers here";
+	// version and pid are only for callers holding the API token.
+	if !ctx.authenticated {
+		return ctx.json(HealthLiveness{
+			healthy: true
+		})
+	}
 	return ctx.json(Health{
 		healthy: true
 		version: product_version

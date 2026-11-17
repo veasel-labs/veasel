@@ -6,10 +6,16 @@ info:
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
+security:
+  - bearerAuth: []
 paths:
   /v1/health:
     get:
       operationId: getHealth
+      description: Liveness probe and the only unauthenticated route. Without a token it returns just {"healthy":true}; with a valid bearer token it also returns version and pid.
+      security:
+        - {}
+        - bearerAuth: []
       responses:
         '200':
           description: Server is ready.
@@ -17,6 +23,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Health'
+  /v1/auth/rotate:
+    post:
+      operationId: rotateApiToken
+      description: Replaces the API token. The new value is written to the api-token file in the data directory (never returned in the response); the previous token stops working immediately. Returns 409 when the token is managed by VEASEL_API_TOKEN.
+      responses:
+        '200':
+          description: Token rotated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [rotated]
+                properties:
+                  rotated:
+                    type: boolean
+        '409':
+          description: The token is managed by VEASEL_API_TOKEN and cannot be rotated in place.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /v1/capabilities:
     get:
       operationId: getCapabilities
@@ -2315,15 +2342,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Required on every route except GET /v1/health, for every method, including the SSE stream. The token is VEASEL_API_TOKEN when set, otherwise the contents of the `api-token` file in the Veasel data directory (VEASEL_DATA_DIR, default ~/.local/share/veasel), created with mode 0600. Tokens in query strings are rejected. Missing or wrong credentials return 401 with a WWW-Authenticate: Bearer challenge. Requests whose Host or Origin is not loopback return 403 even with a valid token. See docs/security/backend-caller-auth.md.
   schemas:
     Health:
       type: object
-      required: [healthy, version]
+      required: [healthy]
       properties:
         healthy:
           type: boolean
         version:
           type: string
+          description: Present only for authenticated callers.
+        pid:
+          type: integer
+          description: Present only for authenticated callers.
     Capabilities:
       type: object
       required: [api_version, features]

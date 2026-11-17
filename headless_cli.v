@@ -164,6 +164,9 @@ fn headless_json_request(port int, method http.Method, path string, data string,
 	if operation_id.len > 0 {
 		header.set_custom('X-Veasel-Operation-ID', operation_id)!
 	}
+	if authorization := api_auth_header(default_data_dir()) {
+		header.set(.authorization, authorization)
+	}
 	return http.fetch(
 		url:           'http://127.0.0.1:${port}${path}'
 		method:        method

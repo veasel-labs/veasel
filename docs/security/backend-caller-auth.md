@@ -1,0 +1,120 @@
+# Backend caller authentication (ADR)
+
+**Status:** Accepted. Implements the P0 item of epic #689.
+**Code:** `api_auth.v`, `api_auth_nix.c.v`, `api_auth_windows.c.v`, `api_auth_cli.v`,
+`Context.before_request` in `api.v`. **Tests:** `api_auth_test.v`, `scripts/api-smoke.sh`.
+
+## Problem
+
+The only gate was a loopback `Host` check plus a loopback `Origin` check
+*when an Origin was present*. A request without Origin (curl, any local
+process, a script) was accepted, and about 90 `/v1` routes were open:
+sessions, workspace edits and shell-command approvals, MCP server add
+(which launches a stdio command), MCP credentials, model settings, plugin
+install, the SSE stream. The Desktop proxy token (#720) was never checked by
+the backend.
+
+## Decision
+
+1. **Bearer token on every route.** `Context.before_request` runs before
+   veb routing, so it covers every method, unknown routes, `HEAD`/`OPTIONS`,
+   trailing-slash/case/encoding variants and SSE. Exactly one
+   `Authorization: Bearer <token>` header is accepted. Query-string, cookie
+   and custom-header credentials are ignored. The compare hashes both sides
+   with SHA-256 and uses `crypto.subtle.constant_time_compare`, so it is
+   constant-time and length-independent. Only the digest is kept in memory.
+   An unconfigured verifier rejects everything (fail closed).
+2. **One exemption:** `GET /v1/health` with the exact path. Without a token it
+   returns `{"healthy":true}` (no pid, version or paths). With a valid token it
+   returns the previous payload (`version`, `pid`), so the CLI stale-server
+   warning and the Desktop identity probe keep working. Every other spelling
+   of that path (`/v1/health/`, `/V1/health`, `%68ealth`, absolute-form,
+   `POST`, `HEAD`, `OPTIONS`) requires the token.
+3. **Host and Origin checks stay** and run first, so DNS-rebinding and
+   cross-origin requests get 403 even with a correct token. "No Origin =>
+   allowed" is gone: a request with no Origin is allowed only if it proves it
+   holds the token. A loopback Origin (Desktop renderer, dev servers) also
+   needs the token. Browsers cannot attach `Authorization` cross-origin
+   without CORS, and the server sends no CORS headers, so web pages cannot
+   call the API.
+4. **401 body** is JSON `{"error": ...}` plus `WWW-Authenticate: Bearer`. It
+   names the discovery mechanism (`api-token` in the data directory,
+   `VEASEL_API_TOKEN`) but never a token, a real path, or another user's path.
+
+## Token lifecycle
+
+| Aspect | Behavior |
+|---|---|
+| Generation | 32 bytes from the OS CSPRNG (`crypto.rand`), 64 lowercase hex chars. |
+| Location | `$VEASEL_DATA_DIR/api-token` (default `~/.local/share/veasel/api-token`). `veasel token path` prints it. |
+| Override | `VEASEL_API_TOKEN` (32-512 printable ASCII chars, no whitespace). Wins over the file, is never written to disk, and disables rotation. |
+| Creation | Written to a unique `api-token.tmp-<pid>-<rand>` created with `open(O_CREAT\|O_EXCL, 0600)`, fsynced, then `link()`ed into place. The final path is never partially written, and two servers starting together converge on one token. Data dir is created `0700`; an existing dir that is group/world-writable is chmod'd to `0700` or startup fails. |
+| Restart | An existing valid file is reused, so a CLI/TUI/Desktop that cached the path or value keeps working and `veasel` still reuses a running backend. |
+| Crash leftovers | Temp files older than 60 s are removed at startup. A private file with malformed/truncated content is replaced atomically. |
+| Permission self-check | On POSIX the server refuses to start (exit 1, message tells the user to `chmod 600` or rotate) if the file is a symlink or not a regular file, is not owned by the current user, or has any group/other bit. Clients apply the same check and send no token from a bad file. A bad file is never auto-repaired. |
+| Rotation | `veasel token rotate` (live server: `POST /v1/auth/rotate` with the current token; no server: rewrite the file). The new file is written to a temp file then `rename()`d, and the live verifier swaps at the same time. The old token returns 401 immediately; the new value is only written to the file, never returned. TUI and Desktop re-read the file per request; processes that cached the value need a restart. Not available with `VEASEL_API_TOKEN`. |
+| Windows | No POSIX modes. The file is created under the user profile and `icacls /inheritance:r /grant:r <user>:F` removes inherited entries; if `icacls` fails the token is not installed and the server does not start. There is no ownership/ACL re-verification on read, which is weaker than POSIX. A data directory outside the user profile is the operator's responsibility. Not exercised on a Windows runner in this change. |
+
+## Clients
+
+- **CLI** (`headless_*`, `ensure_backend`, `veasel token`): reads
+  `VEASEL_API_TOKEN` or the file in `default_data_dir()`; sends the header on
+  every API call and on the health probe.
+- **TUI**: `tui/src/backend-auth.ts` wraps `fetch` for the backend origin only
+  (installed by both entry points); the file is re-read per request.
+- **Desktop**: the main process reads the token (`readBackendApiToken`) and
+  the renderer proxy injects `Authorization` per request, discarding any
+  `Authorization` the renderer sends. The renderer never receives the backend
+  token (it still holds only the separate `x-veasel-proxy` capability). The
+  backend child is started with the canonical data dir, so TUI-first and
+  Desktop-first starts share one token.
+- **Scripts / external clients**: send the header; `scripts/api-smoke.sh`,
+  `scripts/standalone-tui-smoke.py` and `benchmarks/repo-map-recall.mjs` read
+  the file from their disposable data dir. The Harbor adapter and the other
+  benchmark launchers only poll `GET /v1/health` and start the CLI with the
+  same environment, so they need no change.
+- `docs/openapi.yaml` declares `bearerAuth` globally and `security: []`-style
+  override on `getHealth`.
+
+## Alternatives considered
+
+- **Unix domain socket / named pipe only.** Not adopted. veb (pinned V) serves
+  TCP only, so this needs a different server or a proxy; Electron `fetch`, the
+  TUI, curl, the Harbor adapter and every external client are URL/TCP based;
+  Windows needs a separate named-pipe path. Its security gain over a 0600
+  token file is small: both are same-OS-user boundaries (file mode on the
+  socket instead of on the token). The one real gain, kernel peer credentials
+  (`SO_PEERCRED`), still only identifies the uid, not the process. Kept as a
+  future complement (socket for first-party clients, token for the rest) if
+  the owner wants it.
+- **Token only in the process environment / argv.** Rejected: readable in
+  `/proc/<pid>/environ` and `ps`, and lost on backend reuse. Env stays as an
+  explicit override only.
+- **Per-launch random token handed from a launcher.** Rejected: breaks "a
+  running backend is reused by later CLI/TUI invocations".
+- **Origin allow-list / CORS only.** Rejected: curl and any local process omit
+  Origin.
+- **Rate limiting.** Not needed for a 256-bit random token.
+
+## Limits (explicit)
+
+- **A malicious process running as the same OS user can read the token file**
+  (or `/proc/<pid>/environ`, or ptrace the TUI/Desktop) and call the API. This
+  change blocks other users, browsers/web pages, DNS rebinding, and
+  unauthenticated local clients; it does not defend against same-user code
+  execution. OS sandboxing of the approved shell and MCP stdio remains the
+  control for what a compromised tool can reach.
+- Traffic is plaintext HTTP on loopback; another user cannot read the token
+  from the socket, but a privileged local attacker can.
+- A backend started by an older Veasel build has no auth. The CLI still reuses
+  it (and prints the existing stale-version warning); restart it to get
+  protection. A client built from this change talking to such a server simply
+  sends an ignored header.
+- Old external clients get 401 until they send the header; this is the
+  intended breaking change for the unauthenticated surface.
+- If the token file is replaced on disk while a server runs (for example by an
+  offline `veasel token rotate` against a server running elsewhere), the
+  server keeps its in-memory value until rotated through the API or
+  restarted; clients then see 401.
+- `veb` ordering was verified on the local V (0.5.2, `4a23b18`) and by reading
+  the pinned `.v-version` source; the pinned compiler itself was not built.

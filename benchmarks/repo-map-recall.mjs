@@ -73,10 +73,19 @@ function freePort() {
 		})
 	})
 }
+// The backend writes its bearer token to <data dir>/api-token on first start.
+function authHeaders() {
+	const headers = { "content-type": "application/json" }
+	try {
+		const token = readFileSync(join(dataDir, "api-token"), "utf8").trim()
+		if (token) headers.authorization = `Bearer ${token}`
+	} catch {}
+	return headers
+}
 function req(port, method, path, body) {
 	return new Promise((resolve, reject) => {
 		const r = http.request(
-			{ host: "127.0.0.1", port, path, method, headers: { "content-type": "application/json" } },
+			{ host: "127.0.0.1", port, path, method, headers: authHeaders() },
 			(res) => {
 				let data = ""
 				res.on("data", (c) => (data += c))

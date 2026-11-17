@@ -86,6 +86,16 @@ Headless turn with the same local server and approval rules:
 veasel run --prompt "Explain the request flow in this repository" --workspace . --json
 ```
 
+### API authentication
+
+Every API route except the liveness probe `GET /v1/health` requires
+`Authorization: Bearer <token>`. The backend creates a 256-bit token in
+`$VEASEL_DATA_DIR/api-token` (default `~/.local/share/veasel/api-token`, mode
+0600) on first start; the CLI, TUI and Desktop find it there. External
+clients can read that file or the `VEASEL_API_TOKEN` override. Rotate with
+`veasel token rotate`. Design and limits (a same-user process can read the
+token file): [docs/security/backend-caller-auth.md](docs/security/backend-caller-auth.md).
+
 ## Current status
 
 The working vertical slice includes:

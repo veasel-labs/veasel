@@ -86,7 +86,10 @@ fn test_session_agent_budget_api_reports_cumulative_tokens_and_cost_provenance()
 		server.shutdown(timeout: 5 * time.second) or {}
 		server_thread.wait()
 	}
-	response := http.get('http://127.0.0.1:${port}/v1/sessions/${session.id}/agent-budget') or {
+	response := http.fetch(
+		url:    'http://127.0.0.1:${port}/v1/sessions/${session.id}/agent-budget'
+		header: budget_test_auth_header()
+	) or {
 		panic(err)
 	}
 	assert response.status_code == 200
@@ -103,4 +106,13 @@ fn test_session_agent_budget_api_reports_cumulative_tokens_and_cost_provenance()
 	assert summary.cost_reported_calls == 1
 	assert summary.cost_reported
 	assert (summary.reported_cost_usd or { -1.0 }) == f64(0.0042)
+}
+
+// The API rejects every unauthenticated request, so HTTP fixtures install a
+// known token and send it like any real client.
+fn budget_test_auth_header() http.Header {
+	api_auth_state().configure('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '', true)
+	mut header := http.new_header()
+	header.set(.authorization, 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	return header
 }

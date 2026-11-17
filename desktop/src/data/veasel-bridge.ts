@@ -427,10 +427,12 @@ export function createVeaselFocusBridge(options: {
       return result(async () => {
         const choice = choices.get(id);
         const veaselProvider = choice ? toVeaselProviderId(choice.provider) : null;
-        // The backend requires provider and model together (or neither):
-        // without a chosen model, inherit the session's configured default
-        // instead of posting a provider-only turn it would reject.
-        const target = veaselProvider && choice?.model ? { provider: veaselProvider, model: choice.model } : {};
+        // A chosen provider always travels with the turn so the backend never
+        // runs the global default while Focus displays another provider. The
+        // model is optional: installed-CLI providers resolve their own default.
+        const target = veaselProvider
+          ? { provider: veaselProvider, ...(choice?.model ? { model: choice.model } : {}) }
+          : {};
         await request(`/v1/sessions/${encodeURIComponent(id)}/messages`, {
           method: 'POST',
           body: JSON.stringify({

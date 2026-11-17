@@ -2,6 +2,7 @@ module main
 
 import json2
 import os
+import net.urllib
 import sync
 
 pub struct ModelProviderInfo {
@@ -191,6 +192,28 @@ fn (state &ModelSettingsState) persist(settings PersistedModelSettings) ! {
 		os.chmod(temporary_path, 0o600)!
 	}
 	os.mv(temporary_path, state.path)!
+}
+
+// write_private_file_atomic: baseline (pre-fix) behavior, hardened in the next commit.
+fn write_private_file_atomic(path string, contents string) ! {
+	temporary_path := '${path}.tmp'
+	write_private_file(temporary_path, contents)!
+	$if !windows {
+		os.chmod(temporary_path, 0o600)!
+	}
+	os.mv(temporary_path, path)!
+}
+
+fn model_endpoints_match(a string, b string) bool {
+	left := a.trim_space().trim_right('/')
+	right := b.trim_space().trim_right('/')
+	if left.len == 0 || right.len == 0 {
+		return false
+	}
+	pa := urllib.parse(left) or { return false }
+	pb := urllib.parse(right) or { return false }
+	return pa.scheme.to_lower() == pb.scheme.to_lower() && pa.host.to_lower() == pb.host.to_lower()
+		&& pa.path == pb.path
 }
 
 fn write_private_file(path string, contents string) ! {

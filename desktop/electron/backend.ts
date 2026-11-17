@@ -75,6 +75,13 @@ export interface BackendSupervisorOptions {
   /** Remove explicitly deleted Desktop credentials from the inherited launch environment. */
   resolveClearedEnvironmentSecretNames?: () => string[];
   startTimeoutMs?: number;
+  /**
+   * When set, this supervisor is inert: start/restart report the reason as
+   * a failed state and never select or spawn a binary. Veasel Desktop uses
+   * this for the legacy Agent Toolkit supervisor — the Veasel V backend is
+   * the only runtime (ADR-0001), and no UI path may spawn a second engine.
+   */
+  disabledReason?: string;
 }
 
 export interface HealthPayload {
@@ -187,6 +194,7 @@ export class BackendSupervisor {
   private readonly resolveEnvironmentSecrets: () => Record<string, string>;
   private readonly resolveClearedEnvironmentSecretNames: () => string[];
   private readonly startTimeoutMs: number;
+  private readonly disabledReason: string | null;
 
   constructor(options: BackendSupervisorOptions = {}) {
     this.resolveHarness = options.resolveHarness ?? (() => resolveHarnessFromProcess());
@@ -197,6 +205,7 @@ export class BackendSupervisor {
     this.resolveEnvironmentSecrets = options.resolveEnvironmentSecrets ?? (() => ({}));
     this.resolveClearedEnvironmentSecretNames = options.resolveClearedEnvironmentSecretNames ?? (() => []);
     this.startTimeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
+    this.disabledReason = options.disabledReason ?? null;
   }
 
   snapshot(): BackendState {
@@ -223,6 +232,16 @@ export class BackendSupervisor {
 
   /** Singleflight: concurrent callers share one start attempt. */
   start(): Promise<boolean> {
+    if (this.disabledReason) {
+      this.emit({
+        status: 'failed',
+        url: null,
+        version: null,
+        problem: 'no-backend',
+        detail: this.disabledReason,
+      });
+      return Promise.resolve(false);
+    }
     if (this.proc) return Promise.resolve(this.state.status === 'ready');
     if (!this.starting) {
       const attempt = this.doStart(this.generation).finally(() => {

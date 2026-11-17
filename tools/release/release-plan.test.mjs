@@ -22,6 +22,11 @@ test("runtime code changes still release when a squash title has a non-release p
   assert.equal(classifyChanges(["feat: add repository tools"], ["api.v"]), "minor");
   assert.equal(classifyChanges(["fix: guard session updates"], ["api.v"]), "patch");
   assert.equal(classifyChanges(["docs: explain tests"], ["api_test.v"]), null);
+  // Desktop source is a shipped runtime surface: it releases even when the
+  // squash title carries a non-release prefix, but desktop tests do not.
+  assert.equal(classifyChanges(["ci: update desktop"], ["desktop/electron/main.ts"]), "patch");
+  assert.equal(classifyChanges(["docs: desktop notes"], ["desktop/src/data/focus.tsx"]), "patch");
+  assert.equal(classifyChanges(["ci: update desktop"], ["desktop/src/data/focus.test.ts"]), null);
 });
 
 test("prerelease increments follow the V module's current semantic version", () => {

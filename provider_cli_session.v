@@ -317,7 +317,11 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 	// the CLI applying file edits without per-tool prompts; it is never
 	// inferred. Interactive per-tool approvals replace the deny path
 	// when the approval layer lands (#691 follow-up).
-	permission_mode := os.getenv_opt('VEASEL_CLI_PERMISSION_MODE') or { 'ask' }
+	permission_mode := if config.permission_mode.len > 0 {
+		config.permission_mode
+	} else {
+		os.getenv_opt('VEASEL_CLI_PERMISSION_MODE') or { 'ask' }
+	}
 	spec := validate_provider_cli_launch(config.provider, permission_mode)!
 	if spec.protocol !in ['stream-json', 'app-server', 'acp'] {
 		return error('installed-CLI protocol ${spec.protocol} is not yet wired for session turns')

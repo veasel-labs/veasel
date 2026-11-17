@@ -75,6 +75,7 @@ pub:
 	content          string
 	provider         string @[omitempty]
 	model            string @[omitempty]
+	permission_mode  string @[json: 'permission_mode'; omitempty]
 	collect_trace    bool   @[json: 'collect_trace'; omitempty]
 	autonomous       bool   @[json: 'autonomous'; omitempty]
 	execution_policy string @[json: 'execution_policy'; omitempty]
@@ -84,14 +85,19 @@ pub:
 // model_config_for_chat_input resolves a per-turn target without changing the
 // session's global model default. An omitted target inherits that default.
 fn (app &App) model_config_for_chat_input(session_id string, input ChatMessageInput) !ModelConfig {
-	if input.provider.len == 0 && input.model.len == 0 {
-		return app.model_config_for_session(session_id)
+	permission_mode := input.permission_mode.trim_space()
+	if permission_mode.len > 0 && permission_mode !in ['ask', 'accept-edits', 'plan', 'bypass'] {
+		return error('permission_mode is invalid')
 	}
-	if input.provider.len == 0 || input.model.len == 0 {
+	mut config := if input.provider.len == 0 && input.model.len == 0 {
+		app.model_config_for_session(session_id)!
+	} else if input.provider.len == 0 || input.model.len == 0 {
 		return error('provider and model must be supplied together')
+	} else {
+		app.provider_model_config_for_target(input.provider, input.model)!
 	}
-	mut config := app.provider_model_config_for_target(input.provider, input.model)!
 	config.session_id = session_id
+	config.permission_mode = permission_mode
 	return config
 }
 

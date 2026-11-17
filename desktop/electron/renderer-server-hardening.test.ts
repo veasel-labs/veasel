@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startRendererServer, type RendererServer } from './renderer-server';
 
@@ -128,10 +127,5 @@ describe('renderer-server hardening', () => {
   it('keeps proxy token gate for /api with correct Host', async () => {
     const res = await raw(port, 'GET /api/x HTTP/1.1');
     expect(res.status).toBe(403);
-  });
-
-  it('exposes port for sanity', () => {
-    expect(port).toBe((server.url.match(/:(\d+)$/) ? Number(RegExp.$1) : 0));
-    void (null as unknown as AddressInfo);
   });
 });

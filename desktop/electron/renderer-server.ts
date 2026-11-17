@@ -183,7 +183,15 @@ export async function startRendererServer(
     file: string,
     cb: (error: NodeJS.ErrnoException | null, data?: Buffer, real?: string) => void,
   ): void => {
-    fs.realpath(file, (rpError, real) => {
+    // Lexical containment first: no filesystem call ever sees a path outside
+    // the served root. The realpath check below then catches symlink escapes.
+    const lexical = path.resolve(file);
+    if (lexical !== root && !lexical.startsWith(root + path.sep)) {
+      const denied: NodeJS.ErrnoException = new Error('outside root');
+      denied.code = 'EOUTSIDE';
+      return cb(denied);
+    }
+    fs.realpath(lexical, (rpError, real) => {
       if (rpError) return cb(rpError);
       if (!isInside(realRoot, real)) {
         const denied: NodeJS.ErrnoException = new Error('outside root');

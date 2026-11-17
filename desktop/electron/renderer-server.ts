@@ -50,11 +50,24 @@ const TYPES: Record<string, string> = {
 };
 
 function safeJoin(root: string, requestPath: string): string | null {
-  const decoded = decodeURIComponent((requestPath.split('?')[0] ?? '/').split('#')[0] ?? '/');
+  const rawPath = (requestPath.split('?')[0] ?? '/').split('#')[0] ?? '/';
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPath);
+  } catch {
+    return null;
+  }
+  // NUL truncates paths in native APIs; backslash is a separator on Windows.
+  if (decoded.includes('\0') || decoded.includes('\\') || rawPath.includes('\\')) return null;
   const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
   const resolved = path.resolve(root, relative);
   if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
   return resolved;
+}
+
+/** True when `candidate` (already realpath-resolved) lies inside `realRoot`. */
+function isInside(realRoot: string, candidate: string): boolean {
+  return candidate === realRoot || candidate.startsWith(realRoot + path.sep);
 }
 
 function proxyApi(
@@ -146,6 +159,7 @@ export async function startRendererServer(
   options: RendererServerOptions = {},
 ): Promise<RendererServer> {
   const root = path.resolve(distDir);
+  const realRoot = fs.realpathSync(root);
   if (!fs.existsSync(path.join(root, 'index.html'))) {
     throw new Error(`Renderer dist missing index.html at ${root}`);
   }
@@ -159,8 +173,32 @@ export async function startRendererServer(
     res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
   };
 
-  const server = http.createServer((req, res) => {
+  const sendText = (res: ServerResponse, status: number, text: string): void => {
+    if (res.headersSent || res.writableEnded) return;
+    res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' }).end(text);
+  };
+
+  /** Read a file only if its symlink-resolved path stays inside the real root. */
+  const readContained = (
+    file: string,
+    cb: (error: NodeJS.ErrnoException | null, data?: Buffer, real?: string) => void,
+  ): void => {
+    fs.realpath(file, (rpError, real) => {
+      if (rpError) return cb(rpError);
+      if (!isInside(realRoot, real)) {
+        const denied: NodeJS.ErrnoException = new Error('outside root');
+        denied.code = 'EOUTSIDE';
+        return cb(denied);
+      }
+      fs.readFile(real, (error, data) => cb(error, data, real));
+    });
+  };
+
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
     const url = req.url ?? '/';
+    // DNS-rebinding guard for every request, static included: only this
+    // server's own loopback authority is accepted (absent Host fails closed).
+    if (req.headers.host !== ownAuthority) return rejectForbidden(res);
     // Veasel API surface is proxied same-origin too (no CORS, no LAN):
     // the renderer only ever talks to this loopback server.
     if (url === '/api' || url.startsWith('/api/') || url === '/v1' || url.startsWith('/v1/')) {
@@ -168,7 +206,6 @@ export async function startRendererServer(
       // capability, own Host (DNS-rebinding), own Origin when present, and
       // never a cross-site browser context.
       if (!tokenMatches(req.headers[PROXY_TOKEN_HEADER], proxyToken)) return rejectForbidden(res);
-      if (req.headers.host !== ownAuthority) return rejectForbidden(res);
       const origin = req.headers.origin;
       if (origin !== undefined && origin !== `http://${ownAuthority}`) return rejectForbidden(res);
       if (req.headers['sec-fetch-site'] === 'cross-site') return rejectForbidden(res);
@@ -189,27 +226,40 @@ export async function startRendererServer(
 
     const filePath = safeJoin(root, url);
     if (!filePath) {
-      res.writeHead(403).end('forbidden');
+      sendText(res, 403, 'forbidden');
       return;
     }
-    fs.readFile(filePath, (error, data) => {
+    readContained(filePath, (error, data, real) => {
       if (error) {
-        if (error.code === 'ENOENT') {
-          fs.readFile(path.join(root, 'index.html'), (fallbackError, html) => {
-            if (fallbackError) {
-              res.writeHead(404).end('not found');
-              return;
-            }
+        if (error.code === 'EOUTSIDE') return sendText(res, 403, 'forbidden');
+        if (error.code === 'ENOENT' || error.code === 'ENOTDIR') {
+          readContained(path.join(root, 'index.html'), (fallbackError, html) => {
+            if (fallbackError || !html) return sendText(res, 404, 'not found');
             res.writeHead(200, { 'content-type': TYPES['.html'], ...STATIC_HARDENING_HEADERS }).end(html);
           });
           return;
         }
-        res.writeHead(500).end('error');
-        return;
+        // EISDIR, EACCES, ENAMETOOLONG, ...: no detail disclosure.
+        return sendText(res, error.code === 'ENAMETOOLONG' ? 414 : 404, 'not found');
       }
-      const type = TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+      const type = TYPES[path.extname(real ?? filePath).toLowerCase()] ?? 'application/octet-stream';
       res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache', ...STATIC_HARDENING_HEADERS }).end(data);
     });
+  };
+
+  const server = http.createServer((req, res) => {
+    // Last-resort guard: nothing may throw out of the handler into the
+    // Electron main process.
+    try {
+      handle(req, res);
+    } catch {
+      if (!res.headersSent) sendText(res, 500, 'error');
+      else res.destroy();
+    }
+  });
+  server.on('clientError', (_error, socket) => {
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+    else socket.destroy();
   });
 
   await new Promise<void>((resolve, reject) => {

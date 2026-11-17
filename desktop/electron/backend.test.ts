@@ -363,6 +363,27 @@ describe('BackendSupervisor', () => {
     expect(supervisor.snapshot()).toMatchObject({ status: 'failed', problem: 'no-backend' });
   });
 
+  it('never selects or spawns a binary when disabled (one-runtime guard)', async () => {
+    let selections = 0;
+    supervisor = new BackendSupervisor({
+      resolveHarness: fallbackHarness,
+      disabledReason: 'legacy backend disabled for test',
+      selectBinary: async () => {
+        selections += 1;
+        return { ok: false, problem: 'no-backend', message: 'none', rejected: [] };
+      },
+    });
+    expect(await supervisor.start()).toBe(false);
+    expect(await supervisor.restart()).toBe(false);
+    expect(selections).toBe(0);
+    expect(supervisor.snapshot()).toMatchObject({
+      status: 'failed',
+      problem: 'no-backend',
+      detail: 'legacy backend disabled for test',
+      url: null,
+    });
+  });
+
   it('parses the expected-major override', () => {
     process.env.ATK_EXPECTED_BACKEND_MAJOR = 'v2.0.0';
     expect(resolveExpectedBackendMajor()).toBe('2');

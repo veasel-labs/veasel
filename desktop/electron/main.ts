@@ -85,6 +85,11 @@ async function createWindow(): Promise<void> {
       resolveHarness: () => harnessController.resolve(),
       resolveEnvironmentSecrets: () => secretStore.environment(),
       resolveClearedEnvironmentSecretNames: () => secretStore.managedNames(),
+      // One runtime (ADR-0001): the legacy Agent Toolkit supervisor is
+      // wired for IPC/status compatibility only and must never spawn a
+      // second engine in Veasel Desktop.
+      disabledReason:
+        'The legacy Agent Toolkit backend is disabled in Veasel Desktop; the Veasel V backend is the only runtime.',
     });
   }
   const supervisor = backend;
@@ -177,11 +182,9 @@ async function createWindow(): Promise<void> {
   });
 
   const onBackendState = (state: BackendState): void => {
-    if (rendererServer && state.url) {
-      rendererServer.setBackendTarget(state.url);
-      mainWindow?.webContents.send('atk:backend-state', { ...state, url: rendererServer.url });
-      return;
-    }
+    // The renderer proxy target is owned solely by the Veasel backend
+    // supervisor. Legacy ATK state is forwarded for status display only;
+    // it must never retarget /api or /v1 traffic to a second engine.
     mainWindow?.webContents.send('atk:backend-state', state);
   };
   backend.onState(onBackendState);

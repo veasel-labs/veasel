@@ -168,8 +168,12 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 		''
 	} else if input.api_key.len > 0 {
 		input.api_key
-	} else {
+	} else if previous.base_url.len == 0 || model_endpoints_match(previous.base_url, base_url)
+		|| model_endpoints_match(trusted_catalog_endpoint(provider), base_url) {
 		previous.api_key
+	} else {
+		// A saved key never follows the profile to a different endpoint.
+		''
 	}
 	mut profiles := state.settings.profiles.clone()
 	profiles[provider] = ModelProfile{
@@ -186,22 +190,49 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 fn (state &ModelSettingsState) persist(settings PersistedModelSettings) ! {
 	if state.path == '' { return }
 	ensure_directory(os.dir(state.path))!
-	temporary_path := '${state.path}.tmp'
-	write_private_file(temporary_path, json2.encode(settings))!
-	$if !windows {
-		os.chmod(temporary_path, 0o600)!
-	}
-	os.mv(temporary_path, state.path)!
+	write_private_file_atomic(state.path, json2.encode(settings))!
 }
 
-// write_private_file_atomic: baseline (pre-fix) behavior, hardened in the next commit.
+// write_private_file_atomic replaces `path` with `contents`, readable only by
+// the owner from the moment the file exists:
+//   * a stale or attacker-planted `<path>.tmp` (including a symlink) is removed
+//     first, so the write can never be redirected onto another file;
+//   * the temp file is created with mode 0600 (open(2) mode, so there is no
+//     write-then-chmod window), then chmod'd and verified to be exactly 0600;
+//   * rename(2) replaces the target (and any symlink at it) atomically.
+// Any failure returns an error and deletes the temp file (fail closed).
+// Windows has no POSIX mode bits: the file inherits the ACL of its parent
+// directory, which is not checked here. See docs/security/threat-model.md.
 fn write_private_file_atomic(path string, contents string) ! {
 	temporary_path := '${path}.tmp'
-	write_private_file(temporary_path, contents)!
-	$if !windows {
-		os.chmod(temporary_path, 0o600)!
+	if os.exists(temporary_path) || os.is_link(temporary_path) {
+		os.rm(temporary_path)!
 	}
-	os.mv(temporary_path, path)!
+	write_private_file(temporary_path, contents) or {
+		os.rm(temporary_path) or {}
+		return err
+	}
+	os.mv(temporary_path, path) or {
+		os.rm(temporary_path) or {}
+		return err
+	}
+}
+
+// trusted_catalog_endpoint returns the catalog base URL for a provider, or ''.
+fn trusted_catalog_endpoint(provider string) string {
+	info := model_provider_info(provider) or { return '' }
+	return info.base_url
+}
+
+fn model_endpoint_is_trusted_for_stored_key(provider string, endpoint string, saved_endpoint string) bool {
+	if model_endpoints_match(trusted_catalog_endpoint(provider), endpoint)
+		|| model_endpoints_match(saved_endpoint, endpoint) {
+		return true
+	}
+	if operator_endpoint := non_empty_environment_value('VEASEL_MODEL_BASE_URL') {
+		return model_endpoints_match(operator_endpoint, endpoint)
+	}
+	return false
 }
 
 fn model_endpoints_match(a string, b string) bool {
@@ -221,6 +252,9 @@ fn write_private_file(path string, contents string) ! {
 	defer { file.close() }
 	$if !windows {
 		os.chmod(path, 0o600)!
+		if int(os.inode(path).bitmask()) & 0o777 != 0o600 {
+			return error('private file permissions could not be enforced')
+		}
 	}
 	file.write_string(contents)!
 }
@@ -314,17 +348,6 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 			model:    if cli_model.len > 0 { cli_model } else { 'default' }
 		}
 	}
-	// Precedence: transient override → saved profile key → environment → none.
-	// Clearing a saved key intentionally falls back to environment only.
-	api_key := if key_override.len > 0 {
-		key_override
-	} else if clear_saved_key {
-		provider_api_key(provider) or { '' }
-	} else if profile.api_key.trim_space().len > 0 {
-		profile.api_key
-	} else {
-		provider_api_key(provider) or { '' }
-	}
 	base_url := if endpoint_override.trim_space().len > 0 {
 		endpoint_override
 	} else if profile.base_url.len > 0 {
@@ -336,7 +359,29 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 		}
 	}
 	info := model_provider_info(provider) or { return error('unsupported model provider') }
+	// Credential-to-endpoint binding: a saved or environment key is attached
+	// only when the effective endpoint is one the operator already trusts for
+	// this provider (catalog default, saved profile endpoint, or the operator's
+	// VEASEL_MODEL_BASE_URL). Any other endpoint needs its own key in the same
+	// request; the stored key is never sent there.
+	trusted := model_endpoint_is_trusted_for_stored_key(provider, base_url, profile.base_url)
+	// Precedence: transient override → saved profile key → environment → none.
+	// Clearing a saved key intentionally falls back to environment only.
+	api_key := if key_override.len > 0 {
+		key_override
+	} else if !trusted {
+		''
+	} else if clear_saved_key {
+		provider_api_key(provider) or { '' }
+	} else if profile.api_key.trim_space().len > 0 {
+		profile.api_key
+	} else {
+		provider_api_key(provider) or { '' }
+	}
 	if info.requires_api_key && api_key.trim_space().len == 0 {
+		if !trusted {
+			return error('model credentials are not configured for ${provider} at this endpoint; enter an API key with the custom endpoint (saved credentials are only used with their own endpoint)')
+		}
 		return error('model credentials are not configured for ${provider}')
 	}
 	// Empty model is allowed here so catalog discovery can resolve credentials

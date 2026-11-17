@@ -90,7 +90,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       operationId: discoverProviderModels
-      description: Fetches models before a profile is saved. Credentials and an optional endpoint override are accepted in the request body only; this operation never persists settings and never returns credentials. Requests use bounded timeouts and response size, and redirects are disabled.
+      description: Fetches models before a profile is saved. Credentials and an optional endpoint override are accepted in the request body only; this operation never persists settings and never returns credentials. Saved and environment credentials are attached only when the effective endpoint is the provider's catalog endpoint, the endpoint already saved for that provider, or the operator-configured `VEASEL_MODEL_BASE_URL`; for any other `base_url` the request must include its own `api_key` (providers that need no key are unaffected), otherwise the request fails with 400 and no stored key is sent. Requests use bounded timeouts and response size, and redirects are disabled.
       requestBody:
         required: true
         content:

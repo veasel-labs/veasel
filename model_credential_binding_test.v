@@ -50,7 +50,7 @@ fn test_catalog_request_never_sends_saved_key_to_caller_endpoint() {
 		provider: 'openai'
 		base_url: binding_attacker_url
 	}) or {
-		assert err.msg().contains('API key')
+		assert err.msg().contains('credentials are not configured')
 		return
 	}
 	assert config.api_key != binding_saved_key
@@ -76,7 +76,7 @@ fn test_catalog_request_never_sends_environment_key_to_caller_endpoint() {
 		provider: 'openai'
 		base_url: binding_attacker_url
 	}) or {
-		assert err.msg().contains('API key')
+		assert err.msg().contains('credentials are not configured')
 		return
 	}
 	assert config.api_key != binding_env_key

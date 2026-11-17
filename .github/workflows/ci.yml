@@ -559,13 +559,180 @@ jobs:
       - run: pnpm build:all
         working-directory: desktop
 
+  desktop-package:
+    name: Desktop package (Linux)
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release-plan.outputs.released == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [release-plan, backend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the verified Linux backend archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: veasel-Linux
+          path: backend-archive
+      - name: Extract the verified backend binary
+        run: |
+          set -euo pipefail
+          mkdir -p backend-bin
+          tar -xzf backend-archive/veasel-Linux.tar.gz -C backend-bin veasel
+          chmod +x backend-bin/veasel
+          test "$(backend-bin/veasel --version)" = "Veasel Code ${{ needs.release-plan.outputs.version }}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - name: Activate pinned pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+      - run: pnpm install --frozen-lockfile
+        working-directory: desktop
+      - name: Stage the verified backend and build
+        env:
+          VEASEL_BACKEND_BIN: ${{ github.workspace }}/backend-bin/veasel
+        run: |
+          pnpm stage:backend
+          pnpm build:all
+        working-directory: desktop
+      - name: Package Linux AppImage and DEB at the release version
+        run: |
+          ./node_modules/.bin/electron-builder --linux AppImage deb \
+            -c.extraMetadata.version="${{ needs.release-plan.outputs.version }}"
+          test "$(release/linux-unpacked/resources/bin/veasel --version)" = "Veasel Code ${{ needs.release-plan.outputs.version }}"
+        working-directory: desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: veasel-desktop-Linux
+          path: |
+            desktop/release/veasel-desktop-*.AppImage
+            desktop/release/veasel-desktop-*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-package-macos:
+    name: Desktop package (macOS)
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release-plan.outputs.released == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [release-plan, backend]
+    runs-on: macos-14
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the verified macOS backend archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: veasel-macOS
+          path: backend-archive
+      - name: Extract the verified backend binary
+        run: |
+          set -euo pipefail
+          mkdir -p backend-bin
+          tar -xzf backend-archive/veasel-macOS.tar.gz -C backend-bin veasel
+          chmod +x backend-bin/veasel
+          test "$(backend-bin/veasel --version)" = "Veasel Code ${{ needs.release-plan.outputs.version }}"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - name: Activate pinned pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+      - run: pnpm install --frozen-lockfile
+        working-directory: desktop
+      - name: Stage the verified backend and build
+        env:
+          VEASEL_BACKEND_BIN: ${{ github.workspace }}/backend-bin/veasel
+        run: |
+          pnpm stage:backend
+          pnpm build:all
+        working-directory: desktop
+      - name: Package macOS DMG at the release version (unsigned)
+        run: |
+          ./node_modules/.bin/electron-builder --mac dmg \
+            -c.extraMetadata.version="${{ needs.release-plan.outputs.version }}"
+          test "$(release/mac-arm64/Veasel.app/Contents/Resources/bin/veasel --version)" = "Veasel Code ${{ needs.release-plan.outputs.version }}"
+        working-directory: desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: veasel-desktop-macOS
+          path: desktop/release/veasel-desktop-*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  desktop-package-windows:
+    name: Desktop package (Windows)
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.release-plan.outputs.released == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [release-plan, backend]
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download the verified Windows backend archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: veasel-Windows
+          path: backend-archive
+      - name: Extract the verified backend binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force backend-bin | Out-Null
+          Expand-Archive backend-archive/veasel-Windows.zip -DestinationPath backend-bin -Force
+          $version = & backend-bin/veasel.exe --version
+          if ($version -ne "Veasel Code ${{ needs.release-plan.outputs.version }}") { throw "backend version mismatch: $version" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - name: Activate pinned pnpm via Corepack
+        shell: pwsh
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm --version
+      - run: pnpm install --frozen-lockfile
+        working-directory: desktop
+      - name: Stage the verified backend and build
+        env:
+          VEASEL_BACKEND_BIN: ${{ github.workspace }}/backend-bin/veasel.exe
+        run: |
+          pnpm stage:backend
+          pnpm build:all
+        working-directory: desktop
+      - name: Package Windows NSIS at the release version (unsigned)
+        run: |
+          ./node_modules/.bin/electron-builder --win nsis \
+            -c.extraMetadata.version="${{ needs.release-plan.outputs.version }}"
+        working-directory: desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: veasel-desktop-Windows
+          path: desktop/release/veasel-desktop-*.exe
+          if-no-files-found: error
+          retention-days: 7
+
   publish-prerelease:
     name: Publish verified prerelease
     if: >-
       github.ref == 'refs/heads/main' &&
       needs.release-plan.outputs.released == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [release-plan, backend, security, tui, harbor-adapter]
+    needs: [release-plan, backend, security, tui, harbor-adapter, desktop-package, desktop-package-macos, desktop-package-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
@@ -645,6 +812,12 @@ jobs:
           (
             cd release-assets
             sha256sum veasel-Linux.tar.gz veasel-macOS.tar.gz veasel-Windows.zip > ../SHA256SUMS
+            # Desktop artifacts ride along when the package jobs produced them.
+            for desktop_asset in veasel-desktop-*; do
+              if [[ -f "$desktop_asset" ]]; then
+                sha256sum "$desktop_asset" >> ../SHA256SUMS
+              fi
+            done
             sha256sum --check ../SHA256SUMS
           )
           python3 - <<'PY'

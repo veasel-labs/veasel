@@ -299,6 +299,45 @@ fn test_per_turn_route_requires_provider_and_model_and_validates_credentials_ear
 	}
 }
 
+fn test_per_turn_permission_mode_validates_and_stamps_config() {
+	previous_shared_key := os.getenv_opt('VEASEL_MODEL_API_KEY') or { '' }
+	previous_model := os.getenv_opt('VEASEL_MODEL') or { '' }
+	os.setenv('VEASEL_MODEL_API_KEY', 'test-key', true)
+	os.setenv('VEASEL_MODEL', 'test-model', true)
+	defer {
+		os.setenv('VEASEL_MODEL_API_KEY', previous_shared_key, true)
+		os.setenv('VEASEL_MODEL', previous_model, true)
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-permission-mode-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	// Unknown modes are rejected before any provider work happens.
+	if _ := app.model_config_for_chat_input('session-id', ChatMessageInput{
+		content:         'x'
+		permission_mode: 'yolo-everything'
+	}) {
+		assert false, 'unknown permission modes must be rejected'
+	} else {
+		assert err.msg() == 'permission_mode is invalid'
+	}
+	// A valid mode is stamped onto the resolved config (inherited default
+	// route here), so the CLI runner can honor it per turn.
+	config := app.model_config_for_chat_input('session-id', ChatMessageInput{
+		content:         'x'
+		permission_mode: 'accept-edits'
+	}) or { panic(err) }
+	assert config.permission_mode == 'accept-edits'
+	// Omitted mode stays empty: runner falls back to env or 'ask'.
+	default_config := app.model_config_for_chat_input('session-id', ChatMessageInput{
+		content: 'x'
+	}) or { panic(err) }
+	assert default_config.permission_mode == ''
+}
+
 fn test_context_handoff_migration_copies_legacy_event_artifacts_into_retained_table() {
 	root := os.join_path(os.temp_dir(), 'veasel-context-handoff-migration-${uuid.new_v4().str()}')
 	os.mkdir_all(root) or { panic(err) }

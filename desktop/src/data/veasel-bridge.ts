@@ -433,7 +433,11 @@ export function createVeaselFocusBridge(options: {
         const target = veaselProvider && choice?.model ? { provider: veaselProvider, model: choice.model } : {};
         await request(`/v1/sessions/${encodeURIComponent(id)}/messages`, {
           method: 'POST',
-          body: JSON.stringify({ content: text, ...target }),
+          body: JSON.stringify({
+            content: text,
+            ...target,
+            ...(choice ? { permission_mode: choice.permissionMode } : {}),
+          }),
         });
         return true as const;
       });

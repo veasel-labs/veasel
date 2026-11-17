@@ -680,6 +680,10 @@ struct ModelConfig {
 mut:
 	session_id        string
 	max_output_tokens int
+	// Per-turn CLI permission mode chosen by the client; empty means the
+	// backend default (VEASEL_CLI_PERMISSION_MODE or 'ask'). Validated
+	// against the provider's supported modes before any CLI launches.
+	permission_mode string
 	// When enabled for local Qwen3, keep the model in tool mode until it
 	// proposes the requested edit. Other providers ignore this local policy.
 	require_tool_choice bool

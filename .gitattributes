@@ -1,2 +1,6 @@
 *.v text eol=lf
 *.vsh text eol=lf
+
+# Desktop sources are built on Windows runners too; the vite prettier
+# step rejects CRLF, so pin LF at checkout on every platform.
+desktop/** text eol=lf

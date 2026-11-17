@@ -34,6 +34,41 @@ TUI executable beside the V backend.
 These automated builds are prereleases while the product remains under active
 development. They are not stable compatibility promises.
 
+## Release immutability and Desktop lane policy
+
+Published release assets are immutable, because downstream consumers pin their
+SHA-256 digests (website, Homebrew, AUR).
+
+- CI stages one upload set (`tools/release/build_release_assets.py`): the three
+  CLI archives, the standalone `veasel-tui` / `veasel-tui.exe` extracted from
+  the checksum-verified archives, Desktop installers, `release.json`, and
+  `SHA256SUMS`. `SHA256SUMS` covers every uploaded file except itself.
+  `release.json` lists `name`, `size`, `sha256`, `platform`, `arch`, and `kind`
+  for each asset (`signed: false` on Desktop installers).
+- `tools/release/publish-release.sh` creates the release as a **draft**,
+  uploads, re-downloads every asset and checks it against `SHA256SUMS`, and
+  only then publishes. It never uses `--clobber` and never modifies the assets
+  of a published tag.
+- Re-running on an existing published tag with the same full commit SHA
+  verifies the published assets and skips if they are identical; if they
+  differ (for example a non-reproducible rebuild) it fails loudly. A different
+  commit is a tag collision and fails. A leftover unpublished draft from an
+  interrupted run is discarded and recreated.
+- Desktop lane: the CLI prerelease needs the core jobs (backend, security, tui,
+  harbor-adapter) to be exactly `success`. Desktop installers are attached
+  only when **all three** Desktop jobs (Linux, macOS, Windows) succeeded.
+  If any Desktop job failed, was cancelled, or was skipped (for example runner
+  capacity), the release is CLI-only: `release.json` has
+  `"desktop": {"status": "unavailable", "lanes": {...}, "reason": ...}`, the
+  release notes say `desktop: unavailable`, and no partial installers are
+  attached. A cancelled workflow publishes nothing. Timeouts are not raised to
+  mask flaky Desktop jobs.
+- Desktop installers (AppImage, deb, dmg, NSIS exe) are **unsigned and not
+  notarized**; expect Gatekeeper/SmartScreen warnings. The generated release
+  notes repeat this.
+
+Run the fixture tests with `python3 -m unittest discover -s tools/release -p 'test_*.py'`.
+
 ## Verify an archive
 
 Download the archive, `SHA256SUMS`, and `release.json` from the same GitHub

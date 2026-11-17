@@ -137,6 +137,9 @@ export class VeaselBackendSupervisor {
       VEASEL_PORT: String(port),
       VEASEL_DATA_DIR: dataDir,
       VEASEL_PLUGIN_DIR: path.join(dataDir, 'plugins'),
+      // Desktop is an interactive client: CLI tool requests must surface as
+      // durable pending approvals the user decides in Focus, not auto-deny.
+      VEASEL_CLI_INTERACTIVE_APPROVALS: '1',
     };
     let lastError: string | null = null;
     for (const candidate of veaselBackendBinaryCandidates(this.options)) {

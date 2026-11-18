@@ -136,6 +136,7 @@ async function measurePtyConnectedMs(tuiPath, serverPath) {
 		COLORTERM: process.env.COLORTERM ?? "",
 		VEASEL_PORT: String(port),
 		VEASEL_DATA_DIR: dataDir,
+		VEASEL_SECRET_STORE: 'file', // headless CI: explicit plaintext opt-in (no Secret Service)
 		VEASEL_PLUGIN_DIR: join(dataDir, "plugins"),
 		VEASEL_API_URL: `http://127.0.0.1:${port}`,
 	}

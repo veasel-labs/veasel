@@ -1584,6 +1584,7 @@ def run_case(args: argparse.Namespace) -> int:
     prompt = (args.case.parent / case["prompt_file"]).read_text()
     if args.agent == "veasel":
         env["VEASEL_DATA_DIR"] = str(data_dir)
+        env.setdefault("VEASEL_SECRET_STORE", "file")  # headless benchmark: explicit opt-in
         if case.get("provider_config", {}).get("credential") == "saved-profile":
             env["VEASEL_MODEL_API_KEY"] = private_profile_key(data_dir)
             remove_profile_key_from_disk(data_dir)

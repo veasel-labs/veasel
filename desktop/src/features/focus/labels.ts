@@ -83,8 +83,9 @@ export function providerBlocker(provider: FocusProviderStatus): string | null {
   if (!provider.capabilities.sessions) return 'Detected. Sessions here are not available for it yet';
   if (provider.auth === 'signed-out')
     return `${provider.authDetail}. Run \`${provider.signInHint ?? 'its login command'}\` in a terminal`;
-  if (provider.id === 'opencode' && provider.auth === 'unknown')
-    return 'OpenCode authentication could not be verified. Check its account status, then choose Check again';
+  // 'unknown' means the auth file is present but sign-in is unverified — the
+  // strongest state the presence-only probe can report for ANY provider, so
+  // it must not block starting (a stale login then fails honestly at turn time).
   return null;
 }
 

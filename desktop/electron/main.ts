@@ -52,7 +52,13 @@ async function resolveRendererUrl(): Promise<string> {
   // Packaged / local production: serve dist over loopback (not file://) so
   // mutating calls to serve keep a loopback Origin. See renderer-server.ts.
   if (!rendererServer) {
-    rendererServer = await startRendererServer(path.join(__dirname, '..', 'dist'));
+    rendererServer = await startRendererServer(path.join(__dirname, '..', 'dist'), {
+      // Backend bearer token: injected by the proxy only, never sent to the renderer.
+      backendAuthorization: () => {
+        const token = veaselBackend?.apiToken();
+        return token ? `Bearer ${token}` : undefined;
+      },
+    });
   }
   return rendererServer.url;
 }

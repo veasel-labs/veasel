@@ -50,6 +50,12 @@ test("LiveApp adds a local plugin through API validation and confirms replacemen
     await until("Replace plugin link?")
     expect(requests).toHaveLength(1)
     setup.mockInput.pressEnter()
+    // The first success banner is still on screen, so waiting for that text
+    // returns immediately; wait for the second request itself.
+    for (let n = 0; n < 200 && requests.length < 2; n++) {
+      await setup.renderOnce()
+      await Bun.sleep(5)
+    }
     await until("Linked plugin · review-tools")
     expect(requests).toEqual([
       { path: "/tmp/review-tools", replace: false },

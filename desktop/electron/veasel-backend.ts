@@ -30,6 +30,7 @@ export interface VeaselBackendOptions {
 }
 
 const HEALTH_TIMEOUT_MS = 30_000;
+const GENERATED_API_TOKEN = /^[0-9a-f]{64}$/;
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -78,9 +79,45 @@ export function veaselHealthIdentity(body: unknown): VeaselBackendIdentity | nul
   return { version: health.version, pid: health.pid };
 }
 
-export async function probeVeaselBackend(url: string): Promise<VeaselBackendIdentity | null> {
+/**
+ * The backend's API bearer token (docs/security/backend-caller-auth.md):
+ * `VEASEL_API_TOKEN` when set, else the `api-token` file in the data dir,
+ * which the backend creates 0600. A group/world-accessible file is not
+ * trusted (the backend refuses to serve with one). Main-process only: the
+ * renderer never receives this value; the renderer proxy injects it.
+ */
+export function readBackendApiToken(
+  env: NodeJS.ProcessEnv = process.env,
+  dataDir: string = canonicalVeaselDataDir(env),
+): string | null {
+  if (env.VEASEL_API_TOKEN) return env.VEASEL_API_TOKEN;
+  const file = path.join(dataDir, 'api-token');
+  let fd: number | undefined;
   try {
-    const response = await fetch(`${url}/v1/health`);
+    // Open once and validate the SAME descriptor (no stat-then-read race).
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    if (process.platform !== 'win32') {
+      if ((stat.mode & 0o077) !== 0) return null;
+      if (typeof process.getuid === 'function' && stat.uid !== process.getuid()) return null;
+    }
+    const token = fs.readFileSync(fd, 'utf8').trim();
+    return GENERATED_API_TOKEN.test(token) ? token : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+export async function probeVeaselBackend(url: string, apiToken?: string | null): Promise<VeaselBackendIdentity | null> {
+  try {
+    // Unauthenticated health is minimal liveness; identity (version, pid)
+    // is only returned to a caller holding the token.
+    const response = await fetch(`${url}/v1/health`, {
+      headers: apiToken ? { authorization: `Bearer ${apiToken}` } : {},
+    });
     if (response.status !== 200) return null;
     return veaselHealthIdentity(await response.json());
   } catch {
@@ -88,8 +125,8 @@ export async function probeVeaselBackend(url: string): Promise<VeaselBackendIden
   }
 }
 
-async function isHealthy(url: string): Promise<boolean> {
-  return (await probeVeaselBackend(url)) !== null;
+async function isHealthy(url: string, apiToken: string | null): Promise<boolean> {
+  return (await probeVeaselBackend(url, apiToken)) !== null;
 }
 
 export class VeaselBackendSupervisor {
@@ -102,6 +139,12 @@ export class VeaselBackendSupervisor {
 
   snapshot(): VeaselBackendState {
     return this.state;
+  }
+
+  /** Current backend token (re-read so `veasel token rotate` is honoured). */
+  apiToken(): string | null {
+    const env = this.options.env ?? process.env;
+    return readBackendApiToken(env, this.options.dataDir ?? canonicalVeaselDataDir(env));
   }
 
   onState(listener: (state: VeaselBackendState) => void): void {
@@ -121,7 +164,7 @@ export class VeaselBackendSupervisor {
     // attached to (one runtime, shared sessions) instead of duplicated;
     // only spawn our own when nothing healthy answers there.
     const conventional = 'http://127.0.0.1:4097';
-    if (await isHealthy(conventional)) {
+    if (await isHealthy(conventional, this.apiToken())) {
       this.attached = true;
       this.setState({ status: 'ready', url: conventional, problem: null });
       return this.state;
@@ -194,7 +237,7 @@ export class VeaselBackendSupervisor {
     while (Date.now() < deadline) {
       if (this.childFailed) return false;
       if (this.child && this.child.exitCode !== null) return false;
-      if (await isHealthy(url)) return true;
+      if (await isHealthy(url, this.apiToken())) return true;
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
     return false;

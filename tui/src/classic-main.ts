@@ -180,6 +180,7 @@ import {
 } from "./catalog-filter"
 import { VEASEL_PORTRAIT_ROWS, portraitRowCells } from "./veasel-portrait"
 
+import { installBackendAuth } from "./backend-auth"
 import {
   formatGlobalUsageSummary,
   formatReportedCacheUsage,
@@ -498,6 +499,7 @@ if (
   throw new Error("Veasel TUI only connects to an unauthenticated loopback API")
 }
 const apiBase = apiUrl.origin
+installBackendAuth(apiBase)
 const renderer = await createCliRenderer({ exitOnCtrlC: true })
 const controller = new AbortController()
 const chatHistoryPageSize = 100

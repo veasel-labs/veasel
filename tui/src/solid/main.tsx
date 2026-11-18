@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { resolveLoopbackApiBase, VeaselApiClient } from "../api-client"
+import { installBackendAuth } from "../backend-auth"
 
 // Load the renderer and full UI graph only after the lightweight CLI entry
 // has selected the interactive path.
@@ -10,6 +11,7 @@ const [{ render }, { LiveApp }] = await Promise.all([
 
 const controller = new AbortController()
 const apiBase = resolveLoopbackApiBase()
+installBackendAuth(apiBase)
 const api = new VeaselApiClient(apiBase, controller.signal)
 
 const quit = () => {

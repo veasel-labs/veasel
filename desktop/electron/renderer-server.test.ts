@@ -271,4 +271,48 @@ describe('startRendererServer', () => {
       await server.close();
     }
   });
+  it('injects the backend bearer token itself and never exposes it to the renderer', async () => {
+    const seen: Array<string | undefined> = [];
+    const backend = http.createServer((req, res) => {
+      seen.push(req.headers.authorization);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    backends.push(backend);
+    await new Promise<void>((resolve) => backend.listen(0, '127.0.0.1', resolve));
+    const backendPort = (backend.address() as AddressInfo).port;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atk-renderer-'));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'index.html'), 'ok');
+    let current: string | undefined = 'Bearer backend-secret-1';
+    const server = await startRendererServer(dir, { proxyToken: TOKEN, backendAuthorization: () => current });
+    server.setBackendTarget(`http://127.0.0.1:${backendPort}`);
+    try {
+      const plain = await request(`${server.url}/v1/sessions`, 'GET', '', { 'x-veasel-proxy': TOKEN });
+      expect(plain.status).toBe(200);
+      expect(plain.body).not.toContain('backend-secret');
+      // A renderer-supplied Authorization is discarded, not forwarded.
+      await request(`${server.url}/v1/sessions`, 'GET', '', {
+        'x-veasel-proxy': TOKEN,
+        authorization: 'Bearer renderer-forged',
+      });
+      // Rotation is picked up per request.
+      current = 'Bearer backend-secret-2';
+      await request(`${server.url}/v1/sessions`, 'GET', '', { 'x-veasel-proxy': TOKEN });
+      current = undefined;
+      await request(`${server.url}/v1/sessions`, 'GET', '', {
+        'x-veasel-proxy': TOKEN,
+        authorization: 'Bearer renderer-forged',
+      });
+      expect(seen).toEqual(['Bearer backend-secret-1', 'Bearer backend-secret-1', 'Bearer backend-secret-2', undefined]);
+      // The proxy token gate still fails closed before the backend is contacted.
+      const before = seen.length;
+      expect((await get(`${server.url}/v1/sessions`)).status).toBe(403);
+      expect(seen.length).toBe(before);
+    } finally {
+      await server.close();
+    }
+  });
+
 });

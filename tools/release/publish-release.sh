@@ -9,6 +9,10 @@ set -euo pipefail
 
 dir="${1:?upload dir}"
 notes="${2:?notes file}"
+# Resolve to absolute paths up front: verification cd's into a scratch dir, so a
+# relative path (CI passes `release-upload`) would stop resolving.
+dir="$(cd "$dir" && pwd -P)"
+notes="$(cd "$(dirname "$notes")" && pwd -P)/$(basename "$notes")"
 : "${RELEASE_TAG:?}" "${RELEASE_VERSION:?}" "${RELEASE_COMMIT:?}" "${GH_REPO:?}"
 
 [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {

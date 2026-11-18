@@ -87,7 +87,7 @@ curl() {
 	if [[ -r "$(token_file)" ]]; then
 		token="$(tr -d '\r\n' <"$(token_file)")"
 	fi
-	if [[ -n "$token" && "$*" == *"$api/"* ]]; then
+	if [[ -n "$token" && ("$*" == *"$api/"* || "$*" == *"${refusal_api:-@unset@}/"*) ]]; then
 		printf 'header = "Authorization: Bearer %s"\n' "$token" |
 			command curl --connect-timeout 2 --max-time 30 -K - "$@"
 	else
@@ -1115,6 +1115,7 @@ wait "$server_pid" 2>/dev/null || true
 server_pid=""
 refusal_port="$(free_port)"
 refusal_api="http://127.0.0.1:${refusal_port}"
+smoke_token_file="$work_dir/refusal-data/api-token"
 env -u VEASEL_MODEL -u VEASEL_MODEL_API_KEY -u VEASEL_MODEL_BASE_URL -u VEASEL_MODEL_PROVIDER \
 	-u VEASEL_SECRET_STORE DBUS_SESSION_BUS_ADDRESS="unix:path=$work_dir/no-such-bus" \
 	VEASEL_PORT="$refusal_port" VEASEL_DATA_DIR="$work_dir/refusal-data" VEASEL_PLUGIN_DIR="$work_dir/plugins" \

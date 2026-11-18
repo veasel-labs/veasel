@@ -27,6 +27,8 @@ if (session) {
   }
 }
 // Give the (possibly failing) turn a moment to persist before re-reading.
-await new Promise((resolve) => setTimeout(resolve, 3000));
+await new Promise((resolve) => setTimeout(resolve, 8000));
 const after = session ? await client.listMessages(sessionId) : [];
-process.stdout.write(`${JSON.stringify({ found: Boolean(session), directory: session?.directory ?? null, before, sent, after })}\n`);
+process.stdout.write(
+  `${JSON.stringify({ found: Boolean(session), session, directory: session?.directory ?? null, before, sent, after })}\n`,
+);

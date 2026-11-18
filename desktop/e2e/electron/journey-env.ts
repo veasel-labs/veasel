@@ -111,7 +111,10 @@ export function installFakeClis(env: JourneyEnv, home: string): void {
 /** A git repo with one failing test: add() subtracts. Deterministic content and commit. */
 export function createFixtureRepo(repo: string): void {
   fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'src', 'math.js'), 'function add(a, b) {\n  return a - b;\n}\nmodule.exports = { add };\n');
+  fs.writeFileSync(
+    path.join(repo, 'src', 'math.js'),
+    'function add(a, b) {\n  return a - b;\n}\nmodule.exports = { add };\n',
+  );
   fs.writeFileSync(
     path.join(repo, 'test.js'),
     "const assert = require('node:assert');\nconst { add } = require('./src/math.js');\nassert.strictEqual(add(2, 3), 5);\nconsole.log('ok');\n",
@@ -168,7 +171,12 @@ export function findBackend(env: JourneyEnv): BackendProcess | null {
 }
 
 /** Authenticated request straight to the backend, bypassing the Desktop UI. */
-export async function backendApi<T>(env: JourneyEnv, backend: BackendProcess, route: string, init: RequestInit = {}): Promise<T> {
+export async function backendApi<T>(
+  env: JourneyEnv,
+  backend: BackendProcess,
+  route: string,
+  init: RequestInit = {},
+): Promise<T> {
   const token = readApiToken(env);
   const response = await fetch(`http://127.0.0.1:${backend.port}${route}`, {
     ...init,
@@ -206,15 +214,27 @@ export async function launchFocusDesktop(options: LaunchOptions = {}): Promise<{
   const fresh = options.existing === undefined;
   const root = options.existing?.root ?? fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-focus-journeys-'));
   const env = options.existing ?? planJourneyEnv(root);
+  // The legacy Agent Toolkit backend is disabled in Desktop (#728): no `workspace init`, and the binary the shared
+  // fixture insists on is only a placeholder.
+  process.env['ATK_E2E_BACKEND_BIN'] ??= backendBin;
   const desktop = await openDesktop({
+    initWorkspace: false,
     root,
-    extraArgs: ['--ozone-platform=x11', '--disable-gpu'],
+    extraArgs: [
+      '--ozone-platform=x11',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      // Only inside the capability-dropped container (see e2e/docker); never on a developer host.
+      ...(process.env['VEASEL_E2E_NO_SANDBOX'] === '1' ? ['--no-sandbox'] : []),
+    ],
     extraEnv: {
       PATH: env.binDir,
       FAKE_CLI_LOG: env.cliLog,
       VEASEL_DATA_DIR: env.dataDir,
       VEASEL_BACKEND_BIN: backendBin,
       VEASEL_SECRET_STORE: 'file',
+      // Bounded approval wait: long enough for a click-driven approval, short enough that J11 sees expiry.
+      VEASEL_CLI_APPROVAL_TIMEOUT_SECONDS: '45',
       XDG_STATE_HOME: path.join(root, 'home', '.local', 'state'),
       XDG_CACHE_HOME: path.join(root, 'home', '.cache'),
       NO_AT_BRIDGE: '1',
@@ -223,28 +243,9 @@ export async function launchFocusDesktop(options: LaunchOptions = {}): Promise<{
       if (!fresh) return;
       fs.mkdirSync(env.dataDir, { recursive: true });
       installFakeClis(env, home);
-      configurePlaceholderDefault(env, backendBin);
     },
   });
   // The workspace is scaffolded by openDesktop; the repo goes inside it afterwards.
   if (fresh) createFixtureRepo(env.repo);
   return { desktop, env };
-}
-
-/**
- * Gives the backend's GLOBAL default provider a placeholder key and an unroutable endpoint.
- * Needed because `complete_agent_with_model_override` (api.v) resolves the session default
- * before applying a per-turn installed-CLI override, so a clean install with no API key
- * fails every Focus turn ("model credentials are not configured for openai-compatible").
- * The endpoint is never called: every journey turn is routed to a fake installed CLI.
- */
-export function configurePlaceholderDefault(env: JourneyEnv, backendBin: string): void {
-  execFileSync(
-    backendBin,
-    ['config', 'model', 'set', '--provider', 'openai-compatible', '--model', 'placeholder', '--base-url', 'http://127.0.0.1:9/v1', '--api-key', 'placeholder-not-a-secret'],
-    {
-      env: { ...process.env, VEASEL_DATA_DIR: env.dataDir, VEASEL_SECRET_STORE: 'file', HOME: path.join(env.root, 'home'), XDG_CONFIG_HOME: path.join(env.root, 'home', '.config') },
-      stdio: 'pipe',
-    },
-  );
 }

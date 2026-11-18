@@ -15,7 +15,11 @@ if (!evidencePath || !resultsPath || !binary || !out) {
   process.exit(2);
 }
 const evidence = fs.existsSync(evidencePath)
-  ? fs.readFileSync(evidencePath, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  ? fs
+      .readFileSync(evidencePath, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
   : [];
 const results = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
 const specs = [];
@@ -27,19 +31,43 @@ for (const suite of results.suites ?? []) walk(suite);
 
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const binarySha = crypto.createHash('sha256').update(fs.readFileSync(binary)).digest('hex');
-const journeyIds = ['J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'J7', 'J8', 'J9', 'J10', 'J11'];
+const journeyIds = [
+  'J1',
+  'J2',
+  'J3',
+  'J3b',
+  'J3c',
+  'J4',
+  'J4b',
+  'J4c',
+  'J5',
+  'J6',
+  'J7',
+  'J8',
+  'J8b',
+  'J9',
+  'J10',
+  'J11',
+];
 
 const rows = journeyIds.map((id) => {
   const spec = specs.find((candidate) => candidate.title.startsWith(`${id} `));
   const test = spec?.tests?.[0];
   const status = test?.status ?? 'not run';
   const verdict =
-    test === undefined ? 'NOT RUN'
-    : test.expectedStatus === 'skipped' || status === 'skipped' ? 'FIXME/SKIPPED'
-    : status === 'expected' ? 'PASS'
-    : status === 'unexpected' ? 'FAIL'
-    : status === 'flaky' ? 'FLAKY'
-    : status.toUpperCase();
+    test === undefined
+      ? 'NOT RUN'
+      : test.expectedStatus === 'skipped' || status === 'skipped'
+        ? 'FIXME/SKIPPED'
+        : status === 'expected' && test.expectedStatus === 'failed'
+          ? 'FAIL (known product bug; test.fail)'
+          : status === 'expected'
+            ? 'PASS'
+            : status === 'unexpected'
+              ? 'FAIL'
+              : status === 'flaky'
+                ? 'FLAKY'
+                : status.toUpperCase();
   const entry = evidence.find((candidate) => candidate.journey === id);
   const oracle = entry?.oracle ?? '(no oracle evidence recorded)';
   return `| ${id} | ${spec?.title.replace(/\|/g, '/') ?? '-'} | ${oracle.replace(/\|/g, '/')} | ${verdict} |`;

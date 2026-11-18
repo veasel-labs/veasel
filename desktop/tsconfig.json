@@ -25,6 +25,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "scripts/gen-api.mjs", "vite.config.ts", "vite-plugin-eslint.d.ts", "vitest.config.ts", "playwright.config.ts", "e2e"],
+  "include": ["src", "scripts/gen-api.mjs", "vite.config.ts", "vite-plugin-eslint.d.ts", "vitest.config.ts", "playwright.config.ts", "playwright.fixture.config.ts", "playwright.focus.config.ts", "e2e"],
   "exclude": ["node_modules", "dist", "dist-electron", "release", "electron"]
 }

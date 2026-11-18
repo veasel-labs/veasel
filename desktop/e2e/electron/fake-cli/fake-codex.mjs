@@ -6,7 +6,8 @@ import fs from 'node:fs';
 
 const log = (event, extra = {}) => {
   const file = process.env.FAKE_CLI_LOG;
-  if (file) fs.appendFileSync(file, `${JSON.stringify({ cli: 'codex', event, pid: process.pid, at: Date.now(), ...extra })}\n`);
+  if (file)
+    fs.appendFileSync(file, `${JSON.stringify({ cli: 'codex', event, pid: process.pid, at: Date.now(), ...extra })}\n`);
 };
 if (process.argv.includes('--version')) {
   process.stdout.write('codex-cli 0.167.2 (fake)\n');

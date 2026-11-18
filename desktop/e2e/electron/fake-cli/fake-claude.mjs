@@ -7,6 +7,7 @@
 // The scenario is the LAST `[[name]]` marker in the user text:
 //   [[fix]]    stream text, ask to Edit src/math.js (bug fix), apply only if allowed
 //   [[reject]] stream text, ask to Edit README.md, apply only if allowed
+//   [[applyexpire]] Edit approved by a human, then an unanswered `git push` approval that expires
 //   [[slow]]   stream text forever (until killed) - cancel / crash tests
 //   [[shell]]  ask to run a Bash command; the edit never applies without approval
 //   (none)     stream a short answer
@@ -63,8 +64,30 @@ rl.on('close', () => {
   if (userText === null) process.exit(0);
 });
 
+// Frame shapes mirror a real claude -p stream: a tool_use block, then the permission
+// request, then (after the decision) a tool_result. The backend derives durable turn
+// outcomes from the tool_result frames (docs/TURN_OUTCOMES.md).
+function toolResult(toolId, isError, content) {
+  send({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId, is_error: isError, content }] },
+  });
+}
+
 function ask(requestId, toolName, input) {
-  send({ type: 'control_request', request_id: requestId, request: { subtype: 'can_use_tool', tool_name: toolName, input } });
+  send({
+    type: 'assistant',
+    parent_tool_use_id: null,
+    message: {
+      id: `msg_${requestId}`,
+      content: [{ type: 'tool_use', id: `toolu_${requestId}`, name: toolName, input }],
+    },
+  });
+  send({
+    type: 'control_request',
+    request_id: requestId,
+    request: { subtype: 'can_use_tool', tool_name: toolName, input, tool_use_id: `toolu_${requestId}` },
+  });
   log('approval-requested', { requestId, toolName });
   return new Promise((resolve) => pending.set(requestId, resolve));
 }
@@ -82,6 +105,7 @@ function applyEdit(file, oldString, newString) {
   if (!before.includes(oldString)) throw new Error(`old_string not found in ${file}`);
   fs.writeFileSync(target, before.replace(oldString, newString));
   log('edit-applied', { file });
+  return true;
 }
 
 async function run(text) {
@@ -92,31 +116,68 @@ async function run(text) {
   let summary = 'Done.';
   if (scenario === 'fix') {
     await stream('Reading src/math.js. The add function subtracts instead of adding. Proposing a one-line fix. ');
-    const input = { file_path: 'src/math.js', old_string: 'return a - b;', new_string: 'return a + b;' };
+    const input = {
+      file_path: path.join(process.cwd(), 'src/math.js'),
+      old_string: 'return a - b;',
+      new_string: 'return a + b;',
+    };
     if (await ask('fake-req-fix', 'Edit', input)) {
       applyEdit('src/math.js', input.old_string, input.new_string);
+      toolResult('toolu_fake-req-fix', false, 'updated');
       summary = 'Applied the fix to src/math.js.';
     } else {
+      toolResult('toolu_fake-req-fix', true, 'denied');
       log('edit-denied', { file: 'src/math.js' });
       summary = 'The fix was not applied.';
     }
     await stream(`${summary} `);
   } else if (scenario === 'reject') {
     await stream('Also proposing a README note. ');
-    const input = { file_path: 'README.md', old_string: '# Fixture', new_string: '# Fixture (edited by fake agent)' };
+    const input = {
+      file_path: path.join(process.cwd(), 'README.md'),
+      old_string: '# Fixture',
+      new_string: '# Fixture (edited by fake agent)',
+    };
     if (await ask('fake-req-reject', 'Edit', input)) {
       applyEdit('README.md', input.old_string, input.new_string);
+      toolResult('toolu_fake-req-reject', false, 'updated');
       summary = 'Applied the README change.';
     } else {
+      toolResult('toolu_fake-req-reject', true, 'denied');
       log('edit-denied', { file: 'README.md' });
       summary = 'README change was not applied.';
     }
     await stream(`${summary} `);
   } else if (scenario === 'shell') {
     await stream('I need to run the tests. ');
-    const allowed = await ask('fake-req-shell', 'Bash', { command: 'node test.js', description: 'Run the fixture tests' });
+    const allowed = await ask('fake-req-shell', 'Bash', {
+      command: 'node test.js',
+      description: 'Run the fixture tests',
+    });
+    toolResult('toolu_fake-req-shell', !allowed, allowed ? 'ran' : 'denied');
     if (allowed) log('shell-allowed');
     summary = allowed ? 'Ran the shell command.' : 'Shell command was not allowed.';
+    await stream(`${summary} `);
+  } else if (scenario === 'applyexpire') {
+    // Edit is approved by the human; the later shell approval is left unanswered and the
+    // backend expires it (VEASEL_CLI_APPROVAL_TIMEOUT_SECONDS) and denies it in-band.
+    await stream('Applying the fix, then I will push. ');
+    const input = {
+      file_path: path.join(process.cwd(), 'src/math.js'),
+      old_string: 'return a - b;',
+      new_string: 'return a + b;',
+    };
+    if (await ask('fake-req-fix', 'Edit', input)) {
+      applyEdit('src/math.js', input.old_string, input.new_string);
+      toolResult('toolu_fake-req-fix', false, 'updated');
+      const pushed = await ask('fake-req-push', 'Bash', { command: 'git push origin main' });
+      toolResult('toolu_fake-req-push', !pushed, pushed ? 'pushed' : 'denied');
+      log(pushed ? 'push-allowed' : 'push-denied');
+      summary = pushed ? 'Pushed.' : 'Push skipped.';
+    } else {
+      toolResult('toolu_fake-req-fix', true, 'denied');
+      summary = 'The fix was not applied.';
+    }
     await stream(`${summary} `);
   } else if (scenario === 'slow') {
     for (let index = 0; ; index += 1) await stream(`working on step ${index}. `, 500);

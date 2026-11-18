@@ -216,10 +216,16 @@ export function buildTimeline(
     }
   }
 
-  const last = turns.at(-1);
-  if (last?.open) {
-    for (const [itemId, text] of Object.entries(live)) {
-      if (committed.has(itemId) || !text.text) continue;
+  // Live text streams before the turn's user message is persisted, so there may be no open turn to hold it yet:
+  // it then starts the next turn rather than being dropped.
+  const streaming = Object.entries(live).filter(([itemId, text]) => !committed.has(itemId) && text.text);
+  if (streaming.length > 0) {
+    let last = turns.at(-1);
+    if (!last?.open) {
+      last = { turn: (last?.turn ?? 0) + 1, open: true, items: [] };
+      turns.push(last);
+    }
+    for (const [itemId, text] of streaming) {
       last.items.push({ kind: text.channel, key: itemId, text: text.text, streaming: true });
     }
   }

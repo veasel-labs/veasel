@@ -12,6 +12,13 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 : "${VEASEL_BIN:?}" "${BUN_BIN:=/usr/bin/bun}" "${OUT_DIR:?}"
 IMAGE="${IMAGE:-veasel-e2e-focus:local}"
+# A missing bind-mount source makes Docker create a root-owned directory in its place; refuse instead.
+for bin in "$VEASEL_BIN" "$BUN_BIN"; do
+  if [[ ! -f "$bin" || ! -x "$bin" ]]; then
+    echo "run-focus-journeys: $bin is not an executable file" >&2
+    exit 2
+  fi
+done
 mkdir -p "$OUT_DIR"
 
 # --no-sandbox is required INSIDE the container only: --cap-drop=ALL removes the capabilities

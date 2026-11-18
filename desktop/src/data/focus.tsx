@@ -19,6 +19,19 @@ export interface ThreadTimeline {
 const EMPTY_TIMELINE: ThreadTimeline = { loaded: false, events: [], live: {} };
 const NO_THREADS: readonly FocusThread[] = [];
 
+/**
+ * The turn that live (streamed, not yet persisted) output belongs to: the last turn while it is still open,
+ * otherwise the next one. Matches what buildTimeline renders for live text.
+ */
+export function liveTurnNumber(timeline: ThreadTimeline): number {
+  const last = Math.max(0, ...timeline.events.map((event) => event.turn));
+  if (last === 0) return 1;
+  const finished = timeline.events.some((event) => event.turn === last && event.type === 'turn.finished');
+  const started = timeline.events.some((event) => event.turn === last && event.type === 'turn.started');
+  const answered = timeline.events.some((event) => event.turn === last && event.type === 'assistant');
+  return started && !finished ? last : finished || answered ? last + 1 : last;
+}
+
 export class FocusStore {
   private threads: readonly FocusThread[] = NO_THREADS;
   private threadsLoaded = false;
@@ -154,17 +167,37 @@ export class FocusStore {
       case 'event': {
         this.flushDeltas(false);
         const current = this.timelines.get(update.threadId) ?? EMPTY_TIMELINE;
-        const event = update.event;
+        let event = update.event;
         let live = current.live;
+        const committed: FocusEvent[] = [];
         if (event.type === 'assistant' || event.type === 'reasoning') {
           const rest = { ...live };
           delete rest[event.itemId];
           live = rest;
         } else if (event.type === 'turn.finished') {
+          // The server's turn event carries no turn number: it ends the turn the live text belongs to.
+          const turn = liveTurnNumber(current);
+          event = { ...event, turn };
+          // Keep what streamed: the persisted transcript is only re-read when the session is reopened.
+          Object.entries(live).forEach(([itemId, text], index) => {
+            if (!text.text) return;
+            committed.push({
+              seq: event.seq - 1 + (index + 1) / 1000,
+              at: event.at,
+              turn,
+              type: text.channel,
+              itemId,
+              text: text.text,
+            } as FocusEvent);
+          });
           live = {};
         }
         if (current.events.some((existing) => existing.seq === event.seq)) return;
-        this.timelines.set(update.threadId, { loaded: current.loaded, events: [...current.events, event], live });
+        this.timelines.set(update.threadId, {
+          loaded: current.loaded,
+          events: [...current.events, ...committed, event],
+          live,
+        });
         break;
       }
     }

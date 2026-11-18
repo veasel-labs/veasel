@@ -19,6 +19,20 @@ const tool = (itemId: string, parentItemId: string | null = null): FocusEventBod
 });
 
 describe('buildTimeline', () => {
+  it('shows streamed text in a new open turn when no turn is open yet', () => {
+    const turns = buildTimeline(
+      journal([
+        { type: 'user', text: 'first' },
+        { type: 'assistant', itemId: 'm1', text: 'ok' },
+      ]),
+      {
+        op2: { channel: 'assistant', text: 'streaming now' },
+      },
+    );
+    expect(turns.at(-1)).toMatchObject({ turn: 2, open: true });
+    expect(turns.at(-1)?.items).toEqual([{ kind: 'assistant', key: 'op2', text: 'streaming now', streaming: true }]);
+  });
+
   it('merges a tool call, its approval and its result into one item', () => {
     const turns = buildTimeline(
       journal([

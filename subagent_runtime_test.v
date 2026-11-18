@@ -2,6 +2,7 @@ module main
 
 import context as vcontext
 import json2
+import net
 import net.http
 import db.sqlite
 import os
@@ -150,6 +151,10 @@ fn start_subagent_provider_fixture(mut fixture SubagentProviderFixture) !(&http.
 		handler:              fixture
 		addr:                 '127.0.0.1:0'
 		show_startup_message: false
+		// Parent and child turns call the fixture concurrently. Never size the
+		// worker pool from VJOBS (1 in CI): an idle pooled keep-alive connection
+		// pins a worker for up to 30 s and starves the next connection.
+		worker_num:           8
 	}
 	server_thread := spawn server.listen_and_serve()
 	server.wait_till_running() or {
@@ -693,4 +698,52 @@ fn test_app_shutdown_interrupting_child_is_persisted_as_uncertain() {
 	assert interrupted.status == 'uncertain'
 	assert !interrupted.cancel_requested
 	assert interrupted.outcome_claimed
+}
+
+// Regression for the CI-only "child makes no progress" timeout: the fixture
+// server took its worker count from VJOBS (1 in CI), and V's server keeps a
+// worker on an idle keep-alive connection for up to 30 s. An idle pooled
+// connection therefore starved the next connection (the child's provider
+// request) for ~30 s. Hold an idle connection open and require that a second
+// request is still answered promptly.
+fn test_provider_fixture_serves_new_connections_while_another_is_idle() {
+	prior_vjobs := os.getenv_opt('VJOBS')
+	os.setenv('VJOBS', '1', true)
+	defer {
+		if v := prior_vjobs {
+			os.setenv('VJOBS', v, true)
+		} else {
+			os.unsetenv('VJOBS')
+		}
+	}
+	mut fixture := &SubagentProviderFixture{}
+	mut server, server_thread := start_subagent_provider_fixture(mut fixture) or { panic(err) }
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	mut idle := net.dial_tcp(server.addr) or { panic(err) }
+	defer { idle.close() or {} }
+	time.sleep(100 * time.millisecond)
+	done := chan string{cap: 1}
+	addr := server.addr
+	spawn fn [addr, done] () {
+		response := http.fetch(http.FetchConfig{
+			url:    'http://${addr}/v1/chat/completions'
+			method: .post
+			data:   '{"model":"local-fixture","messages":[]}'
+		}) or {
+			done <- 'error: ${err.msg()}'
+			return
+		}
+		done <- 'status ${response.status_code}'
+	}()
+	mut outcome := ''
+	deadline := time.sys_mono_now() + u64(5 * time.second)
+	for outcome.len == 0 && time.sys_mono_now() < deadline {
+		if done.try_pop(mut outcome) != .success {
+			time.sleep(10 * time.millisecond)
+		}
+	}
+	assert outcome.starts_with('status'), 'second connection was not served while another sat idle: [${outcome}]'
 }

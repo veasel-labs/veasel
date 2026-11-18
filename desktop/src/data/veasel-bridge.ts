@@ -169,7 +169,7 @@ function defaultEventStream(url: string, onEvent: (type: string, data: string) =
   const EventSourceCtor = (globalThis as { EventSource?: typeof EventSource }).EventSource;
   if (!EventSourceCtor) return () => {};
   const source = new EventSourceCtor(url);
-  const types = ['assistant.delta', 'session.turn_completed'];
+  const types = ['assistant.delta', 'session.turn_started', 'session.turn_queued', 'session.turn_completed'];
   const listeners = types.map((type) => {
     const listener = (message: MessageEvent) => onEvent(type, String(message.data ?? ''));
     source.addEventListener(type, listener);
@@ -180,6 +180,9 @@ function defaultEventStream(url: string, onEvent: (type: string, data: string) =
     source.close();
   };
 }
+
+/** How often a running turn is checked for new or decided approvals. */
+const APPROVAL_POLL_MS = 1_000;
 
 const PROVIDER_IDS: FocusProviderId[] = ['claude', 'codex', 'opencode', 'muse'];
 
@@ -546,16 +549,67 @@ export function createVeaselFocusBridge(options: {
       // EventSource (non-browser host, tests without a factory) this is
       // an honest no-op: readThread polling remains correct, just slower.
       const createStream = options.createEventStream ?? defaultEventStream;
-      return createStream(`${base}/v1/events`, (_type, raw) => {
+      // Approvals are not pushed by the server: while a turn runs, watch the pending set and ask the store to
+      // re-read the thread whenever it changes, so a request made mid-turn shows without reopening the session.
+      const pollers = new Map<string, ReturnType<typeof setInterval>>();
+      const watchApprovals = (threadId: string): (() => Promise<void>) => {
+        let known = '';
+        const tick = async (): Promise<void> => {
+          const approvals = await request(`/v1/sessions/${encodeURIComponent(threadId)}/cli-approvals`).catch(
+            () => null,
+          );
+          if (approvals === null) return;
+          const key = asArray<VeaselCliApproval>(approvals)
+            .filter((approval) => approval.status === 'pending')
+            .map((approval) => approval.id)
+            .sort()
+            .join(',');
+          if (key !== known) {
+            known = key;
+            listener({ kind: 'refresh', threadId });
+          }
+        };
+        pollers.set(
+          threadId,
+          setInterval(() => void tick(), APPROVAL_POLL_MS),
+        );
+        return tick;
+      };
+      const finals = new Map<string, () => Promise<void>>();
+      const unsubscribe = createStream(`${base}/v1/events`, (_type, raw) => {
         let parsed: VeaselServerEvent;
         try {
           parsed = JSON.parse(raw) as VeaselServerEvent;
         } catch {
           return;
         }
+        const threadId = parsed.session_id;
+        if (typeof threadId === 'string' && threadId.length > 0) {
+          if (
+            (parsed.type === 'session.turn_started' || parsed.type === 'session.turn_queued') &&
+            !pollers.has(threadId)
+          ) {
+            const tick = watchApprovals(threadId);
+            finals.set(threadId, tick);
+            void tick();
+          } else if (parsed.type === 'session.turn_completed' && pollers.has(threadId)) {
+            const timer = pollers.get(threadId);
+            const tick = finals.get(threadId);
+            if (timer) clearInterval(timer);
+            pollers.delete(threadId);
+            finals.delete(threadId);
+            void tick?.();
+          }
+        }
         const update = veaselEventToLiveUpdate(parsed);
         if (update) listener(update);
       });
+      return () => {
+        for (const timer of pollers.values()) clearInterval(timer);
+        pollers.clear();
+        finals.clear();
+        unsubscribe();
+      };
     },
   };
 }

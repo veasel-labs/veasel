@@ -120,6 +120,18 @@ export class FocusStore {
     });
   }
 
+  /** Re-reads one thread from the server (a pending approval appeared or was decided mid-turn). */
+  private reloadThread(id: string): void {
+    if (!this.bridge) return;
+    void this.bridge.readThread(id).then((snapshot) => {
+      if (!snapshot) return;
+      const current = this.timelines.get(id) ?? EMPTY_TIMELINE;
+      this.timelines.set(id, { loaded: true, events: snapshot.events, live: current.live });
+      this.upsertThread(snapshot.thread);
+      this.notify();
+    });
+  }
+
   apply(update: FocusLiveUpdate): void {
     this.touchedDuringReload?.add(update.kind === 'thread' ? update.thread.id : update.threadId);
     switch (update.kind) {
@@ -131,6 +143,9 @@ export class FocusStore {
       case 'thread':
         this.upsertThread(update.thread);
         break;
+      case 'refresh':
+        this.reloadThread(update.threadId);
+        return;
       case 'removed':
         this.threads = this.threads.filter((thread) => thread.id !== update.threadId);
         this.timelines.delete(update.threadId);

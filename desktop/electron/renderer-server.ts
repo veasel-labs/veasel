@@ -65,11 +65,6 @@ function safeJoin(root: string, requestPath: string): string | null {
   return resolved;
 }
 
-/** True when `candidate` (already realpath-resolved) lies inside `realRoot`. */
-function isInside(realRoot: string, candidate: string): boolean {
-  return candidate === realRoot || candidate.startsWith(realRoot + path.sep);
-}
-
 function proxyApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -193,7 +188,7 @@ export async function startRendererServer(
     }
     fs.realpath(lexical, (rpError, real) => {
       if (rpError) return cb(rpError);
-      if (!isInside(realRoot, real)) {
+      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
         const denied: NodeJS.ErrnoException = new Error('outside root');
         denied.code = 'EOUTSIDE';
         return cb(denied);

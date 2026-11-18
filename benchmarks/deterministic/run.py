@@ -603,6 +603,7 @@ def run_cancel_tool_task(veasel: Path, provider_port: int, task: dict, work: Pat
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",
@@ -701,6 +702,7 @@ def run_queue_recovery_task(veasel: Path, provider_port: int, task: dict, work: 
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",
@@ -849,6 +851,7 @@ def run_worktree_isolation_task(veasel: Path, provider_port: int, task: dict, wo
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",

@@ -67,6 +67,8 @@ class Harness:
             "VEASEL_PORT": str(self.port),
             "VEASEL_DATA_DIR": str(self.data),
             "VEASEL_PLUGIN_DIR": str(root / "plugins"),
+            # Headless runner without a Secret Service: explicit plaintext opt-in.
+            "VEASEL_SECRET_STORE": "file",
             "HOME": str(root / "home"),
         }
         (root / "home").mkdir(exist_ok=True)

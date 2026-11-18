@@ -10,7 +10,8 @@ import x.json2
 // Approvals are NEVER auto-approved in this layer: every can_use_tool
 // request is denied in-band (fail closed) and surfaced in the returned
 // events so a future UI/API layer can own the decision. Cancellation is
-// the caller's process kill; timeout kills the process.
+// the operation cancel context (CliCancelFn), which kills the CLI's whole
+// process group; timeout does the same.
 
 // CliApprovalDecisionFn decides ONE tool approval. Returning false (or
 // the absence of an interactive decider) denies the tool: fail closed.
@@ -94,7 +95,7 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 	resume_session_id string, user_text string, timeout_ms int,
 	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !ProviderCliTurnResult {
 	return run_claude_cli_turn_observed(command, cwd, permission_mode, resume_session_id,
-		user_text, timeout_ms, on_text_delta, decide, unsafe { nil })
+		user_text, timeout_ms, on_text_delta, decide, unsafe { nil }, unsafe { nil })
 }
 
 // run_claude_cli_turn_observed is run_claude_cli_turn that also records the
@@ -103,7 +104,7 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 // still knows what it applied.
 pub fn run_claude_cli_turn_observed(command string, cwd string, permission_mode string,
 	resume_session_id string, user_text string, timeout_ms int,
-	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, facts &TurnFacts) !ProviderCliTurnResult {
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, facts &TurnFacts, cancel CliCancelFn) !ProviderCliTurnResult {
 	mut observed := unsafe { facts }
 	if facts != unsafe { nil } {
 		observed.set_effects_observed(true)
@@ -114,25 +115,14 @@ pub fn run_claude_cli_turn_observed(command string, cwd string, permission_mode 
 		process.set_work_folder(cwd)
 	}
 	process.set_redirect_stdio()
+	process.use_pgroup = true
 	process.run()
 	if process.status != .running {
 		process.close()
 		return error('unable to start installed CLI: ${command}')
 	}
 	defer {
-		if process.is_alive() {
-			process.signal_term()
-			for _ in 0 .. 20 {
-				if !process.is_alive() {
-					break
-				}
-				time.sleep(10 * time.millisecond)
-			}
-			if process.is_alive() {
-				process.signal_kill()
-			}
-		}
-		process.close()
+		cli_terminate_process(mut process)
 	}
 	process.stdin_write(json2.encode(ClaudeCliInit{
 		typ:        'control_request'
@@ -163,6 +153,9 @@ pub fn run_claude_cli_turn_observed(command string, cwd string, permission_mode 
 	started := time.now()
 	timeout := if timeout_ms > 0 { timeout_ms } else { 120_000 }
 	for {
+		if reason := cli_cancel_reason(cancel) {
+			return error(reason)
+		}
 		if time.since(started).milliseconds() > timeout {
 			return error('installed CLI turn timed out after ${timeout}ms')
 		}
@@ -382,9 +375,9 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 	// would too).
 	cli_model := if config.model == 'default' { '' } else { config.model }
 	if spec.protocol == 'acp' {
-		acp_turn := run_acp_cli_turn(spec.exec, ['acp'], cwd,
+		acp_turn := run_acp_cli_turn_cancellable(spec.exec, ['acp'], cwd,
 			acp_session_configs(spec.id, cli_model), safe_resume_id, prompt,
-			timeout_ms, on_text_delta, decide)!
+			timeout_ms, on_text_delta, decide, config.cli_cancel)!
 		if acp_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${acp_turn.outcome}')
 		}
@@ -398,8 +391,8 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 		}
 	}
 	if spec.protocol == 'app-server' {
-		codex_turn := run_codex_cli_turn(spec.exec, cwd, permission_mode,
-			cli_model, safe_resume_id, prompt, timeout_ms, on_text_delta, decide)!
+		codex_turn := run_codex_cli_turn_cancellable(spec.exec, cwd, permission_mode,
+			cli_model, safe_resume_id, prompt, timeout_ms, on_text_delta, decide, config.cli_cancel)!
 		if codex_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${codex_turn.outcome}')
 		}
@@ -416,7 +409,7 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 		}
 	}
 	turn := run_claude_cli_turn_observed(spec.exec, cwd, permission_mode, safe_resume_id,
-		prompt, timeout_ms, on_text_delta, decide, config.turn_facts)!
+		prompt, timeout_ms, on_text_delta, decide, config.turn_facts, config.cli_cancel)!
 	if turn.outcome != 'completed' {
 		return error('installed CLI ${spec.name} turn ${turn.outcome}')
 	}

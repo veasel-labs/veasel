@@ -397,7 +397,7 @@ fn cli_approval_timeout() time.Duration {
 // pending approval that a client approves or denies. Nothing is auto-approved:
 // expiry and a failed read both mean deny, and every decision is recorded in
 // facts for the turn outcome.
-fn (app &App) cli_approval_decider(session_id string, request_deadline time.Time, facts &TurnFacts) CliApprovalDecisionFn {
+fn (app &App) cli_approval_decider(session_id string, request_deadline time.Time, facts &TurnFacts, cancel CliCancelFn) CliApprovalDecisionFn {
 	if os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS') or { '' } != '1' {
 		return fn [facts] (request_id string, tool_name string, input_json string) bool {
 			mut observed := unsafe { facts }
@@ -411,7 +411,7 @@ fn (app &App) cli_approval_decider(session_id string, request_deadline time.Time
 	} else {
 		request_deadline
 	}
-	return fn [app, session_id, wait_deadline, facts] (request_id string, tool_name string, input_json string) bool {
+	return fn [app, session_id, wait_deadline, facts, cancel] (request_id string, tool_name string, input_json string) bool {
 		mut observed := unsafe { facts }
 		mut store := app.store
 		approval := store.create_cli_tool_approval(session_id, request_id, tool_name, input_json) or {
@@ -419,6 +419,13 @@ fn (app &App) cli_approval_decider(session_id string, request_deadline time.Time
 			return false
 		}
 		for time.now() < wait_deadline {
+			// A cancelled or expired turn must not keep a person waiting on a
+			// request nothing will act on: expire it and deny in-band.
+			if _ := cli_cancel_reason(cancel) {
+				store.expire_cli_tool_approval(approval.id) or {}
+				observed.note_approval(tool_name, 'expired')
+				return false
+			}
 			current := store.get_cli_tool_approval(approval.id) or {
 				observed.note_approval(tool_name, 'denied')
 				return false

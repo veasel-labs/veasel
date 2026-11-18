@@ -91,6 +91,7 @@ jobs:
           python -m py_compile benchmarks/real-task/run.py
           python -m unittest discover -s benchmarks/real-task -p 'test_*.py' -v
           python -m unittest discover -s tools/provider-catalog -p 'test_*.py' -v
+          python -m unittest discover -s tools/release -p 'test_*.py' -v
 
   backend:
     name: V backend / ${{ matrix.os }}
@@ -727,7 +728,17 @@ jobs:
 
   publish-prerelease:
     name: Publish verified prerelease
+    # Core jobs must be exactly `success` (cancelled/skipped/failure block the
+    # release). Desktop jobs are allowed to be non-success only because the
+    # staging step then publishes an explicit CLI-only release marked
+    # `desktop: unavailable`; their result is recorded, never assumed.
     if: >-
+      !cancelled() &&
+      needs.release-plan.result == 'success' &&
+      needs.backend.result == 'success' &&
+      needs.security.result == 'success' &&
+      needs.tui.result == 'success' &&
+      needs.harbor-adapter.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       needs.release-plan.outputs.released == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -750,118 +761,32 @@ jobs:
           path: release-assets
           merge-multiple: true
       # The merged download mixes three OS artifacts that each contain a
-      # file named like the standalone TUI (Linux ELF, macOS Mach-O), so the
-      # loose veasel-tui that lands in release-assets is whichever artifact
-      # was merged last — in v0.64.2 it was a binary that segfaulted on
-      # startup and did not match the verified build. Take the standalone
-      # binaries from the checksum-verified archives instead (each archive
-      # carries the exact binary its job verified plus build.json
-      # provenance), and fail the publish if they do not match provenance.
-      - name: Use verified standalone TUI binaries from archives
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import tarfile
-          import zipfile
-          from pathlib import Path
-
-          def sha256(path):
-              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-          def extract(archive, member, dest):
-              if archive.endswith('.zip'):
-                  with zipfile.ZipFile(archive) as zf:
-                      data = zf.read(member)
-              else:
-                  with tarfile.open(archive) as tf:
-                      data = tf.extractfile(member).read()
-              Path(dest).write_bytes(data)
-
-          work = Path('/tmp/standalone-verify')
-          work.mkdir(exist_ok=True)
-          cases = [
-              ('release-assets/veasel-Linux.tar.gz', 'veasel-tui',
-               'release-assets/veasel-tui'),
-              ('release-assets/veasel-Windows.zip', 'veasel-tui.exe',
-               'release-assets/veasel-tui.exe'),
-          ]
-          for archive, member, dest in cases:
-              extract(archive, 'build.json', work / 'build.json')
-              provenance = json.loads((work / 'build.json').read_text())
-              extract(archive, member, dest)
-              actual = sha256(dest)
-              expected = provenance['tui_binary_sha256']
-              if actual != expected:
-                  raise SystemExit(
-                      f'{dest} sha256 {actual} != verified provenance {expected}')
-              print(f'{dest}: verified against build provenance ({actual})')
-          PY
-          chmod +x release-assets/veasel-tui
-      - name: Build checksums and release manifest
+      # file named like the standalone TUI, so loose binaries here are not
+      # trustworthy (v0.64.2 shipped one that segfaulted). The staging script
+      # takes standalone binaries only from the checksum-verified archives,
+      # checks them against build.json provenance, and builds the complete
+      # upload set (SHA256SUMS + release.json cover every uploaded asset).
+      # Desktop installers are attached only when ALL desktop lanes verified;
+      # otherwise the release is CLI-only and says `desktop: unavailable`.
+      - name: Stage verified release assets
         env:
           RELEASE_TAG: ${{ needs.release-plan.outputs.tag }}
           RELEASE_VERSION: ${{ needs.release-plan.outputs.version }}
           RELEASE_COMMIT: ${{ github.sha }}
+          DESKTOP_LANES: linux=${{ needs.desktop-package.result }},macos=${{ needs.desktop-package-macos.result }},windows=${{ needs.desktop-package-windows.result }}
         run: |
           set -euo pipefail
-          mapfile -t archives < <(find release-assets -maxdepth 1 -type f \( -name 'veasel-Linux.tar.gz' -o -name 'veasel-macOS.tar.gz' -o -name 'veasel-Windows.zip' \) | sort)
-          test "${#archives[@]}" -eq 3
-          (
-            cd release-assets
-            sha256sum veasel-Linux.tar.gz veasel-macOS.tar.gz veasel-Windows.zip > ../SHA256SUMS
-            # Desktop artifacts ride along when the package jobs produced them.
-            for desktop_asset in veasel-desktop-*; do
-              if [[ -f "$desktop_asset" ]]; then
-                sha256sum "$desktop_asset" >> ../SHA256SUMS
-              fi
-            done
-            sha256sum --check ../SHA256SUMS
-          )
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          assets = []
-          for path in sorted(Path('release-assets').iterdir()):
-              if path.name not in {'veasel-Linux.tar.gz', 'veasel-macOS.tar.gz', 'veasel-Windows.zip'}:
-                  continue
-              digest = hashlib.sha256(path.read_bytes()).hexdigest()
-              assets.append({'name': path.name, 'sha256': digest})
-          if len(assets) != 3:
-              raise SystemExit('expected Linux, macOS, and Windows release archives')
-          Path('release.json').write_text(json.dumps({
-              'name': 'Veasel Code',
-              'version': os.environ['RELEASE_VERSION'],
-              'tag': os.environ['RELEASE_TAG'],
-              'source_commit': os.environ['RELEASE_COMMIT'],
-              'channel': 'next',
-              'prerelease': True,
-              'assets': assets,
-          }, indent=2) + '\n')
-          PY
-      - name: Publish GitHub prerelease
+          python3 -m unittest discover -s tools/release -p 'test_*.py'
+          python3 tools/release/build_release_assets.py \
+            --assets-dir release-assets --out-dir release-upload \
+            --tag "$RELEASE_TAG" --version "$RELEASE_VERSION" \
+            --commit "$RELEASE_COMMIT" --desktop-lanes "$DESKTOP_LANES"
+          (cd release-upload && sha256sum --check SHA256SUMS)
+      - name: Publish GitHub prerelease (draft, verify, publish; never overwrite)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.release-plan.outputs.tag }}
           RELEASE_VERSION: ${{ needs.release-plan.outputs.version }}
           RELEASE_COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          # Publish the verified commit that finished CI. Main may have moved
-          # ahead while this run was queued; that is OK for the next channel.
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            existing="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq .target_commitish)"
-            if [[ "$existing" == "$RELEASE_COMMIT" || "$existing" == "${RELEASE_COMMIT:0:7}" ]]; then
-              gh release upload "$RELEASE_TAG" release-assets/* SHA256SUMS release.json --clobber
-              exit 0
-            fi
-            echo "::error::Release tag collision: $RELEASE_TAG points to $existing, but this verified build is for $RELEASE_COMMIT. Re-run CI after the existing release is visible to the version planner."
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" release-assets/* SHA256SUMS release.json \
-            --target "$RELEASE_COMMIT" --title "Veasel Code $RELEASE_VERSION" \
-            --generate-notes --prerelease
+        run: tools/release/publish-release.sh release-upload RELEASE_NOTES.md

@@ -219,6 +219,17 @@ class PublishTests(unittest.TestCase):
         self.assertNotIn("--clobber", log)
         self.assertNotIn("release upload", log)
 
+    def test_relative_upload_dir_works_like_ci(self):
+        # CI calls `publish-release.sh release-upload RELEASE_NOTES.md` from the
+        # workspace root. The script cd's into its download dir during
+        # verification, so a relative path must be resolved up front.
+        result = subprocess.run(
+            ["bash", str(HERE / "publish-release.sh"), self.out.name, "RELEASE_NOTES.md"],
+            cwd=self.root, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (rel,) = self.releases()
+        self.assertFalse(rel["draft"])
+
     def test_rerun_same_assets_verifies_and_skips(self):
         self.assertEqual(self.run_publish().returncode, 0)
         self.log.write_text("")

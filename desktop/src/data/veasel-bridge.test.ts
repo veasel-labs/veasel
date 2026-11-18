@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildTimeline, pendingApproval } from '../features/focus/timeline';
 import {
   approvalToEvent,
   createVeaselFocusBridge,
@@ -94,6 +95,39 @@ describe('veasel Focus bridge HTTP behavior', () => {
     const snapshot = await bridge.readThread('s1');
     expect(snapshot?.thread.status).toBe('awaiting-approval');
     expect(snapshot?.events.some((event) => event.type === 'approval.requested')).toBe(true);
+  });
+
+  it('opens the turn for a pending approval so Focus can render the approval dialog', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+        // The user message is persisted only when the turn ends, so a running turn has none yet.
+        '/v1/sessions/s1/messages': [],
+        '/v1/sessions/s1/cli-approvals': [{ id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' }],
+      }),
+    });
+    const snapshot = await bridge.readThread('s1');
+    const pending = pendingApproval(buildTimeline(snapshot?.events ?? [], {}));
+    expect(pending?.approval?.state).toBe('pending');
+  });
+
+  it('puts a pending approval in the next turn when earlier turns are complete', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+        '/v1/sessions/s1/messages': [
+          { id: 1, role: 'user', content: 'first' },
+          { id: 2, role: 'assistant', content: 'done' },
+        ],
+        '/v1/sessions/s1/cli-approvals': [{ id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' }],
+      }),
+    });
+    const snapshot = await bridge.readThread('s1');
+    const turns = buildTimeline(snapshot?.events ?? [], {});
+    expect(turns.at(-1)?.turn).toBe(2);
+    expect(pendingApproval(turns)?.approval?.state).toBe('pending');
   });
 
   it('never widens a session-wide approval decision', async () => {

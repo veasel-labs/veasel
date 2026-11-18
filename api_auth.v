@@ -112,7 +112,7 @@ fn api_token_path(data_dir string) string {
 	return os.join_path(data_dir, api_token_file_name)
 }
 
-fn remove_stale_token_temporaries(data_dir string) {
+fn remove_stale_token_temporaries(data_dir string, max_age_seconds int) {
 	entries := os.ls(data_dir) or { return }
 	now := time.now().unix()
 	for entry in entries {
@@ -121,7 +121,7 @@ fn remove_stale_token_temporaries(data_dir string) {
 		}
 		path := os.join_path(data_dir, entry)
 		st := os.lstat(path) or { continue }
-		if now - i64(st.mtime) > api_token_stale_temp_seconds {
+		if now - i64(st.mtime) > max_age_seconds {
 			os.rm(path) or {}
 		}
 	}
@@ -150,7 +150,7 @@ fn read_token_file(path string) !string {
 // concurrently starting servers converge on one value.
 fn load_or_create_api_token(data_dir string) !string {
 	ensure_private_directory(data_dir)!
-	remove_stale_token_temporaries(data_dir)
+	remove_stale_token_temporaries(data_dir, api_token_stale_temp_seconds)
 	path := api_token_path(data_dir)
 	for _ in 0 .. 5 {
 		if os.exists(path) || os.is_link(path) {

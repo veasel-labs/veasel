@@ -274,17 +274,19 @@ fn test_stale_temporaries_from_a_crashed_process_are_removed_and_ignored() {
 	root := auth_test_root()
 	defer { os.rmdir_all(root) or {} }
 	stale := os.join_path(root, 'api-token.tmp-1-deadbeef')
+	unrelated := os.join_path(root, 'veasel.sqlite3')
 	os.write_file(stale, 'partial') or { panic(err) }
-	old := time.now().unix() - 3600
-	// Backdate beyond the staleness window.
-	$if !windows {
-		os.execute('touch -d @${old} ${stale}')
-	}
+	os.write_file(unrelated, 'keep') or { panic(err) }
+	// A fresh temporary may belong to a live server starting right now:
+	// the production window leaves it alone, and startup never uses it.
 	token := load_or_create_api_token(root) or { panic(err) }
 	assert is_valid_generated_token(token)
-	$if !windows {
-		assert !os.exists(stale)
-	}
+	assert os.exists(stale)
+	// Once older than the window it is removed; other files are untouched.
+	remove_stale_token_temporaries(root, -1)
+	assert !os.exists(stale)
+	assert os.exists(unrelated)
+	assert os.exists(api_token_path(root))
 }
 
 fn test_group_writable_data_directory_is_restricted() {

@@ -38,7 +38,7 @@ Veasel can ship honestly in this slice.
 
 Trusted MCP stdio may opt into the same `/usr/bin/sandbox-exec` binary via
 `VEASEL_MCP_STDIO_SANDBOX` defaults to `require` (unset/invalid fails closed);
-explicit `auto` allows unsandboxed fallback and `off` disables wrapping. The
+`auto`/`off` refuse unless the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in is set. The
 MCP profile keeps network shared (many servers need outbound HTTPS), carves
 writable `PLUGIN_ROOT` and `PLUGIN_DATA` instead of a workspace root, and
 advertises `mcp.stdio.sandbox.seatbelt` only when wrap will run. Windows MCP

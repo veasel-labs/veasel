@@ -106,29 +106,61 @@ fn mcp_stdio_sandbox_mode() ApprovedShellSandboxMode {
 fn mcp_stdio_review_sandbox_preview() ReviewSandboxPreview {
 	mode := mcp_stdio_sandbox_mode()
 	mut backend := 'none'
-	mut will_wrap := false
 	if mcp_stdio_sandbox_bubblewrap_capability() {
 		backend = 'bubblewrap'
-		will_wrap = true
 	} else if mcp_stdio_sandbox_seatbelt_capability() {
 		backend = 'seatbelt'
-		will_wrap = true
 	} else if mcp_stdio_sandbox_windows_capability() {
 		backend = 'windows'
-		will_wrap = true
 	}
-	// MCP stdio wraps always share network; unsandboxed inherits the host.
-	network := if will_wrap { 'shared' } else { 'host' }
+	plan := approved_shell_sandbox_plan(mode, approved_shell_backend_available(), shell_unsandboxed_opt_in())
+	will_wrap := plan == .wrap && backend != 'none'
+	// Wrapped MCP stdio shares network; an unsandboxed run inherits the host;
+	// a refused server runs nothing (network none).
+	network := if will_wrap {
+		'shared'
+	} else if plan == .unsandboxed {
+		'host'
+	} else {
+		'none'
+	}
 	return ReviewSandboxPreview{
-		mode:      approved_shell_sandbox_mode_label(mode)
-		will_wrap: will_wrap
-		backend:   backend
-		network:   network
+		mode:        approved_shell_sandbox_mode_label(mode)
+		will_wrap:   will_wrap
+		backend:     backend
+		network:     network
+		unsandboxed: plan == .unsandboxed
 	}
 }
 
 fn warn_mcp_stdio_unsandboxed_default() {
-	eprintln('veasel: trusted MCP stdio is running unsandboxed because VEASEL_MCP_STDIO_SANDBOX=off was explicitly set. It inherits Veasel OS-user permissions.')
+	eprintln('veasel: WARNING trusted MCP stdio is running UNSANDBOXED because ${shell_sandbox_opt_in_env} is set. It inherits Veasel OS-user permissions.')
+}
+
+// mcp_stdio_sandbox_refusal is the actionable reason shown when a stdio MCP
+// server cannot start because isolation is required but unavailable.
+fn mcp_stdio_sandbox_refusal() string {
+	os_name := $if linux {
+		'linux'
+	} $else $if macos {
+		'macos'
+	} $else $if windows {
+		'windows'
+	} $else {
+		'other'
+	}
+	return mcp_stdio_sandbox_refusal_for(os_name)
+}
+
+fn mcp_stdio_sandbox_refusal_for(os_name string) string {
+	return 'Trusted MCP stdio is unavailable: an OS sandbox is required but not usable (${shell_sandbox_install_hint(os_name)}). No server process was started. To knowingly run without isolation set ${shell_sandbox_opt_in_env}=${shell_unsandboxed_opt_in_token} together with ${mcp_stdio_sandbox_mode_env}=auto or off.'
+}
+
+// mcp_stdio_unsandboxed_capability is true when stdio MCP will run with no OS
+// sandbox because of the explicit opt-in (never the default).
+fn mcp_stdio_unsandboxed_capability() bool {
+	return approved_shell_sandbox_plan(mcp_stdio_sandbox_mode(), approved_shell_backend_available(),
+		shell_unsandboxed_opt_in()) == .unsandboxed
 }
 
 // mcp_stdio_sandbox_bubblewrap_capability is true only when Linux Bubblewrap
@@ -196,46 +228,25 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	env['PLUGIN_DATA'] = data
 	args := server.args.map(expand_plugin_placeholders(it, root, data))
 	mode := mcp_stdio_sandbox_mode()
-	$if linux {
-		if mode != .off {
-			if bubblewrap_available() {
-				return start_plugin_mcp_transport_linux_sandboxed(root, data, cwd, server.command,
-					args, env)
-			}
-			if mode == .require {
-				return error('Trusted MCP stdio requires bubblewrap (bwrap) because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
-			}
-		}
-	} $else $if macos {
-		if mode != .off {
-			if seatbelt_available() {
-				return start_plugin_mcp_transport_macos_sandboxed(root, data, cwd, server.command,
-					args, env)
-			}
-			if mode == .require {
-				return error('Trusted MCP stdio requires /usr/bin/sandbox-exec because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
-			}
-		}
-	} $else $if windows {
-		if mode != .off {
-			if windows_appcontainer_sandbox_available() {
-				return start_plugin_mcp_transport_windows_sandboxed(root, data, cwd, server.command,
-					args, env)
-			}
-			if mode == .require {
-				return error('Trusted MCP stdio requires a Windows AppContainer because VEASEL_MCP_STDIO_SANDBOX=require; no unsandboxed fallback was started')
-			}
-		}
-	} $else {
-		if mode == .require {
-			return error('VEASEL_MCP_STDIO_SANDBOX=require is only implemented for Linux Bubblewrap, macOS Seatbelt, and Windows AppContainer; refuse to start unsandboxed MCP stdio')
+	plan := approved_shell_sandbox_plan(mode, approved_shell_backend_available(), shell_unsandboxed_opt_in())
+	if plan == .refuse {
+		return error(mcp_stdio_sandbox_refusal())
+	}
+	if plan == .wrap {
+		$if linux {
+			return start_plugin_mcp_transport_linux_sandboxed(root, data, cwd, server.command,
+				args, env)
+		} $else $if macos {
+			return start_plugin_mcp_transport_macos_sandboxed(root, data, cwd, server.command,
+				args, env)
+		} $else $if windows {
+			return start_plugin_mcp_transport_windows_sandboxed(root, data, cwd, server.command,
+				args, env)
 		}
 	}
-	if mode == .off {
-		warn_mcp_stdio_unsandboxed_default()
-	} else if mode == .auto {
-		eprintln('veasel: trusted MCP stdio falling back unsandboxed (VEASEL_MCP_STDIO_SANDBOX=auto but platform sandbox unavailable)')
-	}
+	// plan == .unsandboxed: only reachable with the explicit
+	// VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in.
+	warn_mcp_stdio_unsandboxed_default()
 	mut process := os.new_process(server.command)
 	process.set_args(args)
 	process.set_work_folder(cwd)

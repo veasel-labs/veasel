@@ -46,7 +46,7 @@ describe("formatMcpReview", () => {
     expect(text).toBe("keep\nline\\u0007two")
   })
 
-  test("shows explicit-off stdio sandbox status ahead of arguments", () => {
+  test("shows the explicit unsandboxed opt-in loudly ahead of arguments", () => {
     const text = formatMcpReview({
       plugin: "review-tools",
       server: "local",
@@ -56,17 +56,21 @@ describe("formatMcpReview", () => {
       pending: true,
       argumentsText: '{\n  "path": "src/main.v"\n}',
       maxLines: 20,
-      stdioSandbox: { mode: "off", will_wrap: false, backend: "none" },
+      stdioSandbox: { mode: "off", will_wrap: false, backend: "none", network: "host", unsandboxed: true },
     })
     expect(text).toContain("Stdio sandbox: mode off · will not wrap")
-    expect(text).toContain("because VEASEL_MCP_STDIO_SANDBOX=off was explicitly set")
+    expect(text).toContain("WARNING: UNSANDBOXED")
+    expect(text).toContain("VEASEL_SHELL_ALLOW_UNSANDBOXED")
     expect(text.indexOf("Stdio sandbox:")).toBeLessThan(text.indexOf('"path"'))
     expect(mcpStdioSandboxWarning({ mode: "auto", will_wrap: true, backend: "bubblewrap" })).toContain("Bubblewrap")
   })
 
   test("explains that required stdio sandboxing refuses to start without a backend", () => {
-    const warning = mcpStdioSandboxWarning({ mode: "require", will_wrap: false, backend: "none" })
-    expect(warning).toContain("will not start because the required OS sandbox is unavailable")
-    expect(warning).toContain("VEASEL_MCP_STDIO_SANDBOX=off only if you intentionally accept")
+    for (const mode of ["require", "auto", "off"]) {
+      const warning = mcpStdioSandboxWarning({ mode, will_wrap: false, backend: "none", network: "none" })
+      expect(warning).toContain("unavailable and will not start")
+      expect(warning).toContain("explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in")
+      expect(warning).not.toContain("WARNING: UNSANDBOXED")
+    }
   })
 })

@@ -13,7 +13,12 @@ RUN pacman -Syu --noconfirm --needed \
     && pacman -Scc --noconfirm \
     && rm -rf /var/cache/pacman/pkg/*
 
+# Unprivileged by default (Trivy DS-0002). run-focus-journeys.sh still passes the host uid/gid with
+# --user, which overrides this; HOME and TMPDIR live on tmpfs mounts, so any uid can write there.
+RUN groupadd --gid 1000 e2e && useradd --uid 1000 --gid 1000 --create-home --shell /usr/bin/nologin e2e
+
 ENV NO_AT_BRIDGE=1 \
     VEASEL_E2E_NO_SANDBOX=1 \
     VEASEL_E2E_XVFB=1
 WORKDIR /work/desktop
+USER e2e

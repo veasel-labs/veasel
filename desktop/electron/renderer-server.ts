@@ -49,12 +49,63 @@ const TYPES: Record<string, string> = {
   '.map': 'application/json',
 };
 
-function safeJoin(root: string, requestPath: string): string | null {
-  const decoded = decodeURIComponent((requestPath.split('?')[0] ?? '/').split('#')[0] ?? '/');
-  const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
-  const resolved = path.resolve(root, relative);
-  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
-  return resolved;
+const MAX_STATIC_PATH = 2048;
+
+type StaticKey =
+  | { kind: 'key'; key: string }
+  | { kind: 'forbidden' }
+  | { kind: 'too-long' };
+
+/**
+ * Turn a request target into a lookup key for the startup file index. The key
+ * is only ever used to look up a pre-validated path in a Map; it is never
+ * passed to a filesystem call, so traversal is impossible by construction.
+ */
+function resolveStaticKey(requestPath: string): StaticKey {
+  const rawPath = (requestPath.split('?')[0] ?? '/').split('#')[0] ?? '/';
+  if (rawPath.length > MAX_STATIC_PATH) return { kind: 'too-long' };
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPath);
+  } catch {
+    return { kind: 'forbidden' };
+  }
+  // NUL truncates paths in native APIs; backslash is a separator on Windows.
+  if (decoded.includes('\0') || decoded.includes('\\') || rawPath.includes('\\')) {
+    return { kind: 'forbidden' };
+  }
+  const normalized = path.posix.normalize(`/${decoded}`);
+  return { kind: 'key', key: normalized === '/' ? '/index.html' : normalized };
+}
+
+/**
+ * Index every regular file under the packaged renderer once, at startup.
+ * Symlinks are resolved and kept only when the real file stays inside the real
+ * root; symlinked directories and escapes are excluded. Requests can then only
+ * ever reach files that were validated here.
+ */
+function indexDist(realRoot: string): Map<string, string> {
+  const index = new Map<string, string>();
+  const walk = (dir: string, rel: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      const key = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(full, key);
+        continue;
+      }
+      let real: string;
+      try {
+        real = fs.realpathSync(full);
+        if (!real.startsWith(realRoot + path.sep) || !fs.statSync(real).isFile()) continue;
+      } catch {
+        continue;
+      }
+      index.set(key, real);
+    }
+  };
+  walk(realRoot, '');
+  return index;
 }
 
 function proxyApi(
@@ -146,6 +197,8 @@ export async function startRendererServer(
   options: RendererServerOptions = {},
 ): Promise<RendererServer> {
   const root = path.resolve(distDir);
+  const realRoot = fs.realpathSync(root);
+  const fileIndex = indexDist(realRoot);
   if (!fs.existsSync(path.join(root, 'index.html'))) {
     throw new Error(`Renderer dist missing index.html at ${root}`);
   }
@@ -159,8 +212,16 @@ export async function startRendererServer(
     res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
   };
 
-  const server = http.createServer((req, res) => {
+  const sendText = (res: ServerResponse, status: number, text: string): void => {
+    if (res.headersSent || res.writableEnded) return;
+    res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8' }).end(text);
+  };
+
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
     const url = req.url ?? '/';
+    // DNS-rebinding guard for every request, static included: only this
+    // server's own loopback authority is accepted (absent Host fails closed).
+    if (req.headers.host !== ownAuthority) return rejectForbidden(res);
     // Veasel API surface is proxied same-origin too (no CORS, no LAN):
     // the renderer only ever talks to this loopback server.
     if (url === '/api' || url.startsWith('/api/') || url === '/v1' || url.startsWith('/v1/')) {
@@ -168,7 +229,6 @@ export async function startRendererServer(
       // capability, own Host (DNS-rebinding), own Origin when present, and
       // never a cross-site browser context.
       if (!tokenMatches(req.headers[PROXY_TOKEN_HEADER], proxyToken)) return rejectForbidden(res);
-      if (req.headers.host !== ownAuthority) return rejectForbidden(res);
       const origin = req.headers.origin;
       if (origin !== undefined && origin !== `http://${ownAuthority}`) return rejectForbidden(res);
       if (req.headers['sec-fetch-site'] === 'cross-site') return rejectForbidden(res);
@@ -187,29 +247,33 @@ export async function startRendererServer(
       return;
     }
 
-    const filePath = safeJoin(root, url);
-    if (!filePath) {
-      res.writeHead(403).end('forbidden');
-      return;
-    }
-    fs.readFile(filePath, (error, data) => {
-      if (error) {
-        if (error.code === 'ENOENT') {
-          fs.readFile(path.join(root, 'index.html'), (fallbackError, html) => {
-            if (fallbackError) {
-              res.writeHead(404).end('not found');
-              return;
-            }
-            res.writeHead(200, { 'content-type': TYPES['.html'], ...STATIC_HARDENING_HEADERS }).end(html);
-          });
-          return;
-        }
-        res.writeHead(500).end('error');
-        return;
-      }
-      const type = TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+    const resolved = resolveStaticKey(url);
+    if (resolved.kind === 'forbidden') return sendText(res, 403, 'forbidden');
+    if (resolved.kind === 'too-long') return sendText(res, 414, 'not found');
+    // Unknown paths fall back to the SPA entry point; the file comes from the
+    // startup index, never from the request.
+    const file = fileIndex.get(resolved.key) ?? fileIndex.get('/index.html');
+    if (!file) return sendText(res, 404, 'not found');
+    fs.readFile(file, (error, data) => {
+      if (error) return sendText(res, 404, 'not found');
+      const type = TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
       res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache', ...STATIC_HARDENING_HEADERS }).end(data);
     });
+  };
+
+  const server = http.createServer((req, res) => {
+    // Last-resort guard: nothing may throw out of the handler into the
+    // Electron main process.
+    try {
+      handle(req, res);
+    } catch {
+      if (!res.headersSent) sendText(res, 500, 'error');
+      else res.destroy();
+    }
+  });
+  server.on('clientError', (_error, socket) => {
+    if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+    else socket.destroy();
   });
 
   await new Promise<void>((resolve, reject) => {

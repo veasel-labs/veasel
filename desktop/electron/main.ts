@@ -168,7 +168,12 @@ async function createWindow(): Promise<void> {
   // Navigation stays on the shell's own loopback origin; anything else
   // is denied here (external links go through the open handler below).
   mainWindow.webContents.on('will-navigate', (event, target) => {
-    if (new URL(target).origin !== new URL(url).origin) event.preventDefault();
+    try {
+      if (new URL(target).origin === new URL(url).origin) return;
+    } catch {
+      // Unparseable target: deny.
+    }
+    event.preventDefault();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {

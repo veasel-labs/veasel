@@ -59,6 +59,10 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if shell_sandbox_windows_capability() {
 		features << 'shell.sandbox.windows'
 	}
+	if shell_unsandboxed_capability() {
+		// Loud, explicit operator opt-in: approved shell runs with no OS sandbox.
+		features << 'shell.sandbox.unsandboxed_opt_in'
+	}
 	features << 'agent.execution_policy'
 	if app.allow_auto_edit {
 		features << 'agent.execution_policy.auto_edit'

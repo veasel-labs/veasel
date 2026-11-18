@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Veasel Code API
   version: 0.3.1
-  description: Local sessions, multi-provider chat, bounded workspace tools, durable approvals, local Agent Plugins and replayable events. Approved shell and trusted stdio MCP default to platform OS sandboxing and fail closed when the backend is unavailable. Explicit VEASEL_SHELL_SANDBOX=auto or VEASEL_MCP_STDIO_SANDBOX=auto permits unsandboxed fallback; off explicitly disables wrapping. Shell network is denied by default; MCP stdio network is shared inside its sandbox. Capabilities are advertised only when wrapping will run. AppContainer + Job is not Codex WFP/LPAC.
+  description: Local sessions, multi-provider chat, bounded workspace tools, durable approvals, local Agent Plugins and replayable events. Approved shell and trusted stdio MCP default to platform OS sandboxing and fail closed when the backend is unavailable. VEASEL_MCP_STDIO_SANDBOX=auto permits unsandboxed MCP fallback; approved shell never falls back silently and only runs unsandboxed with the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in (advertised as shell.sandbox.unsandboxed_opt_in). Shell network is denied by default; MCP stdio network is shared inside its sandbox. Capabilities are advertised only when wrapping will run. AppContainer + Job is not Codex WFP/LPAC.
 servers:
   - url: http://127.0.0.1:4097
     description: Loopback only; remote binding is not implemented.
@@ -2087,7 +2087,7 @@ paths:
         schema: { type: string, format: uuid }
     post:
       operationId: approveShellCommandProposal
-      description: Durably records explicit approval before running the exact reviewed command. Shell execution defaults to the platform OS sandbox. An unset or invalid VEASEL_SHELL_SANDBOX fails closed if the backend is unavailable; explicit auto permits unsandboxed fallback and off disables wrapping. Shell network is denied unless VEASEL_SHELL_SANDBOX_NETWORK=allow. Bounded timeout and output apply; execution is never retried after interruption.
+      description: Durably records explicit approval before running the exact reviewed command. Shell execution defaults to the platform OS sandbox. An unset or invalid VEASEL_SHELL_SANDBOX fails closed if the backend is unavailable; auto and off also fail closed unless the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in is set. Shell network is denied unless VEASEL_SHELL_SANDBOX_NETWORK=allow. Bounded timeout and output apply; execution is never retried after interruption.
       responses:
         '200':
           description: Command outcome and bounded output.
@@ -3223,12 +3223,13 @@ components:
     ReviewSandboxPreview:
       type: object
       required: [mode, will_wrap, backend, network]
-      description: Computed at response time from VEASEL_SHELL_SANDBOX or VEASEL_MCP_STDIO_SANDBOX and platform backends. Not persisted. network is deny|allow for wrapped shell (VEASEL_SHELL_SANDBOX_NETWORK), shared for wrapped MCP stdio, and host when unsandboxed.
+      description: Computed at response time from VEASEL_SHELL_SANDBOX or VEASEL_MCP_STDIO_SANDBOX and platform backends. Not persisted. network is deny|allow for wrapped shell (VEASEL_SHELL_SANDBOX_NETWORK), shared for wrapped MCP stdio, and none when approval would be refused, and host when unsandboxed through the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in.
       properties:
         mode: { type: string, enum: [off, auto, require] }
+        unsandboxed: { type: boolean, description: True only when the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in will run approved shell with no OS sandbox. }
         will_wrap: { type: boolean, description: True only when this process will wrap on the current platform. }
         backend: { type: string, enum: [none, bubblewrap, seatbelt, windows] }
-        network: { type: string, enum: [deny, allow, shared, host], description: Effective network posture for the reviewed process. }
+        network: { type: string, enum: [deny, allow, shared, host, none], description: Effective network posture for the reviewed process. }
     PluginMCPToolCallApproval:
       type: object
       required: [id, operation_id, plugin_name, server_name, tool_name, arguments_json, status, reviewed_at, created_at, updated_at, stdio_sandbox]

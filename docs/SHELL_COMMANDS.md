@@ -27,7 +27,8 @@ of review.
 
 | Variable | Values | Behavior |
 |---|---|---|
-| `VEASEL_SHELL_SANDBOX` | `require` (default), `auto`, `off` | Fail closed unless wrapped; explicitly allow fallback when unavailable; or explicitly disable wrapping |
+| `VEASEL_SHELL_SANDBOX` | `require` (default), `auto`, `off` | `require`/`auto`: wrap or refuse. `off`: do not wrap, which is itself refused without the opt-in below |
+| `VEASEL_SHELL_ALLOW_UNSANDBOXED` | unset (default) or exactly `i-accept-unsandboxed-shell-execution` | The only way to run approved shell with no OS sandbox. Applies to `auto` (backend missing) and `off`; ignored by `require` |
 | `VEASEL_SHELL_SANDBOX_NETWORK` | unset/deny (default), `allow` | Whether the platform sandbox may share host network |
 
 Capability flags are advertised only when that platform will actually wrap:
@@ -39,9 +40,18 @@ Capability flags are advertised only when that platform will actually wrap:
 | `shell.sandbox.windows` | Windows, mode not `off`, and AppContainer + Job Object wrap can be created |
 
 Unset, empty, and invalid values resolve to `require`. Missing backends then
-fail closed with no unsandboxed fallback. `auto` is an explicit compatibility
-choice that allows unsandboxed fallback and does **not** advertise a sandbox
-capability; `off` explicitly disables wrapping.
+fail closed with no unsandboxed fallback. `auto` no longer falls back silently:
+with no backend the command is refused with a message naming what to install
+(bubblewrap on Linux, `/usr/bin/sandbox-exec` on macOS, AppContainer on
+Windows) and no process starts. `off` is refused the same way. Running without
+isolation requires setting `VEASEL_SHELL_ALLOW_UNSANDBOXED` to the exact token
+above together with `auto` or `off`. When active, the authenticated
+`/v1/capabilities` output includes `shell.sandbox.unsandboxed_opt_in`, command
+review responses carry `sandbox.unsandboxed: true` and `network: host`, and the
+approval UI shows an `UNSANDBOXED` warning. A refused review shows
+`network: none`. Autonomous mode is unchanged and always fails closed. Migration:
+operators who relied on `auto` or `off` must add the opt-in to keep the old
+behavior; MCP stdio sandbox modes are unaffected.
 
 ## Linux Bubblewrap for approved commands
 

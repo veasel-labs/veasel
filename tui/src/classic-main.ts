@@ -742,7 +742,7 @@ function approvedShellSandboxHint(): string {
   if (shellSandboxCapability === "windows") {
     return "On Windows, approved commands run inside AppContainer + Job Object when available (workspace ACL grant, network isolated by default, process-tree/resource caps; not Codex WFP/LPAC)."
   }
-  return "Approved commands require the platform OS sandbox by default and are refused if it is unavailable. VEASEL_SHELL_SANDBOX=auto explicitly permits an unsandboxed fallback; off disables wrapping."
+  return "Approved commands require the platform OS sandbox and are refused if it is unavailable, in every VEASEL_SHELL_SANDBOX mode. Only the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in permits running without isolation (capability shell.sandbox.unsandboxed_opt_in)."
 }
 
 function pendingShellSandboxNotice(count: number): string {

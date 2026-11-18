@@ -802,6 +802,34 @@ pub fn (app &App) search_workspace(mut ctx Context, id string) veb.Result {
 	return ctx.json(result)
 }
 
+@['/v1/sessions/:id/workspace/git/changes'; get]
+pub fn (app &App) list_session_git_changes(mut ctx Context, id string) veb.Result {
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	changes := workspace_git_changes(session.directory) or {
+		return json_request_error(mut ctx, err.msg())
+	}
+	return ctx.json(changes)
+}
+
+@['/v1/sessions/:id/workspace/git/diff'; get]
+pub fn (app &App) read_session_git_diff(mut ctx Context, id string) veb.Result {
+	session := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	diff := workspace_git_diff(session.directory, ctx.query['path'] or { '' }, (ctx.query['staged'] or {
+		''
+	}) == 'true') or { return json_request_error(mut ctx, err.msg()) }
+	return ctx.json(diff)
+}
+
 @['/v1/sessions/:id/workspace/git/worktrees'; get]
 pub fn (app &App) list_session_git_worktrees(mut ctx Context, id string) veb.Result {
 	session := app.store.get_session(id) or {

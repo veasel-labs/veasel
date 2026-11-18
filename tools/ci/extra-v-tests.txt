@@ -52,5 +52,6 @@ turn_model_config_test.v
 turn_outcome_e2e_test.v
 turn_outcome_test.v
 usage_dashboard_test.v
+workspace_git_changes_test.v
 workspace_git_test.v
 workspace_read_identity_test.v

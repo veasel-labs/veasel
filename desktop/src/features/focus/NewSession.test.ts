@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectListEntry } from '../../lib/api';
-import { selectStartProject } from './NewSession';
+import { selectStartProject, titleFromTask } from './NewSession';
 
 const projects = [
   { name: 'alpha', target: '/tmp/alpha', status: 'ok' },
@@ -21,5 +21,13 @@ describe('selectStartProject', () => {
 
   it('does not choose an unavailable project', () => {
     expect(selectStartProject(projects.slice(2), '')).toBeUndefined();
+  });
+});
+
+describe('titleFromTask', () => {
+  it('uses the first non-empty line, stripped of control bytes and capped', () => {
+    expect(titleFromTask('\n  Fix the add()\tbug \nmore')).toBe('Fix the add() bug');
+    expect(titleFromTask('x'.repeat(200))).toHaveLength(80);
+    expect(titleFromTask('   ')).toBe('New session');
   });
 });

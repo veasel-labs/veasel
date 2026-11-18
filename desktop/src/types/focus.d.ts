@@ -185,6 +185,28 @@ export interface FocusThreadPatch {
 
 export type FocusResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
+export interface FocusGitChange {
+  path: string;
+  /** Porcelain index (staged) column; ' ' when unchanged. */
+  index: string;
+  /** Porcelain working-tree column; ' ' when unchanged. */
+  worktree: string;
+  untracked: boolean;
+}
+
+export interface FocusGitChanges {
+  branch: string;
+  changes: FocusGitChange[];
+  truncated: boolean;
+}
+
+export interface FocusGitDiff {
+  path: string;
+  staged: boolean;
+  diff: string;
+  truncated: boolean;
+}
+
 export interface FocusBridge {
   providers: (options?: { refresh?: boolean }) => Promise<FocusProviderStatus[]>;
   listThreads: () => Promise<FocusThread[]>;
@@ -196,5 +218,8 @@ export interface FocusBridge {
   respondApproval: (id: string, requestId: string, decision: FocusApprovalDecision) => Promise<FocusResult<true>>;
   respondUserInput: (id: string, requestId: string, answers: Record<string, string[]>) => Promise<FocusResult<true>>;
   interrupt: (id: string) => Promise<FocusResult<true>>;
+  /** Read-only git working-tree view of the session's own directory. */
+  gitChanges: (id: string) => Promise<FocusResult<FocusGitChanges>>;
+  gitDiff: (id: string, path: string, staged: boolean) => Promise<FocusResult<FocusGitDiff>>;
   onUpdate: (listener: (update: FocusLiveUpdate) => void) => () => void;
 }

@@ -206,6 +206,11 @@ export function useFocusStore(): FocusStore {
   return store;
 }
 
+/** The store when a provider is mounted; isolated component tests render without one. */
+export function useOptionalFocusStore(): FocusStore | null {
+  return useContext(FocusContext);
+}
+
 export function useFocusBridge(): FocusBridge | undefined {
   const store = useContext(FocusContext);
   if (store) return store.focusBridge;

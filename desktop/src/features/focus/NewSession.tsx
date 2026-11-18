@@ -1,39 +1,52 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useFocusBridge } from '../../data/focus';
-import { useLinkProject } from '../../data/projects';
-import type { ProjectListEntry } from '../../lib/api';
+import { useFocusBridge, useOptionalFocusStore } from '../../data/focus';
 import type { FocusPermissionMode, FocusProviderId, FocusProviderStatus } from '../../types/focus';
 import { Button, PixelIcon } from '../../ui';
 import { MODE_OPTIONS, permissionModeSupported, providerBlocker } from './labels';
 import styles from './focus.module.css';
+
+/** A folder a session can run in: sessions carry their own directory, so no registry is involved. */
+export interface StartProject {
+  name: string;
+  target: string;
+  status: 'ok' | string;
+}
 
 export interface NewSessionDefaults {
   project?: string;
 }
 
 /** Never silently substitute a different repository for an explicit project selection. */
-export function selectStartProject(
-  projects: readonly ProjectListEntry[],
-  selected: string,
-): ProjectListEntry | undefined {
+export function selectStartProject(projects: readonly StartProject[], selected: string): StartProject | undefined {
   const usable = projects.filter((entry) => entry.status === 'ok');
   return selected ? usable.find((entry) => entry.name === selected) : usable[0];
 }
 
+/** The backend requires a non-empty printable title; the task's first line is the natural one. */
+export function titleFromTask(task: string): string {
+  const first = task.split('\n').find((entry) => entry.trim().length > 0) ?? '';
+  const printable = [...first]
+    .map((char) => (char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? ' ' : char))
+    .join('');
+  const line = printable.trim();
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line || 'New session';
+}
+
 /** The start of every session: where, with whom, how careful, and the task itself. */
 export function NewSession({
-  workspace,
   projects,
   projectsLoading,
+  onChooseFolder,
   providers,
   providersLoading,
   onRefreshProviders,
   defaults,
   onStarted,
 }: {
-  workspace: string;
-  projects: readonly ProjectListEntry[];
+  projects: readonly StartProject[];
   projectsLoading: boolean;
+  /** Opens the native folder picker; resolves to the chosen folder, or null when cancelled. */
+  onChooseFolder?: () => Promise<StartProject | null>;
   providers: readonly FocusProviderStatus[];
   providersLoading: boolean;
   onRefreshProviders: () => void;
@@ -41,7 +54,9 @@ export function NewSession({
   onStarted: (threadId: string) => void;
 }) {
   const bridge = useFocusBridge();
-  const link = useLinkProject(workspace);
+  const focusStore = useOptionalFocusStore();
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const usable = useMemo(() => projects.filter((project) => project.status === 'ok'), [projects]);
   const ready = useMemo(() => providers.filter((provider) => providerBlocker(provider) === null), [providers]);
   const [project, setProject] = useState(defaults?.project ?? '');
@@ -85,6 +100,7 @@ export function NewSession({
         provider: activeProvider.id,
         model: model || null,
         permissionMode: mode,
+        title: titleFromTask(task),
       });
       if (!created.ok) {
         setError(created.error);
@@ -95,6 +111,8 @@ export function NewSession({
         setError(sent.error);
         return;
       }
+      // The thread list loads at startup; add the new session now so selecting it does not look like a missing one.
+      focusStore?.apply({ kind: 'thread', thread: created.value });
       onStarted(created.value.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not start the session. Please try again.');
@@ -104,12 +122,19 @@ export function NewSession({
     }
   };
 
-  const linkFolder = () =>
-    link.mutate(undefined, {
-      onSuccess: (linked) => {
-        if (linked) setProject(linked.name);
-      },
-    });
+  const linkFolder = () => {
+    if (!onChooseFolder || linking) return;
+    setLinking(true);
+    setLinkError(null);
+    onChooseFolder()
+      .then((chosen) => {
+        if (chosen) setProject(chosen.name);
+      })
+      .catch((cause: unknown) =>
+        setLinkError(cause instanceof Error ? cause.message : 'The folder could not be opened.'),
+      )
+      .finally(() => setLinking(false));
+  };
 
   const canStart = Boolean(bridge && activeProject && activeProvider && task.trim()) && !starting;
 
@@ -153,12 +178,7 @@ export function NewSession({
           ) : (
             <p className={styles.startEmpty}>{projectsLoading ? 'Looking for projects…' : 'No project linked yet.'}</p>
           )}
-          <Button
-            variant={usable.length === 0 ? 'primary' : 'ghost'}
-            size="sm"
-            onClick={linkFolder}
-            busy={link.isPending}
-          >
+          <Button variant={usable.length === 0 ? 'primary' : 'ghost'} size="sm" onClick={linkFolder} busy={linking}>
             <PixelIcon name="projects" size={12} />
             {usable.length === 0 ? 'Choose a repository folder' : 'Link another folder'}
           </Button>
@@ -168,9 +188,9 @@ export function NewSession({
             </p>
           ) : null}
           {activeProject ? <p className={styles.startPath}>{activeProject.target}</p> : null}
-          {link.error ? (
+          {linkError ? (
             <p className={styles.startError} role="alert">
-              {link.error.message}
+              {linkError}
             </p>
           ) : null}
         </div>

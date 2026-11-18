@@ -269,4 +269,66 @@ describe('Conversation', () => {
     expect(alert).toHaveTextContent('API Error: 529 overloaded');
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
   });
+
+  it('does not call a partial turn a plain failure and lists what was applied', async () => {
+    setup(
+      thread({ status: 'error' }),
+      journal([
+        { type: 'user', text: 'go' },
+        { type: 'turn.started', model: null },
+        {
+          type: 'turn.finished',
+          outcome: 'failed',
+          outcomeDetail: 'partial',
+          detail: 'Already applied: Edit math.js. These changes are not verified.',
+          durationMs: null,
+          usage: null,
+        },
+      ]),
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('This turn stopped early, but changes were applied.');
+    expect(alert).not.toHaveTextContent('This turn failed.');
+    expect(alert).toHaveTextContent('Edit math.js');
+    expect(alert).toHaveTextContent('not verified');
+  });
+
+  it('shows denials on a completed turn instead of a bare Done', async () => {
+    setup(
+      thread(),
+      journal([
+        { type: 'user', text: 'go' },
+        { type: 'turn.started', model: null },
+        {
+          type: 'turn.finished',
+          outcome: 'completed',
+          outcomeDetail: 'completed_with_denials',
+          detail: 'Approvals: 1 expired (Bash). No changes were applied.',
+          durationMs: null,
+          usage: null,
+        },
+      ]),
+    );
+    expect(await screen.findByText(/Done, with denied approvals/)).toBeInTheDocument();
+    expect(screen.getByText(/1 expired \(Bash\)/)).toBeInTheDocument();
+  });
+
+  it('flags an uncertain turn as unknown rather than done or failed', async () => {
+    setup(
+      thread(),
+      journal([
+        { type: 'user', text: 'go' },
+        { type: 'turn.started', model: null },
+        {
+          type: 'turn.finished',
+          outcome: 'interrupted',
+          outcomeDetail: 'uncertain',
+          detail: 'The server stopped.',
+          durationMs: null,
+          usage: null,
+        },
+      ]),
+    );
+    expect(await screen.findByText(/Result uncertain/)).toBeInTheDocument();
+  });
 });

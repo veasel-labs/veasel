@@ -93,6 +93,8 @@ export interface VeaselServerEvent {
     operation_id?: string;
     delta?: string;
     status?: string;
+    /** Durable fact-derived outcome (completed_with_denials, partial, uncertain, ...). */
+    outcome?: string;
     error?: string;
     usage_reported?: boolean;
     input_tokens?: number;
@@ -135,7 +137,8 @@ export function veaselEventToLiveUpdate(event: VeaselServerEvent): FocusLiveUpda
         turn: 1,
         type: 'turn.finished',
         outcome,
-        detail: event.data?.error ?? null,
+        ...outcomeDetailOf(event.data?.outcome),
+        detail: event.data?.error ? event.data.error : null,
         durationMs: null,
         usage: event.data?.usage_reported
           ? {
@@ -149,6 +152,15 @@ export function veaselEventToLiveUpdate(event: VeaselServerEvent): FocusLiveUpda
     };
   }
   return null;
+}
+
+function outcomeDetailOf(
+  outcome: string | undefined,
+): { outcomeDetail: 'completed_with_denials' | 'partial' | 'uncertain' } | Record<string, never> {
+  if (outcome === 'completed_with_denials' || outcome === 'partial' || outcome === 'uncertain') {
+    return { outcomeDetail: outcome };
+  }
+  return {};
 }
 
 function defaultEventStream(url: string, onEvent: (type: string, data: string) => void): () => void {

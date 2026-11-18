@@ -16,6 +16,8 @@ const FAKE_DIR = path.join(__dirname, 'fake-cli');
 export const REPO_NAME = 'focus-fixture';
 
 export interface JourneyEnv {
+  /** Backend API bearer token, chosen here and handed to the app via VEASEL_API_TOKEN; never read from disk. */
+  token: string;
   root: string;
   binDir: string;
   dataDir: string;
@@ -81,6 +83,7 @@ export function isAlive(pid: number): boolean {
 export function planJourneyEnv(root: string): JourneyEnv {
   const home = path.join(root, 'home');
   return {
+    token: crypto.randomBytes(32).toString('hex'),
     root,
     binDir: path.join(root, 'fake-bin'),
     dataDir: path.join(root, 'veasel-data'),
@@ -137,12 +140,6 @@ export function backendBinaryUnderTest(): string {
   return bin;
 }
 
-/** The API token the backend wrote (absent until the token gate lands); null means "no gate". */
-export function readApiToken(env: JourneyEnv): string | null {
-  const file = path.join(env.dataDir, 'api-token');
-  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim() : null;
-}
-
 export interface BackendProcess {
   pid: number;
   port: number;
@@ -177,12 +174,11 @@ export async function backendApi<T>(
   route: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const token = readApiToken(env);
   const response = await fetch(`http://127.0.0.1:${backend.port}${route}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      authorization: `Bearer ${env.token}`,
       ...((init.headers as Record<string, string> | undefined) ?? {}),
     },
   });
@@ -231,6 +227,7 @@ export async function launchFocusDesktop(options: LaunchOptions = {}): Promise<{
       PATH: env.binDir,
       FAKE_CLI_LOG: env.cliLog,
       VEASEL_DATA_DIR: env.dataDir,
+      VEASEL_API_TOKEN: env.token,
       VEASEL_BACKEND_BIN: backendBin,
       VEASEL_SECRET_STORE: 'file',
       // Bounded approval wait: long enough for a click-driven approval, short enough that J11 sees expiry.
@@ -248,4 +245,34 @@ export async function launchFocusDesktop(options: LaunchOptions = {}): Promise<{
   // The workspace is scaffolded by openDesktop; the repo goes inside it afterwards.
   if (fresh) createFixtureRepo(env.repo);
   return { desktop, env };
+}
+
+/** SIGTERM, bounded wait, then SIGKILL; resolves once the process is gone. */
+export async function terminate(pid: number, waitMs = 3_000): Promise<void> {
+  if (!isAlive(pid)) return;
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    return;
+  }
+  const deadline = Date.now() + waitMs;
+  while (isAlive(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
+  if (isAlive(pid)) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      return;
+    }
+    while (isAlive(pid) && Date.now() < deadline + 3_000) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/** Stops every fake CLI process recorded in the spawn log (and waits for it to exit). */
+export async function stopSpawnedClis(env: JourneyEnv): Promise<void> {
+  for (const entry of readCliLog(env)) if (entry.event === 'spawn') await terminate(entry.pid);
+}
+
+/** Removes a scratch directory, retrying while a dying process still holds files in it. */
+export async function removeDirectory(dir: string): Promise<void> {
+  await fs.promises.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }

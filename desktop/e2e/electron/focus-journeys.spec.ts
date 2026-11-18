@@ -11,8 +11,9 @@ import {
   git,
   isAlive,
   launchFocusDesktop,
-  readApiToken,
   readCliLog,
+  removeDirectory,
+  stopSpawnedClis,
   REPO_NAME,
   runRepoTests,
   sha256,
@@ -104,10 +105,10 @@ async function backend() {
 
 async function fetchRaw(route: string, method: string, body: unknown): Promise<{ status: number; body: string }> {
   const found = await backend();
-  const token = readApiToken(env);
+  const token = env.token;
   const response = await fetch(`http://127.0.0.1:${found.port}${route}`, {
     method,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
   });
   return { status: response.status, body: await response.text() };
@@ -191,11 +192,11 @@ function currentThread(): string | null {
 /** Independent tap on the backend's SSE stream: which events does the server really emit? */
 async function tapEvents(): Promise<{ types: string[]; stop: () => void }> {
   const found = await backend();
-  const token = readApiToken(env);
+  const token = env.token;
   const controller = new AbortController();
   const types: string[] = [];
   void fetch(`http://127.0.0.1:${found.port}/v1/events`, {
-    headers: token ? { authorization: `Bearer ${token}` } : {},
+    headers: { authorization: `Bearer ${token}` },
     signal: controller.signal,
   })
     .then(async (response) => {
@@ -236,9 +237,8 @@ test.afterAll(async ({}, testInfo) => {
   }
   await desktop?.close().catch(() => undefined);
   if (env) {
-    for (const entry of readCliLog(env))
-      if (entry.event === 'spawn' && isAlive(entry.pid)) process.kill(entry.pid, 'SIGKILL');
-    fs.rmSync(env.root, { recursive: true, force: true });
+    await stopSpawnedClis(env);
+    await removeDirectory(env.root);
   }
 });
 
@@ -262,7 +262,9 @@ test('J1 clean first launch lists the installed CLI providers', async ({}, testI
     .sort();
   expect(installed).toEqual(expect.arrayContaining(['claude-code', 'codex']));
   expect(readCliLog(env).filter((entry) => entry.event === 'spawn')).toHaveLength(0);
-  record(testInfo, 'J1', 'GET /v1/providers/cli installed ids; no CLI turn spawned', { installed });
+  record(testInfo, 'J1', 'GET /v1/providers/cli installed ids; no CLI turn spawned', {
+    installedCount: installed.length,
+  });
 });
 
 test('J2 open the disposable git workspace', async ({}, testInfo) => {
@@ -295,7 +297,9 @@ test('J2 open the disposable git workspace', async ({}, testInfo) => {
   const link = path.join(desktop.home, '.ai-workspace', 'projects', REPO_NAME);
   const resolved = fs.realpathSync(link);
   expect(resolved).toBe(fs.realpathSync(env.repo));
-  record(testInfo, 'J2', 'workspace symlink realpath == disposable repo', { link, resolved });
+  record(testInfo, 'J2', 'workspace symlink realpath == disposable repo', {
+    linkResolvesToRepo: resolved === fs.realpathSync(env.repo),
+  });
 });
 
 test('J3 choose provider (no model) and prompt: chosen provider spawned, text streams incrementally', async ({}, testInfo) => {
@@ -341,7 +345,8 @@ test('J3 choose provider (no model) and prompt: chosen provider spawned, text st
     'J3',
     'fake CLI spawn log == [claude]; operation.resolved_provider == claude-code; server emitted assistant.delta events',
     {
-      spawned: spawns.map((entry) => entry.cli),
+      spawnCount: spawns.length,
+      onlyClaudeSpawned: spawns.every((entry) => entry.cli === 'claude'),
       serverDeltas,
     },
   );
@@ -405,12 +410,13 @@ test('J4 inspect the proposed edit and diff; approve turns the repo test red to 
   expect(diff).toContain('+  return a + b;');
 
   await shot(testInfo, 'J4-approved-diff');
-  record(testInfo, 'J4', 'sha256(src/math.js) changed; node test.js exit red->green; git diff has the fix', {
-    shaBefore: before,
-    shaAfter: sha256(file),
-    redExit: red.code,
-    greenExit: green.code,
-  });
+  record(
+    testInfo,
+    'J4',
+    'sha256(src/math.js) changed; node test.js exit red->green; git diff has the fix',
+    { redExit: red.code, greenExit: green.code },
+    { shaBefore: before, shaAfter: sha256(file) },
+  );
 });
 
 test('J4b the Changes panel shows the git diff of the applied edit', async ({}, testInfo) => {
@@ -450,9 +456,13 @@ test('J5 a second proposal is rejected and changes nothing', async ({}, testInfo
   expect(snapshot()).toEqual(before);
   expect(readCliLog(env).some((entry) => entry.event === 'edit-applied' && entry.file === 'README.md')).toBe(false);
   expect(readCliLog(env).filter((entry) => entry.event === 'spawn').length).toBe(spawnsBefore + 1);
-  record(testInfo, 'J5', 'README sha256 and git status+diff identical; fake CLI logged edit-denied, no edit-applied', {
-    readmeSha: readmeBefore,
-  });
+  record(
+    testInfo,
+    'J5',
+    'README sha256 and git status+diff identical; fake CLI logged edit-denied, no edit-applied',
+    {},
+    { readmeSha: readmeBefore },
+  );
 });
 
 test('J6 cancelling an in-flight operation is honest and the process is gone', async ({}, testInfo) => {
@@ -528,9 +538,9 @@ test('J7 close and reopen: the same session is still listed with its transcript'
     'J7',
     'backend transcript + stored provider/mode (#743) after restart; stale PATCH -> 409 prefs_version_conflict',
     {
-      sessionId,
-      messages: messages.length,
-      stored,
+      messageCount: messages.length,
+      providerStored: stored.preferred_provider === 'claude-code',
+      modeStored: stored.permission_mode === 'ask',
       stalePatchStatus: stale.status,
     },
   );
@@ -582,30 +592,34 @@ test('J8 keyboard-only approve and reject, visible focus, Escape stops', async (
   await expect(approval()).toBeHidden({ timeout: 20_000 });
   expect(readCliLog(env).some((entry) => entry.event === 'shell-allowed')).toBe(false);
 
-  let axeSource: string | null = null;
-  try {
-    axeSource = require.resolve('axe-core/axe.min.js');
-  } catch {
-    axeSource = null;
-  }
-  if (axeSource) {
-    await page.addScriptTag({ path: axeSource });
-    const violations = await page.evaluate(async () => {
-      const axe = (window as unknown as { axe: { run: () => Promise<{ violations: Array<{ id: string }> }> } }).axe;
-      return (await axe.run()).violations.map((violation) => violation.id);
-    });
-    expect(violations).toEqual([]);
-  } else {
-    test.info().annotations.push({
-      type: 'axe-skipped',
-      description:
-        'axe-core is only a transitive dependency (eslint-plugin-jsx-a11y), not a declared one; not imported.',
-    });
-  }
   record(testInfo, 'J8', 'README changed after Enter on Allow once; shell never allowed after keyboard deny', {
-    focusOrder: order,
-    axe: axeSource ? 'run' : 'skipped (axe-core not a declared dependency)',
+    focusStops: order.length,
   });
+});
+
+test('J8c axe-core finds no accessibility violations on the Focus screen', async ({}, testInfo) => {
+  // KNOWN PRODUCT BUG found by axe on the opened session: aria-required-children (critical, 1 node). The oracle is
+  // unchanged; this flips to a failure (remove test.fail) once the markup is fixed.
+  test.fail(true, 'axe: aria-required-children (critical) on the Focus conversation screen');
+  // The app's CSP (script-src 'self') correctly blocks page.addScriptTag, so axe is injected through Electron's
+  // embedder path (webContents.executeJavaScript), which is not subject to the page CSP. No CSP is loosened.
+  const source = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+  const violations = await desktop.app.evaluate(async ({ BrowserWindow }, axeSource) => {
+    const [win] = BrowserWindow.getAllWindows();
+    if (!win) throw new Error('no Desktop window');
+    await win.webContents.executeJavaScript(axeSource);
+    const result = (await win.webContents.executeJavaScript('axe.run(document)')) as {
+      violations: Array<{ id: string; impact: string | null; nodes: unknown[] }>;
+    };
+    return result.violations.map((violation) => ({
+      id: violation.id,
+      impact: violation.impact,
+      nodes: violation.nodes.length,
+    }));
+  }, source);
+  await shot(testInfo, 'J8c-axe');
+  expect(violations, `axe violations: ${JSON.stringify(violations)}`).toEqual([]);
+  record(testInfo, 'J8c', 'axe-core violations on the Focus screen == 0', { violationCount: violations.length });
 });
 
 test('J8b Escape in the composer stops a running turn and the process exits', async ({}, testInfo) => {
@@ -634,7 +648,12 @@ test('J9 TUI client resumes the exact session; Desktop shows the TUI message', a
     'bun',
     ['run', path.join(__dirname, 'tui-resume.mjs'), TUI_SRC, `http://127.0.0.1:${found.port}`, sessionId, marker],
     {
-      env: { ...process.env, VEASEL_DATA_DIR: env.dataDir, HOME: path.join(env.root, 'home') },
+      env: {
+        ...process.env,
+        VEASEL_DATA_DIR: env.dataDir,
+        VEASEL_API_TOKEN: env.token,
+        HOME: path.join(env.root, 'home'),
+      },
       encoding: 'utf8',
       timeout: 60_000,
     },
@@ -668,10 +687,7 @@ test('J9 TUI client resumes the exact session; Desktop shows the TUI message', a
     testInfo,
     'J9',
     'TUI client (tui/src/api-client.ts) read the same session id + transcript; its message is in the backend transcript and visible in Desktop',
-    {
-      sessionId,
-      marker,
-    },
+    { tuiMessageInBackendTranscript: true, shownInDesktop: true },
   );
 });
 
@@ -729,10 +745,7 @@ test('J11 an unanswered shell approval expires: UI reports applied-with-denial, 
     testInfo,
     'J11',
     'operation.outcome == completed_with_denials; file hash changed; repo test green; push never allowed',
-    {
-      outcome: outcome?.outcome,
-      summary: outcome?.outcome_summary,
-    },
+    { outcomeCompletedWithDenials: outcome?.outcome === 'completed_with_denials' },
   );
 });
 

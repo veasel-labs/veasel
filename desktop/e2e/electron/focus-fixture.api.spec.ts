@@ -14,6 +14,9 @@ import {
   isAlive,
   planJourneyEnv,
   readCliLog,
+  removeDirectory,
+  stopSpawnedClis,
+  terminate,
   runRepoTests,
   sha256,
   type BackendProcess,
@@ -107,6 +110,7 @@ test.beforeAll(async () => {
       XDG_STATE_HOME: path.join(home, '.local', 'state'),
       VEASEL_PORT: String(port),
       VEASEL_DATA_DIR: env.dataDir,
+      VEASEL_API_TOKEN: env.token,
       VEASEL_PLUGIN_DIR: path.join(env.dataDir, 'plugins'),
       VEASEL_SECRET_STORE: 'file',
       VEASEL_CLI_APPROVAL_TIMEOUT_SECONDS: '5',
@@ -140,9 +144,12 @@ test.afterEach(async ({}, testInfo) => {
   }
 });
 
-test.afterAll(() => {
-  child?.kill('SIGKILL');
-  if (env) fs.rmSync(env.root, { recursive: true, force: true });
+test.afterAll(async () => {
+  if (child?.pid) await terminate(child.pid);
+  if (env) {
+    await stopSpawnedClis(env);
+    await removeDirectory(env.root);
+  }
 });
 
 test('discovery lists the installed fake CLIs', async () => {

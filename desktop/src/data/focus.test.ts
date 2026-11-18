@@ -83,6 +83,30 @@ describe('FocusStore', () => {
     expect(store.getThreads()[0]?.status).toBe('awaiting-approval');
   });
 
+  it('tracks a running turn from status updates and clears it when the turn finishes', async () => {
+    const { bridge: api, push } = bridge({
+      listThreads: async () => [thread('th_a')],
+    });
+    const store = new FocusStore(api);
+    store.connect();
+    await vi.waitFor(() => expect(store.getThreadsLoaded()).toBe(true));
+    expect(store.getThreads()[0]?.status).toBe('idle');
+    push({ kind: 'status', threadId: 'th_a', status: 'running' });
+    expect(store.getThreads()[0]?.status).toBe('running');
+    push({
+      kind: 'event',
+      threadId: 'th_a',
+      event: event(7, { type: 'turn.finished', outcome: 'interrupted', detail: null, durationMs: null, usage: null }),
+    });
+    expect(store.getThreads()[0]?.status).toBe('interrupted');
+    push({
+      kind: 'event',
+      threadId: 'th_a',
+      event: event(9, { type: 'turn.finished', outcome: 'completed', detail: null, durationMs: null, usage: null }),
+    });
+    expect(store.getThreads()[0]?.status).toBe('idle');
+  });
+
   it('accumulates live text, then drops it when the item is committed', async () => {
     const { bridge: api, push } = bridge();
     const store = new FocusStore(api);

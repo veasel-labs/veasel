@@ -156,6 +156,11 @@ export class FocusStore {
       case 'thread':
         this.upsertThread(update.thread);
         break;
+      case 'status':
+        this.threads = this.threads.map((thread) =>
+          thread.id === update.threadId ? { ...thread, status: update.status } : thread,
+        );
+        break;
       case 'refresh':
         this.reloadThread(update.threadId);
         return;
@@ -198,6 +203,10 @@ export class FocusStore {
           events: [...current.events, ...committed, event],
           live,
         });
+        if (event.type === 'turn.finished') {
+          const status = event.outcome === 'completed' ? 'idle' : event.outcome === 'failed' ? 'error' : 'interrupted';
+          this.threads = this.threads.map((thread) => (thread.id === update.threadId ? { ...thread, status } : thread));
+        }
         break;
       }
     }

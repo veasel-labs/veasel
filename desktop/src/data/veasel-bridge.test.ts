@@ -97,6 +97,61 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(snapshot?.events.some((event) => event.type === 'approval.requested')).toBe(true);
   });
 
+  it('marks a thread running while an operation is active, so Focus can show Stop', async () => {
+    for (const status of ['queued', 'running', 'cancelling']) {
+      const bridge = createVeaselFocusBridge({
+        baseUrl: 'http://veasel.test',
+        fetch: fakeFetch({
+          '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+          '/v1/sessions/s1/messages': [],
+          '/v1/sessions/s1/cli-approvals': [],
+          '/v1/sessions/s1/operations': [{ id: 'op1', status }],
+        }),
+      });
+      const snapshot = await bridge.readThread('s1');
+      expect(snapshot?.thread.status, status).toBe('running');
+    }
+    const done = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+        '/v1/sessions/s1/messages': [],
+        '/v1/sessions/s1/cli-approvals': [],
+        '/v1/sessions/s1/operations': [{ id: 'op1', status: 'completed' }],
+      }),
+    });
+    expect((await done.readThread('s1'))?.thread.status).toBe('idle');
+    for (const [opStatus, threadStatus] of [
+      ['cancelled', 'interrupted'],
+      ['failed', 'error'],
+      ['uncertain', 'error'],
+    ] as const) {
+      const bridge = createVeaselFocusBridge({
+        baseUrl: 'http://veasel.test',
+        fetch: fakeFetch({
+          '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+          '/v1/sessions/s1/messages': [],
+          '/v1/sessions/s1/cli-approvals': [],
+          '/v1/sessions/s1/operations': [{ id: 'op1', status: opStatus }],
+        }),
+      });
+      expect((await bridge.readThread('s1'))?.thread.status, opStatus).toBe(threadStatus);
+    }
+  });
+
+  it('keeps awaiting-approval ahead of running when both apply', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/sessions/s1': { id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' },
+        '/v1/sessions/s1/messages': [],
+        '/v1/sessions/s1/cli-approvals': [{ id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' }],
+        '/v1/sessions/s1/operations': [{ id: 'op1', status: 'running' }],
+      }),
+    });
+    expect((await bridge.readThread('s1'))?.thread.status).toBe('awaiting-approval');
+  });
+
   it('opens the turn for a pending approval so Focus can render the approval dialog', async () => {
     const bridge = createVeaselFocusBridge({
       baseUrl: 'http://veasel.test',
@@ -478,6 +533,13 @@ describe('veasel SSE live updates', () => {
       expect(done.event.outcome).toBe('completed');
       expect(done.event.usage?.inputTokens).toBe(10);
       expect(done.event.usage?.costUsd).toBeNull();
+    }
+    for (const type of ['session.turn_started', 'session.turn_queued']) {
+      expect(veaselEventToLiveUpdate({ id: 8, type, session_id: 's1', data: { operation_id: 'op-1' } })).toEqual({
+        kind: 'status',
+        threadId: 's1',
+        status: 'running',
+      });
     }
     expect(veaselEventToLiveUpdate({ id: 1, type: 'heartbeat', session_id: 's1', data: {} })).toBeNull();
     expect(veaselEventToLiveUpdate({ id: 2, type: 'assistant.delta', session_id: 's1', data: {} })).toBeNull();

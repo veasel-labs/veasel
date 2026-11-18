@@ -127,6 +127,10 @@ export function veaselEventToLiveUpdate(event: VeaselServerEvent): FocusLiveUpda
       text: event.data.delta,
     };
   }
+  if (event.type === 'session.turn_started' || event.type === 'session.turn_queued') {
+    // Without this the thread stays 'idle' for the whole turn and Focus never shows a Stop button.
+    return { kind: 'status', threadId: event.session_id, status: 'running' };
+  }
   if (event.type === 'session.turn_completed') {
     const status = event.data?.status ?? '';
     const outcome = status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'interrupted';
@@ -354,6 +358,21 @@ export function createVeaselFocusBridge(options: {
       provider,
       turns: events.filter((event) => event.type === 'user').length,
     });
+    // A snapshot taken mid-turn (reopen, approval refresh) must still show the turn as running, or the
+    // Stop button disappears. Pending approvals stay the more specific status.
+    const operations = asArray<{ status?: string }>(
+      await request(`/v1/sessions/${encodeURIComponent(id)}/operations`).catch(() => []),
+    );
+    if (
+      operations.some(
+        (operation) =>
+          operation.status === 'queued' || operation.status === 'running' || operation.status === 'cancelling',
+      )
+    )
+      thread.status = 'running';
+    else if (operations.at(-1)?.status === 'cancelled') thread.status = 'interrupted';
+    else if (operations.at(-1)?.status === 'failed' || operations.at(-1)?.status === 'uncertain')
+      thread.status = 'error';
     if (approvals.some((approval) => approval.status === 'pending')) thread.status = 'awaiting-approval';
     return { thread, events };
   }

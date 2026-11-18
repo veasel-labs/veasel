@@ -55,6 +55,6 @@ manual parent review. Parent users can still edit them directly.
 always applies: network namespace isolation (the caller's `allow_network` is
 ignored), `--die-with-parent --new-session` plus PID namespace so timeout or
 cancel tears down the whole tree including `setsid` escapes, the 64 KiB output
-cap, `ulimit` caps (processes 256, open files 1024, file size, no core dumps),
+cap, `prlimit` caps applied before exec, independent of the shell dialect (processes 256, open files 1024, file size 1 GiB, no core dumps; fails closed if prlimit is missing),
 and a 1 GiB worktree quota checked before and after the run. The primitive is
 still not wired to the implementer profile.

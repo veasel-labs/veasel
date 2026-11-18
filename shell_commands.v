@@ -245,13 +245,19 @@ struct LinuxShellSandboxOptions {
 // user+pid namespace created by Bubblewrap counts only sandbox processes.
 const child_shell_max_processes = 256
 const child_shell_max_open_files = 1024
-// ulimit -f unit is shell-dependent (512 B in dash, 1 KiB in bash): the cap is
-// 512 MiB..1 GiB per file, enough to stop runaway writers.
-const child_shell_max_file_blocks = 1_048_576
+// Per-file size cap in bytes, applied by prlimit (shell-dialect independent).
+const child_shell_max_file_bytes = i64(1024) * 1024 * 1024
 const max_child_worktree_bytes = i64(1024) * 1024 * 1024
 
-fn child_shell_resource_prologue() string {
-	return 'ulimit -c 0 && ulimit -u ${child_shell_max_processes} && ulimit -n ${child_shell_max_open_files} && ulimit -f ${child_shell_max_file_blocks} || exit 125; '
+// child_shell_prlimit_args returns the prlimit argv prefix that applies the
+// delegated-child rlimits before exec, or an error when prlimit is missing so
+// callers fail closed instead of running unlimited.
+fn child_shell_prlimit_args() ![]string {
+	prlimit := os.find_abs_path_of_executable('prlimit') or {
+		return error('install util-linux (prlimit) to run delegated child commands; limits are required')
+	}
+	return [prlimit, '--nproc=${child_shell_max_processes}', '--nofile=${child_shell_max_open_files}',
+		'--fsize=${child_shell_max_file_bytes}', '--core=0', '--']
 }
 
 // workspace_tree_exceeds reports whether the regular files under root add up to
@@ -693,6 +699,17 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 			output:    '${purpose} refused: the child worktree already exceeds its ${max_child_worktree_bytes} byte quota; no process was started.'
 		}
 	}
+	prlimit_prefix := if limited {
+		child_shell_prlimit_args() or {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    '${purpose} refused: ${err.msg()}; no process was started.'
+			}
+		}
+	} else {
+		[]string{}
+	}
 	mut args := [
 		'--unshare-all',
 		'--die-with-parent',
@@ -729,13 +746,12 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << '--chdir'
 	args << os.join_path(canonical_root, cwd)
 	args << '--'
+	if limited {
+		args << prlimit_prefix
+	}
 	args << shell_executable
 	args << '-c'
-	args << if limited {
-		child_shell_resource_prologue() + command.command
-	} else {
-		command.command
-	}
+	args << command.command
 	mut process := os.new_process(bwrap)
 	process.set_args(args)
 	mut environment := map[string]string{}

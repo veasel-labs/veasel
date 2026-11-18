@@ -106,8 +106,8 @@ fn test_child_fork_bomb_is_bounded_by_limits_and_timeout() {
 	fixture := child_sandbox_fixture() or { return }
 	defer { os.rmdir_all(fixture.base) or {} }
 	// Precondition: the nproc cap must be effective before a real bomb runs.
-	probe := run_child_command(fixture, 'ulimit -u', 5, false)
-	assert probe.output.trim_space().int() > 0 && probe.output.trim_space().int() <= 256, probe.output
+	probe := run_child_command(fixture, 'grep "Max processes" /proc/self/limits', 5, false)
+	assert probe.output.contains('256'), probe.output
 	started := time.now()
 	result := run_child_command(fixture, 'b() { b | b & }; b; sleep 5', 2, false)
 	assert result.status in ['timed_out', 'failed', 'succeeded'], result.status
@@ -119,8 +119,13 @@ fn test_child_fork_bomb_is_bounded_by_limits_and_timeout() {
 fn test_child_file_size_and_worktree_quota_are_enforced() {
 	fixture := child_sandbox_fixture() or { return }
 	defer { os.rmdir_all(fixture.base) or {} }
-	limit := run_child_command(fixture, 'ulimit -f', 5, false)
-	assert limit.output.trim_space().int() > 0, limit.output
+	limit := run_child_command(fixture, 'cat /proc/self/limits', 5, false)
+	assert limit.status == 'succeeded', limit.output
+	assert limit.output.contains('Max processes') && limit.output.contains('256'), limit.output
+	assert limit.output.contains('Max open files') && limit.output.contains('1024'), limit.output
+	assert limit.output.contains('Max file size') && limit.output.contains('1073741824'), limit.output
+	core := limit.output.split_into_lines().filter(it.starts_with('Max core file size'))
+	assert core.len == 1 && core[0].contains(' 0 '), limit.output
 	assert !workspace_tree_exceeds(fixture.child, 1024)
 	os.write_file(os.join_path(fixture.child, 'blob'), 'x'.repeat(4096)) or { panic(err) }
 	assert workspace_tree_exceeds(fixture.child, 1024)
@@ -129,4 +134,15 @@ fn test_child_file_size_and_worktree_quota_are_enforced() {
 	os.write_file(os.join_path(fixture.base, 'huge'), 'y'.repeat(100_000)) or { panic(err) }
 	os.symlink(os.join_path(fixture.base, 'huge'), os.join_path(fixture.child, 'link')) or { panic(err) }
 	assert !workspace_tree_exceeds(fixture.child, 8192)
+}
+
+fn test_child_limits_are_dialect_independent_under_dash() {
+	fixture := child_sandbox_fixture() or { return }
+	defer { os.rmdir_all(fixture.base) or {} }
+	dash := os.find_abs_path_of_executable('dash') or { return }
+	// The limits come from prlimit, not from shell builtins, so a dash
+	// subshell inherits them and the run does not fail on `ulimit -u`.
+	result := run_child_command(fixture, '${dash} -c "grep \"Max processes\" /proc/self/limits"', 5, false)
+	assert result.status == 'succeeded', result.output
+	assert result.output.contains('256'), result.output
 }

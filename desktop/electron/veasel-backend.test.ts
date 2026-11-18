@@ -6,7 +6,9 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  VeaselBackendSupervisor,
   canonicalVeaselDataDir,
+  classifyVeaselBackend,
   probeVeaselBackend,
   readBackendApiToken,
   veaselHealthIdentity,
@@ -123,6 +125,88 @@ describe('readBackendApiToken', () => {
       expect(seen).toEqual([undefined, 'Bearer t0k']);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
+
+describe('legacy backend negotiation', () => {
+  const servers: http.Server[] = [];
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  });
+
+  async function fake(mode: 'legacy' | 'spoof' | 'garbage' | 'secure') {
+    const authSeen: Array<string | undefined> = [];
+    const server = http.createServer((req, res) => {
+      authSeen.push(req.headers.authorization);
+      const send = (status: number, body: string) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(body);
+      };
+      if (req.url === '/v1/health') {
+        if (mode === 'garbage') return send(200, 'not json');
+        if (mode === 'legacy') return send(200, JSON.stringify({ healthy: true, version: '0.0.9', pid: 4242 }));
+        if (mode === 'secure' && req.headers.authorization) {
+          return send(200, JSON.stringify({ healthy: true, auth: 'bearer', protocol: 1, version: '1.0.0', pid: 7 }));
+        }
+        return send(200, JSON.stringify({ healthy: true, auth: 'bearer', protocol: 1 }));
+      }
+      if (req.url === '/v1/operations') {
+        return send(200, JSON.stringify({ operations: [{ operation: { status: 'running' } }] }));
+      }
+      return send(mode === 'secure' ? 401 : 200, '{}');
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as AddressInfo).port;
+    return { url: `http://127.0.0.1:${port}`, port: String(port), authSeen };
+  }
+
+  it('classifies current, legacy, spoofing, garbled and absent servers', async () => {
+    expect(await classifyVeaselBackend((await fake('secure')).url)).toBe('secure');
+    expect(await classifyVeaselBackend((await fake('legacy')).url)).toBe('legacy');
+    expect(await classifyVeaselBackend((await fake('spoof')).url)).toBe('legacy');
+    expect(await classifyVeaselBackend((await fake('garbage')).url)).toBe('legacy');
+    expect(await classifyVeaselBackend('http://127.0.0.1:1')).toBe('absent');
+  });
+
+  it('blocks on a legacy backend: no attach, no spawn, no token sent, recovery text shown', async () => {
+    const legacy = await fake('legacy');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-legacy-'));
+    fs.writeFileSync(path.join(dir, 'api-token'), `${T1}\n`, { mode: 0o600 });
+    try {
+      const supervisor = new VeaselBackendSupervisor({
+        userDataDir: dir,
+        dataDir: dir,
+        env: { VEASEL_BACKEND_BIN: '/nonexistent/veasel-must-not-spawn' },
+        conventionalUrl: legacy.url,
+      });
+      const state = await supervisor.start();
+      expect(state.status).toBe('failed');
+      expect(state.url).toBeNull();
+      expect(state.problem).toContain('legacy Veasel backend');
+      expect(state.problem).toContain(`127.0.0.1:${legacy.port}`);
+      expect(state.problem).toContain('1 turn(s) are running or queued');
+      expect(state.problem).toContain('taskkill');
+      expect(legacy.authSeen.every((header) => header === undefined)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('attaches to a current backend and sends the token only after it proved auth', async () => {
+    const secure = await fake('secure');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-secure-'));
+    fs.writeFileSync(path.join(dir, 'api-token'), `${T1}\n`, { mode: 0o600 });
+    try {
+      const supervisor = new VeaselBackendSupervisor({ userDataDir: dir, dataDir: dir, env: {}, conventionalUrl: secure.url });
+      const state = await supervisor.start();
+      expect(state.status).toBe('ready');
+      expect(state.url).toBe(secure.url);
+      expect(secure.authSeen.slice(0, 2)).toEqual([undefined, undefined]);
+      expect(secure.authSeen).toContain(`Bearer ${T1}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

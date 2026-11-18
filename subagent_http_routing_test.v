@@ -175,7 +175,7 @@ fn run_subagent_http_test_server(mut app SubagentHTTPServer) {
 fn wait_for_http_subagent(url string, run_id string) SubagentRun {
 	deadline := time.sys_mono_now() + u64(20 * time.second)
 	for time.sys_mono_now() < deadline {
-		response := http.get('${url}/${run_id}') or {
+		response := http.fetch(url: '${url}/${run_id}', header: routing_test_auth_header()) or {
 			time.sleep(10 * time.millisecond)
 			continue
 		}
@@ -203,6 +203,7 @@ fn create_http_subagent(base_url string, request_id string, agent_id string, pro
 	})
 	response := http.fetch(
 		url:           base_url
+		header:        routing_test_auth_header()
 		method:        .post
 		data:          payload
 		read_timeout:  5 * time.second
@@ -347,6 +348,7 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 
 	cancel_response := http.fetch(
 		url:           '${base_url}/${openai_run.id}/cancel'
+		header:        routing_test_auth_header()
 		method:        .post
 		read_timeout:  5 * time.second
 		write_timeout: 5 * time.second
@@ -363,7 +365,7 @@ fn test_http_subagents_route_native_providers_concurrently_and_cancel_independen
 	assert openai_fixture.request_count == 1
 	assert anthropic_fixture.request_count == 1
 
-	list_response := http.get(base_url) or { panic(err) }
+	list_response := http.fetch(url: base_url, header: routing_test_auth_header()) or { panic(err) }
 	assert list_response.status_code == 200
 	listed := json2.decode[[]SubagentRun](list_response.body) or { panic(err) }
 	assert listed.any(it.id == openai_run.id && it.provider == 'openai-compatible'
@@ -514,7 +516,10 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 	assert openai_done.usage_reported
 	assert openai_done.input_tokens == 11
 	assert openai_done.output_tokens == 4
-	blocked_anthropic_response := http.get('${base_url}/${second_run.id}') or { panic(err) }
+	blocked_anthropic_response := http.fetch(
+		url:    '${base_url}/${second_run.id}'
+		header: routing_test_auth_header()
+	) or { panic(err) }
 	assert blocked_anthropic_response.status_code == 200
 	blocked_anthropic := json2.decode[SubagentRun](blocked_anthropic_response.body) or { panic(err) }
 	assert blocked_anthropic.status == 'running'
@@ -534,7 +539,7 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 	assert openai_done.id != anthropic_done.id
 	assert openai_done.child_session_id != anthropic_done.child_session_id
 
-	list_response := http.get(base_url) or { panic(err) }
+	list_response := http.fetch(url: base_url, header: routing_test_auth_header()) or { panic(err) }
 	assert list_response.status_code == 200
 	listed := json2.decode[[]SubagentRun](list_response.body) or { panic(err) }
 	assert listed.any(it.id == openai_run.id && it.parent_session_id == parent.id
@@ -545,4 +550,13 @@ fn test_http_subagents_complete_concurrently_across_providers_and_attribute_resu
 		&& it.parent_operation_id == openai_run.parent_operation_id && it.status == 'completed'
 		&& it.provider == 'anthropic' && it.model == 'anthropic-child-fixture'
 		&& it.input_tokens == 9 && it.output_tokens == 3 && it.usage_reported)
+}
+
+// The API rejects every unauthenticated request, so HTTP fixtures install a
+// known token and send it like any real client.
+fn routing_test_auth_header() http.Header {
+	api_auth_state().configure('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '', true)
+	mut header := http.new_header()
+	header.set(.authorization, 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+	return header
 }

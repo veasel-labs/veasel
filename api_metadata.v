@@ -11,6 +11,16 @@ pub:
 	pid     int
 }
 
+// Unauthenticated liveness. `auth` and `protocol` let a client tell a current
+// backend from a legacy one that never enforced authentication; they leak no
+// pid, version or path.
+struct HealthLiveness {
+pub:
+	healthy  bool
+	auth     string
+	protocol int
+}
+
 struct Capabilities {
 pub:
 	api_version string
@@ -19,6 +29,15 @@ pub:
 
 @['/v1/health'; get]
 pub fn (app &App) health(mut ctx Context) veb.Result {
+	// Unauthenticated liveness leaks nothing but "a server answers here";
+	// version and pid are only for callers holding the API token.
+	if !ctx.authenticated {
+		return ctx.json(HealthLiveness{
+			healthy:  true
+			auth:     'bearer'
+			protocol: auth_protocol_version
+		})
+	}
 	return ctx.json(Health{
 		healthy: true
 		version: product_version

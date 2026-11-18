@@ -278,7 +278,7 @@ class VeaselCode(BaseInstalledAgent):
             "server_log=/logs/agent/veasel-server.log; "
             f"\"$HOME/.local/bin/veasel\" serve >\"$server_log\" 2>&1 & server_pid=$!; "
             "trap 'kill \"$server_pid\" 2>/dev/null || true; wait \"$server_pid\" 2>/dev/null || true' EXIT; "
-            "attempt=0; until curl --fail --silent --show-error \"http://127.0.0.1:$VEASEL_PORT/v1/health\" >/dev/null; do "
+            "attempt=0; until curl --fail --silent --show-error \"http://127.0.0.1:$VEASEL_PORT/v1/health\" | grep -q '\"auth\":\"bearer\"'; do "
             "attempt=$((attempt + 1)); if [ \"$attempt\" -ge 100 ]; then cat \"$server_log\" >&2; exit 1; fi; sleep 0.1; done; "
             "set +e; \"$HOME/.local/bin/veasel\" run --autonomous --json "
             f"--timeout {timeout} --workspace \"$PWD\" "

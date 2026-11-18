@@ -27,6 +27,8 @@ export interface VeaselBackendOptions {
   env?: NodeJS.ProcessEnv;
   /** Test seam; production uses the canonical Veasel data dir. */
   dataDir?: string;
+  /** Test seam; production uses the backend's conventional loopback URL. */
+  conventionalUrl?: string;
 }
 
 const HEALTH_TIMEOUT_MS = 30_000;
@@ -111,6 +113,70 @@ export function readBackendApiToken(
   }
 }
 
+export type BackendKind = 'absent' | 'secure' | 'legacy';
+
+async function probeNoCredentials(url: string): Promise<Response | undefined> {
+  try {
+    // No Authorization header: an unverified server must never see the token.
+    return await fetch(url, { headers: {}, signal: AbortSignal.timeout(1500) });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Classifies the server on `base` without sending any credential. `secure`
+ * requires health to advertise bearer auth AND an unauthenticated protected
+ * route to be refused; anything reachable that cannot prove that (an older
+ * backend, a server that only claims it, unparseable output) is `legacy`.
+ */
+export async function classifyVeaselBackend(base: string): Promise<BackendKind> {
+  const health = await probeNoCredentials(`${base}/v1/health`);
+  if (!health) return 'absent';
+  if (health.status !== 200) return 'legacy';
+  let body: unknown;
+  try {
+    body = await health.json();
+  } catch {
+    return 'legacy';
+  }
+  const liveness = body as { healthy?: unknown; auth?: unknown; protocol?: unknown } | null;
+  if (!liveness || liveness.healthy !== true || liveness.auth !== 'bearer') return 'legacy';
+  if (typeof liveness.protocol !== 'number' || liveness.protocol < 1) return 'legacy';
+  const protectedRoute = await probeNoCredentials(`${base}/v1/capabilities`);
+  return protectedRoute?.status === 401 ? 'secure' : 'legacy';
+}
+
+async function legacyActiveOperations(base: string): Promise<number | undefined> {
+  const response = await probeNoCredentials(`${base}/v1/operations`);
+  if (!response || response.status !== 200) return undefined;
+  try {
+    const page = (await response.json()) as { operations?: Array<{ operation?: { status?: string } }> };
+    if (!Array.isArray(page.operations)) return undefined;
+    return page.operations.filter((row) => row.operation?.status === 'running' || row.operation?.status === 'queued')
+      .length;
+  } catch {
+    return undefined;
+  }
+}
+
+export function legacyBackendMessage(port: string, active: number | undefined): string {
+  const impact =
+    active === undefined
+      ? 'It may be running turns; stopping it interrupts them.'
+      : active > 0
+        ? `${active} turn(s) are running or queued on it and will be interrupted if you stop it.`
+        : 'No running or queued turns were reported (checked with a read-only request).';
+  return [
+    `A legacy Veasel backend without caller authentication is running on 127.0.0.1:${port} (or another server that cannot prove authentication holds that port). Any local process can control it, so Veasel Desktop will not attach to it or send it credentials. ${impact} Sessions are stored in SQLite and are kept; only in-flight turns are lost.`,
+    'To recover, stop it yourself and reopen Veasel (Veasel never stops a process it did not start):',
+    `  Linux:   ss -ltnp "sport = :${port}"    then   kill <pid>`,
+    `  macOS:   lsof -nP -iTCP:${port} -sTCP:LISTEN   then   kill <pid>`,
+    `  Windows: netstat -ano | findstr :${port}   then   taskkill /PID <pid>`,
+    'Two backends must never share one data directory, and a legacy process holds its directory without a lock, so Veasel will not start another backend beside it.',
+  ].join('\n');
+}
+
 export async function probeVeaselBackend(url: string, apiToken?: string | null): Promise<VeaselBackendIdentity | null> {
   try {
     // Unauthenticated health is minimal liveness; identity (version, pid)
@@ -163,8 +229,20 @@ export class VeaselBackendSupervisor {
     // Prefer the backend's conventional port so a TUI-started backend is
     // attached to (one runtime, shared sessions) instead of duplicated;
     // only spawn our own when nothing healthy answers there.
-    const conventional = 'http://127.0.0.1:4097';
-    if (await isHealthy(conventional, this.apiToken())) {
+    const conventional = this.options.conventionalUrl ?? 'http://127.0.0.1:4097';
+    const kind = await classifyVeaselBackend(conventional);
+    if (kind === 'legacy') {
+      // Never attach to (or spawn beside) a server that does not enforce
+      // authentication; block with an explicit recovery message instead.
+      const port = new URL(conventional).port || '80';
+      this.setState({
+        status: 'failed',
+        url: null,
+        problem: legacyBackendMessage(port, await legacyActiveOperations(conventional)),
+      });
+      return this.state;
+    }
+    if (kind === 'secure' && (await isHealthy(conventional, this.apiToken()))) {
       this.attached = true;
       this.setState({ status: 'ready', url: conventional, problem: null });
       return this.state;

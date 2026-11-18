@@ -652,17 +652,141 @@ fn test_ensure_directory_survives_concurrent_creators() {
 	ensure_directory(target) or { panic(err) }
 }
 
+// Models a current backend: bearer-auth liveness and a 401 on protected routes.
 struct BackendHealthFixture {}
 
 fn (mut _ BackendHealthFixture) handle(request http.Request) http.Response {
 	mut response := http.Response{}
 	if request.url == '/v1/health' {
 		response.header.set(.content_type, 'application/json')
-		response.body = '{"healthy":true}'
+		response.body = '{"healthy":true,"auth":"bearer","protocol":1}'
+		return response
+	}
+	if request.url == '/v1/capabilities' {
+		response.set_status(.unauthorized)
 		return response
 	}
 	response.set_status(.not_found)
 	return response
+}
+
+// Models a backend started before caller authentication existed (or a server
+// that spoofs it): old-style health, protected routes answer 200, and any
+// Authorization header it receives is recorded.
+struct LegacyBackendFixture {
+mut:
+	mode          string // legacy | spoof | garbage | status
+	saw_auth      bool
+	operations_ok bool
+}
+
+fn (mut f LegacyBackendFixture) handle(request http.Request) http.Response {
+	mut response := http.Response{}
+	if request.header.get(.authorization) or { '' } != '' {
+		f.saw_auth = true
+	}
+	response.header.set(.content_type, 'application/json')
+	match request.url {
+		'/v1/health' {
+			response.body = match f.mode {
+				'legacy' { '{"healthy":true,"version":"0.0.9","pid":4242}' }
+				'spoof' { '{"healthy":true,"auth":"bearer","protocol":1}' }
+				'garbage' { 'not json at all' }
+				else { '{"healthy":true}' }
+			}
+			if f.mode == 'status' {
+				response.set_status(.service_unavailable)
+			}
+		}
+		'/v1/operations' {
+			response.body = '{"operations":[{"operation":{"status":"running"}},{"operation":{"status":"completed"}},{"operation":{"status":"queued"}}]}'
+		}
+		else {
+			response.body = '{}'
+		}
+	}
+	return response
+}
+
+fn start_legacy_fixture(mode string) (&http.Server, thread, &LegacyBackendFixture, int) {
+	mut fixture := &LegacyBackendFixture{
+		mode: mode
+	}
+	mut server := &http.Server{
+		accept_timeout:       100 * time.millisecond
+		handler:              fixture
+		addr:                 '127.0.0.1:0'
+		show_startup_message: false
+	}
+	server_thread := spawn server.listen_and_serve()
+	server.wait_till_running() or {
+		server.stop()
+		server_thread.wait()
+		panic(err)
+	}
+	return server, server_thread, fixture, server.addr.all_after_last(':').int()
+}
+
+fn test_legacy_unauthenticated_backend_is_refused_and_never_sent_credentials() {
+	mut server, server_thread, fixture, port := start_legacy_fixture('legacy')
+	defer {
+		server.stop()
+		server_thread.wait()
+	}
+	assert port > 0
+	assert probe_backend_kind(port) == .legacy
+	assert backend_health(port) == none
+	assert !backend_is_healthy(port)
+	ensure_backend(port, '') or {
+		message := err.msg()
+		assert message.contains('legacy Veasel backend')
+		assert message.contains('127.0.0.1:${port}')
+		assert message.contains('2 turn(s) are running or queued')
+		assert message.contains('ss -ltnp')
+		assert message.contains('lsof')
+		assert message.contains('taskkill')
+		assert message.contains('SEPARATE VEASEL_DATA_DIR')
+		assert message.contains('only in-flight turns are lost')
+		assert !fixture.saw_auth, 'the legacy server must never receive an Authorization header'
+		return
+	}
+	assert false, 'ensure_backend must refuse a legacy backend'
+}
+
+fn test_spoofed_garbled_and_failing_health_fail_closed() {
+	// Claims bearer auth but answers a protected route with 200: insecure.
+	for mode in ['spoof', 'garbage', 'status'] {
+		mut server, server_thread, fixture, port := start_legacy_fixture(mode)
+		assert probe_backend_kind(port) == .legacy, mode
+		assert backend_health(port) == none, mode
+		ensure_backend(port, '') or {
+			assert err.msg().contains('legacy Veasel backend'), mode
+			assert !fixture.saw_auth, mode
+			server.stop()
+			server_thread.wait()
+			continue
+		}
+		server.stop()
+		server_thread.wait()
+		assert false, '${mode}: ensure_backend must refuse'
+	}
+}
+
+fn test_unreachable_port_is_absent_not_legacy() {
+	assert probe_backend_kind(1) == .absent
+}
+
+fn test_backend_start_refuses_a_data_directory_owned_by_another_backend() {
+	root := os.join_path(os.temp_dir(), 'veasel-owner-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut first := new_subagent_preparation_lock(os.join_path(root, 'backend.lock')) or { panic(err) }
+	assert first.try_acquire()
+	mut second := new_subagent_preparation_lock(os.join_path(root, 'backend.lock')) or { panic(err) }
+	assert !second.try_acquire()
+	first.release()
+	assert second.try_acquire()
+	second.release()
 }
 
 fn test_backend_health_probe_and_ensure_reuses_healthy_listener() {

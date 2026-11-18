@@ -348,6 +348,7 @@ pub fn (mut app PrefsHTTPServer) patch(mut ctx Context, id string) veb.Result {
 }
 
 fn run_prefs_http_server(mut app PrefsHTTPServer, port int) {
+	prefs_test_install_token()
 	veb.run_at[PrefsHTTPServer, Context](mut app, host: '127.0.0.1', family: .ip, port: port) or {
 		panic(err)
 	}
@@ -373,7 +374,8 @@ fn prefs_request(method http.Method, url string, body string) http.Response {
 		method:        method
 		data:          body
 		header:        http.new_header_from_map({
-			http.CommonHeader.content_type: 'application/json'
+			http.CommonHeader.content_type:  'application/json'
+			http.CommonHeader.authorization: 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 		})
 		read_timeout:  10 * time.second
 		write_timeout: 10 * time.second
@@ -527,4 +529,10 @@ fn test_cli_session_preference_runs_without_global_credentials() {
 	}) or { panic(err) }
 	assert over.target_source == 'turn'
 	assert over.input.provider == 'codex'
+}
+
+// The API rejects every unauthenticated request; HTTP fixtures install this
+// known token and send it like any real client.
+fn prefs_test_install_token() {
+	api_auth_state().configure('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '', true)
 }

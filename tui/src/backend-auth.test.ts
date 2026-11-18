@@ -3,7 +3,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { apiTokenPath, createApiTokenSource, withBackendAuth } from "./backend-auth"
+import {
+  apiTokenPath,
+  classifyBackend,
+  connectAuthenticated,
+  createApiTokenSource,
+  legacyBackendMessage,
+  requireNonLegacyBackend,
+  withBackendAuth,
+} from "./backend-auth"
 
 let dir: string
 const T1 = "a".repeat(64)
@@ -117,5 +125,78 @@ describe("withBackendAuth", () => {
     await withBackendAuth(base, () => undefined, inner)(`${base}/x`)
     expect(seen[0]!.auth).toBe("Bearer mine")
     expect(seen[1]!.auth).toBeNull()
+  })
+})
+
+describe("legacy backend negotiation", () => {
+  type Mode = "legacy" | "spoof" | "garbage" | "secure" | "unavailable"
+  const servers: Array<ReturnType<typeof Bun.serve>> = []
+  afterEach(() => {
+    for (const server of servers.splice(0)) server.stop(true)
+  })
+  function fake(mode: Mode) {
+    const seen: Array<string | null> = []
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        seen.push(request.headers.get("authorization"))
+        const path = new URL(request.url).pathname
+        if (path === "/v1/health") {
+          if (mode === "unavailable") return new Response("{}", { status: 503 })
+          if (mode === "garbage") return new Response("not json")
+          if (mode === "legacy") return Response.json({ healthy: true, version: "0.0.9", pid: 4242 })
+          return Response.json({ healthy: true, auth: "bearer", protocol: 1 })
+        }
+        if (path === "/v1/operations")
+          return Response.json({
+            operations: [{ operation: { status: "running" } }, { operation: { status: "completed" } }],
+          })
+        // A secure server rejects protected routes; legacy and spoofing servers answer 200.
+        if (mode === "secure") return new Response("{}", { status: 401 })
+        return Response.json({})
+      },
+    })
+    servers.push(server)
+    return { base: server.url.origin, seen, port: String(server.port) }
+  }
+
+  test("a current backend is attached normally", async () => {
+    const { base } = fake("secure")
+    expect(await classifyBackend(base)).toBe("secure")
+    expect(await requireNonLegacyBackend(base)).toBe("secure")
+  })
+
+  test("an unreachable port is absent, not legacy", async () => {
+    expect(await classifyBackend("http://127.0.0.1:1")).toBe("absent")
+  })
+
+  test("legacy, spoofing, garbled and failing servers are refused and never receive the token", async () => {
+    for (const mode of ["legacy", "spoof", "garbage", "unavailable"] as const) {
+      const { base, seen, port } = fake(mode)
+      expect(await classifyBackend(base)).toBe("legacy")
+      const dir = mkdtempSync(join(tmpdir(), "veasel-legacy-"))
+      writeFileSync(join(dir, "api-token"), `${T1}\n`, { mode: 0o600 })
+      let message = ""
+      await connectAuthenticated(base, { VEASEL_DATA_DIR: dir } as NodeJS.ProcessEnv).catch((error: Error) => {
+        message = error.message
+      })
+      rmSync(dir, { recursive: true, force: true })
+      expect(message).toContain("legacy Veasel backend")
+      expect(message).toContain(`127.0.0.1:${port}`)
+      expect(message).toContain("taskkill")
+      expect(message).toContain("SEPARATE VEASEL_DATA_DIR")
+      expect(seen.every((header) => header === null)).toBe(true)
+    }
+  })
+
+  test("the message reports in-flight turns read-only when the legacy API answers", async () => {
+    const { base } = fake("legacy")
+    let message = ""
+    await requireNonLegacyBackend(base).catch((error: Error) => {
+      message = error.message
+    })
+    expect(message).toContain("1 turn(s) are running or queued")
+    expect(legacyBackendMessage("4097", undefined)).toContain("may be running turns")
   })
 })

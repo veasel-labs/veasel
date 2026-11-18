@@ -1,18 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { useBackend } from '../../data/backend';
 import { useFocusBridge, useFocusProviders, useFocusThreads, useFocusTimeline } from '../../data/focus';
-import { useProjects } from '../../data/projects';
+import { useFocusFolders } from '../../data/focus-folders';
 import { useTerminalSessions } from '../../data/terminal';
 import { OPEN_TERMINAL_DOCK_EVENT } from '../../shell/events';
 import type { FocusPermissionMode, FocusProviderStatus, FocusThread } from '../../types/focus';
 import { Button, ConfirmAction, PixelIcon } from '../../ui';
-import { FilesPanel } from '../workspace/FilesPanel';
-import { ProjectChangesPanel } from '../workspace/ProjectChangesPanel';
 import { Conversation } from './Conversation';
 import { MODE_OPTIONS, relativeTime, STATUS_LABEL, threadTitle } from './labels';
 import { NewSession } from './NewSession';
+import { SessionChanges } from './SessionChanges';
 import styles from './focus.module.css';
 
 const WIDE_WINDOW = '(min-width: 78.0625rem)';
@@ -221,8 +219,7 @@ function Header({
   );
 }
 
-function Inspector({ thread, workspace, onClose }: { thread: FocusThread; workspace: string; onClose: () => void }) {
-  const [tab, setTab] = useState<'changes' | 'files'>('changes');
+function Inspector({ thread, onClose }: { thread: FocusThread; onClose: () => void }) {
   const queryClient = useQueryClient();
   const timeline = useFocusTimeline(thread.id);
   const lastSeq = timeline.events.at(-1)?.seq ?? 0;
@@ -231,42 +228,21 @@ function Inspector({ thread, workspace, onClose }: { thread: FocusThread; worksp
   // The working tree changes when a tool finishes or a turn ends: re-read Git then, not on a timer.
   useEffect(() => {
     if (lastType !== 'tool.finished' && lastType !== 'turn.finished') return;
-    void queryClient.invalidateQueries({
-      predicate: (query) => query.queryKey[0] === 'projects' && String(query.queryKey[1]).startsWith('git'),
-    });
-    void queryClient.invalidateQueries({ queryKey: ['files'] });
-  }, [queryClient, lastSeq, lastType]);
+    void queryClient.invalidateQueries({ queryKey: ['focus', 'git', thread.id] });
+  }, [queryClient, lastSeq, lastType, thread.id]);
 
-  if (!thread.projectName) {
-    return (
-      <aside className={styles.inspector} aria-label="Changes and files">
-        <p className={styles.quiet}>
-          This session runs in a folder that is not a linked project, so changes cannot be reviewed here.
-        </p>
-      </aside>
-    );
-  }
   return (
     <aside className={styles.inspector} aria-label="Changes and files">
-      <div className={styles.tabs} role="tablist" aria-label="Project view">
-        <button type="button" role="tab" aria-selected={tab === 'changes'} onClick={() => setTab('changes')}>
-          Changes
-        </button>
-        <button type="button" role="tab" aria-selected={tab === 'files'} onClick={() => setTab('files')}>
-          Files
-        </button>
+      <div className={styles.tabs}>
+        <h2 className={styles.threadGroup}>Working tree</h2>
         <span className={styles.tabsClose}>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close changes and files">
             <PixelIcon name="cross" size={12} />
           </Button>
         </span>
       </div>
-      <div className={styles.inspectorBody} role="tabpanel">
-        {tab === 'changes' ? (
-          <ProjectChangesPanel workspace={workspace} projects={[{ name: thread.projectName, status: 'ok' }]} />
-        ) : (
-          <FilesPanel project={thread.projectName} />
-        )}
+      <div className={styles.inspectorBody}>
+        <SessionChanges threadId={thread.id} />
       </div>
     </aside>
   );
@@ -278,12 +254,10 @@ function Inspector({ thread, workspace, onClose }: { thread: FocusThread; worksp
  * and files sit beside it; a real terminal opens in the same folder.
  */
 export default function FocusView() {
-  const { backend } = useBackend();
-  const workspace = backend?.harness?.path ?? '';
   const [params, setParams] = useSearchParams();
   const { threads, loaded } = useFocusThreads();
   const providers = useFocusProviders();
-  const projects = useProjects(workspace);
+  const folders = useFocusFolders(threads);
   const terminals = useTerminalSessions();
   const bridge = useFocusBridge();
   const [error, setError] = useState<string | null>(null);
@@ -375,9 +349,9 @@ export default function FocusView() {
           </div>
         ) : (
           <NewSession
-            workspace={workspace}
-            projects={projects.data?.projects ?? []}
-            projectsLoading={projects.isLoading}
+            projects={folders.folders}
+            projectsLoading={false}
+            onChooseFolder={folders.choose}
             providers={providers.data ?? []}
             providersLoading={providers.isLoading}
             onRefreshProviders={() => {
@@ -388,9 +362,7 @@ export default function FocusView() {
           />
         )}
       </div>
-      {active && inspectorOpen ? (
-        <Inspector thread={active} workspace={workspace} onClose={() => setInspectorOpen(false)} />
-      ) : null}
+      {active && inspectorOpen ? <Inspector thread={active} onClose={() => setInspectorOpen(false)} /> : null}
     </div>
   );
 }

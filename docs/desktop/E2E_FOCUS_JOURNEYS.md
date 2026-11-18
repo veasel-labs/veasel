@@ -41,9 +41,7 @@ ubuntu-24.04 and runs the same spec under `xvfb-run`, uploads evidence and a ste
 
 ## Fixture-only workarounds (each backed by a known bug above)
 
-- The start form cannot list or link a project (J2), so sessions are created through the API with stored
-  preferences and then opened by clicking them in the Sessions list; everything after (composer, approvals, keyboard,
-  reopen) is click/keyboard driven.
+- Approval/stop journeys use a fresh API-created session with stored preferences (the start form itself is covered by J2).
 - The thread list and pending approvals load at open time, so tests reload/reselect the session to load server state
   (J3b, J4c). One fresh session per approval journey.
 - J9 drives the TUI through its own API client (`tui/src/api-client.ts`, `backend-auth.ts`) under `bun`, not a pty; the
@@ -53,10 +51,11 @@ ubuntu-24.04 and runs the same spec under `xvfb-run`, uploads evidence and a ste
 
 ## Product bugs found (repro: run the suite; each has a `test.fail` journey)
 
-1. J2/J4b: Focus takes workspace and projects from the legacy ATK backend that #728 disabled (`backend.harness.path`
-   is null; `useProjects`, `useLinkProject`, `ProjectChangesPanel`). The start form shows "No project linked yet",
-   linking says "workspace is still starting" forever, and the Changes panel stays on "Reading working tree...". No
-   session can be started from the UI on a clean install. Fix: source projects and git status from the V backend.
+1. (fixed) J2/J4b: Focus took workspace, projects and git status from the legacy ATK backend that #728 disabled. It now uses
+   the session's own directory: folders come from existing sessions plus the native picker, and the Changes panel reads
+   `GET /v1/sessions/:id/workspace/git/changes|diff` from the V backend. Starting from the form also needed a session
+   title (the backend rejects an empty one) and adding the new thread to the store. The old tab markup that axe flagged
+   (aria-required-children) went away with it, so J8c now passes.
 2. J3b (fixed here, see commit "render the approval dialog"): `readThreadSnapshot` never emitted `turn.started`, so
    `pendingApproval()` ignored the turn and the dialog never rendered; the pending approval was also numbered into the
    previous turn. Still open: a mid-turn approval is not pushed live (no SSE event/poll), so the dialog appears only

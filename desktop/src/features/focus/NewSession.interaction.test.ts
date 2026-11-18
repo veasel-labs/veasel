@@ -6,10 +6,6 @@ import type { FocusBridge, FocusProviderStatus, FocusThread } from '../../types/
 import type { AtkBridge } from '../../types/electron';
 import { NewSession } from './NewSession';
 
-vi.mock('../../data/projects', () => ({
-  useLinkProject: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-}));
-
 const provider: FocusProviderStatus = {
   id: 'claude',
   label: 'Claude Code',
@@ -52,7 +48,6 @@ describe('NewSession', () => {
   it('announces provider discovery while the first agent check is pending', () => {
     render(
       createElement(NewSession, {
-        workspace: '/ws',
         projects: [],
         projectsLoading: true,
         providers: [],
@@ -76,7 +71,6 @@ describe('NewSession', () => {
 
     render(
       createElement(NewSession, {
-        workspace: '/ws',
         projects: [{ name: 'demo', target: '/ws/demo', status: 'ok' }],
         projectsLoading: false,
         providers: [signedOut],
@@ -108,7 +102,6 @@ describe('NewSession', () => {
 
     render(
       createElement(NewSession, {
-        workspace: '/ws',
         projects: [{ name: 'demo', target: '/ws/demo', status: 'ok' }],
         projectsLoading: false,
         providers: [provider],
@@ -138,7 +131,6 @@ describe('NewSession', () => {
 
     render(
       createElement(NewSession, {
-        workspace: '/ws',
         projects: [{ name: 'available', target: '/ws/available', status: 'ok' }],
         projectsLoading: false,
         providers: [provider],
@@ -166,7 +158,6 @@ describe('NewSession', () => {
 
     render(
       createElement(NewSession, {
-        workspace: '/ws',
         projects: [{ name: 'demo', target: '/ws/demo', status: 'ok' }],
         projectsLoading: false,
         providers: [provider],
@@ -199,7 +190,6 @@ describe('NewSession', () => {
 
     render(
       createElement(NewSession, {
-        workspace: '/ws',
         projects: [{ name: 'demo', target: '/ws/demo', status: 'ok' }],
         projectsLoading: false,
         providers: [provider],

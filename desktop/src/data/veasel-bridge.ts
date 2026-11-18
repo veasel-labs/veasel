@@ -17,6 +17,8 @@ import type {
   FocusApprovalDecision,
   FocusBridge,
   FocusCreateThreadInput,
+  FocusGitChanges,
+  FocusGitDiff,
   FocusEvent,
   FocusLiveUpdate,
   FocusPermissionMode,
@@ -520,6 +522,23 @@ export function createVeaselFocusBridge(options: {
         });
         return true as const;
       });
+    },
+
+    gitChanges(id: string): Promise<FocusResult<FocusGitChanges>> {
+      return result(async () => {
+        const raw = await request<Partial<FocusGitChanges>>(
+          `/v1/sessions/${encodeURIComponent(id)}/workspace/git/changes`,
+        );
+        return { branch: raw.branch ?? '', changes: raw.changes ?? [], truncated: raw.truncated ?? false };
+      });
+    },
+
+    gitDiff(id: string, path: string, staged: boolean): Promise<FocusResult<FocusGitDiff>> {
+      return result(() =>
+        request<FocusGitDiff>(
+          `/v1/sessions/${encodeURIComponent(id)}/workspace/git/diff?path=${encodeURIComponent(path)}&staged=${staged}`,
+        ),
+      );
     },
 
     onUpdate(listener: (update: FocusLiveUpdate) => void): () => void {

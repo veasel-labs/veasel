@@ -149,9 +149,9 @@ async function showApproval(): Promise<void> {
 
 /**
  * Creates a session on the backend with stored preferences (#743), then opens it in the UI with a real
- * click. WORKAROUND for a product bug (see J2): the Focus start form cannot list or link a project in
- * Desktop main, so no session can be started from the form. Everything after the session exists
- * (composer, approvals, stop, reopen) is genuinely click/keyboard driven.
+ * click. The start form itself is covered by J2; seeding keeps every approval/stop journey on a fresh session with
+ * known preferences, independent of the form. Everything after the session exists (composer, approvals, stop,
+ * reopen) is genuinely click/keyboard driven.
  */
 async function openSeededSession(testInfo: TestInfo): Promise<string> {
   seeded += 1;
@@ -267,38 +267,34 @@ test('J1 clean first launch lists the installed CLI providers', async ({}, testI
   });
 });
 
-test('J2 open the disposable git workspace', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG (#728 side effect): the legacy ATK backend is disabled, but Focus still takes its
-  // workspace path and project list from it (`backend.harness.path`, `useProjects`). Linking a folder fails
-  // with "The workspace is still starting" forever and the project select never appears, so no session can
-  // be started from the form. Oracle unchanged; expected to fail until Focus sources projects from the V backend.
-  test.fail(true, 'Focus cannot link/list projects: it depends on the disabled legacy ATK backend (#728)');
+test('J2 choose the disposable git folder and start a session from the form', async ({}, testInfo) => {
   // The native folder picker is platform-owned; only its result is stubbed (as project-link.spec.ts does).
   await desktop.app.evaluate(({ dialog }, folder) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
   }, env.repo);
-  await testInfo.attach('atk-backend-status', {
-    body: JSON.stringify(
-      await page.evaluate(() =>
-        (window as unknown as { atk: { backendStatus: () => Promise<unknown> } }).atk.backendStatus(),
-      ),
-      null,
-      1,
-    ),
-    contentType: 'application/json',
-  });
-  // The workspace service warms up after launch ("still starting"); retry the real click until it links.
-  await expect(async () => {
-    await page.getByRole('button', { name: 'Choose a repository folder' }).click();
-    await expect(page.getByLabel('Project')).toHaveValue(REPO_NAME, { timeout: 5_000 });
-  }).toPass({ timeout: 20_000, intervals: [1_000, 3_000] });
-  await shot(testInfo, 'J2-project');
-  // Oracle: the workspace link on disk resolves to the disposable repo.
-  const link = path.join(desktop.home, '.ai-workspace', 'projects', REPO_NAME);
-  const resolved = fs.realpathSync(link);
-  expect(resolved).toBe(fs.realpathSync(env.repo));
-  record(testInfo, 'J2', 'workspace symlink realpath == disposable repo', {
-    linkResolvesToRepo: resolved === fs.realpathSync(env.repo),
+  await page.getByRole('button', { name: 'Choose a repository folder' }).click();
+  await expect(page.getByLabel('Project')).toHaveValue(REPO_NAME);
+  await page.getByRole('radio', { name: /Claude Code/ }).check();
+  await page.getByLabel('Permissions').selectOption({ label: 'Ask before changes' });
+  await page.getByRole('textbox', { name: 'Task' }).fill('[[echo]] hello from the start form');
+  await shot(testInfo, 'J2-form');
+  await page.getByRole('button', { name: 'Start session' }).click();
+  await expect(conversation()).toBeVisible({ timeout: 20_000 });
+  // Oracles: the backend holds a session whose directory is the disposable repo, and the fake CLI ran for it.
+  const started = await threadFromUrl();
+  const stored = await backendApi<{ directory: string; preferred_provider: string; permission_mode: string }>(
+    env,
+    await backend(),
+    `/v1/sessions/${started}`,
+  );
+  expect(fs.realpathSync(stored.directory)).toBe(fs.realpathSync(env.repo));
+  expect(stored.preferred_provider).toBe('claude-code');
+  await expect
+    .poll(() => readCliLog(env).filter((entry) => entry.event === 'scenario' && entry.scenario === 'echo').length)
+    .toBe(1);
+  record(testInfo, 'J2', 'backend session.directory == disposable repo; echo turn ran in the fake CLI', {
+    directoryIsRepo: fs.realpathSync(stored.directory) === fs.realpathSync(env.repo),
+    echoTurns: 1,
   });
 });
 
@@ -307,6 +303,7 @@ test('J3 choose provider (no model) and prompt: chosen provider spawned, text st
   // Provider and permission mode are the session's stored preferences (#743); NO model is chosen anywhere.
   sessionId = await openSeededSession(testInfo);
   await expect(page.getByTitle(/Reads freely/)).toContainText('Ask before changes');
+  const spawnsBefore = readCliLog(env).filter((entry) => entry.event === 'spawn').length;
   const tap = await tapEvents();
   await composer().fill(FIX_PROMPT);
   await composer().press('Enter');
@@ -332,7 +329,9 @@ test('J3 choose provider (no model) and prompt: chosen provider spawned, text st
   expect(serverDeltas, 'the server must emit assistant.delta while the CLI streams').toBeGreaterThan(1);
 
   // Oracle (#735 regression): the only CLI process spawned for this turn is the chosen provider.
-  const spawns = readCliLog(env).filter((entry) => entry.event === 'spawn');
+  const spawns = readCliLog(env)
+    .filter((entry) => entry.event === 'spawn')
+    .slice(spawnsBefore);
   expect(spawns.map((entry) => entry.cli)).toEqual(['claude']);
   const operations = await backendApi<Array<{ resolved_provider?: string }>>(
     env,
@@ -420,15 +419,18 @@ test('J4 inspect the proposed edit and diff; approve turns the repo test red to 
 });
 
 test('J4b the Changes panel shows the git diff of the applied edit', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG (same root cause as J2): ProjectChangesPanel reads the working tree through the disabled
-  // legacy ATK backend, so it stays on "Reading working tree…" and never lists src/math.js. Oracle unchanged:
-  // `git diff` in the disposable repo already contains the fix (asserted in J4).
-  test.fail(true, 'Changes panel never loads: it depends on the disabled legacy ATK backend (#728)');
   const inspector = page.getByRole('complementary', { name: 'Changes and files' });
-  await inspector.getByRole('tab', { name: 'Changes' }).click();
   await expect(inspector).toContainText('src/math.js', { timeout: 15_000 });
+  await expect(inspector.getByRole('region', { name: 'Changes' })).toBeVisible();
+  const shown = inspector.getByLabel('Changes to src/math.js');
+  await expect(shown).toContainText('-  return a - b;');
+  await expect(shown).toContainText('+  return a + b;');
   await shot(testInfo, 'J4b-changes-panel');
-  expect(git(env.repo, 'diff')).toContain('+  return a + b;');
+  // Oracle: the repository's own diff says the same.
+  const diff = git(env.repo, 'diff');
+  expect(diff).toContain('-  return a - b;');
+  expect(diff).toContain('+  return a + b;');
+  record(testInfo, 'J4b', 'Changes panel diff lines == git diff of the disposable repo', { diffHasFix: true });
 });
 
 test('J4c after the approved turn finishes the session returns to Ready', async () => {
@@ -598,9 +600,6 @@ test('J8 keyboard-only approve and reject, visible focus, Escape stops', async (
 });
 
 test('J8c axe-core finds no accessibility violations on the Focus screen', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG found by axe on the opened session: aria-required-children (critical, 1 node). The oracle is
-  // unchanged; this flips to a failure (remove test.fail) once the markup is fixed.
-  test.fail(true, 'axe: aria-required-children (critical) on the Focus conversation screen');
   // The app's CSP (script-src 'self') correctly blocks page.addScriptTag, so axe is injected through Electron's
   // embedder path (webContents.executeJavaScript), which is not subject to the page CSP. No CSP is loosened.
   const source = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');

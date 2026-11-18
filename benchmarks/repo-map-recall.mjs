@@ -4,7 +4,7 @@
  * Usage: VEASEL_BIN=/path/veasel node repo-map-recall.mjs <repoDir> <cases.json>
  * cases.json: [{ "query": "...", "expected": "relative/path" }] */
 import { spawn, spawnSync } from "node:child_process"
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { basename, join, relative, resolve } from "node:path"
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -73,10 +73,25 @@ function freePort() {
 		})
 	})
 }
+// The benchmark generates the bearer token and hands it to the backend through
+// VEASEL_API_TOKEN, so nothing is read back from disk and no file data reaches
+// the (fixed, loopback) request target.
+const apiToken = randomBytes(32).toString("hex")
+function authHeaders() {
+	return { "content-type": "application/json", authorization: `Bearer ${apiToken}` }
+}
+// The request target is a fixed loopback host plus an API path. Cases come from
+// a JSON file, so the path is validated against the only shapes this benchmark
+// issues before it reaches the request.
+const SAFE_API_PATH = /^\/v1\/[A-Za-z0-9_\-/]+(\?hint=[A-Za-z0-9%._~-]*)?$/
 function req(port, method, path, body) {
 	return new Promise((resolve, reject) => {
+		if (!SAFE_API_PATH.test(path)) {
+			reject(new Error(`refusing unexpected API path: ${path.slice(0, 80)}`))
+			return
+		}
 		const r = http.request(
-			{ host: "127.0.0.1", port, path, method, headers: { "content-type": "application/json" } },
+			{ host: "127.0.0.1", port, path, method, headers: authHeaders() },
 			(res) => {
 				let data = ""
 				res.on("data", (c) => (data += c))
@@ -105,6 +120,7 @@ const env = {
 	...process.env,
 	VEASEL_PORT: String(port),
 	VEASEL_DATA_DIR: dataDir,
+	VEASEL_API_TOKEN: apiToken,
 	VEASEL_SECRET_STORE: 'file', // headless CI: explicit plaintext opt-in (no Secret Service)
 	VEASEL_PLUGIN_DIR: join(dataDir, "plugins"),
 }

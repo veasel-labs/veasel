@@ -180,7 +180,7 @@ import {
 } from "./catalog-filter"
 import { VEASEL_PORTRAIT_ROWS, portraitRowCells } from "./veasel-portrait"
 
-import { installBackendAuth } from "./backend-auth"
+import { connectAuthenticated } from "./backend-auth"
 import {
   formatGlobalUsageSummary,
   formatReportedCacheUsage,
@@ -499,7 +499,12 @@ if (
   throw new Error("Veasel TUI only connects to an unauthenticated loopback API")
 }
 const apiBase = apiUrl.origin
-installBackendAuth(apiBase)
+try {
+  await connectAuthenticated(apiBase)
+} catch (error) {
+  console.error(`veasel: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
+}
 const renderer = await createCliRenderer({ exitOnCtrlC: true })
 const controller = new AbortController()
 const chatHistoryPageSize = 100
@@ -2135,7 +2140,7 @@ async function showMcpServers(filter = "") {
     const importPaths = configured.import_paths?.length
       ? `\nImported project files: ${configured.import_paths.map(safeTerminalText).join(", ")}`
       : ""
-    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nHTTP auth: /mcp credentials · /mcp credential set|remove · /mcp oauth authorize|complete|refresh (header names only; token values never shown; --listen stays headless)\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Trusted stdio MCP requires Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer by default; configure VEASEL_MCP_STDIO_SANDBOX=auto for an explicit unsandboxed fallback or =off to disable sandboxing (capabilities mcp.stdio.sandbox.* show when wrap will run). Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
+    skillNotice = `${header}\n${inventory}${filter ? "" : `${configPath}${projectPath}${importPaths}`}\n\nFilter with /mcp <text> (all tokens must match). Add: /mcp add [user|project] stdio <name> <command> [args…] · /mcp add [user|project] http <name> <url>\nManage: /mcp enable|disable|remove [user|project] <name>\nHTTP auth: /mcp credentials · /mcp credential set|remove · /mcp oauth authorize|complete|refresh (header names only; token values never shown; --listen stays headless)\nTrust: /mcp trust configured/<name> or /mcp trust <plugin>/<server>. Precedence for the same name: project (.veasel) > project-import (.mcp.json, then .cursor/mcp.json) > user. Imports are read-only. Trust connects on the next model turn; every tool call still needs /mcp call show then approve. Trusted stdio MCP requires Linux Bubblewrap, macOS Seatbelt, or Windows AppContainer by default; only the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in runs them unsandboxed (capabilities mcp.stdio.sandbox.* show when wrap will run; mcp.stdio.sandbox.unsandboxed_opt_in shows the opt-in). Streamable HTTP stays pinned to its origin (redirects refused). MCP inputs/results go to your model provider. No install scripts are auto-executed.`
     renderChat(chatMessages)
   } catch (error) {
     skillNotice = `Could not load MCP servers: ${error instanceof Error ? error.message : "request failed"}`

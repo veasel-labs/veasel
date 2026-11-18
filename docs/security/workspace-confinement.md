@@ -56,5 +56,19 @@ always applies: network namespace isolation (the caller's `allow_network` is
 ignored), `--die-with-parent --new-session` plus PID namespace so timeout or
 cancel tears down the whole tree including `setsid` escapes, the 64 KiB output
 cap, `prlimit` caps applied before exec, independent of the shell dialect (processes 256, open files 1024, file size 1 GiB, no core dumps; fails closed if prlimit is missing),
-and a 1 GiB worktree quota checked before and after the run. The primitive is
-still not wired to the implementer profile.
+and a 1 GiB worktree quota checked before and after the run. 
+
+### Wiring (#747)
+
+Every shell command in a child session is routed through
+`App.run_session_shell_command` (`subagent_child_shell.v`), used by both the
+approval API and the autonomous path. A session that is the child of a subagent
+run executes only through `run_delegated_child_shell_command`: writable scope is
+the child worktree, network is denied, rlimits apply, and the cwd is validated
+inside the worktree. The parent's `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in is
+never consulted for children, so a child can never run unsandboxed. On
+platforms without Bubblewrap and `prlimit` (macOS, Windows, other) the command
+is refused with no process started. The built-in implementer profile still
+does not grant `workspace_propose_shell_command`; this wiring is the execution
+guard for any path (API, future profile change) that creates a child shell
+command, and it never widens inherited permissions.

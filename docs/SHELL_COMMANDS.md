@@ -51,7 +51,7 @@ review responses carry `sandbox.unsandboxed: true` and `network: host`, and the
 approval UI shows an `UNSANDBOXED` warning. A refused review shows
 `network: none`. Autonomous mode is unchanged and always fails closed. Migration:
 operators who relied on `auto` or `off` must add the opt-in to keep the old
-behavior; MCP stdio sandbox modes are unaffected.
+behavior. Trusted MCP stdio follows the same rule (see below).
 
 ## Linux Bubblewrap for approved commands
 
@@ -146,9 +146,16 @@ object (`mode`, `will_wrap`, `backend`, `network`) from `VEASEL_SHELL_SANDBOX`,
 see wrap intent and network posture before approval (`deny`/`allow` when
 wrapping, `host` when unsandboxed). MCP tool-call reviews expose the parallel
 `stdio_sandbox` object from `VEASEL_MCP_STDIO_SANDBOX` (default `require`;
-`network` is `shared` when wrapping, otherwise `host`). Missing backends under
-`require` refuse to start the server; `auto` explicitly allows unsandboxed
-fallback and `off` explicitly disables wrapping.
+`network` is `shared` when wrapping, `host` when running unsandboxed through the
+opt-in, and `none` when the server is unavailable). Missing backends refuse to
+start the server in every mode (`require`, `auto`, `off`) with an actionable
+message naming what to install, and the server is shown as unavailable. The only
+way to run stdio MCP unsandboxed is the same
+`VEASEL_SHELL_ALLOW_UNSANDBOXED=i-accept-unsandboxed-shell-execution` opt-in used
+for shell, combined with `auto` or `off`. When active the preview carries
+`unsandboxed: true`, `/v1/capabilities` includes
+`mcp.stdio.sandbox.unsandboxed_opt_in`, and the TUI shows an `UNSANDBOXED`
+warning. Migration: operators who relied on `auto`/`off` must add the opt-in.
 
 The API is loopback-only and has no authentication token. A local same-user
 process can access session APIs and invoke approvals. Treat same-user processes

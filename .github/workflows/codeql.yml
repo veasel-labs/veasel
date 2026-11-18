@@ -1,6 +1,7 @@
 name: CodeQL
 
-# Semantic (source -> sink) analysis for the Desktop TypeScript surface,
+# Semantic (source -> sink) analysis for every JavaScript/TypeScript surface
+# (Desktop, the TUI, benchmarks, scripts and tools),
 # including the Electron main process and the renderer proxy trust boundary
 # (desktop/electron/renderer-server.ts). Trivy in security.yml covers
 # secrets/dependencies/misconfiguration; this covers dataflow classes.
@@ -10,10 +11,26 @@ on:
     branches: [main]
     paths:
       - "desktop/**"
+      - "tui/**"
+      - "benchmarks/**"
+      - "scripts/**"
+      - "tools/**"
+      - "**/*.mjs"
+      - "**/*.js"
+      - "**/*.ts"
+      - "**/*.tsx"
       - ".github/workflows/codeql.yml"
   pull_request:
     paths:
       - "desktop/**"
+      - "tui/**"
+      - "benchmarks/**"
+      - "scripts/**"
+      - "tools/**"
+      - "**/*.mjs"
+      - "**/*.js"
+      - "**/*.ts"
+      - "**/*.tsx"
       - ".github/workflows/codeql.yml"
   schedule:
     - cron: "41 5 * * 1"

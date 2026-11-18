@@ -324,6 +324,7 @@ jobs:
           fi
           bwrap --unshare-all --die-with-parent --new-session --ro-bind / / -- true
           v test main_test.v
+          v test api_auth_test.v
           v test model_settings_test.v
           v test secret_store_test.v
           v test api_metadata_test.v
@@ -359,7 +360,7 @@ jobs:
         env:
           VJOBS: 2
         run: |
-          & v -cc gcc -d windows_7 test main_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v
+          & v -cc gcc -d windows_7 test main_test.v api_auth_test.v api_auth_windows_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -cc gcc test model_settings_test.v secret_store_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -367,6 +368,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           v test main_test.v
+          v test api_auth_test.v
           v test model_settings_test.v
           v test secret_store_test.v
           v test api_metadata_test.v
@@ -408,6 +410,8 @@ jobs:
           python3 scripts/test_terminal_screen.py
           mkdir -p benchmark-results
           scripts/api-smoke.sh
+          python3 scripts/auth-lifecycle-smoke.py --server dist/veasel
+          python3 scripts/legacy-backend-refusal-smoke.py --server dist/veasel
           python3 benchmarks/deterministic/run.py --veasel dist/veasel --report benchmark-results/deterministic.json
       - name: Package Unix binaries for artifact smoke
         if: runner.os != 'Windows'

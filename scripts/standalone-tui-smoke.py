@@ -18,7 +18,10 @@ import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote
+from urllib.request import BaseHandler
 from urllib.request import Request
+from urllib.request import build_opener
+from urllib.request import install_opener
 from urllib.request import urlopen
 
 from terminal_screen import TerminalScreen
@@ -40,6 +43,31 @@ else:
     import signal
     import struct
     import termios
+
+
+class BackendTokenHandler(BaseHandler):
+    """Adds the backend bearer token to requests for the API under test only.
+
+    The backend creates `api-token` in its data directory on first start; it
+    is re-read per request so token rotation is honoured. Fixture servers on
+    other ports never receive it.
+    """
+
+    handler_order = 100
+
+    def __init__(self, port: int, token_path: Path) -> None:
+        self.authority = f"127.0.0.1:{port}"
+        self.token_path = token_path
+
+    def http_request(self, request: Request) -> Request:
+        if request.host == self.authority and not request.has_header("Authorization"):
+            try:
+                token = self.token_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                token = ""
+            if token:
+                request.add_unredirected_header("Authorization", f"Bearer {token}")
+        return request
 
 
 def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
@@ -972,6 +1000,7 @@ def main() -> None:
         plugin_dir = Path(temporary) / "plugins"
         workspace = Path(temporary) / "workspace"
         workspace.mkdir()
+        install_opener(build_opener(BackendTokenHandler(port, data_dir / "api-token")))
         env = os.environ.copy()
         for name in list(env):
             if any(marker in name for marker in ("API_KEY", "_TOKEN", "_PAT", "_SECRET_KEY")):

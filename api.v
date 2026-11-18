@@ -248,8 +248,16 @@ fn json_conflict_error(mut ctx Context, message string) veb.Result {
 
 pub struct Context {
 	veb.Context
+pub mut:
+	// Set by before_request once the bearer token verified. Handlers that
+	// vary their output by caller (the liveness endpoint) read it; every
+	// other route is unreachable without it.
+	authenticated bool
 }
 
+// Gate for EVERY request (all methods, paths, and unknown routes): veb runs
+// this before routing and skips the handler once a response was sent.
+// Order: DNS-rebinding Host check, cross-origin check, bearer token.
 pub fn (mut ctx Context) before_request() {
 	host := ctx.req.header.get_custom('Host', exact: false) or { '' }
 	if !is_loopback_host(host) {
@@ -257,11 +265,22 @@ pub fn (mut ctx Context) before_request() {
 		ctx.text('The API only accepts loopback Host values')
 		return
 	}
-	origin := ctx.req.header.get_custom('Origin', exact: false) or { return }
-	if !is_loopback_origin(origin) {
-		ctx.res.set_status(.forbidden)
-		ctx.text('The API only accepts loopback browser origins')
+	if origin := ctx.req.header.get_custom('Origin', exact: false) {
+		if !is_loopback_origin(origin) {
+			ctx.res.set_status(.forbidden)
+			ctx.text('The API only accepts loopback browser origins')
+			return
+		}
 	}
+	mut state := api_auth_state()
+	if state.verify(bearer_token_from_request(ctx.req.header)) {
+		ctx.authenticated = true
+		return
+	}
+	if is_unauthenticated_liveness_request(ctx.req.method, ctx.req.url) {
+		return
+	}
+	reject_unauthenticated(mut ctx)
 }
 
 pub struct App {

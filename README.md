@@ -86,6 +86,16 @@ Headless turn with the same local server and approval rules:
 veasel run --prompt "Explain the request flow in this repository" --workspace . --json
 ```
 
+### API authentication
+
+Every API route except the liveness probe `GET /v1/health` requires
+`Authorization: Bearer <token>`. The backend creates a 256-bit token in
+`$VEASEL_DATA_DIR/api-token` (default `~/.local/share/veasel/api-token`, mode
+0600) on first start; the CLI, TUI and Desktop find it there. External
+clients can read that file or the `VEASEL_API_TOKEN` override. Rotate with
+`veasel token rotate`. Design and limits (a same-user process can read the
+token file): [docs/security/backend-caller-auth.md](docs/security/backend-caller-auth.md).
+
 ## Current status
 
 The working vertical slice includes:
@@ -116,8 +126,7 @@ Honesty bounds that stay in the product voice:
   explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in (see docs/SHELL_COMMANDS.md) runs unsandboxed. Windows grants
   workspace ACL to the AppContainer SID and denies network by default; it is
   not Codex-level WFP/LPAC. Trusted MCP stdio also defaults to fail-closed
-  sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); `auto` explicitly permits
-  unsandboxed fallback and `off` disables wrapping. Capabilities are shown only
+  sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); unsandboxed execution needs the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in (see docs/SHELL_COMMANDS.md). Capabilities are shown only
   when the platform wrap will run; inspect effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox

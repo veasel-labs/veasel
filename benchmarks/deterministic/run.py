@@ -26,6 +26,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -94,6 +95,22 @@ def wait_healthy(port: int, process: subprocess.Popen, timeout: float = 15.0) ->
         except OSError:
             time.sleep(0.05)
     raise TimeoutError(f"server on port {port} did not become healthy")
+
+
+def api_token_headers(data_dir: Path) -> dict[str, str]:
+    """Bearer header for the backend under test.
+
+    Every route except GET /v1/health requires the token the server wrote to
+    `<data dir>/api-token`. Read it per call (rotation-safe, and only after
+    the server is healthy) and only accept the generated 64-hex format.
+    """
+    try:
+        token = (Path(data_dir) / "api-token").read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    if re.fullmatch(r"[0-9a-f]{64}", token) is None:
+        return {}
+    return {"authorization": f"Bearer {token}"}
 
 
 def rss_kib(pid: int) -> int | None:
@@ -586,6 +603,7 @@ def run_cancel_tool_task(veasel: Path, provider_port: int, task: dict, work: Pat
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",
@@ -602,7 +620,8 @@ def run_cancel_tool_task(veasel: Path, provider_port: int, task: dict, work: Pat
             f"http://127.0.0.1:{port}{path}",
             data=json.dumps(body).encode() if body is not None else None,
             method=method,
-            headers={"content-type": "application/json", **(headers or {})},
+            headers={"content-type": "application/json",
+                     **api_token_headers(work / "data"), **(headers or {})},
         )
         with urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read() or b"{}")
@@ -683,6 +702,7 @@ def run_queue_recovery_task(veasel: Path, provider_port: int, task: dict, work: 
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",
@@ -697,7 +717,9 @@ def run_queue_recovery_task(veasel: Path, provider_port: int, task: dict, work: 
             f"{base or f'http://127.0.0.1:{port}'}{path}",
             data=json.dumps(body).encode() if body is not None else None,
             method=method,
-            headers={"content-type": "application/json", **(headers or {})},
+            headers={"content-type": "application/json",
+                     **(api_token_headers(work / "data") if base is None else {}),
+                     **(headers or {})},
         )
         with urlopen(request, timeout=10) as response:
             return response.status, json.loads(response.read() or b"{}")
@@ -829,6 +851,7 @@ def run_worktree_isolation_task(veasel: Path, provider_port: int, task: dict, wo
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(work / "data"),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",
@@ -860,7 +883,8 @@ def run_worktree_isolation_task(veasel: Path, provider_port: int, task: dict, wo
                 f"http://127.0.0.1:{port}{path}",
                 data=json.dumps(body).encode() if body is not None else None,
                 method=method,
-                headers={"content-type": "application/json"},
+                headers={"content-type": "application/json",
+                         **api_token_headers(work / "data")},
             )
             with urlopen(request, timeout=15) as response:
                 return response.status, json.loads(response.read() or b"{}")

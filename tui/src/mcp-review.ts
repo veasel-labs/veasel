@@ -19,13 +19,13 @@ export function mcpStdioSandboxWarning(preview: ReviewSandboxPreview | undefined
   if (capability === "windows") {
     return "Trusted stdio MCP will wrap in Windows AppContainer + Job when this call uses stdio (writable PLUGIN_ROOT/PLUGIN_DATA, network shared). Streamable HTTP ignores this wrap. Review every effect before approval."
   }
-  if (preview?.mode === "require") {
-    return "This stdio MCP server will not start because the required OS sandbox is unavailable. Set VEASEL_MCP_STDIO_SANDBOX=off only if you intentionally accept unsandboxed OS-user privileges. Streamable HTTP is unaffected."
+  if (preview?.unsandboxed) {
+    return "WARNING: UNSANDBOXED. VEASEL_SHELL_ALLOW_UNSANDBOXED is set, so this stdio MCP server runs with your OS-user privileges and no OS sandbox. Streamable HTTP ignores this wrap. Review every effect before approval."
   }
-  if (preview?.mode === "auto") {
-    return "This explicit auto policy falls back to unsandboxed OS-user privileges when no platform sandbox is available. Set VEASEL_MCP_STDIO_SANDBOX=require to fail closed. Streamable HTTP ignores this wrap. Review every effect before approval."
+  if (preview && !preview.will_wrap) {
+    return "This stdio MCP server is unavailable and will not start: the required OS sandbox is missing (install bubblewrap on Linux; sandbox-exec is needed on macOS). Running without isolation needs the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in. Streamable HTTP is unaffected."
   }
-  return "Trusted stdio MCP is running unsandboxed because VEASEL_MCP_STDIO_SANDBOX=off was explicitly set; it inherits OS-user privileges. Streamable HTTP ignores this wrap. Review every effect before approval."
+  return "Trusted stdio MCP wrap status is unknown for this server (no sandbox preview was provided). Treat it as unsandboxed and review every effect before approval."
 }
 
 function escapeReviewLine(line: string): string {

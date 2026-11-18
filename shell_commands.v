@@ -235,6 +235,48 @@ struct LinuxShellSandboxOptions {
 	// writable_root narrows the writable bind for delegated work. Empty keeps
 	// the reviewed workspace-root behavior used by ordinary shell approvals.
 	writable_root string
+	// limit_resources applies the delegated-child resource limits (process
+	// count, open files, per-file size, no core dumps) even without a narrowed
+	// writable_root. Delegated scopes always apply them.
+	limit_resources bool
+}
+
+// Aggregate limits for delegated child commands. RLIMIT_NPROC inside the
+// user+pid namespace created by Bubblewrap counts only sandbox processes.
+const child_shell_max_processes = 256
+const child_shell_max_open_files = 1024
+// ulimit -f unit is shell-dependent (512 B in dash, 1 KiB in bash): the cap is
+// 512 MiB..1 GiB per file, enough to stop runaway writers.
+const child_shell_max_file_blocks = 1_048_576
+const max_child_worktree_bytes = i64(1024) * 1024 * 1024
+
+fn child_shell_resource_prologue() string {
+	return 'ulimit -c 0 && ulimit -u ${child_shell_max_processes} && ulimit -n ${child_shell_max_open_files} && ulimit -f ${child_shell_max_file_blocks} || exit 125; '
+}
+
+// workspace_tree_exceeds reports whether the regular files under root add up to
+// more than limit bytes. Symlinks are never followed; the walk is bounded by
+// stopping as soon as the limit is crossed.
+fn workspace_tree_exceeds(root string, limit i64) bool {
+	mut total := i64(0)
+	mut pending := [root]
+	for pending.len > 0 {
+		dir := pending.pop()
+		entries := os.ls(dir) or { continue }
+		for entry in entries {
+			path := os.join_path(dir, entry)
+			info := os.lstat(path) or { continue }
+			if info.mode & 0o170000 == 0o040000 {
+				pending << path
+			} else if info.mode & 0o170000 == 0o100000 {
+				total += i64(info.size)
+				if total > limit {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 struct MacosShellSandboxOptions {
@@ -640,6 +682,17 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 			output:    '${purpose} could not locate /bin/sh or /usr/bin/sh; no process was started.'
 		}
 	}
+	// Delegated children (narrowed writable scope) never get the network and
+	// always run under aggregate resource limits and a worktree size quota.
+	delegated := writable_root.len > 0
+	limited := delegated || options.limit_resources
+	if delegated && workspace_tree_exceeds(canonical_writable_root, max_child_worktree_bytes) {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    '${purpose} refused: the child worktree already exceeds its ${max_child_worktree_bytes} byte quota; no process was started.'
+		}
+	}
 	mut args := [
 		'--unshare-all',
 		'--die-with-parent',
@@ -648,7 +701,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 		'/',
 		'/',
 	]
-	if options.allow_network {
+	if options.allow_network && !delegated {
 		args << '--share-net'
 	}
 	for hidden_path in ['/home', '/root', '/run', '/mnt', '/media', '/tmp'] {
@@ -678,7 +731,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << '--'
 	args << shell_executable
 	args << '-c'
-	args << command.command
+	args << if limited { child_shell_resource_prologue() + command.command } else { command.command }
 	mut process := os.new_process(bwrap)
 	process.set_args(args)
 	mut environment := map[string]string{}
@@ -693,7 +746,15 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	process.set_stdin_path('/dev/null')
 	process.set_redirect_stdio()
 	process.use_pgroup = true
-	return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
+	result := collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
+	if delegated && workspace_tree_exceeds(canonical_writable_root, max_child_worktree_bytes) {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: result.exit_code
+			output:    '${result.output}\n[Child worktree exceeded its ${max_child_worktree_bytes} byte quota; the result must not be integrated]'
+		}
+	}
+	return result
 }
 
 fn validate_linux_shell_workspace_root(root string) !string {

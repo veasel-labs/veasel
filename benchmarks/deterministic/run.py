@@ -126,6 +126,7 @@ def measure_startup(veasel: Path, runs: int, work_root: Path) -> dict:
         env.update(
             VEASEL_PORT=str(port),
             VEASEL_DATA_DIR=str(data_dir),
+            VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
             VEASEL_MODEL_PROVIDER="openai-compatible",
             VEASEL_MODEL="smoke-model",
             VEASEL_MODEL_API_KEY="startup-probe-key",
@@ -495,6 +496,7 @@ def run_task(veasel: Path, provider_port: int, task: dict, work: Path) -> dict:
         VEASEL_ALLOW_AUTONOMOUS_EXECUTION="1",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=str(data_dir),
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in
         VEASEL_PLUGIN_DIR=str(work / "plugins"),
         VEASEL_MODEL_PROVIDER="openai-compatible",
         VEASEL_MODEL="smoke-model",

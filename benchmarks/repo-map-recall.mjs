@@ -105,6 +105,7 @@ const env = {
 	...process.env,
 	VEASEL_PORT: String(port),
 	VEASEL_DATA_DIR: dataDir,
+	VEASEL_SECRET_STORE: 'file', // headless CI: explicit plaintext opt-in (no Secret Service)
 	VEASEL_PLUGIN_DIR: join(dataDir, "plugins"),
 }
 const server = spawn(bin, ["serve"], { env, stdio: "ignore" })

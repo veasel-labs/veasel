@@ -9,7 +9,7 @@ fn test_model_settings_persist_and_never_expose_credentials() {
 	os.mkdir_all(root) or { panic(err) }
 	defer { os.rmdir_all(root) or {} }
 	path := os.join_path(root, 'model-settings.json')
-	mut state := new_model_settings_state(path)
+	mut state := new_model_settings_state_with(path, 'file', UnavailableSecretBackend{ reason: 'unused' })
 	state.update(ModelSettingsInput{
 		provider: 'anthropic'
 		model:    'claude-sonnet-4-5'
@@ -23,7 +23,7 @@ fn test_model_settings_persist_and_never_expose_credentials() {
 	assert view.profiles['anthropic'].max_output_tokens == 0
 	assert !json2.encode(view).contains('secret-token-value')
 
-	mut reloaded := new_model_settings_state(path)
+	mut reloaded := new_model_settings_state_with(path, 'file', UnavailableSecretBackend{ reason: 'unused' })
 	assert reloaded.view().active_provider == 'anthropic'
 	assert reloaded.view().profiles['anthropic'].api_key_saved
 	assert reloaded.view().profiles['anthropic'].base_url == 'https://api.anthropic.com/v1'

@@ -257,6 +257,7 @@ class VeaselCode(BaseInstalledAgent):
         env = {
             "VEASEL_ALLOW_AUTONOMOUS_EXECUTION": "1",
             "VEASEL_DATA_DIR": f"/tmp/veasel-harbor-{uuid.uuid4().hex}",
+            "VEASEL_SECRET_STORE": "file",
             "VEASEL_MODEL_PROVIDER": provider,
             "VEASEL_MODEL": model,
             "VEASEL_MODEL_API_KEY": api_key,

@@ -137,9 +137,17 @@ Responses / local-server presets). See the
 as independent protocol implementations.
 
 `/connect` is the happy path for credentials and model selection; `/models`
-adds endpoint and budget controls (Ctrl+U / Ctrl+O). Keys are stored locally
-in plaintext under `$VEASEL_DATA_DIR/model-settings.json` (owner-only on
-POSIX). Saved profile keys win over environment variables for the same
+adds endpoint and budget controls (Ctrl+U / Ctrl+O). Keys are stored in the
+OS keychain (Linux Secret Service via `secret-tool`, macOS Keychain, Windows
+Credential Manager); `model-settings.json` keeps only a reference. If the
+keychain is unavailable or locked Veasel fails closed with an actionable error
+instead of writing plaintext. Headless servers can opt in with
+`VEASEL_SECRET_STORE=file` (keys stay in the owner-only file, plaintext at
+rest). On Linux install `libsecret-tools` (`secret-tool`) and run a Secret Service
+provider (GNOME Keyring, KeePassXC); on a headless host without one, saving a
+key is refused with an error that names `VEASEL_SECRET_STORE=file`. Existing plaintext keys migrate automatically on first start; unsetting
+`VEASEL_SECRET_STORE=file` later is the rollback (keys are copied back and the
+keychain entries removed). See `docs/security/threat-model.md`. Saved profile keys win over environment variables for the same
 provider; env remains an optional alternative. `VEASEL_API_URL` is accepted
 only for unauthenticated loopback HTTP. The API rejects non-loopback `Host`
 values and non-loopback browser `Origin` headers; settings views expose

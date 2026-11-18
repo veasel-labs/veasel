@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# CI runners have no Secret Service. Veasel fails closed without a keychain, so
+# the smoke backends use the documented explicit opt-in; the refusal leg below
+# proves the default behaviour.
+export VEASEL_SECRET_STORE=file
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
 mkdir "$work_dir/workspace"
@@ -1015,6 +1020,7 @@ expect_status 200 -X POST -H 'content-type: application/json' \
 	-d '{"provider":"openai-compatible","model":"settings-smoke-model","base_url":"http://127.0.0.1:1/v1","api_key":"smoke-only-model-key"}' \
 	"$api/v1/config/model"
 grep -Fq '"api_key_saved":true' "$work_dir/response" || fail 'saved API key presence is missing from settings response'
+grep -Fq '"secret_store":"file"' "$work_dir/response" || fail 'settings response does not report secret_store=file under the opt-in'
 ! grep -Fq 'smoke-only-model-key' "$work_dir/response" || fail 'settings API exposed the saved API key'
 [[ "$(stat -c '%a' "$work_dir/data/model-settings.json")" == '600' ]] || fail 'model settings file is not owner-only'
 grep -Fq 'smoke-only-model-key' "$work_dir/data/model-settings.json" || fail 'saved model key was not persisted'
@@ -1065,5 +1071,29 @@ assert "smoke-only-model-key" not in json.dumps(settings)
 PY
 grep -Fq 'smoke-only-model-key' "$work_dir/data/model-settings.json" || fail 'model key was lost after server restart'
 ! grep -Fq 'smoke-only-model-key' "$work_dir/server.log" || fail 'server logs exposed the model API key'
+
+printf 'Smoke: key save is refused without a keychain and without the file opt-in\n'
+kill "$server_pid"
+wait "$server_pid" 2>/dev/null || true
+server_pid=""
+refusal_port="$(free_port)"
+refusal_api="http://127.0.0.1:${refusal_port}"
+env -u VEASEL_MODEL -u VEASEL_MODEL_API_KEY -u VEASEL_MODEL_BASE_URL -u VEASEL_MODEL_PROVIDER \
+	-u VEASEL_SECRET_STORE DBUS_SESSION_BUS_ADDRESS="unix:path=$work_dir/no-such-bus" \
+	VEASEL_PORT="$refusal_port" VEASEL_DATA_DIR="$work_dir/refusal-data" VEASEL_PLUGIN_DIR="$work_dir/plugins" \
+	"$work_dir/veasel" serve >"$work_dir/refusal-server.log" 2>&1 &
+server_pid=$!
+for ((attempt = 0; attempt < 80; attempt++)); do
+	curl -fsS "$refusal_api/v1/health" >/dev/null 2>&1 && break
+	sleep 0.1
+done
+expect_status 400 -X POST -H 'content-type: application/json' \
+	-d '{"provider":"openai-compatible","model":"refusal-model","base_url":"http://127.0.0.1:1/v1","api_key":"refused-plaintext-key"}' \
+	"$refusal_api/v1/config/model"
+grep -Fq 'VEASEL_SECRET_STORE=file' "$work_dir/response" || fail 'refusal does not tell the user how to opt in'
+! grep -Fq 'refused-plaintext-key' "$work_dir/response" || fail 'refusal response exposed the key'
+! grep -rFq 'refused-plaintext-key' "$work_dir/refusal-data" 2>/dev/null || fail 'key was written in plaintext despite the refusal'
+! grep -Fq 'refused-plaintext-key' "$work_dir/refusal-server.log" || fail 'server logs exposed the refused key'
+curl -fsS "$refusal_api/v1/config/model" | grep -Fq '"secret_store":"keychain"' || fail 'default secret_store is not keychain'
 
 printf 'API and provider smoke passed\n'

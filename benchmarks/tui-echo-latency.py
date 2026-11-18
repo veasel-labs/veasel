@@ -65,6 +65,7 @@ def main():
         TERM="xterm-256color",
         VEASEL_PORT=str(port),
         VEASEL_DATA_DIR=data,
+        VEASEL_SECRET_STORE="file",  # headless: explicit opt-in, no Secret Service
         VEASEL_PLUGIN_DIR=os.path.join(data, "plugins"),
         VEASEL_API_URL=f"http://127.0.0.1:{port}",
     )

@@ -1003,6 +1003,7 @@ def main() -> None:
         env.update(
             VEASEL_PORT=str(port),
             VEASEL_DATA_DIR=str(data_dir),
+            VEASEL_SECRET_STORE="file",  # headless CI: explicit opt-in, no Secret Service
             VEASEL_PLUGIN_DIR=str(plugin_dir),
             VEASEL_API_URL=f"http://127.0.0.1:{port}",
             VEASEL_PROJECT_DIR=str(workspace),

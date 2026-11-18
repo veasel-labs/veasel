@@ -40,7 +40,7 @@ paths:
                 $ref: '#/components/schemas/ModelSettingsView'
     post:
       operationId: updateModelSettings
-      description: Selects a provider and updates its model, endpoint, and optional API key. Empty api_key preserves an existing key; clear_api_key removes it. Credentials are stored locally with owner-only POSIX permissions, not encrypted.
+      description: Selects a provider and updates its model, endpoint, and optional API key. Empty api_key preserves an existing key; clear_api_key removes it. Provider keys are stored in the OS keychain by default (Linux Secret Service, macOS Keychain, Windows Credential Manager) and fail closed when it is unavailable or locked; the response reports `secret_store` and, when saved keys cannot be used, a secret-free `secret_store_error`. The explicit opt-in `VEASEL_SECRET_STORE=file` keeps keys in the owner-only (0600) settings file, plaintext at rest.
       requestBody:
         required: true
         content:
@@ -2522,7 +2522,7 @@ components:
           description: Optional generated-token limit. Omit to preserve the saved setting; 0 selects Veasel's 4,096-token default, except Meta, where Veasel omits the Responses API field so Meta applies its own limit.
     ModelSettingsView:
       type: object
-      required: [active_provider, profiles, providers]
+      required: [active_provider, profiles, providers, secret_store]
       properties:
         active_provider:
           type: string
@@ -2765,6 +2765,13 @@ components:
               environment_key: { type: string }
               documentation_url: { type: string }
               requires_api_key: { type: boolean }
+        secret_store:
+          type: string
+          enum: [keychain, file]
+          description: Where saved provider keys live. `keychain` is the OS credential store; `file` is the explicit VEASEL_SECRET_STORE=file opt-in (owner-only file, plaintext at rest).
+        secret_store_error:
+          type: string
+          description: Present only when saved keys cannot be used right now (locked or missing keychain, interrupted migration). Actionable and never contains a secret. Dependent providers report an error instead of falling back to another credential source.
         configured_providers:
           type: array
           description: Provider IDs with a saved or environment credential. Secret values are never included.

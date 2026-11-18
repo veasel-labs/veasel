@@ -3612,6 +3612,12 @@ components:
           type: string
           minLength: 1
           maxLength: 1048576
+        provider:
+          type: string
+          description: Per-turn provider override. Supply it with `model`, or alone for an installed-CLI provider (claude-code, codex, opencode, muse), which then runs with its configured or CLI default model. Omit both to inherit the session default. `model` without `provider` is rejected.
+        model:
+          type: string
+          description: Per-turn model override; requires `provider`.
         collect_trace:
           type: boolean
           default: false

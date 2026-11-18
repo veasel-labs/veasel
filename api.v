@@ -91,6 +91,12 @@ fn (app &App) model_config_for_chat_input(session_id string, input ChatMessageIn
 	}
 	mut config := if input.provider.len == 0 && input.model.len == 0 {
 		app.model_config_for_session(session_id)!
+	} else if input.provider.len > 0 && input.model.len == 0
+		&& provider_cli_by_id(input.provider) != none {
+		// Installed-CLI providers own their model choice: a provider-only
+		// target runs THAT provider with its configured/default model rather
+		// than silently inheriting the global provider.
+		app.provider_model_config(input.provider, '')!
 	} else if input.provider.len == 0 || input.model.len == 0 {
 		return error('provider and model must be supplied together')
 	} else {

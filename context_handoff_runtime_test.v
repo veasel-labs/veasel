@@ -299,6 +299,48 @@ fn test_per_turn_route_requires_provider_and_model_and_validates_credentials_ear
 	}
 }
 
+// A Focus user who picks an installed-CLI provider without choosing a model
+// must run THAT provider (CLI default model), never silently inherit the
+// global provider the UI is not showing.
+fn test_provider_only_cli_target_executes_selected_provider_not_global_default() {
+	previous_shared_key := os.getenv_opt('VEASEL_MODEL_API_KEY') or { '' }
+	previous_model := os.getenv_opt('VEASEL_MODEL') or { '' }
+	os.setenv('VEASEL_MODEL_API_KEY', 'test-key', true)
+	os.setenv('VEASEL_MODEL', 'global-default-model', true)
+	defer {
+		os.setenv('VEASEL_MODEL_API_KEY', previous_shared_key, true)
+		os.setenv('VEASEL_MODEL', previous_model, true)
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-provider-only-${uuid.new_v4().str()}')
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	global := app.model_config_for_chat_input('session-id', ChatMessageInput{ content: 'x' }) or {
+		panic(err)
+	}
+	for spec in provider_cli_registry() {
+		config := app.model_config_for_chat_input('session-id', ChatMessageInput{
+			content:  'x'
+			provider: spec.id
+		}) or { panic('provider-only ${spec.id} must resolve: ${err.msg()}') }
+		assert config.provider == spec.id
+		assert config.provider != global.provider
+		assert config.model == 'default'
+	}
+	// A model without a provider stays ambiguous and is still rejected.
+	if _ := app.model_config_for_chat_input('session-id', ChatMessageInput{
+		content: 'x'
+		model:   'some-model'
+	}) {
+		assert false, 'model-only targets must be rejected'
+	} else {
+		assert err.msg() == 'provider and model must be supplied together'
+	}
+}
+
 fn test_per_turn_permission_mode_validates_and_stamps_config() {
 	previous_shared_key := os.getenv_opt('VEASEL_MODEL_API_KEY') or { '' }
 	previous_model := os.getenv_opt('VEASEL_MODEL') or { '' }

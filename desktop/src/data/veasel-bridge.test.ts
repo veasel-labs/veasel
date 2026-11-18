@@ -176,7 +176,7 @@ describe('veasel Focus bridge send contract', () => {
     };
   }
 
-  it('omits provider when no model is chosen so the backend inherits its default', async () => {
+  it('sends the chosen provider alone when no model is chosen, never the global default', async () => {
     const sent: Array<{ path: string; body: unknown }> = [];
     const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: capturingFetch(sent) });
     const created = await bridge.createThread({
@@ -190,10 +190,10 @@ describe('veasel Focus bridge send contract', () => {
     const outcome = await bridge.send('s1', 'fix it');
     expect(outcome.ok).toBe(true);
     const message = sent.find((entry) => entry.path === '/v1/sessions/s1/messages');
-    // The backend rejects provider-without-model; sending neither is the
-    // documented inherit-default path. The chosen permission mode always
-    // travels with the turn.
-    expect(message?.body).toEqual({ content: 'fix it', permission_mode: 'ask' });
+    // The backend resolves a provider-only CLI target to that provider's
+    // default model. Omitting the provider would run the global provider
+    // while Focus displays another one.
+    expect(message?.body).toEqual({ content: 'fix it', provider: 'codex', permission_mode: 'ask' });
   });
 
   it('sends provider and model together when a model is chosen', async () => {

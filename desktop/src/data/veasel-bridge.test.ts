@@ -231,6 +231,49 @@ describe('veasel Focus bridge HTTP behavior', () => {
     }
   });
 
+  it('reports the backend connection lost and regained while a turn runs', async () => {
+    vi.useFakeTimers();
+    try {
+      let answering = true;
+      let emit: (type: string, data: string) => void = () => {};
+      const bridge = createVeaselFocusBridge({
+        baseUrl: 'http://veasel.test',
+        fetch: (async (input: string) => {
+          if (input.endsWith('/cli-approvals') && answering) return { ok: true, status: 200, json: async () => [] };
+          return { ok: false, status: 502, json: async () => ({}) };
+        }) as FetchLike,
+        createEventStream: (_url, onEvent) => {
+          emit = onEvent;
+          return () => {};
+        },
+      });
+      const updates: FocusLiveUpdate[] = [];
+      const stop = bridge.onUpdate((update) => updates.push(update));
+      emit('session.turn_started', JSON.stringify({ type: 'session.turn_started', session_id: 's1', data: {} }));
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'connection')).toHaveLength(0);
+
+      // One failed poll is not yet "backend down"; the second consecutive one is.
+      answering = false;
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'connection')).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'connection')).toEqual([
+        { kind: 'connection', threadId: 's1', online: false },
+      ]);
+
+      answering = true;
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'connection')).toEqual([
+        { kind: 'connection', threadId: 's1', online: false },
+        { kind: 'connection', threadId: 's1', online: true },
+      ]);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('never widens a session-wide approval decision', async () => {
     const bridge = createVeaselFocusBridge({
       baseUrl: 'http://veasel.test',

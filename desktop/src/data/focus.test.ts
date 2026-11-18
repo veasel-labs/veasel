@@ -107,6 +107,19 @@ describe('FocusStore', () => {
     expect(store.getThreads()[0]?.status).toBe('idle');
   });
 
+  it('surfaces a lost backend connection and re-reads the thread when it returns', async () => {
+    const readThread = vi.fn(async () => ({ thread: thread('th_a', { status: 'error' }), events: [] }));
+    const { bridge: api, push } = bridge({ readThread });
+    const store = new FocusStore(api);
+    store.connect();
+    expect(store.getBackendDown()).toBe(false);
+    push({ kind: 'connection', threadId: 'th_a', online: false });
+    expect(store.getBackendDown()).toBe(true);
+    push({ kind: 'connection', threadId: 'th_a', online: true });
+    expect(store.getBackendDown()).toBe(false);
+    await vi.waitFor(() => expect(readThread).toHaveBeenCalledWith('th_a'));
+  });
+
   it('accumulates live text, then drops it when the item is committed', async () => {
     const { bridge: api, push } = bridge();
     const store = new FocusStore(api);

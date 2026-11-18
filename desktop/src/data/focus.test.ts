@@ -69,6 +69,20 @@ describe('FocusStore', () => {
     disconnect();
   });
 
+  it('re-reads a thread when the server says its state changed (mid-turn approval)', async () => {
+    const readThread = vi.fn(async () => ({
+      thread: thread('th_a', { status: 'awaiting-approval' }),
+      events: [event(1, { type: 'user', text: 'go' } as FocusEventBody)],
+    }));
+    const { bridge: api, push } = bridge({ readThread });
+    const store = new FocusStore(api);
+    store.connect();
+    push({ kind: 'refresh', threadId: 'th_a' });
+    await vi.waitFor(() => expect(store.getTimeline('th_a').loaded).toBe(true));
+    expect(readThread).toHaveBeenCalledWith('th_a');
+    expect(store.getThreads()[0]?.status).toBe('awaiting-approval');
+  });
+
   it('accumulates live text, then drops it when the item is committed', async () => {
     const { bridge: api, push } = bridge();
     const store = new FocusStore(api);

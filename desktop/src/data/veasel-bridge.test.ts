@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildTimeline, pendingApproval } from '../features/focus/timeline';
 import {
   approvalToEvent,
@@ -128,6 +128,52 @@ describe('veasel Focus bridge HTTP behavior', () => {
     const turns = buildTimeline(snapshot?.events ?? [], {});
     expect(turns.at(-1)?.turn).toBe(2);
     expect(pendingApproval(turns)?.approval?.state).toBe('pending');
+  });
+
+  it('asks for a refresh when a mid-turn approval appears and when it is decided', async () => {
+    vi.useFakeTimers();
+    try {
+      let pending: unknown[] = [];
+      let emit: (type: string, data: string) => void = () => {};
+      const bridge = createVeaselFocusBridge({
+        baseUrl: 'http://veasel.test',
+        fetch: (async (input: string) => {
+          if (input.endsWith('/cli-approvals')) return { ok: true, status: 200, json: async () => pending };
+          return { ok: false, status: 404, json: async () => ({}) };
+        }) as FetchLike,
+        createEventStream: (_url, onEvent) => {
+          emit = onEvent;
+          return () => {};
+        },
+      });
+      const updates: FocusLiveUpdate[] = [];
+      const stop = bridge.onUpdate((update) => updates.push(update));
+      emit('session.turn_started', JSON.stringify({ type: 'session.turn_started', session_id: 's1', data: {} }));
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'refresh')).toHaveLength(0);
+
+      pending = [{ id: 'a1', tool_name: 'Edit', input_json: '{}', status: 'pending' }];
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'refresh')).toEqual([{ kind: 'refresh', threadId: 's1' }]);
+
+      // Unchanged pending set: no further refresh. Decided (empty again): one more.
+      await vi.advanceTimersByTimeAsync(2_100);
+      expect(updates.filter((entry) => entry.kind === 'refresh')).toHaveLength(1);
+      pending = [];
+      await vi.advanceTimersByTimeAsync(1_100);
+      expect(updates.filter((entry) => entry.kind === 'refresh')).toHaveLength(2);
+
+      emit(
+        'session.turn_completed',
+        JSON.stringify({ type: 'session.turn_completed', session_id: 's1', data: { status: 'completed' } }),
+      );
+      pending = [{ id: 'a2', tool_name: 'Bash', input_json: '{}', status: 'pending' }];
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(updates.filter((entry) => entry.kind === 'refresh').length).toBeLessThanOrEqual(3);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never widens a session-wide approval decision', async () => {

@@ -56,14 +56,11 @@ ubuntu-24.04 and runs the same spec under `xvfb-run`, uploads evidence and a ste
    `GET /v1/sessions/:id/workspace/git/changes|diff` from the V backend. Starting from the form also needed a session
    title (the backend rejects an empty one) and adding the new thread to the store. The old tab markup that axe flagged
    (aria-required-children) went away with it, so J8c now passes.
-2. J3b (fixed here, see commit "render the approval dialog"): `readThreadSnapshot` never emitted `turn.started`, so
-   `pendingApproval()` ignored the turn and the dialog never rendered; the pending approval was also numbered into the
-   previous turn. Still open: a mid-turn approval is not pushed live (no SSE event/poll), so the dialog appears only
-   after reopening the session.
+2. (fixed) J3b: a mid-turn approval was only loaded when a session was opened. While a turn runs the bridge now watches the
+   pending-approval set (server events `session.turn_started/queued` start it, `turn_completed` stops it) and asks the store
+   to re-read the thread when the set changes, so the dialog appears, and is retired once decided, without reopening.
+   This also fixed J4c (the stale "Needs your answer" status): the re-read replaces it.
 3. J3c: the server emits `assistant.delta` while the CLI streams, but the Focus conversation text does not change.
-4. J4c: the thread stays "Needs your answer" (composer disabled) after the approval is decided and the turn ends; live
-   `turn.finished` events are always numbered turn 1.
-5. J6/J8b (UI half; backend half fixed in #757): a running CLI turn shows no Stop button
-   and the CLI process alive (`run_claude_cli_turn` never watches the cancel context). Fix: poll the operation cancel
-   context in the read loop and `signal_term` the process.
-6. J10: after `kill -9` of the backend Desktop shows no alert or message.
+4. J6/J8b (UI half; the backend half was fixed in #757): a running CLI turn shows no Stop button, so the user cannot cancel
+   from the UI.
+5. J10: after `kill -9` of the backend Desktop shows no alert or message.

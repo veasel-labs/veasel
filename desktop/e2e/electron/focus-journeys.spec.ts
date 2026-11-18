@@ -117,7 +117,6 @@ async function fetchRaw(route: string, method: string, body: unknown): Promise<{
 let streamSamples: number[] = [];
 let serverDeltaCount = 0;
 let seeded = 0;
-let currentTitle = '';
 let currentSession = '';
 
 const pendingApprovals = async (): Promise<number> =>
@@ -125,26 +124,13 @@ const pendingApprovals = async (): Promise<number> =>
     await backendApi<Array<{ status: string }>>(env, await backend(), `/v1/sessions/${currentSession}/cli-approvals`)
   ).filter((entry) => entry.status === 'pending').length;
 
-/** Reload and re-select the current session (a real "reopen"), which re-reads server state. */
-async function reopenCurrent(): Promise<void> {
-  await page.reload();
-  await page
-    .getByRole('navigation', { name: 'Sessions' })
-    .getByRole('button', { name: new RegExp(currentTitle) })
-    .click();
-  await expect(conversation()).toBeVisible({ timeout: 20_000 });
-}
-
 /**
  * Waits until the BACKEND holds a pending approval (independent oracle), then makes sure the dialog is on
  * screen. If Focus did not push it live (known bug, see J3b) the session is reopened, which loads it.
  */
 async function showApproval(): Promise<void> {
   await expect.poll(pendingApprovals, { timeout: 40_000 }).toBeGreaterThan(0);
-  await approval()
-    .waitFor({ timeout: 6_000 })
-    .catch(() => reopenCurrent());
-  await expect(approval()).toBeVisible({ timeout: 20_000 });
+  await expect(approval()).toBeVisible({ timeout: 15_000 });
 }
 
 /**
@@ -156,7 +142,6 @@ async function showApproval(): Promise<void> {
 async function openSeededSession(testInfo: TestInfo): Promise<string> {
   seeded += 1;
   const title = `journey-${seeded}`;
-  currentTitle = title;
   const found = await backend();
   const created = await backendApi<{ id: string; prefs_version: number }>(env, found, '/v1/sessions', {
     method: 'POST',
@@ -363,28 +348,14 @@ test('J3c streamed text appears incrementally in the conversation', async () => 
 });
 
 test('J3b Focus shows the approval while the turn is still running (#751)', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG: the Focus store loads pending approvals once per opened thread (ensureTimeline) and
-  // otherwise only reacts to assistant.delta / session.turn_completed SSE events. An approval requested after the
-  // last delta is never pushed, so the dialog stays invisible until the session is reopened (and the approval
-  // may expire first). Oracle (backend holds a pending approval) is unchanged.
-  test.fail(true, 'Focus does not show an approval requested mid-turn until the session is reopened');
+  // Independent oracle first: the backend holds a pending approval and the turn has not finished.
   expect(await pendingApprovals()).toBeGreaterThan(0);
-  try {
-    await expect(approval()).toBeVisible({ timeout: 10_000 });
-  } finally {
-    await shot(testInfo, 'J3b-no-live-approval');
-    if (!(await approval().isVisible())) {
-      await reopenCurrent();
-      await approval()
-        .waitFor({ timeout: 10_000 })
-        .catch(() => undefined);
-      await testInfo.attach('after-reopen-aria', {
-        body: await page.locator('main').ariaSnapshot(),
-        contentType: 'text/plain',
-      });
-      await shot(testInfo, 'J3b-after-reopen');
-    }
-  }
+  // No reload, no reopen: the dialog must appear on its own while the turn is still blocked on the human.
+  await expect(approval()).toBeVisible({ timeout: 15_000 });
+  await shot(testInfo, 'J3b-live-approval');
+  record(testInfo, 'J3b', 'backend pending approval exists while the dialog is visible without reopening', {
+    pendingApprovals: await pendingApprovals(),
+  });
 });
 
 test('J4 inspect the proposed edit and diff; approve turns the repo test red to green', async ({}, testInfo) => {
@@ -434,9 +405,6 @@ test('J4b the Changes panel shows the git diff of the applied edit', async ({}, 
 });
 
 test('J4c after the approved turn finishes the session returns to Ready', async () => {
-  // KNOWN PRODUCT BUG: the thread status loaded with a pending approval ("Needs your answer") is never
-  // cleared by the turn.finished event, so the composer stays disabled until the session is reopened.
-  test.fail(true, 'thread status stays awaiting-approval after the turn completed');
   await expect(page.getByTitle(/Reads freely/)).toContainText('Ready', { timeout: 20_000 });
 });
 
@@ -704,8 +672,7 @@ test('J11 an unanswered shell approval expires: UI reports applied-with-denial, 
   await approval().getByRole('button', { name: 'Allow once' }).click();
   await expect.poll(() => sha256(file), { timeout: 20_000 }).not.toBe(before);
   // The push approval appears and is deliberately left alone until the server expires it.
-  // Focus does not retire the decided Edit approval live (see J4c), so wait for the BACKEND to hold the
-  // push approval and reopen the session to load it.
+  // Wait for the BACKEND to hold the push approval, then the dialog must swap to it live (no reopen).
   await expect
     .poll(
       async () =>
@@ -719,8 +686,7 @@ test('J11 an unanswered shell approval expires: UI reports applied-with-denial, 
       { timeout: 30_000 },
     )
     .toBe(true);
-  await reopenCurrent();
-  await expect(approval()).toContainText('git push', { timeout: 20_000 });
+  await expect(approval()).toContainText('git push', { timeout: 15_000 });
   await expect(approval()).toBeHidden({ timeout: 60_000 });
   await expect
     .poll(() => readCliLog(env).some((entry) => entry.event === 'push-denied'), { timeout: 20_000 })

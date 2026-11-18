@@ -3,7 +3,9 @@ module main
 import context as vcontext
 import json2
 import net.http
+import db.sqlite
 import os
+import runtime
 import sync
 import time
 import uuid
@@ -158,6 +160,36 @@ fn start_subagent_provider_fixture(mut fixture SubagentProviderFixture) !(&http.
 	return server, server_thread
 }
 
+// subagent_wait_diagnostics prints everything needed to understand a timeout
+// from CI logs alone: the child run row, its session operation, the sandbox
+// tooling visible to the test process and the runtime limits.
+fn subagent_wait_diagnostics(mut store Store, run_id string) {
+	eprintln('--- subagent wait diagnostics for ${run_id} ---')
+	if run := store.get_subagent_run(run_id) {
+		eprintln('run: status=${run.status} error=[${run.error}] result_len=${run.result.len} cancel_requested=${run.cancel_requested} outcome_claimed=${run.outcome_claimed} workspace_ready=${run.workspace_ready} workspace_started=${run.workspace_started} provider=${run.provider} model=${run.model}')
+		ops := store.db.exec_param_many('SELECT id, status, error, created_at, updated_at FROM session_operations WHERE session_id = ?',
+			[run.child_session_id]) or { []sqlite.Row{} }
+		for row in ops {
+			eprintln('child operation: id=${row.val(0)} status=${row.val(1)} error=[${row.val(2)}] created=${row.val(3)} updated=${row.val(4)}')
+		}
+		if ops.len == 0 {
+			eprintln('child operation: none recorded for child session ${run.child_session_id}')
+		}
+	} else {
+		eprintln('run row unreadable: ${err.msg()}')
+	}
+	bwrap := os.find_abs_path_of_executable('bwrap') or { '' }
+	eprintln('bwrap=[${bwrap}] prlimit_available=${prlimit_available()} bwrap_available=${bubblewrap_available()}')
+	if bwrap.len > 0 {
+		version := os.execute('${bwrap} --version')
+		probe := os.execute('${bwrap} --unshare-all --die-with-parent --new-session --ro-bind / / -- true')
+		eprintln('bwrap version=[${version.output.trim_space()}] userns_probe_exit=${probe.exit_code} out=[${probe.output.trim_space()}]')
+	}
+	eprintln('unprivileged_userns_clone=[${(os.read_file('/proc/sys/kernel/unprivileged_userns_clone') or { 'n/a' }).trim_space()}] apparmor_userns=[${(os.read_file('/proc/sys/kernel/apparmor_restrict_unprivileged_userns') or { 'n/a' }).trim_space()}] max_user_namespaces=[${(os.read_file('/proc/sys/user/max_user_namespaces') or { 'n/a' }).trim_space()}]')
+	eprintln('cpus=${runtime.nr_cpus()} VEASEL_SECRET_STORE=[${os.getenv('VEASEL_SECRET_STORE')}] VEASEL_SHELL_SANDBOX=[${os.getenv('VEASEL_SHELL_SANDBOX')}]')
+	eprintln('--- end diagnostics ---')
+}
+
 fn wait_for_subagent_terminal(mut store Store, run_id string) SubagentRun {
 	deadline := time.sys_mono_now() + u64(10 * time.second)
 	for time.sys_mono_now() < deadline {
@@ -167,6 +199,7 @@ fn wait_for_subagent_terminal(mut store Store, run_id string) SubagentRun {
 		}
 		time.sleep(10 * time.millisecond)
 	}
+	subagent_wait_diagnostics(mut store, run_id)
 	panic('timed out waiting for child run ${run_id}')
 }
 
@@ -179,6 +212,7 @@ fn wait_for_subagent_outcome_claimed(mut store Store, run_id string) SubagentRun
 		}
 		time.sleep(10 * time.millisecond)
 	}
+	subagent_wait_diagnostics(mut store, run_id)
 	panic('timed out waiting for child outcome ${run_id}')
 }
 

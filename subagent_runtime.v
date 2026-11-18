@@ -357,7 +357,10 @@ fn (app &App) launch_subagent_worker(run SubagentRun, task string, profile Subag
 				eprintln('veasel: unable to persist child result ${run_id} (${err.msg()})')
 				return
 			}
-			claimed := store.claim_subagent_outcome(finished.id) or { return }
+			claimed := store.claim_subagent_outcome_with_retry(finished.id) or {
+				eprintln('veasel: unable to deliver child outcome ${finished.id}: ${err.msg()}')
+				return
+			}
 			app.cleanup_delivered_subagent_workspace(claimed.id)
 			return
 		}
@@ -366,7 +369,10 @@ fn (app &App) launch_subagent_worker(run SubagentRun, task string, profile Subag
 			eprintln('veasel: unable to persist child result ${run_id} (${err.msg()})')
 			return
 		}
-		claimed := store.claim_subagent_outcome(finished.id) or { return }
+		claimed := store.claim_subagent_outcome_with_retry(finished.id) or {
+			eprintln('veasel: unable to deliver child outcome ${finished.id}: ${err.msg()}')
+			return
+		}
 		app.cleanup_delivered_subagent_workspace(claimed.id)
 	}(app, started.id, operation_id, mut turn_ctx, cancel, request_deadline, child_session, task,
 		profile, model_config, parent_policy, child_tool_policy)
@@ -454,4 +460,20 @@ fn intersect_subagent_tool_policy(profile_policy AgentToolPolicy,
 		restricted:    true
 		allowed_tools: allowed
 	}
+}
+
+// claim_subagent_outcome_with_retry retries a failed durable claim a few times.
+// The worker used to drop a failed claim silently, which left a terminal child
+// run undelivered until some later parent wait happened to claim it.
+fn (mut store Store) claim_subagent_outcome_with_retry(run_id string) !SubagentRun {
+	mut last_error := ''
+	for attempt in 0 .. 5 {
+		claimed := store.claim_subagent_outcome(run_id) or {
+			last_error = err.msg()
+			time.sleep((attempt + 1) * 50 * time.millisecond)
+			continue
+		}
+		return claimed
+	}
+	return error(last_error)
 }

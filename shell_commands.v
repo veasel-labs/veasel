@@ -731,7 +731,11 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << '--'
 	args << shell_executable
 	args << '-c'
-	args << if limited { child_shell_resource_prologue() + command.command } else { command.command }
+	args << if limited {
+		child_shell_resource_prologue() + command.command
+	} else {
+		command.command
+	}
 	mut process := os.new_process(bwrap)
 	process.set_args(args)
 	mut environment := map[string]string{}

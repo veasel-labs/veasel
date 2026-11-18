@@ -92,8 +92,8 @@ fn test_escaping_and_disguised_paths_are_rejected() {
 	for dir in ['.git.', '.git ', 'GIT~1', 'NODE_MODULES'] {
 		os.mkdir_all(os.join_path(root, dir)) or { panic(err) }
 	}
-	for bad in ['../outside/secret.txt', '/etc/passwd', 'sub/../../outside/x', 'sub//f.txt', './sub/f.txt',
-		'sub\\..\\..\\outside\\x', '.GIT/config', '.Git/hooks/pre-commit', '.git./config',
+	for bad in ['../outside/secret.txt', '/etc/passwd', 'sub/../../outside/x', 'sub//f.txt',
+		'./sub/f.txt', 'sub\\..\\..\\outside\\x', '.GIT/config', '.Git/hooks/pre-commit', '.git./config',
 		'.git /config', '.git::$INDEX_ALLOCATION/x', 'GIT~1/config', 'node_modules/x/y.js',
 		'NODE_MODULES/x', 'sub/‮/x', 'sub/a\x00b'] {
 		if target := resolve_workspace_edit_target(root, bad) {

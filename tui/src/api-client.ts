@@ -15,6 +15,13 @@ export type ApiSession = {
   title: string
   directory: string
   created_at: string
+  // Server-persisted choices (epic #689); absent on older backends.
+  preferred_provider?: string
+  preferred_model?: string
+  permission_mode?: string
+  prefs_version?: number
+  last_provider?: string
+  last_model?: string
 }
 
 export type ModelProfileView = {
@@ -40,6 +47,8 @@ export type SessionTurnAccepted = {
 export type SessionTurnCompletion = {
   operation_id?: string
   status?: string
+  /** Fact-derived outcome (completed_with_denials, partial, ...); absent on older servers. */
+  outcome?: string
   provider?: string
   model?: string
   error?: string

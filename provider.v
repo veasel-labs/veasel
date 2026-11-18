@@ -690,6 +690,9 @@ mut:
 	// Captured before the provider worker starts. Cancellation still flows
 	// through Context; the deadline value is immutable for this provider turn.
 	request_deadline ?time.Time
+	// Collects approval decisions and CLI-reported side effects for the turn
+	// outcome. nil outside installed-CLI session turns.
+	turn_facts &TurnFacts = unsafe { nil }
 }
 
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {

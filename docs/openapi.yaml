@@ -677,6 +677,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateSession
+      description: >-
+        Renames the session and/or changes its server-persisted provider, model
+        and permission mode. A preference change requires expected_prefs_version
+        (optimistic concurrency): a stale value is a 409 carrying the current
+        session, and so is any change while a turn is queued, running or
+        cancelling. A target change always replaces provider and model together;
+        provider+model together, or an installed-CLI provider alone, are accepted
+        and a model alone is rejected (same rules as a per-turn target). Setting
+        permission_mode bypass requires confirm_bypass true and writes a durable
+        session.permission_bypass_confirmed audit event atomically with the change.
+        Turns resolve explicit per-turn override, then this session preference,
+        then the global default; the resolved values are stamped on the operation
+        (resolved_provider, resolved_model, permission_mode, target_source). A stored
+        provider that is no longer available fails the turn with 409 code
+        session_provider_unavailable instead of running another provider.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSession'
+      responses:
+        '200':
+          description: Updated session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          description: Invalid JSON, title, preference values, or missing expected_prefs_version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: prefs_version_conflict or session_busy; the body carries the current session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPreferencesConflict'
     delete:
       operationId: deleteSession
       description: Deletes the session, its chat history, and dependent session state (operations, workspace edits, shell commands, MCP calls, traces). Workspace files on disk are never touched.
@@ -3450,9 +3505,40 @@ components:
           minLength: 1
           maxLength: 4096
           description: Existing workspace directory; the server stores its canonical path and rejects NUL bytes.
+        preferred_provider: { type: string, description: 'Optional initial provider choice; same validation as a per-turn target.' }
+        preferred_model: { type: string, description: 'Optional initial model; requires preferred_provider unless the provider is an installed CLI.' }
+        permission_mode:
+          type: string
+          enum: [ask, accept-edits, plan, bypass]
+          default: ask
+        confirm_bypass:
+          type: boolean
+          description: Must be true to create a session in bypass mode; the choice is audited.
+    UpdateSession:
+      type: object
+      description: At least one of title, preferred_provider/preferred_model, permission_mode.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        preferred_provider: { type: string, description: 'Empty string clears the choice (follow the global default).' }
+        preferred_model: { type: string }
+        permission_mode:
+          type: string
+          enum: [ask, accept-edits, plan, bypass]
+        confirm_bypass: { type: boolean }
+        expected_prefs_version:
+          type: integer
+          minimum: 0
+          description: Required with any preference field; must equal the session prefs_version.
+    SessionPreferencesConflict:
+      type: object
+      required: [error, code, session]
+      properties:
+        error: { type: string }
+        code: { type: string, enum: [prefs_version_conflict, session_busy] }
+        session: { $ref: '#/components/schemas/Session' }
     Session:
       type: object
-      required: [id, title, directory, created_at]
+      required: [id, title, directory, created_at, preferred_provider, preferred_model, permission_mode, prefs_version, last_provider, last_model]
       properties:
         id:
           type: string
@@ -3464,6 +3550,26 @@ components:
         created_at:
           type: string
           description: SQLite timestamp formatted as YYYY-MM-DD HH:MM:SS.
+        preferred_provider:
+          type: string
+          description: Provider chosen for this session; empty means the global default applies.
+        preferred_model:
+          type: string
+          description: Model chosen for this session; empty for the provider default.
+        permission_mode:
+          type: string
+          enum: [ask, accept-edits, plan, bypass]
+          description: Persisted permission mode (default ask). bypass is never defaulted or inherited by forks.
+        prefs_version:
+          type: integer
+          minimum: 0
+          description: Optimistic-concurrency token; increments on every preference change.
+        last_provider:
+          type: string
+          description: Provider of the latest completed turn (what actually ran); empty before the first completed turn. Never the preference.
+        last_model:
+          type: string
+          description: Model of the latest completed turn; empty before the first completed turn.
     ProviderCliStatus:
       type: object
       required: [id, name, exec, protocol, installed, version, auth_probe_present, auth_state, permission_modes, session_resume_verified, usage_reporting]
@@ -3709,6 +3815,25 @@ components:
         provider: { type: string }
         model: { type: string }
         error: { type: string, maxLength: 1024 }
+        outcome:
+          type: string
+          enum: [completed, completed_with_denials, partial, failed, cancelled, uncertain]
+          description: >-
+            Durable, fact-derived outcome of the turn; empty for turns recorded
+            before migration 32 (their truth is status alone). status stays the
+            lifecycle. completed_with_denials: the turn finished but at least one
+            approval was denied or expired. partial: the turn stopped early after
+            edits or approved commands were already applied. uncertain: effects
+            cannot be established. A turn that applied work is never reduced to
+            failed, and applied work is never reported as verified.
+        outcome_summary:
+          type: string
+          description: Public text for the outcome (what was applied, which approvals were denied or expired, and that applied changes are not verified). Never contains command arguments.
+        outcome_facts: { $ref: '#/components/schemas/TurnOutcomeFacts' }
+        resolved_provider: { type: string, description: 'Provider admission resolved for this turn (empty when the global default applied); provider above is what executed.' }
+        resolved_model: { type: string }
+        permission_mode: { type: string, description: 'Permission mode admission resolved and stamped for this turn.' }
+        target_source: { type: string, enum: [turn, session, default, ''], description: 'Which layer chose the target: explicit per-turn override, session preference, or global default.' }
         input_tokens:
           type: integer
           minimum: 0
@@ -3740,6 +3865,30 @@ components:
           description: True only when the provider supplied a reasoning token counter.
         created_at: { type: string }
         updated_at: { type: string }
+    TurnOutcomeFacts:
+      type: object
+      description: The recorded evidence behind an outcome.
+      properties:
+        approvals_approved: { type: integer, minimum: 0 }
+        approvals_denied: { type: integer, minimum: 0 }
+        approvals_expired: { type: integer, minimum: 0 }
+        edits_applied:
+          type: array
+          items: { type: string }
+          description: Edit-type tool calls the CLI reported as applied, e.g. "Edit math.js".
+        commands_ran:
+          type: array
+          items: { type: string }
+          description: Approval-gated commands the CLI reported as run, by executable only.
+        expired_tools: { type: array, items: { type: string } }
+        denied_tools: { type: array, items: { type: string } }
+        effects_observed:
+          type: boolean
+          description: True only when the provider protocol exposes tool results (Claude stream-json). When false, applied changes are unknown rather than zero.
+        verification:
+          type: string
+          enum: [not_reported]
+          description: Veasel does not run or read tests for CLI turns, so applied changes are never reported as verified.
     SubagentTargetInput:
       type: object
       required: [provider, model]

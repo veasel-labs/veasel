@@ -20,6 +20,7 @@ pub:
 	tool_name         string
 	request_id        string
 	input_json        string // raw tool input JSON (approval events)
+	approval_tool_id  string // tool_use_id an approval request is for
 	outcome           string // completed|failed (result only)
 	usage             ProviderUsage
 	usage_reported    bool
@@ -124,10 +125,11 @@ pub fn parse_claude_cli_line(line string) ClaudeCliEvent {
 					input_json = json2.encode(input)
 				}
 				return ClaudeCliEvent{
-					kind:       'approval_request'
-					request_id: claude_cli_string(frame, 'request_id')
-					tool_name:  claude_cli_string(request, 'tool_name')
-					input_json: input_json
+					kind:             'approval_request'
+					request_id:       claude_cli_string(frame, 'request_id')
+					tool_name:        claude_cli_string(request, 'tool_name')
+					input_json:       input_json
+					approval_tool_id: claude_cli_string(request, 'tool_use_id')
 				}
 			}
 		}
@@ -219,4 +221,80 @@ pub fn claude_cli_args(permission_mode string, resume_session_id string) []strin
 		args << resume_session_id
 	}
 	return args
+}
+
+pub struct ClaudeCliToolUse {
+pub:
+	id         string
+	name       string
+	input_json string
+}
+
+pub struct ClaudeCliToolResult {
+pub:
+	tool_id  string
+	is_error bool
+}
+
+// claude_cli_tool_uses lists every tool_use block of one assistant frame.
+// parse_claude_cli_line reports only the first block, which is enough for
+// display; outcome facts need all of them.
+pub fn claude_cli_tool_uses(line string) []ClaudeCliToolUse {
+	frame := json2.decode[map[string]json2.Any](line.trim_space()) or { return [] }
+	if claude_cli_string(frame, 'type') != 'assistant' {
+		return []
+	}
+	message := claude_cli_map(frame, 'message')
+	mut uses := []ClaudeCliToolUse{}
+	if content := message['content'] {
+		if content is []json2.Any {
+			for entry in content {
+				if entry is map[string]json2.Any {
+					if claude_cli_string(entry, 'type') == 'tool_use' {
+						mut input_json := '{}'
+						if input := entry['input'] {
+							input_json = json2.encode(input)
+						}
+						uses << ClaudeCliToolUse{
+							id:         claude_cli_string(entry, 'id')
+							name:       claude_cli_string(entry, 'name')
+							input_json: input_json
+						}
+					}
+				}
+			}
+		}
+	}
+	return uses
+}
+
+// claude_cli_tool_results lists the tool_result blocks the CLI reports back
+// for its own tool calls. is_error is the CLI's verdict, never inferred.
+pub fn claude_cli_tool_results(line string) []ClaudeCliToolResult {
+	frame := json2.decode[map[string]json2.Any](line.trim_space()) or { return [] }
+	if claude_cli_string(frame, 'type') != 'user' {
+		return []
+	}
+	message := claude_cli_map(frame, 'message')
+	mut results := []ClaudeCliToolResult{}
+	if content := message['content'] {
+		if content is []json2.Any {
+			for entry in content {
+				if entry is map[string]json2.Any {
+					if claude_cli_string(entry, 'type') == 'tool_result' {
+						is_error := if flag := entry['is_error'] {
+							if flag is bool { flag } else { false }
+						} else {
+							false
+						}
+						results << ClaudeCliToolResult{
+							tool_id:  claude_cli_string(entry, 'tool_use_id')
+							is_error: is_error
+						}
+					}
+				}
+			}
+		}
+	}
+	return results
 }

@@ -93,6 +93,21 @@ pub:
 pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 	resume_session_id string, user_text string, timeout_ms int,
 	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !ProviderCliTurnResult {
+	return run_claude_cli_turn_observed(command, cwd, permission_mode, resume_session_id,
+		user_text, timeout_ms, on_text_delta, decide, unsafe { nil })
+}
+
+// run_claude_cli_turn_observed is run_claude_cli_turn that also records the
+// tool calls and results the CLI reports into facts (nil disables it). The
+// facts survive a transport error, so a turn that dies after applying an edit
+// still knows what it applied.
+pub fn run_claude_cli_turn_observed(command string, cwd string, permission_mode string,
+	resume_session_id string, user_text string, timeout_ms int,
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, facts &TurnFacts) !ProviderCliTurnResult {
+	mut observed := unsafe { facts }
+	if facts != unsafe { nil } {
+		observed.set_effects_observed(true)
+	}
 	mut process := os.new_process(command)
 	process.set_args(claude_cli_args(permission_mode, resume_session_id))
 	if cwd.len > 0 {
@@ -159,6 +174,17 @@ pub fn run_claude_cli_turn(command string, cwd string, permission_mode string,
 				buffer = buffer[newline + 1..]
 				event := parse_claude_cli_line(line)
 				events << event
+				if facts != unsafe { nil } {
+					for tool in claude_cli_tool_uses(line) {
+						observed.note_tool_use(tool.id, tool.name, tool.input_json)
+					}
+					for tool_result in claude_cli_tool_results(line) {
+						observed.note_tool_result(tool_result.tool_id, tool_result.is_error)
+					}
+					if event.kind == 'approval_request' {
+						observed.note_gated(event.approval_tool_id)
+					}
+				}
 				match event.kind {
 					'init' {
 						model = event.model
@@ -389,8 +415,8 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 			provider_attempts: 1
 		}
 	}
-	turn := run_claude_cli_turn(spec.exec, cwd, permission_mode, safe_resume_id,
-		prompt, timeout_ms, on_text_delta, decide)!
+	turn := run_claude_cli_turn_observed(spec.exec, cwd, permission_mode, safe_resume_id,
+		prompt, timeout_ms, on_text_delta, decide, config.turn_facts)!
 	if turn.outcome != 'completed' {
 		return error('installed CLI ${spec.name} turn ${turn.outcome}')
 	}

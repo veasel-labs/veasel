@@ -139,12 +139,19 @@ fn plugin_mcp_persistence_call(root string, data string, server PluginMCPServer,
 // test below exercises the fail-closed wrapper itself.
 fn with_mcp_fixture_sandbox_off[T](start fn () !T) !T {
 	prior := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	prior_opt_in := os.getenv_opt(shell_sandbox_opt_in_env)
 	os.setenv(mcp_stdio_sandbox_mode_env, 'off', true)
+	os.setenv(shell_sandbox_opt_in_env, shell_unsandboxed_opt_in_token, true)
 	defer {
 		if value := prior {
 			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
 		} else {
 			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+		if value := prior_opt_in {
+			os.setenv(shell_sandbox_opt_in_env, value, true)
+		} else {
+			os.unsetenv(shell_sandbox_opt_in_env)
 		}
 	}
 	return start()!
@@ -220,12 +227,19 @@ fn test_plugin_stdio_mcp_process_environment_handshake_and_tool_call() {
 
 fn test_trusted_session_mcp_tool_discovery_and_dispatch_keep_turn_state() {
 	prior_sandbox_mode := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	prior_opt_in := os.getenv_opt(shell_sandbox_opt_in_env)
 	os.setenv(mcp_stdio_sandbox_mode_env, 'off', true)
+	os.setenv(shell_sandbox_opt_in_env, shell_unsandboxed_opt_in_token, true)
 	defer {
 		if value := prior_sandbox_mode {
 			os.setenv(mcp_stdio_sandbox_mode_env, value, true)
 		} else {
 			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+		if value := prior_opt_in {
+			os.setenv(shell_sandbox_opt_in_env, value, true)
+		} else {
+			os.unsetenv(shell_sandbox_opt_in_env)
 		}
 	}
 	node := os.find_abs_path_of_executable('node') or {
@@ -458,7 +472,8 @@ fn test_mcp_stdio_review_sandbox_preview_defaults_fail_closed() {
 	} else {
 		assert !preview.will_wrap
 		assert preview.backend == 'none'
-		assert preview.network == 'host'
+		assert preview.network == 'none'
+		assert !preview.unsandboxed
 	}
 	assert os.setenv(mcp_stdio_sandbox_mode_env, 'auto', true) == 0
 	auto := mcp_stdio_review_sandbox_preview()
@@ -478,7 +493,8 @@ fn test_mcp_stdio_review_sandbox_preview_defaults_fail_closed() {
 	} else {
 		assert !auto.will_wrap
 		assert auto.backend == 'none'
-		assert auto.network == 'host'
+		assert auto.network == 'none'
+		assert !auto.unsandboxed
 	}
 }
 
@@ -692,4 +708,41 @@ fn test_plugin_mcp_frame_buffer_enforces_frame_size_limit() {
 		return
 	}
 	assert false
+}
+
+fn test_mcp_stdio_refusal_names_what_to_install_and_the_opt_in() {
+	for os_name in ['linux', 'macos', 'windows', 'other'] {
+		msg := mcp_stdio_sandbox_refusal_for(os_name)
+		assert msg.contains(shell_sandbox_install_hint(os_name))
+		assert msg.contains(shell_sandbox_opt_in_env)
+		assert msg.contains('No server process was started')
+	}
+}
+
+fn test_mcp_stdio_preview_reports_unsandboxed_only_with_opt_in() {
+	prior_mode := os.getenv_opt(mcp_stdio_sandbox_mode_env)
+	prior_opt := os.getenv_opt(shell_sandbox_opt_in_env)
+	defer {
+		if v := prior_mode {
+			os.setenv(mcp_stdio_sandbox_mode_env, v, true)
+		} else {
+			os.unsetenv(mcp_stdio_sandbox_mode_env)
+		}
+		if v := prior_opt {
+			os.setenv(shell_sandbox_opt_in_env, v, true)
+		} else {
+			os.unsetenv(shell_sandbox_opt_in_env)
+		}
+	}
+	os.setenv(mcp_stdio_sandbox_mode_env, 'off', true)
+	os.unsetenv(shell_sandbox_opt_in_env)
+	refused := mcp_stdio_review_sandbox_preview()
+	assert !refused.will_wrap && !refused.unsandboxed
+	assert refused.network == 'none'
+	assert !mcp_stdio_unsandboxed_capability()
+	os.setenv(shell_sandbox_opt_in_env, shell_unsandboxed_opt_in_token, true)
+	opted := mcp_stdio_review_sandbox_preview()
+	assert opted.unsandboxed && !opted.will_wrap
+	assert opted.network == 'host'
+	assert mcp_stdio_unsandboxed_capability()
 }

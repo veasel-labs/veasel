@@ -116,8 +116,7 @@ Honesty bounds that stay in the product voice:
   explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in (see docs/SHELL_COMMANDS.md) runs unsandboxed. Windows grants
   workspace ACL to the AppContainer SID and denies network by default; it is
   not Codex-level WFP/LPAC. Trusted MCP stdio also defaults to fail-closed
-  sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); `auto` explicitly permits
-  unsandboxed fallback and `off` disables wrapping. Capabilities are shown only
+  sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); unsandboxed execution needs the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in (see docs/SHELL_COMMANDS.md). Capabilities are shown only
   when the platform wrap will run; inspect effects before approval
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox

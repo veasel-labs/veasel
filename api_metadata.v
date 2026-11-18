@@ -70,6 +70,9 @@ pub fn (app &App) capabilities(mut ctx Context) veb.Result {
 	if app.allow_autonomous {
 		features << 'agent.execution_policy.sandbox_auto'
 	}
+	if mcp_stdio_unsandboxed_capability() {
+		features << 'mcp.stdio.sandbox.unsandboxed_opt_in'
+	}
 	if mcp_stdio_sandbox_bubblewrap_capability() {
 		features << 'mcp.stdio.sandbox.bubblewrap'
 	}

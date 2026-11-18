@@ -49,8 +49,7 @@ helper-service filters, private logon identities, or LPAC.
 
 ## Trusted MCP stdio (same C helper, separate profile)
 
-Fail-closed by default via `VEASEL_MCP_STDIO_SANDBOX=require` (explicit `auto`
-permits fallback; `off` disables wrapping). When wrapping:
+Fail-closed by default via `VEASEL_MCP_STDIO_SANDBOX=require` (`auto`/`off` refuse unless the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in is set). When wrapping:
 
 - Uses AppContainer profile `VeaselTrustedMcp` (not the approved-shell profile).
 - Grants ACL on `PLUGIN_ROOT` and `PLUGIN_DATA` (and cwd when distinct).

@@ -441,21 +441,17 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   diagnostic) instead of omitting the entire source; load resolves both the
   qualified catalog name and the original discovery source.
 - [x] Fail-closed-by-default Linux Bubblewrap wrap for trusted MCP stdio
-  (`VEASEL_MCP_STDIO_SANDBOX` unset/invalid = `require`; explicit `auto` allows
-  fallback; explicit `off` disables wrapping);
+  (`VEASEL_MCP_STDIO_SANDBOX` unset/invalid = `require`; `auto`/`off` refuse unless the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in is set);
   capability `mcp.stdio.sandbox.bubblewrap` only when wrap will run; network
-  shared; PLUGIN_ROOT/PLUGIN_DATA writable; honest unsandboxed fallback under
-  auto.
+  shared; PLUGIN_ROOT/PLUGIN_DATA writable; unsandboxed only with the explicit opt-in.
 - [x] macOS Seatbelt wrap for trusted MCP stdio under the same
   `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.seatbelt` only
-  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; explicit
-  unsandboxed fallback under auto; `require` fails closed without
+  when wrap will run; network shared; PLUGIN_ROOT/PLUGIN_DATA writable; unsandboxed only with the explicit opt-in; `require` fails closed without
   `/usr/bin/sandbox-exec`.
 - [x] Windows AppContainer + Job wrap for trusted MCP stdio under the
   same `VEASEL_MCP_STDIO_SANDBOX` knobs; capability `mcp.stdio.sandbox.windows`
   only when wrap will run; PLUGIN_ROOT/PLUGIN_DATA ACL grants; network
-  capability SIDs always enabled (parity with Linux/macOS MCP); explicit
-  unsandboxed fallback under auto; `require` fails closed without AppContainer.
+  capability SIDs always enabled (parity with Linux/macOS MCP); unsandboxed only with the explicit opt-in; `require` fails closed without AppContainer.
   Not Codex WFP/LPAC.
 - [x] Persist per-session MCP trust, launch trusted stdio servers or connect
   to trusted Streamable HTTP endpoints with redirects and retries disabled,

@@ -335,6 +335,11 @@ jobs:
           v test plugin_mcp_cancel_test.v
           VEASEL_AGENT_PARENT_TOKEN_BUDGET=3000000 v test agent_runtime_test.v
           v test shell_commands_test.v
+          # Adversarial confinement/limit tests (#642): symlink/hardlink/TOCTOU
+          # races, protected names, child rlimits, network deny, fork bomb.
+          v test workspace_confinement_test.v
+          v test subagent_resource_limits_test.v
+          v test subagent_integration_test.v
           v test session_compaction_test.v
           v test repository_map_test.v
           v test atif_trace_test.v

@@ -1,7 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { useFocusBridge, useFocusProviders, useFocusThreads, useFocusTimeline } from '../../data/focus';
+import {
+  useFocusBackendDown,
+  useFocusBridge,
+  useFocusProviders,
+  useFocusThreads,
+  useFocusTimeline,
+} from '../../data/focus';
 import { useFocusFolders } from '../../data/focus-folders';
 import { useTerminalSessions } from '../../data/terminal';
 import { OPEN_TERMINAL_DOCK_EVENT } from '../../shell/events';
@@ -256,6 +262,7 @@ function Inspector({ thread, onClose }: { thread: FocusThread; onClose: () => vo
 export default function FocusView() {
   const [params, setParams] = useSearchParams();
   const { threads, loaded } = useFocusThreads();
+  const backendDown = useFocusBackendDown();
   const providers = useFocusProviders();
   const folders = useFocusFolders(threads);
   const terminals = useTerminalSessions();
@@ -314,6 +321,12 @@ export default function FocusView() {
     <div className={styles.focus} data-inspector={active && inspectorOpen ? 'open' : 'closed'}>
       <ThreadList threads={threads} activeId={active?.id ?? null} onSelect={select} onNew={() => select(null)} />
       <div className={styles.stage}>
+        {backendDown ? (
+          <p className={styles.banner} role="alert">
+            The backend stopped responding. The running turn was interrupted and its outcome is unknown until the
+            backend answers again.
+          </p>
+        ) : null}
         {error ? (
           <p className={styles.banner} role="alert">
             {error}

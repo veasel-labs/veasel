@@ -168,6 +168,8 @@ export type FocusLiveUpdate =
   | { kind: 'thread'; thread: FocusThread }
   /** The thread's lifecycle status changed (for example a turn started). */
   | { kind: 'status'; threadId: string; status: FocusThreadStatus }
+  /** The backend stopped answering (or answered again) while a turn was being watched. */
+  | { kind: 'connection'; threadId: string; online: boolean }
   | { kind: 'removed'; threadId: string }
   /** The server-side state changed (for example a new pending approval): re-read this thread. */
   | { kind: 'refresh'; threadId: string };

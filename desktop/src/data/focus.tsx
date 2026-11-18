@@ -35,6 +35,7 @@ export function liveTurnNumber(timeline: ThreadTimeline): number {
 export class FocusStore {
   private threads: readonly FocusThread[] = NO_THREADS;
   private threadsLoaded = false;
+  private backendDown = false;
   private readonly timelines = new Map<string, ThreadTimeline>();
   private readonly drafts = new Map<string, string>();
   private readonly loading = new Set<string>();
@@ -63,6 +64,8 @@ export class FocusStore {
   getThreads = (): readonly FocusThread[] => this.threads;
 
   getThreadsLoaded = (): boolean => this.threadsLoaded;
+
+  getBackendDown = (): boolean => this.backendDown;
 
   getDraft(threadId: string): string {
     return this.drafts.get(threadId) ?? '';
@@ -160,6 +163,14 @@ export class FocusStore {
         this.threads = this.threads.map((thread) =>
           thread.id === update.threadId ? { ...thread, status: update.status } : thread,
         );
+        break;
+      case 'connection':
+        this.backendDown = !update.online;
+        if (update.online) {
+          // The backend answered again: re-read the thread so the interrupted
+          // turn resolves to its server-recorded outcome instead of a stale state.
+          this.reloadThread(update.threadId);
+        }
         break;
       case 'refresh':
         this.reloadThread(update.threadId);
@@ -273,6 +284,12 @@ export function useFocusBridge(): FocusBridge | undefined {
   if (store) return store.focusBridge;
   // Plain-browser/test fallback: the legacy ATK bridge slot.
   return typeof window !== 'undefined' ? window.atk?.focus : undefined;
+}
+
+/** Whether the backend stopped answering mid-turn (the Focus banner reads this). */
+export function useFocusBackendDown(): boolean {
+  const store = useFocusStore();
+  return useSyncExternalStore(store.subscribe, store.getBackendDown);
 }
 
 export function useFocusThreads(): { threads: readonly FocusThread[]; loaded: boolean } {

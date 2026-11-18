@@ -573,11 +573,28 @@ export function createVeaselFocusBridge(options: {
       const pollers = new Map<string, ReturnType<typeof setInterval>>();
       const watchApprovals = (threadId: string): (() => Promise<void>) => {
         let known = '';
+        let failures = 0;
+        let reportedDown = false;
         const tick = async (): Promise<void> => {
           const approvals = await request(`/v1/sessions/${encodeURIComponent(threadId)}/cli-approvals`).catch(
             () => null,
           );
-          if (approvals === null) return;
+          if (approvals === null) {
+            // The poll is also the only sign of life while a turn runs: two consecutive
+            // failures mean the backend is gone, and Focus must say so instead of
+            // leaving the turn "Working" in silence.
+            failures += 1;
+            if (failures >= 2 && !reportedDown) {
+              reportedDown = true;
+              listener({ kind: 'connection', threadId, online: false });
+            }
+            return;
+          }
+          failures = 0;
+          if (reportedDown) {
+            reportedDown = false;
+            listener({ kind: 'connection', threadId, online: true });
+          }
           const key = asArray<VeaselCliApproval>(approvals)
             .filter((approval) => approval.status === 'pending')
             .map((approval) => approval.id)
@@ -605,7 +622,12 @@ export function createVeaselFocusBridge(options: {
         const threadId = parsed.session_id;
         if (typeof threadId === 'string' && threadId.length > 0) {
           if (
-            (parsed.type === 'session.turn_started' || parsed.type === 'session.turn_queued') &&
+            // A delta also proves a turn is running: if turn_started was missed
+            // (stream reconnect), the watcher must still start or a backend
+            // death mid-turn would never be noticed.
+            (parsed.type === 'session.turn_started' ||
+              parsed.type === 'session.turn_queued' ||
+              parsed.type === 'assistant.delta') &&
             !pollers.has(threadId)
           ) {
             const tick = watchApprovals(threadId);

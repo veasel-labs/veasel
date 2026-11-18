@@ -704,9 +704,6 @@ test('J11 an unanswered shell approval expires: UI reports applied-with-denial, 
 });
 
 test('J10 backend crash mid-operation: honest error state, no phantom success', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG: after `kill -9` of the backend Desktop shows no alert, banner or message at all. Oracle
-  // unchanged; remove test.fail once Focus surfaces the loss and offers a restart/reconnect.
-  test.fail(true, 'Desktop shows nothing when the backend dies');
   // Only a slow scenario started by THIS turn counts: earlier journeys leave dead slow entries behind.
   const slowBefore = readCliLog(env).filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow').length;
   await startTurn(testInfo, '[[slow]] keep working until the backend dies');
@@ -726,6 +723,9 @@ test('J10 backend crash mid-operation: honest error state, no phantom success', 
         .at(-1),
     );
   expect(isAlive(slow?.pid ?? -1)).toBe(true);
+  // The crash must land while the UI itself shows the turn running (Stop visible):
+  // killing before the renderer processes the turn start would test a race, not the product.
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 30_000 });
   const before = snapshot();
   const resultsBefore = readCliLog(env).filter((entry) => entry.event === 'result').length;
   const found = await backend();

@@ -29,6 +29,7 @@ pub fn (mut app OutcomeHTTPServer) send(mut ctx Context, id string) veb.Result {
 }
 
 fn run_outcome_http_server(mut app OutcomeHTTPServer, port int) {
+	outcome_test_install_token()
 	veb.run_at[OutcomeHTTPServer, Context](mut app, host: '127.0.0.1', family: .ip, port: port) or {
 		panic(err)
 	}
@@ -108,7 +109,8 @@ fn run_outcome_turn(scenario string, approve_tools []string) OutcomeTurn {
 			data:          body
 			header:        http.new_header_from_map({
 				http.CommonHeader.content_type: 'application/json'
-			})
+			http.CommonHeader.authorization: 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+		})
 			read_timeout:  300 * time.second
 			write_timeout: 30 * time.second
 		) or {
@@ -218,4 +220,10 @@ fn test_clean_completion_with_applied_edit_is_not_presented_as_verified() {
 	outcome, summary := outcome_of(turn)
 	assert outcome == 'completed', 'outcome=${outcome} events=${turn.events}'
 	assert summary.contains('not verified'), summary
+}
+
+// The API rejects every unauthenticated request; HTTP fixtures install this
+// known token and send it like any real client.
+fn outcome_test_install_token() {
+	api_auth_state().configure('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '', true)
 }

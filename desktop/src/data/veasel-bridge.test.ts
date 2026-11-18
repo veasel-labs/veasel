@@ -274,6 +274,34 @@ describe('veasel Focus bridge HTTP behavior', () => {
     }
   });
 
+  it('starts watching on a delta when turn_started was missed, so a backend death is still reported', async () => {
+    vi.useFakeTimers();
+    try {
+      let emit: (type: string, data: string) => void = () => {};
+      const bridge = createVeaselFocusBridge({
+        baseUrl: 'http://veasel.test',
+        fetch: (async () => ({ ok: false, status: 502, json: async () => ({}) })) as FetchLike,
+        createEventStream: (_url, onEvent) => {
+          emit = onEvent;
+          return () => {};
+        },
+      });
+      const updates: FocusLiveUpdate[] = [];
+      const stop = bridge.onUpdate((update) => updates.push(update));
+      emit(
+        'assistant.delta',
+        JSON.stringify({ type: 'assistant.delta', session_id: 's1', data: { operation_id: 'op', delta: 'x' } }),
+      );
+      await vi.advanceTimersByTimeAsync(2_200);
+      expect(updates.filter((entry) => entry.kind === 'connection')).toEqual([
+        { kind: 'connection', threadId: 's1', online: false },
+      ]);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('never widens a session-wide approval decision', async () => {
     const bridge = createVeaselFocusBridge({
       baseUrl: 'http://veasel.test',

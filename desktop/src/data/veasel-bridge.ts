@@ -622,7 +622,12 @@ export function createVeaselFocusBridge(options: {
         const threadId = parsed.session_id;
         if (typeof threadId === 'string' && threadId.length > 0) {
           if (
-            (parsed.type === 'session.turn_started' || parsed.type === 'session.turn_queued') &&
+            // A delta also proves a turn is running: if turn_started was missed
+            // (stream reconnect), the watcher must still start or a backend
+            // death mid-turn would never be noticed.
+            (parsed.type === 'session.turn_started' ||
+              parsed.type === 'session.turn_queued' ||
+              parsed.type === 'assistant.delta') &&
             !pollers.has(threadId)
           ) {
             const tick = watchApprovals(threadId);

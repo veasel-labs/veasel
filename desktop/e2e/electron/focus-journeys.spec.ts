@@ -723,6 +723,9 @@ test('J10 backend crash mid-operation: honest error state, no phantom success', 
         .at(-1),
     );
   expect(isAlive(slow?.pid ?? -1)).toBe(true);
+  // The crash must land while the UI itself shows the turn running (Stop visible):
+  // killing before the renderer processes the turn start would test a race, not the product.
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 30_000 });
   const before = snapshot();
   const resultsBefore = readCliLog(env).filter((entry) => entry.event === 'result').length;
   const found = await backend();

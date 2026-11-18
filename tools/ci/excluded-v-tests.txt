@@ -1,0 +1,3 @@
+# V test files intentionally NOT run in CI, with the reason (format: file<TAB>reason).
+repository_map_benchmark_test.v	benchmark (timing sensitive); run by benchmarks/ tooling, not a correctness gate
+repository_map_cache_benchmark_test.v	benchmark (timing sensitive); run by benchmarks/ tooling, not a correctness gate

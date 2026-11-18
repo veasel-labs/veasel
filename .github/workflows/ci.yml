@@ -520,6 +520,56 @@ jobs:
           path: backend-status/result
           retention-days: 7
 
+  v-test-coverage:
+    name: V test coverage guard
+    # Fails when a *_test.v is run by no CI job (the explicit file lists in the
+    # backend job had silently left most suites unexecuted).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 tools/ci/check_v_test_coverage.py .
+
+  v-extra-tests:
+    name: V extra tests / linux (shard ${{ matrix.shard }})
+    # Runs every V test file the backend job does not list. Sharded across
+    # runners because each file compiles the whole module (~1 min). Non-required
+    # until the suite has been stable; the coverage guard keeps the list honest.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      VJOBS: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: vlang/setup-v@663cc08827d1fc0532ee755b4dedbb183c11d06a # v1.7
+        id: setup-v
+        with:
+          version-file: .v-version
+      - name: Install bundled SQLite
+        env:
+          V_BUILD_ROOT: ${{ steps.setup-v.outputs.bin-path }}
+        run: |
+          vroot="$V_BUILD_ROOT"
+          test -f "$vroot/vlib/db/sqlite/install_thirdparty_sqlite.vsh"
+          v run "$vroot/vlib/db/sqlite/install_thirdparty_sqlite.vsh"
+      - name: Set up Node.js MCP fixtures
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+      - name: Run shard ${{ matrix.shard }} of 6
+        env:
+          VEASEL_AGENT_PARENT_TOKEN_BUDGET: "3000000"
+        run: |
+          if ! command -v bwrap >/dev/null 2>&1; then
+            sudo apt-get install -y bubblewrap
+          fi
+          bwrap --unshare-all --die-with-parent --new-session --ro-bind / / -- true
+          tools/ci/run_v_tests_shard.sh ${{ matrix.shard }} 6
+
   platform-status:
     name: Per-platform backend status
     if: >-

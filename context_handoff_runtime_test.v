@@ -402,10 +402,9 @@ fn test_context_handoff_migration_copies_legacy_event_artifacts_into_retained_ta
 	store.db.exec('DROP TABLE agent_token_budget_reservations') or { panic(err) }
 	store.db.exec('DROP TABLE session_cli_resume') or { panic(err) }
 	store.db.exec('DROP TABLE cli_tool_approvals') or { panic(err) }
-	store.db.exec('DELETE FROM schema_migrations WHERE version = 27') or { panic(err) }
-	store.db.exec('DELETE FROM schema_migrations WHERE version = 28') or { panic(err) }
-	store.db.exec('DELETE FROM schema_migrations WHERE version = 29') or { panic(err) }
-	store.db.exec('DELETE FROM schema_migrations WHERE version = 30') or { panic(err) }
+	// Simulate a pre-27 store: forget EVERY migration from 27 on (not a fixed list), so
+	// open_store re-runs them all and the test keeps working as migrations are added.
+	store.db.exec('DELETE FROM schema_migrations WHERE version >= 27') or { panic(err) }
 	store.close() or { panic(err) }
 	mut migrated := open_store(database) or { panic(err) }
 	defer { migrated.close() or {} }

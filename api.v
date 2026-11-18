@@ -450,10 +450,20 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 		mut registry := app.turn_facts
 		turn_facts := registry.get_or_begin(session_id)
 		config.turn_facts = turn_facts
-		decide := app.cli_approval_decider(session_id, request_deadline, turn_facts)
+		config.cli_cancel = fn [mut turn_ctx] () ?string {
+			return turn_context_error(mut turn_ctx)
+		}
+		decide := app.cli_approval_decider(session_id, request_deadline, turn_facts,
+			config.cli_cancel)
 		mut resume_store := app.store
-		return complete_cli_provider_turn_with_resume(mut resume_store, session_id,
-			messages, config, session.directory, on_text_delta, decide)!
+		output := complete_cli_provider_turn_with_resume(mut resume_store, session_id,
+			messages, config, session.directory, on_text_delta, decide) or {
+			// No approval may outlive the CLI process it belonged to.
+			resume_store.expire_pending_cli_tool_approvals(session_id) or {}
+			return err
+		}
+		resume_store.expire_pending_cli_tool_approvals(session_id) or {}
+		return output
 	}
 	policy := agent_token_budget_policy()!
 	reservation_tokens := provider_call_reservation_tokens(messages, tools, config)

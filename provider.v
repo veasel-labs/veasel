@@ -693,6 +693,9 @@ mut:
 	// Collects approval decisions and CLI-reported side effects for the turn
 	// outcome. nil outside installed-CLI session turns.
 	turn_facts &TurnFacts = unsafe { nil }
+	// Reports why an installed-CLI turn must stop (operation cancel or
+	// deadline). nil outside installed-CLI session turns.
+	cli_cancel CliCancelFn = unsafe { nil }
 }
 
 fn fetch_provider_models(config ModelConfig) ![]ModelCatalogEntry {

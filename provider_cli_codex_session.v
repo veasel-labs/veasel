@@ -68,31 +68,29 @@ fn codex_rpc_request(id int, method string, params string) string {
 pub fn run_codex_cli_turn(command string, cwd string, permission_mode string,
 	model string, resume_thread_id string, user_text string, timeout_ms int,
 	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn) !CodexCliTurnResult {
+	return run_codex_cli_turn_cancellable(command, cwd, permission_mode, model, resume_thread_id,
+		user_text, timeout_ms, on_text_delta, decide, unsafe { nil })
+}
+
+// run_codex_cli_turn_cancellable is run_codex_cli_turn that also stops (and
+// kills the CLI's process group) as soon as cancel reports a reason.
+pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mode string,
+	model string, resume_thread_id string, user_text string, timeout_ms int,
+	on_text_delta ProviderTextDeltaFn, decide CliApprovalDecisionFn, cancel CliCancelFn) !CodexCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(['app-server'])
 	if cwd.len > 0 {
 		process.set_work_folder(cwd)
 	}
 	process.set_redirect_stdio()
+	process.use_pgroup = true
 	process.run()
 	if process.status != .running {
 		process.close()
 		return error('unable to start installed CLI: ${command}')
 	}
 	defer {
-		if process.is_alive() {
-			process.signal_term()
-			for _ in 0 .. 20 {
-				if !process.is_alive() {
-					break
-				}
-				time.sleep(10 * time.millisecond)
-			}
-			if process.is_alive() {
-				process.signal_kill()
-			}
-		}
-		process.close()
+		cli_terminate_process(mut process)
 	}
 	policy := codex_policy(permission_mode)
 	timeout := if timeout_ms > 0 { timeout_ms } else { 120_000 }
@@ -112,6 +110,9 @@ pub fn run_codex_cli_turn(command string, cwd string, permission_mode string,
 	mut phase := 0 // 0=initialize, 1=thread/start, 2=turn/start, 3=streaming
 	mut buffer := ''
 	for {
+		if reason := cli_cancel_reason(cancel) {
+			return error(reason)
+		}
 		if time.since(started).milliseconds() > timeout {
 			return error('installed CLI turn timed out after ${timeout}ms')
 		}

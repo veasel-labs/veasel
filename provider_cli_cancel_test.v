@@ -180,3 +180,40 @@ fn test_expire_pending_cli_approvals_settles_only_pending_rows() {
 	assert (store.get_cli_tool_approval(approved.id) or { panic(err) }).status == 'approved'
 	assert (store.list_pending_cli_tool_approvals(session.id) or { panic(err) }).len == 0
 }
+
+// Production wiring: the CLI cancel closure is built from the operation's
+// turn context, exactly as complete_agent_with_model_override does, so the
+// operation cancel API ends the CLI turn and its process group.
+fn test_operation_cancel_ends_cli_turn_and_kills_process_group() {
+	$if !linux {
+		return
+	}
+	f := new_cli_cancel_fixture()
+	defer { os.rmdir_all(f.dir) or {} }
+	store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(f.dir, 'plugins'))
+	defer { app.close() }
+	operation_id := uuid.new_v4().str()
+	_, mut turn_ctx, cancel, _ := app.begin_turn_operation('session-cli', operation_id) or {
+		panic(err)
+	}
+	defer { cancel() }
+	cli_cancel := fn [mut turn_ctx] () ?string {
+		return turn_context_error(mut turn_ctx)
+	}
+	spawn fn [app, operation_id] () {
+		time.sleep(700 * time.millisecond)
+		app.cancel_turn_operation('session-cli', operation_id) or {}
+	}()
+	started := time.now()
+	run_claude_cli_turn_observed(f.script, f.dir, 'ask', '', 'hello', 60_000,
+		ignore_provider_text_delta, deny_all_cli_approvals, unsafe { nil }, cli_cancel) or {
+		assert err.msg() == 'cancelled', err.msg()
+		assert time.since(started) < 5 * time.second
+		f.assert_everything_gone()
+		app.finish_turn_operation(operation_id)
+		return
+	}
+	assert false
+}

@@ -185,3 +185,89 @@ fn test_model_endpoints_match_normalizes_equivalent_urls() {
 	assert !model_endpoints_match('https://api.openai.com/v1', 'https://api.openai.com/v2')
 	assert !model_endpoints_match('', '')
 }
+
+// A profile that relies on the catalog endpoint (no saved base_url) must not
+// keep its saved key when an attacker re-saves it against their own endpoint
+// with a blank key: the new saved endpoint would otherwise become "trusted".
+fn test_resaving_default_endpoint_profile_to_attacker_endpoint_drops_saved_key() {
+	root := binding_root()
+	mut store, app := binding_test_app(root)
+	defer {
+		app.close()
+		store.close() or {}
+		os.rmdir_all(root) or {}
+	}
+	// Legacy/hand-edited settings can hold a key with no saved endpoint (the
+	// API validator rejects an empty endpoint, so inject the shape directly).
+	mut state := app.model_settings
+	state.mu.lock()
+	state.settings.profiles['openai'] = ModelProfile{
+		model:   'gpt-5'
+		api_key: binding_saved_key
+	}
+	state.mu.unlock()
+	state.update(ModelSettingsInput{
+		provider: 'openai'
+		model:    'gpt-5'
+		base_url: binding_attacker_url
+	}) or { panic(err) }
+	config := app.provider_model_config('openai', '') or {
+		assert err.msg().contains('credentials are not configured')
+		return
+	}
+	assert config.api_key != binding_saved_key
+	assert config.api_key == ''
+}
+
+// An environment key is bound to the catalog (or operator) endpoint only. A
+// caller who saves their own endpoint with no key must not receive it.
+fn test_environment_key_never_follows_a_saved_custom_endpoint() {
+	root := binding_root()
+	mut store, app := binding_test_app(root)
+	prior := os.getenv_opt('VEASEL_MODEL_API_KEY')
+	os.setenv('VEASEL_MODEL_API_KEY', binding_env_key, true)
+	defer {
+		if value := prior {
+			os.setenv('VEASEL_MODEL_API_KEY', value, true)
+		} else {
+			os.unsetenv('VEASEL_MODEL_API_KEY')
+		}
+		app.close()
+		store.close() or {}
+		os.rmdir_all(root) or {}
+	}
+	mut state := app.model_settings
+	state.update(ModelSettingsInput{
+		provider: 'openai'
+		model:    'gpt-5'
+		base_url: binding_attacker_url
+	}) or { panic(err) }
+	config := app.provider_model_config('openai', '') or {
+		assert err.msg().contains('credentials are not configured')
+		return
+	}
+	assert config.api_key != binding_env_key
+	assert config.api_key == ''
+}
+
+// Canonicalization attacks must never make an attacker endpoint "equal" to a
+// trusted one. Equality is exact scheme + host(:port) + decoded path.
+fn test_endpoint_matching_rejects_lookalike_urls() {
+	trusted := 'https://api.openai.com/v1'
+	for lookalike in [
+		'https://api.openai.com:8443/v1', // different port
+		'http://api.openai.com/v1', // different scheme
+		'https://api.openai.com.attacker.example/v1', // suffix host
+		'https://api.openai.com@attacker.example/v1', // userinfo trick
+		'https://attacker.example/v1', // different host
+		'https://api.openai.com./v1', // trailing-dot FQDN variant
+		'https://api.openai.com/v1/../v2', // dot segments
+		'https://api.openai.com/v1%2f..%2fv2', // encoded traversal
+		'https://api.openai.com/v2', // different path
+		'https://api.openai.com', // different path (root)
+	] {
+		assert !model_endpoints_match(trusted, lookalike), 'must not match: ${lookalike}'
+	}
+	assert model_endpoints_match(trusted, 'https://API.OPENAI.COM/v1/')
+	assert model_endpoints_match(trusted, ' https://api.openai.com/v1 ')
+}

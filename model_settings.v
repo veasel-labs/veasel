@@ -168,8 +168,11 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 		''
 	} else if input.api_key.len > 0 {
 		input.api_key
-	} else if previous.base_url.len == 0 || model_endpoints_match(previous.base_url, base_url)
-		|| model_endpoints_match(trusted_catalog_endpoint(provider), base_url) {
+	} else if model_endpoints_match(if previous.base_url.len > 0 {
+		previous.base_url
+	} else {
+		trusted_catalog_endpoint(provider)
+	}, base_url) || model_endpoints_match(trusted_catalog_endpoint(provider), base_url) {
 		previous.api_key
 	} else {
 		// A saved key never follows the profile to a different endpoint.
@@ -364,19 +367,23 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	// this provider (catalog default, saved profile endpoint, or the operator's
 	// VEASEL_MODEL_BASE_URL). Any other endpoint needs its own key in the same
 	// request; the stored key is never sent there.
+	// A saved key is bound to the endpoint it was saved with (the update path
+	// drops it when that endpoint changes). An environment key is bound ONLY to
+	// the catalog/operator endpoint: a caller who saves their own endpoint must
+	// never receive it, so the saved endpoint does not make it trusted.
 	trusted := model_endpoint_is_trusted_for_stored_key(provider, base_url, profile.base_url)
+	env_trusted := model_endpoint_is_trusted_for_stored_key(provider, base_url, '')
 	// Precedence: transient override → saved profile key → environment → none.
 	// Clearing a saved key intentionally falls back to environment only.
+	environment_key := if env_trusted { provider_api_key(provider) or { '' } } else { '' }
 	api_key := if key_override.len > 0 {
 		key_override
-	} else if !trusted {
-		''
 	} else if clear_saved_key {
-		provider_api_key(provider) or { '' }
-	} else if profile.api_key.trim_space().len > 0 {
+		environment_key
+	} else if trusted && profile.api_key.trim_space().len > 0 {
 		profile.api_key
 	} else {
-		provider_api_key(provider) or { '' }
+		environment_key
 	}
 	if info.requires_api_key && api_key.trim_space().len == 0 {
 		if !trusted {

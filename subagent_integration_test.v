@@ -313,3 +313,38 @@ fn create_completed_implementer_child(mut store Store, parent Session, parent_op
 	claimed := store.claim_subagent_outcome(finished.id) or { panic(err) }
 	return claimed, child.directory
 }
+
+fn test_child_integration_never_imports_hook_ci_or_hooks_path_changes() {
+	root := os.join_path(os.temp_dir(), 'veasel-child-sensitive-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_integration_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	parent := store.create_session(SessionInput{ title: 'Parent sensitive', directory: workspace }) or {
+		panic(err)
+	}
+	parent_operation := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, parent_operation) or { panic(err) }
+	run, child_directory := create_completed_implementer_child(mut store, parent, parent_operation,
+		workspace, 'integration-sensitive')
+	_ := run_workspace_git_command(child_directory, ['config', 'core.hooksPath', '.evil-hooks']) or {
+		panic(err)
+	}
+	for relative in ['.github/workflows/ci.yml', '.husky/pre-commit', '.gitattributes', '.envrc',
+		'.git-hooks/pre-push', '.evil-hooks/pre-commit'] {
+		os.mkdir_all(os.dir(os.join_path(child_directory, relative))) or { panic(err) }
+		os.write_file(os.join_path(child_directory, relative), 'echo pwned\n') or { panic(err) }
+	}
+	os.write_file(os.join_path(child_directory, 'README.md'), 'ordinary change\n') or { panic(err) }
+	response := app.propose_subagent_integration(parent.id, run.id) or { panic(err) }
+	assert response.proposals.len == 1
+	assert response.proposals[0].path == 'README.md'
+	assert response.conflicts.len == 6
+	for conflict in response.conflicts {
+		assert conflict.reason.contains('manual parent review')
+	}
+	assert !os.exists(os.join_path(workspace, '.github'))
+}

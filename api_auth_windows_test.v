@@ -26,7 +26,7 @@ fn test_windows_token_file_and_directory_pass_the_allowlist() {
 		for target in [path, data] {
 			trustees := windows_acl_trustees(target) or { panic(err) }
 			assert trustees.len > 0
-			assert first_disallowed_trustee(trustees, me.sid) == none, '${target}: ${trustees}'
+			assert first_disallowed_trustee(trustees, me.sid, me.is_local()) == none, '${target}: ${trustees}'
 			windows_acl_is_private(target) or { panic(err) }
 		}
 		assert load_or_create_api_token(data) or { panic(err) } == token

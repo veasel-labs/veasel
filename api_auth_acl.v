@@ -8,10 +8,11 @@ module main
 // administrators can reach the file regardless (an administrator can take
 // ownership, SYSTEM is the OS), so they are outside the threat model; every
 // other principal (Everyone, Users, Authenticated Users, other users or
-// groups, ANONYMOUS, NETWORK, ...) is refused. Trustees are compared as SIDs
-// or SDDL aliases from `icacls /save`, never as localized display names.
+// groups, ANONYMOUS, NETWORK, ...) is refused. Every trustee from `icacls /save` is resolved to a
+// real SID (aliases such as LA are machine-relative) and SIDs are compared,
+// never display names.
 
-const acl_allowed_trustees = ['SY', 'BA', 'S-1-5-18', 'S-1-5-32-544']
+const acl_allowed_sids = ['S-1-5-18', 'S-1-5-32-544']
 
 // Extracts the trustee (6th field) of every ACE in the DACL of an SDDL
 // string such as `D:PAI(A;OICI;FA;;;S-1-5-21-1-2-3-1001)(A;;FA;;;SY)`.
@@ -45,17 +46,61 @@ fn parse_sddl_trustees(sddl string) []string {
 	return trustees
 }
 
-// Returns the first trustee that is neither the current user nor an
-// allowlisted principal, or none when the ACL is acceptable.
-fn first_disallowed_trustee(trustees []string, user_sid string) ?string {
+// Resolves an SDDL trustee to a real SID. Some aliases are machine-relative
+// (LA = <machine SID>-500, LG = <machine SID>-501), so they are expanded from
+// the current user's own SID prefix and only when that user is a LOCAL
+// account (its domain part is this machine). For a domain account, or any
+// alias that cannot be resolved with certainty, there is no answer and the
+// caller fails closed.
+fn resolve_sddl_trustee(trustee string, user_sid string, user_is_local bool) ?string {
+	if trustee.to_upper().starts_with('S-1-') {
+		return trustee.to_upper()
+	}
+	fixed := match trustee.to_upper() {
+		'WD' { 'S-1-1-0' }
+		'AN' { 'S-1-5-7' }
+		'NU' { 'S-1-5-2' }
+		'IU' { 'S-1-5-4' }
+		'SY' { 'S-1-5-18' }
+		'AU' { 'S-1-5-11' }
+		'BA' { 'S-1-5-32-544' }
+		'BU' { 'S-1-5-32-545' }
+		'BG' { 'S-1-5-32-546' }
+		'PU' { 'S-1-5-32-547' }
+		'CO' { 'S-1-3-0' }
+		'OW' { 'S-1-3-4' }
+		else { '' }
+	}
+	if fixed.len > 0 {
+		return fixed
+	}
+	rid := match trustee.to_upper() {
+		'LA' { '500' }
+		'LG' { '501' }
+		else { '' }
+	}
+	if rid.len == 0 || !user_is_local || !user_sid.to_upper().starts_with('S-1-5-21-') {
+		return none
+	}
+	last := user_sid.last_index('-') or { return none }
+	return '${user_sid[..last].to_upper()}-${rid}'
+}
+
+// Returns the first trustee (as printed) whose RESOLVED SID is neither the
+// current user nor an allowlisted principal, or none when the ACL is
+// acceptable. Unresolvable trustees are disallowed (fail closed).
+fn first_disallowed_trustee(trustees []string, user_sid string, user_is_local bool) ?string {
 	if trustees.len == 0 {
 		return 'an empty or unreadable ACL'
 	}
 	user := user_sid.to_upper()
 	for trustee in trustees {
-		t := trustee.to_upper()
-		if t.len == 0 || (t != user && t !in acl_allowed_trustees) {
-			return if trustee.len == 0 { 'a malformed entry' } else { trustee }
+		if trustee.len == 0 {
+			return 'a malformed entry'
+		}
+		sid := resolve_sddl_trustee(trustee, user_sid, user_is_local) or { return trustee }
+		if sid != user && sid !in acl_allowed_sids {
+			return trustee
 		}
 	}
 	return none
@@ -71,25 +116,4 @@ fn decode_icacls_save(raw []u8) string {
 		}
 	}
 	return text.bytestr()
-}
-
-// SID for an SDDL trustee, so `icacls /remove *<SID>` can drop it. Returns
-// an empty string for an alias this table does not know (the caller then
-// fails closed instead of guessing).
-fn sddl_trustee_sid(trustee string) string {
-	if trustee.starts_with('S-1-') {
-		return trustee
-	}
-	return match trustee.to_upper() {
-		'WD' { 'S-1-1-0' }
-		'AN' { 'S-1-5-7' }
-		'NU' { 'S-1-5-2' }
-		'IU' { 'S-1-5-4' }
-		'AU' { 'S-1-5-11' }
-		'BU' { 'S-1-5-32-545' }
-		'BG' { 'S-1-5-32-546' }
-		'PU' { 'S-1-5-32-547' }
-		'CO' { 'S-1-3-0' }
-		else { '' }
-	}
 }

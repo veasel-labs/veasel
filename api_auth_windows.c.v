@@ -63,10 +63,20 @@ fn windows_acl_trustees(path string) ![]string {
 	return error('icacls reported no DACL for ${path}')
 }
 
+// A local account's domain part is this machine's name; only then can
+// machine-relative aliases (LA, LG) be expanded from the user's SID.
+fn (p WindowsPrincipal) is_local() bool {
+	machine := os.getenv('COMPUTERNAME').to_lower()
+	return machine.len > 0 && p.name.all_before('\\').to_lower() == machine
+}
+
 fn windows_acl_is_private(path string) ! {
 	me := current_windows_principal()!
-	if bad := first_disallowed_trustee(windows_acl_trustees(path)!, me.sid) {
-		return error('${path} grants access to ${bad}; only the current user (and SYSTEM/Administrators) may hold an entry')
+	trustees := windows_acl_trustees(path)!
+	if bad := first_disallowed_trustee(trustees, me.sid, me.is_local()) {
+		// Principals are SIDs/aliases, not secrets: list them so a CI log
+		// shows exactly what icacls printed.
+		return error('${path} grants access to ${bad}; only the current user (and SYSTEM/Administrators) may hold an entry. user=${me.sid} local=${me.is_local()} trustees=${trustees}')
 	}
 }
 
@@ -82,10 +92,15 @@ fn restrict_windows_acl(path string, is_dir bool) ! {
 		return error('icacls could not restrict ${path} to the current user')
 	}
 	for _ in 0 .. 8 {
-		bad := first_disallowed_trustee(windows_acl_trustees(path)!, me.sid) or { return }
-		sid := sddl_trustee_sid(bad)
-		if sid.len == 0 {
-			return error('cannot remove ${bad} from the ACL of ${path}')
+		trustees := windows_acl_trustees(path)!
+		bad := first_disallowed_trustee(trustees, me.sid, me.is_local()) or { return }
+		// Never remove the allowlisted current user; an alias that cannot be
+		// resolved to a SID cannot be removed either: fail closed.
+		sid := resolve_sddl_trustee(bad, me.sid, me.is_local()) or {
+			return error('cannot resolve ${bad} to a SID; refusing ${path} (trustees=${trustees})')
+		}
+		if sid.to_upper() == me.sid.to_upper() {
+			return error('refusing to remove the current user from ${path}')
 		}
 		removed := os.exec(['icacls', path, '/remove', '*${sid}'])
 		if removed.exit_code != 0 {

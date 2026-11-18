@@ -405,8 +405,23 @@ test('J4b the Changes panel shows the git diff of the applied edit', async ({}, 
   record(testInfo, 'J4b', 'Changes panel diff lines == git diff of the disposable repo', { diffHasFix: true });
 });
 
-test('J4c after the approved turn finishes the session returns to Ready', async () => {
+test('J4c after the approved turn finishes the session returns to Ready', async ({}, testInfo) => {
   await expect(page.getByTitle(/Reads freely/)).toContainText('Ready', { timeout: 20_000 });
+  // Independent oracle: the backend operation itself is completed and none is
+  // still active — "Ready" must reflect the server, not just the label.
+  const sid = await threadFromUrl();
+  const operations = await backendApi<Array<{ status: string }>>(
+    env,
+    await backend(),
+    `/v1/sessions/${sid}/operations`,
+  );
+  expect(operations.at(-1)?.status).toBe('completed');
+  expect(operations.some((operation) => ['queued', 'running', 'cancelling'].includes(operation.status))).toBe(false);
+  record(testInfo, 'J4c', 'backend last operation status == completed; no active operation remains', {
+    lastOperationCompleted: operations.at(-1)?.status === 'completed',
+    activeOperations: operations.filter((operation) => ['queued', 'running', 'cancelling'].includes(operation.status))
+      .length,
+  });
 });
 
 test('J5 a second proposal is rejected and changes nothing', async ({}, testInfo) => {
@@ -589,8 +604,24 @@ test('J8b Escape in the composer stops a running turn and the process exits', as
   const slow = readCliLog(env)
     .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
     .at(-1);
+  // Independent oracles: the CLI process is alive before Escape, dead after,
+  // and the backend records the operation as cancelled (not completed).
+  expect(slow, 'slow CLI scenario started').toBeDefined();
+  await expect.poll(() => isAlive(slow?.pid ?? -1)).toBe(true);
+  const sid = await threadFromUrl();
   await composer().press('Escape');
   await expect.poll(() => isAlive(slow?.pid ?? -1), { timeout: 20_000 }).toBe(false);
+  await expect
+    .poll(
+      async () =>
+        (await backendApi<Array<{ status: string }>>(env, await backend(), `/v1/sessions/${sid}/operations`)).at(-1)
+          ?.status,
+      { timeout: 20_000 },
+    )
+    .toBe('cancelled');
+  record(testInfo, 'J8b', 'fake CLI pid alive before Escape and dead after; backend operation status == cancelled', {
+    pid: slow?.pid ?? null,
+  });
 });
 
 test('J9 TUI client resumes the exact session; Desktop shows the TUI message', async ({}, testInfo) => {

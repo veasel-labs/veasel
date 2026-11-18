@@ -160,62 +160,179 @@ describe('veasel Focus bridge HTTP behavior', () => {
   });
 });
 
-describe('veasel Focus bridge send contract', () => {
-  function capturingFetch(sent: Array<{ path: string; body: unknown }>): FetchLike {
-    return async (input: string, init?: RequestInit) => {
+describe('veasel Focus bridge session preferences (server-persisted)', () => {
+  type Call = { method: string; path: string; body: unknown };
+
+  /** A tiny in-memory Veasel server: the single source of truth for choices. */
+  function fakeServer(initial: Record<string, unknown> = {}) {
+    const calls: Call[] = [];
+    let session: Record<string, unknown> = {
+      id: 's1',
+      title: 'T',
+      directory: '/p',
+      created_at: '2026-11-16',
+      preferred_provider: '',
+      preferred_model: '',
+      permission_mode: 'ask',
+      prefs_version: 0,
+      last_provider: '',
+      last_model: '',
+      ...initial,
+    };
+    const fetch: FetchLike = async (input, init) => {
       const path = input.replace('http://veasel.test', '');
-      if (init?.body) sent.push({ path, body: JSON.parse(String(init.body)) });
-      if (path === '/v1/sessions') {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' }),
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ method, path, body });
+      if (path === '/v1/sessions' && method === 'POST') {
+        session = {
+          ...session,
+          preferred_provider: body.preferred_provider ?? '',
+          preferred_model: body.preferred_model ?? '',
+          permission_mode: body.permission_mode ?? 'ask',
         };
+        return { ok: true, status: 201, json: async () => session };
+      }
+      if (path === '/v1/sessions/s1' && method === 'GET') {
+        return { ok: true, status: 200, json: async () => session };
+      }
+      if (path === '/v1/sessions/s1' && method === 'PATCH') {
+        if (body.expected_prefs_version !== session.prefs_version) {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({
+              error: 'Session preferences changed; reload and retry.',
+              code: 'prefs_version_conflict',
+              session,
+            }),
+          };
+        }
+        session = {
+          ...session,
+          ...(body.preferred_provider !== undefined ? { preferred_provider: body.preferred_provider } : {}),
+          ...(body.preferred_model !== undefined ? { preferred_model: body.preferred_model } : {}),
+          ...(body.permission_mode !== undefined ? { permission_mode: body.permission_mode } : {}),
+          ...(body.title !== undefined ? { title: body.title } : {}),
+          prefs_version: (session.prefs_version as number) + 1,
+        };
+        return { ok: true, status: 200, json: async () => session };
+      }
+      if (path === '/v1/sessions' && method === 'GET') {
+        return { ok: true, status: 200, json: async () => [session] };
       }
       return { ok: true, status: 200, json: async () => ({}) };
     };
+    return { fetch, calls };
   }
 
-  it('sends the chosen provider alone when no model is chosen, never the global default', async () => {
-    const sent: Array<{ path: string; body: unknown }> = [];
-    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: capturingFetch(sent) });
+  it('creates the session with its choices on the server instead of a client-only map', async () => {
+    const server = fakeServer();
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
     const created = await bridge.createThread({
       cwd: '/p',
       projectName: 'p',
       provider: 'codex',
       model: null,
-      permissionMode: 'ask',
+      permissionMode: 'plan',
     });
     expect(created.ok).toBe(true);
-    const outcome = await bridge.send('s1', 'fix it');
-    expect(outcome.ok).toBe(true);
-    const message = sent.find((entry) => entry.path === '/v1/sessions/s1/messages');
-    // The backend resolves a provider-only CLI target to that provider's
-    // default model. Omitting the provider would run the global provider
-    // while Focus displays another one.
-    expect(message?.body).toEqual({ content: 'fix it', provider: 'codex', permission_mode: 'ask' });
+    const create = server.calls.find((call) => call.method === 'POST' && call.path === '/v1/sessions');
+    expect(create?.body).toMatchObject({ preferred_provider: 'codex', permission_mode: 'plan' });
+    expect(create?.body).not.toHaveProperty('confirm_bypass');
+    if (created.ok) {
+      expect(created.value.provider).toBe('codex');
+      expect(created.value.permissionMode).toBe('plan');
+    }
   });
 
-  it('sends provider and model together when a model is chosen', async () => {
-    const sent: Array<{ path: string; body: unknown }> = [];
-    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: capturingFetch(sent) });
-    const created = await bridge.createThread({
+  it('survives a reload: a brand-new bridge reads the same choices back from the server', async () => {
+    const server = fakeServer();
+    const first = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
+    await first.createThread({
       cwd: '/p',
-      provider: 'claude',
       projectName: 'p',
+      provider: 'claude',
       model: 'claude-sonnet-5',
-      permissionMode: 'ask',
+      permissionMode: 'accept-edits',
     });
-    expect(created.ok).toBe(true);
+    const reloaded = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
+    const threads = await reloaded.listThreads();
+    expect(threads[0]).toMatchObject({ provider: 'claude', model: 'claude-sonnet-5', permissionMode: 'accept-edits' });
+    const snapshot = await reloaded.readThread('s1');
+    expect(snapshot?.thread).toMatchObject({
+      provider: 'claude',
+      model: 'claude-sonnet-5',
+      permissionMode: 'accept-edits',
+    });
+  });
+
+  it('shows the truthful last-executed model separately from the preference', async () => {
+    const server = fakeServer({
+      preferred_provider: 'codex',
+      last_provider: 'claude-code',
+      last_model: 'claude-sonnet-5',
+    });
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
+    const snapshot = await bridge.readThread('s1');
+    expect(snapshot?.thread.provider).toBe('codex');
+    expect(snapshot?.thread.model).toBeNull();
+    expect(snapshot?.thread.resolvedModel).toBe('claude-sonnet-5');
+  });
+
+  it('sends only the prompt: the server resolves turn > session > default', async () => {
+    const server = fakeServer({ preferred_provider: 'codex', permission_mode: 'plan' });
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
     const outcome = await bridge.send('s1', 'fix it');
     expect(outcome.ok).toBe(true);
-    const message = sent.find((entry) => entry.path === '/v1/sessions/s1/messages');
-    expect(message?.body).toEqual({
-      content: 'fix it',
-      provider: 'claude-code',
-      model: 'claude-sonnet-5',
-      permission_mode: 'ask',
-    });
+    const message = server.calls.find((call) => call.path === '/v1/sessions/s1/messages');
+    expect(message?.body).toEqual({ content: 'fix it' });
+  });
+
+  it('updates choices with the expected prefs_version read from the server', async () => {
+    const server = fakeServer({ prefs_version: 4 });
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
+    const updated = await bridge.updateThread('s1', { permissionMode: 'accept-edits' });
+    expect(updated.ok).toBe(true);
+    const patch = server.calls.find((call) => call.method === 'PATCH');
+    expect(patch?.body).toEqual({ permission_mode: 'accept-edits', expected_prefs_version: 4 });
+  });
+
+  it('does not clobber the title when only a choice changes', async () => {
+    const server = fakeServer();
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
+    await bridge.updateThread('s1', { model: null, permissionMode: 'ask' });
+    const patch = server.calls.find((call) => call.method === 'PATCH');
+    expect(patch?.body).not.toHaveProperty('title');
+  });
+
+  it('surfaces a version conflict honestly instead of applying a stale choice', async () => {
+    const server = fakeServer({ prefs_version: 1 });
+    // A concurrent writer (the TUI) bumps the version between read and patch.
+    const racing: FetchLike = async (input, init) => {
+      if ((init?.method ?? 'GET') === 'PATCH') {
+        const body = JSON.parse(String(init?.body));
+        body.expected_prefs_version = 0;
+        return server.fetch(input, { ...init, body: JSON.stringify(body) });
+      }
+      return server.fetch(input, init);
+    };
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: racing });
+    const outcome = await bridge.updateThread('s1', { permissionMode: 'plan' });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain('changed');
+  });
+
+  it('only asks the server to confirm bypass when the user chose bypass explicitly', async () => {
+    const server = fakeServer();
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: server.fetch });
+    await bridge.updateThread('s1', { permissionMode: 'bypass' });
+    const patch = server.calls.find((call) => call.method === 'PATCH');
+    expect(patch?.body).toMatchObject({ permission_mode: 'bypass', confirm_bypass: true });
+    const other = fakeServer();
+    const calm = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: other.fetch });
+    await calm.updateThread('s1', { permissionMode: 'plan' });
+    expect(other.calls.find((call) => call.method === 'PATCH')?.body).not.toHaveProperty('confirm_bypass');
   });
 });
 

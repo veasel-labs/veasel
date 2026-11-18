@@ -35,6 +35,15 @@ export interface VeaselSession {
   title: string;
   directory: string;
   created_at: string;
+  /** Server-persisted choices (epic #689); absent on pre-v31 backends. */
+  preferred_provider?: string;
+  preferred_model?: string;
+  permission_mode?: string;
+  /** Optimistic-concurrency token for PATCH /v1/sessions/:id. */
+  prefs_version?: number;
+  /** Provider/model of the latest completed turn: what actually ran. */
+  last_provider?: string;
+  last_model?: string;
 }
 
 export interface VeaselMessage {
@@ -181,16 +190,23 @@ export function sessionToThread(
 ): FocusThread {
   const cwd = session.directory ?? '';
   const projectName = cwd ? (cwd.split('/').filter(Boolean).pop() ?? null) : null;
+  // Choices come from the server session, never from client memory. An unset
+  // preference follows the server's global default, so the provider stays the
+  // caller's fallback ('unknown' by default) rather than being guessed.
+  const preferred = session.preferred_provider ? toFocusProviderId(session.preferred_provider) : null;
+  const permissionMode = PERMISSION_MODES.find((mode) => mode === session.permission_mode) ?? 'ask';
   return {
     id: session.id,
     title: session.title || 'Untitled session',
     workspace: cwd,
     projectName,
     cwd,
-    provider: options.provider ?? 'unknown',
-    model: null,
-    resolvedModel: null,
-    permissionMode: 'ask',
+    provider: preferred ?? options.provider ?? 'unknown',
+    model: session.preferred_model ? session.preferred_model : null,
+    // The model of the latest completed turn: what actually ran, which may
+    // differ from the preference if the preference changed afterwards.
+    resolvedModel: session.last_model ? session.last_model : null,
+    permissionMode,
     providerSessionId: null,
     status: 'idle',
     createdAt: session.created_at ?? '',
@@ -269,17 +285,6 @@ export function createVeaselFocusBridge(options: {
   const base = options.baseUrl.replace(/\/$/, '');
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
   const provider = options.provider ?? 'unknown';
-  // Per-thread Focus choices Veasel sessions do not persist (yet): kept
-  // client-side and applied to outgoing turns / thread projections.
-  const choices = new Map<
-    string,
-    { provider: FocusThreadProviderId; model: string | null; permissionMode: FocusPermissionMode }
-  >();
-  const applyChoice = (thread: FocusThread): FocusThread => {
-    const choice = choices.get(thread.id);
-    return choice ? { ...thread, ...choice } : thread;
-  };
-
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await doFetch(`${base}${path}`, {
       ...init,
@@ -315,12 +320,10 @@ export function createVeaselFocusBridge(options: {
     approvals
       .filter((approval) => approval.status === 'pending')
       .forEach((approval, index) => events.push(approvalToEvent(approval, turn, events.length + index + 1)));
-    const thread = applyChoice(
-      sessionToThread(session as VeaselSession, {
-        provider,
-        turns: events.filter((event) => event.type === 'user').length,
-      }),
-    );
+    const thread = sessionToThread(session as VeaselSession, {
+      provider,
+      turns: events.filter((event) => event.type === 'user').length,
+    });
     if (approvals.some((approval) => approval.status === 'pending')) thread.status = 'awaiting-approval';
     return { thread, events };
   }
@@ -378,21 +381,25 @@ export function createVeaselFocusBridge(options: {
 
     async listThreads(): Promise<FocusThread[]> {
       const sessions = asArray<VeaselSession>(await request('/v1/sessions'));
-      return sessions.map((session) => applyChoice(sessionToThread(session, { provider })));
+      return sessions.map((session) => sessionToThread(session, { provider }));
     },
 
     createThread(input: FocusCreateThreadInput): Promise<FocusResult<FocusThread>> {
       return result(async () => {
+        const veaselProvider = toVeaselProviderId(input.provider);
         const session = await request<VeaselSession>('/v1/sessions', {
           method: 'POST',
-          body: JSON.stringify({ title: input.title ?? '', directory: input.cwd }),
+          body: JSON.stringify({
+            title: input.title ?? '',
+            directory: input.cwd,
+            ...(veaselProvider ? { preferred_provider: veaselProvider } : {}),
+            ...(veaselProvider && input.model ? { preferred_model: input.model } : {}),
+            permission_mode: input.permissionMode,
+            // Bypass is only ever sent because the caller chose it explicitly.
+            ...(input.permissionMode === 'bypass' ? { confirm_bypass: true } : {}),
+          }),
         });
-        choices.set(session.id, {
-          provider: input.provider,
-          model: input.model,
-          permissionMode: input.permissionMode,
-        });
-        return applyChoice(sessionToThread(session, { provider: input.provider }));
+        return sessionToThread(session, { provider: input.provider });
       });
     },
 
@@ -402,17 +409,27 @@ export function createVeaselFocusBridge(options: {
 
     updateThread(id: string, patch: FocusThreadPatch): Promise<FocusResult<FocusThread>> {
       return result(async () => {
-        const session = await request<VeaselSession>(`/v1/sessions/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ title: patch.title ?? '' }),
-        });
-        const previous = choices.get(id) ?? { provider, model: null, permissionMode: 'ask' as FocusPermissionMode };
-        choices.set(id, {
-          provider: previous.provider,
-          model: patch.model !== undefined ? patch.model : previous.model,
-          permissionMode: patch.permissionMode ?? previous.permissionMode,
-        });
-        return applyChoice(sessionToThread(session, { provider }));
+        const path = `/v1/sessions/${encodeURIComponent(id)}`;
+        const body: Record<string, unknown> = {};
+        if (patch.title !== undefined) body.title = patch.title;
+        if (patch.permissionMode !== undefined) {
+          body.permission_mode = patch.permissionMode;
+          if (patch.permissionMode === 'bypass') body.confirm_bypass = true;
+        }
+        if (patch.model !== undefined) {
+          // A target change replaces provider and model together server-side.
+          // A model needs its provider, so the current preference is read
+          // from the server rather than a client copy.
+          const current = await request<VeaselSession>(path);
+          body.preferred_provider = current.preferred_provider ?? '';
+          body.preferred_model = patch.model ?? '';
+          body.expected_prefs_version = current.prefs_version ?? 0;
+        } else if (patch.permissionMode !== undefined) {
+          const current = await request<VeaselSession>(path);
+          body.expected_prefs_version = current.prefs_version ?? 0;
+        }
+        const session = await request<VeaselSession>(path, { method: 'PATCH', body: JSON.stringify(body) });
+        return sessionToThread(session, { provider });
       });
     },
 
@@ -425,21 +442,13 @@ export function createVeaselFocusBridge(options: {
 
     send(id: string, text: string): Promise<FocusResult<true>> {
       return result(async () => {
-        const choice = choices.get(id);
-        const veaselProvider = choice ? toVeaselProviderId(choice.provider) : null;
-        // A chosen provider always travels with the turn so the backend never
-        // runs the global default while Focus displays another provider. The
-        // model is optional: installed-CLI providers resolve their own default.
-        const target = veaselProvider
-          ? { provider: veaselProvider, ...(choice?.model ? { model: choice.model } : {}) }
-          : {};
+        // Only the prompt travels: the server resolves the target and the
+        // permission mode (per-turn override > session preference > default)
+        // and stamps the result on the operation, so Focus can never run a
+        // different provider than the session displays.
         await request(`/v1/sessions/${encodeURIComponent(id)}/messages`, {
           method: 'POST',
-          body: JSON.stringify({
-            content: text,
-            ...target,
-            ...(choice ? { permission_mode: choice.permissionMode } : {}),
-          }),
+          body: JSON.stringify({ content: text }),
         });
         return true as const;
       });

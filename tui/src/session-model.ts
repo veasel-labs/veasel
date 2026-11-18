@@ -32,3 +32,35 @@ export function needsModelSetup(view: ModelReadinessView): boolean {
 
 export const NO_MODEL_SETUP_GUIDANCE =
   "No model is configured yet — type /connect to add a provider key and pick a model. Prompts will fail until then."
+
+// Server-persisted per-session choices (epic #689). The TUI never keeps its
+// own copy: it renders what the session API returns, so the TUI and Desktop
+// always show, and resume, the same provider/model/permission.
+export type SessionSettingsView = {
+  preferred_provider?: string
+  preferred_model?: string
+  permission_mode?: string
+  last_provider?: string
+  last_model?: string
+}
+
+function targetLabel(provider?: string, model?: string): string {
+  const p = provider?.trim() ?? ""
+  const m = model?.trim() ?? ""
+  if (!p) return ""
+  return m ? `${p}/${m}` : p
+}
+
+// One compact line: the chosen target and non-default permission mode, plus
+// what actually ran last when that differs from the choice (never implied).
+export function formatSessionSettings(view: SessionSettingsView): string {
+  const parts: string[] = []
+  const chosen = targetLabel(view.preferred_provider, view.preferred_model)
+  parts.push(chosen || "default model")
+  const mode = view.permission_mode?.trim()
+  if (mode === "bypass") parts.push("bypass permissions!")
+  else if (mode && mode !== "ask") parts.push(mode)
+  const last = targetLabel(view.last_provider, view.last_model)
+  if (last && last !== chosen) parts.push(`last ran ${last}`)
+  return parts.join(" · ")
+}

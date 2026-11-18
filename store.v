@@ -21,6 +21,54 @@ pub:
 	title      string
 	directory  string
 	created_at string
+	// Server-persisted choices (issue #689). preferred_* is empty when the
+	// session follows the global default; prefs_version is the optimistic
+	// concurrency token for PATCH /v1/sessions/:id.
+	preferred_provider string
+	preferred_model    string
+	permission_mode    string = 'ask'
+	prefs_version      int
+	// The provider/model of the latest COMPLETED turn, read from
+	// session_operations; empty until a turn has executed. Never the
+	// preference: it is what actually ran.
+	last_provider string
+	last_model    string
+}
+
+const session_columns = "id, title, directory, created_at, preferred_provider, preferred_model, permission_mode, prefs_version, COALESCE((SELECT o.provider FROM session_operations o WHERE o.session_id = sessions.id AND o.status = 'completed' AND o.provider != '' ORDER BY o.rowid DESC LIMIT 1), ''), COALESCE((SELECT o.model FROM session_operations o WHERE o.session_id = sessions.id AND o.status = 'completed' AND o.provider != '' ORDER BY o.rowid DESC LIMIT 1), '')"
+
+// latest_schema_version is the highest migration open_store applies. Tests
+// compare against it instead of a literal so adding a migration never breaks
+// them; keep it equal to the last `if current < N` block below.
+const latest_schema_version = 31
+
+// add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
+// that was removed (tests, manual repair) must not fail on a duplicate column.
+fn add_column_if_missing(db &sqlite.DB, table string, column string, ddl string) ! {
+	rows := db.exec('PRAGMA table_info(${table})')!
+	for row in rows {
+		if row.val(1) == column {
+			return
+		}
+	}
+	db.exec('ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}')!
+}
+
+const valid_session_permission_modes = ['ask', 'accept-edits', 'plan', 'bypass']
+
+fn session_from_row(row sqlite.Row) Session {
+	return Session{
+		id:                 row.val(0)
+		title:              row.val(1)
+		directory:          row.val(2)
+		created_at:         row.val(3)
+		preferred_provider: row.val(4)
+		preferred_model:    row.val(5)
+		permission_mode:    row.val(6)
+		prefs_version:      row.val(7).int()
+		last_provider:      row.val(8)
+		last_model:         row.val(9)
+	}
 }
 
 pub struct ChatTurn {
@@ -50,6 +98,13 @@ pub:
 	reasoning_reported    bool @[omitempty]
 	created_at            string
 	updated_at            string
+	// What admission resolved for this turn (explicit per-turn override >
+	// session preference > global default). provider/model above stay the
+	// values the turn actually executed with.
+	resolved_provider string @[omitempty]
+	resolved_model    string @[omitempty]
+	permission_mode   string @[omitempty]
+	target_source     string @[omitempty]
 }
 
 pub struct GlobalSessionOperation {
@@ -128,6 +183,12 @@ struct SessionInput {
 pub:
 	title     string
 	directory string
+	// Optional initial choices. The API validates them before they reach the
+	// store; bypass additionally requires confirm_bypass and is audited.
+	preferred_provider string
+	preferred_model    string
+	permission_mode    string
+	confirm_bypass     bool
 }
 
 struct Event {
@@ -142,6 +203,7 @@ pub:
 struct EventData {
 pub:
 	operation_id                   string @[omitempty]
+	permission_mode                string @[omitempty]
 	delta                          string @[omitempty]
 	status                         string @[omitempty]
 	provider                       string @[omitempty]
@@ -1077,6 +1139,44 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit CLI session resume migration')
 		}
 	}
+	if current < 31 {
+		// Server-persisted per-session choices (issue #689). Every column is
+		// added with a default so rows written by v30 stay valid and a v30
+		// binary can still read, and write, a v31 database: it simply ignores
+		// the new columns. The resolved_* / permission_mode / target_source
+		// columns stamp what each turn was admitted with.
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin session preferences migration')
+		}
+		for column in [
+			['sessions', 'preferred_provider', "TEXT NOT NULL DEFAULT ''"],
+			['sessions', 'preferred_model', "TEXT NOT NULL DEFAULT ''"],
+			['sessions', 'permission_mode',
+				"TEXT NOT NULL DEFAULT 'ask' CHECK (permission_mode IN ('ask', 'accept-edits', 'plan', 'bypass'))"],
+			['sessions', 'prefs_version', 'INTEGER NOT NULL DEFAULT 0'],
+			['session_operations', 'resolved_provider', "TEXT NOT NULL DEFAULT ''"],
+			['session_operations', 'resolved_model', "TEXT NOT NULL DEFAULT ''"],
+			['session_operations', 'permission_mode', "TEXT NOT NULL DEFAULT ''"],
+			['session_operations', 'target_source', "TEXT NOT NULL DEFAULT ''"],
+		] {
+			add_column_if_missing(db, column[0], column[1], column[2]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to add session preference columns')
+			}
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (31)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record session preferences migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit session preferences migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -1742,11 +1842,26 @@ fn (mut store Store) create_session(input SessionInput) !Session {
 		store.mu.unlock()
 	}
 	id := uuid.new_v4().str()
+	permission_mode := if input.permission_mode.len == 0 { 'ask' } else { input.permission_mode }
+	if permission_mode !in valid_session_permission_modes {
+		return error('permission_mode is invalid')
+	}
+	if permission_mode == 'bypass' && !input.confirm_bypass {
+		return error('bypass_confirmation_required')
+	}
 	store.db.begin()!
-	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)',
-		[id, input.title, input.directory]) or {
+	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory, preferred_provider, preferred_model, permission_mode) VALUES (?, ?, ?, ?, ?, ?)',
+		[id, input.title, input.directory, input.preferred_provider, input.preferred_model,
+			permission_mode]) or {
 		store.db.rollback() or {}
 		return error('unable to write session')
+	}
+	if permission_mode == 'bypass' {
+		store.record_bypass_audit_unlocked(id, input.preferred_provider, input.preferred_model,
+			'session.created') or {
+			store.db.rollback() or {}
+			return error('unable to write bypass audit event')
+		}
 	}
 	_ = store.db.exec_param2('INSERT INTO events (type, session_id) VALUES (?, ?)', 'session.created',
 		id) or {
@@ -1757,18 +1872,12 @@ fn (mut store Store) create_session(input SessionInput) !Session {
 		store.db.rollback() or {}
 		return error('unable to commit session')
 	}
-	rows := store.db.exec_param('SELECT id, title, directory, created_at FROM sessions WHERE id = ?',
-		id)!
+	rows := store.db.exec_param('SELECT ${session_columns} FROM sessions WHERE id = ?', id)!
 	if rows.len != 1 {
 		return error('created session could not be read')
 	}
 	row := rows[0]
-	return Session{
-		id:         row.val(0)
-		title:      row.val(1)
-		directory:  row.val(2)
-		created_at: row.val(3)
-	}
+	return session_from_row(row)
 }
 
 // fork_session duplicates a session and its chat history under a new id so
@@ -1780,7 +1889,7 @@ fn (mut store Store) fork_session(source_id string) !Session {
 	defer {
 		store.mu.unlock()
 	}
-	source_rows := store.db.exec_param('SELECT title, directory FROM sessions WHERE id = ?',
+	source_rows := store.db.exec_param('SELECT title, directory, preferred_provider, preferred_model FROM sessions WHERE id = ?',
 		source_id)!
 	if source_rows.len != 1 {
 		return error('session not found')
@@ -1794,8 +1903,11 @@ fn (mut store Store) fork_session(source_id string) !Session {
 		'${source_title} (fork)'
 	}
 	store.db.begin()!
-	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory) VALUES (?, ?, ?)',
-		[id, title, source_directory]) or {
+	// A fork keeps the provider/model choice so it continues with what the
+	// operator sees, but never inherits the permission mode: elevated modes
+	// are re-chosen explicitly for the new session (default 'ask').
+	_ = store.db.exec_param_many('INSERT INTO sessions (id, title, directory, preferred_provider, preferred_model) VALUES (?, ?, ?, ?, ?)',
+		[id, title, source_directory, source_rows[0].val(2), source_rows[0].val(3)]) or {
 		store.db.rollback() or {}
 		return error('unable to write forked session')
 	}
@@ -1813,18 +1925,12 @@ fn (mut store Store) fork_session(source_id string) !Session {
 		store.db.rollback() or {}
 		return error('unable to commit forked session')
 	}
-	rows := store.db.exec_param('SELECT id, title, directory, created_at FROM sessions WHERE id = ?',
-		id)!
+	rows := store.db.exec_param('SELECT ${session_columns} FROM sessions WHERE id = ?', id)!
 	if rows.len != 1 {
 		return error('forked session could not be read')
 	}
 	row := rows[0]
-	return Session{
-		id:         row.val(0)
-		title:      row.val(1)
-		directory:  row.val(2)
-		created_at: row.val(3)
-	}
+	return session_from_row(row)
 }
 
 fn (mut store Store) list_sessions() ![]Session {
@@ -1832,15 +1938,10 @@ fn (mut store Store) list_sessions() ![]Session {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec('SELECT id, title, directory, created_at FROM sessions ORDER BY created_at DESC, id DESC')!
+	rows := store.db.exec('SELECT ${session_columns} FROM sessions ORDER BY created_at DESC, id DESC')!
 	mut sessions := []Session{cap: rows.len}
 	for row in rows {
-		sessions << Session{
-			id:         row.val(0)
-			title:      row.val(1)
-			directory:  row.val(2)
-			created_at: row.val(3)
-		}
+		sessions << session_from_row(row)
 	}
 	return sessions
 }
@@ -1850,18 +1951,12 @@ fn (mut store Store) get_session(id string) !Session {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param('SELECT id, title, directory, created_at FROM sessions WHERE id = ?',
-		id)!
+	rows := store.db.exec_param('SELECT ${session_columns} FROM sessions WHERE id = ?', id)!
 	if rows.len == 0 {
 		return error('session not found')
 	}
 	row := rows[0]
-	return Session{
-		id:         row.val(0)
-		title:      row.val(1)
-		directory:  row.val(2)
-		created_at: row.val(3)
-	}
+	return session_from_row(row)
 }
 
 // delete_session removes a session and its dependent rows. Children with
@@ -1918,17 +2013,133 @@ fn (mut store Store) rename_session(id string, title string) !Session {
 		store.db.rollback() or {}
 		return error('unable to commit session rename')
 	}
-	rows := store.db.exec_param('SELECT id, title, directory, created_at FROM sessions WHERE id = ?',
-		id)!
+	rows := store.db.exec_param('SELECT ${session_columns} FROM sessions WHERE id = ?', id)!
 	if rows.len != 1 {
 		return error('renamed session could not be read')
 	}
 	row := rows[0]
-	return Session{
-		id:         row.val(0)
-		title:      row.val(1)
-		directory:  row.val(2)
-		created_at: row.val(3)
+	return session_from_row(row)
+}
+
+// SessionPreferencesPatch carries a validated change. A group is applied only
+// when its set_* flag is true, so a PATCH that omits a group leaves it as is.
+struct SessionPreferencesPatch {
+	set_target         bool
+	preferred_provider string
+	preferred_model    string
+	set_permission     bool
+	permission_mode    string
+	confirm_bypass     bool
+}
+
+// record_bypass_audit_unlocked writes the durable audit entry for choosing
+// the bypass permission mode. Callers hold store.mu and run it inside the
+// same transaction as the preference write, so a bypass choice can never be
+// persisted without its audit record.
+fn (mut store Store) record_bypass_audit_unlocked(session_id string, provider string, model string, cause string) ! {
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.permission_bypass_confirmed',
+		session_id,
+		json2.encode[EventData](EventData{
+			permission_mode: 'bypass'
+			provider:        provider
+			model:           model
+			status:          cause
+		}),
+	])!
+}
+
+// update_session_preferences applies a validated patch under optimistic
+// concurrency. It fails with prefs_version_conflict when expected_version is
+// stale and with session_busy while any turn is queued, running, or
+// cancelling, so a choice can never change under an executing operation.
+fn (mut store Store) update_session_preferences(id string, expected_version int, patch SessionPreferencesPatch) !Session {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param('SELECT ${session_columns} FROM sessions WHERE id = ?', id)!
+	if rows.len != 1 {
+		return error('session not found')
+	}
+	current := session_from_row(rows[0])
+	if current.prefs_version != expected_version {
+		return error('prefs_version_conflict')
+	}
+	if patch.set_permission && patch.permission_mode !in valid_session_permission_modes {
+		return error('permission_mode is invalid')
+	}
+	if patch.set_permission && patch.permission_mode == 'bypass' && !patch.confirm_bypass {
+		return error('bypass_confirmation_required')
+	}
+	active := store.db.exec_param("SELECT COUNT(*) FROM session_operations WHERE session_id = ? AND status IN ('queued', 'running', 'cancelling')",
+		id)!
+	if active.len == 1 && active[0].val(0).int() > 0 {
+		return error('session_busy')
+	}
+	provider := if patch.set_target { patch.preferred_provider } else { current.preferred_provider }
+	model := if patch.set_target { patch.preferred_model } else { current.preferred_model }
+	mode := if patch.set_permission { patch.permission_mode } else { current.permission_mode }
+	store.db.begin()!
+	updated := store.db.exec_param_many('UPDATE sessions SET preferred_provider = ?, preferred_model = ?, permission_mode = ?, prefs_version = prefs_version + 1 WHERE id = ? AND prefs_version = ?',
+		[provider, model, mode, id, expected_version.str()]) or {
+		store.db.rollback() or {}
+		return error('unable to update session preferences')
+	}
+	_ = updated
+	if mode == 'bypass' && patch.set_permission {
+		store.record_bypass_audit_unlocked(id, provider, model, 'session.preferences_updated') or {
+			store.db.rollback() or {}
+			return error('unable to write bypass audit event')
+		}
+	}
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.preferences_updated',
+		id,
+		json2.encode[EventData](EventData{
+			provider:        provider
+			model:           model
+			permission_mode: mode
+		}),
+	]) or {
+		store.db.rollback() or {}
+		return error('unable to write session preferences event')
+	}
+	store.db.commit() or {
+		store.db.rollback() or {}
+		return error('unable to commit session preferences')
+	}
+	after := store.db.exec_param('SELECT ${session_columns} FROM sessions WHERE id = ?', id)!
+	if after.len != 1 {
+		return error('updated session could not be read')
+	}
+	return session_from_row(after[0])
+}
+
+// stamp_session_operation records what admission resolved for a turn.
+fn (mut store Store) stamp_session_operation(session_id string, operation_id string, provider string, model string, permission_mode string, source string) ! {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	_ = store.db.exec_param_many('UPDATE session_operations SET resolved_provider = ?, resolved_model = ?, permission_mode = ?, target_source = ? WHERE session_id = ? AND id = ?',
+		[provider, model, permission_mode, source, session_id, operation_id])!
+	// Synchronous turns have no operation row until they complete, so the
+	// resolution is also kept as an event: every admitted turn records what it
+	// was resolved to, whichever path it took.
+	_ = store.db.exec_param_many('INSERT INTO events (type, session_id, data) VALUES (?, ?, ?)', [
+		'session.turn_resolved',
+		session_id,
+		json2.encode[EventData](EventData{
+			operation_id:    operation_id
+			provider:        provider
+			model:           model
+			permission_mode: permission_mode
+			status:          source
+		}),
+	])!
+	if permission_mode == 'bypass' {
+		store.record_bypass_audit_unlocked(session_id, provider, model, 'turn:${operation_id}')!
 	}
 }
 
@@ -2084,7 +2295,7 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 	if sessions.len != 1 {
 		return error('session not found')
 	}
-	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? ORDER BY rowid ASC',
+	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE session_id = ? ORDER BY rowid ASC',
 		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
@@ -2109,7 +2320,7 @@ fn (mut store Store) list_global_session_operations(limit int, before string, se
 		}
 		cursor_created_at = cursor[0].val(0)
 	}
-	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
+	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, o.resolved_provider, o.resolved_model, o.permission_mode, o.target_source, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
 	mut filters := []string{}
 	mut params := []string{}
 	if before.len > 0 {
@@ -2138,7 +2349,7 @@ fn (mut store Store) list_global_session_operations(limit int, before string, se
 		}
 		page.operations << GlobalSessionOperation{
 			operation:     store.session_operation_from_row(row)
-			session_title: row.val(16)
+			session_title: row.val(20)
 		}
 	}
 	if rows.len > limit && page.operations.len > 0 {
@@ -2152,7 +2363,7 @@ fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE status = 'queued' ORDER BY session_id ASC, queue_order ASC")!
+	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE status = 'queued' ORDER BY session_id ASC, queue_order ASC")!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
 		operations << store.session_operation_from_row(row)
@@ -2165,7 +2376,7 @@ fn (mut store Store) first_queued_session_operation(session_id string) ![]Sessio
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? AND status = 'queued' ORDER BY queue_order ASC LIMIT 1",
+	rows := store.db.exec_param("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE session_id = ? AND status = 'queued' ORDER BY queue_order ASC LIMIT 1",
 		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
@@ -2296,7 +2507,7 @@ fn (mut store Store) prune_terminal_session_operations_unlocked(session_id strin
 }
 
 fn (mut store Store) session_operation_unlocked(session_id string, operation_id string) !SessionOperation {
-	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at FROM session_operations WHERE session_id = ? AND id = ?', [
+	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
 		operation_id,
 	])!
@@ -2327,6 +2538,10 @@ fn (store &Store) session_operation_from_row(row sqlite.Row) SessionOperation {
 		reasoning_reported:    reasoning_reported
 		created_at:            row.val(14)
 		updated_at:            row.val(15)
+		resolved_provider:     row.val(16)
+		resolved_model:        row.val(17)
+		permission_mode:       row.val(18)
+		target_source:         row.val(19)
 	}
 }
 

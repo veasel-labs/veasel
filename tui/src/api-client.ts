@@ -15,6 +15,13 @@ export type ApiSession = {
   title: string
   directory: string
   created_at: string
+  // Server-persisted choices (epic #689); absent on older backends.
+  preferred_provider?: string
+  preferred_model?: string
+  permission_mode?: string
+  prefs_version?: number
+  last_provider?: string
+  last_model?: string
 }
 
 export type ModelProfileView = {

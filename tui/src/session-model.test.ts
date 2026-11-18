@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import {
   formatActiveModelLabel,
   formatListeningStatus,
+  formatSessionSettings,
   needsModelSetup,
   NO_MODEL_SETUP_GUIDANCE,
 } from "./session-model"
@@ -27,4 +28,37 @@ test("flags only an explicit backend not-ready verdict for setup guidance", () =
   // Older backends omit the field; never warn on absence of evidence.
   expect(needsModelSetup({})).toBe(false)
   expect(NO_MODEL_SETUP_GUIDANCE).toContain("/connect")
+})
+
+test("session settings render the server-persisted choice, not a client guess", () => {
+  expect(formatSessionSettings({})).toBe("default model")
+  expect(
+    formatSessionSettings({ preferred_provider: "codex", permission_mode: "ask" }),
+  ).toBe("codex")
+  expect(
+    formatSessionSettings({
+      preferred_provider: "claude-code",
+      preferred_model: "claude-sonnet-5",
+      permission_mode: "plan",
+    }),
+  ).toBe("claude-code/claude-sonnet-5 · plan")
+})
+
+test("session settings flag bypass and any divergence from what last ran", () => {
+  expect(
+    formatSessionSettings({ preferred_provider: "codex", permission_mode: "bypass" }),
+  ).toBe("codex · bypass permissions!")
+  expect(
+    formatSessionSettings({
+      preferred_provider: "codex",
+      last_provider: "claude-code",
+      last_model: "sonnet",
+    }),
+  ).toBe("codex · last ran claude-code/sonnet")
+  expect(
+    formatSessionSettings({
+      preferred_provider: "codex",
+      last_provider: "codex",
+    }),
+  ).toBe("codex")
 })

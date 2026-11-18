@@ -91,16 +91,8 @@ fn (app &App) model_config_for_chat_input(session_id string, input ChatMessageIn
 	}
 	mut config := if input.provider.len == 0 && input.model.len == 0 {
 		app.model_config_for_session(session_id)!
-	} else if input.provider.len > 0 && input.model.len == 0
-		&& provider_cli_by_id(input.provider) != none {
-		// Installed-CLI providers own their model choice: a provider-only
-		// target runs THAT provider with its configured/default model rather
-		// than silently inheriting the global provider.
-		app.provider_model_config(input.provider, '')!
-	} else if input.provider.len == 0 || input.model.len == 0 {
-		return error('provider and model must be supplied together')
 	} else {
-		app.provider_model_config_for_target(input.provider, input.model)!
+		app.resolve_explicit_target(input.provider, input.model)!
 	}
 	config.session_id = session_id
 	config.permission_mode = permission_mode
@@ -1973,11 +1965,11 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	if ctx.req.data.len > chat_input_byte_limit() + 1024 {
 		return json_request_error(mut ctx, 'Request body exceeds the size limit')
 	}
-	input := json2.decode[ChatMessageInput](ctx.req.data) or {
+	raw_input := json2.decode[ChatMessageInput](ctx.req.data) or {
 		return json_request_error(mut ctx, 'Expected JSON with a content field')
 	}
-	policy := execution_policy_turn_from_input(input.execution_policy, input.autonomous,
-		input.non_interactive)
+	policy := execution_policy_turn_from_input(raw_input.execution_policy, raw_input.autonomous,
+		raw_input.non_interactive)
 	if err_msg := app.execution_policy_forbidden_reason(policy) {
 		ctx.res.set_status(.forbidden)
 		return ctx.json(APIError{
@@ -1986,7 +1978,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	}
 	user_message := ChatMessage{
 		role:    'user'
-		content: input.content
+		content: raw_input.content
 	}
 	validate_messages([user_message]) or {
 		return json_request_error(mut ctx, err.msg())
@@ -1997,6 +1989,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'session not found'
 		})
 	}
+	resolved := app.resolve_turn_preferences(session, raw_input) or {
+		return session_preference_error_response(mut ctx, err)
+	}
+	input := resolved.input
 	_ := app.model_config_for_chat_input(id, input) or {
 		ctx.res.set_status(if input.provider.len > 0 || input.model.len > 0 {
 			.bad_request
@@ -2054,6 +2050,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
 		app.mark_turn_operation_persistence_resolved(operation_id)
+		store.stamp_session_operation(id, operation_id, resolved.provider, resolved.model,
+			input.permission_mode, resolved.target_source) or {
+			eprintln('veasel: unable to stamp resolved turn preferences (${err.msg()})')
+		}
 		app.schedule_durable_session_operation(operation_id, cancel, turn_done, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
@@ -2065,6 +2065,11 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	defer {
 		app.finish_turn_operation(operation_id)
 		cancel()
+	}
+	mut sync_store := app.store
+	sync_store.stamp_session_operation(id, operation_id, resolved.provider, resolved.model,
+		input.permission_mode, resolved.target_source) or {
+		eprintln('veasel: unable to stamp resolved turn preferences (${err.msg()})')
 	}
 	exchange := app.run_session_message(mut turn_ctx, id, session, input, operation_id,
 		request_deadline or { return json_server_error(mut ctx, 'Turn deadline was unavailable') }) or {
@@ -2452,10 +2457,15 @@ pub fn (app &App) create_session(mut ctx Context) veb.Result {
 	directory := canonical_workspace_root(input.directory) or {
 		return json_request_error(mut ctx, 'Directory must resolve to an existing workspace directory')
 	}
-	session := app.store.create_session(SessionInput{
-		title:     title
-		directory: directory
-	}) or {
+	prefs := app.validate_session_create_preferences(SessionInput{
+		title:              title
+		directory:          directory
+		preferred_provider: input.preferred_provider
+		preferred_model:    input.preferred_model
+		permission_mode:    input.permission_mode
+		confirm_bypass:     input.confirm_bypass
+	}) or { return json_request_error(mut ctx, err.msg()) }
+	session := app.store.create_session(prefs) or {
 		eprintln('veasel: create session failed: ${err}')
 		return json_server_error(mut ctx, 'Unable to create session')
 	}
@@ -2513,35 +2523,9 @@ pub fn (app &App) get_session(mut ctx Context, id string) veb.Result {
 	return ctx.json(session)
 }
 
-struct SessionRenameInput {
-pub:
-	title string
-}
-
 @['/v1/sessions/:id'; patch]
 pub fn (app &App) rename_session(mut ctx Context, id string) veb.Result {
-	if ctx.req.data.len > 4_096 {
-		return json_request_error(mut ctx, 'Session rename exceeds the size limit')
-	}
-	input := json2.decode[SessionRenameInput](ctx.req.data) or {
-		return json_request_error(mut ctx, 'Expected JSON with title')
-	}
-	title := input.title.trim_space()
-	if !valid_session_title(title) {
-		return json_request_error(mut ctx, 'Title must contain 1 to 200 printable characters without control bytes')
-	}
-	mut store := app.store
-	session := store.rename_session(id, title) or {
-		if err.msg() == 'session not found' {
-			ctx.res.set_status(.not_found)
-			return ctx.json(APIError{
-				error: 'session not found'
-			})
-		}
-		eprintln('veasel: rename session failed: ${err}')
-		return json_server_error(mut ctx, 'Unable to rename session')
-	}
-	return ctx.json(session)
+	return app.patch_session(mut ctx, id)
 }
 
 struct SessionDeletion {

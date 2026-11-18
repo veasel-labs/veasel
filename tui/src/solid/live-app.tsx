@@ -92,7 +92,12 @@ import { openShellOutputDialog } from "./component/shell-output-dialog"
 import { openDialogSelect } from "./ui/dialog-select"
 import { liveReleaseHighlights } from "./release-highlights"
 import { shellCommandsWithOutput } from "./shell-output-live"
-import { formatActiveModelLabel, needsModelSetup, NO_MODEL_SETUP_GUIDANCE } from "../session-model"
+import {
+  formatActiveModelLabel,
+  formatSessionSettings,
+  needsModelSetup,
+  NO_MODEL_SETUP_GUIDANCE,
+} from "../session-model"
 import { safeModelCatalogText, type ModelProvider } from "../model-providers"
 import { exportOpenCodeGoApiKey } from "../opencode-auth"
 import {
@@ -191,6 +196,7 @@ function sessionEntry(session: ApiSession): SolidSessionEntry {
     id: session.id,
     title: session.title,
     directory: session.directory,
+    settings: formatSessionSettings(session),
   }
 }
 

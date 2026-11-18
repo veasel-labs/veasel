@@ -64,7 +64,7 @@ ubuntu-24.04 and runs the same spec under `xvfb-run`, uploads evidence and a ste
 3. J3c: the server emits `assistant.delta` while the CLI streams, but the Focus conversation text does not change.
 4. J4c: the thread stays "Needs your answer" (composer disabled) after the approval is decided and the turn ends; live
    `turn.finished` events are always numbered turn 1.
-5. J6/J8b (+ fixture spec): a running CLI turn shows no Stop button, and cancelling leaves the operation `cancelling`
+5. J6/J8b (UI half; backend half fixed in #757): a running CLI turn shows no Stop button
    and the CLI process alive (`run_claude_cli_turn` never watches the cancel context). Fix: poll the operation cancel
    context in the read loop and `signal_term` the process.
 6. J10: after `kill -9` of the backend Desktop shows no alert or message.

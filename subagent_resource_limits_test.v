@@ -110,7 +110,9 @@ fn test_child_fork_bomb_is_bounded_by_limits_and_timeout() {
 	assert probe.output.contains('256'), probe.output
 	started := time.now()
 	result := run_child_command(fixture, 'b() { b | b & }; b; sleep 5', 2, false)
-	assert result.status in ['timed_out', 'failed', 'succeeded'], result.status
+	// output_limited is legitimate containment: the bomb floods stderr with
+	// 'Resource temporarily unavailable' and the output cap stops the run.
+	assert result.status in ['timed_out', 'failed', 'succeeded', 'output_limited'], result.status
 	assert time.since(started) < 12 * time.second
 	time.sleep(500 * time.millisecond)
 	assert host_process_count('"[b]wrap.*veasel-child-limits-"') == 0
@@ -142,7 +144,7 @@ fn test_child_limits_are_dialect_independent_under_dash() {
 	dash := os.find_abs_path_of_executable('dash') or { return }
 	// The limits come from prlimit, not from shell builtins, so a dash
 	// subshell inherits them and the run does not fail on `ulimit -u`.
-	result := run_child_command(fixture, '${dash} -c "grep \"Max processes\" /proc/self/limits"', 5, false)
+	result := run_child_command(fixture, '${dash} -c \'grep "Max processes" /proc/self/limits\'', 5, false)
 	assert result.status == 'succeeded', result.output
 	assert result.output.contains('256'), result.output
 }

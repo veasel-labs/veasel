@@ -438,7 +438,7 @@ test('J5 a second proposal is rejected and changes nothing', async ({}, testInfo
 
 test('J6 cancelling an in-flight operation is honest and the process is gone', async ({}, testInfo) => {
   await startTurn(testInfo, '[[slow]] keep working');
-  const stop = page.getByRole('button', { name: 'Stop' });
+  const stop = page.getByRole('button', { name: 'Stop', exact: true });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   const slow = readCliLog(env)
     .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
@@ -585,7 +585,7 @@ test('J8c axe-core finds no accessibility violations on the Focus screen', async
 
 test('J8b Escape in the composer stops a running turn and the process exits', async ({}, testInfo) => {
   await startTurn(testInfo, '[[slow]] keep working');
-  await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 30_000 });
   const slow = readCliLog(env)
     .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
     .at(-1);

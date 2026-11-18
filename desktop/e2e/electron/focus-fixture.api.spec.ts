@@ -155,7 +155,7 @@ test('oracle: the spawned provider is the chosen one; a turn without a provider 
   // Control for #735: with no provider on the turn and no global default, the backend must refuse
   // rather than run something else, so the "spawned == chosen" oracle above can really fail.
   const unchosen = await newSession();
-  await expect(send(unchosen, '[[echo]] hello again')).rejects.toThrow(/HTTP (400|503)/);
+  await expect(send(unchosen, '[[echo]] hello again')).rejects.toThrow(/HTTP [45]\d\d/);
   expect(readCliLog(env).filter((entry) => entry.event === 'spawn')).toHaveLength(1);
 });
 

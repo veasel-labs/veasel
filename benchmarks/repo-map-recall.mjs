@@ -80,8 +80,16 @@ const apiToken = randomBytes(32).toString("hex")
 function authHeaders() {
 	return { "content-type": "application/json", authorization: `Bearer ${apiToken}` }
 }
+// The request target is a fixed loopback host plus an API path. Cases come from
+// a JSON file, so the path is validated against the only shapes this benchmark
+// issues before it reaches the request.
+const SAFE_API_PATH = /^\/v1\/[A-Za-z0-9_\-/]+(\?hint=[A-Za-z0-9%._~-]*)?$/
 function req(port, method, path, body) {
 	return new Promise((resolve, reject) => {
+		if (!SAFE_API_PATH.test(path)) {
+			reject(new Error(`refusing unexpected API path: ${path.slice(0, 80)}`))
+			return
+		}
 		const r = http.request(
 			{ host: "127.0.0.1", port, path, method, headers: authHeaders() },
 			(res) => {

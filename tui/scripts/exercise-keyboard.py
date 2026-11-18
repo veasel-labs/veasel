@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import pty
+import secrets
 import select
 import struct
 import subprocess
@@ -41,6 +42,10 @@ PAUSE_SCALE = max(0.35, min(1.5, float(os.environ.get("VEASEL_KEYBOARD_EXERCISE_
 def pause(seconds: float) -> None:
     time.sleep(max(0.02, seconds * PAUSE_SCALE))
 
+# The mock speaks the real backend's caller-auth contract: health advertises
+# the bearer capability and every other route needs the token the harness
+# hands to the TUI through VEASEL_API_TOKEN (401 otherwise).
+API_TOKEN = secrets.token_hex(32)
 SESSION = "11111111-1111-4111-8111-111111111111"
 OTHER = "22222222-2222-4222-8222-222222222222"
 EDIT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -386,6 +391,24 @@ class FixtureHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def _enforce_auth(method):
+    def wrapped(self):
+        path = urllib.parse.urlparse(self.path).path
+        if method.__name__ == "do_GET" and path == "/v1/health":
+            return self._json(200, {"healthy": True, "auth": "bearer", "protocol": 1})
+        if self.headers.get("Authorization") != f"Bearer {API_TOKEN}":
+            return self._json(401, {"error": "authentication required"})
+        return method(self)
+
+    wrapped.__name__ = method.__name__
+    return wrapped
+
+
+for _name in ("do_GET", "do_POST", "do_DELETE", "do_PATCH", "do_PUT"):
+    if hasattr(Handler, _name):
+        setattr(Handler, _name, _enforce_auth(getattr(Handler, _name)))
+
+
 def settings_view():
     return {
         "active_provider": "openai",
@@ -622,6 +645,7 @@ def launch(port: int, rows: int, cols: int) -> tuple[subprocess.Popen, int]:
     env = os.environ.copy()
     env.update({
         "VEASEL_PORT": str(port),
+        "VEASEL_API_TOKEN": API_TOKEN,
         "VEASEL_TUI_THEME": "mint",
         "TERM": "xterm-256color",
         "COLUMNS": str(cols),

@@ -99,15 +99,10 @@ fn (state &MCPOAuthPendingState) persist(sessions map[string]MCPOAuthAuthorizeSe
 		return
 	}
 	ensure_directory(os.dir(state.path))!
-	temporary_path := '${state.path}.tmp'
 	payload := PersistedMCPOAuthPending{
 		sessions: sessions
 	}
-	write_private_file(temporary_path, json2.encode(payload))!
-	$if !windows {
-		os.chmod(temporary_path, 0o600)!
-	}
-	os.mv(temporary_path, state.path)!
+	write_private_file_atomic(state.path, json2.encode(payload))!
 }
 
 fn parse_mcp_oauth_token_response(body string) !MCPOAuthTokenSet {

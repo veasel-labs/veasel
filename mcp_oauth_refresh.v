@@ -130,10 +130,8 @@ fn (mut state MCPOAuthRefreshState) persist(settings PersistedMCPOAuthRefresh) !
 		return
 	}
 	encoded := json2.encode[PersistedMCPOAuthRefresh](settings)
-	os.write_file(state.path, encoded)!
-	$if !windows {
-		os.chmod(state.path, 0o600) or {}
-	}
+	ensure_directory(os.dir(state.path))!
+	write_private_file_atomic(state.path, encoded)!
 }
 
 fn exchange_mcp_oauth_refresh_token(record MCPOAuthRefreshRecord) !MCPOAuthTokenSet {

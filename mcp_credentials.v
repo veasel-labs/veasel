@@ -183,12 +183,7 @@ fn (state &MCPCredentialState) persist(settings PersistedMCPCredentials) ! {
 		return
 	}
 	ensure_directory(os.dir(state.path))!
-	temporary_path := '${state.path}.tmp'
-	write_private_file(temporary_path, json2.encode(settings))!
-	$if !windows {
-		os.chmod(temporary_path, 0o600)!
-	}
-	os.mv(temporary_path, state.path)!
+	write_private_file_atomic(state.path, json2.encode(settings))!
 }
 
 fn decode_mcp_credential_input(raw string) !MCPCredentialInput {

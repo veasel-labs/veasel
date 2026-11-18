@@ -435,6 +435,10 @@ export function createVeaselFocusBridge(options: {
           : {};
         await request(`/v1/sessions/${encodeURIComponent(id)}/messages`, {
           method: 'POST',
+          // Same as the TUI: do not hold the request open for the whole turn.
+          // A turn waiting on the user's approval cannot finish, so a blocking
+          // POST would hide the approval and leave Focus on "Starting…".
+          headers: { Prefer: 'respond-async' },
           body: JSON.stringify({
             content: text,
             ...target,

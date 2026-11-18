@@ -196,6 +196,38 @@ describe('veasel Focus bridge send contract', () => {
     expect(message?.body).toEqual({ content: 'fix it', provider: 'codex', permission_mode: 'ask' });
   });
 
+  it('sends turns with Prefer: respond-async so a turn waiting on an approval cannot block the request', async () => {
+    // Without it the POST blocks until the turn ends, but a turn that is
+    // waiting for the user's approval cannot end: Focus would sit on
+    // "Starting…" and never surface the approval (the TUI already sends it).
+    const headersSeen: Array<{ path: string; headers: Record<string, string> }> = [];
+    const doFetch: FetchLike = async (input: string, init?: RequestInit) => {
+      const path = input.replace('http://veasel.test', '');
+      headersSeen.push({ path, headers: { ...((init?.headers as Record<string, string>) ?? {}) } });
+      if (path === '/v1/sessions') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ id: 's1', title: 'T', directory: '/p', created_at: '2026-11-16' }),
+        };
+      }
+      return { ok: true, status: 202, json: async () => ({ operation_id: 'op1' }) };
+    };
+    const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: doFetch });
+    const created = await bridge.createThread({
+      cwd: '/p',
+      projectName: 'p',
+      provider: 'claude',
+      model: null,
+      permissionMode: 'ask',
+    });
+    expect(created.ok).toBe(true);
+    const outcome = await bridge.send('s1', 'fix it');
+    expect(outcome.ok).toBe(true);
+    const post = headersSeen.find((entry) => entry.path === '/v1/sessions/s1/messages');
+    expect(post?.headers.Prefer).toBe('respond-async');
+  });
+
   it('sends provider and model together when a model is chosen', async () => {
     const sent: Array<{ path: string; body: unknown }> = [];
     const bridge = createVeaselFocusBridge({ baseUrl: 'http://veasel.test', fetch: capturingFetch(sent) });

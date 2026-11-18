@@ -399,14 +399,18 @@ fn (app &App) complete_agent_with_provider_limit(mut turn_ctx vcontext.Context,
 		require_tool_choice, on_text_delta, request_deadline, pool, none)
 }
 
-// turn_model_config resolves the config a turn runs with.
+// turn_model_config resolves the config a turn runs with. An explicit per-turn
+// override (an installed-CLI provider, or a provider/model chosen for this
+// turn) is used as-is: the session/global default is consulted ONLY when there
+// is no override, so a user whose only agent is a CLI subscription (no HTTP
+// provider credentials) can still run turns.
 fn (app &App) turn_model_config(session_id string, model_config_override ?ModelConfig) !ModelConfig {
-	mut config := app.model_config_for_session(session_id)!
-	if model_config_override != none {
-		config = model_config_override
+	if override := model_config_override {
+		mut config := override
 		config.session_id = session_id
+		return config
 	}
-	return config
+	return app.model_config_for_session(session_id)!
 }
 
 fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,

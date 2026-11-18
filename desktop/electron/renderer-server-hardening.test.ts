@@ -93,13 +93,17 @@ describe('renderer-server hardening', () => {
   it('does not serve a symlinked file that points outside the root', async () => {
     const res = await raw(port, 'GET /link.txt HTTP/1.1');
     expect(res.body).not.toContain(SECRET);
-    expect([403, 404]).toContain(res.status);
+    // Excluded from the startup index: behaves like any unknown path (SPA
+    // fallback), never the outside file.
+    expect([200, 403, 404]).toContain(res.status);
+    if (res.status === 200) expect(res.body).toContain('<html>ok</html>');
   });
 
   it('does not traverse a symlinked directory that points outside the root', async () => {
     const res = await raw(port, 'GET /linkdir/secret.txt HTTP/1.1');
     expect(res.body).not.toContain(SECRET);
-    expect([403, 404]).toContain(res.status);
+    expect([200, 403, 404]).toContain(res.status);
+    if (res.status === 200) expect(res.body).toContain('<html>ok</html>');
   });
 
   it('rejects static requests with a rebinding Host', async () => {

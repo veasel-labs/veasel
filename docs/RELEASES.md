@@ -34,17 +34,16 @@ TUI executable beside the V backend.
 These automated builds are prereleases while the product remains under active
 development. They are not stable compatibility promises.
 
-## Release immutability and Desktop lane policy
+## Release immutability and Linux-first platform policy
 
 Published release assets are immutable, because downstream consumers pin their
 SHA-256 digests (website, Homebrew, AUR).
 
-- CI stages one upload set (`tools/release/build_release_assets.py`): the three
-  CLI archives, the standalone `veasel-tui` / `veasel-tui.exe` extracted from
-  the checksum-verified archives, Desktop installers, `release.json`, and
-  `SHA256SUMS`. `SHA256SUMS` covers every uploaded file except itself.
-  `release.json` lists `name`, `size`, `sha256`, `platform`, `arch`, and `kind`
-  for each asset (`signed: false` on Desktop installers).
+- CI stages one upload set (`tools/release/build_release_assets.py`): the CLI
+  archives, standalone `veasel-tui` / `veasel-tui.exe` extracted from the
+  checksum-verified archives, Desktop installers, `release.json`, and
+  `SHA256SUMS`. The set contains **only what verified**. `SHA256SUMS` covers
+  every uploaded file except itself.
 - `tools/release/publish-release.sh` creates the release as a **draft**,
   uploads, re-downloads every asset and checks it against `SHA256SUMS`, and
   only then publishes. It never uses `--clobber` and never modifies the assets
@@ -54,18 +53,51 @@ SHA-256 digests (website, Homebrew, AUR).
   differ (for example a non-reproducible rebuild) it fails loudly. A different
   commit is a tag collision and fails. A leftover unpublished draft from an
   interrupted run is discarded and recreated.
-- Desktop lane: the CLI prerelease needs the core jobs (backend, security, tui,
-  harbor-adapter) to be exactly `success`. Desktop installers are attached
-  only when **all three** Desktop jobs (Linux, macOS, Windows) succeeded.
-  If any Desktop job failed, was cancelled, or was skipped (for example runner
-  capacity), the release is CLI-only: `release.json` has
-  `"desktop": {"status": "unavailable", "lanes": {...}, "reason": ...}`, the
-  release notes say `desktop: unavailable`, and no partial installers are
-  attached. A cancelled workflow publishes nothing. Timeouts are not raised to
-  mask flaky Desktop jobs.
-- Desktop installers (AppImage, deb, dmg, NSIS exe) are **unsigned and not
-  notarized**; expect Gatekeeper/SmartScreen warnings. The generated release
-  notes repeat this.
+- **Linux-first gating.** Publishing requires `release-plan`, `security`,
+  `tui`, `harbor-adapter` and the **Linux** backend leg to be exactly
+  `success`. A red, cancelled or unavailable macOS or Windows backend leg does
+  not block the release. Each backend leg records its own `job.status` in a
+  `backend-status-<os>` artifact (written last, `if: always()`), and the
+  `platform-status` job exposes `linux`/`macos`/`windows` outputs; a leg that
+  never reported is recorded as `unavailable`.
+- Each non-Linux CLI archive and each Desktop lane (Linux AppImage+deb, macOS
+  dmg, Windows NSIS exe) is attached only when **its own job result is
+  `success`**; a Desktop lane additionally requires its platform's CLI to be
+  published. Cancelled/skipped/failed/missing never count as success, and no
+  assets are fabricated. Timeouts are not raised to mask flaky jobs.
+- Desktop installers are **unsigned and not notarized**; expect
+  Gatekeeper/SmartScreen warnings. The release notes repeat this whenever any
+  installer is attached.
+
+### `release.json` platform contract
+
+`release.json` has a `platforms` block keyed `linux`, `macos`, `windows`:
+
+```json
+"platforms": {
+  "linux":   {"status": "published", "ci_result": "success", "arch": "x86_64",
+              "desktop": {"status": "published", "kind": "desktop-installer",
+                          "arch": "x86_64", "signed": false,
+                          "assets": ["veasel-desktop-....AppImage", "...deb"]}},
+  "windows": {"status": "failed", "ci_result": "failure", "arch": "x86_64",
+              "reason": "failed - see CI", "desktop": {"status": "unavailable", ...}}
+}
+```
+
+`status` is one of `published`, `unavailable` (job never reported, e.g. runner
+capacity), `failed`, `cancelled`, `skipped`. `assets[]` lists every uploaded
+file with `name`, `size`, `sha256`, `platform`, `arch`, `kind`. The generated
+release notes list every platform that is **not** included and why.
+
+**Consumer rule (website `src/data/verified-release.json`, Homebrew cask, AUR
+PKGBUILD generators):** advertise or pin a platform only if
+`platforms.<p>.status == "published"` **and** a matching `assets[]` entry
+exists; take the digest from that entry, never from a hard-coded asset name
+alone. If the status is anything else, keep the previous pin or omit the
+platform, and never present it as supported for this tag. (Today the Homebrew
+cask workflow downloads `veasel-macOS.tar.gz` unconditionally and the AUR
+script reads the Linux archive; the cask workflow should gate on
+`platforms.macos.status`. Those repos are not changed here.)
 
 Run the fixture tests with `python3 -m unittest discover -s tools/release -p 'test_*.py'`.
 

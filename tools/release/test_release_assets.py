@@ -16,7 +16,6 @@ import build_release_assets as bra
 HERE = Path(__file__).resolve().parent
 COMMIT = "a" * 40
 TAG = "v9.9.9-next.1"
-ALL_OK = {"linux": "success", "macos": "success", "windows": "success"}
 
 
 def sha(data: bytes) -> str:
@@ -40,25 +39,41 @@ def make_zip(path: Path, tui_name: str, tui: bytes):
         zf.writestr("build.json", build)
 
 
-def fixture(root: Path, desktop=True, bad_linux_tui=False) -> Path:
+def fixture(root: Path, cli=("linux", "macos", "windows"),
+            desktop=("linux", "macos", "windows"), bad_linux_tui=False) -> Path:
+    """Build CI-artifact fixtures. Unlisted platforms have no files at all."""
     assets = root / "release-assets"
     assets.mkdir()
-    make_tar(assets / "veasel-Linux.tar.gz", "veasel-tui", b"linux-tui",
-             claimed=b"other" if bad_linux_tui else None)
-    make_tar(assets / "veasel-macOS.tar.gz", "veasel-tui", b"mac-tui")
-    make_zip(assets / "veasel-Windows.zip", "veasel-tui.exe", b"win-tui")
+    if "linux" in cli:
+        make_tar(assets / "veasel-Linux.tar.gz", "veasel-tui", b"linux-tui",
+                 claimed=b"other" if bad_linux_tui else None)
+    if "macos" in cli:
+        make_tar(assets / "veasel-macOS.tar.gz", "veasel-tui", b"mac-tui")
+    if "windows" in cli:
+        make_zip(assets / "veasel-Windows.zip", "veasel-tui.exe", b"win-tui")
     # Loose, unverified TUI from a merged artifact must never be uploaded.
     (assets / "veasel-tui").write_bytes(b"WRONG-LOOSE-BINARY")
-    if desktop:
-        for name in ("veasel-desktop-1.AppImage", "veasel-desktop-1.deb",
-                     "veasel-desktop-1.dmg", "veasel-desktop-1.exe"):
+    names = {"linux": ("veasel-desktop-1.AppImage", "veasel-desktop-1.deb"),
+             "macos": ("veasel-desktop-1.dmg",),
+             "windows": ("veasel-desktop-1.exe",)}
+    for platform in desktop:
+        for name in names[platform]:
             (assets / name).write_bytes(name.encode())
     return assets
 
 
-def stage(root, assets, lanes):
+def res(**kw):
+    base = {"linux": "", "macos": "", "windows": ""}
+    base.update(kw)
+    return base
+
+
+ALL_OK = res(linux="success", macos="success", windows="success")
+
+
+def stage(root, assets, cli=ALL_OK, lanes=ALL_OK):
     out = root / "release-upload"
-    manifest = bra.stage(assets, out, TAG, "9.9.9-next.1", COMMIT, lanes)
+    manifest = bra.stage(assets, out, TAG, "9.9.9-next.1", COMMIT, cli, lanes)
     return out, manifest
 
 
@@ -70,66 +85,124 @@ class StageTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_complete_manifest_and_sums(self):
-        out, manifest = stage(self.root, fixture(self.root), ALL_OK)
-        names = {a["name"] for a in manifest["assets"]}
-        self.assertEqual(names, {
+    def notes(self):
+        return (self.root / "RELEASE_NOTES.md").read_text()
+
+    def assert_sums_cover(self, out, manifest):
+        listed = [line.split("  ")[1] for line in (out / "SHA256SUMS").read_text().splitlines()]
+        uploaded = sorted(p.name for p in out.iterdir() if p.name != "SHA256SUMS")
+        self.assertEqual(sorted(listed), uploaded)
+        subprocess.run(["sha256sum", "--check", "SHA256SUMS"], cwd=out, check=True,
+                       capture_output=True)
+        # Every manifest asset is uploaded and vice versa (release.json itself aside).
+        self.assertEqual(sorted(a["name"] for a in manifest["assets"]),
+                         [n for n in uploaded if n != "release.json"])
+
+    def test_all_three_complete(self):
+        out, manifest = stage(self.root, fixture(self.root))
+        self.assertEqual({a["name"] for a in manifest["assets"]}, {
             "veasel-Linux.tar.gz", "veasel-macOS.tar.gz", "veasel-Windows.zip",
             "veasel-tui", "veasel-tui.exe", "veasel-desktop-1.AppImage",
             "veasel-desktop-1.deb", "veasel-desktop-1.dmg", "veasel-desktop-1.exe"})
         self.assertEqual(manifest["desktop"]["status"], "available")
+        for p in ("linux", "macos", "windows"):
+            self.assertEqual(manifest["platforms"][p]["status"], "published")
+            self.assertEqual(manifest["platforms"][p]["desktop"]["status"], "published")
+            self.assertIs(manifest["platforms"][p]["desktop"]["signed"], False)
         for a in manifest["assets"]:
             self.assertEqual(set(a) - {"signed"}, {"name", "size", "sha256", "platform", "arch", "kind"})
             self.assertEqual(a["size"], (out / a["name"]).stat().st_size)
             self.assertEqual(a["sha256"], sha((out / a["name"]).read_bytes()))
-            if a["kind"] == "desktop-installer":
-                self.assertIs(a["signed"], False)
-            else:
-                self.assertNotIn("signed", a)
-        # Loose wrong binary was replaced by the provenance-verified one.
+            self.assertEqual("signed" in a, a["kind"] == "desktop-installer")
         self.assertEqual((out / "veasel-tui").read_bytes(), b"linux-tui")
-        # SHA256SUMS covers every uploaded asset except itself.
-        listed = [line.split("  ")[1] for line in (out / "SHA256SUMS").read_text().splitlines()]
-        self.assertEqual(sorted(listed), sorted(p.name for p in out.iterdir() if p.name != "SHA256SUMS"))
-        subprocess.run(["sha256sum", "--check", "SHA256SUMS"], cwd=out, check=True,
-                       capture_output=True)
-        self.assertIn("UNSIGNED", (self.root / "RELEASE_NOTES.md").read_text())
+        self.assert_sums_cover(out, manifest)
+        self.assertIn("UNSIGNED", self.notes())
+        self.assertNotIn("Not included", self.notes())
 
-    def test_failed_lane_publishes_cli_only_marked_unavailable(self):
-        lanes = dict(ALL_OK, windows="failure")
-        out, manifest = stage(self.root, fixture(self.root), lanes)  # partial files present
+    def test_linux_only(self):
+        # macOS/Windows never reported (runner capacity) or failed; their stale
+        # artifacts, if any, must not leak in.
+        assets = fixture(self.root, cli=("linux", "windows"), desktop=("linux", "windows"))
+        out, manifest = stage(self.root, assets,
+                              cli=res(linux="success", windows="failure"),
+                              lanes=res(linux="success", windows="skipped"))
+        self.assertEqual({p.name for p in out.iterdir()}, {
+            "veasel-Linux.tar.gz", "veasel-tui", "veasel-desktop-1.AppImage",
+            "veasel-desktop-1.deb", "release.json", "SHA256SUMS"})
+        pl = manifest["platforms"]
+        self.assertEqual(pl["linux"]["status"], "published")
+        self.assertEqual(pl["macos"]["status"], "unavailable")
+        self.assertEqual(pl["macos"]["ci_result"], "none")
+        self.assertEqual(pl["windows"]["status"], "failed")
+        self.assertEqual(pl["windows"]["ci_result"], "failure")
+        self.assertEqual(pl["windows"]["desktop"]["status"], "unavailable")
+        self.assertEqual(manifest["desktop"]["status"], "partial")
+        notes = self.notes()
+        self.assertIn("Included platforms: Linux.", notes)
+        self.assertIn("macOS CLI: unavailable", notes)
+        self.assertIn("Windows CLI: failed", notes)
+        self.assertIn("Windows Desktop: unavailable", notes)
+        self.assert_sums_cover(out, manifest)
+
+    def test_linux_plus_windows(self):
+        assets = fixture(self.root, cli=("linux", "windows"), desktop=("linux", "windows"))
+        out, manifest = stage(self.root, assets,
+                              cli=res(linux="success", windows="success", macos="cancelled"),
+                              lanes=res(linux="success", windows="success", macos="skipped"))
+        self.assertIn("veasel-tui.exe", {p.name for p in out.iterdir()})
+        self.assertEqual(manifest["platforms"]["macos"]["status"], "cancelled")
+        self.assertIn("Included platforms: Linux, Windows.", self.notes())
+        self.assertIn("macOS CLI: cancelled", self.notes())
+        self.assert_sums_cover(out, manifest)
+
+    def test_desktop_partial_per_lane(self):
+        out, manifest = stage(self.root, fixture(self.root),
+                              lanes=res(linux="success", macos="failure", windows="cancelled"))
+        names = {p.name for p in out.iterdir()}
+        self.assertIn("veasel-desktop-1.AppImage", names)
+        self.assertNotIn("veasel-desktop-1.dmg", names)   # stale file present, not attached
+        self.assertNotIn("veasel-desktop-1.exe", names)
+        d = manifest["platforms"]
+        self.assertEqual(d["macos"]["desktop"]["status"], "failed")
+        self.assertEqual(d["windows"]["desktop"]["status"], "cancelled")
+        self.assertEqual(manifest["desktop"]["status"], "partial")
+        self.assertIn("macOS Desktop: failed", self.notes())
+        self.assertIn("UNSIGNED", self.notes())
+        self.assert_sums_cover(out, manifest)
+
+    def test_no_desktop_at_all_has_no_unsigned_claim_of_inclusion(self):
+        out, manifest = stage(self.root, fixture(self.root, desktop=()),
+                              lanes=res(linux="failure", macos="failure", windows="failure"))
         self.assertEqual(manifest["desktop"]["status"], "unavailable")
-        self.assertEqual(manifest["desktop"]["lanes"]["windows"], "failure")
-        self.assertFalse([p for p in out.iterdir() if "desktop" in p.name])
         self.assertFalse([a for a in manifest["assets"] if a["kind"] == "desktop-installer"])
-        notes = (self.root / "RELEASE_NOTES.md").read_text()
-        self.assertIn("desktop: unavailable", notes)
+        self.assertNotIn("UNSIGNED", self.notes())
+        self.assertIn("Linux Desktop: failed", self.notes())
 
-    def test_cancelled_and_skipped_are_not_success(self):
-        for bad in ("cancelled", "skipped", ""):
+    def test_linux_must_succeed(self):
+        for bad in ("failure", "cancelled", "skipped", ""):
             with self.subTest(bad=bad):
                 root = self.root / (bad or "empty")
                 root.mkdir()
-                _, manifest = stage(root, fixture(root), dict(ALL_OK, macos=bad))
-                self.assertEqual(manifest["desktop"]["status"], "unavailable")
+                with self.assertRaises(bra.ReleaseError):
+                    stage(root, fixture(root), cli=res(linux=bad, macos="success", windows="success"))
 
-    def test_missing_installer_with_all_lanes_green_fails(self):
+    def test_claimed_success_without_archive_fails(self):
         with self.assertRaises(bra.ReleaseError):
-            stage(self.root, fixture(self.root, desktop=False), ALL_OK)
+            stage(self.root, fixture(self.root, cli=("linux", "windows")))
+
+    def test_desktop_success_without_installers_fails(self):
+        with self.assertRaises(bra.ReleaseError):
+            stage(self.root, fixture(self.root, desktop=("linux", "macos")))
 
     def test_tui_provenance_mismatch_fails(self):
         with self.assertRaises(bra.ReleaseError):
-            stage(self.root, fixture(self.root, bad_linux_tui=True), ALL_OK)
+            stage(self.root, fixture(self.root, bad_linux_tui=True))
 
-    def test_missing_archive_fails(self):
-        assets = fixture(self.root)
-        (assets / "veasel-macOS.tar.gz").unlink()
+    def test_parse_results(self):
+        self.assertEqual(bra.parse_results("linux=success,windows=", "x"),
+                         {"linux": "success", "macos": "", "windows": ""})
         with self.assertRaises(bra.ReleaseError):
-            stage(self.root, assets, ALL_OK)
-
-    def test_parse_lanes_requires_all(self):
-        with self.assertRaises(bra.ReleaseError):
-            bra.parse_lanes("linux=success,macos=success")
+            bra.parse_results("beos=success", "x")
 
 
 FAKE_GH = r'''#!/usr/bin/env python3
@@ -185,7 +258,7 @@ class PublishTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR"))
         self.root = Path(self.tmp.name)
-        self.out, _ = stage(self.root, fixture(self.root), ALL_OK)
+        self.out, _ = stage(self.root, fixture(self.root))
         bindir = self.root / "bin"
         bindir.mkdir()
         (bindir / "gh").write_text(FAKE_GH)
@@ -255,6 +328,16 @@ class PublishTests(unittest.TestCase):
         result = self.run_publish(RELEASE_COMMIT="b" * 40)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("collision", result.stderr + result.stdout)
+
+    def test_linux_only_set_publishes_and_rerun_skips(self):
+        root = self.root / "lo"
+        root.mkdir()
+        self.out, _ = stage(root, fixture(root, cli=("linux",), desktop=("linux",)),
+                            cli=res(linux="success"), lanes=res(linux="success"))
+        self.assertEqual(self.run_publish().returncode, 0)
+        again = self.run_publish()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertIn("nothing to do", again.stdout)
 
     def test_short_sha_is_rejected(self):
         result = self.run_publish(RELEASE_COMMIT=COMMIT[:7])

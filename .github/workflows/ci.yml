@@ -499,6 +499,61 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Record this platform's verified result
+        # Runs last and always: `job.status` is success only when every
+        # earlier step (build, smoke, verification, upload) passed. The
+        # publish gate reads this, so one failing OS never hides another's
+        # result and a half-passed leg is never treated as publishable.
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p backend-status
+          echo "${{ job.status }}" > backend-status/result
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: backend-status-${{ matrix.os }}
+          path: backend-status/result
+          retention-days: 7
+
+  platform-status:
+    name: Per-platform backend status
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.release-plan.outputs.released == 'true' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [release-plan, backend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      linux: ${{ steps.collect.outputs.linux }}
+      macos: ${{ steps.collect.outputs.macos }}
+      windows: ${{ steps.collect.outputs.windows }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: backend-status-*
+          path: backend-status
+      - id: collect
+        run: |
+          set -euo pipefail
+          # Missing/unknown value (job never got a runner) is reported empty,
+          # which the release tooling records as `unavailable`, never success.
+          read_result() {
+            local f="backend-status/backend-status-$1/result" v=""
+            [[ -f "$f" ]] && v="$(tr -d '[:space:]' < "$f")"
+            case "$v" in success|failure|cancelled|skipped) echo "$v" ;; *) echo "" ;; esac
+          }
+          {
+            echo "linux=$(read_result linux)"
+            echo "macos=$(read_result macOS)"
+            echo "windows=$(read_result Windows)"
+          } | tee -a "$GITHUB_OUTPUT"
+
   security:
     name: Security scan
     runs-on: ubuntu-24.04
@@ -579,10 +634,12 @@ jobs:
   desktop-package:
     name: Desktop package (Linux)
     if: >-
+      !cancelled() &&
+      needs.platform-status.outputs.linux == 'success' &&
       github.ref == 'refs/heads/main' &&
       needs.release-plan.outputs.released == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [release-plan, backend]
+    needs: [release-plan, platform-status]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -636,10 +693,12 @@ jobs:
   desktop-package-macos:
     name: Desktop package (macOS)
     if: >-
+      !cancelled() &&
+      needs.platform-status.outputs.macos == 'success' &&
       github.ref == 'refs/heads/main' &&
       needs.release-plan.outputs.released == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [release-plan, backend]
+    needs: [release-plan, platform-status]
     runs-on: macos-latest
     timeout-minutes: 60
     permissions:
@@ -691,10 +750,12 @@ jobs:
   desktop-package-windows:
     name: Desktop package (Windows)
     if: >-
+      !cancelled() &&
+      needs.platform-status.outputs.windows == 'success' &&
       github.ref == 'refs/heads/main' &&
       needs.release-plan.outputs.released == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [release-plan, backend]
+    needs: [release-plan, platform-status]
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -744,21 +805,22 @@ jobs:
 
   publish-prerelease:
     name: Publish verified prerelease
-    # Core jobs must be exactly `success` (cancelled/skipped/failure block the
-    # release). Desktop jobs are allowed to be non-success only because the
-    # staging step then publishes an explicit CLI-only release marked
-    # `desktop: unavailable`; their result is recorded, never assumed.
+    # Linux-first: release-plan, security, tui, harbor-adapter and the Linux
+    # backend leg must be exactly `success`. macOS/Windows backend legs and
+    # every Desktop lane are optional: each is attached only when its own job
+    # result is `success`, otherwise it is absent and release.json/notes record
+    # its status (failed/cancelled/skipped/unavailable). Never inferred.
     if: >-
       !cancelled() &&
       needs.release-plan.result == 'success' &&
-      needs.backend.result == 'success' &&
+      needs.platform-status.outputs.linux == 'success' &&
       needs.security.result == 'success' &&
       needs.tui.result == 'success' &&
       needs.harbor-adapter.result == 'success' &&
       github.ref == 'refs/heads/main' &&
       needs.release-plan.outputs.released == 'true' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [release-plan, backend, security, tui, harbor-adapter, desktop-package, desktop-package-macos, desktop-package-windows]
+    needs: [release-plan, platform-status, security, tui, harbor-adapter, desktop-package, desktop-package-macos, desktop-package-windows]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     concurrency:
@@ -782,13 +844,14 @@ jobs:
       # takes standalone binaries only from the checksum-verified archives,
       # checks them against build.json provenance, and builds the complete
       # upload set (SHA256SUMS + release.json cover every uploaded asset).
-      # Desktop installers are attached only when ALL desktop lanes verified;
-      # otherwise the release is CLI-only and says `desktop: unavailable`.
+      # Each non-Linux platform and each Desktop lane is attached only when its
+      # own job succeeded; the rest are listed as not included.
       - name: Stage verified release assets
         env:
           RELEASE_TAG: ${{ needs.release-plan.outputs.tag }}
           RELEASE_VERSION: ${{ needs.release-plan.outputs.version }}
           RELEASE_COMMIT: ${{ github.sha }}
+          CLI_RESULTS: linux=${{ needs.platform-status.outputs.linux }},macos=${{ needs.platform-status.outputs.macos }},windows=${{ needs.platform-status.outputs.windows }}
           DESKTOP_LANES: linux=${{ needs.desktop-package.result }},macos=${{ needs.desktop-package-macos.result }},windows=${{ needs.desktop-package-windows.result }}
         run: |
           set -euo pipefail
@@ -796,7 +859,8 @@ jobs:
           python3 tools/release/build_release_assets.py \
             --assets-dir release-assets --out-dir release-upload \
             --tag "$RELEASE_TAG" --version "$RELEASE_VERSION" \
-            --commit "$RELEASE_COMMIT" --desktop-lanes "$DESKTOP_LANES"
+            --commit "$RELEASE_COMMIT" --cli-results "$CLI_RESULTS" \
+            --desktop-lanes "$DESKTOP_LANES"
           (cd release-upload && sha256sum --check SHA256SUMS)
       - name: Publish GitHub prerelease (draft, verify, publish; never overwrite)
         env:

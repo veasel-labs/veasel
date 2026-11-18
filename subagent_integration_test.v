@@ -1,5 +1,6 @@
 module main
 
+import context as vcontext
 import os
 import json2
 import net
@@ -348,4 +349,57 @@ fn test_child_integration_never_imports_hook_ci_or_hooks_path_changes() {
 		assert conflict.reason.contains('manual parent review')
 	}
 	assert !os.exists(os.join_path(workspace, '.github'))
+}
+
+fn test_child_session_shell_commands_run_only_in_the_child_sandbox() {
+	$if !linux {
+		return
+	}
+	if !bubblewrap_available() || !prlimit_available() {
+		return
+	}
+	root := os.join_path(os.temp_dir(), 'veasel-child-shell-dispatch-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_integration_test_repo(root)
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	parent := store.create_session(SessionInput{ title: 'Parent shell', directory: workspace }) or {
+		panic(err)
+	}
+	parent_operation := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, parent_operation) or { panic(err) }
+	run, child_directory := create_completed_implementer_child(mut store, parent, parent_operation,
+		workspace, 'child-shell-dispatch')
+	assert (store.child_subagent_run_id(run.child_session_id) or { panic(err) }) == run.id
+	assert (store.child_subagent_run_id(parent.id) or { panic(err) }) == ''
+	// Even with the operator's unsandboxed opt-in, a child must stay sandboxed.
+	prior_mode := os.getenv_opt(shell_sandbox_mode_env)
+	prior_opt := os.getenv_opt(shell_sandbox_opt_in_env)
+	os.setenv(shell_sandbox_mode_env, 'off', true)
+	os.setenv(shell_sandbox_opt_in_env, shell_unsandboxed_opt_in_token, true)
+	defer {
+		if v := prior_mode {
+			os.setenv(shell_sandbox_mode_env, v, true)
+		} else {
+			os.unsetenv(shell_sandbox_mode_env)
+		}
+		if v := prior_opt {
+			os.setenv(shell_sandbox_opt_in_env, v, true)
+		} else {
+			os.unsetenv(shell_sandbox_opt_in_env)
+		}
+	}
+	mut ctx := vcontext.background()
+	result := app.run_session_shell_command(mut ctx, run.child_session_id, child_directory,
+		ShellCommandSummary{
+			command:         'printf child > child.txt; (printf bad > ${workspace}/README.md) 2>/dev/null && exit 41; grep -c wlan /proc/net/dev; printf done'
+			cwd:             '.'
+			timeout_seconds: 5
+		}, false)
+	assert result.output.contains('done'), result.output
+	assert os.read_file(os.join_path(child_directory, 'child.txt')) or { panic(err) } == 'child'
+	assert os.read_file(os.join_path(workspace, 'README.md')) or { panic(err) } == 'base\n'
 }

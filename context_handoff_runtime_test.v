@@ -77,6 +77,10 @@ fn start_context_handoff_provider_fixture(mut fixture ContextHandoffProviderFixt
 		handler:              fixture
 		addr:                 '127.0.0.1:0'
 		show_startup_message: false
+		// Parent and child turns call the fixture concurrently. Never size the
+		// worker pool from VJOBS (1 in CI): an idle pooled keep-alive connection
+		// pins a worker for up to 30 s and starves the next connection.
+		worker_num:           8
 	}
 	server_thread := spawn server.listen_and_serve()
 	server.wait_till_running() or {

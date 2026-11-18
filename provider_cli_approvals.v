@@ -100,3 +100,13 @@ fn (mut store Store) expire_cli_tool_approval(id string) ! {
 	}
 	return
 }
+
+// expire_pending_cli_tool_approvals settles every still-pending approval of a
+// session as expired. Called when a turn ends (cancel, deadline, error) so no
+// approval outlives the CLI process it belonged to.
+fn (mut store Store) expire_pending_cli_tool_approvals(session_id string) ! {
+	_ = store.db.exec_param_many('UPDATE cli_tool_approvals SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND status = ?',
+		['expired', session_id, 'pending']) or {
+		return error('unable to expire pending CLI tool approvals')
+	}
+}

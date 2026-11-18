@@ -108,31 +108,30 @@ pub fn run_acp_cli_turn(command string, spawn_args []string, cwd string,
 	config_options []AcpSessionConfig, resume_session_id string, user_text string,
 	timeout_ms int, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
+	return run_acp_cli_turn_cancellable(command, spawn_args, cwd, config_options, resume_session_id,
+		user_text, timeout_ms, on_text_delta, decide, unsafe { nil })
+}
+
+// run_acp_cli_turn_cancellable is run_acp_cli_turn that also stops (and kills
+// the CLI's process group) as soon as cancel reports a reason.
+pub fn run_acp_cli_turn_cancellable(command string, spawn_args []string, cwd string,
+	config_options []AcpSessionConfig, resume_session_id string, user_text string,
+	timeout_ms int, on_text_delta ProviderTextDeltaFn,
+	decide CliApprovalDecisionFn, cancel CliCancelFn) !OpencodeCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(spawn_args)
 	if cwd.len > 0 {
 		process.set_work_folder(cwd)
 	}
 	process.set_redirect_stdio()
+	process.use_pgroup = true
 	process.run()
 	if process.status != .running {
 		process.close()
 		return error('unable to start installed CLI: ${command}')
 	}
 	defer {
-		if process.is_alive() {
-			process.signal_term()
-			for _ in 0 .. 20 {
-				if !process.is_alive() {
-					break
-				}
-				time.sleep(10 * time.millisecond)
-			}
-			if process.is_alive() {
-				process.signal_kill()
-			}
-		}
-		process.close()
+		cli_terminate_process(mut process)
 	}
 	timeout := if timeout_ms > 0 { timeout_ms } else { 120_000 }
 	started := time.now()
@@ -150,6 +149,9 @@ pub fn run_acp_cli_turn(command string, spawn_args []string, cwd string,
 	prompt_rpc_id := 3 + config_options.len
 	mut buffer := ''
 	for {
+		if reason := cli_cancel_reason(cancel) {
+			return error(reason)
+		}
 		if time.since(started).milliseconds() > timeout {
 			return error('installed CLI turn timed out after ${timeout}ms')
 		}

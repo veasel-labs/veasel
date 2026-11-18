@@ -277,3 +277,23 @@ fn test_symlink_swap_race_never_writes_outside() {
 	assert os.ls(outside) or { panic(err) } == ['secret.txt']
 	assert os.read_file(os.join_path(outside, 'secret.txt')) or { panic(err) } == 'TOP-SECRET\n'
 }
+
+fn test_non_linux_directory_check_detects_swap_and_missing_path() {
+	$if windows {
+		return
+	}
+	root, outside := confinement_fixture()
+	defer { confinement_cleanup(root) }
+	dirfd := confined_open_dir(root, ['sub']) or { panic(err) }
+	defer { confined_close(dirfd) }
+	sub := os.join_path(root, 'sub')
+	assert confined_dir_matches_path(dirfd, root, sub)
+	// No expected path: fail closed instead of assuming the directory is fine.
+	assert !confined_dir_matches_path(dirfd, root, '')
+	// A path outside the root is never accepted.
+	assert !confined_dir_matches_path(dirfd, root, outside)
+	// Replacing the path by a different directory changes dev/ino identity.
+	os.rename(sub, os.join_path(root, 'sub.orig')) or { panic(err) }
+	os.mkdir(sub) or { panic(err) }
+	assert !confined_dir_matches_path(dirfd, root, sub)
+}

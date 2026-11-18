@@ -72,3 +72,23 @@ is refused with no process started. The built-in implementer profile still
 does not grant `workspace_propose_shell_command`; this wiring is the execution
 guard for any path (API, future profile change) that creates a child shell
 command, and it never widens inherited permissions.
+
+## Platform validation matrix (#748)
+
+Nothing below is claimed as verified on macOS or Windows beyond what the
+cross-platform CI jobs execute. "Refuses" means no process starts and a typed
+error names what is missing.
+
+| Path | Linux | macOS | Windows | Code | Test that runs on Linux CI |
+|---|---|---|---|---|---|
+| Approved shell sandbox | Bubblewrap; refuses without `bwrap` unless the explicit opt-in | Seatbelt (`sandbox-exec`) when present, else refuses; runtime not validated here | AppContainer + Job when available, else refuses; runtime not validated here | `approved_shell_sandbox_plan`, `approved_shell_sandbox_refusal` (`shell_commands.v`) | `platform_validation_test.v`, `shell_commands_test.v` |
+| Delegated child shell (network deny, narrowed writable scope, `prlimit`, quota) | Supported | Linux-only: refuses | Linux-only: refuses | `delegated_child_shell_refusal`, `run_delegated_child_shell_command` (`subagent_child_shell.v`) | `subagent_child_shell_test.v`, `platform_validation_test.v` |
+| Descriptor-pinned edit/read walk (`O_NOFOLLOW`, regular-file and hardlink-write checks) | Supported | POSIX code path runs; not manually validated | Not present: reparse-point screening only (check-time, no TOCTOU closure) | `workspace_confinement_nix.c.v`, `workspace_confinement_windows.c.v` | `workspace_confinement_test.v` |
+| Post-write "directory still inside root" verification | `/proc/self/fd` path | dev/ino identity against the expected directory path; fails closed when no path is supplied | Not applicable (no pinned descriptor) | `confined_dir_is_inside`, `confined_dir_matches_path` | `workspace_confinement_test.v` (`test_non_linux_directory_check_detects_swap_and_missing_path`) |
+| `prlimit` resource limits | Required for child shell; refuses if missing | Not available: child shell refuses | Not available: child shell refuses | `child_shell_prlimit_args` | `subagent_resource_limits_test.v` |
+| Stdio MCP sandbox | Same plan as shell (#746 / PR #754) | same | same | `mcp_stdio_sandbox_refusal` | see PR #754 |
+
+Known residual gaps: Windows confinement is weaker than POSIX (no pinned
+descriptor); macOS and Windows sandbox runtimes are exercised only by their CI
+jobs and are not independently reviewed. Native macOS and Windows adversarial
+tests are tracked in #748.

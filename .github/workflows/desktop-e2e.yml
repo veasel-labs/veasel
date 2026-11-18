@@ -1,0 +1,83 @@
+name: Desktop Focus journeys (async)
+
+# Click-driven Electron acceptance for Focus (epic #689). NOT a required check and not part of the
+# release gate: it is a separate workflow that nothing depends on. It builds the V backend and the
+# Desktop app, then runs docs/desktop/E2E_FOCUS_JOURNEYS.md under Xvfb against a fake installed CLI.
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "docs/desktop/**"
+      - ".github/workflows/desktop-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focus-journeys:
+    name: Focus journeys (Xvfb)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VJOBS: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: vlang/setup-v@663cc08827d1fc0532ee755b4dedbb183c11d06a # v1.7
+        id: setup-v
+        with:
+          version-file: .v-version
+      - name: Install bundled SQLite
+        env:
+          V_BUILD_ROOT: ${{ steps.setup-v.outputs.bin-path }}
+        run: v run "$V_BUILD_ROOT/vlib/db/sqlite/install_thirdparty_sqlite.vsh"
+      - name: Build backend
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-pkgconfig" dist
+          PKG_CONFIG_PATH="" PKG_CONFIG_LIBDIR="$RUNNER_TEMP/no-pkgconfig" v -cc clang -o dist/veasel .
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+      - name: Activate pinned pnpm via Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+      - name: Install terminal client dependencies
+        run: bun install --frozen-lockfile
+        working-directory: tui
+      - run: pnpm install --frozen-lockfile
+        working-directory: desktop
+      - run: pnpm build:all
+        working-directory: desktop
+      - name: Ensure Xvfb
+        run: command -v xvfb-run >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb xauth)
+      - name: Run Focus journeys under Xvfb
+        working-directory: desktop
+        env:
+          VEASEL_E2E_XVFB: "1"
+          # GitHub runners have no setuid Chromium sandbox helper; the VM is the isolation boundary.
+          VEASEL_E2E_NO_SANDBOX: "1"
+          VEASEL_BACKEND_BIN: ${{ github.workspace }}/dist/veasel
+          ATK_E2E_BACKEND_BIN: ${{ github.workspace }}/dist/veasel
+          VEASEL_E2E_EVIDENCE_DIR: ${{ runner.temp }}/e2e/evidence
+          VEASEL_E2E_OUTPUT_DIR: ${{ runner.temp }}/e2e/test-results
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/e2e/results.json
+          VEASEL_SECRET_STORE: file
+        run: xvfb-run -a -s "-screen 0 1440x900x24" pnpm exec playwright test -c playwright.focus.config.ts
+      - name: Build evidence table
+        if: always()
+        working-directory: desktop
+        run: node scripts/e2e-evidence.mjs "$RUNNER_TEMP/e2e/evidence/evidence.jsonl" "$RUNNER_TEMP/e2e/results.json" ../dist/veasel "$RUNNER_TEMP/e2e/E2E_EVIDENCE.md" && cat "$RUNNER_TEMP/e2e/E2E_EVIDENCE.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: desktop-focus-journeys
+          path: ${{ runner.temp }}/e2e
+          retention-days: 7

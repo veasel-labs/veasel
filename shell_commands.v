@@ -65,6 +65,9 @@ pub:
 	will_wrap bool
 	backend   string
 	network   string
+	// unsandboxed is true only when the operator set the explicit
+	// VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in and approval will run with no OS sandbox.
+	unsandboxed bool
 }
 
 pub struct ShellCommandSummary {
@@ -148,6 +151,72 @@ fn shell_text_has_unsafe_controls(value string) bool {
 
 const shell_sandbox_mode_env = 'VEASEL_SHELL_SANDBOX'
 const shell_sandbox_network_env = 'VEASEL_SHELL_SANDBOX_NETWORK'
+// shell_sandbox_opt_in_env is the only way to let approved shell commands run
+// with no OS sandbox. The value must be the exact acknowledgement token below.
+const shell_sandbox_opt_in_env = 'VEASEL_SHELL_ALLOW_UNSANDBOXED'
+const shell_unsandboxed_opt_in_token = 'i-accept-unsandboxed-shell-execution'
+
+enum ApprovedShellSandboxPlan {
+	wrap
+	refuse
+	unsandboxed
+}
+
+// approved_shell_sandbox_plan decides how an approved shell command may run.
+// `auto` and `off` never silently fall back: running without an OS sandbox
+// requires the explicit opt-in. `require` ignores the opt-in.
+fn approved_shell_sandbox_plan(mode ApprovedShellSandboxMode, backend_available bool, opt_in bool) ApprovedShellSandboxPlan {
+	if mode == .require {
+		return if backend_available { .wrap } else { .refuse }
+	}
+	if mode == .auto && backend_available {
+		return .wrap
+	}
+	return if opt_in { .unsandboxed } else { .refuse }
+}
+
+fn shell_unsandboxed_opt_in_from(value string) bool {
+	return value.trim_space() == shell_unsandboxed_opt_in_token
+}
+
+fn shell_unsandboxed_opt_in() bool {
+	return shell_unsandboxed_opt_in_from(os.getenv(shell_sandbox_opt_in_env))
+}
+
+// shell_unsandboxed_capability is true when approved shell commands can run
+// with no OS sandbox because of the explicit opt-in (never the default).
+fn shell_unsandboxed_capability() bool {
+	if !shell_unsandboxed_opt_in() {
+		return false
+	}
+	return approved_shell_sandbox_plan(approved_shell_sandbox_mode(), approved_shell_backend_available(),
+		true) == .unsandboxed
+}
+
+fn approved_shell_backend_available() bool {
+	$if linux {
+		return bubblewrap_available()
+	} $else $if macos {
+		return seatbelt_available()
+	} $else $if windows {
+		return windows_appcontainer_sandbox_available()
+	} $else {
+		return false
+	}
+}
+
+fn shell_sandbox_install_hint(os_name string) string {
+	return match os_name {
+		'linux' { 'install bubblewrap (bwrap) and make it available on PATH' }
+		'macos' { 'make /usr/bin/sandbox-exec (Seatbelt) available' }
+		'windows' { 'enable Windows AppContainer + Job Object sandbox support' }
+		else { 'this platform has no Veasel sandbox backend' }
+	}
+}
+
+fn approved_shell_sandbox_refusal(os_name string) string {
+	return 'Approved shell execution refused: an OS sandbox is required but not available (${shell_sandbox_install_hint(os_name)}). Refused; no process was started. To knowingly run without isolation set ${shell_sandbox_opt_in_env}=${shell_unsandboxed_opt_in_token} together with VEASEL_SHELL_SANDBOX=auto or off.'
+}
 
 // ApprovedShellSandboxMode selects defense-in-depth OS sandboxing for reviewed
 // commands (Bubblewrap on Linux, Seatbelt on macOS, AppContainer+Job on Windows).
@@ -166,6 +235,54 @@ struct LinuxShellSandboxOptions {
 	// writable_root narrows the writable bind for delegated work. Empty keeps
 	// the reviewed workspace-root behavior used by ordinary shell approvals.
 	writable_root string
+	// limit_resources applies the delegated-child resource limits (process
+	// count, open files, per-file size, no core dumps) even without a narrowed
+	// writable_root. Delegated scopes always apply them.
+	limit_resources bool
+}
+
+// Aggregate limits for delegated child commands. RLIMIT_NPROC inside the
+// user+pid namespace created by Bubblewrap counts only sandbox processes.
+const child_shell_max_processes = 256
+const child_shell_max_open_files = 1024
+// Per-file size cap in bytes, applied by prlimit (shell-dialect independent).
+const child_shell_max_file_bytes = i64(1024) * 1024 * 1024
+const max_child_worktree_bytes = i64(1024) * 1024 * 1024
+
+// child_shell_prlimit_args returns the prlimit argv prefix that applies the
+// delegated-child rlimits before exec, or an error when prlimit is missing so
+// callers fail closed instead of running unlimited.
+fn child_shell_prlimit_args() ![]string {
+	prlimit := os.find_abs_path_of_executable('prlimit') or {
+		return error('install util-linux (prlimit) to run delegated child commands; limits are required')
+	}
+	return [prlimit, '--nproc=${child_shell_max_processes}', '--nofile=${child_shell_max_open_files}',
+		'--fsize=${child_shell_max_file_bytes}', '--core=0', '--']
+}
+
+// workspace_tree_exceeds reports whether the regular files under root add up to
+// more than limit bytes. Symlinks are never followed; the walk is bounded by
+// stopping as soon as the limit is crossed.
+fn workspace_tree_exceeds(root string, limit i64) bool {
+	mut total := i64(0)
+	mut pending := [root]
+	for pending.len > 0 {
+		dir := pending.pop()
+		entries := os.ls(dir) or { continue }
+		for entry in entries {
+			path := os.join_path(dir, entry)
+			info := os.lstat(path) or { continue }
+			if info.mode & 0o170000 == 0o040000 {
+				pending << path
+			} else if info.mode & 0o170000 == 0o100000 {
+				total += i64(info.size)
+				if total > limit {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 struct MacosShellSandboxOptions {
@@ -222,15 +339,20 @@ fn shell_review_sandbox_preview() ReviewSandboxPreview {
 		backend = 'windows'
 		will_wrap = true
 	}
-	mut network := 'host'
-	if will_wrap {
+	plan := approved_shell_sandbox_plan(mode, approved_shell_backend_available(), shell_unsandboxed_opt_in())
+	unsandboxed := plan == .unsandboxed
+	mut network := 'none'
+	if will_wrap && plan == .wrap {
 		network = if approved_shell_sandbox_network_allowed() { 'allow' } else { 'deny' }
+	} else if unsandboxed {
+		network = 'host'
 	}
 	return ReviewSandboxPreview{
-		mode:      approved_shell_sandbox_mode_label(mode)
-		will_wrap: will_wrap
-		backend:   backend
-		network:   network
+		mode:        approved_shell_sandbox_mode_label(mode)
+		will_wrap:   will_wrap && plan == .wrap
+		backend:     backend
+		network:     network
+		unsandboxed: unsandboxed
 	}
 }
 
@@ -426,74 +548,46 @@ fn run_approved_shell_command_with_context(mut turn_ctx vcontext.Context, root s
 		}
 	}
 	mode := approved_shell_sandbox_mode()
-	$if linux {
-		if mode != .off {
-			if bubblewrap_available() {
-				return run_linux_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
-					LinuxShellSandboxOptions{
-						purpose:            'Approved shell execution'
-						fail_closed:        mode == .require
-						filter_environment: false
-						allow_network:      approved_shell_sandbox_network_allowed()
-					})
-			}
-			if mode == .require {
-				return ShellCommandResult{
-					status:    'failed'
-					exit_code: -1
-					output:    'Approved shell execution requires bubblewrap (bwrap) because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
-				}
-			}
-			// VEASEL_SHELL_SANDBOX=auto and bwrap missing: fall through unsandboxed.
-		}
-	} $else $if macos {
-		if mode != .off {
-			if seatbelt_available() {
-				return run_macos_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
-					MacosShellSandboxOptions{
-						purpose:            'Approved shell execution'
-						fail_closed:        mode == .require
-						filter_environment: false
-						allow_network:      approved_shell_sandbox_network_allowed()
-					})
-			}
-			if mode == .require {
-				return ShellCommandResult{
-					status:    'failed'
-					exit_code: -1
-					output:    'Approved shell execution requires /usr/bin/sandbox-exec because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
-				}
-			}
-			// VEASEL_SHELL_SANDBOX=auto and sandbox-exec missing: fall through unsandboxed.
-		}
-	} $else $if windows {
-		if mode != .off {
-			if windows_appcontainer_sandbox_available() {
-				return run_windows_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
-					WindowsShellSandboxOptions{
-						purpose:       'Approved shell execution'
-						fail_closed:   mode == .require
-						allow_network: approved_shell_sandbox_network_allowed()
-					})
-			}
-			if mode == .require {
-				return ShellCommandResult{
-					status:    'failed'
-					exit_code: -1
-					output:    'Approved shell execution requires a Windows AppContainer sandbox because VEASEL_SHELL_SANDBOX=require; no unsandboxed fallback was started.'
-				}
-			}
-			// VEASEL_SHELL_SANDBOX=auto and AppContainer unavailable: fall through unsandboxed.
-		}
-	} $else {
-		if mode == .require {
-			return ShellCommandResult{
-				status:    'failed'
-				exit_code: -1
-				output:    'Approved shell execution requires an OS sandbox because VEASEL_SHELL_SANDBOX=require; this platform has no Veasel sandbox backend, so no unsandboxed fallback was started.'
-			}
+	plan := approved_shell_sandbox_plan(mode, approved_shell_backend_available(), shell_unsandboxed_opt_in())
+	if plan == .refuse {
+		$if linux {
+			return ShellCommandResult{ status: 'failed', exit_code: -1, output: approved_shell_sandbox_refusal('linux') }
+		} $else $if macos {
+			return ShellCommandResult{ status: 'failed', exit_code: -1, output: approved_shell_sandbox_refusal('macos') }
+		} $else $if windows {
+			return ShellCommandResult{ status: 'failed', exit_code: -1, output: approved_shell_sandbox_refusal('windows') }
+		} $else {
+			return ShellCommandResult{ status: 'failed', exit_code: -1, output: approved_shell_sandbox_refusal('other') }
 		}
 	}
+	if plan == .wrap {
+		$if linux {
+			return run_linux_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
+				LinuxShellSandboxOptions{
+					purpose:            'Approved shell execution'
+					fail_closed:        true
+					filter_environment: false
+					allow_network:      approved_shell_sandbox_network_allowed()
+				})
+		} $else $if macos {
+			return run_macos_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
+				MacosShellSandboxOptions{
+					purpose:            'Approved shell execution'
+					fail_closed:        true
+					filter_environment: false
+					allow_network:      approved_shell_sandbox_network_allowed()
+				})
+		} $else $if windows {
+			return run_windows_sandboxed_shell_command(mut turn_ctx, canonical_root, verified.cwd, command,
+				WindowsShellSandboxOptions{
+					purpose:       'Approved shell execution'
+					fail_closed:   true
+					allow_network: approved_shell_sandbox_network_allowed()
+				})
+		}
+	}
+	// plan == .unsandboxed: only reachable with the explicit
+	// VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in.
 	$if windows {
 		shell := os.getenv('COMSPEC')
 		if shell.len == 0 {
@@ -594,6 +688,28 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 			output:    '${purpose} could not locate /bin/sh or /usr/bin/sh; no process was started.'
 		}
 	}
+	// Delegated children (narrowed writable scope) never get the network and
+	// always run under aggregate resource limits and a worktree size quota.
+	delegated := writable_root.len > 0
+	limited := delegated || options.limit_resources
+	if delegated && workspace_tree_exceeds(canonical_writable_root, max_child_worktree_bytes) {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: -1
+			output:    '${purpose} refused: the child worktree already exceeds its ${max_child_worktree_bytes} byte quota; no process was started.'
+		}
+	}
+	prlimit_prefix := if limited {
+		child_shell_prlimit_args() or {
+			return ShellCommandResult{
+				status:    'failed'
+				exit_code: -1
+				output:    '${purpose} refused: ${err.msg()}; no process was started.'
+			}
+		}
+	} else {
+		[]string{}
+	}
 	mut args := [
 		'--unshare-all',
 		'--die-with-parent',
@@ -602,7 +718,7 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 		'/',
 		'/',
 	]
-	if options.allow_network {
+	if options.allow_network && !delegated {
 		args << '--share-net'
 	}
 	for hidden_path in ['/home', '/root', '/run', '/mnt', '/media', '/tmp'] {
@@ -630,6 +746,9 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	args << '--chdir'
 	args << os.join_path(canonical_root, cwd)
 	args << '--'
+	if limited {
+		args << prlimit_prefix
+	}
 	args << shell_executable
 	args << '-c'
 	args << command.command
@@ -647,7 +766,15 @@ fn run_linux_sandboxed_shell_command_with_write_scope(mut turn_ctx vcontext.Cont
 	process.set_stdin_path('/dev/null')
 	process.set_redirect_stdio()
 	process.use_pgroup = true
-	return collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
+	result := collect_shell_process(mut process, command.timeout_seconds, mut turn_ctx)
+	if delegated && workspace_tree_exceeds(canonical_writable_root, max_child_worktree_bytes) {
+		return ShellCommandResult{
+			status:    'failed'
+			exit_code: result.exit_code
+			output:    '${result.output}\n[Child worktree exceeded its ${max_child_worktree_bytes} byte quota; the result must not be integrated]'
+		}
+	}
+	return result
 }
 
 fn validate_linux_shell_workspace_root(root string) !string {

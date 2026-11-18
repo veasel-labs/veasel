@@ -278,7 +278,7 @@ fn resolve_workspace_edit_target(root string, relative_path string) !string {
 		if segment in ['', '.', '..'] {
 			return error('workspace edit path contains an invalid segment')
 		}
-		if segment.to_lower() in ['.git', '.hg', '.svn', 'node_modules', 'vendor'] {
+		if workspace_segment_is_protected(segment) {
 			return error('workspace edit path targets a protected directory')
 		}
 	}
@@ -304,6 +304,10 @@ fn resolve_workspace_edit_target(root string, relative_path string) !string {
 	if os.is_link(joined) {
 		return error('workspace edit path must not be a symbolic link')
 	}
+	// Descriptor-based re-check: every parent is opened O_NOFOLLOW (POSIX) or
+	// screened for reparse points (Windows) and the leaf must be a regular,
+	// single-link file. The string checks above stay as the first line.
+	confined_verify_target(canonical_root, segments)!
 	if os.exists(joined) {
 		if !os.is_file(joined) || os.file_size(joined) > max_workspace_edit_bytes {
 			return error('workspace edit target must be a bounded regular file')
@@ -337,6 +341,23 @@ fn apply_workspace_edit(root string, edit StoredWorkspaceEdit) ! {
 	parent := os.dir(path)
 	temporary := os.join_path(parent, '.veasel-edit-${edit.id}.tmp')
 	backup := os.join_path(parent, '.veasel-edit-${edit.id}.bak')
+	$if !windows {
+		// POSIX: replace through descriptors pinned with O_NOFOLLOW, verify the
+		// result and roll back on a detected swap (see workspace_confinement_nix.c.v).
+		canonical_root := canonical_workspace_root(root)!
+		segments := edit.path.replace('\\', '/').split('/')
+		confined_replace_file(canonical_root, segments, ConfinedReplace{
+			root:          canonical_root
+			leaf:          segments[segments.len - 1]
+			temporary:     '.veasel-edit-${edit.id}.tmp'
+			content:       edit.content
+			original:      current
+			expected_hash: edit.expected_hash
+			existed:       !create_file
+			mode:          mode
+		})!
+		return
+	}
 	if os.exists(temporary) {
 		return error('temporary workspace edit file already exists')
 	}
@@ -345,14 +366,6 @@ fn apply_workspace_edit(root string, edit StoredWorkspaceEdit) ! {
 	}
 	os.write_file(temporary, edit.content) or {
 		return error('unable to write the reviewed workspace edit')
-	}
-	$if !windows {
-		if mode >= 0 {
-			os.chmod(temporary, mode) or {
-				os.rm(temporary) or {}
-				return error('unable to preserve workspace file permissions')
-			}
-		}
 	}
 	$if windows {
 		if create_file {
@@ -372,11 +385,6 @@ fn apply_workspace_edit(root string, edit StoredWorkspaceEdit) ! {
 			os.rm(backup) or {
 				eprintln('veasel: workspace edit applied; unable to remove original-file backup ${backup}: ${err.msg()}')
 			}
-		}
-	} $else {
-		os.rename(temporary, path) or {
-			os.rm(temporary) or {}
-			return error('unable to replace the reviewed workspace file')
 		}
 	}
 }

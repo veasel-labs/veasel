@@ -57,7 +57,7 @@ fn test_shell_review_sandbox_preview_matches_capabilities() {
 	assert off.mode == 'off'
 	assert !off.will_wrap
 	assert off.backend == 'none'
-	assert off.network == 'host'
+	assert off.network == 'none'
 	os.setenv(shell_sandbox_mode_env, 'auto', true)
 	preview := shell_review_sandbox_preview()
 	assert preview.mode == 'auto'
@@ -76,15 +76,79 @@ fn test_shell_review_sandbox_preview_matches_capabilities() {
 	} else {
 		assert !preview.will_wrap
 		assert preview.backend == 'none'
-		assert preview.network == 'host'
+		assert preview.network == 'none'
 	}
 	os.setenv(shell_sandbox_network_env, 'allow', true)
 	allowed := shell_review_sandbox_preview()
 	if allowed.will_wrap {
 		assert allowed.network == 'allow'
 	} else {
-		assert allowed.network == 'host'
+		assert allowed.network == 'none'
 	}
+}
+
+fn test_shell_sandbox_plan_fails_closed_without_explicit_opt_in() {
+	// auto/off must never silently run unsandboxed.
+	assert approved_shell_sandbox_plan(.auto, false, false) == .refuse
+	assert approved_shell_sandbox_plan(.off, false, false) == .refuse
+	assert approved_shell_sandbox_plan(.off, true, false) == .refuse
+	assert approved_shell_sandbox_plan(.require, false, false) == .refuse
+	assert approved_shell_sandbox_plan(.require, false, true) == .refuse
+	assert approved_shell_sandbox_plan(.auto, true, false) == .wrap
+	assert approved_shell_sandbox_plan(.require, true, false) == .wrap
+	// Only the explicit opt-in plus auto/off allows an unsandboxed run.
+	assert approved_shell_sandbox_plan(.auto, false, true) == .unsandboxed
+	assert approved_shell_sandbox_plan(.off, true, true) == .unsandboxed
+	assert approved_shell_sandbox_plan(.off, false, true) == .unsandboxed
+	assert approved_shell_sandbox_plan(.auto, true, true) == .wrap
+}
+
+fn test_shell_unsandboxed_opt_in_requires_exact_token() {
+	assert !shell_unsandboxed_opt_in_from('')
+	assert !shell_unsandboxed_opt_in_from('1')
+	assert !shell_unsandboxed_opt_in_from('true')
+	assert !shell_unsandboxed_opt_in_from('yes')
+	assert shell_unsandboxed_opt_in_from(shell_unsandboxed_opt_in_token)
+	assert shell_unsandboxed_opt_in_from('  ${shell_unsandboxed_opt_in_token} ')
+}
+
+fn test_shell_sandbox_refusal_names_what_to_install() {
+	assert shell_sandbox_install_hint('linux').contains('bubblewrap')
+	assert shell_sandbox_install_hint('macos').contains('/usr/bin/sandbox-exec')
+	assert shell_sandbox_install_hint('windows').contains('AppContainer')
+	assert shell_sandbox_install_hint('plan9').contains('no Veasel sandbox backend')
+	msg := approved_shell_sandbox_refusal('linux')
+	assert msg.contains('bubblewrap')
+	assert msg.contains(shell_sandbox_opt_in_env)
+	assert msg.contains('no process was started')
+}
+
+fn test_shell_preview_reports_refusal_and_explicit_opt_in() {
+	prev_mode := os.getenv(shell_sandbox_mode_env)
+	prev_opt := os.getenv(shell_sandbox_opt_in_env)
+	defer {
+		if prev_mode.len > 0 {
+			os.setenv(shell_sandbox_mode_env, prev_mode, true)
+		} else {
+			os.unsetenv(shell_sandbox_mode_env)
+		}
+		if prev_opt.len > 0 {
+			os.setenv(shell_sandbox_opt_in_env, prev_opt, true)
+		} else {
+			os.unsetenv(shell_sandbox_opt_in_env)
+		}
+	}
+	os.setenv(shell_sandbox_mode_env, 'off', true)
+	os.unsetenv(shell_sandbox_opt_in_env)
+	refused := shell_review_sandbox_preview()
+	assert !refused.will_wrap
+	assert !refused.unsandboxed
+	assert refused.network == 'none'
+	os.setenv(shell_sandbox_opt_in_env, shell_unsandboxed_opt_in_token, true)
+	opted := shell_review_sandbox_preview()
+	assert opted.unsandboxed
+	assert opted.network == 'host'
+	assert shell_unsandboxed_capability()
 }
 
 fn test_approved_shell_sandbox_network_flag_parses_allowlist() {

@@ -95,7 +95,7 @@ describe("formatShellReview", () => {
       sandbox: { mode: "require", will_wrap: false, backend: "none", network: "host" },
     })
     expect(text).toContain("will be refused because the required OS sandbox is unavailable")
-    expect(text).toContain("VEASEL_SHELL_SANDBOX=off only if you intentionally accept")
+    expect(text).toContain("explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in")
   })
 
   test("uses concise security disclosure before the command on compact terminals", () => {
@@ -163,5 +163,34 @@ describe("formatShellReview", () => {
     expect(text).toContain("Sandbox: mode auto · will wrap (bubblewrap) · network deny")
     expect(text).toContain("inside Bubblewrap")
     expect(text).not.toContain("without an OS sandbox")
+  })
+})
+
+describe("sandbox opt-in disclosure", () => {
+  const base = {
+    command: "echo hi",
+    cwd: ".",
+    timeoutSeconds: 10,
+    runner: "/bin/sh",
+    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    pending: true,
+    output: "",
+    maxLines: 20,
+  }
+  test("auto without a backend is shown as refused, not as a fallback", () => {
+    const text = formatShellReview({
+      ...base,
+      sandbox: { mode: "auto", will_wrap: false, backend: "none", network: "none", unsandboxed: false },
+    })
+    expect(text).toContain("will be refused")
+    expect(text).not.toContain("WARNING: UNSANDBOXED")
+  })
+  test("explicit opt-in is loudly disclosed", () => {
+    const text = formatShellReview({
+      ...base,
+      sandbox: { mode: "off", will_wrap: false, backend: "none", network: "host", unsandboxed: true },
+    })
+    expect(text).toContain("WARNING: UNSANDBOXED")
+    expect(text).toContain("VEASEL_SHELL_ALLOW_UNSANDBOXED")
   })
 })

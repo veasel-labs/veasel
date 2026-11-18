@@ -47,9 +47,11 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 	mut conflicts := []SubagentIntegrationConflict{}
 	mut conflicted_paths := map[string]bool{}
 	mut inspected_paths := 0
+	mut hooks_prefix := ''
 
 	if run.workspace_ready {
 		worktree := os.join_path(os.dir(os.real_path(store.path)), 'subagent-worktrees', run.id)
+		hooks_prefix = subagent_hooks_path_prefix(worktree)
 		if !os.is_dir(worktree) || os.real_path(child.directory) != os.real_path(worktree) {
 			return error('child workspace is unavailable or no longer matches its durable run')
 		}
@@ -69,6 +71,14 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 					conflicts << SubagentIntegrationConflict{
 						path:   relative_path
 						reason: 'child path is unsafe and cannot be integrated'
+					}
+					conflicted_paths[relative_path] = true
+					continue
+				}
+				if reason := subagent_integration_sensitive_reason(relative_path, hooks_prefix) {
+					conflicts << SubagentIntegrationConflict{
+						path:   relative_path
+						reason: reason
 					}
 					conflicted_paths[relative_path] = true
 					continue
@@ -143,6 +153,14 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 					conflicts << SubagentIntegrationConflict{
 						path:   relative_path
 						reason: 'child path is unsafe and cannot be integrated'
+					}
+					conflicted_paths[relative_path] = true
+					continue
+				}
+				if reason := subagent_integration_sensitive_reason(relative_path, hooks_prefix) {
+					conflicts << SubagentIntegrationConflict{
+						path:   relative_path
+						reason: reason
 					}
 					conflicted_paths[relative_path] = true
 					continue
@@ -222,6 +240,14 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 			conflicted_paths[path] = true
 			continue
 		}
+		if reason := subagent_integration_sensitive_reason(path, hooks_prefix) {
+			conflicts << SubagentIntegrationConflict{
+				path:   path
+				reason: reason
+			}
+			conflicted_paths[path] = true
+			continue
+		}
 		if prior := candidates[path] {
 			if prior.content != row.val(1) {
 				conflicts << SubagentIntegrationConflict{
@@ -284,6 +310,40 @@ fn (app &App) propose_subagent_integration(parent_session_id string,
 		proposals: proposals
 		conflicts: conflicts
 	}
+}
+
+// subagent_integration_sensitive_reason returns a conflict reason when a child
+// path could change what git, the shell or CI executes later (hooks, filter
+// attributes, workflows, direnv) or lies under a repository-configured
+// core.hooksPath. Such paths are never imported automatically; the parent must
+// review and apply them by hand.
+fn subagent_integration_sensitive_reason(path string, hooks_prefix string) ?string {
+	if workspace_relative_path_is_sensitive(path) {
+		return 'child path changes git hooks, attributes, CI or shell-environment configuration; it is not imported automatically and needs manual parent review'
+	}
+	if hooks_prefix.len > 0 && (path == hooks_prefix || path.starts_with(hooks_prefix + '/')) {
+		return 'child path is inside the repository core.hooksPath directory; it is not imported automatically and needs manual parent review'
+	}
+	return none
+}
+
+// subagent_hooks_path_prefix returns the workspace-relative directory that
+// git's core.hooksPath redirects hooks to when it points inside the child
+// worktree, or '' when unset or outside the worktree.
+fn subagent_hooks_path_prefix(worktree string) string {
+	value := run_workspace_git_command_output(worktree, ['config', '--get', 'core.hooksPath'],
+		4_096) or { return '' }
+	hooks := value.trim_space()
+	if hooks.len == 0 {
+		return ''
+	}
+	absolute := if os.is_abs_path(hooks) { hooks } else { os.join_path(worktree, hooks) }
+	canonical_worktree := os.real_path(worktree)
+	resolved := os.real_path(absolute)
+	if resolved == canonical_worktree || !resolved.starts_with(canonical_worktree + os.path_separator) {
+		return ''
+	}
+	return resolved[canonical_worktree.len + 1..].replace('\\', '/')
 }
 
 fn workspace_git_path_matches_commit(root string, commit string, relative_path string) !bool {

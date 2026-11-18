@@ -11,7 +11,9 @@ export type ReviewSandboxPreview = {
   will_wrap: boolean
   backend: "none" | "bubblewrap" | "seatbelt" | "windows" | string
   /** deny|allow for wrapped shell; shared for wrapped MCP stdio; host when unsandboxed. */
-  network?: "deny" | "allow" | "shared" | "host" | string
+  network?: "deny" | "allow" | "shared" | "host" | "none" | string
+  /** True only with the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in: approval runs with no OS sandbox. */
+  unsandboxed?: boolean
 }
 
 // Leaves the safety warning and the approve instruction on the first screen.
@@ -72,11 +74,11 @@ export function approvedShellSandboxWarning(
   if (capability === "windows") {
     return "On Windows, approval still runs as your OS user inside AppContainer + Job Object: workspace ACL grant, network isolated by default, process-tree kill-on-close, active-process and job-memory caps. Not Codex-level WFP/LPAC; inherited environment may still carry credentials. Review every effect before approval."
   }
-  if (preview?.mode === "require") {
-    return "This command will be refused because the required OS sandbox is unavailable. Set VEASEL_SHELL_SANDBOX=off only if you intentionally accept unsandboxed execution."
+  if (preview?.unsandboxed) {
+    return "WARNING: UNSANDBOXED. VEASEL_SHELL_ALLOW_UNSANDBOXED is set, so approval runs as your OS user with your inherited environment and full filesystem and network access, without an OS sandbox. Review every effect before approval."
   }
-  if (preview?.mode === "auto") {
-    return "This explicit auto policy falls back to your OS user with filesystem and network access when no sandbox is available. Set VEASEL_SHELL_SANDBOX=require to fail closed. Review every effect before approval."
+  if (preview && !preview.will_wrap) {
+    return "This command will be refused because the required OS sandbox is unavailable (install bubblewrap on Linux; sandbox-exec is needed on macOS). Running without isolation needs the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in."
   }
   return "Runs as your OS user, inherits its environment, and has filesystem and network access without an OS sandbox because VEASEL_SHELL_SANDBOX=off was explicitly set. Review every effect before approval."
 }
@@ -88,8 +90,8 @@ function compactShellSandboxWarning(
   if (capability === "bubblewrap") return "Sandboxed: Bubblewrap."
   if (capability === "seatbelt") return "Sandboxed: Seatbelt."
   if (capability === "windows") return "Sandboxed: AppContainer."
-  if (preview?.mode === "require") return "Required sandbox unavailable."
-  if (preview?.mode === "auto") return "No sandbox: host access."
+  if (preview?.unsandboxed) return "UNSANDBOXED (explicit opt-in): host access."
+  if (preview && !preview.will_wrap) return "Required sandbox unavailable."
   return "Unsandboxed: host access."
 }
 

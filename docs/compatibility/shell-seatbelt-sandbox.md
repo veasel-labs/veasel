@@ -26,8 +26,8 @@ Veasel can ship honestly in this slice.
   temp directories, deny reads/writes under `/Users`, `/var/root`, and
   `/Volumes` except the workspace carve-out, network denied unless
   `VEASEL_SHELL_SANDBOX_NETWORK=allow`.
-- Shared knobs `VEASEL_SHELL_SANDBOX` (default `require`; `auto` explicitly
-  permits fallback, `off` disables wrapping) and `VEASEL_SHELL_SANDBOX_NETWORK`;
+- Shared knobs `VEASEL_SHELL_SANDBOX` (default `require`; `auto`/`off`
+  still refuse unless the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in is set) and `VEASEL_SHELL_SANDBOX_NETWORK`;
   capability `shell.sandbox.seatbelt` is true only when wrap will run.
 - Autonomous macOS shell also uses Seatbelt fail-closed with a filtered
   environment and network denied (never shares the approved-path network knob).

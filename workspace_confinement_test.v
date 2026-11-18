@@ -69,21 +69,34 @@ fn test_parent_symlink_is_rejected_for_edit() {
 	assert !os.exists(os.join_path(outside, 'new.txt'))
 }
 
-fn test_hardlink_to_outside_file_is_rejected_for_edit_and_read() {
+fn test_hardlink_is_readable_but_never_writable() {
 	$if windows {
 		return
 	}
 	root, outside := confinement_fixture()
 	defer { confinement_cleanup(root) }
 	os.link(os.join_path(outside, 'secret.txt'), os.join_path(root, 'hard')) or { panic(err) }
+	// Reads of regular multi-link files are allowed (pnpm stores, etc.).
+	content := read_workspace_text_file(os.join_path(root, 'hard')) or { panic(err) }
+	assert content == 'TOP-SECRET\n'
+	// Writes through the link are refused and the outside file is unchanged.
 	if _ := resolve_workspace_edit_target(root, 'hard') {
 		assert false
 	}
-	if content := read_workspace_text_file(os.join_path(root, 'hard')) {
-		assert content.len == 0
+	if _ := prepare_workspace_edit(root, 'hard', 'overwritten\n') {
 		assert false
 	}
 	assert os.read_file(os.join_path(outside, 'secret.txt')) or { panic(err) } == 'TOP-SECRET\n'
+}
+
+fn test_hardlinked_regular_file_inside_tree_is_readable() {
+	$if windows {
+		return
+	}
+	root, _ := confinement_fixture()
+	defer { confinement_cleanup(root) }
+	os.link(os.join_path(root, 'sub', 'f.txt'), os.join_path(root, 'sub', 'g.txt')) or { panic(err) }
+	assert read_workspace_text_file(os.join_path(root, 'sub', 'g.txt')) or { panic(err) } == 'inside\n'
 }
 
 fn test_escaping_and_disguised_paths_are_rejected() {

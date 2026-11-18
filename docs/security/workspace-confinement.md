@@ -15,17 +15,18 @@ POSIX (Linux, macOS, other Unix):
   is pinned, so later renames or symlink swaps of its path cannot redirect the
   write.
 - The leaf is opened with `O_NOFOLLOW | O_NONBLOCK`, `fstat`ed on the open
-  descriptor, and must be a regular file with `st_nlink == 1`. Hard links
-  (possible aliases of files outside the workspace), FIFOs, devices and
-  directories are refused for both reads and edits. Size limits are enforced on
+  descriptor, and must be a regular file. FIFOs, devices and directories are
+  refused for reads and edits. Edits additionally require `st_nlink == 1`: a
+  write through a hard link would modify a file that may live outside the
+  tree. Reads of regular files with `st_nlink > 1` are allowed: a hard link
+  grants the same user no read access they did not already have, and refusing
+  it would break hardlink-based tooling such as pnpm `node_modules`. Size limits are enforced on
   the descriptor, so sparse and growing files stay bounded.
 - Apply writes an `O_EXCL` temporary file and `renameat`s it through the pinned
   directory descriptor, then re-opens the result: dev/ino must match the file we
   wrote and (Linux) `/proc/self/fd/N` must still be inside the workspace root.
   A failed verification restores the original content (or unlinks a newly
   created file) and returns an error.
-- Reads that you can hit through hard links in pnpm-style stores will now fail
-  closed; use a copy.
 
 Windows: every component is screened for reparse points (symlinks, junctions)
 with `GetFileAttributesW`. This is check-time only; Windows has no

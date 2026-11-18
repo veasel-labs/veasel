@@ -112,8 +112,8 @@ Honesty bounds that stay in the product voice:
 - Approved shell defaults to fail-closed OS sandboxing: Bubblewrap on Linux
   (`shell.sandbox.bubblewrap`), Seatbelt on macOS (`shell.sandbox.seatbelt`),
   or AppContainer + Job Object on Windows (`shell.sandbox.windows`). Missing
-  backends refuse execution by default; `VEASEL_SHELL_SANDBOX=auto` explicitly
-  permits an unsandboxed fallback and `off` disables wrapping. Windows grants
+  backends refuse execution in every `VEASEL_SHELL_SANDBOX` mode; only the
+  explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in (see docs/SHELL_COMMANDS.md) runs unsandboxed. Windows grants
   workspace ACL to the AppContainer SID and denies network by default; it is
   not Codex-level WFP/LPAC. Trusted MCP stdio also defaults to fail-closed
   sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); `auto` explicitly permits

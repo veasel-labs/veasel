@@ -100,8 +100,9 @@ fn confined_dir_is_inside(fd int, root string) bool {
 
 // confined_open_leaf opens the final component without following symlinks.
 // Returns fd < 0 with exists=false when absent. Non-regular files (FIFO,
-// device, directory) and multi-link files are rejected.
-fn confined_open_leaf(dirfd int, leaf string) !(int, bool) {
+// device, directory) are rejected; multi-link files only when for_write (a
+// write through a hard link would modify a file that may live outside the tree).
+fn confined_open_leaf(dirfd int, leaf string, for_write bool) !(int, bool) {
 	fd := C.openat(dirfd, &char(leaf.str), C.O_RDONLY | C.O_NOFOLLOW | C.O_NONBLOCK | C.O_CLOEXEC, 0)
 	if fd < 0 {
 		if C.errno == C.ENOENT {
@@ -120,7 +121,7 @@ fn confined_open_leaf(dirfd int, leaf string) !(int, bool) {
 		C.close(fd)
 		return error('workspace path is not a regular file')
 	}
-	if info.nlink > 1 {
+	if for_write && info.nlink > 1 {
 		C.close(fd)
 		return error('workspace file has multiple hard links and may alias a file outside the workspace')
 	}
@@ -153,7 +154,7 @@ fn confined_read_fd(fd int, max_bytes int) ![]u8 {
 fn confined_verify_target(root string, segments []string) ! {
 	dirfd := confined_open_dir(root, segments[..segments.len - 1])!
 	defer { confined_close(dirfd) }
-	fd, exists := confined_open_leaf(dirfd, segments[segments.len - 1])!
+	fd, exists := confined_open_leaf(dirfd, segments[segments.len - 1], true)!
 	if exists {
 		confined_close(fd)
 	}
@@ -175,7 +176,7 @@ fn confined_read_file(path string, max_bytes int) ![]u8 {
 	if live.len > 0 && live != parent {
 		return error('workspace file path changed while it was being opened')
 	}
-	fd, exists := confined_open_leaf(dirfd, leaf)!
+	fd, exists := confined_open_leaf(dirfd, leaf, false)!
 	if !exists {
 		return error('workspace file does not exist')
 	}
@@ -254,7 +255,7 @@ fn confined_replace_in_dir(dirfd int, req ConfinedReplace, after_rename fn ()) !
 	if !confined_dir_is_inside(dirfd, req.root) {
 		return error('workspace parent directory is outside the workspace root')
 	}
-	existing_fd, exists := confined_open_leaf(dirfd, req.leaf)!
+	existing_fd, exists := confined_open_leaf(dirfd, req.leaf, true)!
 	if exists != req.existed {
 		confined_close(existing_fd)
 		return error('workspace edit target changed after review')
@@ -273,7 +274,7 @@ fn confined_replace_in_dir(dirfd int, req ConfinedReplace, after_rename fn ()) !
 	after_rename()
 	mut verified := confined_dir_is_inside(dirfd, req.root)
 	if verified {
-		check_fd, present := confined_open_leaf(dirfd, req.leaf) or {
+		check_fd, present := confined_open_leaf(dirfd, req.leaf, true) or {
 			verified = false
 			-1, false
 		}

@@ -32,8 +32,8 @@ risks in the field; Veasel therefore avoids that logon pattern.
 - Compose with a Job Object: `KILL_ON_JOB_CLOSE`, active-process cap (64), job
   memory cap (512 MiB); spawn `CREATE_SUSPENDED`, `AssignProcessToJobObject`,
   then `ResumeThread`.
-- Shared knobs `VEASEL_SHELL_SANDBOX` (default `require`; explicit `auto` permits
-  fallback and `off` disables wrapping) and `VEASEL_SHELL_SANDBOX_NETWORK`.
+- Shared knobs `VEASEL_SHELL_SANDBOX` (default `require`; `auto`/`off`
+  still refuse unless the explicit VEASEL_SHELL_ALLOW_UNSANDBOXED opt-in is set) and `VEASEL_SHELL_SANDBOX_NETWORK`.
 - Capability `shell.sandbox.windows` is true only when the AppContainer + Job
   Object wrap will run.
 - Autonomous Windows shell also uses AppContainer + Job fail-closed with

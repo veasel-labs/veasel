@@ -43,6 +43,8 @@ function assertBuilt(): void {
 export interface Desktop {
   app: ElectronApplication;
   page: Page;
+  /** Scratch root that holds HOME, user-data and any fixture data. */
+  root: string;
   /** Scratch HOME; the default harness is `$HOME/.ai-workspace` when created. */
   home: string;
   /** Scratch workspace scaffolded by the real CLI when `initWorkspace` is true. */
@@ -57,6 +59,17 @@ export interface OpenDesktopOptions {
   initWorkspace?: boolean;
   /** Persist first-run complete so existing specs land on World. Default true. */
   skipOnboarding?: boolean;
+  /**
+   * Extra environment for the app (and the backend it spawns). `PATH` is
+   * PREPENDED to the scratch PATH rather than replacing it.
+   */
+  extraEnv?: Record<string, string>;
+  /** Reuse an existing scratch root (relaunch). The root is then kept on close. */
+  root?: string;
+  /** Runs after the scratch HOME exists and before the app launches. */
+  prepare?: (paths: { root: string; home: string; workspace: string }) => void | Promise<void>;
+  /** Extra Electron/Chromium args (for example `--ozone-platform=x11`). */
+  extraArgs?: string[];
 }
 
 /**
@@ -68,14 +81,23 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
   const skipOnboarding = options.skipOnboarding ?? true;
   assertBuilt();
   const backendBin = backendBinary();
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atk-desktop-e2e-'));
+  const reusedRoot = options.root !== undefined;
+  const root = options.root ?? fs.mkdtempSync(path.join(os.tmpdir(), 'atk-desktop-e2e-'));
   const home = path.join(root, 'home');
   // The default harness, so the supervisor resolves it without an override.
   const workspace = path.join(home, '.ai-workspace');
   fs.mkdirSync(home, { recursive: true });
 
   // Harness overrides from the developer's shell would point at their real workspace.
-  const dropped = new Set(['ELECTRON_RUN_AS_NODE', 'AGENT_TOOLKIT_WORKSPACE', 'HARNESS_DIR']);
+  const dropped = new Set([
+    'ELECTRON_RUN_AS_NODE',
+    'AGENT_TOOLKIT_WORKSPACE',
+    'HARNESS_DIR',
+    // A scratch app must never reach the developer's compositor or session keyring.
+    'WAYLAND_DISPLAY',
+    'HYPRLAND_INSTANCE_SIGNATURE',
+    'DBUS_SESSION_BUS_ADDRESS',
+  ]);
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined && !dropped.has(key)) env[key] = value;
@@ -92,15 +114,23 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
     .filter((entry): entry is string => Boolean(entry))
     .join(path.delimiter);
   env['NO_COLOR'] = '1';
+  for (const [key, value] of Object.entries(options.extraEnv ?? {})) {
+    env[key] = key === 'PATH' ? [value, env['PATH']].filter(Boolean).join(path.delimiter) : value;
+  }
+  await options.prepare?.({ root, home, workspace });
 
-  if (initWorkspace) {
+  if (initWorkspace && !fs.existsSync(workspace)) {
     execFileSync(backendBin, ['workspace', 'init', '--dir', workspace], {
       env,
       stdio: 'pipe',
     });
   }
 
-  const args = [...(packagedApp ? [] : [APP_DIR]), `--user-data-dir=${path.join(root, 'user-data')}`];
+  const args = [
+    ...(packagedApp ? [] : [APP_DIR]),
+    `--user-data-dir=${path.join(root, 'user-data')}`,
+    ...(options.extraArgs ?? []),
+  ];
   // GitHub runners have no setuid sandbox helper for Chromium.
   if (process.env.CI) args.push('--no-sandbox');
   const app = await electron.launch({ executablePath: packagedApp, args, cwd: initWorkspace ? workspace : home, env });
@@ -117,6 +147,7 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
   return {
     app,
     page,
+    root,
     home,
     workspace,
     backendBin,
@@ -139,7 +170,7 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
         ]);
       } finally {
         if (killTimer) clearTimeout(killTimer);
-        fs.rmSync(root, { recursive: true, force: true });
+        if (!reusedRoot) fs.rmSync(root, { recursive: true, force: true });
       }
     },
   };

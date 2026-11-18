@@ -328,10 +328,23 @@ export function createVeaselFocusBridge(options: {
     const approvals = asArray<VeaselCliApproval>(
       await request(`/v1/sessions/${encodeURIComponent(id)}/cli-approvals`).catch(() => []),
     );
-    const turn = Math.max(1, events.filter((event) => event.type === 'user').length);
-    approvals
-      .filter((approval) => approval.status === 'pending')
-      .forEach((approval, index) => events.push(approvalToEvent(approval, turn, events.length + index + 1)));
+    const users = events.filter((event) => event.type === 'user').length;
+    // The running turn's user message is persisted only when the turn ends, so a pending approval belongs to
+    // the NEXT turn unless the latest persisted message is already that turn's user message.
+    const turn = Math.max(1, messages.at(-1)?.role === 'user' ? users : users + 1);
+    const pending = approvals.filter((approval) => approval.status === 'pending');
+    // A pending approval means the turn is still running. The timeline only treats a turn as open after
+    // `turn.started`, and pendingApproval() ignores closed turns, so without this the approval dialog
+    // never renders from a snapshot (the user message is persisted only when the turn ends).
+    if (pending.length > 0)
+      events.push({
+        seq: events.length + 1,
+        at: pending[0]?.created_at ?? '',
+        turn,
+        type: 'turn.started',
+        model: null,
+      });
+    pending.forEach((approval, index) => events.push(approvalToEvent(approval, turn, events.length + index + 1)));
     const thread = sessionToThread(session as VeaselSession, {
       provider,
       turns: events.filter((event) => event.type === 'user').length,

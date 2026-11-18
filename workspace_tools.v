@@ -590,23 +590,11 @@ fn resolve_workspace_file_path(root string, relative_path string) !string {
 }
 
 fn read_workspace_text_file(path string) !string {
-	file_size := os.stat(path)!.size
-	if file_size > u64(max_workspace_file_bytes) {
-		return error('workspace file exceeds the ${max_workspace_file_bytes} byte limit')
-	}
-	mut file := os.open(path)!
-	defer {
-		file.close()
-	}
-	// Size the read buffer to the file instead of allocating the 512 KiB limit
-	// for every small source file in a workspace scan. Keep one spare byte to
-	// detect a file that grows between stat and read.
-	mut bytes := []u8{len: int(file_size) + 1}
-	count := file.read_bytes_into(0, mut bytes)!
-	if count > max_workspace_file_bytes || count > int(file_size)
-		|| os.stat(path)!.size > u64(max_workspace_file_bytes) {
-		return error('workspace file exceeds the ${max_workspace_file_bytes} byte limit')
-	}
+	// Descriptor-based read: the final component is opened without following
+	// symlinks, must be a regular single-link file, and is size-checked on the
+	// open descriptor (not the path), so a swap after resolve cannot redirect it.
+	bytes := confined_read_file(path, max_workspace_file_bytes)!
+	count := bytes.len
 	// bytestr() below allocates the owned string and copies these bytes once;
 	// cloning the slice here would duplicate the same file contents again.
 	content := unsafe { bytes[..count] }

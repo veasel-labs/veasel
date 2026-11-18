@@ -164,6 +164,34 @@ describe('FocusStore', () => {
     expect(store.getTimeline('th_a').live).toEqual({});
   });
 
+  it('keeps streamed text when the turn ends and numbers the end after earlier turns', async () => {
+    const { bridge: api, push } = bridge({
+      readThread: async () => ({
+        thread: thread('th_a'),
+        events: [
+          event(1, { type: 'user', text: 'first' }),
+          event(2, { type: 'assistant', itemId: 'm1', text: 'done' }),
+        ],
+      }),
+    });
+    const store = new FocusStore(api);
+    store.connect();
+    store.ensureTimeline('th_a');
+    await vi.waitFor(() => expect(store.getTimeline('th_a').loaded).toBe(true));
+    push({ kind: 'delta', threadId: 'th_a', itemId: 'op2', channel: 'assistant', text: 'second answer' });
+    push({
+      kind: 'event',
+      threadId: 'th_a',
+      event: event(40, { type: 'turn.finished', outcome: 'completed', detail: null, durationMs: null, usage: null }),
+    });
+    const events = store.getTimeline('th_a').events;
+    expect(events.find((entry) => entry.type === 'assistant' && entry.turn === 2)).toMatchObject({
+      text: 'second answer',
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'turn.finished', turn: 2 });
+    expect(store.getTimeline('th_a').live).toEqual({});
+  });
+
   it('is inert without a runtime', () => {
     const store = new FocusStore(undefined);
     store.connect();

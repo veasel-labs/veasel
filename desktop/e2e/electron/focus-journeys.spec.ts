@@ -336,15 +336,16 @@ test('J3 choose provider (no model) and prompt: chosen provider spawned, text st
   );
 });
 
-test('J3c streamed text appears incrementally in the conversation', async () => {
-  // KNOWN PRODUCT BUG: the server emitted assistant.delta events (J3 asserts that independently) but the
-  // Focus conversation text did not change while the turn streamed. Oracle unchanged.
-  test.fail(true, 'live assistant.delta text is not rendered in the Focus conversation');
+test('J3c streamed text appears incrementally in the conversation', async ({}, testInfo) => {
   expect(
     streamSamples.length,
     `UI samples ${streamSamples.join(',')} vs ${serverDeltaCount} server deltas`,
   ).toBeGreaterThanOrEqual(3);
   expect(streamSamples.at(-1)).toBeGreaterThan(streamSamples[0] ?? 0);
+  record(testInfo, 'J3c', 'conversation text length grew in >=3 steps while the server emitted assistant.delta', {
+    uiSamples: streamSamples.length,
+    serverDeltas: serverDeltaCount,
+  });
 });
 
 test('J3b Focus shows the approval while the turn is still running (#751)', async ({}, testInfo) => {

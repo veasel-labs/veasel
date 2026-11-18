@@ -62,3 +62,8 @@ fn ensure_private_directory(path string) ! {
 		}
 	}
 }
+
+// rename(2) atomically replaces an existing destination.
+fn replace_file_atomic(src string, dst string) ! {
+	os.rename(src, dst)!
+}

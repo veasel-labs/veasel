@@ -108,7 +108,91 @@ export function withBackendAuth(
   return Object.assign(wrapped, inner) as FetchLike
 }
 
+/**
+ * Refuses a legacy backend, then installs the auth wrapper. The token wrapper is
+ * only installed after the server proved it enforces authentication.
+ */
+export async function connectAuthenticated(base: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+  await requireNonLegacyBackend(base)
+  installBackendAuth(base, env)
+}
+
 /** Installs the auth wrapper on the global `fetch` used by the TUI client. */
 export function installBackendAuth(base: string, env: NodeJS.ProcessEnv = process.env): void {
   globalThis.fetch = withBackendAuth(base, createApiTokenSource(env), globalThis.fetch)
+}
+
+export type BackendKind = "absent" | "secure" | "legacy"
+
+async function probe(url: string, fetchImpl: FetchLike): Promise<Response | undefined> {
+  try {
+    return await fetchImpl(url, { signal: AbortSignal.timeout(1500), headers: {} })
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Classifies the server on `base` WITHOUT sending any credential: an
+ * unverified server must never receive the token. `secure` requires health to
+ * advertise bearer auth AND an unauthenticated protected route to be refused;
+ * anything reachable that cannot prove that (an older backend, a server that
+ * only claims it, unparseable output) is `legacy` (fail closed).
+ */
+export async function classifyBackend(base: string, fetchImpl: FetchLike = fetch): Promise<BackendKind> {
+  const health = await probe(`${base}/v1/health`, fetchImpl)
+  if (!health) return "absent"
+  if (health.status !== 200) return "legacy"
+  let body: unknown
+  try {
+    body = await health.json()
+  } catch {
+    return "legacy"
+  }
+  const liveness = body as { healthy?: unknown; auth?: unknown; protocol?: unknown } | null
+  if (!liveness || liveness.healthy !== true || liveness.auth !== "bearer") return "legacy"
+  if (typeof liveness.protocol !== "number" || liveness.protocol < 1) return "legacy"
+  const protectedRoute = await probe(`${base}/v1/capabilities`, fetchImpl)
+  return protectedRoute?.status === 401 ? "secure" : "legacy"
+}
+
+/** Read-only count of running/queued turns on a legacy backend (undefined if unknown). */
+async function legacyActiveOperations(base: string, fetchImpl: FetchLike): Promise<number | undefined> {
+  const response = await probe(`${base}/v1/operations`, fetchImpl)
+  if (!response || response.status !== 200) return undefined
+  try {
+    const page = (await response.json()) as { operations?: Array<{ operation?: { status?: string } }> }
+    if (!Array.isArray(page.operations)) return undefined
+    return page.operations.filter((row) => row.operation?.status === "running" || row.operation?.status === "queued")
+      .length
+  } catch {
+    return undefined
+  }
+}
+
+export function legacyBackendMessage(port: string, active: number | undefined): string {
+  const impact =
+    active === undefined
+      ? "It may be running turns; stopping it interrupts them."
+      : active > 0
+        ? `${active} turn(s) are running or queued on it and will be interrupted if you stop it.`
+        : "No running or queued turns were reported (checked with a read-only request)."
+  return [
+    `a legacy Veasel backend without caller authentication is running on 127.0.0.1:${port} (or another server that cannot prove authentication holds that port). Any local process can control it, so Veasel will not attach to it or send it credentials. ${impact} Sessions are stored in SQLite and are kept; only in-flight turns are lost.`,
+    "To recover, stop it yourself and run the command again (Veasel never stops a process it did not start):",
+    `  Linux:   ss -ltnp "sport = :${port}"    then   kill <pid>`,
+    `  macOS:   lsof -nP -iTCP:${port} -sTCP:LISTEN   then   kill <pid>`,
+    `  Windows: netstat -ano | findstr :${port}   then   taskkill /PID <pid>`,
+    "Or start a new backend on another port with VEASEL_PORT=<port> and a SEPARATE VEASEL_DATA_DIR: two backends must never share one data directory, and a legacy process holds its directory without a lock, so Veasel cannot verify that for you.",
+  ].join("\n")
+}
+
+/** Throws (with the recovery text) if `base` is held by a legacy/unverifiable backend. */
+export async function requireNonLegacyBackend(base: string, fetchImpl: FetchLike = fetch): Promise<BackendKind> {
+  const kind = await classifyBackend(base, fetchImpl)
+  if (kind === "legacy") {
+    const port = new URL(base).port || "80"
+    throw new Error(legacyBackendMessage(port, await legacyActiveOperations(base, fetchImpl)))
+  }
+  return kind
 }

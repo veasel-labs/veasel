@@ -35,6 +35,16 @@ fn serve(port int, data_dir string) ! {
 	// Fail closed: no token, no server. Done before the store opens so a
 	// refused (e.g. group-readable) token file never starts a listener.
 	init_api_auth(data_dir)!
+	// One owner per data directory (SQLite recovery and queues assume it). The
+	// advisory lock is released by the OS when this process exits.
+	ensure_directory(data_dir)!
+	mut owner := new_subagent_preparation_lock(os.join_path(data_dir, 'backend.lock'))!
+	if !owner.try_acquire() {
+		return error('another Veasel backend already owns the data directory ${data_dir}; stop it first or use a separate VEASEL_DATA_DIR')
+	}
+	defer {
+		owner.release()
+	}
 	mut store := open_store(os.join_path(data_dir, 'veasel.sqlite3'))!
 	defer {
 		store.close() or { eprintln('veasel: unable to close session store') }
@@ -50,7 +60,12 @@ fn serve(port int, data_dir string) ! {
 	veb.run_at[App, Context](mut app, host: '127.0.0.1', family: .ip, port: port)!
 }
 
+// Identity of a VERIFIED authenticated backend. The unauthenticated probe runs
+// first, and the token is only sent once the server proved it enforces auth.
 fn backend_health(port int) ?Health {
+	if probe_backend_kind(port) != .secure {
+		return none
+	}
 	mut header := http.new_header()
 	if authorization := api_auth_header(default_data_dir()) {
 		header.set(.authorization, authorization)
@@ -177,6 +192,11 @@ fn backend_log_path(log_path string) string {
 }
 
 fn ensure_backend(port int, log_path string) ! {
+	// Never attach to, spawn beside, or signal a backend that does not enforce
+	// caller authentication; the user stops it explicitly.
+	if probe_backend_kind(port) == .legacy {
+		return error(legacy_backend_message(port, legacy_active_operations(port)))
+	}
 	if health := backend_health(port) {
 		warning := stale_server_warning(health)
 		if warning.len > 0 {

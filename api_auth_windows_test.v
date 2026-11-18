@@ -83,3 +83,41 @@ fn test_windows_widened_data_directory_is_restricted_again() {
 		windows_acl_is_private(data) or { panic(err) }
 	}
 }
+
+fn test_windows_rotation_replaces_the_existing_token_file_twice() {
+	$if windows {
+		prior := os.getenv_opt(api_token_env)
+		os.unsetenv(api_token_env)
+		defer {
+			if value := prior {
+				os.setenv(api_token_env, value, true)
+			}
+		}
+		root := windows_auth_test_root()
+		defer {
+			os.rmdir_all(root) or {}
+		}
+		data := os.join_path(root, 'data')
+		init_api_auth(data) or { panic(err) }
+		mut state := api_auth_state()
+		defer {
+			state.reset()
+		}
+		first := read_token_file(api_token_path(data)) or { panic(err) }
+		assert state.verify(first)
+		rotate_api_token() or { panic(err) }
+		second := read_token_file(api_token_path(data)) or { panic(err) }
+		assert second != first
+		assert state.verify(second)
+		assert !state.verify(first)
+		rotate_api_token() or { panic(err) }
+		third := read_token_file(api_token_path(data)) or { panic(err) }
+		assert third !in [first, second]
+		assert state.verify(third)
+		assert !state.verify(first)
+		assert !state.verify(second)
+		// The replaced file still satisfies the ACL allowlist and no temp files remain.
+		windows_acl_is_private(api_token_path(data)) or { panic(err) }
+		assert os.ls(data) or { panic(err) }.filter(it.contains('.tmp-')).len == 0
+	}
+}

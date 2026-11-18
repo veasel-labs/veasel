@@ -411,6 +411,7 @@ jobs:
           mkdir -p benchmark-results
           scripts/api-smoke.sh
           python3 scripts/auth-lifecycle-smoke.py --server dist/veasel
+          python3 scripts/legacy-backend-refusal-smoke.py --server dist/veasel
           python3 benchmarks/deterministic/run.py --veasel dist/veasel --report benchmark-results/deterministic.json
       - name: Package Unix binaries for artifact smoke
         if: runner.os != 'Windows'

@@ -12,7 +12,13 @@ paths:
   /v1/health:
     get:
       operationId: getHealth
-      description: Liveness probe and the only unauthenticated route. Without a token it returns just {"healthy":true}; with a valid bearer token it also returns version and pid.
+      description: >-
+        Liveness probe and the only unauthenticated route. Without a token it
+        returns just {"healthy":true,"auth":"bearer","protocol":1}. The auth and
+        protocol fields let a client tell a current backend from a legacy one
+        that never enforced authentication (clients refuse to attach to a
+        response without them). With a valid bearer token it also returns
+        version and pid.
       security:
         - {}
         - bearerAuth: []
@@ -2355,6 +2361,13 @@ components:
       properties:
         healthy:
           type: boolean
+        auth:
+          type: string
+          enum: [bearer]
+          description: Caller-authentication scheme the server enforces. Absent on legacy backends.
+        protocol:
+          type: integer
+          description: Authentication protocol version (1 = bearer token on every route except GET /v1/health).
         version:
           type: string
           description: Present only for authenticated callers.

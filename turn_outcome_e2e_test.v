@@ -108,9 +108,9 @@ fn run_outcome_turn(scenario string, approve_tools []string) OutcomeTurn {
 			method:        .post
 			data:          body
 			header:        http.new_header_from_map({
-				http.CommonHeader.content_type: 'application/json'
-			http.CommonHeader.authorization: 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-		})
+				http.CommonHeader.content_type:  'application/json'
+				http.CommonHeader.authorization: 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+			})
 			read_timeout:  300 * time.second
 			write_timeout: 30 * time.second
 		) or {

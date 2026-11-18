@@ -25,7 +25,9 @@ the backend.
    constant-time and length-independent. Only the digest is kept in memory.
    An unconfigured verifier rejects everything (fail closed).
 2. **One exemption:** `GET /v1/health` with the exact path. Without a token it
-   returns `{"healthy":true}` (no pid, version or paths). With a valid token it
+   returns `{"healthy":true,"auth":"bearer","protocol":1}` (no pid, version or
+   paths; `auth`/`protocol` are the capability clients negotiate on, see
+   Migration). With a valid token it
    returns the previous payload (`version`, `pid`), so the CLI stale-server
    warning and the Desktop identity probe keep working. Every other spelling
    of that path (`/v1/health/`, `/V1/health`, `%68ealth`, absolute-form,
@@ -76,6 +78,46 @@ the backend.
 - `docs/openapi.yaml` declares `bearerAuth` globally and `security: []`-style
   override on `getHealth`.
 
+## Migration: legacy backends and capability negotiation
+
+A backend started by an older Veasel build enforces no authentication, so any
+local process can drive it (approve edits, add MCP servers, ...). A new client
+that silently attached to it would trust an insecure server. Every client path
+that discovers or reuses a backend therefore negotiates first:
+
+1. It probes `GET /v1/health` and an unauthenticated protected route
+   (`GET /v1/capabilities`) **without any credential**. The server is `secure`
+   only if health advertises `"auth":"bearer"` with `protocol >= 1` and the
+   protected route answers 401.
+2. A reachable server that does not prove this (old health with `version`/`pid`,
+   a spoofed capability whose protected route answers 200, unparseable or
+   non-200 health) is **legacy** and is refused: the client does not attach,
+   does not send the token, and does not start a second backend beside it. It
+   never falls back silently. An unreachable port is `absent`, which means "spawn
+   our own".
+3. Applies to: the CLI (`veasel`, `veasel run`, `mcp`, `config`, `skills`,
+   `plugins`, `worktrees`), the TUI (both entry points), the Desktop supervisor
+   (blocking error state, no renderer-visible token), the Harbor adapter (waits
+   for the capability) and the scripts.
+
+Recovery is explicit and non-destructive. Veasel **never stops or signals a
+process it did not start**. The error names the port, says a legacy backend is
+running, reports (from a read-only `GET /v1/operations`, when the legacy API
+answers) how many turns are running or queued and will be interrupted, and gives
+the steps to stop it yourself:
+
+- Linux: `ss -ltnp "sport = :<port>"`, then `kill <pid>` (SIGTERM is graceful)
+- macOS: `lsof -nP -iTCP:<port> -sTCP:LISTEN`, then `kill <pid>`
+- Windows: `netstat -ano | findstr :<port>`, then `taskkill /PID <pid>`
+
+Sessions live in SQLite and are kept; only in-flight turns are lost. The
+alternative is a new backend on another port (`VEASEL_PORT`) with a **separate**
+`VEASEL_DATA_DIR`. Two backends must never share one data directory (SQLite
+recovery and queues assume a single owner): a current backend takes an exclusive
+lock on `<data dir>/backend.lock` and refuses to start if another current backend
+holds it, but a legacy process holds its directory without any lock, so that
+case cannot be detected and the instructions require a separate directory.
+
 ## Alternatives considered
 
 - **Unix domain socket / named pipe only.** Not adopted. veb (pinned V) serves
@@ -100,6 +142,7 @@ the backend.
 
 - **Out of scope on Windows:** SYSTEM and local Administrators. They can read the token file (or take ownership of it) regardless of the ACL, as root can on POSIX.
 
+- **A 0600 token is NOT a defense against malicious code running under the same OS account.** That code can read the file, read `/proc/<pid>/environ`, ptrace the TUI/Desktop, or simply act as the user. The token only separates *other* accounts, browsers/web pages, DNS rebinding and unauthenticated local clients.
 - **A malicious process running as the same OS user can read the token file**
   (or `/proc/<pid>/environ`, or ptrace the TUI/Desktop) and call the API. This
   change blocks other users, browsers/web pages, DNS rebinding, and

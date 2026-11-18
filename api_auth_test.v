@@ -501,7 +501,7 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 	// Liveness: minimal and leak-free without a token.
 	live := auth_test_raw(port, auth_test_request('GET', '/v1/health', []))
 	assert auth_test_status(live).contains(' 200 ')
-	assert live.all_after('\r\n\r\n') == '{"healthy":true}'
+	assert live.all_after('\r\n\r\n') == '{"healthy":true,"auth":"bearer","protocol":1}'
 	assert !live.contains('pid')
 	assert !live.contains('version')
 

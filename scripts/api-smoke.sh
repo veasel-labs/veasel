@@ -284,7 +284,7 @@ start_server
 expect_status 403 -H 'Host: attacker.example' "$api/v1/health"
 
 # Caller authentication: only the minimal liveness probe is anonymous.
-[[ "$(anon_curl -sS "$api/v1/health")" == '{"healthy":true}' ]] || fail 'anonymous health must be minimal liveness only'
+[[ "$(anon_curl -sS "$api/v1/health")" == '{"healthy":true,"auth":"bearer","protocol":1}' ]] || fail 'anonymous health must be minimal liveness plus the auth capability only'
 for anon_path in /v1/sessions /v1/capabilities /v1/events /v1/config/model /v1/mcp-servers /v1/plugins; do
 	anon_status="$(anon_curl -sS -o "$work_dir/response" -w '%{http_code}' "$api$anon_path")" || fail "anonymous request failed: $anon_path"
 	[[ "$anon_status" == 401 ]] || fail "anonymous $anon_path returned HTTP $anon_status instead of 401"

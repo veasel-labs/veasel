@@ -188,7 +188,8 @@ fn load_or_create_api_token(data_dir string) !string {
 
 fn write_token_via_rename(data_dir string, token string) ! {
 	tmp := write_token_temporary(data_dir, token)!
-	os.rename(tmp, api_token_path(data_dir)) or {
+	// On failure the temp file is removed and the OLD token stays valid.
+	replace_file_atomic(tmp, api_token_path(data_dir)) or {
 		os.rm(tmp) or {}
 		return err
 	}

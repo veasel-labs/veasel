@@ -143,3 +143,19 @@ fn ensure_private_directory(path string) ! {
 		windows_acl_is_private(path)!
 	}
 }
+
+fn C.MoveFileExW(&u16, &u16, u32) int
+
+// The CRT rename() cannot replace an existing file on Windows (EEXIST), so
+// rotation uses MoveFileExW(REPLACE_EXISTING | WRITE_THROUGH). The temp file
+// was created in the already-restricted data directory, so it carries the
+// restricted DACL; it is re-verified after the move. Any failure leaves the
+// old token file in place (the caller removes the temp file).
+fn replace_file_atomic(src string, dst string) ! {
+	movefile_replace_existing := u32(0x1)
+	movefile_write_through := u32(0x8)
+	if C.MoveFileExW(src.to_wide(), dst.to_wide(), movefile_replace_existing | movefile_write_through) == 0 {
+		return error('unable to replace ${dst} atomically')
+	}
+	windows_acl_is_private(dst)!
+}

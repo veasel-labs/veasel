@@ -152,7 +152,7 @@ def run(h: Harness) -> None:
     token1 = h.token()
     check(len(token1) == 64, "token is 256-bit hex")
     anon = health(h.port)
-    check(anon == {"healthy": True}, "anonymous health is minimal liveness only")
+    check(anon == {"healthy": True, "auth": "bearer", "protocol": 1}, "anonymous health is liveness plus the auth capability only (no pid/version)")
     authed = health(h.port, token1)
     pid1 = authed["pid"]
     check(authed["version"] and pid1 > 0, "authenticated health returns identity")
@@ -175,7 +175,7 @@ def run(h: Harness) -> None:
     check(http(h.port, "/v1/events", token1, read=False)[0] == 401, "SSE with the old token is rejected before any event")
     status, body = http(h.port, "/v1/sessions", token2)
     check(status == 200, "new token works")
-    check(health(h.port, token1) == {"healthy": True}, "old token only gets minimal liveness (no identity)")
+    check("pid" not in health(h.port, token1), "old token only gets minimal liveness (no identity)")
     check(health(h.port, token2)["pid"] == pid1, "rotation did not restart the server")
     tui = h.tui_probe(stale=token1)
     check(tui["sessions"] == 200 and tui["events"] == 200 and tui["requests"] == 3, f"TUI client holding the old token re-reads the file and retries once ({tui})")

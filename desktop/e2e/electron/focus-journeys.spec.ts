@@ -437,14 +437,6 @@ test('J5 a second proposal is rejected and changes nothing', async ({}, testInfo
 });
 
 test('J6 cancelling an in-flight operation is honest and the process is gone', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG (UI half): a running installed-CLI turn never shows a Stop button (the thread stays Ready), so
-  // the user cannot cancel from the UI. The backend half (CLI process survives cancel) was fixed in #757 and is
-  // asserted by the fixture spec. The oracle is NOT weakened: this test is
-  // expected to fail until Focus shows a running turn with a Stop button; remove test.fail() then.
-  test.fail(
-    true,
-    'Focus never shows a running installed-CLI turn (thread stays Ready, no Stop button), so the user cannot cancel from the UI (the backend now kills the CLI on cancel, #757)',
-  );
   await startTurn(testInfo, '[[slow]] keep working');
   const stop = page.getByRole('button', { name: 'Stop' });
   await expect(stop).toBeVisible({ timeout: 30_000 });
@@ -456,7 +448,8 @@ test('J6 cancelling an in-flight operation is honest and the process is gone', a
   await expect.poll(() => isAlive(pid)).toBe(true);
   const before = snapshot();
   await stop.click();
-  await expect(page.getByText('Stopped', { exact: true })).toBeVisible({ timeout: 20_000 });
+  // 'Stopped' also appears in the session list; scope to the composer status line (as J4c does for 'Ready').
+  await expect(page.getByTitle(/Reads freely/)).toContainText('Stopped', { timeout: 20_000 });
   await expect.poll(() => isAlive(pid), { timeout: 20_000 }).toBe(false);
   expect(snapshot()).toEqual(before);
   await shot(testInfo, 'J6-stopped');
@@ -591,11 +584,6 @@ test('J8c axe-core finds no accessibility violations on the Focus screen', async
 });
 
 test('J8b Escape in the composer stops a running turn and the process exits', async ({}, testInfo) => {
-  // Same root cause as J6: the interrupt reaches the backend but the CLI process is not terminated.
-  test.fail(
-    true,
-    'Focus never shows a running installed-CLI turn (thread stays Ready, no Stop button), so the user cannot cancel from the UI (the backend now kills the CLI on cancel, #757)',
-  );
   await startTurn(testInfo, '[[slow]] keep working');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
   const slow = readCliLog(env)
@@ -719,18 +707,22 @@ test('J10 backend crash mid-operation: honest error state, no phantom success', 
   // KNOWN PRODUCT BUG: after `kill -9` of the backend Desktop shows no alert, banner or message at all. Oracle
   // unchanged; remove test.fail once Focus surfaces the loss and offers a restart/reconnect.
   test.fail(true, 'Desktop shows nothing when the backend dies');
+  // Only a slow scenario started by THIS turn counts: earlier journeys leave dead slow entries behind.
+  const slowBefore = readCliLog(env).filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow').length;
   await startTurn(testInfo, '[[slow]] keep working until the backend dies');
   // Independent oracle that the operation is in flight: the fake CLI is streaming and alive.
   const slow = await expect
     .poll(() =>
       readCliLog(env)
         .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
+        .slice(slowBefore)
         .at(-1),
     )
     .toBeDefined()
     .then(() =>
       readCliLog(env)
         .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
+        .slice(slowBefore)
         .at(-1),
     );
   expect(isAlive(slow?.pid ?? -1)).toBe(true);
@@ -740,13 +732,20 @@ test('J10 backend crash mid-operation: honest error state, no phantom success', 
   process.kill(found.pid, 'SIGKILL');
   try {
     // Desktop must SAY the backend is gone or the turn stopped (an alert, or a backend/connection/stopped message);
-    // silence, or a stale "Ready", is not an honest state.
+    // silence, or a stale "Ready", is not an honest state. Scoped to this thread's conversation and composer
+    // status: a leftover "Stopped" label on another session in the sidebar is not this crash being surfaced.
+    const crashWords = /backend|unavailable|offline|restart|reconnect|connection|Stopped|Failed/i;
     await expect
       .poll(
         async () =>
           (await page.getByRole('alert').count()) > 0 ||
-          (await page.getByText(/backend|unavailable|offline|restart|reconnect|connection|Stopped|Failed/i).count()) >
-            0,
+          crashWords.test(await conversation().innerText()) ||
+          crashWords.test(
+            (await page
+              .getByTitle(/Reads freely/)
+              .innerText()
+              .catch(() => '')) ?? '',
+          ),
         { timeout: 60_000 },
       )
       .toBe(true);

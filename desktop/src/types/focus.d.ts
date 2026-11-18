@@ -166,6 +166,8 @@ export type FocusLiveUpdate =
   | { kind: 'event'; threadId: string; event: FocusEvent }
   | { kind: 'delta'; threadId: string; itemId: string; channel: 'assistant' | 'reasoning'; text: string }
   | { kind: 'thread'; thread: FocusThread }
+  /** The thread's lifecycle status changed (for example a turn started). */
+  | { kind: 'status'; threadId: string; status: FocusThreadStatus }
   | { kind: 'removed'; threadId: string }
   /** The server-side state changed (for example a new pending approval): re-read this thread. */
   | { kind: 'refresh'; threadId: string };

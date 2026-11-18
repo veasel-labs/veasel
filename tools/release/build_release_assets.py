@@ -3,8 +3,8 @@
 
 Inputs are the merged CI artifacts in --assets-dir. The output directory
 contains exactly the files that will be uploaded: CLI archives, standalone TUI
-binaries taken from the checksum-verified archives, Desktop installers (only
-when every Desktop lane verified), release.json, SHA256SUMS and the release
+binaries taken from the checksum-verified archives, per-platform Desktop
+installers (each only when its own job succeeded), release.json, SHA256SUMS and the release
 notes used for the GitHub release body (RELEASE_NOTES.md, not uploaded).
 """
 
@@ -19,14 +19,12 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+PLATFORMS = ("linux", "macos", "windows")
+# platform -> (archive name, arch, standalone TUI member name or None)
 ARCHIVES = {
-    "veasel-Linux.tar.gz": ("linux", "x86_64", "veasel-tui"),
-    "veasel-macOS.tar.gz": ("macos", "arm64", None),
-    "veasel-Windows.zip": ("windows", "x86_64", "veasel-tui.exe"),
-}
-STANDALONE_TUI = {
-    "veasel-tui": ("linux", "x86_64", "veasel-Linux.tar.gz"),
-    "veasel-tui.exe": ("windows", "x86_64", "veasel-Windows.zip"),
+    "linux": ("veasel-Linux.tar.gz", "x86_64", "veasel-tui"),
+    "macos": ("veasel-macOS.tar.gz", "arm64", None),
+    "windows": ("veasel-Windows.zip", "x86_64", "veasel-tui.exe"),
 }
 DESKTOP_KINDS = {
     ".AppImage": ("linux", "x86_64"),
@@ -34,7 +32,6 @@ DESKTOP_KINDS = {
     ".dmg": ("macos", "arm64"),
     ".exe": ("windows", "x86_64"),
 }
-DESKTOP_LANES = ("linux", "macos", "windows")
 UNSIGNED_NOTE = (
     "Desktop installers (AppImage, deb, dmg, NSIS exe) are UNSIGNED and not "
     "notarized. Expect OS warnings (Gatekeeper, SmartScreen). Verify them "
@@ -65,15 +62,37 @@ def read_member(archive: Path, member: str) -> bytes:
         return handle.read()
 
 
-def parse_lanes(raw: str) -> dict[str, str]:
-    lanes: dict[str, str] = {}
-    for item in raw.split(","):
+def parse_results(raw: str, what: str) -> dict[str, str]:
+    """Parse `linux=success,macos=failure,windows=` into a full 3-key dict.
+
+    A missing or empty value means the job never reported (for example it
+    never got a runner) and is reported as `unavailable`, never as success.
+    """
+    results: dict[str, str] = {}
+    for item in filter(None, (part.strip() for part in raw.split(","))):
         name, _, result = item.partition("=")
-        lanes[name.strip()] = result.strip()
-    missing = [lane for lane in DESKTOP_LANES if lane not in lanes]
-    if missing:
-        raise ReleaseError(f"missing desktop lane results: {missing}")
-    return {lane: lanes[lane] for lane in DESKTOP_LANES}
+        if name.strip() not in PLATFORMS:
+            raise ReleaseError(f"unknown platform {name!r} in {what}")
+        results[name.strip()] = result.strip()
+    return {p: results.get(p, "") for p in PLATFORMS}
+
+
+STATUS_BY_RESULT = {
+    "success": "published",
+    "failure": "failed",
+    "cancelled": "cancelled",
+    "skipped": "skipped",
+}
+REASONS = {
+    "failed": "failed - see CI",
+    "cancelled": "cancelled - see CI",
+    "skipped": "skipped - an upstream job did not pass",
+    "unavailable": "unavailable - job did not report (for example runner capacity)",
+}
+
+
+def status_of(result: str) -> str:
+    return STATUS_BY_RESULT.get(result, "unavailable")
 
 
 def entry(path: Path, kind: str, platform: str, arch: str) -> dict:
@@ -91,57 +110,76 @@ def entry(path: Path, kind: str, platform: str, arch: str) -> dict:
 
 
 def stage(assets_dir: Path, out_dir: Path, tag: str, version: str,
-          commit: str, lanes: dict[str, str]) -> dict:
+          commit: str, cli: dict[str, str], lanes: dict[str, str]) -> dict:
+    """Stage the upload set. `cli`/`lanes` map platform -> CI job result.
+
+    Linux CLI must have succeeded. Every other platform (CLI or Desktop) is
+    included only when its job result is exactly `success`; its assets are then
+    required to exist. Anything else is absent and reported, never fabricated.
+    """
+    if cli["linux"] != "success":
+        raise ReleaseError(
+            f"linux CLI job result is {cli['linux']!r}; a Linux release requires success")
     if out_dir.exists() and any(out_dir.iterdir()):
         raise ReleaseError(f"{out_dir} must be empty")
     out_dir.mkdir(parents=True, exist_ok=True)
     assets: list[dict] = []
+    platforms: dict[str, dict] = {}
 
-    for name, (platform, arch, _) in ARCHIVES.items():
-        source = assets_dir / name
-        if not source.is_file():
-            raise ReleaseError(f"missing verified CLI archive {name}")
-        shutil.copyfile(source, out_dir / name)
-        assets.append(entry(out_dir / name, "cli-archive", platform, arch))
+    for platform in PLATFORMS:
+        name, arch, tui_name = ARCHIVES[platform]
+        status = status_of(cli[platform])
+        block: dict = {"status": status, "ci_result": cli[platform] or "none",
+                       "arch": arch}
+        if status == "published":
+            source = assets_dir / name
+            if not source.is_file():
+                raise ReleaseError(f"{platform} job succeeded but {name} is missing")
+            shutil.copyfile(source, out_dir / name)
+            assets.append(entry(out_dir / name, "cli-archive", platform, arch))
+            if tui_name:
+                provenance = json.loads(read_member(source, "build.json"))
+                data = read_member(source, tui_name)
+                expected = provenance["tui_binary_sha256"]
+                actual = hashlib.sha256(data).hexdigest()
+                if actual != expected:
+                    raise ReleaseError(
+                        f"{tui_name} sha256 {actual} != verified provenance {expected}")
+                (out_dir / tui_name).write_bytes(data)
+                assets.append(entry(out_dir / tui_name, "standalone-tui", platform, arch))
+        else:
+            block["reason"] = REASONS.get(status, REASONS["unavailable"])
+        platforms[platform] = block
 
-    for name, (platform, arch, archive_name) in STANDALONE_TUI.items():
-        archive = assets_dir / archive_name
-        provenance = json.loads(read_member(archive, "build.json"))
-        data = read_member(archive, name)
-        expected = provenance["tui_binary_sha256"]
-        actual = hashlib.sha256(data).hexdigest()
-        if actual != expected:
-            raise ReleaseError(
-                f"{name} sha256 {actual} != verified provenance {expected}")
-        (out_dir / name).write_bytes(data)
-        assets.append(entry(out_dir / name, "standalone-tui", platform, arch))
+    for platform in PLATFORMS:
+        cli_ok = platforms[platform]["status"] == "published"
+        result = lanes[platform]
+        status = status_of(result) if cli_ok else "unavailable"
+        desk: dict = {"status": status, "ci_result": result or "none",
+                      "arch": ARCHIVES[platform][1], "kind": "desktop-installer",
+                      "signed": False, "assets": []}
+        if status == "published":
+            kinds = [s for s, (p, _) in DESKTOP_KINDS.items() if p == platform]
+            files = sorted(f for f in assets_dir.glob("veasel-desktop-*")
+                           if f.is_file() and f.suffix in kinds)
+            if {f.suffix for f in files} != set(kinds):
+                raise ReleaseError(
+                    f"{platform} desktop job succeeded but installers are missing "
+                    f"(expected {sorted(kinds)}, found {[f.name for f in files]})")
+            for source in files:
+                shutil.copyfile(source, out_dir / source.name)
+                assets.append(entry(out_dir / source.name, "desktop-installer",
+                                    platform, desk["arch"]))
+                desk["assets"].append(source.name)
+        else:
+            desk["reason"] = (REASONS.get(status, REASONS["unavailable"]) if cli_ok
+                              else f"unavailable - {platform} CLI build not published")
+        platforms[platform]["desktop"] = desk
 
-    desktop_ok = all(result == "success" for result in lanes.values())
-    desktop_files = sorted(p for p in assets_dir.glob("veasel-desktop-*") if p.is_file())
-    if desktop_ok:
-        seen: set[str] = set()
-        for source in desktop_files:
-            if source.suffix not in DESKTOP_KINDS:
-                raise ReleaseError(f"unexpected desktop asset {source.name}")
-            seen.add(source.suffix)
-            shutil.copyfile(source, out_dir / source.name)
-            platform, arch = DESKTOP_KINDS[source.suffix]
-            assets.append(entry(out_dir / source.name, "desktop-installer", platform, arch))
-        missing = sorted(set(DESKTOP_KINDS) - seen)
-        if missing:
-            raise ReleaseError(
-                f"all desktop lanes succeeded but installers are missing: {missing}")
-        desktop = {"status": "available", "lanes": lanes}
-    else:
-        # Never attach partial Desktop output: a lane that failed, was
-        # cancelled or skipped makes the whole Desktop set unavailable.
-        desktop = {
-            "status": "unavailable",
-            "lanes": lanes,
-            "reason": "one or more desktop lanes did not verify; "
-                      "no desktop installers are attached to this release",
-        }
-
+    desk_states = [platforms[p]["desktop"]["status"] for p in PLATFORMS]
+    desktop_summary = ("available" if all(s == "published" for s in desk_states)
+                       else "partial" if any(s == "published" for s in desk_states)
+                       else "unavailable")
     manifest = {
         "name": "Veasel Code",
         "version": version,
@@ -149,7 +187,8 @@ def stage(assets_dir: Path, out_dir: Path, tag: str, version: str,
         "source_commit": commit,
         "channel": "next",
         "prerelease": True,
-        "desktop": desktop,
+        "platforms": platforms,
+        "desktop": {"status": desktop_summary},
         "assets": sorted(assets, key=lambda a: a["name"]),
     }
     (out_dir / "release.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -158,20 +197,23 @@ def stage(assets_dir: Path, out_dir: Path, tag: str, version: str,
     (out_dir / "SHA256SUMS").write_text(
         "".join(f"{sha256(out_dir / n)}  {n}\n" for n in names))
 
-    notes = [f"Verified prerelease `{tag}` built from `{commit}`.", ""]
-    if desktop_ok:
-        notes += ["Desktop installers are included.", "", UNSIGNED_NOTE]
-    else:
-        notes += [
-            "**desktop: unavailable.** The Desktop lane did not fully verify "
-            "(" + ", ".join(f"{k}={v}" for k, v in lanes.items()) + "), so this "
-            "release contains the CLI/TUI assets only. No Desktop installers "
-            "are attached.",
-            "",
-            UNSIGNED_NOTE,
-        ]
-    (out_dir.parent / "RELEASE_NOTES.md").write_text(
-        "\n".join(notes) + "\n")
+    pretty = {"linux": "Linux", "macos": "macOS", "windows": "Windows"}
+    notes = [f"Verified prerelease `{tag}` built from `{commit}`.", "",
+             "Included platforms: " + ", ".join(
+                 pretty[p] for p in PLATFORMS if platforms[p]["status"] == "published") + "."]
+    missing = []
+    for p in PLATFORMS:
+        block = platforms[p]
+        if block["status"] != "published":
+            missing.append(f"- {pretty[p]} CLI: {block['status']} - {block['reason']}")
+        d = block["desktop"]
+        if d["status"] != "published":
+            missing.append(f"- {pretty[p]} Desktop: {d['status']} - {d['reason']}")
+    if missing:
+        notes += ["", "**Not included in this release** (do not assume coverage):"] + missing
+    if desktop_summary != "unavailable":
+        notes += ["", UNSIGNED_NOTE]
+    (out_dir.parent / "RELEASE_NOTES.md").write_text("\n".join(notes) + "\n")
     return manifest
 
 
@@ -182,12 +224,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
-    parser.add_argument("--desktop-lanes", required=True,
+    parser.add_argument("--cli-results", required=True,
                         help="linux=<result>,macos=<result>,windows=<result>")
+    parser.add_argument("--desktop-lanes", required=True,
+                        help="same format, Desktop job results")
     args = parser.parse_args(argv)
     try:
         stage(args.assets_dir, args.out_dir, args.tag, args.version,
-              args.commit, parse_lanes(args.desktop_lanes))
+              args.commit, parse_results(args.cli_results, 'cli'),
+              parse_results(args.desktop_lanes, 'desktop'))
     except ReleaseError as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1

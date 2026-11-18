@@ -30,12 +30,17 @@ pub:
 	base_url          string
 	api_key           string
 	max_output_tokens int
+	// True when the key lives in the OS keychain: the JSON then carries this
+	// reference instead of the secret (see secret_store.v).
+	key_in_keychain bool
 }
 
 struct PersistedModelSettings {
 mut:
 	active_provider string
 	profiles        map[string]ModelProfile
+	secret_store    string @[omitempty]
+	migration_note  string @[omitempty]
 }
 
 pub struct ModelSettingsView {
@@ -44,6 +49,12 @@ pub:
 	profiles             map[string]ModelProfileView
 	providers            []ModelProviderInfo
 	configured_providers []string
+	// Where saved provider keys live: `keychain` (OS credential store) or
+	// `file` (explicit VEASEL_SECRET_STORE=file opt-in, owner-only 0600).
+	secret_store string
+	// Non-empty when saved keys cannot be used right now (locked/missing
+	// keychain, interrupted migration). Never contains a secret.
+	secret_store_error string @[omitempty]
 pub mut:
 	// True only when the same resolution a chat turn uses (saved profile,
 	// then environment) yields a usable provider, model, and credential.
@@ -86,28 +97,73 @@ mut:
 	mu       sync.Mutex
 	path     string
 	settings PersistedModelSettings
+	// Secret handling (secret_store.v / model_secrets.v).
+	mode                string // keychain | file
+	backend             SecretBackend
+	scope               string
+	secret_error        string
+	unavailable         map[string]bool // providers whose saved key cannot be loaded now
+	plaintext_on_disk   map[string]bool // providers still holding a plaintext key in the JSON
+	last_secret_attempt i64
 }
 
 pub fn new_model_settings_state(path string) &ModelSettingsState {
+	mut mode := parse_secret_store_mode(os.getenv('VEASEL_SECRET_STORE'))
+	$if test {
+		// Unit tests must never reach a real OS keyring: default to the file
+		// store unless a test asks otherwise via VEASEL_SECRET_STORE.
+		if os.getenv('VEASEL_SECRET_STORE') == '' {
+			mode = 'file'
+		}
+	}
+	return new_model_settings_state_with(path, mode, native_secret_backend())
+}
+
+fn new_model_settings_state_with(path string, requested_mode string, backend SecretBackend) &ModelSettingsState {
+	// With no settings path nothing is persisted, so no secret is at rest.
+	mut mode := if path == '' || requested_mode == 'file' { 'file' } else { 'keychain' }
+	mut chosen := backend
+	if requested_mode == 'invalid' && path != '' {
+		chosen = UnavailableSecretBackend{
+			reason: 'VEASEL_SECRET_STORE must be `keychain` or `file`'
+		}
+		mode = 'keychain'
+	}
 	mut state := &ModelSettingsState{
 		path:     path
 		settings: PersistedModelSettings{
 			active_provider: 'openai-compatible'
 			profiles:        map[string]ModelProfile{}
 		}
+		mode:     mode
+		backend:  chosen
+		scope:    if path != '' { secret_account_scope(path) } else { '' }
 	}
-	if path != '' && os.is_file(path) {
-		loaded := json2.decode[PersistedModelSettings](os.read_file(path) or { '' }) or { return state }
-		if loaded.active_provider in supported_model_providers {
-			state.settings = loaded
+	state.load_from_disk()
+	state.sync_secrets()
+	return state
+}
+
+fn (mut state ModelSettingsState) load_from_disk() {
+	state.plaintext_on_disk = map[string]bool{}
+	if state.path == '' || !os.is_file(state.path) {
+		return
+	}
+	loaded := json2.decode[PersistedModelSettings](os.read_file(state.path) or { '' }) or { return }
+	if loaded.active_provider in supported_model_providers {
+		state.settings = loaded
+		for provider, profile in loaded.profiles {
+			if profile.api_key.len > 0 {
+				state.plaintext_on_disk[provider] = true
+			}
 		}
 	}
-	return state
 }
 
 fn (mut state ModelSettingsState) view() ModelSettingsView {
 	state.mu.lock()
 	defer { state.mu.unlock() }
+	state.retry_secret_sync()
 	mut profiles := map[string]ModelProfileView{}
 	for provider, profile in state.settings.profiles {
 		max_output_tokens := if valid_max_output_tokens(profile.max_output_tokens) {
@@ -118,7 +174,8 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 		profiles[provider] = ModelProfileView{
 			model:             profile.model
 			base_url:          profile.base_url
-			api_key_saved:     profile.api_key.len > 0
+			api_key_saved:     profile.api_key.len > 0 || profile.key_in_keychain
+				|| state.unavailable[provider]
 			max_output_tokens: max_output_tokens
 		}
 	}
@@ -126,7 +183,11 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 	for info in model_provider_catalog() {
 		profile := state.settings.profiles[info.id] or { ModelProfile{} }
 		// Saved profile keys win over environment variables for the same provider.
-		api_key := if profile.api_key.trim_space().len > 0 {
+		api_key := if state.unavailable[info.id] {
+			// A saved key that cannot be loaded must not silently yield to
+			// an environment key (fail closed).
+			''
+		} else if profile.api_key.trim_space().len > 0 {
 			profile.api_key
 		} else {
 			non_empty_environment_value('VEASEL_MODEL_API_KEY') or {
@@ -142,6 +203,8 @@ fn (mut state ModelSettingsState) view() ModelSettingsView {
 		profiles:             profiles
 		providers:            model_provider_catalog()
 		configured_providers: configured_providers
+		secret_store:         state.mode
+		secret_store_error:   state.secret_error
 	}
 }
 
@@ -159,41 +222,104 @@ fn (mut state ModelSettingsState) update(input ModelSettingsInput) ! {
 	}
 	state.mu.lock()
 	defer { state.mu.unlock() }
+	state.retry_secret_sync()
+	if state.plaintext_on_disk.len > 0 && state.mode == 'keychain' {
+		// An unfinished migration still owns the plaintext keys in the JSON;
+		// rewriting the file now could destroy them before they are safe.
+		return error(state.secret_error)
+	}
 	previous := state.settings.profiles[provider] or { ModelProfile{} }
 	max_output_tokens := input.max_output_tokens or { previous.max_output_tokens }
 	if !valid_max_output_tokens(max_output_tokens) {
 		return error('model settings are invalid')
 	}
-	key := if input.clear_api_key {
-		''
+	mut keep := false
+	mut key := ''
+	if input.clear_api_key {
+		key = ''
 	} else if input.api_key.len > 0 {
-		input.api_key
+		key = input.api_key
 	} else if model_endpoints_match(if previous.base_url.len > 0 {
 		previous.base_url
 	} else {
 		trusted_catalog_endpoint(provider)
 	}, base_url) || model_endpoints_match(trusted_catalog_endpoint(provider), base_url) {
-		previous.api_key
-	} else {
-		// A saved key never follows the profile to a different endpoint.
-		''
+		key = previous.api_key
+		keep = true
+	}
+	// else: a saved key never follows the profile to a different endpoint.
+	account := model_secret_account(state.scope, provider)
+	mut flag := false
+	if keep {
+		// Unchanged key. If it is saved but currently unreadable, the
+		// reference is preserved untouched.
+		flag = if state.mode == 'keychain' {
+			previous.key_in_keychain || key.len > 0
+		} else {
+			previous.key_in_keychain && key.len == 0
+		}
+	} else if key.len > 0 && state.mode == 'keychain' {
+		// Keychain first, verified by read-back, THEN the JSON reference.
+		state.keychain_write_verified(account, key)!
+		flag = true
 	}
 	mut profiles := state.settings.profiles.clone()
 	profiles[provider] = ModelProfile{
 		model:             model
 		base_url:          base_url
 		api_key:           key
+		key_in_keychain:   flag
 		max_output_tokens: max_output_tokens
 	}
-	updated := PersistedModelSettings{ active_provider: provider, profiles: profiles }
-	state.persist(updated)!
+	updated := PersistedModelSettings{
+		active_provider: provider
+		profiles:        profiles
+	}
+	state.persist(updated) or {
+		if !keep && key.len > 0 && state.mode == 'keychain' {
+			// Undo the keychain write so disk and keychain agree.
+			if previous.api_key.len > 0 {
+				state.backend.set(account, previous.api_key) or {}
+			} else {
+				state.backend.delete(account) or {}
+			}
+		}
+		return err
+	}
 	state.settings = updated
+	if !keep && previous.key_in_keychain && key.len == 0 {
+		// Key removed or dropped (clear / endpoint change): remove the stored
+		// secret only after the JSON no longer references it.
+		state.backend.delete(account) or { return error(with_keychain_hint(err.msg())) }
+	} else if !keep && key.len > 0 && state.mode == 'file' && previous.key_in_keychain {
+		state.backend.delete(account) or {}
+	}
+	if !keep {
+		state.unavailable.delete(provider)
+	}
 }
 
 fn (state &ModelSettingsState) persist(settings PersistedModelSettings) ! {
 	if state.path == '' { return }
+	mut profiles := map[string]ModelProfile{}
+	for provider, profile in settings.profiles {
+		profiles[provider] = if state.mode == 'keychain' {
+			ModelProfile{
+				...profile
+				api_key:         ''
+				key_in_keychain: profile.api_key.len > 0 || profile.key_in_keychain
+			}
+		} else {
+			profile
+		}
+	}
+	payload := PersistedModelSettings{
+		active_provider: settings.active_provider
+		profiles:        profiles
+		secret_store:    state.mode
+	}
 	ensure_directory(os.dir(state.path))!
-	write_private_file_atomic(state.path, json2.encode(settings))!
+	write_private_file_atomic(state.path, json2.encode(payload))!
 }
 
 // write_private_file_atomic replaces `path` with `contents`, readable only by
@@ -334,7 +460,10 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 	key_override string, clear_saved_key bool) !ModelConfig {
 	mut state := app.model_settings
 	state.mu.lock()
+	state.retry_secret_sync()
 	profile := state.settings.profiles[provider] or { ModelProfile{} }
+	key_unavailable := state.unavailable[provider]
+	secret_error := state.secret_error
 	state.mu.unlock()
 	model := if profile.model.len > 0 { profile.model } else { fallback_model }
 	// Installed-CLI providers (ADR-0001 dual plane) have no HTTP endpoint
@@ -350,6 +479,10 @@ fn (app &App) resolve_provider_model_config(provider string, fallback_model stri
 			provider: provider
 			model:    if cli_model.len > 0 { cli_model } else { 'default' }
 		}
+	}
+	if key_unavailable && key_override.len == 0 && !clear_saved_key {
+		// Fail closed: never fall through to another credential source.
+		return error(secret_error)
 	}
 	base_url := if endpoint_override.trim_space().len > 0 {
 		endpoint_override

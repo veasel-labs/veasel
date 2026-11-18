@@ -325,6 +325,7 @@ jobs:
           bwrap --unshare-all --die-with-parent --new-session --ro-bind / / -- true
           v test main_test.v
           v test model_settings_test.v
+          v test secret_store_test.v
           v test api_metadata_test.v
           v test plugins_test.v
           v test plugins_links_test.v
@@ -355,13 +356,14 @@ jobs:
         run: |
           & v -cc gcc -d windows_7 test main_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & v -cc gcc test model_settings_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
+          & v -cc gcc test model_settings_test.v secret_store_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run macOS provider settings, backend startup, and shell sandbox tests
         if: runner.os == 'macOS'
         run: |
           v test main_test.v
           v test model_settings_test.v
+          v test secret_store_test.v
           v test api_metadata_test.v
           v test headless_config_test.v
           v test plugins_links_test.v
@@ -369,6 +371,15 @@ jobs:
           v test plugin_mcp_cancel_test.v
           v test repository_map_test.v
           v test shell_commands_test.v
+      - name: Native OS keychain round trip (macOS Keychain / Windows Credential Manager)
+        if: runner.os != 'Linux'
+        # Exercises the real credential store on hosted runners. Advisory
+        # until proven stable on headless runner sessions (issue #690).
+        continue-on-error: true
+        shell: bash
+        env:
+          VEASEL_NATIVE_KEYCHAIN_TEST: '1'
+        run: v test secret_store_native_test.v
       - name: Run child-agent lifecycle tests
         timeout-minutes: 20
         env:

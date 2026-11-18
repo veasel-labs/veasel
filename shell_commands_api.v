@@ -1,5 +1,6 @@
 module main
 
+import context as vcontext
 import veb
 
 @['/v1/sessions/:id/workspace/commands'; get]
@@ -98,7 +99,8 @@ pub fn (app &App) approve_shell_command(mut ctx Context, id string, command_id s
 		}
 		return json_server_error(mut ctx, 'Unable to persist shell command approval')
 	}
-	result := run_approved_shell_command(session.directory, proposal)
+	mut shell_ctx := vcontext.background()
+	result := app.run_session_shell_command(mut shell_ctx, id, session.directory, proposal, false)
 	store.finish_shell_command(id, command_id, result) or {
 		eprintln('veasel: command ${command_id} finished but its outcome could not be persisted: ${err.msg()}')
 		ctx.res.set_status(.internal_server_error)

@@ -1940,7 +1940,7 @@ fn execute_autonomous_workspace_agent_tool(app &App, mut turn_ctx vcontext.Conte
 		approved := store.begin_shell_command(session_id, proposal.id) or {
 			return encode_agent_tool_error('The shell command could not begin safely.')
 		}
-		result := run_approved_shell_command_with_context(mut turn_ctx, root, approved, true)
+		result := app.run_session_shell_command(mut turn_ctx, session_id, root, approved, true)
 		store.finish_shell_command(session_id, proposal.id, result) or {
 			return encode_agent_tool_error('The command finished but its result could not be recorded.')
 		}

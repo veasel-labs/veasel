@@ -285,6 +285,7 @@ pub:
 	mcp_oauth_refresh     &MCPOAuthRefreshState
 	allow_autonomous      bool
 	allow_auto_edit       bool
+	turn_facts            &TurnFactsRegistry
 }
 
 fn new_app(store &Store, plugin_directory string) &App {
@@ -306,6 +307,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		allow_auto_edit:             os.getenv('VEASEL_ALLOW_AUTO_EDIT') == '1'
 			|| os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		session_turn_locks:          session_turn_locks
+		turn_facts:                  new_turn_facts_registry()
 		repository_map_symbol_cache: new_repository_map_symbol_cache()
 		operation_registry:          &TurnOperationRegistry{
 			mutex:            sync.new_mutex()
@@ -414,32 +416,12 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	if _ := provider_cli_by_id(config.provider) {
 		mut cli_store := app.store
 		session := cli_store.get_session(session_id)!
-		mut decide := deny_all_cli_approvals
-		// Interactive approvals are opt-in (TUI sets this): each CLI tool
-		// request becomes a durable pending approval that the turn polls
-		// until a client decides via the cli-approvals API or the wait
-		// bound expires it. Without it, approvals deny immediately.
-		if os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS') or { '' } == '1' {
-			decide = fn [app, session_id, request_deadline] (request_id string, tool_name string, input_json string) bool {
-				mut store := app.store
-				approval := store.create_cli_tool_approval(session_id, request_id,
-					tool_name, input_json) or { return false }
-				wait_deadline := request_deadline
-				for time.now() < wait_deadline {
-					current := store.get_cli_tool_approval(approval.id) or {
-						return false
-					}
-					match current.status {
-						'approved' { return true }
-						'denied', 'expired' { return false }
-						else {}
-					}
-					time.sleep(200 * time.millisecond)
-				}
-				store.expire_cli_tool_approval(approval.id) or {}
-				return false
-			}
-		}
+		// Approval decisions and CLI-reported side effects feed the durable
+		// turn outcome (turn_outcome.v).
+		mut registry := app.turn_facts
+		turn_facts := registry.get_or_begin(session_id)
+		config.turn_facts = turn_facts
+		decide := app.cli_approval_decider(session_id, request_deadline, turn_facts)
 		mut resume_store := app.store
 		return complete_cli_provider_turn_with_resume(mut resume_store, session_id,
 			messages, config, session.directory, on_text_delta, decide)!
@@ -2152,13 +2134,24 @@ fn (app &App) persist_partial_trace(id string, operation_id string, steps []ATIF
 
 fn (app &App) record_session_turn_failure(id string, operation_id string, message string, user_content string) {
 	eprintln('veasel: assistant turn failed (${message})')
-	status, public_error := session_turn_failure(message)
+	status, generic_error := session_turn_failure(message)
+	// The recorded facts decide what the turn is called: a turn that applied
+	// edits is partial (or cancelled/uncertain with the edits listed), never a
+	// generic failure that hides them.
+	mut facts_registry := app.turn_facts
+	outcome := derive_turn_outcome(status, facts_registry.snapshot(id), generic_error)
+	public_error := if outcome.summary.len > 1000 {
+		outcome.summary[..1000]
+	} else {
+		outcome.summary
+	}
 	mut store := app.store
 	streamed := store.assistant_text_for_operation(id, operation_id) or { '' }
-	store.record_session_turn_completion(id, operation_id, status, public_error, user_content,
-		visible_failed_turn(streamed, public_error)) or {
+	store.record_session_turn_completion_with_outcome(id, operation_id, status, public_error,
+		user_content, visible_failed_turn(streamed, public_error), outcome) or {
 		eprintln('veasel: unable to persist session turn completion (${err.msg()})')
 	}
+	facts_registry.finish(id)
 	store.cleanup_unstarted_subagent_workspaces()
 }
 
@@ -2271,6 +2264,8 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 
 fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id string, session Session,
 	input ChatMessageInput, operation_id string, request_deadline time.Time) !ChatExchange {
+	mut turn_facts_registry := app.turn_facts
+	turn_facts_registry.begin(id)
 	model_config := app.model_config_for_chat_input(id, input)!
 	user_message := ChatMessage{
 		role:    'user'
@@ -2399,10 +2394,12 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 	}
 	visible := app.store.assistant_text_for_operation(id, operation_id) or { output.content }
 	assistant_content := if visible.len > 0 { visible } else { output.content }
-	persisted := app.store.append_exchange(id, operation_id, input.content, assistant_content,
-		output.provider, output.model, trace_json, result.usage) or {
+	outcome := derive_turn_outcome('completed', turn_facts_registry.snapshot(id), '')
+	persisted := app.store.append_exchange_with_outcome(id, operation_id, input.content,
+		assistant_content, output.provider, output.model, trace_json, result.usage, outcome) or {
 		return error('unable to persist session messages')
 	}
+	turn_facts_registry.finish(id)
 	mut store := app.store
 	// Finishing a parent turn cancels any queued children; only clean workspaces
 	// that have never been claimed, preserving any child that may have executed.

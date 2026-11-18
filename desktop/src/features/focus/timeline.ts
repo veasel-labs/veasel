@@ -59,6 +59,7 @@ export type TimelineItem =
       kind: 'turn-end';
       key: string;
       outcome: 'completed' | 'interrupted' | 'failed';
+      outcomeDetail?: 'completed_with_denials' | 'partial' | 'uncertain';
       detail: string | null;
       durationMs: number | null;
       usage: FocusUsage | null;
@@ -205,6 +206,7 @@ export function buildTimeline(
           kind: 'turn-end',
           key,
           outcome: event.outcome,
+          outcomeDetail: event.outcomeDetail,
           detail: event.detail,
           durationMs: event.durationMs,
           usage: event.usage,

@@ -92,6 +92,7 @@ import { openShellOutputDialog } from "./component/shell-output-dialog"
 import { openDialogSelect } from "./ui/dialog-select"
 import { liveReleaseHighlights } from "./release-highlights"
 import { shellCommandsWithOutput } from "./shell-output-live"
+import { cancelledTurnNote, completedTurnNote } from "../turn-outcome"
 import {
   formatActiveModelLabel,
   formatSessionSettings,
@@ -1655,11 +1656,12 @@ function LiveAppShell(props: LiveAppProps) {
       if (activeSessionId() === sessionId) {
         if (completion.status === "completed") {
           const waiting = queuedFollowUps().length
+          const note = completedTurnNote(completion)
           setStatus(waiting > 0
             ? formatBusyStatus(`${waiting} follow-up${waiting === 1 ? "" : "s"} queued`)
-            : "● connected  ·  listening for activity")
+            : note ? formatWarnStatus(note) : "● connected  ·  listening for activity")
         } else if (completion.status === "cancelled") {
-          setStatus(formatWarnStatus("Turn cancelled"))
+          setStatus(formatWarnStatus(cancelledTurnNote(completion, "Turn cancelled")))
         } else if (completion.status === "uncertain") {
           setStatus(formatWarnStatus("Outcome uncertain; inspect the workspace before retrying"))
         } else {

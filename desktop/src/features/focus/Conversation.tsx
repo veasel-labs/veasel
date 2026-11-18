@@ -18,8 +18,28 @@ import { ToolDetail, ToolRow } from './ToolRow';
 import styles from './focus.module.css';
 
 function TurnEnd({ item }: { item: Extract<TimelineItem, { kind: 'turn-end' }> }) {
+  // Partial work is never reduced to "failed" (it hides what was applied) and
+  // is never shown as done: the server's fact-derived summary is the text.
+  if (item.outcomeDetail === 'partial') {
+    return (
+      <div className={styles.turnFailed} role="alert">
+        <strong>This turn stopped early, but changes were applied.</strong>
+        <pre>{item.detail ?? 'Review the working tree before relying on it.'}</pre>
+      </div>
+    );
+  }
+  if (item.outcomeDetail === 'uncertain') {
+    return (
+      <p className={styles.turnEnd} data-outcome="uncertain" role="status">
+        Result uncertain{item.detail ? `: ${item.detail}` : '.'}
+      </p>
+    );
+  }
   const parts: string[] = [];
-  if (item.outcome === 'completed') parts.push(item.durationMs ? `Done in ${formatDuration(item.durationMs)}` : 'Done');
+  if (item.outcome === 'completed') {
+    const base = item.durationMs ? `Done in ${formatDuration(item.durationMs)}` : 'Done';
+    parts.push(item.outcomeDetail === 'completed_with_denials' ? `${base}, with denied approvals` : base);
+  }
   if (item.outcome === 'interrupted') parts.push(item.detail ?? 'Stopped');
   if (item.usage && item.usage.outputTokens > 0) parts.push(`${formatTokens(item.usage.outputTokens)} tokens written`);
   if (item.outcome === 'failed') {
@@ -30,6 +50,9 @@ function TurnEnd({ item }: { item: Extract<TimelineItem, { kind: 'turn-end' }> }
       </div>
     );
   }
+  // A completed turn keeps the server's note (applied-but-unverified work,
+  // denied or expired approvals) next to "Done".
+  if (item.outcome === 'completed' && item.detail) parts.push(item.detail);
   return (
     <p className={styles.turnEnd} data-outcome={item.outcome}>
       {parts.join(', ')}

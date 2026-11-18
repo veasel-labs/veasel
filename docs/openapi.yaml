@@ -3815,6 +3815,21 @@ components:
         provider: { type: string }
         model: { type: string }
         error: { type: string, maxLength: 1024 }
+        outcome:
+          type: string
+          enum: [completed, completed_with_denials, partial, failed, cancelled, uncertain]
+          description: >-
+            Durable, fact-derived outcome of the turn; empty for turns recorded
+            before migration 32 (their truth is status alone). status stays the
+            lifecycle. completed_with_denials: the turn finished but at least one
+            approval was denied or expired. partial: the turn stopped early after
+            edits or approved commands were already applied. uncertain: effects
+            cannot be established. A turn that applied work is never reduced to
+            failed, and applied work is never reported as verified.
+        outcome_summary:
+          type: string
+          description: Public text for the outcome (what was applied, which approvals were denied or expired, and that applied changes are not verified). Never contains command arguments.
+        outcome_facts: { $ref: '#/components/schemas/TurnOutcomeFacts' }
         resolved_provider: { type: string, description: 'Provider admission resolved for this turn (empty when the global default applied); provider above is what executed.' }
         resolved_model: { type: string }
         permission_mode: { type: string, description: 'Permission mode admission resolved and stamped for this turn.' }
@@ -3850,6 +3865,30 @@ components:
           description: True only when the provider supplied a reasoning token counter.
         created_at: { type: string }
         updated_at: { type: string }
+    TurnOutcomeFacts:
+      type: object
+      description: The recorded evidence behind an outcome.
+      properties:
+        approvals_approved: { type: integer, minimum: 0 }
+        approvals_denied: { type: integer, minimum: 0 }
+        approvals_expired: { type: integer, minimum: 0 }
+        edits_applied:
+          type: array
+          items: { type: string }
+          description: Edit-type tool calls the CLI reported as applied, e.g. "Edit math.js".
+        commands_ran:
+          type: array
+          items: { type: string }
+          description: Approval-gated commands the CLI reported as run, by executable only.
+        expired_tools: { type: array, items: { type: string } }
+        denied_tools: { type: array, items: { type: string } }
+        effects_observed:
+          type: boolean
+          description: True only when the provider protocol exposes tool results (Claude stream-json). When false, applied changes are unknown rather than zero.
+        verification:
+          type: string
+          enum: [not_reported]
+          description: Veasel does not run or read tests for CLI turns, so applied changes are never reported as verified.
     SubagentTargetInput:
       type: object
       required: [provider, model]

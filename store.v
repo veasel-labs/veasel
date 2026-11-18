@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 31
+const latest_schema_version = 32
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -105,6 +105,11 @@ pub:
 	resolved_model    string @[omitempty]
 	permission_mode   string @[omitempty]
 	target_source     string @[omitempty]
+	// Durable outcome (see turn_outcome.v); empty for turns recorded before
+	// migration 32, whose truth is status alone.
+	outcome         string @[omitempty]
+	outcome_summary string @[omitempty]
+	outcome_facts   TurnOutcomeFacts
 }
 
 pub struct GlobalSessionOperation {
@@ -204,6 +209,7 @@ struct EventData {
 pub:
 	operation_id                   string @[omitempty]
 	permission_mode                string @[omitempty]
+	outcome                        string @[omitempty]
 	delta                          string @[omitempty]
 	status                         string @[omitempty]
 	provider                       string @[omitempty]
@@ -1177,6 +1183,40 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit session preferences migration')
 		}
 	}
+	if current < 32 {
+		// Durable per-turn outcome (epic #689, item B). `status` stays the
+		// lifecycle (queued..uncertain); `outcome` records what the turn did,
+		// derived from recorded facts. Additive columns, no table rebuild: a
+		// rebuild of session_operations would have to recreate its indexes and
+		// every statement that reads it just to widen a CHECK, while a new
+		// column with its own CHECK leaves `status` untouched, so older
+		// binaries and clients keep working unchanged.
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin turn outcome migration')
+		}
+		for column in [
+			['outcome',
+				"TEXT NOT NULL DEFAULT '' CHECK (outcome IN ('', 'completed', 'completed_with_denials', 'partial', 'failed', 'cancelled', 'uncertain'))"],
+			['outcome_detail', "TEXT NOT NULL DEFAULT ''"],
+		] {
+			add_column_if_missing(db, 'session_operations', column[0], column[1]) or {
+				db.rollback() or {}
+				db.close() or {}
+				return error('unable to add turn outcome columns')
+			}
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (32)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record turn outcome migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit turn outcome migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -1201,7 +1241,7 @@ fn open_store_at(path string) !&Store {
 		return error('unable to classify interrupted agent token budget reservations')
 	}
 	for row in interrupted_operations {
-		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {
+		_ = db.exec_param_many("UPDATE session_operations SET status = 'uncertain', outcome = 'uncertain', error = 'The server stopped before this operation reached a recorded result.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('running', 'cancelling')", [row.val(0)]) or {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to classify interrupted session operation')
@@ -2295,7 +2335,7 @@ fn (mut store Store) list_session_operations(session_id string) ![]SessionOperat
 	if sessions.len != 1 {
 		return error('session not found')
 	}
-	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE session_id = ? ORDER BY rowid ASC',
+	rows := store.db.exec_param('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source, outcome, outcome_detail FROM session_operations WHERE session_id = ? ORDER BY rowid ASC',
 		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
@@ -2320,7 +2360,7 @@ fn (mut store Store) list_global_session_operations(limit int, before string, se
 		}
 		cursor_created_at = cursor[0].val(0)
 	}
-	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, o.resolved_provider, o.resolved_model, o.permission_mode, o.target_source, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
+	mut query := 'SELECT o.id, o.session_id, o.status, o.provider, o.model, o.error, o.input_tokens, o.output_tokens, o.usage_reported, o.cache_read_tokens, o.cache_creation_tokens, o.cache_reported, o.reasoning_tokens, o.reasoning_reported, o.created_at, o.updated_at, o.resolved_provider, o.resolved_model, o.permission_mode, o.target_source, o.outcome, o.outcome_detail, s.title FROM session_operations o JOIN sessions s ON s.id = o.session_id'
 	mut filters := []string{}
 	mut params := []string{}
 	if before.len > 0 {
@@ -2349,7 +2389,7 @@ fn (mut store Store) list_global_session_operations(limit int, before string, se
 		}
 		page.operations << GlobalSessionOperation{
 			operation:     store.session_operation_from_row(row)
-			session_title: row.val(20)
+			session_title: row.val(22)
 		}
 	}
 	if rows.len > limit && page.operations.len > 0 {
@@ -2363,7 +2403,7 @@ fn (mut store Store) list_queued_session_operations() ![]SessionOperation {
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE status = 'queued' ORDER BY session_id ASC, queue_order ASC")!
+	rows := store.db.exec("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source, outcome, outcome_detail FROM session_operations WHERE status = 'queued' ORDER BY session_id ASC, queue_order ASC")!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
 		operations << store.session_operation_from_row(row)
@@ -2376,7 +2416,7 @@ fn (mut store Store) first_queued_session_operation(session_id string) ![]Sessio
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE session_id = ? AND status = 'queued' ORDER BY queue_order ASC LIMIT 1",
+	rows := store.db.exec_param("SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source, outcome, outcome_detail FROM session_operations WHERE session_id = ? AND status = 'queued' ORDER BY queue_order ASC LIMIT 1",
 		session_id)!
 	mut operations := []SessionOperation{cap: rows.len}
 	for row in rows {
@@ -2432,7 +2472,7 @@ fn (mut store Store) finish_queued_session_operation(session_id string, operatio
 	status := rows[0].val(0)
 	if status == 'queued' {
 		store.db.begin()!
-		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'queued'",
+		_ = store.db.exec_param_many("UPDATE session_operations SET status = 'cancelled', outcome = 'cancelled', error = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND id = ? AND status = 'queued'",
 			[public_error, session_id, operation_id]) or {
 			store.db.rollback() or {}
 			return error('unable to cancel queued session operation')
@@ -2507,7 +2547,7 @@ fn (mut store Store) prune_terminal_session_operations_unlocked(session_id strin
 }
 
 fn (mut store Store) session_operation_unlocked(session_id string, operation_id string) !SessionOperation {
-	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source FROM session_operations WHERE session_id = ? AND id = ?', [
+	rows := store.db.exec_param_many('SELECT id, session_id, status, provider, model, error, input_tokens, output_tokens, usage_reported, cache_read_tokens, cache_creation_tokens, cache_reported, reasoning_tokens, reasoning_reported, created_at, updated_at, resolved_provider, resolved_model, permission_mode, target_source, outcome, outcome_detail FROM session_operations WHERE session_id = ? AND id = ?', [
 		session_id,
 		operation_id,
 	])!
@@ -2521,6 +2561,7 @@ fn (store &Store) session_operation_from_row(row sqlite.Row) SessionOperation {
 	usage_reported := row.val(8) == '1'
 	cache_reported := row.val(11) == '1'
 	reasoning_reported := row.val(13) == '1'
+	outcome_detail := turn_outcome_detail_from_json(row.val(21))
 	return SessionOperation{
 		id:                    row.val(0)
 		session_id:            row.val(1)
@@ -2542,6 +2583,9 @@ fn (store &Store) session_operation_from_row(row sqlite.Row) SessionOperation {
 		resolved_model:        row.val(17)
 		permission_mode:       row.val(18)
 		target_source:         row.val(19)
+		outcome:               row.val(20)
+		outcome_summary:       outcome_detail.summary
+		outcome_facts:         outcome_detail.facts
 	}
 }
 
@@ -2986,6 +3030,16 @@ fn (mut store Store) messages_page_for_session(session_id string, limit int, bef
 fn (mut store Store) append_exchange(session_id string, operation_id string, user_content string,
 	assistant_content string, provider string, model string, trajectory_json string,
 	usage ProviderUsage) ![]ChatTurn {
+	return store.append_exchange_with_outcome(session_id, operation_id, user_content,
+		assistant_content, provider, model, trajectory_json, usage, TurnOutcome{})
+}
+
+fn (mut store Store) append_exchange_with_outcome(session_id string, operation_id string, user_content string,
+	assistant_content string, provider string, model string, trajectory_json string,
+	usage ProviderUsage, outcome TurnOutcome) ![]ChatTurn {
+	if outcome.outcome.len > 0 && outcome.outcome !in turn_outcome_values {
+		return error('turn outcome is invalid')
+	}
 	if trajectory_json.len > max_provider_stream_bytes * 2 {
 		return error('operation trace exceeds the persistence size limit')
 	}
@@ -3065,10 +3119,19 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			store.db.rollback() or {}
 			return error('unable to persist session operation result')
 		}
+		if outcome.outcome.len > 0 {
+			_ = store.db.exec_param_many('UPDATE session_operations SET outcome = ?, outcome_detail = ? WHERE id = ? AND session_id = ?',
+				[outcome.outcome, turn_outcome_detail_json(outcome), operation_id, session_id]) or {
+				store.db.rollback() or {}
+				return error('unable to persist session operation outcome')
+			}
+		}
 		completion := if usage.reported {
 			EventData{
 				operation_id:          operation_id
 				status:                'completed'
+				outcome:               outcome.outcome
+				error:                 outcome.summary
 				provider:              provider
 				model:                 model
 				input_tokens:          input_tokens
@@ -3084,6 +3147,8 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 			EventData{
 				operation_id: operation_id
 				status:       'completed'
+				outcome:      outcome.outcome
+				error:        outcome.summary
 				provider:     provider
 				model:        model
 			}
@@ -3130,6 +3195,15 @@ fn (mut store Store) append_exchange(session_id string, operation_id string, use
 
 fn (mut store Store) record_session_turn_completion(session_id string, operation_id string,
 	status string, public_error string, user_content string, assistant_content string) ! {
+	return store.record_session_turn_completion_with_outcome(session_id, operation_id, status,
+		public_error, user_content, assistant_content, TurnOutcome{})
+}
+
+fn (mut store Store) record_session_turn_completion_with_outcome(session_id string, operation_id string,
+	status string, public_error string, user_content string, assistant_content string, outcome TurnOutcome) ! {
+	if outcome.outcome.len > 0 && outcome.outcome !in turn_outcome_values {
+		return error('turn outcome is invalid')
+	}
 	if !validate_operation_id(operation_id) || operation_id.len == 0
 		|| status !in ['failed', 'cancelled'] || public_error.len > 1024
 		|| user_content.len > chat_input_byte_limit() || assistant_content.len > max_provider_stream_bytes {
@@ -3178,15 +3252,18 @@ fn (mut store Store) record_session_turn_completion(session_id string, operation
 		json2.encode[EventData](EventData{
 			operation_id: operation_id
 			status:       status
+			outcome:      outcome.outcome
 			error:        public_error
 		}),
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist session turn completion')
 	}
-	_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('queued', 'running', 'cancelling')", [
+	_ = store.db.exec_param_many("UPDATE session_operations SET status = ?, error = ?, outcome = ?, outcome_detail = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND session_id = ? AND status IN ('queued', 'running', 'cancelling')", [
 		status,
 		public_error,
+		outcome.outcome,
+		turn_outcome_detail_json(outcome),
 		operation_id,
 		session_id,
 	]) or {

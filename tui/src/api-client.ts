@@ -47,6 +47,8 @@ export type SessionTurnAccepted = {
 export type SessionTurnCompletion = {
   operation_id?: string
   status?: string
+  /** Fact-derived outcome (completed_with_denials, partial, ...); absent on older servers. */
+  outcome?: string
   provider?: string
   model?: string
   error?: string

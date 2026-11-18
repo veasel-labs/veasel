@@ -411,3 +411,64 @@ describe('veasel SSE live updates', () => {
     unsubscribe();
   });
 });
+
+describe('veasel turn outcomes (honest finish events)', () => {
+  const finished = (data: Record<string, unknown>) =>
+    veaselEventToLiveUpdate({ id: 9, type: 'session.turn_completed', session_id: 's1', data });
+
+  it('keeps a partial turn visible as partial, with what was applied', () => {
+    const update = finished({
+      status: 'failed',
+      outcome: 'partial',
+      error: 'The turn stopped before it finished. Already applied: Edit math.js. These changes are not verified.',
+    });
+    expect(update?.kind).toBe('event');
+    if (update?.kind === 'event' && update.event.type === 'turn.finished') {
+      expect(update.event.outcome).toBe('failed');
+      expect(update.event.outcomeDetail).toBe('partial');
+      expect(update.event.detail).toContain('Edit math.js');
+    }
+  });
+
+  it('marks a completed turn with denied approvals and keeps the summary', () => {
+    const update = finished({
+      status: 'completed',
+      outcome: 'completed_with_denials',
+      error: 'Approvals: 1 expired (Bash). Applied: Edit math.js. These changes are not verified.',
+    });
+    if (update?.kind === 'event' && update.event.type === 'turn.finished') {
+      expect(update.event.outcome).toBe('completed');
+      expect(update.event.outcomeDetail).toBe('completed_with_denials');
+      expect(update.event.detail).toContain('expired');
+    }
+  });
+
+  it('shows applied-but-unverified work on a clean completion', () => {
+    const update = finished({
+      status: 'completed',
+      outcome: 'completed',
+      error: 'Applied: Edit math.js. Not verified.',
+    });
+    if (update?.kind === 'event' && update.event.type === 'turn.finished') {
+      expect(update.event.outcome).toBe('completed');
+      expect(update.event.outcomeDetail).toBeUndefined();
+      expect(update.event.detail).toContain('Applied');
+    }
+  });
+
+  it('maps an uncertain outcome without claiming success or failure', () => {
+    const update = finished({ status: 'uncertain', outcome: 'uncertain', error: 'The server stopped.' });
+    if (update?.kind === 'event' && update.event.type === 'turn.finished') {
+      expect(update.event.outcome).toBe('interrupted');
+      expect(update.event.outcomeDetail).toBe('uncertain');
+    }
+  });
+
+  it('still maps older servers that send no outcome', () => {
+    const update = finished({ status: 'failed', error: 'The assistant turn failed.' });
+    if (update?.kind === 'event' && update.event.type === 'turn.finished') {
+      expect(update.event.outcome).toBe('failed');
+      expect(update.event.outcomeDetail).toBeUndefined();
+    }
+  });
+});

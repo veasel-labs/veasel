@@ -4,7 +4,7 @@
  * Usage: VEASEL_BIN=/path/veasel node repo-map-recall.mjs <repoDir> <cases.json>
  * cases.json: [{ "query": "...", "expected": "relative/path" }] */
 import { spawn, spawnSync } from "node:child_process"
-import { createHash } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { basename, join, relative, resolve } from "node:path"
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -73,14 +73,12 @@ function freePort() {
 		})
 	})
 }
-// The backend writes its bearer token to <data dir>/api-token on first start.
+// The benchmark generates the bearer token and hands it to the backend through
+// VEASEL_API_TOKEN, so nothing is read back from disk and no file data reaches
+// the (fixed, loopback) request target.
+const apiToken = randomBytes(32).toString("hex")
 function authHeaders() {
-	const headers = { "content-type": "application/json" }
-	try {
-		const token = readFileSync(join(dataDir, "api-token"), "utf8").trim()
-		if (/^[0-9a-f]{64}$/.test(token)) headers.authorization = `Bearer ${token}`
-	} catch {}
-	return headers
+	return { "content-type": "application/json", authorization: `Bearer ${apiToken}` }
 }
 function req(port, method, path, body) {
 	return new Promise((resolve, reject) => {
@@ -114,6 +112,7 @@ const env = {
 	...process.env,
 	VEASEL_PORT: String(port),
 	VEASEL_DATA_DIR: dataDir,
+	VEASEL_API_TOKEN: apiToken,
 	VEASEL_SECRET_STORE: 'file', // headless CI: explicit plaintext opt-in (no Secret Service)
 	VEASEL_PLUGIN_DIR: join(dataDir, "plugins"),
 }

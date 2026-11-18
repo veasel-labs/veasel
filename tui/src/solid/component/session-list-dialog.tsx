@@ -16,6 +16,8 @@ import { openSessionRenameDialog } from "./session-rename-dialog"
 
 export type SolidSessionEntry = SessionListEntry & {
   id: string
+  /** Server-persisted provider/model/permission line (see formatSessionSettings). */
+  settings?: string
 }
 
 export type SessionListDialogProps = {
@@ -282,6 +284,7 @@ export function SessionListDialog(props: SessionListDialogProps) {
                   <text fg={colors.muted}>
                     {"    "}
                     {session.directory}
+                    {session.settings ? `  ·  ${session.settings}` : ""}
                   </text>
                 </box>
               )

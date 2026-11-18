@@ -141,6 +141,13 @@ export type FocusEventBody =
   | {
       type: 'turn.finished';
       outcome: 'completed' | 'interrupted' | 'failed';
+      /**
+       * The server's finer, fact-derived outcome when it differs from the
+       * three-way lifecycle above: a failed lifecycle that applied edits is
+       * 'partial', a completed one with denied/expired approvals is
+       * 'completed_with_denials'. Absent on older servers.
+       */
+      outcomeDetail?: 'completed_with_denials' | 'partial' | 'uncertain';
       detail: string | null;
       durationMs: number | null;
       usage: FocusUsage | null;

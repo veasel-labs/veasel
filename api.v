@@ -91,16 +91,8 @@ fn (app &App) model_config_for_chat_input(session_id string, input ChatMessageIn
 	}
 	mut config := if input.provider.len == 0 && input.model.len == 0 {
 		app.model_config_for_session(session_id)!
-	} else if input.provider.len > 0 && input.model.len == 0
-		&& provider_cli_by_id(input.provider) != none {
-		// Installed-CLI providers own their model choice: a provider-only
-		// target runs THAT provider with its configured/default model rather
-		// than silently inheriting the global provider.
-		app.provider_model_config(input.provider, '')!
-	} else if input.provider.len == 0 || input.model.len == 0 {
-		return error('provider and model must be supplied together')
 	} else {
-		app.provider_model_config_for_target(input.provider, input.model)!
+		app.resolve_explicit_target(input.provider, input.model)!
 	}
 	config.session_id = session_id
 	config.permission_mode = permission_mode
@@ -293,6 +285,7 @@ pub:
 	mcp_oauth_refresh     &MCPOAuthRefreshState
 	allow_autonomous      bool
 	allow_auto_edit       bool
+	turn_facts            &TurnFactsRegistry
 }
 
 fn new_app(store &Store, plugin_directory string) &App {
@@ -314,6 +307,7 @@ fn new_app(store &Store, plugin_directory string) &App {
 		allow_auto_edit:             os.getenv('VEASEL_ALLOW_AUTO_EDIT') == '1'
 			|| os.getenv('VEASEL_ALLOW_AUTONOMOUS_EXECUTION') == '1'
 		session_turn_locks:          session_turn_locks
+		turn_facts:                  new_turn_facts_registry()
 		repository_map_symbol_cache: new_repository_map_symbol_cache()
 		operation_registry:          &TurnOperationRegistry{
 			mutex:            sync.new_mutex()
@@ -432,32 +426,12 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	if _ := provider_cli_by_id(config.provider) {
 		mut cli_store := app.store
 		session := cli_store.get_session(session_id)!
-		mut decide := deny_all_cli_approvals
-		// Interactive approvals are opt-in (TUI sets this): each CLI tool
-		// request becomes a durable pending approval that the turn polls
-		// until a client decides via the cli-approvals API or the wait
-		// bound expires it. Without it, approvals deny immediately.
-		if os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS') or { '' } == '1' {
-			decide = fn [app, session_id, request_deadline] (request_id string, tool_name string, input_json string) bool {
-				mut store := app.store
-				approval := store.create_cli_tool_approval(session_id, request_id,
-					tool_name, input_json) or { return false }
-				wait_deadline := request_deadline
-				for time.now() < wait_deadline {
-					current := store.get_cli_tool_approval(approval.id) or {
-						return false
-					}
-					match current.status {
-						'approved' { return true }
-						'denied', 'expired' { return false }
-						else {}
-					}
-					time.sleep(200 * time.millisecond)
-				}
-				store.expire_cli_tool_approval(approval.id) or {}
-				return false
-			}
-		}
+		// Approval decisions and CLI-reported side effects feed the durable
+		// turn outcome (turn_outcome.v).
+		mut registry := app.turn_facts
+		turn_facts := registry.get_or_begin(session_id)
+		config.turn_facts = turn_facts
+		decide := app.cli_approval_decider(session_id, request_deadline, turn_facts)
 		mut resume_store := app.store
 		return complete_cli_provider_turn_with_resume(mut resume_store, session_id,
 			messages, config, session.directory, on_text_delta, decide)!
@@ -1983,11 +1957,11 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	if ctx.req.data.len > chat_input_byte_limit() + 1024 {
 		return json_request_error(mut ctx, 'Request body exceeds the size limit')
 	}
-	input := json2.decode[ChatMessageInput](ctx.req.data) or {
+	raw_input := json2.decode[ChatMessageInput](ctx.req.data) or {
 		return json_request_error(mut ctx, 'Expected JSON with a content field')
 	}
-	policy := execution_policy_turn_from_input(input.execution_policy, input.autonomous,
-		input.non_interactive)
+	policy := execution_policy_turn_from_input(raw_input.execution_policy, raw_input.autonomous,
+		raw_input.non_interactive)
 	if err_msg := app.execution_policy_forbidden_reason(policy) {
 		ctx.res.set_status(.forbidden)
 		return ctx.json(APIError{
@@ -1996,7 +1970,7 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	}
 	user_message := ChatMessage{
 		role:    'user'
-		content: input.content
+		content: raw_input.content
 	}
 	validate_messages([user_message]) or {
 		return json_request_error(mut ctx, err.msg())
@@ -2007,6 +1981,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			error: 'session not found'
 		})
 	}
+	resolved := app.resolve_turn_preferences(session, raw_input) or {
+		return session_preference_error_response(mut ctx, err)
+	}
+	input := resolved.input
 	_ := app.model_config_for_chat_input(id, input) or {
 		ctx.res.set_status(if input.provider.len > 0 || input.model.len > 0 {
 			.bad_request
@@ -2064,6 +2042,10 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 			return json_server_error(mut ctx, 'Unable to persist session operation')
 		}
 		app.mark_turn_operation_persistence_resolved(operation_id)
+		store.stamp_session_operation(id, operation_id, resolved.provider, resolved.model,
+			input.permission_mode, resolved.target_source) or {
+			eprintln('veasel: unable to stamp resolved turn preferences (${err.msg()})')
+		}
 		app.schedule_durable_session_operation(operation_id, cancel, turn_done, id, session, input)
 		ctx.res.set_status(.accepted)
 		ctx.res.header.add_custom('Preference-Applied', 'respond-async') or {}
@@ -2075,6 +2057,11 @@ pub fn (app &App) send_session_message(mut ctx Context, id string) veb.Result {
 	defer {
 		app.finish_turn_operation(operation_id)
 		cancel()
+	}
+	mut sync_store := app.store
+	sync_store.stamp_session_operation(id, operation_id, resolved.provider, resolved.model,
+		input.permission_mode, resolved.target_source) or {
+		eprintln('veasel: unable to stamp resolved turn preferences (${err.msg()})')
 	}
 	exchange := app.run_session_message(mut turn_ctx, id, session, input, operation_id,
 		request_deadline or { return json_server_error(mut ctx, 'Turn deadline was unavailable') }) or {
@@ -2157,13 +2144,24 @@ fn (app &App) persist_partial_trace(id string, operation_id string, steps []ATIF
 
 fn (app &App) record_session_turn_failure(id string, operation_id string, message string, user_content string) {
 	eprintln('veasel: assistant turn failed (${message})')
-	status, public_error := session_turn_failure(message)
+	status, generic_error := session_turn_failure(message)
+	// The recorded facts decide what the turn is called: a turn that applied
+	// edits is partial (or cancelled/uncertain with the edits listed), never a
+	// generic failure that hides them.
+	mut facts_registry := app.turn_facts
+	outcome := derive_turn_outcome(status, facts_registry.snapshot(id), generic_error)
+	public_error := if outcome.summary.len > 1000 {
+		outcome.summary[..1000]
+	} else {
+		outcome.summary
+	}
 	mut store := app.store
 	streamed := store.assistant_text_for_operation(id, operation_id) or { '' }
-	store.record_session_turn_completion(id, operation_id, status, public_error, user_content,
-		visible_failed_turn(streamed, public_error)) or {
+	store.record_session_turn_completion_with_outcome(id, operation_id, status, public_error,
+		user_content, visible_failed_turn(streamed, public_error), outcome) or {
 		eprintln('veasel: unable to persist session turn completion (${err.msg()})')
 	}
+	facts_registry.finish(id)
 	store.cleanup_unstarted_subagent_workspaces()
 }
 
@@ -2276,6 +2274,8 @@ fn (app &App) run_session_message(mut turn_ctx vcontext.Context, id string, sess
 
 fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id string, session Session,
 	input ChatMessageInput, operation_id string, request_deadline time.Time) !ChatExchange {
+	mut turn_facts_registry := app.turn_facts
+	turn_facts_registry.begin(id)
 	model_config := app.model_config_for_chat_input(id, input)!
 	user_message := ChatMessage{
 		role:    'user'
@@ -2404,10 +2404,12 @@ fn (app &App) run_session_message_locked(mut turn_ctx vcontext.Context, id strin
 	}
 	visible := app.store.assistant_text_for_operation(id, operation_id) or { output.content }
 	assistant_content := if visible.len > 0 { visible } else { output.content }
-	persisted := app.store.append_exchange(id, operation_id, input.content, assistant_content,
-		output.provider, output.model, trace_json, result.usage) or {
+	outcome := derive_turn_outcome('completed', turn_facts_registry.snapshot(id), '')
+	persisted := app.store.append_exchange_with_outcome(id, operation_id, input.content,
+		assistant_content, output.provider, output.model, trace_json, result.usage, outcome) or {
 		return error('unable to persist session messages')
 	}
+	turn_facts_registry.finish(id)
 	mut store := app.store
 	// Finishing a parent turn cancels any queued children; only clean workspaces
 	// that have never been claimed, preserving any child that may have executed.
@@ -2462,10 +2464,15 @@ pub fn (app &App) create_session(mut ctx Context) veb.Result {
 	directory := canonical_workspace_root(input.directory) or {
 		return json_request_error(mut ctx, 'Directory must resolve to an existing workspace directory')
 	}
-	session := app.store.create_session(SessionInput{
-		title:     title
-		directory: directory
-	}) or {
+	prefs := app.validate_session_create_preferences(SessionInput{
+		title:              title
+		directory:          directory
+		preferred_provider: input.preferred_provider
+		preferred_model:    input.preferred_model
+		permission_mode:    input.permission_mode
+		confirm_bypass:     input.confirm_bypass
+	}) or { return json_request_error(mut ctx, err.msg()) }
+	session := app.store.create_session(prefs) or {
 		eprintln('veasel: create session failed: ${err}')
 		return json_server_error(mut ctx, 'Unable to create session')
 	}
@@ -2523,35 +2530,9 @@ pub fn (app &App) get_session(mut ctx Context, id string) veb.Result {
 	return ctx.json(session)
 }
 
-struct SessionRenameInput {
-pub:
-	title string
-}
-
 @['/v1/sessions/:id'; patch]
 pub fn (app &App) rename_session(mut ctx Context, id string) veb.Result {
-	if ctx.req.data.len > 4_096 {
-		return json_request_error(mut ctx, 'Session rename exceeds the size limit')
-	}
-	input := json2.decode[SessionRenameInput](ctx.req.data) or {
-		return json_request_error(mut ctx, 'Expected JSON with title')
-	}
-	title := input.title.trim_space()
-	if !valid_session_title(title) {
-		return json_request_error(mut ctx, 'Title must contain 1 to 200 printable characters without control bytes')
-	}
-	mut store := app.store
-	session := store.rename_session(id, title) or {
-		if err.msg() == 'session not found' {
-			ctx.res.set_status(.not_found)
-			return ctx.json(APIError{
-				error: 'session not found'
-			})
-		}
-		eprintln('veasel: rename session failed: ${err}')
-		return json_server_error(mut ctx, 'Unable to rename session')
-	}
-	return ctx.json(session)
+	return app.patch_session(mut ctx, id)
 }
 
 struct SessionDeletion {

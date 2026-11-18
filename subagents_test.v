@@ -399,19 +399,11 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 	db_path := os.join_path(root, 'veasel.sqlite3')
 	mut store := open_store(db_path) or { panic(err) }
 	initial_version := store.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert initial_version == 30
+	assert initial_version == latest_schema_version
 	_ = store.db.exec('DROP TABLE subagent_runs') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 20') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 21') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 22') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 23') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 24') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 25') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 26') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 27') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 28') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 29') or { panic(err) }
-	_ = store.db.exec('DELETE FROM schema_migrations WHERE version = 30') or { panic(err) }
+	// Forget every migration after v19 so all of them must re-run, including
+	// ones added later; a literal list here would rot with each new migration.
+	_ = store.db.exec('DELETE FROM schema_migrations WHERE version >= 20') or { panic(err) }
 	_ = store.db.exec('DROP TABLE session_cli_resume') or { panic(err) }
 	_ = store.db.exec('DROP TABLE cli_tool_approvals') or { panic(err) }
 	_ = store.db.exec('DROP TABLE context_handoffs') or { panic(err) }
@@ -423,7 +415,7 @@ fn test_subagent_schema_migrates_existing_v17_database() {
 		panic(err)
 	} == 1
 	migrated_version := migrated.db.q_int('SELECT MAX(version) FROM schema_migrations') or { panic(err) }
-	assert migrated_version == 30
+	assert migrated_version == latest_schema_version
 	assert migrated.db.q_int("SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'subagent_runs_unclaimed_outcome'") or {
 		panic(err)
 	} == 1

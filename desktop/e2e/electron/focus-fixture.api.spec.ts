@@ -224,9 +224,6 @@ test('oracle: reject leaves the repo byte-identical with no side effects', async
 });
 
 test('oracle: cancelling an in-flight operation kills the CLI process', async () => {
-  // KNOWN PRODUCT BUG: the operation stays `cancelling` and the process lives until the turn
-  // deadline. Expected to fail; when the backend is fixed this test flips and test.fail() must go.
-  test.fail(true, 'cancel does not terminate the installed CLI process');
   const session = await newSession();
   await send(session, '[[slow]] keep going', 'claude-code');
   const spawned = await until('slow spawn', () =>

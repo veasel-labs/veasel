@@ -466,13 +466,13 @@ test('J5 a second proposal is rejected and changes nothing', async ({}, testInfo
 });
 
 test('J6 cancelling an in-flight operation is honest and the process is gone', async ({}, testInfo) => {
-  // KNOWN PRODUCT BUG (reproduced in the fixture spec): cancelling a CLI turn leaves the operation in
-  // `cancelling` and the CLI process alive until the turn deadline, because run_claude_cli_turn only
-  // watches its own timeout, not the cancel context. The oracle is NOT weakened: this test is
-  // expected to fail until the backend kills the process on cancel; remove test.fail() then.
+  // KNOWN PRODUCT BUG (UI half): a running installed-CLI turn never shows a Stop button (the thread stays Ready), so
+  // the user cannot cancel from the UI. The backend half (CLI process survives cancel) was fixed in #757 and is
+  // asserted by the fixture spec. The oracle is NOT weakened: this test is
+  // expected to fail until Focus shows a running turn with a Stop button; remove test.fail() then.
   test.fail(
     true,
-    'Focus never shows a running installed-CLI turn (thread stays Ready, no Stop button), and cancel does not kill the CLI process (run_claude_cli_turn ignores cancellation)',
+    'Focus never shows a running installed-CLI turn (thread stays Ready, no Stop button), so the user cannot cancel from the UI (the backend now kills the CLI on cancel, #757)',
   );
   await startTurn(testInfo, '[[slow]] keep working');
   const stop = page.getByRole('button', { name: 'Stop' });
@@ -626,7 +626,7 @@ test('J8b Escape in the composer stops a running turn and the process exits', as
   // Same root cause as J6: the interrupt reaches the backend but the CLI process is not terminated.
   test.fail(
     true,
-    'Focus never shows a running installed-CLI turn (thread stays Ready, no Stop button), and cancel does not kill the CLI process (run_claude_cli_turn ignores cancellation)',
+    'Focus never shows a running installed-CLI turn (thread stays Ready, no Stop button), so the user cannot cancel from the UI (the backend now kills the CLI on cancel, #757)',
   );
   await startTurn(testInfo, '[[slow]] keep working');
   await expect(page.getByRole('button', { name: 'Stop' })).toBeVisible({ timeout: 30_000 });
@@ -750,6 +750,9 @@ test('J11 an unanswered shell approval expires: UI reports applied-with-denial, 
 });
 
 test('J10 backend crash mid-operation: honest error state, no phantom success', async ({}, testInfo) => {
+  // KNOWN PRODUCT BUG: after `kill -9` of the backend Desktop shows no alert, banner or message at all. Oracle
+  // unchanged; remove test.fail once Focus surfaces the loss and offers a restart/reconnect.
+  test.fail(true, 'Desktop shows nothing when the backend dies');
   await startTurn(testInfo, '[[slow]] keep working until the backend dies');
   // Independent oracle that the operation is in flight: the fake CLI is streaming and alive.
   const slow = await expect

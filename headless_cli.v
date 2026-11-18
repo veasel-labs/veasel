@@ -164,9 +164,26 @@ fn headless_json_request(port int, method http.Method, path string, data string,
 	if operation_id.len > 0 {
 		header.set_custom('X-Veasel-Operation-ID', operation_id)!
 	}
+	mut used := ''
 	if authorization := api_auth_header(default_data_dir()) {
+		used = authorization
 		header.set(.authorization, authorization)
 	}
+	response := headless_fetch(port, path, method, data, header)!
+	// The token may have been rotated while this process held the old value:
+	// re-read the file and retry exactly once if it now holds a different one.
+	if response.status_code == 401 {
+		if fresh := api_auth_header(default_data_dir()) {
+			if fresh != used {
+				header.set(.authorization, fresh)
+				return headless_fetch(port, path, method, data, header)
+			}
+		}
+	}
+	return response
+}
+
+fn headless_fetch(port int, path string, method http.Method, data string, header http.Header) !http.Response {
 	return http.fetch(
 		url:           'http://127.0.0.1:${port}${path}'
 		method:        method

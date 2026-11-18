@@ -78,7 +78,7 @@ function authHeaders() {
 	const headers = { "content-type": "application/json" }
 	try {
 		const token = readFileSync(join(dataDir, "api-token"), "utf8").trim()
-		if (token) headers.authorization = `Bearer ${token}`
+		if (/^[0-9a-f]{64}$/.test(token)) headers.authorization = `Bearer ${token}`
 	} catch {}
 	return headers
 }

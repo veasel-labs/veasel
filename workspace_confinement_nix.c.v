@@ -86,14 +86,32 @@ fn confined_fd_path(fd int) string {
 	}
 }
 
+// confined_dir_matches_path is the non-Linux fallback of the post-write
+// directory check: the pinned descriptor must still be the same inode (dev/ino)
+// as the expected canonical directory path, and that path must be inside root.
+// Linux uses /proc/self/fd instead; this function is also exercised on Linux so
+// the macOS path has a test that can run in Linux CI.
+fn confined_dir_matches_path(fd int, root string, dir_path string) bool {
+	if dir_path.len == 0 {
+		return false
+	}
+	root_prefix := root.trim_right('/') + '/'
+	if dir_path != root && !dir_path.starts_with(root_prefix) {
+		return false
+	}
+	info := confined_fstat(fd) or { return false }
+	disk := os.stat(dir_path) or { return false }
+	return info.dev == disk.dev && info.ino == disk.inode
+}
+
 // confined_dir_is_inside re-verifies, after pinning, that the directory fd
 // still lives inside root. Linux compares the kernel's current path for the
-// descriptor. Other POSIX systems have no portable fd->path query here, so they
-// rely on the O_NOFOLLOW descent that created the descriptor (documented gap).
-fn confined_dir_is_inside(fd int, root string) bool {
+// descriptor. Other POSIX systems fall back to confined_dir_matches_path and
+// fail closed (false) when no expected directory path was supplied.
+fn confined_dir_is_inside(fd int, root string, dir_path string) bool {
 	live := confined_fd_path(fd)
 	if live.len == 0 {
-		return true
+		return confined_dir_matches_path(fd, root, dir_path)
 	}
 	return live == root || live.starts_with(root.trim_right('/') + '/')
 }
@@ -246,13 +264,16 @@ struct ConfinedReplace {
 	expected_hash string
 	existed       bool
 	mode          int
+	// dir_path is the canonical directory expected to contain leaf; used by the
+	// non-Linux post-write verification.
+	dir_path string
 }
 
 // confined_replace_in_dir performs the replacement through a pinned dirfd, then
 // re-verifies the result and rolls back when the target is not the file we
 // wrote or the directory left the workspace. after_rename is a test seam.
 fn confined_replace_in_dir(dirfd int, req ConfinedReplace, after_rename fn ()) ! {
-	if !confined_dir_is_inside(dirfd, req.root) {
+	if !confined_dir_is_inside(dirfd, req.root, req.dir_path) {
 		return error('workspace parent directory is outside the workspace root')
 	}
 	existing_fd, exists := confined_open_leaf(dirfd, req.leaf, true)!
@@ -272,7 +293,7 @@ fn confined_replace_in_dir(dirfd int, req ConfinedReplace, after_rename fn ()) !
 	}
 	written := confined_write_temp_and_rename(dirfd, req.temporary, req.leaf, req.content, req.mode)!
 	after_rename()
-	mut verified := confined_dir_is_inside(dirfd, req.root)
+	mut verified := confined_dir_is_inside(dirfd, req.root, req.dir_path)
 	if verified {
 		check_fd, present := confined_open_leaf(dirfd, req.leaf, true) or {
 			verified = false
@@ -304,5 +325,12 @@ fn confined_replace_in_dir(dirfd int, req ConfinedReplace, after_rename fn ()) !
 fn confined_replace_file(root string, segments []string, req ConfinedReplace) ! {
 	dirfd := confined_open_dir(root, segments[..segments.len - 1])!
 	defer { confined_close(dirfd) }
-	confined_replace_in_dir(dirfd, req, confined_noop)!
+	mut dir_path := root
+	for segment in segments[..segments.len - 1] {
+		dir_path = os.join_path(dir_path, segment)
+	}
+	confined_replace_in_dir(dirfd, ConfinedReplace{
+		...req
+		dir_path: dir_path
+	}, confined_noop)!
 }

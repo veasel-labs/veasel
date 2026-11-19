@@ -97,7 +97,10 @@ jobs:
     name: V backend / ${{ matrix.os }}
     runs-on: ${{ matrix.runner }}
     needs: release-plan
-    timeout-minutes: ${{ matrix.os == 'Windows' && 90 || 60 }}
+    # Windows: gcc recompiles the whole module per test file (~3 min/file);
+    # measured full-job need is ~100 min. 120 keeps a guard without hiding
+    # a hang (each test step keeps its own 50 min timeout).
+    timeout-minutes: ${{ matrix.os == 'Windows' && 120 || 60 }}
     env:
       VJOBS: 1
     strategy:
@@ -353,15 +356,36 @@ jobs:
           v test headless_cli_test.v
           v test headless_config_test.v
           v test workspace_tools_test.v
-      - name: Run Windows plugin, workspace edit, and recovery tests
+      # Split into batches of <=6 files: every file recompiles the whole
+      # module with gcc on Windows (~3 min/file at VJOBS=2, measured on run
+      # 44594397273: 11 files = 33 min wall, runtime only ~42 s). A single
+      # 17-file step exceeds any sane step timeout although no test hangs;
+      # each batch keeps the 50 min step guard.
+      - name: Run Windows plugin, workspace edit, and recovery tests (batch 1)
         if: runner.os == 'Windows'
         shell: pwsh
         timeout-minutes: 50
         env:
           VJOBS: 2
         run: |
-          & v -cc gcc -d windows_7 test main_test.v api_auth_test.v api_auth_windows_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v workspace_confinement_windows_test.v
+          & v -cc gcc -d windows_7 test main_test.v api_auth_test.v api_auth_windows_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Windows plugin, workspace edit, and recovery tests (batch 2)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 50
+        env:
+          VJOBS: 2
+        run: |
+          & v -cc gcc -d windows_7 test plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v workspace_confinement_windows_test.v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Windows plugin, workspace edit, and recovery tests (batch 3)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        timeout-minutes: 50
+        env:
+          VJOBS: 2
+        run: |
           & v -cc gcc test model_settings_test.v secret_store_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run macOS provider settings, backend startup, and shell sandbox tests

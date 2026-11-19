@@ -60,7 +60,6 @@ ubuntu-24.04 and runs the same spec under `xvfb-run`, uploads evidence and a ste
    pending-approval set (server events `session.turn_started/queued` start it, `turn_completed` stops it) and asks the store
    to re-read the thread when the set changes, so the dialog appears, and is retired once decided, without reopening.
    This also fixed J4c (the stale "Needs your answer" status): the re-read replaces it.
-3. J3c: the server emits `assistant.delta` while the CLI streams, but the Focus conversation text does not change.
-4. J6/J8b (UI half; the backend half was fixed in #757): a running CLI turn shows no Stop button, so the user cannot cancel
-   from the UI.
-5. J10: after `kill -9` of the backend Desktop shows no alert or message.
+3. (fixed in #763) J3c: streamed text was dropped when no turn was open yet and cleared on turn.finished; live deltas now render and are committed when the turn ends.
+4. (fixed in #764) J6/J8b: nothing ever set a thread's status to running, so no Stop button appeared. Turn start/queue now maps to a running status (snapshots also derive it from active operations), and finished turns resolve to idle/interrupted/error.
+5. (fixed in #765) J10: a dead backend mid-turn was silent. The approval poll now doubles as the liveness probe: two consecutive failures surface a persistent Focus alert banner, and recovery re-reads the thread. Two further real-provider defects were found by the packaged real journey and fixed: OpenCode was permanently unselectable (#767) and its ask mode was unenforced (#768).

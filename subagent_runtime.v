@@ -210,7 +210,15 @@ fn validate_delegation_target(config ModelConfig) ! {
 		}
 		return
 	}
-	if config.api_key.trim_space().len == 0 {
+	// Only providers whose catalog entry requires a key are blocked for a
+	// missing one; local no-key providers (e.g. Ollama) delegate fine, and
+	// config resolution upstream already enforces the same catalog rule.
+	requires_key := if info := model_provider_info(config.provider) {
+		info.requires_api_key
+	} else {
+		true
+	}
+	if requires_key && config.api_key.trim_space().len == 0 {
 		return error('missing credentials for delegated run: provider ${config.provider} has no API key configured; add one in model settings or its environment variable')
 	}
 	if config.base_url.trim_space().len == 0 {

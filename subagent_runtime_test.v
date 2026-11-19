@@ -791,4 +791,12 @@ fn test_delegation_preflight_allows_verifiable_targets() {
 		model:    'claude-fixture'
 		api_key:  'fixture-key'
 	}) or { panic(err) }
+	// Local no-key providers (catalog requires_api_key=false, e.g. Ollama
+	// against a local fixture endpoint) must not be refused for a missing
+	// key: the standalone TUI smoke delegates exactly this route.
+	validate_delegation_target(ModelConfig{
+		provider: 'ollama'
+		base_url: 'http://127.0.0.1:11434/v1'
+		model:    'smoke-model'
+	}) or { panic(err) }
 }

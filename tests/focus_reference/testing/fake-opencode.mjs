@@ -130,7 +130,9 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
         content: { type: 'text', text: accepted ? 'Allowed once.' : 'Not allowed.' },
       },
     });
-    write({ id: promptRequestId, result: { stopReason: 'end_turn' } });
+    // Real opencode 2.3.2 ends the prompt with stopReason 'cancelled' when a
+    // permission is rejected (measured live), not end_turn.
+    write({ id: promptRequestId, result: { stopReason: accepted ? 'end_turn' : 'cancelled' } });
     promptRequestId = null;
   } else if (frame.id === 'question-1') {
     const accepted = frame.result?.action === 'accept' && frame.result.content?.color === 'blue';

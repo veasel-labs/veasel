@@ -285,7 +285,19 @@ pub fn run_acp_cli_turn_cancellable_with_env(command string, spawn_args []string
 							phase = 3
 						}
 					} else if phase == 3 {
-						outcome := parse_opencode_prompt_result(result)
+						mut outcome := parse_opencode_prompt_result(result)
+						// Real OpenCode ends the prompt with stopReason
+						// 'cancelled' when the user DENIES a permission (measured
+						// live on opencode 2.3.2): that is a completed turn
+						// whose proposal was rejected, not an interruption.
+						// A genuine user Stop arrives via the cancel callback
+						// (process kill / error path), never as this result.
+						if outcome.outcome == 'interrupted' && approvals_denied > 0 {
+							outcome = OpencodePromptOutcome{
+								...outcome
+								outcome: 'completed'
+							}
+						}
 						return OpencodeCliTurnResult{
 							events:             events
 							text:               text

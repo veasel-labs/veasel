@@ -215,7 +215,7 @@ fn test_pinned_parent_survives_symlink_swap_before_write() {
 }
 
 fn test_post_write_verification_rolls_back_when_parent_leaves_the_root() {
-	$if !linux {
+	$if windows {
 		return
 	}
 	root, outside := confinement_fixture()
@@ -236,6 +236,9 @@ fn test_post_write_verification_rolls_back_when_parent_leaves_the_root() {
 		expected_hash: workspace_content_hash('inside\n')
 		existed:       true
 		mode:          -1
+		// Required by the non-Linux (macOS) identity-based post-write check;
+		// Linux uses the kernel path of the pinned descriptor instead.
+		dir_path:      os.join_path(root, 'sub')
 	}
 	confined_replace_in_dir(dirfd, req, move_outside) or {
 		assert err.msg().contains('rolled back')

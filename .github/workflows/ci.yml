@@ -360,7 +360,7 @@ jobs:
         env:
           VJOBS: 2
         run: |
-          & v -cc gcc -d windows_7 test main_test.v api_auth_test.v api_auth_windows_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v
+          & v -cc gcc -d windows_7 test main_test.v api_auth_test.v api_auth_windows_test.v plugins_test.v plugins_links_test.v headless_plugins_test.v plugin_mcp_transport_test.v plugin_mcp_cancel_test.v headless_cli_test.v headless_config_test.v workspace_edits_windows_test.v workspace_confinement_windows_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & v -cc gcc test model_settings_test.v secret_store_test.v api_metadata_test.v plugin_mcp_http_transport_test.v shell_commands_test.v repository_map_test.v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -378,6 +378,7 @@ jobs:
           v test plugin_mcp_cancel_test.v
           v test repository_map_test.v
           v test shell_commands_test.v
+          v test workspace_confinement_test.v
       - name: Native OS keychain round trip (macOS Keychain / Windows Credential Manager)
         if: runner.os != 'Linux'
         # Exercises the real credential store on hosted runners. Advisory

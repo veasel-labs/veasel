@@ -88,3 +88,20 @@ fn test_session_turn_failure_names_missing_model_configuration() {
 	_, unsupported := session_turn_failure('unsupported model provider')
 	assert unsupported.contains('not supported')
 }
+
+// Installed-CLI quota/auth failures must be diagnosable from the transcript:
+// the provider's own wording classifies them, but only the synthesized public
+// copy is surfaced (provider text, URLs and account ids never pass through).
+fn test_session_turn_failure_names_cli_quota_and_auth() {
+	_, balance_error := session_turn_failure('installed CLI request failed: Internal error: Insufficient balance. Top up at https://opencode.ai/console/wrk_example/billing?credits=1')
+	assert balance_error.contains('usage or spending limit')
+	assert !balance_error.contains('opencode.ai')
+	assert !balance_error.contains('wrk_example')
+
+	_, usage_error := session_turn_failure("You've hit your usage limit. Upgrade to Pro or try again at 4:13 PM.")
+	assert usage_error.contains('usage or spending limit')
+	assert !usage_error.contains('4:13')
+
+	_, auth_error := session_turn_failure('installed CLI request failed: Authentication required: provider authentication required')
+	assert auth_error.contains('not signed in')
+}

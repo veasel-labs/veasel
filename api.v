@@ -2292,6 +2292,18 @@ fn session_turn_failure(message string) (string, string) {
 	if message.contains('dial_tcp failed') {
 		return 'failed', 'Could not reach the model provider endpoint. Check the provider base URL and that the service is running, then try again.'
 	}
+	// Installed-CLI providers report exhausted quota/balance and missing
+	// sign-in as free-form error text (measured: OpenCode "Insufficient
+	// balance...", Codex "You've hit your usage limit...", Claude spend
+	// limit). Classify by keyword only — provider text carries billing
+	// URLs and account ids that must never reach the transcript.
+	lower := message.to_lower()
+	if lower.contains('insufficient balance') || lower.contains('usage limit') || lower.contains('spend limit') || lower.contains('quota') {
+		return 'failed', 'The installed CLI provider reports its usage or spending limit is exhausted. Check the provider account or pick another provider/model, then try again.'
+	}
+	if lower.contains('authentication required') || lower.contains('not authenticated') || lower.contains('please log in') || lower.contains('login required') {
+		return 'failed', 'The installed CLI provider is not signed in. Run its login command in a terminal, then try again.'
+	}
 	return 'failed', 'The assistant turn failed.'
 }
 

@@ -78,13 +78,50 @@ pub fn acp_session_configs(provider_id string, model string) []AcpSessionConfig 
 	return configs
 }
 
+// opencode_ask_config_content forces Veasel's ask permission mode into
+// OpenCode's own permission config. Without it OpenCode's default agent
+// applies edits and runs shell commands WITHOUT ever emitting
+// session/request_permission, so a Veasel 'ask' session would execute
+// unapproved (proven live: an edit applied with zero approvals). Existing
+// inline config keeps its other keys; malformed content fails closed.
+pub fn opencode_ask_config_content(existing string) !string {
+	mut root := map[string]json2.Any{}
+	if existing.trim_space().len > 0 {
+		root = json2.decode[map[string]json2.Any](existing) or {
+			return error('existing OPENCODE_CONFIG_CONTENT is not valid JSON; refusing to launch OpenCode without enforced ask permissions')
+		}
+	}
+	mut permission := map[string]json2.Any{}
+	if existing_permission := root['permission'] {
+		if existing_permission is map[string]json2.Any {
+			permission = existing_permission.clone()
+		}
+	}
+	permission['edit'] = 'ask'
+	permission['bash'] = 'ask'
+	permission['external_directory'] = 'ask'
+	root['permission'] = permission
+	return json2.encode(root)
+}
+
+// opencode_ask_env is the spawn environment overlay that carries the
+// enforced ask permissions into `opencode acp`.
+pub fn opencode_ask_env() !map[string]string {
+	content := opencode_ask_config_content(os.getenv('OPENCODE_CONFIG_CONTENT'))!
+	return {
+		'OPENCODE_CONFIG_CONTENT': content
+	}
+}
+
 // run_opencode_cli_turn runs one OpenCode ACP prompt (spawn: `acp`,
 // optional model config option).
 pub fn run_opencode_cli_turn(command string, cwd string, model string,
 	user_text string, timeout_ms int, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn) !OpencodeCliTurnResult {
-	return run_acp_cli_turn(command, ['acp'], cwd, acp_session_configs('opencode',
-		model), '', user_text, timeout_ms, on_text_delta, decide)
+	env := opencode_ask_env()!
+	return run_acp_cli_turn_cancellable_with_env(command, ['acp'], cwd,
+		acp_session_configs('opencode', model), '', user_text, timeout_ms,
+		on_text_delta, decide, unsafe { nil }, env)
 }
 
 // run_muse_cli_turn runs one Muse ACP prompt (spawn: `muse acp`).
@@ -118,8 +155,27 @@ pub fn run_acp_cli_turn_cancellable(command string, spawn_args []string, cwd str
 	config_options []AcpSessionConfig, resume_session_id string, user_text string,
 	timeout_ms int, on_text_delta ProviderTextDeltaFn,
 	decide CliApprovalDecisionFn, cancel CliCancelFn) !OpencodeCliTurnResult {
+	return run_acp_cli_turn_cancellable_with_env(command, spawn_args, cwd,
+		config_options, resume_session_id, user_text, timeout_ms, on_text_delta,
+		decide, cancel, map[string]string{})
+}
+
+// run_acp_cli_turn_cancellable_with_env additionally overlays extra_env on
+// the inherited environment of the spawned CLI (empty overlay = inherit).
+pub fn run_acp_cli_turn_cancellable_with_env(command string, spawn_args []string, cwd string,
+	config_options []AcpSessionConfig, resume_session_id string, user_text string,
+	timeout_ms int, on_text_delta ProviderTextDeltaFn,
+	decide CliApprovalDecisionFn, cancel CliCancelFn,
+	extra_env map[string]string) !OpencodeCliTurnResult {
 	mut process := os.new_process(command)
 	process.set_args(spawn_args)
+	if extra_env.len > 0 {
+		mut merged := os.environ()
+		for key, value in extra_env {
+			merged[key] = value
+		}
+		process.set_environment(merged)
+	}
 	if cwd.len > 0 {
 		process.set_work_folder(cwd)
 	}

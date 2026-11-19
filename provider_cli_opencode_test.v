@@ -63,3 +63,38 @@ fn test_opencode_permission_mode_fails_closed() {
 	assert !opencode_permission_mode_supported('bypass')
 	assert !opencode_permission_mode_supported('')
 }
+
+fn test_opencode_ask_config_content_forces_ask_permissions() {
+	// No existing inline config: a permission object is created.
+	fresh := opencode_ask_config_content('') or { panic(err) }
+	fresh_map := json2.decode[map[string]json2.Any](fresh) or { panic(err) }
+	fresh_perm := fresh_map['permission'] or { panic('permission missing') }
+	assert fresh_perm is map[string]json2.Any
+	if fresh_perm is map[string]json2.Any {
+		assert fresh_perm['edit'] or { '' }.str() == 'ask'
+		assert fresh_perm['bash'] or { '' }.str() == 'ask'
+		assert fresh_perm['external_directory'] or { '' }.str() == 'ask'
+	}
+	// Existing user config keeps its other keys; allow rules are overridden to ask.
+	merged := opencode_ask_config_content('{"model":"opencode/big-pickle","permission":{"edit":"allow","bash":{"*":"allow"},"webfetch":"allow"}}') or {
+		panic(err)
+	}
+	merged_map := json2.decode[map[string]json2.Any](merged) or { panic(err) }
+	assert (merged_map['model'] or { '' }).str() == 'opencode/big-pickle'
+	merged_perm := merged_map['permission'] or { panic('permission missing') }
+	assert merged_perm is map[string]json2.Any
+	if merged_perm is map[string]json2.Any {
+		assert merged_perm['edit'] or { '' }.str() == 'ask'
+		assert merged_perm['bash'] or { '' }.str() == 'ask'
+		assert merged_perm['webfetch'] or { '' }.str() == 'allow'
+	}
+	// A global string permission other than ask is replaced, not widened.
+	str_perm := opencode_ask_config_content('{"permission":"allow"}') or { panic(err) }
+	str_map := json2.decode[map[string]json2.Any](str_perm) or { panic(err) }
+	str_perm_value := str_map['permission'] or { panic('permission missing') }
+	assert str_perm_value is map[string]json2.Any
+	// Malformed existing content fails closed instead of launching unguarded.
+	if _ := opencode_ask_config_content('{broken') {
+		assert false, 'malformed OPENCODE_CONFIG_CONTENT must error'
+	}
+}

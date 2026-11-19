@@ -375,9 +375,17 @@ fn complete_cli_provider_turn_resumable(messages []ChatMessage,
 	// would too).
 	cli_model := if config.model == 'default' { '' } else { config.model }
 	if spec.protocol == 'acp' {
-		acp_turn := run_acp_cli_turn_cancellable(spec.exec, ['acp'], cwd,
+		// OpenCode decides for itself whether to ask: without enforced ask
+		// permissions in its own config it applies edits silently, so a
+		// Veasel 'ask' turn must inject them (fail closed on bad config).
+		acp_env := if spec.id == 'opencode' {
+			opencode_ask_env()!
+		} else {
+			map[string]string{}
+		}
+		acp_turn := run_acp_cli_turn_cancellable_with_env(spec.exec, ['acp'], cwd,
 			acp_session_configs(spec.id, cli_model), safe_resume_id, prompt,
-			timeout_ms, on_text_delta, decide, config.cli_cancel)!
+			timeout_ms, on_text_delta, decide, config.cli_cancel, acp_env)!
 		if acp_turn.outcome != 'completed' {
 			return error('installed CLI ${spec.name} turn ${acp_turn.outcome}')
 		}

@@ -747,3 +747,48 @@ fn test_provider_fixture_serves_new_connections_while_another_is_idle() {
 	}
 	assert outcome.starts_with('status'), 'second connection was not served while another sat idle: [${outcome}]'
 }
+
+fn test_delegation_preflight_distinguishes_failure_kinds() {
+	// Missing credentials (HTTP provider without a resolved key).
+	validate_delegation_target(ModelConfig{
+		provider: 'anthropic'
+		base_url: 'https://api.anthropic.com'
+		model:    'claude-fixture'
+	}) or {
+		assert err.msg().contains('missing credentials'), err.msg()
+		// Unsupported permission mode for an ask-only CLI provider.
+		validate_delegation_target(ModelConfig{
+			provider:        'opencode'
+			model:           'fixture-model'
+			permission_mode: 'bypass'
+		}) or {
+			assert err.msg().contains('unsupported capability'), err.msg()
+			// Missing-executable kind: only assertable when the CLI is
+			// actually absent on this host (developer machines may have it).
+			spec := provider_cli_by_id('muse') or { panic('muse spec missing') }
+			if !provider_cli_probe(spec).installed {
+				validate_delegation_target(ModelConfig{
+					provider: 'muse'
+					model:    'fixture-model'
+				}) or {
+					assert err.msg().contains('missing executable'), err.msg()
+					return
+				}
+				assert false, 'uninstalled CLI provider must be refused'
+			}
+			return
+		}
+		assert false, 'ask-only CLI provider must refuse bypass before reservation'
+		return
+	}
+	assert false, 'HTTP provider without credentials must be refused before reservation'
+}
+
+fn test_delegation_preflight_allows_verifiable_targets() {
+	validate_delegation_target(ModelConfig{
+		provider: 'anthropic'
+		base_url: 'https://api.anthropic.com'
+		model:    'claude-fixture'
+		api_key:  'fixture-key'
+	}) or { panic(err) }
+}

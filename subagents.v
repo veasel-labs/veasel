@@ -418,6 +418,20 @@ fn (mut store Store) claim_subagent_outcome(run_id string) !SubagentRun {
 	return store.get_subagent_run_unlocked(run_id)
 }
 
+// prior_subagent_run_id returns the run already reserved for a request
+// key, or '' when this is a first attempt (delegation idempotency, #630).
+fn (mut store Store) prior_subagent_run_id(parent_session_id string, parent_operation_id string,
+	request_id string) !string {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	rows := store.db.exec_param_many('SELECT id FROM subagent_runs WHERE parent_session_id = ? AND parent_operation_id = ? AND request_id = ?',
+		[parent_session_id, parent_operation_id, request_id])!
+	if rows.len == 0 {
+		return ''
+	}
+	return rows[0].val(0)
+}
+
 fn (mut store Store) get_subagent_run_unlocked(run_id string) !SubagentRun {
 	rows := store.db.exec_param_many('SELECT r.id, r.request_id, r.parent_session_id, r.parent_operation_id, r.child_session_id, r.child_operation_id, r.agent_id, r.depth, r.status, r.result, r.error, r.outcome_claimed, r.cancel_requested, r.workspace_ready, r.workspace_started, r.workspace_base_commit, r.target_provider, r.target_model, r.provider, r.model, r.requested_title, r.task, COALESCE(o.input_tokens, 0), COALESCE(o.output_tokens, 0), COALESCE(o.usage_reported, 0), COALESCE(o.cache_read_tokens, 0), COALESCE(o.cache_creation_tokens, 0), COALESCE(o.cache_reported, 0), COALESCE(o.reasoning_tokens, 0), COALESCE(o.reasoning_reported, 0), COALESCE(o.provider_cost_usd, 0), COALESCE(o.provider_cost_reported, 0) FROM subagent_runs r LEFT JOIN session_operations o ON o.id = r.child_operation_id AND o.session_id = r.child_session_id WHERE r.id = ?',
 		[run_id])!

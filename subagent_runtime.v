@@ -2,6 +2,7 @@ module main
 
 import context as vcontext
 import json2
+import os
 import strconv
 import time
 
@@ -182,6 +183,41 @@ fn (app &App) execute_subagent_wait(mut turn_ctx vcontext.Context, parent_sessio
 	})
 }
 
+// validate_delegation_target is the #638 pre-reservation gate. It checks
+// only facts the adapter can verify locally and phrases each failure as
+// its own kind, so callers can act on it:
+//   - installed-CLI provider: the protocol/permission gate
+//     (validate_provider_cli_launch) plus the executable actually being
+//     installed. Sign-in state is a presence probe only, so it is never
+//     claimed verified and never blocks.
+//   - HTTP provider: an API key must have resolved (profile or
+//     environment) and an endpoint must be configured. Whether the
+//     remote model exists cannot be verified without a network call, so
+//     it stays unknown and never blocks.
+fn validate_delegation_target(config ModelConfig) ! {
+	if spec := provider_cli_by_id(config.provider) {
+		permission_mode := if config.permission_mode.len > 0 {
+			config.permission_mode
+		} else {
+			os.getenv_opt('VEASEL_CLI_PERMISSION_MODE') or { 'ask' }
+		}
+		validate_provider_cli_launch(config.provider, permission_mode) or {
+			return error('unsupported capability for delegated run: ${err.msg()}')
+		}
+		status := provider_cli_probe(spec)
+		if !status.installed {
+			return error('missing executable for delegated run: ${spec.name} (${spec.exec}) is not installed')
+		}
+		return
+	}
+	if config.api_key.trim_space().len == 0 {
+		return error('missing credentials for delegated run: provider ${config.provider} has no API key configured; add one in model settings or its environment variable')
+	}
+	if config.base_url.trim_space().len == 0 {
+		return error('provider ${config.provider} is not configured for delegated runs: no endpoint is set')
+	}
+}
+
 fn (app &App) delegate_subagent_task(parent_session_id string, parent_operation_id string,
 	request_id string, agent_id string, task string, target_provider string, target_model string) !SubagentRun {
 	return app.delegate_subagent_task_with_policy(parent_session_id, parent_operation_id,
@@ -222,6 +258,16 @@ fn (app &App) delegate_subagent_task_with_policy(parent_session_id string, paren
 	if _ := model_provider_route(config) {
 	} else {
 		return error('selected provider does not have a supported model adapter')
+	}
+	// #638 preflight: validate what the adapter can actually verify BEFORE
+	// reserving the child run, with errors that distinguish missing
+	// credentials, missing executables and unsupported capabilities.
+	// Anything an adapter cannot verify (CLI sign-in state, remote model
+	// availability) stays unknown and never blocks or claims validation.
+	// Idempotent retries keep the route of their first reservation, so the
+	// preflight is skipped when this request already reserved a run.
+	if store.prior_subagent_run_id(parent_session_id, parent_operation, request_id)!.len == 0 {
+		validate_delegation_target(config)!
 	}
 	title := subagent_title(profile, task)
 	mut run := store.create_subagent_run_with_cancel_reason(parent_session_id, parent_operation, request_id,

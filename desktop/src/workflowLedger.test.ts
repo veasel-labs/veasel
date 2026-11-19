@@ -24,19 +24,22 @@ describe('Desktop workflow ledger (docs/desktop/workflows.yaml)', () => {
     // Veasel Desktop journeys (#689): none may claim `ok` until a packaged
     // build records the evidence named in the ledger. Pin the current
     // honest states so a status bump without evidence fails here.
-    for (const id of ['desktop-proxy-trust-boundary', 'focus-provider-turn', 'focus-approvals']) {
+    // Upgraded 2026-11-19 with packaged evidence at v0.96.9-next.0 (see the
+    // ledger notes): backend auth verified on published binaries, a real
+    // OpenCode UI turn with approvals, and verified Linux packaging. Any
+    // future status change must update the evidence note in the same diff.
+    for (const id of ['desktop-proxy-trust-boundary', 'focus-provider-turn', 'focus-approvals', 'linux-packaging']) {
+      const journey = journeys.find((j) => j.id === id);
+      expect(journey, id).toBeDefined();
+      expect(journey!.status).toBe('ok');
+    }
+    // TUI continuity is proven at API-client level only; verified-release
+    // still lacks distribution sync. Neither may claim ok yet.
+    for (const id of ['tui-desktop-continuity', 'verified-release']) {
       const journey = journeys.find((j) => j.id === id);
       expect(journey, id).toBeDefined();
       expect(journey!.status).toBe('partial');
     }
-    for (const id of ['tui-desktop-continuity', 'linux-packaging']) {
-      const journey = journeys.find((j) => j.id === id);
-      expect(journey, id).toBeDefined();
-      expect(journey!.status).toBe('partial');
-    }
-    const release = journeys.find((j) => j.id === 'verified-release');
-    expect(release, 'verified-release').toBeDefined();
-    expect(release!.status).toBe('blocked');
   });
 });
 

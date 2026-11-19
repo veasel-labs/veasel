@@ -7,20 +7,20 @@
 # must not be over-claimed.
 journeys:
   - id: desktop-proxy-trust-boundary
-    status: partial
-    evidence: "PR #720 merged with adversarial tests; packaged 0.92.0-next.0 AppImage proven live: token-less POST /v1/sessions and GET via the renderer proxy return 403 without backend contact. Direct-to-backend callers remain a documented follow-up."
+    status: ok
+    evidence: "Backend caller auth (#740) merged on top of the #720 proxy gate; independently verified on published binaries v0.96.6-v0.96.9-next.0 (54/54 checks each): unauthenticated direct loopback calls return 401 on every route incl. SSE, health leaks no pid/version, token file is 0600, rotation invalidates the old token. Same-OS-user processes remain out of scope by documented design (docs/security/backend-caller-auth.md)."
   - id: focus-provider-turn
-    status: partial
-    evidence: "Packaged AppImage backend (0.92.0-next.0): Claude CLI turn in /tmp/journey-repo proposed the exact fix for a failing pytest; after approval the edit applied and independent pytest went red-to-green (1 passed). Driven via the backend API, not yet by clicking through Focus; the post-edit shell confirmation step failed in-turn."
+    status: ok
+    evidence: "Packaged v0.96.9-next.0 AppImage (sha256 1f6256d5dda05c51f1cb381ec08f07fe23d9752f260c454eaee9f6417f0b0e6e), real OpenCode CLI through the Focus UI (2026-11-19): session started from the start form, streamed turn, operation resolved_provider=opencode, test independently red before and green after. Claude Code execution through the same UI is also proven (operation claude-code/claude-opus-5-5 completed on v0.96.6), but its edit journey is NOT VERIFIED: the account returned its monthly spend-limit message instead of proposing an edit (quota resets Nov 22)."
   - id: focus-approvals
-    status: partial
-    evidence: "Same packaged run: Edit approval approved -> applied; a second turn's Edit approval rejected -> file unchanged, tests still green. Denial and approval both recorded as durable cli_tool_approvals rows."
+    status: ok
+    evidence: "Same packaged v0.96.9 run: edit approval approved in Focus -> applied (git diff oracle); second edit rejected -> file byte-identical; long shell cancelled via Stop -> CLI processes dead, backend operation cancelled. OpenCode ask-mode enforcement (#768) makes these approvals exist at all; before it, OpenCode applied edits with zero approvals."
   - id: tui-desktop-continuity
     status: partial
-    evidence: "Packaged Desktop spawned its backend on the canonical store and served the existing session history; after app restart the journey session and full history appeared in the Desktop sidebar. Store-level continuity proven; a live TUI-side resume of the same session is not yet recorded."
+    evidence: "Fixture J9 (TUI API client resumes the exact session, Desktop shows its message) passes, and the packaged standalone TUI smoke (pty-driven, mock provider) passes on v0.96.8 binaries. A visual-TUI resume of a real-provider Desktop session is not yet recorded."
   - id: linux-packaging
-    status: partial
-    evidence: "AppImage sha256 b1a7c40cc107d78ea455371ce7a04ac72baac2784ff60478bbe9426cd86954f0 and DEB sha256 fae4c03663d19ec3d25fe45d162770452ece96e8ca61e75767f71f8b18480c1e built from merged main, installed user-level (~/.local/opt/veasel-desktop), launched with a healthy bundled 0.92.0-next.0 backend. Not yet attached to a GitHub release; artifacts unsigned."
+    status: ok
+    evidence: "v0.96.9-next.0 (source 5efa6510) AppImage + DEB attached to the GitHub release, independently verified 54/54 (sums, manifest, bundled backend version, auth behaviour on the published binary). AppImage installed user-level (~/.local/opt/veasel-desktop, sha256 1f6256d5...), upgrade chain 0.96.4 -> 0.96.6 -> 0.96.7 launched healthy on one profile, 0.92.0 kept as rollback. Installers unsigned (signed:false in release.json); Windows unavailable, stated in the manifest."
   - id: verified-release
-    status: blocked
-    evidence: "v0.92.0-next.0 published from intermediate commit f995621 (CLI/TUI assets only). A release from the current main tip (37d94b7+) with Desktop artifacts attached is still pending the serialized main CI queue."
+    status: partial
+    evidence: "Releases v0.96.6-v0.96.9-next.0 each verified 54/54 on the published binaries with truthful per-platform manifest status. Still partial: website/Homebrew/AUR do not yet advertise these (website bot PR needs the owner action_required approval; PR #216 targets superseded v0.95.0), Windows backend CI fails pre-existing on main, macOS/Windows Desktop journeys and signing remain unverified."

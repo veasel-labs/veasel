@@ -38,7 +38,11 @@ fn test_implementer_profile_preserves_parent_policy_and_tool_boundary() {
 	assert profile.tool_policy().allows('workspace_propose_file_edit')
 	assert profile.tool_policy().allows('workspace_propose_file_content')
 	assert profile.tool_policy().allows('workspace_read_file')
-	assert !profile.tool_policy().allows('workspace_propose_shell_command')
+	// #642: the implementer may propose shell commands; execution is routed
+	// to the sealed child sandbox by run_session_shell_command, and the
+	// parent-policy intersection below still strips the grant when the
+	// parent does not allow it.
+	assert profile.tool_policy().allows('workspace_propose_shell_command')
 	assert !profile.tool_policy().allows('plugin_mcp_tool')
 
 	ask_policy := ExecutionPolicyTurn{ mode: .ask, interactive: true }

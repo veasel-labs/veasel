@@ -120,3 +120,63 @@ fn test_delegated_child_shell_has_resource_limits() {
 	assert result.status == 'succeeded', result.output
 	assert result.output.contains('256'), result.output
 }
+
+fn test_sealed_snapshot_syncs_changes_and_refuses_new_links() {
+	$if !linux {
+		return
+	}
+	layout := child_shell_layout() or { return }
+	defer { os.rmdir_all(layout.base) or {} }
+	os.write_file(os.join_path(layout.worktree, 'keep.txt'), 'keep') or { panic(err) }
+	os.write_file(os.join_path(layout.worktree, 'gone.txt'), 'gone') or { panic(err) }
+	sealed := seal_child_worktree_snapshot(layout.worktree) or { panic(err) }
+	// Simulate command effects inside the sandbox: edit, create, delete, link.
+	os.write_file(os.join_path(sealed.dir, 'keep.txt'), 'changed') or { panic(err) }
+	os.write_file(os.join_path(sealed.dir, 'new.txt'), 'new') or { panic(err) }
+	os.rm(os.join_path(sealed.dir, 'gone.txt')) or { panic(err) }
+	sync := sync_sealed_snapshot_back(layout.worktree, sealed)
+	assert sync.err == '', sync.err
+	assert sync.changed == 3, '${sync.changed}'
+	assert os.read_file(os.join_path(layout.worktree, 'keep.txt')) or { panic(err) } == 'changed'
+	assert os.read_file(os.join_path(layout.worktree, 'new.txt')) or { panic(err) } == 'new'
+	assert !os.exists(os.join_path(layout.worktree, 'gone.txt'))
+	os.rmdir_all(sealed.dir) or {}
+	// A link created by the command is refused and the snapshot preserved.
+	sealed2 := seal_child_worktree_snapshot(layout.worktree) or { panic(err) }
+	os.symlink(layout.outside, os.join_path(sealed2.dir, 'escape')) or { panic(err) }
+	sync2 := sync_sealed_snapshot_back(layout.worktree, sealed2)
+	assert sync2.err.contains('symbolic link'), sync2.err
+	assert os.is_dir(sealed2.dir), 'refused snapshot must be preserved for review'
+	os.rmdir_all(sealed2.dir) or {}
+}
+
+fn test_sealed_snapshot_breaks_hardlink_aliasing() {
+	$if !linux {
+		return
+	}
+	layout := child_shell_layout() or { return }
+	defer { os.rmdir_all(layout.base) or {} }
+	target := os.join_path(layout.worktree, 'shared.txt')
+	os.write_file(target, 'original') or { panic(err) }
+	os.link(target, os.join_path(layout.worktree, 'alias.txt')) or { panic(err) }
+	sealed := seal_child_worktree_snapshot(layout.worktree) or { panic(err) }
+	defer { os.rmdir_all(sealed.dir) or {} }
+	os.write_file(os.join_path(sealed.dir, 'alias.txt'), 'snapshot-only') or { panic(err) }
+	sync := sync_sealed_snapshot_back(layout.worktree, sealed)
+	assert sync.err == '', sync.err
+	// The snapshot copy is a fresh inode: writing it cannot alias outside
+	// files, and sync-back writes each path as its own regular file.
+	assert os.read_file(os.join_path(layout.worktree, 'alias.txt')) or { panic(err) } == 'snapshot-only'
+	assert os.read_file(os.join_path(layout.worktree, 'shared.txt')) or { panic(err) } == 'original'
+}
+
+fn test_delegated_child_shell_syncs_command_changes_back() {
+	layout := child_shell_layout() or { return }
+	defer { os.rmdir_all(layout.base) or {} }
+	os.write_file(os.join_path(layout.worktree, 'a.txt'), 'a') or { panic(err) }
+	result := run_child_shell(layout, 'printf made > made.txt; rm a.txt; printf done', '.')
+	assert result.status == 'succeeded', result.output
+	assert result.output.contains('Sealed snapshot'), result.output
+	assert os.read_file(os.join_path(layout.worktree, 'made.txt')) or { panic(err) } == 'made'
+	assert !os.exists(os.join_path(layout.worktree, 'a.txt'))
+}

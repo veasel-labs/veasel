@@ -123,3 +123,19 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
 
 - 2026-11-19: M0 refreshed (49/14 confirmed). M1 fix opened as veasel#773.
   Homebrew#54 / AUR#56 hashes verified against `v0.96.11-next.0` manifest.
+- 2026-11-19: Homebrew#54 merged (`350c6136`), AUR#56 merged (`d91a75df`)
+  after approving the bot `action_required` runs (44480775612 / 44483268100);
+  post-merge main CI green (44584805844 / 44584845108). Issues
+  [homebrew#15](https://github.com/veasel-labs/homebrew-tap/issues/15) and
+  [aur#17](https://github.com/veasel-labs/aur-package/issues/17) closed DONE
+  with that evidence (unsigned installers and visual-TUI limits noted).
+- 2026-11-19: Website#216 disposition = SUPERSEDE-pending. Its verifier
+  requires `veasel-Windows.zip`; no complete release exists since Windows
+  CI broke, so the hourly refresh correctly cannot advance. After #773
+  merges and a complete release publishes, automation opens a fresh PR;
+  #216 is then closed as superseded. Do not merge #216 (targets 0.95.0).
+- 2026-11-19: #741 implemented as veasel#775 (MCP headers + OAuth refresh
+  tokens into OS keychain, fake-backend migration/fail-closed/rollback
+  tests green locally on Linux; native jobs on the PR are the platform
+  proof). Remaining totals after closures: 47 issues / 16 PRs (incl. #773,
+  #774, #775).

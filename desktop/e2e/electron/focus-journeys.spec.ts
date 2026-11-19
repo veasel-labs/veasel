@@ -452,15 +452,29 @@ test('J5 a second proposal is rejected and changes nothing', async ({}, testInfo
 });
 
 test('J6 cancelling an in-flight operation is honest and the process is gone', async ({}, testInfo) => {
+  // Only a slow scenario started by THIS turn counts: earlier journeys leave dead slow entries behind.
+  const slowBefore = readCliLog(env).filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow').length;
   await startTurn(testInfo, '[[slow]] keep working');
   const stop = page.getByRole('button', { name: 'Stop', exact: true });
   await expect(stop).toBeVisible({ timeout: 30_000 });
-  const slow = readCliLog(env)
-    .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
-    .at(-1);
-  expect(slow, 'slow CLI scenario started').toBeDefined();
+  const slow = await expect
+    .poll(
+      () =>
+        readCliLog(env)
+          .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
+          .slice(slowBefore)
+          .at(-1),
+      { timeout: 20_000 },
+    )
+    .toBeDefined()
+    .then(() =>
+      readCliLog(env)
+        .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
+        .slice(slowBefore)
+        .at(-1),
+    );
   const pid = slow?.pid ?? -1;
-  await expect.poll(() => isAlive(pid)).toBe(true);
+  await expect.poll(() => isAlive(pid), { timeout: 20_000 }).toBe(true);
   const before = snapshot();
   await stop.click();
   // 'Stopped' also appears in the session list; scope to the composer status line (as J4c does for 'Ready').
@@ -599,15 +613,29 @@ test('J8c axe-core finds no accessibility violations on the Focus screen', async
 });
 
 test('J8b Escape in the composer stops a running turn and the process exits', async ({}, testInfo) => {
+  // Only a slow scenario started by THIS turn counts: earlier journeys leave dead slow entries behind.
+  const slowBefore = readCliLog(env).filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow').length;
   await startTurn(testInfo, '[[slow]] keep working');
   await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 30_000 });
-  const slow = readCliLog(env)
-    .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
-    .at(-1);
+  const slow = await expect
+    .poll(
+      () =>
+        readCliLog(env)
+          .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
+          .slice(slowBefore)
+          .at(-1),
+      { timeout: 20_000 },
+    )
+    .toBeDefined()
+    .then(() =>
+      readCliLog(env)
+        .filter((entry) => entry.event === 'scenario' && entry.scenario === 'slow')
+        .slice(slowBefore)
+        .at(-1),
+    );
   // Independent oracles: the CLI process is alive before Escape, dead after,
   // and the backend records the operation as cancelled (not completed).
-  expect(slow, 'slow CLI scenario started').toBeDefined();
-  await expect.poll(() => isAlive(slow?.pid ?? -1)).toBe(true);
+  await expect.poll(() => isAlive(slow?.pid ?? -1), { timeout: 20_000 }).toBe(true);
   const sid = await threadFromUrl();
   await composer().press('Escape');
   await expect.poll(() => isAlive(slow?.pid ?? -1), { timeout: 20_000 }).toBe(false);

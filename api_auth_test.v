@@ -195,6 +195,20 @@ fn test_only_exact_get_health_is_liveness_exempt() {
 	assert !is_unauthenticated_liveness_request(.get, '/v1/capabilities')
 }
 
+// Regression: a Windows directory contains backslashes, which are JSON
+// escapes. Session-create bodies must be encoded, never interpolated, or
+// `C:\Users\...` becomes invalid JSON and the server rightly returns 400.
+fn test_session_input_encoding_round_trips_windows_directory() {
+	windows_root := 'C:\\Users\\runneradmin\\AppData\\Local\\Temp\\veasel-auth-1234'
+	body := json2.encode(SessionInput{
+		title:     'authed'
+		directory: windows_root
+	})
+	decoded := json2.decode[SessionInput](body) or { panic(err) }
+	assert decoded.title == 'authed'
+	assert decoded.directory == windows_root
+}
+
 // ------------------------------------------------------ token file lifecycle
 
 fn test_token_file_is_created_private_and_reused_across_restarts() {
@@ -529,9 +543,12 @@ fn test_every_declared_route_rejects_unauthenticated_requests_and_runs_no_handle
 		url:    'http://127.0.0.1:${port}/v1/sessions'
 		method: .post
 		header: auth_test_header(token)
-		data:   '{"title":"authed","directory":"${root}"}'
+		data:   json2.encode(SessionInput{
+			title:     'authed'
+			directory: root
+		})
 	) or { panic(err) }
-	assert created.status_code in [200, 201]
+	assert created.status_code in [200, 201], 'create session -> ${created.status_code} ${created.body}'
 	// SSE with a token opens the stream.
 	stream := auth_test_raw(port, auth_test_request('GET', '/v1/events', [bearer]))
 	assert auth_test_status(stream).contains(' 200 ')

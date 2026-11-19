@@ -414,3 +414,104 @@ fn test_command_runner_delivers_stdin_and_enforces_timeout() {
 	}
 	assert false
 }
+
+// Issue #741: MCP credential headers and OAuth refresh tokens must move to
+// the OS keychain with the same guarantees as provider keys (#690).
+// FakeSecretBackend (secret_store_test.v) stands in for the real keyring.
+
+const mcp_test_secret = 'synthetic-mcp-secret-AAAA-1111'
+const mcp_test_refresh = 'synthetic-refresh-token-BBBB-2222'
+
+fn mcp_secret_test_dir() string {
+	root := os.join_path(os.temp_dir(), 'veasel-mcp-secret-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	return root
+}
+
+fn test_legacy_mcp_credentials_migrate_to_keychain() {
+	root := mcp_secret_test_dir()
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'mcp-credentials.json')
+	os.write_file(path, '{"credentials":{"docs":{"Authorization":"Bearer ${mcp_test_secret}","X-Tenant":"acme"}}}') or {
+		panic(err)
+	}
+	mut fake := &FakeSecretBackend{}
+	mut state := new_mcp_credential_state_with(path, 'keychain', fake)
+	headers := state.get_headers('docs') or { panic(err) }
+	assert headers['Authorization'] == 'Bearer ${mcp_test_secret}'
+	assert headers['X-Tenant'] == 'acme'
+	account := mcp_credential_account(secret_account_scope(path), 'docs')
+	assert account in fake.entries
+	on_disk := os.read_file(path) or { panic(err) }
+	assert !on_disk.contains(mcp_test_secret), 'plaintext header value must leave the JSON file'
+	assert on_disk.contains('Authorization'), 'header names stay on disk for discovery'
+	// Reload: values come from the keychain, not the file.
+	mut reloaded := new_mcp_credential_state_with(path, 'keychain', fake)
+	reloaded_headers := reloaded.get_headers('docs') or { panic(err) }
+	assert reloaded_headers['Authorization'] == 'Bearer ${mcp_test_secret}'
+	assert reloaded.view().credentials[0].header_names == ['Authorization', 'X-Tenant']
+}
+
+fn test_mcp_credential_migration_fails_closed_when_keychain_locked() {
+	root := mcp_secret_test_dir()
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'mcp-credentials.json')
+	original := '{"credentials":{"docs":{"Authorization":"Bearer ${mcp_test_secret}"}}}'
+	os.write_file(path, original) or { panic(err) }
+	mut fake := &FakeSecretBackend{
+		locked: true
+	}
+	mut state := new_mcp_credential_state_with(path, 'keychain', fake)
+	_ := state.get_headers('docs') or {
+		assert err.msg().contains('keychain'), 'locked keychain must fail closed: ${err.msg()}'
+		assert os.read_file(path) or { panic(err) } == original, 'failed migration must not rewrite the file'
+		return
+	}
+	assert false, 'locked keychain must not hand out migrated credentials'
+}
+
+fn test_mcp_credential_keychain_upsert_and_remove_leave_no_plaintext() {
+	root := mcp_secret_test_dir()
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'mcp-credentials.json')
+	mut fake := &FakeSecretBackend{}
+	mut state := new_mcp_credential_state_with(path, 'keychain', fake)
+	state.upsert(MCPCredentialInput{
+		name:    'docs'
+		headers: {
+			'Authorization': 'Bearer ${mcp_test_secret}'
+		}
+	}) or { panic(err) }
+	on_disk := os.read_file(path) or { panic(err) }
+	assert !on_disk.contains(mcp_test_secret)
+	account := mcp_credential_account(secret_account_scope(path), 'docs')
+	assert account in fake.entries
+	state.remove('docs') or { panic(err) }
+	assert account !in fake.entries
+	assert state.view().credentials.len == 0
+}
+
+fn test_legacy_oauth_refresh_migrates_and_file_mode_restores() {
+	root := mcp_secret_test_dir()
+	defer { os.rmdir_all(root) or {} }
+	path := os.join_path(root, 'mcp-oauth-refresh.json')
+	os.write_file(path, '{"credentials":{"docs":{"refresh_token":"${mcp_test_refresh}","token_endpoint":"https://example.com/token","client_id":"client-1","resource":"","scope":""}}}') or {
+		panic(err)
+	}
+	mut fake := &FakeSecretBackend{}
+	mut state := new_mcp_oauth_refresh_state_with(path, 'keychain', fake)
+	record := state.get('docs') or { panic(err) }
+	assert record.refresh_token == mcp_test_refresh
+	on_disk := os.read_file(path) or { panic(err) }
+	assert !on_disk.contains(mcp_test_refresh), 'refresh token must leave the JSON file'
+	assert on_disk.contains('https://example.com/token'), 'non-secret metadata stays on disk'
+	account := mcp_oauth_refresh_account(secret_account_scope(path), 'docs')
+	assert account in fake.entries
+	// Rollback: file mode copies the token back and drops the keychain copy.
+	mut restored := new_mcp_oauth_refresh_state_with(path, 'file', fake)
+	restored_record := restored.get('docs') or { panic(err) }
+	assert restored_record.refresh_token == mcp_test_refresh
+	assert account !in fake.entries
+	restored_disk := os.read_file(path) or { panic(err) }
+	assert restored_disk.contains(mcp_test_refresh), 'file mode is the documented plaintext rollback'
+}

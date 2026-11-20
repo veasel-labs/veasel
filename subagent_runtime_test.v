@@ -784,6 +784,49 @@ fn test_delegation_preflight_distinguishes_failure_kinds() {
 	assert false, 'HTTP provider without credentials must be refused before reservation'
 }
 
+fn test_subagent_child_prompt_matches_tool_plane() {
+	explorer := builtin_subagent_profile('explorer') or { panic(err) }
+	http_prompt := subagent_child_prompt(explorer, false)
+	assert http_prompt.contains('provided list, read, and literal search tools')
+	cli_prompt := subagent_child_prompt(explorer, true)
+	assert cli_prompt.contains('your own native read-only')
+	assert !cli_prompt.contains('provided list, read')
+	implementer := builtin_subagent_profile('implementer') or { panic(err) }
+	assert subagent_child_prompt(implementer, true).contains('your own native tools only inside this isolated child workspace')
+	assert subagent_child_prompt(implementer, false).contains('You may edit only this isolated child workspace')
+}
+
+fn test_delegation_to_cli_provider_passes_adapter_gate() {
+	// Regression: installed-CLI provider ids (codex, claude-code, muse)
+	// are not in the HTTP provider catalog, so the model-adapter gate used
+	// to refuse every delegation to them with 'supported model adapter'.
+	// The gate must accept them; the #638 preflight then decides based on
+	// what is actually installed on this host.
+	root := os.join_path(os.temp_dir(), 'veasel-cli-delegation-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	workspace := init_subagent_runtime_test_repo(root)
+	os.mkdir_all(os.join_path(root, 'data')) or { panic(err) }
+	os.mkdir_all(os.join_path(root, 'plugins')) or { panic(err) }
+	mut store := open_store(os.join_path(root, 'data', 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	mut app := new_app(store, os.join_path(root, 'plugins'))
+	defer { app.close() }
+	parent := store.create_session(SessionInput{
+		title:     'CLI delegation parent'
+		directory: workspace
+	}) or { panic(err) }
+	operation_id := uuid.new_v4().str()
+	_ = store.create_session_operation(parent.id, operation_id) or { panic(err) }
+	run := app.delegate_subagent_task(parent.id, operation_id, 'cli-child', 'explorer',
+		'Inspect the repository.', 'codex', 'default') or {
+		assert !err.msg().contains('supported model adapter'), err.msg()
+		assert err.msg().contains('missing executable'), err.msg()
+		return
+	}
+	assert run.target_provider == 'codex'
+}
+
 fn test_delegation_preflight_allows_verifiable_targets() {
 	validate_delegation_target(ModelConfig{
 		provider: 'anthropic'

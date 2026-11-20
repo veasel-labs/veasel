@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "veasel-essentials",
+  "version": "0.1.0",
+  "description": "Minimal official Veasel essentials: the output-handshake skill, usable fully offline.",
+  "author": {
+    "name": "veasel-labs",
+    "url": "https://github.com/veasel-labs"
+  },
+  "homepage": "https://github.com/veasel-labs/agent-toolkit",
+  "repository": "https://github.com/veasel-labs/agent-toolkit",
+  "license": "MIT",
+  "keywords": [
+    "veasel",
+    "essentials",
+    "offline",
+    "skills"
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "veasel-bundled",
+  "version": 1,
+  "plugins": [
+    {
+      "id": "veasel-essentials",
+      "version": "0.1.0",
+      "license": "MIT",
+      "trust": "first-party",
+      "review": "pending-initial-review",
+      "installable": false,
+      "opt_in_required": false,
+      "source": { "type": "relative", "path": "veasel-essentials", "ref": "main", "repo": "", "sha": "" },
+      "permissions": {
+        "shell": "false",
+        "network": "false",
+        "mcp": "[]",
+        "hooks": "[]",
+        "dangerous_permissions": "[]"
+      }
+    }
+  ]
+}

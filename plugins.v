@@ -448,8 +448,10 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 	}
 	fields := doc.root as map[string]yaml.Any
 	for key, _ in fields {
+		// `origin` is provenance metadata used by the official/personal
+		// catalogs (e.g. first-party); it carries no authority and is ignored.
 		if key !in ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools',
-			'disable-model-invocation'] {
+			'disable-model-invocation', 'origin'] {
 			return error('unknown Agent Skill frontmatter field `${key}`')
 		}
 	}

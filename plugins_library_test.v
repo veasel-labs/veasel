@@ -129,6 +129,28 @@ fn test_library_invalid_catalog_structures_rejected() {
 	}
 }
 
+fn test_bundled_offline_catalog_loads_and_stays_pending_review() {
+	// The catalog physically shipped in this repository (bundled/) is the
+	// offline fallback: it loads with no network, lists only bundled
+	// content, and never claims installability before owner review (#10).
+	path := bundled_library_catalog_path_from([os.getwd()])
+	assert path.len > 0, 'bundled catalog must exist in the repository layout'
+	catalog := load_library_catalog(path) or { panic(err) }
+	assert catalog.plugins.len == 1
+	entry := catalog.entry('veasel-essentials') or { panic('bundled entry missing') }
+	assert entry.trust == 'first-party'
+	installable, reason := library_entry_installable(entry)
+	assert !installable
+	assert reason.contains('not approved'), reason
+	package := library_resolve_package(os.dir(path), entry, LibraryInstallOptions{}) or {
+		panic(err)
+	}
+	plugin := load_agent_plugin(package) or { panic(err) }
+	assert plugin.manifest.name == 'veasel-essentials'
+	assert plugin.skills.len == 1
+	assert plugin.skills[0].name == 'output-handshake'
+}
+
 fn test_library_headless_parse_requires_opt_in_flags_scoped() {
 	opts := parse_headless_plugins_args(['library', 'install', '--opt-in', '--accept-dangerous',
 		'essentials']) or { panic(err) }

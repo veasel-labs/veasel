@@ -400,3 +400,20 @@ fn test_project_skill_roots_stop_at_git_worktree_root() {
 	}
 	assert unbounded_keys['agents/leaked-parent']
 }
+
+fn test_bundled_skill_root_discovers_offline_first_party_skill() {
+	// The repository's own bundled/ tree is the development layout of what
+	// ships next to the release binary: discovery must find the skill with
+	// no network and no user configuration.
+	roots := bundled_skill_roots_from([os.getwd()])
+	assert roots.len == 1
+	assert roots[0].source == 'bundled'
+	discovery := discover_standalone_agent_skills('')
+	mut found := false
+	for skill in discovery.skills {
+		if skill.name == 'output-handshake' && skill.source == 'bundled' {
+			found = true
+		}
+	}
+	assert found, 'bundled output-handshake skill must be discoverable offline'
+}

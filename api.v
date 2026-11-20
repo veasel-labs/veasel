@@ -1226,7 +1226,7 @@ pub fn (app &App) remove_plugin_link_route(mut ctx Context, name string) veb.Res
 pub fn (app &App) list_plugin_library(mut ctx Context) veb.Result {
 	catalog_path := library_catalog_path()
 	if catalog_path.len == 0 {
-		return json_server_error(mut ctx, 'VEASEL_CATALOG_PATH is not configured')
+		return json_server_error(mut ctx, 'no library catalog is configured or bundled')
 	}
 	view := library_catalog_view(app.plugin_directory, app.store.plugin_links_path(),
 		catalog_path) or { return json_server_error(mut ctx, err.msg()) }
@@ -1237,7 +1237,7 @@ pub fn (app &App) list_plugin_library(mut ctx Context) veb.Result {
 pub fn (app &App) install_plugin_library_entry(mut ctx Context, id string) veb.Result {
 	catalog_path := library_catalog_path()
 	if catalog_path.len == 0 {
-		return json_server_error(mut ctx, 'VEASEL_CATALOG_PATH is not configured')
+		return json_server_error(mut ctx, 'no library catalog is configured or bundled')
 	}
 	input := decode_library_install_input(ctx.req.data) or {
 		return json_request_error(mut ctx, err.msg())

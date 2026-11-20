@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { openDesktop, waitForBackend } from './fixtures';
+import { waitForBackend, type Desktop } from './fixtures';
+import { launchFocusDesktop, stopSpawnedClis } from './journey-env';
 
-async function linkGardenApiProject(desktop: Awaited<ReturnType<typeof openDesktop>>): Promise<string> {
+async function linkGardenApiProject(desktop: Desktop): Promise<string> {
   const { app, page, home } = desktop;
   const projectPath = path.join(home, '.ai-workspace', 'repos', 'local', 'garden-api');
   fs.mkdirSync(projectPath, { recursive: true });
@@ -24,7 +25,7 @@ async function linkGardenApiProject(desktop: Awaited<ReturnType<typeof openDeskt
   return projectPath;
 }
 
-async function observeViewTransitions(page: Awaited<ReturnType<typeof openDesktop>>['page']): Promise<void> {
+async function observeViewTransitions(page: Desktop['page']): Promise<void> {
   const supported = await page.evaluate(() => {
     const start = document.startViewTransition;
     if (typeof start !== 'function') return false;
@@ -43,22 +44,22 @@ async function observeViewTransitions(page: Awaited<ReturnType<typeof openDeskto
   expect(supported, 'Electron should expose the View Transitions API').toBe(true);
 }
 
-async function expectDoorTransition(page: Awaited<ReturnType<typeof openDesktop>>['page']): Promise<void> {
+async function expectDoorTransition(page: Desktop['page']): Promise<void> {
   await expect.poll(() => page.locator('html').getAttribute('data-atk-view-transition-calls')).toBe('1');
 }
 
-async function resetViewTransitionCalls(page: Awaited<ReturnType<typeof openDesktop>>['page']): Promise<void> {
+async function resetViewTransitionCalls(page: Desktop['page']): Promise<void> {
   await page.locator('html').evaluate((element) => {
     element.setAttribute('data-atk-view-transition-calls', '0');
   });
 }
 
-async function expectNoDoorTransition(page: Awaited<ReturnType<typeof openDesktop>>['page']): Promise<void> {
+async function expectNoDoorTransition(page: Desktop['page']): Promise<void> {
   await expect(page.locator('html')).toHaveAttribute('data-atk-view-transition-calls', '0');
 }
 
 test('walks into a project house and opens its real terminal', async () => {
-  const desktop = await openDesktop({ initWorkspace: false, extraEnv: { VEASEL_SECRET_STORE: 'file' } });
+  const { desktop, env } = await launchFocusDesktop();
   try {
     const { page } = desktop;
     await waitForBackend(page);
@@ -99,11 +100,12 @@ test('walks into a project house and opens its real terminal', async () => {
     await expect(page.getByRole('tab', { name: /garden-api.*running/i })).toBeVisible();
   } finally {
     await desktop.close();
+    await stopSpawnedClis(env);
   }
 });
 
 test('walks back through the interior door to the workspace grounds', async () => {
-  const desktop = await openDesktop({ initWorkspace: false, extraEnv: { VEASEL_SECRET_STORE: 'file' } });
+  const { desktop, env } = await launchFocusDesktop();
   try {
     const { page } = desktop;
     await waitForBackend(page);
@@ -158,5 +160,6 @@ test('walks back through the interior door to the workspace grounds', async () =
     await expectNoDoorTransition(page);
   } finally {
     await desktop.close();
+    await stopSpawnedClis(env);
   }
 });

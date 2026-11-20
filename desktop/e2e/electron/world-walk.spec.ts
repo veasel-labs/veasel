@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { openDesktop, setViewport, waitForBackend } from './fixtures';
+import { setViewport, waitForBackend } from './fixtures';
+import { launchFocusDesktop, stopSpawnedClis } from './journey-env';
 
 test('walks in the world only while it has focus and keeps typing local to the command palette', async () => {
-  const desktop = await openDesktop({ initWorkspace: false, extraEnv: { VEASEL_SECRET_STORE: 'file' } });
+  const { desktop, env } = await launchFocusDesktop();
   try {
     const { page } = desktop;
     await waitForBackend(page);
@@ -170,5 +171,6 @@ test('walks in the world only while it has focus and keeps typing local to the c
     await expect.poll(position).toEqual(beforeTyping);
   } finally {
     await desktop.close();
+    await stopSpawnedClis(env);
   }
 });

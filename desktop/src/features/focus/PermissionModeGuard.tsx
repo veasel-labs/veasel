@@ -39,10 +39,10 @@ export function usePermissionModeGuard(
       title="Enable unrestricted access?"
       description={
         <>
-          {providerLabel} will not ask before actions. Commands may read and change files anywhere your local
-          account has access. The selected folder <code>{cwd}</code> is not a security boundary for the main
-          session, and Veasel does not enforce an operating-system sandbox around it. Continue only for a trusted
-          task when you can discard all file changes and side effects.
+          {providerLabel} will not ask before actions. Commands may read and change files anywhere your local account
+          has access. The selected folder <code>{cwd}</code> is not a security boundary for the main session, and Veasel
+          does not enforce an operating-system sandbox around it. Continue only for a trusted task when you can discard
+          all file changes and side effects.
         </>
       }
       initialFocus={cancelRef}

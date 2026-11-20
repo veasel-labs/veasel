@@ -18,8 +18,7 @@ function Harness({ onApply }: { onApply: (mode: FocusPermissionMode) => void }) 
       {
         'aria-label': 'Permissions',
         value: mode,
-        onChange: (event: { target: { value: string } }) =>
-          guard.choose(event.target.value as FocusPermissionMode),
+        onChange: (event: { target: { value: string } }) => guard.choose(event.target.value as FocusPermissionMode),
       },
       createElement('option', { value: 'ask' }, 'Ask'),
       createElement('option', { value: 'bypass' }, 'Bypass'),

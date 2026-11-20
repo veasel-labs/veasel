@@ -74,9 +74,13 @@ export function NewSession({
 
   // Starting a session in bypass needs explicit confirmation (#1799 port);
   // consent is scoped to this provider and project.
-  const permissionGuard = usePermissionModeGuard(mode, activeProvider?.label ?? 'This provider',
-    activeProject?.target ?? '', `${activeProvider?.id ?? ''}:${activeProject?.target ?? ''}`,
-    setMode);
+  const permissionGuard = usePermissionModeGuard(
+    mode,
+    activeProvider?.label ?? 'This provider',
+    activeProject?.target ?? '',
+    `${activeProvider?.id ?? ''}:${activeProject?.target ?? ''}`,
+    setMode,
+  );
 
   useEffect(() => {
     if (activeProvider && !permissionModeSupported(activeProvider, mode)) setMode('ask');

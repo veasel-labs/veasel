@@ -4,7 +4,7 @@ import path from 'node:path';
 import { openDesktop, setViewport, waitForBackend } from './fixtures';
 
 test('walks in the world only while it has focus and keeps typing local to the command palette', async () => {
-  const desktop = await openDesktop();
+  const desktop = await openDesktop({ initWorkspace: false });
   try {
     const { page } = desktop;
     await waitForBackend(page);

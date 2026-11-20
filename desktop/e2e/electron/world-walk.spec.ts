@@ -163,7 +163,9 @@ test('walks in the world only while it has focus and keeps typing local to the c
     expect(moved).toBe(true);
 
     const beforeTyping = await position();
-    await page.getByRole('button', { name: 'Commands' }).click();
+    // The palette opens with Ctrl+K in the current shell (no Commands
+    // button exists anymore); typing there must not move the player.
+    await page.keyboard.press('Control+k');
     const filter = page.getByRole('textbox', { name: 'Filter commands' });
     await filter.fill('');
     await page.keyboard.type('wasd');

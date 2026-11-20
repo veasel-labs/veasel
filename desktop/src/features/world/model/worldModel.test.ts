@@ -108,6 +108,38 @@ describe('buildWorldModel', () => {
     });
   });
 
+  it('derives character activity only from the real session status', () => {
+    const project = { name: 'alpha', target: '/repos/alpha', status: 'ok' as const };
+    const withStatus = (status: string) =>
+      buildWorldModel(
+        baseInput({
+          projects: [project],
+          personSessions: [
+            {
+              id: 'th-1',
+              personId: 'th-1',
+              name: 'Fix the test',
+              role: 'codex',
+              cwd: '/repos/alpha',
+              projectId: 'alpha',
+              provider: 'codex',
+              status,
+              focusThreadId: 'th-1',
+            },
+          ],
+        }),
+      ).entities.find((entity) => entity.id === 'character:person:th-1:th-1');
+    expect(withStatus('running')).toMatchObject({ themeKey: 'agent.working', state: 'running' });
+    expect(withStatus('awaiting-approval')).toMatchObject({ themeKey: 'agent.working' });
+    expect(withStatus('failed')).toMatchObject({ themeKey: 'agent.blocked', state: 'failed' });
+    expect(withStatus('idle')).toMatchObject({ themeKey: 'agent.idle', state: 'idle' });
+    // A Focus-backed character opens the same thread, not a People page.
+    expect(withStatus('running')).toMatchObject({
+      hrefPath: '/focus',
+      hrefExtra: { thread: 'th-1' },
+    });
+  });
+
   it('shows only explicitly supplied live Person sessions at their real project house', () => {
     const project = { name: 'alpha', target: '/repos/alpha', status: 'ok' as const };
     const base = baseInput({

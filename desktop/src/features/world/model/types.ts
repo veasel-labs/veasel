@@ -160,6 +160,10 @@ export interface WorldDomainInput {
     projectId?: string;
     provider?: string;
     model?: string;
+    /** Real session status; characters never claim activity without it. */
+    status?: string;
+    /** When set, activating the character opens this Focus thread. */
+    focusThreadId?: string;
     avatarCharacter?: SemanticEntity['characterSprite'];
     avatarAccent?: string;
   }>;

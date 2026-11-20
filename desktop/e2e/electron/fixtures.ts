@@ -177,7 +177,28 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
 }
 
 export async function waitForBackend(page: Page): Promise<void> {
-  await expect(page.getByRole('status').filter({ hasText: /^(Connected|Live)/ })).toBeVisible({ timeout: 30_000 });
+  // Readiness = the Veasel supervisor has published a backend URL and the
+  // renderer proxy answers /v1/health. (The old Connected/Live badge no
+  // longer renders, and the shell HUD's legacy /api/v1/health hook never
+  // answers against the Veasel backend, so neither is a usable signal.)
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const bridge = (window as unknown as { veaselDesktop?: { getBackendUrl?: () => Promise<unknown> } })
+            .veaselDesktop;
+          const backendUrl = bridge?.getBackendUrl
+            ? await bridge.getBackendUrl().catch(() => null)
+            : null;
+          if (!backendUrl) return false;
+          const health = await fetch('/v1/health')
+            .then((r) => r.status)
+            .catch(() => 0);
+          return health === 200;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
 }
 
 /** Resize the window's content area; Xvfb has no window manager to clamp it. */

@@ -58,7 +58,7 @@ async function expectNoDoorTransition(page: Awaited<ReturnType<typeof openDeskto
 }
 
 test('walks into a project house and opens its real terminal', async () => {
-  const desktop = await openDesktop({ initWorkspace: false });
+  const desktop = await openDesktop({ initWorkspace: false, extraEnv: { VEASEL_SECRET_STORE: 'file' } });
   try {
     const { page } = desktop;
     await waitForBackend(page);
@@ -103,7 +103,7 @@ test('walks into a project house and opens its real terminal', async () => {
 });
 
 test('walks back through the interior door to the workspace grounds', async () => {
-  const desktop = await openDesktop({ initWorkspace: false });
+  const desktop = await openDesktop({ initWorkspace: false, extraEnv: { VEASEL_SECRET_STORE: 'file' } });
   try {
     const { page } = desktop;
     await waitForBackend(page);

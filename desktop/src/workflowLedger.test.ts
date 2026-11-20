@@ -33,9 +33,14 @@ describe('Desktop workflow ledger (docs/desktop/workflows.yaml)', () => {
       expect(journey, id).toBeDefined();
       expect(journey!.status).toBe('ok');
     }
-    // TUI continuity is proven at API-client level only; verified-release
-    // still lacks distribution sync. Neither may claim ok yet.
-    for (const id of ['tui-desktop-continuity', 'verified-release']) {
+    // TUI continuity was upgraded 2026-11-20: packaged v0.97.0 visual TUI
+    // resumed a real-provider (OpenCode) session and its message persisted
+    // in the durable transcript. verified-release stays partial until
+    // macOS/Windows packaged Desktop journeys and signing are recorded.
+    const tuiContinuity = journeys.find((j) => j.id === 'tui-desktop-continuity');
+    expect(tuiContinuity).toBeDefined();
+    expect(tuiContinuity!.status).toBe('ok');
+    for (const id of ['verified-release']) {
       const journey = journeys.find((j) => j.id === id);
       expect(journey, id).toBeDefined();
       expect(journey!.status).toBe('partial');

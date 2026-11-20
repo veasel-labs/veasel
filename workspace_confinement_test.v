@@ -186,8 +186,13 @@ fn test_apply_refuses_hardlink_swapped_in_after_review() {
 	assert false
 }
 
+// Linux-only: it asserts writes through a descriptor whose parent was
+// renamed away. The macOS identity check (confined_dir_matches_path)
+// cannot distinguish a renamed directory, so it fails closed and rolls
+// back instead — that behaviour is covered directly by
+// test_non_linux_directory_check_detects_swap_and_missing_path on macOS.
 fn test_pinned_parent_survives_symlink_swap_before_write() {
-	$if windows {
+	$if !linux {
 		return
 	}
 	root, outside := confinement_fixture()
@@ -214,6 +219,9 @@ fn test_pinned_parent_survives_symlink_swap_before_write() {
 	assert os.read_file(os.join_path(outside, 'secret.txt')) or { panic(err) } == 'TOP-SECRET\n'
 }
 
+// Linux-only integration of the post-write rollback: on macOS the
+// identity-based substitute is unit-covered by
+// test_non_linux_directory_check_detects_swap_and_missing_path.
 fn test_post_write_verification_rolls_back_when_parent_leaves_the_root() {
 	$if !linux {
 		return
@@ -236,6 +244,9 @@ fn test_post_write_verification_rolls_back_when_parent_leaves_the_root() {
 		expected_hash: workspace_content_hash('inside\n')
 		existed:       true
 		mode:          -1
+		// Required by the non-Linux (macOS) identity-based post-write check;
+		// Linux uses the kernel path of the pinned descriptor instead.
+		dir_path:      os.join_path(root, 'sub')
 	}
 	confined_replace_in_dir(dirfd, req, move_outside) or {
 		assert err.msg().contains('rolled back')

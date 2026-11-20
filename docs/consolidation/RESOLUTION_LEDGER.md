@@ -6,6 +6,53 @@ Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 Refreshed: **2026-11-19** from live `gh` state. Method: `gh issue/pr list`
 + main-branch SHAs + latest-main CI + release manifest verification.
 
+## Checkpoint 2026-11-20 — consolidation state
+
+| Repository | main SHA | Open issues | Open PRs | State |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `6078091357bf` | 7 | 0 | see below |
+| veasel-labs/agent-toolkit | `e2c218aa` | 1 (#10) | 0 | governance decision (owner) |
+| veasel-labs/website | `567903ea` | 0 | 0 | advertises v0.98.0-next.0, assets verified |
+| veasel-labs/homebrew-tap | `fc5663d5` | 0 | 0 | cask v0.98.0-next.0, sha verified |
+| veasel-labs/aur-package | `e86b9272` | 0 | 0 | pkg v0.98.0-next.0, sha verified |
+| veasel-labs/.github | `7097e534` | 0 | 0 | unchanged, green |
+| ulises-jeremias/agent-toolkit | `5b788da0` | 0 | 0 | mission #1667 closed; CLI 1.49.0 doctor green |
+
+Closed since 2026-11-19 with linked evidence on each issue: veasel
+#630–#633, #637 (PR #780), #638 (#778), #642 (#777), #691, #692, #706
+(#782), #741 (#775), #748 (#776), #552, #553; official toolkit #4;
+website #171; toolkit #1055, #1059–#1063, #1109, #1608, #1667–#1677,
+#1770, #1775, #1804 (#1832), #1806 (#1833), #1676 (#1834) and all
+eleven draft PRs (#1783–#1808: ten superseded by the Veasel Desktop
+migration with per-PR parity mapping, #1799 ported as veasel#781,
+#1808 merged). M1 root causes fixed: #773 (Windows JSON test) and #779
+(Windows step was compile-bound, split into batches; Windows backend
+passes ~50m). First complete release: v0.97.0-next.0 (all platforms
+published incl. veasel-Windows.zip, main CI 44652953187 fully green);
+distribution synchronized hash-verified at v0.98.0-next.0.
+
+Still open, deliberately (no false PASS):
+- veasel #549/#550 — product mission and packaged journey: Linux real-
+  provider evidence complete (incl. visual-TUI continuation, PR #784);
+  macOS/Windows packaged real-provider journeys not yet recorded.
+- veasel #629 — orchestration parent: children all closed; real CLI
+  child file work blocked by #786.
+- veasel #786 — installed-CLI child turns report no usable filesystem
+  tools (filed 2026-11-20 with reproduction and hypotheses).
+- veasel #673 — matched real-provider OpenCode benchmark run pending
+  (deterministic fixture + spend ceilings done).
+- veasel #693 — World packaged visual acceptance loop pending (model
+  and tests green; sprites sha-pinned).
+- veasel-labs/agent-toolkit #10 — plugin governance: OWNER DECISION
+  required (approve/reject/modify pending-review entries); never
+  self-approved.
+- HorneroOS/shell #447 (external repo) — shell-side launcher surface;
+  Veasel prerequisites shipped (.desktop entry, AgentSpec, releases).
+- Human blockers: macOS/Windows signing certificates and Apple/Windows
+  account credentials (installers truthfully `signed: false`); Claude
+  Code account re-login (OAuth expired 2026-11-20; spend limit resets
+  Nov 22).
+
 ## Live snapshot (2026-11-19)
 
 | Repository | main SHA | Open issues | Open PRs | Latest release consumer state |

@@ -274,3 +274,88 @@ fn test_agent_token_budget_reservation_becomes_uncertain_after_store_recovery() 
 	assert !summary.usage_complete
 	assert !summary.cost_reported
 }
+
+fn test_agent_cost_budget_policy_and_schedule_bound() {
+	defer {
+		os.unsetenv('VEASEL_AGENT_CHILD_COST_BUDGET_USD')
+		os.unsetenv('VEASEL_AGENT_PARENT_COST_BUDGET_USD')
+		os.unsetenv('VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED')
+	}
+	os.unsetenv('VEASEL_AGENT_CHILD_COST_BUDGET_USD')
+	os.unsetenv('VEASEL_AGENT_PARENT_COST_BUDGET_USD')
+	os.unsetenv('VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED')
+	unset := agent_token_budget_policy() or { panic(err) }
+	assert !unset.cost_ceiling_configured()
+	assert unset.parent_cost_usd == none
+	os.setenv('VEASEL_AGENT_PARENT_COST_BUDGET_USD', '2.50', true)
+	os.setenv('VEASEL_AGENT_CHILD_COST_BUDGET_USD', '1.25', true)
+	configured := agent_token_budget_policy() or { panic(err) }
+	assert configured.cost_ceiling_configured()
+	assert (configured.parent_cost_usd or { 0.0 }) == 2.50
+	os.setenv('VEASEL_AGENT_CHILD_COST_BUDGET_USD', '3.00', true)
+	agent_token_budget_policy() or {
+		assert err.msg().contains('cannot exceed')
+		// Priced model: bound uses the worst pinned rate (opus output 25).
+		bound := provider_call_cost_bound_usd(100000, ModelConfig{
+			provider: 'anthropic'
+			model:    'claude-opus-4-5'
+		}) or { panic('priced model must be bounded') }
+		assert bound > 2.49 && bound < 2.51
+		// Unpriced model: no bound, cost stays unknown.
+		assert provider_call_cost_bound_usd(100000, ModelConfig{
+			provider: 'ollama'
+			model:    'unpriced-local-model'
+		}) == none
+		return
+	}
+	assert false
+}
+
+fn test_agent_cost_budget_ceiling_enforced_and_unpriced_fails_closed() {
+	root := os.join_path(os.temp_dir(), 'veasel-agent-cost-${uuid.new_v4().str()}')
+	os.mkdir_all(root) or { panic(err) }
+	defer { os.rmdir_all(root) or {} }
+	mut store := open_store(os.join_path(root, 'veasel.sqlite3')) or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{
+		title:     'Cost parent'
+		directory: root
+	}) or { panic(err) }
+	policy := AgentTokenBudgetPolicy{
+		child_tokens:    1000000
+		parent_tokens:   1000000
+		parent_cost_usd: 1.00
+	}
+	// Bound $0.60 fits; a second $0.60 reservation exceeds the $1 ceiling.
+	first := store.reserve_agent_provider_call_with_cost(session.id, 1000, f64(0.60),
+		policy) or { panic(err) }
+	_ := store.reserve_agent_provider_call_with_cost(session.id, 1000, f64(0.60),
+		policy) or {
+		assert err.msg().contains('parent agent cost budget exhausted'), err.msg()
+		// Unpriced calls fail closed under a ceiling.
+		_ := store.reserve_agent_provider_call_with_cost(session.id, 1000, none,
+			policy) or {
+			assert err.msg().contains('cannot be enforced'), err.msg()
+			// Provider-reported cost replaces the bound once settled, so
+			// headroom is returned honestly.
+			store.settle_agent_provider_call(first, 'anthropic', ProviderUsage{
+				input_tokens:      10
+				output_tokens:     5
+				reported:          true
+				reported_cost_usd: f64(0.10)
+			}, 1) or { panic(err) }
+			_ := store.reserve_agent_provider_call_with_cost(session.id, 1000,
+				f64(0.60), policy) or { panic(err) }
+			summary := store.agent_token_budget_summary(session.id, policy) or {
+				panic(err)
+			}
+			assert (summary.parent_cost_limit_usd or { 0.0 }) == 1.00
+			assert summary.reserved_cost_usd > 0.59 && summary.reserved_cost_usd < 0.61
+			assert summary.cost_bounded
+			return
+		}
+		assert false, 'unpriced reservation must fail closed under a dollar ceiling'
+		return
+	}
+	assert false, 'second reservation over the dollar ceiling must be refused'
+}

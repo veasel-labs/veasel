@@ -1217,6 +1217,31 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit turn outcome migration')
 		}
 	}
+	if current < 33 {
+		// Dollar-ceiling reservations (#637): the worst-case schedule bound
+		// priced at reservation time, so cumulative spend can be enforced
+		// before dispatch and unknown cost is never estimated after the fact.
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin agent cost budget migration')
+		}
+		add_column_if_missing(db, 'agent_token_budget_reservations', 'reserved_cost_usd',
+			'REAL NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add agent cost budget column')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (33)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record agent cost budget migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit agent cost budget migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs

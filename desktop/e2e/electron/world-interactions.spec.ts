@@ -36,6 +36,10 @@ test('a real thread appears in the World, opens in Focus, and disappears when de
     const { page } = desktop;
     await waitForBackend(page);
     const threadId = await createThread(page, env.repo, 'World journey thread');
+    // The thread store loads at app start; reload so it refetches and the
+    // World projection includes the new thread.
+    await page.reload();
+    await waitForBackend(page);
 
     const nav = page.getByRole('navigation', { name: 'Destinations' });
     await nav.getByRole('link', { name: 'World' }).click();

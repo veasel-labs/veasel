@@ -7,12 +7,12 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e/electron',
-  testMatch: [
-    'focus-fixture.api.spec.ts',
-    'focus-journeys.spec.ts',
-    'world-walk.spec.ts',
-    'world-interactions.spec.ts',
-  ],
+  // World specs (world-walk/world-interactions) stay out until the
+  // WorldView data layer is ported off the retired legacy backend
+  // (/v1/projects et al. do not exist in the Veasel backend, #693).
+  // They are kept on the working Focus harness so the port can simply
+  // re-add them here.
+  testMatch: ['focus-fixture.api.spec.ts', 'focus-journeys.spec.ts'],
   workers: 1,
   retries: 0,
   timeout: 120_000,

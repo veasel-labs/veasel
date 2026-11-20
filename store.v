@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 32
+const latest_schema_version = 33
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -1215,6 +1215,31 @@ fn open_store_at(path string) !&Store {
 			db.rollback() or {}
 			db.close() or {}
 			return error('unable to commit turn outcome migration')
+		}
+	}
+	if current < 33 {
+		// Dollar-ceiling reservations (#637): the worst-case schedule bound
+		// priced at reservation time, so cumulative spend can be enforced
+		// before dispatch and unknown cost is never estimated after the fact.
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin agent cost budget migration')
+		}
+		add_column_if_missing(db, 'agent_token_budget_reservations', 'reserved_cost_usd',
+			'REAL NOT NULL DEFAULT 0') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add agent cost budget column')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (33)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record agent cost budget migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit agent cost budget migration')
 		}
 	}
 	// Running or cancelling work may have contacted a provider or started a tool

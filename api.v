@@ -443,6 +443,14 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	// reported. Approvals are fail-closed inside the runner until the
 	// interactive approval layer owns decisions.
 	if _ := provider_cli_by_id(config.provider) {
+		// Installed-CLI providers publish no trustworthy per-call pricing,
+		// so a configured dollar ceiling cannot be enforced for them:
+		// fail closed unless the operator explicitly allowed unpriced
+		// routes (#637). Their usage stays reported-as-unknown either way.
+		cli_policy := agent_token_budget_policy()!
+		if cli_policy.cost_ceiling_configured() && !cli_policy.allow_unpriced_cost {
+			return error('agent cost budget cannot be enforced: installed-CLI provider ${config.provider} has no trustworthy per-call pricing; unset the dollar ceiling or set VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED=1 to run it without one')
+		}
 		mut cli_store := app.store
 		session := cli_store.get_session(session_id)!
 		// Approval decisions and CLI-reported side effects feed the durable
@@ -468,7 +476,16 @@ fn (app &App) complete_agent_with_model_override(mut turn_ctx vcontext.Context,
 	policy := agent_token_budget_policy()!
 	reservation_tokens := provider_call_reservation_tokens(messages, tools, config)
 	mut store := app.store
-	reservation := store.reserve_agent_provider_call(session_id, reservation_tokens, policy)!
+	// #637 dollar ceiling: price the reservation from the pinned schedule
+	// before dispatch. Unpriced models fail closed unless the operator
+	// explicitly allowed them; their spend then stays unknown.
+	cost_bound := provider_call_cost_bound_usd(reservation_tokens, config)
+	if policy.cost_ceiling_configured() && cost_bound == none
+		&& !policy.allow_unpriced_cost {
+		return error('agent cost budget cannot be enforced: no trustworthy pricing for ${config.provider}/${config.model} in the pinned cost schedule; choose a priced model or set VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED=1 to run without a dollar ceiling for it')
+	}
+	reservation := store.reserve_agent_provider_call_with_cost(session_id, reservation_tokens,
+		cost_bound, policy)!
 	app.acquire_provider_slot(mut turn_ctx, pool) or {
 		store.release_agent_provider_call(reservation)
 		return err

@@ -17,6 +17,14 @@ const agent_token_budget_protocol_overhead_bytes = 4096
 struct AgentTokenBudgetPolicy {
 	child_tokens  i64
 	parent_tokens i64
+	// Dollar ceilings (#637) are optional: unset means no monetary cap is
+	// claimed. When either is set, a call is admitted only if its cost can
+	// be bounded from the pinned cost schedule, unless the operator
+	// explicitly allows unpriced models (allow_unpriced_cost), in which
+	// case their spend stays unknown and is never estimated.
+	child_cost_usd      ?f64
+	parent_cost_usd     ?f64
+	allow_unpriced_cost bool
 }
 
 struct AgentTokenBudgetReservation {
@@ -42,6 +50,12 @@ pub:
 	reported_cost_usd     ?f64 @[omitempty]
 	cost_reported_calls   int
 	cost_reported         bool
+	// Dollar ceiling state (#637): the configured parent cap, the sum of
+	// outstanding worst-case reservation bounds, and whether every
+	// accounted call's cost is bounded (priced) rather than unknown.
+	parent_cost_limit_usd ?f64 @[omitempty]
+	reserved_cost_usd     f64
+	cost_bounded          bool
 }
 
 fn agent_token_budget_policy() !AgentTokenBudgetPolicy {
@@ -52,10 +66,72 @@ fn agent_token_budget_policy() !AgentTokenBudgetPolicy {
 	if child_tokens > parent_tokens {
 		return error('VEASEL_AGENT_CHILD_TOKEN_BUDGET cannot exceed VEASEL_AGENT_PARENT_TOKEN_BUDGET')
 	}
-	return AgentTokenBudgetPolicy{
-		child_tokens:  child_tokens
-		parent_tokens: parent_tokens
+	child_cost_raw := configured_agent_cost_budget('VEASEL_AGENT_CHILD_COST_BUDGET_USD')!
+	parent_cost_raw := configured_agent_cost_budget('VEASEL_AGENT_PARENT_COST_BUDGET_USD')!
+	child_cost := if child_cost_raw > 0 { ?f64(child_cost_raw) } else { none }
+	parent_cost := if parent_cost_raw > 0 { ?f64(parent_cost_raw) } else { none }
+	if child := child_cost {
+		if parent := parent_cost {
+			if child > parent {
+				return error('VEASEL_AGENT_CHILD_COST_BUDGET_USD cannot exceed VEASEL_AGENT_PARENT_COST_BUDGET_USD')
+			}
+		}
 	}
+	allow_unpriced := match os.getenv_opt('VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED') or { '' } {
+		'', '0', 'false' { false }
+		'1', 'true' { true }
+		else {
+			return error('VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED must be 1/true or 0/false')
+		}
+	}
+	return AgentTokenBudgetPolicy{
+		child_tokens:        child_tokens
+		parent_tokens:       parent_tokens
+		child_cost_usd:      child_cost
+		parent_cost_usd:     parent_cost
+		allow_unpriced_cost: allow_unpriced
+	}
+}
+
+const max_configured_agent_cost_budget_usd = 1000000.0
+
+// Returns 0 when unset (valid ceilings are always positive).
+fn configured_agent_cost_budget(name string) !f64 {
+	raw := os.getenv_opt(name) or { return 0.0 }
+	value := raw.f64()
+	if !(value > 0) || value > max_configured_agent_cost_budget_usd {
+		return error('${name} must be a positive USD amount up to ${max_configured_agent_cost_budget_usd}')
+	}
+	return value
+}
+
+// cost_ceiling_configured reports whether any dollar ceiling is in force.
+fn (policy AgentTokenBudgetPolicy) cost_ceiling_configured() bool {
+	return policy.child_cost_usd != none || policy.parent_cost_usd != none
+}
+
+// provider_call_cost_bound_usd prices a token reservation at the worst
+// pinned rate for the provider/model: a trustworthy pre-call upper bound
+// only when the schedule actually prices that model. Unpriced models
+// return none; their cost stays unknown, never estimated.
+fn provider_call_cost_bound_usd(reservation_tokens i64, config ModelConfig) ?f64 {
+	entry := lookup_cost_schedule_entry(active_cost_schedule(), config.provider,
+		config.model) or { return none }
+	mut worst := entry.input
+	if entry.output > worst {
+		worst = entry.output
+	}
+	if rate := entry.cache_read {
+		if rate > worst {
+			worst = rate
+		}
+	}
+	if rate := entry.cache_write {
+		if rate > worst {
+			worst = rate
+		}
+	}
+	return f64(reservation_tokens) / cost_tokens_per_rate_unit * worst
 }
 
 fn configured_agent_token_budget(name string, fallback i64) !i64 {
@@ -98,9 +174,25 @@ fn actual_agent_provider_tokens(provider string, usage ProviderUsage) i64 {
 
 fn (mut store Store) reserve_agent_provider_call(session_id string, requested_tokens i64,
 	policy AgentTokenBudgetPolicy) !AgentTokenBudgetReservation {
+	return store.reserve_agent_provider_call_with_cost(session_id, requested_tokens, none,
+		policy)!
+}
+
+// reserve_agent_provider_call_with_cost additionally enforces the optional
+// dollar ceilings (#637). requested_cost_bound is the caller-computed
+// worst-case schedule bound for this call; it must be present whenever a
+// ceiling is configured and the operator has not allowed unpriced models.
+fn (mut store Store) reserve_agent_provider_call_with_cost(session_id string,
+	requested_tokens i64, requested_cost_bound ?f64,
+	policy AgentTokenBudgetPolicy) !AgentTokenBudgetReservation {
 	if session_id.len == 0 || requested_tokens <= 0 {
 		return error('agent token budget reservation is invalid')
 	}
+	if policy.cost_ceiling_configured() && !policy.allow_unpriced_cost
+		&& requested_cost_bound == none {
+		return error('agent cost budget cannot be enforced: no trustworthy pricing for this provider/model in the pinned cost schedule; choose a priced model or set VEASEL_AGENT_COST_BUDGET_ALLOW_UNPRICED=1 to run without a dollar ceiling for it')
+	}
+	cost_bound := requested_cost_bound or { 0.0 }
 	reservation_id := uuid.new_v4().str()
 	store.mu.lock()
 	defer {
@@ -140,6 +232,19 @@ fn (mut store Store) reserve_agent_provider_call(session_id string, requested_to
 			store.db.rollback() or {}
 			return error('child agent token budget exhausted: reservation requires ${requested_tokens} tokens, ${policy.child_tokens - child_used} remain')
 		}
+		if child_ceiling := policy.child_cost_usd {
+			cost_rows := store.db.exec_param_many("WITH RECURSIVE descendants(session_id, depth) AS (SELECT ?, 0 UNION ALL SELECT r.child_session_id, descendants.depth + 1 FROM subagent_runs r JOIN descendants ON r.parent_session_id = descendants.session_id WHERE descendants.depth < 2) SELECT COALESCE(SUM(CASE WHEN b.cost_reported = 1 THEN b.reported_cost_usd ELSE b.reserved_cost_usd END), 0) FROM agent_token_budget_reservations b JOIN descendants d ON d.session_id = b.session_id WHERE b.status IN ('reserved', 'settled', 'uncertain')", [
+				session_id,
+			]) or {
+				store.db.rollback() or {}
+				return error('unable to inspect child agent cost budget')
+			}
+			child_cost_used := cost_rows[0].val(0).f64()
+			if child_cost_used + cost_bound > child_ceiling {
+				store.db.rollback() or {}
+				return error('child agent cost budget exhausted: reservation bound is \$${cost_bound:.4}, \$${child_ceiling - child_cost_used:.4} of the \$${child_ceiling:.4} ceiling remains')
+			}
+		}
 	}
 	parent_rows := store.db.exec_param_many("SELECT COALESCE(SUM(accounted_tokens), 0) FROM agent_token_budget_reservations WHERE root_session_id = ? AND status IN ('reserved', 'settled', 'uncertain')", [
 		root_session_id,
@@ -152,12 +257,31 @@ fn (mut store Store) reserve_agent_provider_call(session_id string, requested_to
 		store.db.rollback() or {}
 		return error('parent agent token budget exhausted: reservation requires ${requested_tokens} tokens, ${policy.parent_tokens - parent_used} remain')
 	}
-	_ = store.db.exec_param_many("INSERT INTO agent_token_budget_reservations (id, root_session_id, session_id, reserved_tokens, accounted_tokens, status) VALUES (?, ?, ?, ?, ?, 'reserved')", [
+	if parent_ceiling := policy.parent_cost_usd {
+		cost_rows := store.db.exec_param_many("SELECT COALESCE(SUM(CASE WHEN cost_reported = 1 THEN reported_cost_usd ELSE reserved_cost_usd END), 0), COALESCE(SUM(CASE WHEN cost_reported = 0 AND reserved_cost_usd = 0 THEN 1 ELSE 0 END), 0) FROM agent_token_budget_reservations WHERE root_session_id = ? AND status IN ('reserved', 'settled', 'uncertain')", [
+			root_session_id,
+		]) or {
+			store.db.rollback() or {}
+			return error('unable to inspect parent agent cost budget')
+		}
+		parent_cost_used := cost_rows[0].val(0).f64()
+		unbounded_calls := cost_rows[0].val(1).int()
+		if unbounded_calls > 0 && !policy.allow_unpriced_cost {
+			store.db.rollback() or {}
+			return error('agent cost budget cannot be enforced: ${unbounded_calls} earlier reservation(s) have no trustworthy pricing bound')
+		}
+		if parent_cost_used + cost_bound > parent_ceiling {
+			store.db.rollback() or {}
+			return error('parent agent cost budget exhausted: reservation bound is \$${cost_bound:.4}, \$${parent_ceiling - parent_cost_used:.4} of the \$${parent_ceiling:.4} ceiling remains')
+		}
+	}
+	_ = store.db.exec_param_many("INSERT INTO agent_token_budget_reservations (id, root_session_id, session_id, reserved_tokens, accounted_tokens, status, reserved_cost_usd) VALUES (?, ?, ?, ?, ?, 'reserved', ?)", [
 		reservation_id,
 		root_session_id,
 		session_id,
 		requested_tokens.str(),
 		requested_tokens.str(),
+		cost_bound.str(),
 	]) or {
 		store.db.rollback() or {}
 		return error('unable to persist agent token budget reservation')
@@ -219,7 +343,7 @@ fn (mut store Store) agent_token_budget_summary(session_id string,
 		return error('unable to resolve parent agent token budget')
 	}
 	root_session_id := root_rows[0].val(0)
-	rows := store.db.exec_param_many("SELECT COALESCE(SUM(CASE WHEN status = 'reserved' THEN reserved_tokens ELSE 0 END), 0), COALESCE(SUM(accounted_tokens), 0), COALESCE(SUM(actual_tokens), 0), COUNT(*), COALESCE(SUM(usage_reported), 0), COALESCE(SUM(CASE WHEN usage_reported = 0 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cost_reported = 1 THEN reported_cost_usd ELSE 0 END), 0), COALESCE(SUM(cost_reported), 0), COALESCE(SUM(CASE WHEN cost_reported = 0 THEN 1 ELSE 0 END), 0) FROM agent_token_budget_reservations WHERE root_session_id = ? AND status != 'released'", [
+	rows := store.db.exec_param_many("SELECT COALESCE(SUM(CASE WHEN status = 'reserved' THEN reserved_tokens ELSE 0 END), 0), COALESCE(SUM(accounted_tokens), 0), COALESCE(SUM(actual_tokens), 0), COUNT(*), COALESCE(SUM(usage_reported), 0), COALESCE(SUM(CASE WHEN usage_reported = 0 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cost_reported = 1 THEN reported_cost_usd ELSE 0 END), 0), COALESCE(SUM(cost_reported), 0), COALESCE(SUM(CASE WHEN cost_reported = 0 THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN status = 'reserved' THEN reserved_cost_usd ELSE 0 END), 0), COALESCE(SUM(CASE WHEN cost_reported = 0 AND reserved_cost_usd = 0 THEN 1 ELSE 0 END), 0) FROM agent_token_budget_reservations WHERE root_session_id = ? AND status != 'released'", [
 		root_session_id,
 	]) or { return error('unable to read parent agent token budget') }
 	row := rows[0]
@@ -227,6 +351,7 @@ fn (mut store Store) agent_token_budget_summary(session_id string,
 	usage_missing := row.val(5).int() > 0
 	cost_missing := row.val(8).int() > 0
 	known_cost_calls := row.val(7).int()
+	unbounded_calls := row.val(10).int()
 	return AgentTokenBudgetSummary{
 		root_session_id:       root_session_id
 		per_child_token_limit: policy.child_tokens
@@ -244,6 +369,9 @@ fn (mut store Store) agent_token_budget_summary(session_id string,
 		}
 		cost_reported_calls:   known_cost_calls
 		cost_reported:         call_count > 0 && !cost_missing
+		parent_cost_limit_usd: policy.parent_cost_usd
+		reserved_cost_usd:     row.val(9).f64()
+		cost_bounded:          call_count > 0 && unbounded_calls == 0
 	}
 }
 

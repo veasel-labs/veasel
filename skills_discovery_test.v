@@ -402,18 +402,19 @@ fn test_project_skill_roots_stop_at_git_worktree_root() {
 }
 
 fn test_bundled_skill_root_discovers_offline_first_party_skill() {
-	// The repository's own bundled/ tree is the development layout of what
-	// ships next to the release binary: discovery must find the skill with
-	// no network and no user configuration.
+	// The repository's own bundled/ tree is the layout that ships next to
+	// the release binary: the root resolves with no network and no user
+	// configuration, and the bundled skill parses under the same rules
+	// session discovery applies. (Production roots are the executable's
+	// directory only; a working-directory base would leak a checkout's
+	// bundled tree into unrelated projects.)
 	roots := bundled_skill_roots_from([os.getwd()])
 	assert roots.len == 1
 	assert roots[0].source == 'bundled'
-	discovery := discover_standalone_agent_skills('')
-	mut found := false
-	for skill in discovery.skills {
-		if skill.name == 'output-handshake' && skill.source == 'bundled' {
-			found = true
-		}
-	}
-	assert found, 'bundled output-handshake skill must be discoverable offline'
+	skill_path := os.join_path(roots[0].path, 'output-handshake', 'SKILL.md')
+	assert os.is_file(skill_path)
+	content := os.read_file(skill_path) or { panic(err) }
+	skill := parse_agent_skill('output-handshake', skill_path, content) or { panic(err) }
+	assert skill.name == 'output-handshake'
+	assert bundled_skill_roots_from(['/nonexistent-base']).len == 0
 }

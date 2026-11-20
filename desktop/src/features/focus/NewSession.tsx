@@ -3,6 +3,7 @@ import { useFocusBridge, useOptionalFocusStore } from '../../data/focus';
 import type { FocusPermissionMode, FocusProviderId, FocusProviderStatus } from '../../types/focus';
 import { Button, PixelIcon } from '../../ui';
 import { MODE_OPTIONS, permissionModeSupported, providerBlocker } from './labels';
+import { usePermissionModeGuard } from './PermissionModeGuard';
 import styles from './focus.module.css';
 
 /** A folder a session can run in: sessions carry their own directory, so no registry is involved. */
@@ -70,6 +71,16 @@ export function NewSession({
 
   const activeProject = selectStartProject(usable, project);
   const activeProvider = ready.find((entry) => entry.id === providerId) ?? ready[0];
+
+  // Starting a session in bypass needs explicit confirmation (#1799 port);
+  // consent is scoped to this provider and project.
+  const permissionGuard = usePermissionModeGuard(
+    mode,
+    activeProvider?.label ?? 'This provider',
+    activeProject?.target ?? '',
+    `${activeProvider?.id ?? ''}:${activeProject?.target ?? ''}`,
+    setMode,
+  );
 
   useEffect(() => {
     if (activeProvider && !permissionModeSupported(activeProvider, mode)) setMode('ask');
@@ -200,7 +211,7 @@ export function NewSession({
           <select
             id="focus-start-mode"
             value={mode}
-            onChange={(event) => setMode(event.target.value as FocusPermissionMode)}
+            onChange={(event) => permissionGuard.choose(event.target.value as FocusPermissionMode)}
           >
             {MODE_OPTIONS.map((option) => (
               <option
@@ -316,6 +327,7 @@ export function NewSession({
                 : 'Install a supported coding agent to start'}
         </span>
       </div>
+      {permissionGuard.dialog}
     </form>
   );
 }

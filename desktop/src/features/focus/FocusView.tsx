@@ -16,6 +16,7 @@ import { Button, ConfirmAction, PixelIcon } from '../../ui';
 import { Conversation } from './Conversation';
 import { MODE_OPTIONS, relativeTime, STATUS_LABEL, threadTitle } from './labels';
 import { NewSession } from './NewSession';
+import { usePermissionModeGuard } from './PermissionModeGuard';
 import { SessionChanges } from './SessionChanges';
 import styles from './focus.module.css';
 
@@ -114,6 +115,16 @@ function Header({
     if (result && !result.ok) onError(result.error);
   };
 
+  // Switching an existing session to bypass needs explicit confirmation
+  // (#1799 port); the select stays on the current mode until confirmed.
+  const permissionGuard = usePermissionModeGuard(
+    thread.permissionMode,
+    provider?.label ?? thread.provider,
+    thread.cwd,
+    thread.id,
+    (mode) => void patch({ permissionMode: mode }),
+  );
+
   return (
     <header className={styles.header}>
       <div className={styles.headerMain}>
@@ -158,7 +169,7 @@ function Header({
             value={thread.permissionMode}
             disabled={busy}
             title={busy ? 'Stop the running turn to change this' : undefined}
-            onChange={(event) => void patch({ permissionMode: event.target.value as FocusPermissionMode })}
+            onChange={(event) => permissionGuard.choose(event.target.value as FocusPermissionMode)}
           >
             {MODE_OPTIONS.map((option) => (
               <option
@@ -221,6 +232,7 @@ function Header({
           }}
         />
       </div>
+      {permissionGuard.dialog}
     </header>
   );
 }

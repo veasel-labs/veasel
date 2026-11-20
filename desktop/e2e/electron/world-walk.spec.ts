@@ -9,7 +9,7 @@ test('walks in the world only while it has focus and keeps typing local to the c
   try {
     const { page } = desktop;
     await waitForBackend(page);
-    await expect(page.getByText('Checking live workspace details…')).toBeHidden();
+    await page.getByRole('navigation', { name: 'Destinations' }).getByRole('link', { name: 'World' }).click();
     const world = page.getByRole('application', { name: 'Semantic workspace world' });
     await expect(world).toHaveAttribute('data-player-ready', 'true');
     const player = world.getByRole('img', { name: 'You, exploring the workspace' });

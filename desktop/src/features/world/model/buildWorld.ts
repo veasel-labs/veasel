@@ -89,20 +89,27 @@ function pushPersonCharacters(
   standAtId?: string,
 ): void {
   for (const session of sessions) {
+    // Activity is claimed only from the real session status: a running
+    // session works, a failed one needs attention, anything else is idle.
+    const working =
+      session.status === 'running' || session.status === 'awaiting-approval' || session.status === 'awaiting-input';
+    const blocked = session.status === 'failed';
     entities.push({
       id: `character:person:${session.personId}:${session.id}`,
       kind: 'character',
       concept: 'Person session',
       name: session.name,
-      state: 'session open',
-      themeKey: 'agent.idle',
+      state: session.status ?? 'session open',
+      themeKey: blocked ? 'agent.blocked' : working ? 'agent.working' : 'agent.idle',
       characterSprite: session.avatarCharacter,
       characterAccent: session.avatarAccent,
       availability: 'present',
-      hrefPath: '/people',
-      hrefExtra: { person: session.personId, session: session.id },
+      hrefPath: session.focusThreadId ? '/focus' : '/people',
+      hrefExtra: session.focusThreadId
+        ? { thread: session.focusThreadId }
+        : { person: session.personId, session: session.id },
       projectId,
-      detail: `${session.role} · ${session.provider ?? 'runner unknown'}${session.model ? ` · ${session.model}` : ''} · PTY ${session.id}`,
+      detail: `${session.role} · ${session.provider ?? 'runner unknown'}${session.model ? ` · ${session.model}` : ''} · session ${session.id}`,
       standAtId,
     });
   }

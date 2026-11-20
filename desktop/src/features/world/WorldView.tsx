@@ -1,43 +1,36 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { flushSync } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
-import { requireClient, useBackend } from '../../data/backend';
-import { useTools } from '../../data/catalog';
-import { sortJobs, useJobs } from '../../data/jobs';
-import { useMemoryFile, useMemoryList } from '../../data/memory';
-import { useProjects } from '../../data/projects';
-import { useTerminalSessions } from '../../data/terminal';
-import { activePersonSessionsForWorkspace } from '../../data/personSessionScope';
-import { personCharacterSprite } from '../people/avatar';
+import { useFocusThreads } from '../../data/focus';
 import { useSessionContext } from '../../shell/useSessionContext';
-import { EmptyState, ErrorState } from '../../ui';
-import { installTargetForTool, worldDetailBackExtra, worldDetailBackLabel } from './inspectors';
-import { MemoryRecordInspector } from './MemoryRecordInspector';
-import {
-  buildWorldModel,
-  layoutWorld,
-  pathIsWithin,
-  resolveProjectTarget,
-  type LaidOutEntity,
-  type MemorySummary,
-  type ToolRecord,
-} from './model';
+import { EmptyState } from '../../ui';
+import { worldDetailBackExtra } from './inspectors';
+import { buildWorldModel, layoutWorld, type LaidOutEntity, type MemorySummary, type ProjectRecord } from './model';
 import { WORLD_THEME_PACKS, worldThemePack } from './theme/cyberpunkCity';
-import { ToolRecordInspector } from './ToolRecordInspector';
 import { useWorldDetailEscape } from './useWorldDetailEscape';
 import { WorldEntityList, WorldEntityMap } from './WorldEntityMap';
 import styles from './world.module.css';
 
+function projectNameOf(cwd: string, projectName: string | null): string {
+  if (projectName) return projectName;
+  const parts = cwd
+    .replace(/[/\\]+$/, '')
+    .split(/[/\\]/)
+    .filter(Boolean);
+  return parts[parts.length - 1] ?? cwd;
+}
+
 /**
- * World: semantic spatial home. Domain → model → layout → theme →
- * terrain canvas + pixel sprites. The world is the screen; memory/tool
- * detail inspectors stay on `/world` query params and call real APIs.
+ * World: semantic spatial home, projected only from real Veasel runtime
+ * state (#693). Projects are the distinct working directories of real
+ * Focus threads; characters are those threads with their real provider,
+ * model and status (a character claims activity only while its session
+ * is actually running). There is no second session store and no fake
+ * activity: with no threads, the world is empty.
  */
 export default function WorldView() {
-  const { backend, client } = useBackend();
   const { context, href } = useSessionContext();
-  const terminalSessions = useTerminalSessions();
+  const { threads, loaded } = useFocusThreads();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const focusProject = params.get('project');
@@ -45,22 +38,7 @@ export default function WorldView() {
   const memoryPath = params.get('memory')?.trim() || '';
   const toolId = params.get('tool')?.trim() || '';
 
-  const workspacePath = context.workspace || backend?.harness?.path || '';
-  const projectsQuery = useProjects(workspacePath);
-  const memoryQuery = useMemoryList();
-  const memoryFileQuery = useMemoryFile(memoryPath, { enabled: memoryPath.length > 0 });
-  const jobsQuery = useJobs();
-  const toolsQuery = useTools();
-  const livePersonPtys = useMemo(
-    () => activePersonSessionsForWorkspace(terminalSessions.sessions, context.workspace),
-    [terminalSessions.sessions, context.workspace],
-  );
-  const peopleQuery = useQuery({
-    queryKey: ['people', context.workspace],
-    queryFn: () => requireClient(client).people(context.workspace),
-    enabled: Boolean(client && context.workspace && livePersonPtys.length > 0),
-    staleTime: 15_000,
-  });
+  const workspacePath = context.workspace || threads[0]?.workspace || threads[0]?.cwd || '';
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [worldPackId, setWorldPackId] = useState<string | null>(() => {
     try {
@@ -103,108 +81,58 @@ export default function WorldView() {
     [navigate],
   );
 
-  const projects = useMemo(() => {
-    if (!projectsQuery.isSuccess || !projectsQuery.data) return [];
-    return projectsQuery.data.projects;
-  }, [projectsQuery.data, projectsQuery.isSuccess]);
+  // Projects and characters come from the same canonical thread store
+  // Focus uses — never from a second registry.
+  const projects: ProjectRecord[] = useMemo(() => {
+    const byTarget = new Map<string, ProjectRecord>();
+    for (const thread of threads) {
+      if (!thread.cwd || byTarget.has(thread.cwd)) continue;
+      byTarget.set(thread.cwd, {
+        name: projectNameOf(thread.cwd, thread.projectName),
+        target: thread.cwd,
+        status: 'ok',
+      });
+    }
+    return [...byTarget.values()];
+  }, [threads]);
 
-  const memory: MemorySummary = useMemo(() => {
-    if (memoryQuery.isError) return { available: false, entries: [], projectKeys: [] };
-    if (!memoryQuery.isSuccess || !memoryQuery.data) return { available: false, entries: [], projectKeys: [] };
-    const entries = (memoryQuery.data.entries ?? []).map((entry) => ({
-      id: entry.id,
-      kind: entry.kind,
-      title: entry.title,
-      snippet: entry.snippet,
-      tags: entry.tags,
-      provenance: entry.provenance,
-    }));
-    const projectKeys = [...new Set(entries.map((entry) => entry.provenance.project).filter(Boolean))];
-    return { available: true, entries, projectKeys };
-  }, [memoryQuery.data, memoryQuery.isError, memoryQuery.isSuccess]);
+  const memory: MemorySummary = useMemo(() => ({ available: false, entries: [], projectKeys: [] }), []);
 
-  const tools: ToolRecord[] = useMemo(() => {
-    if (!toolsQuery.isSuccess || !toolsQuery.data) return [];
-    return toolsQuery.data.tools.map((tool) => ({
-      id: tool.id,
-      toolName: tool.tool_name,
-      detected: tool.detected,
-      configured: tool.configured,
-      enabled: tool.enabled,
-      verified: tool.verified,
-      version: tool.version,
-    }));
-  }, [toolsQuery.data, toolsQuery.isSuccess]);
-
-  const jobs = useMemo(() => sortJobs(jobsQuery.data), [jobsQuery.data]);
-
-  const personSessions = useMemo(() => {
-    if (!peopleQuery.data) return [];
-    const peopleById = new Map(peopleQuery.data.people.map((person) => [person.id, person]));
-    return livePersonPtys.flatMap((session) => {
-      const person = session.personId ? peopleById.get(session.personId) : undefined;
-      const project = projects.find(
-        (candidate) =>
-          candidate.name === session.projectId &&
-          pathIsWithin(session.cwd, resolveProjectTarget(workspacePath, candidate.target)),
-      );
-      if (!person || !project) return [];
-      return [
-        {
-          id: session.id,
-          personId: person.id,
-          name: person.name,
-          role: person.role,
-          cwd: session.cwd,
-          projectId: project.name,
-          provider: session.provider,
-          model: session.model,
-          avatarCharacter: personCharacterSprite(person),
-          avatarAccent: person.avatar?.accent,
-        },
-      ];
-    });
-  }, [livePersonPtys, peopleQuery.data, projects, workspacePath]);
-
-  const harnessNotice = backend?.harness?.notice ?? null;
+  const personSessions = useMemo(
+    () =>
+      threads.map((thread) => ({
+        id: thread.id,
+        personId: thread.id,
+        name: thread.title || projectNameOf(thread.cwd, thread.projectName),
+        role: thread.provider,
+        cwd: thread.cwd,
+        projectId: projectNameOf(thread.cwd, thread.projectName),
+        provider: thread.provider,
+        model: thread.resolvedModel ?? thread.model ?? undefined,
+        status: thread.status,
+        focusThreadId: thread.id,
+      })),
+    [threads],
+  );
 
   const model = useMemo(
     () =>
       buildWorldModel({
         workspacePath,
-        harnessNotice,
         projects,
-        projectsKnown: projectsQuery.isSuccess,
+        projectsKnown: loaded,
         memory,
-        tools,
-        toolsKnown: toolsQuery.isSuccess,
-        jobs: jobs.map((job) => ({
-          id: job.id,
-          cmd: job.cmd,
-          args: job.args,
-          status: job.status,
-          workspace: job.workspace,
-        })),
+        tools: [],
+        toolsKnown: false,
+        jobs: [],
         personSessions,
         focusProjectId: focusProject,
       }),
-    [
-      workspacePath,
-      harnessNotice,
-      projects,
-      projectsQuery.isSuccess,
-      memory,
-      tools,
-      toolsQuery.isSuccess,
-      jobs,
-      personSessions,
-      focusProject,
-    ],
+    [workspacePath, projects, loaded, memory, personSessions, focusProject],
   );
 
   const layout = useMemo(() => layoutWorld(model), [model]);
   const selected = layout.entities.find((entity) => entity.id === selectedId) ?? null;
-  const inspectedTool = toolsQuery.data?.tools.find((tool) => tool.id === toolId) ?? null;
 
   useEffect(() => {
     if (memoryPath) {
@@ -231,12 +159,7 @@ export default function WorldView() {
     }
   }, [memoryPath, toolId, focusPlace, focusProject, layout.entities]);
 
-  const gathering =
-    projectsQuery.isPending ||
-    jobsQuery.isPending ||
-    memoryQuery.isPending ||
-    toolsQuery.isPending ||
-    (livePersonPtys.length > 0 && peopleQuery.isPending);
+  const gathering = !loaded;
 
   const openEntity = (entity: LaidOutEntity) => {
     if (!entity.hrefPath) return;
@@ -244,8 +167,9 @@ export default function WorldView() {
     navigateWorld(href(entity.hrefPath, entity.hrefExtra), crossesProjectDoor);
   };
 
-  const detailOpen = Boolean(memoryPath || toolId);
-  const backLabel = worldDetailBackLabel(focusProject);
+  // Memory/tool detail inspectors targeted the retired legacy backend;
+  // until they are ported, no detail overlay opens from the world.
+  const detailOpen = false;
   const goBackFromDetail = useCallback(() => {
     navigate(href('/world', worldDetailBackExtra(focusProject)));
   }, [navigate, href, focusProject]);
@@ -294,7 +218,7 @@ export default function WorldView() {
         ) : null}
         <Link
           className={styles.worldHeaderLink}
-          to={model.focusProjectId ? href('/world') : href('/workspace')}
+          to={model.focusProjectId ? href('/world') : href('/focus')}
           onClick={(event) => {
             if (
               !model.focusProjectId ||
@@ -311,7 +235,7 @@ export default function WorldView() {
             navigateWorld(href('/world'), true);
           }}
         >
-          {model.focusProjectId ? '← grounds' : 'Workspace inspector'}
+          {model.focusProjectId ? '← grounds' : 'Open Focus'}
         </Link>
       </header>
 
@@ -339,49 +263,7 @@ export default function WorldView() {
             Checking live workspace details…
           </p>
         ) : null}
-        {projectsQuery.isError ? (
-          <ErrorState
-            title="Could not list projects"
-            error={projectsQuery.error}
-            onRetry={() => void projectsQuery.refetch()}
-          />
-        ) : null}
-        {livePersonPtys.length > 0 && peopleQuery.isError ? (
-          <ErrorState
-            title="Person presence is temporarily unavailable"
-            error={peopleQuery.error}
-            onRetry={() => void peopleQuery.refetch()}
-          />
-        ) : null}
       </div>
-
-      {memoryPath ? (
-        <MemoryRecordInspector
-          path={memoryPath}
-          data={memoryFileQuery.data}
-          error={memoryFileQuery.error}
-          isPending={memoryFileQuery.isPending}
-          onBack={goBackFromDetail}
-          backLabel={backLabel}
-          onRetry={() => void memoryFileQuery.refetch()}
-        />
-      ) : null}
-
-      {toolId && !memoryPath ? (
-        <ToolRecordInspector
-          toolId={toolId}
-          tool={inspectedTool}
-          isPending={toolsQuery.isPending}
-          error={toolsQuery.error}
-          onReviewInstall={() => {
-            const target = installTargetForTool(toolId);
-            navigate(href('/library', { install_target: target ?? undefined }));
-          }}
-          onBack={goBackFromDetail}
-          backLabel={backLabel}
-          onRetry={() => void toolsQuery.refetch()}
-        />
-      ) : null}
 
       <details className={styles.entityListWrap}>
         <summary>

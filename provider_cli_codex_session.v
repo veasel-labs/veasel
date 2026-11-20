@@ -95,8 +95,12 @@ pub fn run_codex_cli_turn_cancellable(command string, cwd string, permission_mod
 	policy := codex_policy(permission_mode)
 	timeout := if timeout_ms > 0 { timeout_ms } else { 120_000 }
 	started := time.now()
+	// capabilities must stay null: sending {"experimentalApi": false} (or
+	// true) makes codex-cli 0.170 withhold the thread's filesystem tools,
+	// so the model truthfully reports none are available (veasel#786,
+	// reproduced against the real binary; the TS reference sends null).
 	process.stdin_write(codex_rpc_request(1, 'initialize',
-		'{"clientInfo":{"name":"veasel","title":"Veasel","version":"1"},"capabilities":{"experimentalApi":${permission_mode == 'plan'}}}') +
+		'{"clientInfo":{"name":"veasel","title":"Veasel","version":"1"},"capabilities":null}') +
 		'\n')
 
 	mut events := []CodexCliEvent{}

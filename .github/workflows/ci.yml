@@ -443,10 +443,14 @@ jobs:
         run: |
           tui_binary_name="${{ matrix.tui_binary }}"
           tui_binary_name="${tui_binary_name#dist/}"
-          tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel "$tui_binary_name" build.json
+          # Bundled offline Library content (#706) ships next to the binary.
+          cp -r bundled dist/bundled
+          tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel "$tui_binary_name" build.json bundled
       - name: Package Windows binaries for artifact smoke
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/veasel.exe,dist/veasel-tui.exe,dist/build.json -DestinationPath dist/veasel-Windows.zip
+        run: |
+          Copy-Item -Recurse bundled dist/bundled
+          Compress-Archive -Path dist/veasel.exe,dist/veasel-tui.exe,dist/build.json,dist/bundled -DestinationPath dist/veasel-Windows.zip
       - name: Extract and verify packaged binaries
         env:
           VEASEL_PACKAGE_ARCHIVE: dist/veasel-Windows.zip

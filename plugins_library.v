@@ -246,7 +246,23 @@ pub:
 }
 
 fn library_catalog_path() string {
-	return os.getenv_opt('VEASEL_CATALOG_PATH') or { '' }
+	if path := os.getenv_opt('VEASEL_CATALOG_PATH') {
+		return path
+	}
+	// Offline fallback (#706): the catalog physically bundled next to the
+	// executable (or in the working directory for development runs). It
+	// only ever lists content that ships with the binary.
+	return bundled_library_catalog_path_from([os.dir(os.real_path(os.executable())), os.getwd()])
+}
+
+fn bundled_library_catalog_path_from(bases []string) string {
+	for base in bases {
+		candidate := os.join_path(base, 'bundled', 'catalog.json')
+		if os.is_file(candidate) {
+			return candidate
+		}
+	}
+	return ''
 }
 
 fn library_catalog_view(plugin_directory string, registry_path string, catalog_path string) !LibraryCatalogView {

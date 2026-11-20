@@ -177,29 +177,28 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
 }
 
 export async function waitForBackend(page: Page): Promise<void> {
-  // The shell HUD prints `veasel <version>` only after the health endpoint
-  // answers (useHealth in Shell.tsx); the old Connected/Live status badge
-  // no longer renders, so waiting for it timed out every journey.
-  try {
-    await expect(page.getByRole('navigation', { name: 'Destinations' }).getByText(/^veasel \S/)).toBeVisible({
-      timeout: 30_000,
-    });
-  } catch (error) {
-    const diagnostics = await page
-      .evaluate(async () => {
-        const bridge = (window as unknown as { veaselDesktop?: { getBackendUrl?: () => Promise<unknown> } })
-          .veaselDesktop;
-        const backendUrl = bridge?.getBackendUrl
-          ? await bridge.getBackendUrl().catch((e: unknown) => String(e))
-          : 'no bridge';
-        const health = await fetch('/v1/health')
-          .then(async (r) => `${r.status}:${(await r.text()).slice(0, 200)}`)
-          .catch((e: unknown) => String(e));
-        return { backendUrl, health, href: location.href };
-      })
-      .catch((e: unknown) => String(e));
-    throw new Error(`backend never became ready: ${JSON.stringify(diagnostics)}`, { cause: error });
-  }
+  // Readiness = the Veasel supervisor has published a backend URL and the
+  // renderer proxy answers /v1/health. (The old Connected/Live badge no
+  // longer renders, and the shell HUD's legacy /api/v1/health hook never
+  // answers against the Veasel backend, so neither is a usable signal.)
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const bridge = (window as unknown as { veaselDesktop?: { getBackendUrl?: () => Promise<unknown> } })
+            .veaselDesktop;
+          const backendUrl = bridge?.getBackendUrl
+            ? await bridge.getBackendUrl().catch(() => null)
+            : null;
+          if (!backendUrl) return false;
+          const health = await fetch('/v1/health')
+            .then((r) => r.status)
+            .catch(() => 0);
+          return health === 200;
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
 }
 
 /** Resize the window's content area; Xvfb has no window manager to clamp it. */

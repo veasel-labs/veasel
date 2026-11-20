@@ -250,9 +250,10 @@ fn library_catalog_path() string {
 		return path
 	}
 	// Offline fallback (#706): the catalog physically bundled next to the
-	// executable (or in the working directory for development runs). It
-	// only ever lists content that ships with the binary.
-	return bundled_library_catalog_path_from([os.dir(os.real_path(os.executable())), os.getwd()])
+	// executable. It only ever lists content that ships with the binary.
+	// (No working-directory base: that would leak a checkout's catalog
+	// into unrelated projects. Development can set VEASEL_CATALOG_PATH.)
+	return bundled_library_catalog_path_from([os.dir(os.real_path(os.executable()))])
 }
 
 fn bundled_library_catalog_path_from(bases []string) string {

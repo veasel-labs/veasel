@@ -377,10 +377,12 @@ fn standalone_skill_roots(project_directory string) []StandaloneSkillRoot {
 
 // bundled_skill_roots exposes the first-party skills physically shipped
 // next to the executable (bundled/veasel-essentials/skills), so a fresh
-// install works offline (#706). The working directory is a second base
-// for development runs from the repository root.
+// install works offline (#706). Only the executable's directory is a
+// base: a working-directory fallback would leak a checkout's bundled
+// tree into unrelated projects (and into test fixtures that isolate
+// HOME), silently enlarging every turn's skill catalog.
 fn bundled_skill_roots() []StandaloneSkillRoot {
-	return bundled_skill_roots_from([os.dir(os.real_path(os.executable())), os.getwd()])
+	return bundled_skill_roots_from([os.dir(os.real_path(os.executable()))])
 }
 
 fn bundled_skill_roots_from(bases []string) []StandaloneSkillRoot {

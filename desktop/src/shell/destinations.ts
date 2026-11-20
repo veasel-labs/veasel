@@ -27,4 +27,10 @@ export const DESTINATIONS: readonly Destination[] = [
     question: 'What should we build together in this session?',
     component: lazy(() => import('../features/focus/FocusView')),
   },
+  {
+    path: '/world',
+    label: 'World',
+    question: 'Where is everything, and what is actually happening?',
+    component: lazy(() => import('../features/world/WorldView')),
+  },
 ];

@@ -177,7 +177,12 @@ export async function openDesktop(options: OpenDesktopOptions = {}): Promise<Des
 }
 
 export async function waitForBackend(page: Page): Promise<void> {
-  await expect(page.getByRole('status').filter({ hasText: /^(Connected|Live)/ })).toBeVisible({ timeout: 30_000 });
+  // The shell HUD prints `veasel <version>` only after the health endpoint
+  // answers (useHealth in Shell.tsx); the old Connected/Live status badge
+  // no longer renders, so waiting for it timed out every journey.
+  await expect(page.getByRole('navigation', { name: 'Destinations' }).getByText(/^veasel \S/)).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 /** Resize the window's content area; Xvfb has no window manager to clamp it. */

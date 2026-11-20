@@ -187,11 +187,15 @@ export async function waitForBackend(page: Page): Promise<void> {
   } catch (error) {
     const diagnostics = await page
       .evaluate(async () => {
-        const bridge = (window as unknown as { atk?: { backendStatus?: () => Promise<unknown> } }).atk;
-        const status = bridge?.backendStatus
-          ? await bridge.backendStatus().catch((e: unknown) => String(e))
+        const bridge = (window as unknown as { veaselDesktop?: { getBackendUrl?: () => Promise<unknown> } })
+          .veaselDesktop;
+        const backendUrl = bridge?.getBackendUrl
+          ? await bridge.getBackendUrl().catch((e: unknown) => String(e))
           : 'no bridge';
-        return { status, href: location.href };
+        const health = await fetch('/v1/health')
+          .then(async (r) => `${r.status}:${(await r.text()).slice(0, 200)}`)
+          .catch((e: unknown) => String(e));
+        return { backendUrl, health, href: location.href };
       })
       .catch((e: unknown) => String(e));
     throw new Error(`backend never became ready: ${JSON.stringify(diagnostics)}`, { cause: error });

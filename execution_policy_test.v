@@ -129,7 +129,7 @@ fn test_installed_cli_final_response_uses_recorded_effects_and_does_not_overclai
 	assert conflicting.contains('did not independently verify')
 	assert !conflicting.contains('tests passed')
 
-	ordinary := agent_final_response_for_cli('I updated the parser.', true, false, facts)
+	ordinary := agent_final_response_for_cli('I updated the parser.', true, true, facts)
 	assert ordinary.contains('I updated the parser.')
 	assert ordinary.contains('Veasel recorded native CLI edits')
 	assert ordinary.contains('did not independently verify')

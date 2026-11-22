@@ -13,18 +13,25 @@ proposed dispositions are historical and must not be used as current state.
 
 | Repository | `main` SHA | Open issues | Open PRs | Latest relevant evidence |
 | --- | --- | ---: | ---: | --- |
-| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | `9a2ca6b4f8ead74747826c1f199bf145db1405f4` | 4 | 0 | Core CI [#44771350387](https://github.com/veasel-labs/veasel/actions/runs/44771350387) passed on this exact SHA: Linux/macOS/Windows backend, Linux shards, Desktop/Terminal, security, and all three desktop package jobs. The Nov 22 [#45039541114](https://github.com/veasel-labs/veasel/actions/runs/45039541114) is a watchdog, not a replacement for core CI. |
+| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | `9a2ca6b4f8ead74747826c1f199bf145db1405f4` | 4 | 2 | Core CI [#44771350387](https://github.com/veasel-labs/veasel/actions/runs/44771350387) passed on this exact SHA: Linux/macOS/Windows backend, Linux shards, Desktop/Terminal, security, and all three desktop package jobs. The Nov 22 [#45039541114](https://github.com/veasel-labs/veasel/actions/runs/45039541114) is a watchdog, not a replacement for core CI. PRs #790 and #791 are listed below; PR CI is in progress. |
 | [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | `e2c218aa1302639172976d12e383abda3ae23641` | 1 | 0 | Registry validation [#44588769444](https://github.com/veasel-labs/agent-toolkit/actions/runs/44588769444) passed. |
 | [veasel-labs/website](https://github.com/veasel-labs/website) | `1e402a3c32107be92b8ebaad42bc57ba119f6e79` | 0 | 0 | Release refresh [#45038246879](https://github.com/veasel-labs/website/actions/runs/45038246879) passed; build/deploy for the current release metadata passed [#44787710645](https://github.com/veasel-labs/website/actions/runs/44787710645). |
 | [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | `edc719b52d24b0b3f0c077ce65fef89d2a7de839` | 0 | 0 | macOS cask CI [#45056896872](https://github.com/veasel-labs/homebrew-tap/actions/runs/45056896872) passed on this SHA; updater manifest + install smoke [#45056699780](https://github.com/veasel-labs/homebrew-tap/actions/runs/45056699780) passed on pre-merge PR head `e993a4be`; it is not evidence from this main SHA. |
 | [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | `bb8c04675a57b1840cf65d91959d71254d62c8df` | 0 | 0 | Package CI [#44785915351](https://github.com/veasel-labs/aur-package/actions/runs/44785915351) and publisher [#44998127589](https://github.com/veasel-labs/aur-package/actions/runs/44998127589) passed. |
 | [veasel-labs/.github](https://github.com/veasel-labs/.github) | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | Community-file validation [#40167738112](https://github.com/veasel-labs/.github/actions/runs/40167738112) passed on this SHA. |
 | [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | `5b788da03322d01495cc39579ddbf41657120107` | 0 | 0 | Required CI [#44704030935](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/44704030935) passed, including Linux/macOS/Windows integration. |
-| **Total** | — | **5** | **0** | Four open issues in Veasel and one owner-decision issue in the official registry. |
+| **Total** | — | **5** | **2** | Four open issues in Veasel and one owner-decision issue in the official registry; both open PRs are reviewable Veasel work. |
 
 These counts are a point-in-time snapshot. The unresolved items below stay open
 until their product acceptance is met or an explicitly approved disposition is
 recorded. A zero PR count does not imply all closed draft work was migrated.
+
+## Open pull requests
+
+| PR | State / owner | Dependencies and remaining acceptance | Evidence / destination | Required action |
+| --- | --- | --- | --- | --- |
+| [veasel#790](https://github.com/veasel-labs/veasel/pull/790) | OPEN DRAFT · cross-repository consolidation ledger | Ledger refresh only; update with the current PR state and retain all historical disposition caveats. | Head `14b153a2081fd8b7d1978f9b0f3a4a447150cce2`; targeted file is `docs/consolidation/TRIAGE_LEDGER.md`; CI run [#45057802399](https://github.com/veasel-labs/veasel/actions/runs/45057802399), Linux/macOS/Windows backend checks were still pending at capture. | REVIEW, update this row to the resulting head, then mark ready and merge only after required checks pass. |
+| [veasel#791](https://github.com/veasel-labs/veasel/pull/791) | OPEN DRAFT · Veasel runtime / installed CLI provider outcomes | Provider-specific tool contract plus authoritative final reporting from `TurnFacts`; preserve command-only results, provider-reported test results, and incomplete/test-failure reports. Then repeat a fresh packaged Claude edit journey to resolve the current NOT VERIFIED evidence. | Head `b13610a6dae2f056dbf1e078ab97942ff0c73025` (commits `d6f51ea`, `b13610a`); added regression cases in `execution_policy_test.v`; CI [PR #791](https://github.com/veasel-labs/veasel/pull/791) is pending. Destination: Veasel `main`. | REVIEW/VERIFY; merge only with exact-head required CI green. Then publish a new package and repeat the real provider task before updating #550. |
 
 ## Open issues and required resolution
 

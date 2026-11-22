@@ -53,12 +53,12 @@ fn test_agent_system_message_uses_the_selected_provider_tool_contract() {
 	assert cli.contains('native edit tool')
 	assert !cli.contains('workspace_propose_file_edit')
 	assert !cli.contains('proposals remain pending until the user approves them in the TUI')
-	assert !cli.contains('approved commands default to the platform OS sandbox')
+	assert !cli.contains('Approved commands default to the platform OS sandbox')
 
 	veasel := agent_system_message_for_provider('anthropic', 'ask', policy, true)
 	assert veasel.contains('workspace_propose_file_edit')
 	assert veasel.contains('workspace_propose_shell_command')
-	assert veasel.contains('approved commands default to the platform OS sandbox')
+	assert veasel.contains('Approved commands default to the platform OS sandbox')
 	assert !veasel.contains('installed provider CLI and its native tools')
 }
 
@@ -131,7 +131,7 @@ fn test_installed_cli_final_response_uses_recorded_effects_and_does_not_overclai
 
 	ordinary := agent_final_response_for_cli('I updated the parser.', true, false, facts)
 	assert ordinary.contains('I updated the parser.')
-	assert ordinary.contains('Veasel recorded native CLI effects')
+	assert ordinary.contains('Veasel recorded native CLI edits')
 	assert ordinary.contains('did not independently verify')
 	assert ordinary.contains('any test result in the provider response is provider-reported')
 

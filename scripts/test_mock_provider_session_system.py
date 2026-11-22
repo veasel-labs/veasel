@@ -60,12 +60,16 @@ class SessionSystemGuardTests(unittest.TestCase):
         self.assertEqual(self.mock.SANDBOX_AUTO_INSTRUCTIONS, sandbox_auto.group(1))
         self.assertEqual(self.mock.CODE_CHANGE_SYSTEM_INSTRUCTIONS, code_change.group(1))
         self.assertIn(
-            "${tool_instructions}${optional_code_change_instructions} MCP tool names",
+            "system_message := agent_system_message_for_provider(model_config.provider",
             api,
         )
         self.assertRegex(
-            api,
+            runtime,
             r"optional_code_change_instructions := if code_change_instructions\.len > 0",
+        )
+        self.assertIn(
+            "${tool_instructions}${optional_code_change_instructions} MCP tool names",
+            runtime,
         )
 
     def test_repository_map_suffix_is_accepted(self):

@@ -122,7 +122,7 @@ fn test_installed_cli_final_response_uses_recorded_effects_and_does_not_overclai
 		commands_ran:     ['Bash (npm)']
 		effects_observed: true
 	}
-	conflicting := agent_final_response_for_cli('No edit or successful command was recorded.', true,
+	conflicting := agent_final_response_for_cli('No workspace edit was applied.', true,
 		true, facts)
 	assert conflicting.contains('conflicts with recorded native CLI effects')
 	assert conflicting.contains('Write parse-env.mjs, Bash (npm)')
@@ -133,10 +133,26 @@ fn test_installed_cli_final_response_uses_recorded_effects_and_does_not_overclai
 	assert ordinary.contains('I updated the parser.')
 	assert ordinary.contains('Veasel recorded native CLI effects')
 	assert ordinary.contains('did not independently verify')
+	assert ordinary.contains('any test result in the provider response is provider-reported')
+
+	incomplete := agent_final_response_for_cli('The edit was applied, but npm test failed; this task is not complete.',
+		true, true, facts)
+	assert incomplete.contains('npm test failed')
+	assert incomplete.contains('not complete')
+	assert !incomplete.contains('conflicts with recorded')
 
 	no_effects := agent_final_response_for_cli('I made the requested change.', true, false,
 		TurnOutcomeFacts{ effects_observed: true })
 	assert no_effects.contains('No workspace edit was applied')
+
+	command_only := agent_final_response_for_cli('No workspace edit was applied; npm test passed.', true,
+		true, TurnOutcomeFacts{
+			commands_ran:     ['Bash (npm)']
+			effects_observed: true
+		})
+	assert !command_only.contains('conflicts with recorded')
+	assert command_only.contains('This does not establish that a code change was applied')
+	assert command_only.contains('npm test passed')
 
 	unobserved := agent_final_response_for_cli('Done.', true, false, TurnOutcomeFacts{})
 	assert unobserved.contains('could not confirm whether')

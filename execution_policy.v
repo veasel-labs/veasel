@@ -105,16 +105,21 @@ fn agent_final_response_for_cli(response string, code_change_request bool,
 	}
 	if facts.has_effects() {
 		verification := if verification_required {
-			'Veasel did not independently verify the requested checks; command exit status and test results are not reported here. Review the diff and run the tests before treating the task as complete.'
+			'Veasel did not independently verify the requested checks; any test result in the provider response is provider-reported. Review the diff and run the tests before treating the task as complete.'
 		} else {
 			'Veasel did not independently verify these changes; review the diff and run relevant tests.'
 		}
-		if response.to_lower().contains('no edit') || response.to_lower().contains('no change')
-			|| response.to_lower().contains('not applied')
-			|| response.to_lower().contains('not complete') {
+		if facts.edits_applied.len > 0
+			&& (response.to_lower().contains('no workspace edit was applied')
+			|| response.to_lower().contains('no edit was applied')
+			|| response.to_lower().contains('no changes were made')
+			|| response.to_lower().contains('no change was made')) {
 			return 'The provider final response conflicts with recorded native CLI effects. Veasel recorded: ${facts.applied_list()}. ${verification}'
 		}
-		return '${response.trim_space()} Veasel recorded native CLI effects: ${facts.applied_list()}. ${verification}'
+		if facts.edits_applied.len > 0 {
+			return '${response.trim_space()} Veasel recorded native CLI edits: ${facts.edits_applied.join(', ')}. ${verification}'
+		}
+		return '${response.trim_space()} Veasel recorded approved native CLI command(s): ${facts.commands_ran.join(', ')}. This does not establish that a code change was applied. ${verification}'
 	}
 	if facts.effects_observed {
 		return agent_final_response_for_execution_policy(response, true,

@@ -32,7 +32,7 @@ fn test_installed_cli_guidance_matches_the_native_tool_plane() {
 	guidance := installed_cli_tool_instructions('ask')
 	assert guidance.contains('installed provider CLI and its native tools')
 	assert guidance.contains('every native tool request requires an explicit Veasel approval')
-	assert guidance.contains('not covered by Veasel\'s separate shell sandbox')
+	assert guidance.contains("not covered by Veasel's separate shell sandbox")
 	assert !guidance.contains('workspace_propose_file_edit')
 	assert !guidance.contains('workspace_propose_shell_command')
 

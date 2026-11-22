@@ -28,6 +28,40 @@ fn test_workspace_guidance_routes_repository_instructions_to_workspace_tools() {
 	assert guidance.contains('Proposals remain pending until the user approves them in the TUI')
 }
 
+fn test_installed_cli_guidance_matches_the_native_tool_plane() {
+	guidance := installed_cli_tool_instructions('ask')
+	assert guidance.contains('installed provider CLI and its native tools')
+	assert guidance.contains('every native tool request requires an explicit Veasel approval')
+	assert guidance.contains("not covered by Veasel's separate shell sandbox")
+	assert !guidance.contains('workspace_propose_file_edit')
+	assert !guidance.contains('workspace_propose_shell_command')
+
+	change := installed_cli_code_change_instruction(true)
+	assert change.contains('native file-inspection tool')
+	assert change.contains('native edit tool')
+	assert change.contains('Do not claim a change or verification')
+	assert !change.contains('workspace_propose_file_edit')
+	assert installed_cli_code_change_instruction(false) == ''
+	assert installed_cli_tool_instructions('plan').contains('read-only')
+	assert installed_cli_tool_instructions('accept-edits').contains('selected accept-edits')
+}
+
+fn test_agent_system_message_uses_the_selected_provider_tool_contract() {
+	policy := ExecutionPolicyTurn{ mode: .ask, interactive: true }
+	cli := agent_system_message_for_provider('claude-code', 'ask', policy, true)
+	assert cli.contains('installed provider CLI and its native tools')
+	assert cli.contains('native edit tool')
+	assert !cli.contains('workspace_propose_file_edit')
+	assert !cli.contains('proposals remain pending until the user approves them in the TUI')
+	assert !cli.contains('Approved commands default to the platform OS sandbox')
+
+	veasel := agent_system_message_for_provider('anthropic', 'ask', policy, true)
+	assert veasel.contains('workspace_propose_file_edit')
+	assert veasel.contains('workspace_propose_shell_command')
+	assert veasel.contains('Approved commands default to the platform OS sandbox')
+	assert !veasel.contains('installed provider CLI and its native tools')
+}
+
 fn test_execution_policy_ask_denies_side_effects_when_non_interactive() {
 	assert decide_execution_permission(.ask, 'read', false, true) == .allow
 	assert decide_execution_permission(.ask, 'edit', false, true) == .deny
@@ -80,6 +114,50 @@ fn test_non_interactive_code_change_final_response_cannot_claim_completion() {
 		mode:        .ask
 		interactive: true
 	}, false, true).contains('pending human review')
+}
+
+fn test_installed_cli_final_response_uses_recorded_effects_and_does_not_overclaim_verification() {
+	facts := TurnOutcomeFacts{
+		edits_applied:    ['Write parse-env.mjs']
+		commands_ran:     ['Bash (npm)']
+		effects_observed: true
+	}
+	conflicting := agent_final_response_for_cli('No workspace edit was applied.', true,
+		true, facts)
+	assert conflicting.contains('conflicts with recorded native CLI effects')
+	assert conflicting.contains('Write parse-env.mjs, Bash (npm)')
+	assert conflicting.contains('did not independently verify')
+	assert !conflicting.contains('tests passed')
+
+	ordinary := agent_final_response_for_cli('I updated the parser.', true, true, facts)
+	assert ordinary.contains('I updated the parser.')
+	assert ordinary.contains('Veasel recorded native CLI edits')
+	assert ordinary.contains('did not independently verify')
+	assert ordinary.contains('any test result in the provider response is provider-reported')
+
+	incomplete := agent_final_response_for_cli('The edit was applied, but npm test failed; this task is not complete.',
+		true, true, facts)
+	assert incomplete.contains('npm test failed')
+	assert incomplete.contains('not complete')
+	assert !incomplete.contains('conflicts with recorded')
+
+	no_effects := agent_final_response_for_cli('I made the requested change.', true, false,
+		TurnOutcomeFacts{ effects_observed: true })
+	assert no_effects.contains('no successfully applied native edit or approved command')
+	assert no_effects.contains('cannot confirm the requested code change')
+
+	command_only := agent_final_response_for_cli('No workspace edit was applied; npm test passed.', true,
+		true, TurnOutcomeFacts{
+			commands_ran:     ['Bash (npm)']
+			effects_observed: true
+		})
+	assert !command_only.contains('conflicts with recorded')
+	assert command_only.contains('This does not establish that a code change was applied')
+	assert command_only.contains('npm test passed')
+
+	unobserved := agent_final_response_for_cli('Done.', true, false, TurnOutcomeFacts{})
+	assert unobserved.contains('could not confirm whether')
+	assert unobserved.contains('Done.')
 }
 
 fn test_execution_policy_auto_edit_allows_edits_and_asks_shell() {

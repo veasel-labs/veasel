@@ -1120,6 +1120,8 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 	if context_error := turn_context_error(mut turn_ctx) {
 		return error(context_error)
 	}
+	provider_config := app.turn_model_config(session_id, model_config_override)!
+	installed_cli_provider := provider_cli_by_id(provider_config.provider) != none
 	active_mcp_servers := app.store.session_plugin_mcp_servers(session_id)!
 	if policy.mode == .sandbox_auto && active_mcp_servers.len > 0 {
 		return error('sandbox-auto execution policy does not allow session MCP servers')
@@ -1303,6 +1305,35 @@ fn (app &App) run_workspace_agent_turn_with_model_override(mut turn_ctx vcontext
 		if output.tool_calls.len == 0 {
 			if output.content.trim_space().len == 0 {
 				return error('model returned no final response')
+			}
+			if installed_cli_provider {
+				mut facts_registry := app.turn_facts
+				facts := facts_registry.snapshot(session_id)
+				content := agent_final_response_for_cli(output.content, code_change_request,
+					verification_required, facts)
+				final_output := CompletionOutput{
+					provider:         output.provider
+					model:            output.model
+					content:          content
+					provider_context: output.provider_context
+					usage:            output.usage
+				}
+				if buffer_provider_text {
+					on_text_delta(final_output.content)!
+				}
+				if collect_trace {
+					trace_steps << ATIFStep{
+						step_id:    trace_steps.len + 1
+						source:     'agent'
+						model_name: final_output.model
+						message:    final_output.content
+					}
+				}
+				return AgentTraceResult{
+					output: final_output
+					steps:  trace_steps
+					usage:  trace_usage
+				}
 			}
 			if agent_code_change_followthrough_retry_available(code_change_request, followthrough_tools, followthrough_retries,
 				edit_proposal_attempted, request_deadline) {

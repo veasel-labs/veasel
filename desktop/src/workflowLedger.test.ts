@@ -35,12 +35,14 @@ describe('Desktop workflow ledger (docs/desktop/workflows.yaml)', () => {
     }
     // TUI continuity was upgraded 2026-11-20: packaged v0.97.0 visual TUI
     // resumed a real-provider (OpenCode) session and its message persisted
-    // in the durable transcript. verified-release stays partial until
-    // macOS/Windows packaged Desktop journeys and signing are recorded.
+    // in the durable transcript. Claude Code edit remains partial after a
+    // packaged CLI attempt exposed a mismatch between persisted effects and
+    // the final response; verified-release stays partial until macOS/Windows
+    // packaged Desktop journeys and signing are recorded.
     const tuiContinuity = journeys.find((j) => j.id === 'tui-desktop-continuity');
     expect(tuiContinuity).toBeDefined();
     expect(tuiContinuity!.status).toBe('ok');
-    for (const id of ['verified-release']) {
+    for (const id of ['verified-release', 'claude-code-real-edit']) {
       const journey = journeys.find((j) => j.id === id);
       expect(journey, id).toBeDefined();
       expect(journey!.status).toBe('partial');

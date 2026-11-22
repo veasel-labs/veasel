@@ -1,0 +1,43 @@
+{
+  "schema": "veasel.real-provider-acceptance/v1",
+  "captured_at": "2026-11-22",
+  "classification": "NOT VERIFIED",
+  "run_kind": "packaged CLI real-provider turn; not Desktop GUI or visual TUI",
+  "artifact": {
+    "release": "v0.100.0-next.0",
+    "source_commit": "9a2ca6b4f8ead74747826c1f199bf145db1405f4",
+    "name": "veasel-Linux.tar.gz",
+    "sha256": "abdf3690c2bbeac44b0a435223b88994d34ba9628e1f10bf834c42f7418c3baf"
+  },
+  "provider": {
+    "id": "claude-code",
+    "version": "2.1.329",
+    "model_reported": "claude-sonnet-5-5",
+    "auth_probe": "probe-present",
+    "permission_mode": "ask",
+    "interactive_cli_approvals": true
+  },
+  "operation": {
+    "id": "966ddb80-4804-4d05-9722-fad18052d2de",
+    "status": "completed",
+    "outcome": "completed",
+    "approvals_approved": 2,
+    "edits_applied": ["Write parse-env.mjs"],
+    "commands_ran": ["Bash (npm)"],
+    "verification": "not_reported",
+    "usage_reported": true,
+    "input_tokens": 42092,
+    "output_tokens": 3210,
+    "cache_read_tokens": 265312,
+    "cache_creation_tokens": 42078,
+    "cost_usd": null
+  },
+  "independent_check": {
+    "workspace": "disposable /tmp repository; no project data",
+    "baseline": "parseEnv stub; Node test suite failed 6/6",
+    "after_turn": "node --test passed 6/6 when independently rerun",
+    "scope": "one parser implementation task; no dependencies added"
+  },
+  "inconsistency": "The persisted operation records an approved Write and Bash (npm), but the assistant's final text said no edit or successful command was recorded. This is why the run remains NOT VERIFIED despite the independent test pass.",
+  "assistant_final_text": "The requested code change is not complete. No workspace edit was applied and no successful shell command was recorded in this turn. Veasel cannot claim the requested change is done; inspect the workspace and continue with a focused edit."
+}

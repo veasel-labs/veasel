@@ -14,7 +14,7 @@ proposed dispositions are historical and must not be used as current state.
 | Repository | `main` SHA | Open issues | Open PRs | Latest relevant evidence |
 | --- | --- | ---: | ---: | --- |
 | [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | `c20254af8267705432449102c091185445098d25` | 4 | 1 | PR #791 merged at this exact SHA. Latest-main CI [#45070709828](https://github.com/veasel-labs/veasel/actions/runs/45070709828) is queued/pending; no green result is claimed yet. The pre-merge run [#45066764281](https://github.com/veasel-labs/veasel/actions/runs/45066764281) completed successfully on Linux, macOS and Windows, including all six Linux shards, Windows auth batches, native keychain, packaged binaries and ConPTY TUI smoke, plus Desktop/Terminal, Focus, Harbor, security and CodeQL. Earlier main run [#45068873225](https://github.com/veasel-labs/veasel/actions/runs/45068873225) on `a594e4e` is still running. Main branch protection now requires the existing four checks plus macOS backend, Windows backend and all six Linux extra-test shards; exact required contexts are recorded below. |
-| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | `e2c218aa1302639172976d12e383abda3ae23641` | 1 | 0 | Registry validation [#44588769444](https://github.com/veasel-labs/agent-toolkit/actions/runs/44588769444) passed. |
+| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | `2096315d10ccdb19b1cb8ea071986bd2c641eb89` | 0 | 0 | Owner-approved first-party exception merged in [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12); exact-main validation [#45075110730](https://github.com/veasel-labs/agent-toolkit/actions/runs/45075110730) passed. `agent-toolkit-core` remains pending and non-installable. |
 | [veasel-labs/website](https://github.com/veasel-labs/website) | `1e402a3c32107be92b8ebaad42bc57ba119f6e79` | 0 | 0 | Release refresh [#45038246879](https://github.com/veasel-labs/website/actions/runs/45038246879) passed; build/deploy for the current release metadata passed [#44787710645](https://github.com/veasel-labs/website/actions/runs/44787710645). |
 | [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | `edc719b52d24b0b3f0c077ce65fef89d2a7de839` | 0 | 0 | macOS cask CI [#45056896872](https://github.com/veasel-labs/homebrew-tap/actions/runs/45056896872) passed on this SHA; updater manifest + install smoke [#45056699780](https://github.com/veasel-labs/homebrew-tap/actions/runs/45056699780) passed on pre-merge PR head `e993a4be`; it is not evidence from this main SHA. |
 | [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | `bb8c04675a57b1840cf65d91959d71254d62c8df` | 0 | 0 | Package CI [#44785915351](https://github.com/veasel-labs/aur-package/actions/runs/44785915351) and publisher [#44998127589](https://github.com/veasel-labs/aur-package/actions/runs/44998127589) passed. |
@@ -22,7 +22,7 @@ proposed dispositions are historical and must not be used as current state.
 | [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | `5b788da03322d01495cc39579ddbf41657120107` | 0 | 1 | Latest-main CI [#44704030935](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/44704030935) passed, including Linux/macOS/Windows integration. Draft PR #1835 has an updated exact-head matrix running; see below. |
 | **Total** | — | **5** | **1** | Four open issues in Veasel and one owner-decision issue in the official registry. Open PR #1835 is incomplete and has failing checks. |
 
-This snapshot was refreshed on 2026-11-22 after opening draft PR #792; it counts itself. The unresolved items below stay open
+This snapshot was refreshed on 2026-11-22 after merging official registry PR #12 and opening draft PR #792; it counts #792 itself. The unresolved items below stay open
 until their product acceptance is met or an explicitly approved disposition is
 recorded. A zero PR count does not imply all closed draft work was migrated.
 
@@ -131,29 +131,6 @@ Merged since prior ledger snapshot:
 - **Action:** KEEP OPEN and close LAST after every repository, acceptance gate,
   release and user-data migration is independently reconciled.
 
-### veasel-labs/agent-toolkit#10 — first-party registry review policy
-
-- **State / owner:** OPEN · repository owner decision required.
-- **Dependencies:** none for independent runtime and catalog implementation;
-  a second maintainer remains required for community entries.
-- **Evidence:** [decision brief](https://github.com/veasel-labs/agent-toolkit/issues/10#issuecomment-7019036861)
-  records that invalid/all-zero pins are rejected, `veasel-essentials` has a
-  valid relative source and narrow declared permissions, and both entries remain
-  `pending-initial-review` / `installable: false`. `agent-toolkit-core` is pinned
-  to immutable commit `7bd44a7b4cc64afc4908b49977589666c1978920` (the unsigned
-  `v1.49.0` tag resolves to that commit); its Docker MCP server uses a GitHub
-  token and its hook executes Bash, so a distinct reviewer should confirm the
-  declared `network: false` / `shell: false` interpretation before approval.
-  `veasel-essentials` is pinned by the official registry commit because it uses
-  a relative source; its bundled `plugin.json` and `SKILL.md` hashes match. The
-  resolver emits a warning for that relative ref, and `PROVENANCE.md` should
-  explain this first-party pin policy as explicitly as the registry does.
-- **Remaining acceptance:** owner chooses A (approve the disclosed first-party
-  exception for `veasel-essentials` only), B (reject), or C (amend terms). No
-  agent may self-approve; `agent-toolkit-core` still needs a distinct reviewer.
-- **Action:** HUMAN DECISION. Keep the catalog fail-closed until the owner
-  records the decision. Destination is the official registry; no approval
-  commit exists.
 
 ## Distribution and release reconciliation
 
@@ -208,6 +185,7 @@ the retired Desktop runtime wholesale.
 - World integration #693 closed through [PR #789](https://github.com/veasel-labs/veasel/pull/789)
   at current `main`; runtime state is canonical. Visual design/accessibility
   evidence remains part of the open epic acceptance.
+- Official registry governance issue [#10](https://github.com/veasel-labs/agent-toolkit/issues/10) was resolved with the owner's explicit option A decision. [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12) merged as `2096315d10ccdb19b1cb8ea071986bd2c641eb89`, marked only first-party `veasel-essentials` approved, updated generated catalogs and documented the transparent owner exception. Exact-main validation [#45075110730](https://github.com/veasel-labs/agent-toolkit/actions/runs/45075110730) passed. Community `agent-toolkit-core` remains pending; no independent review is claimed. The first-party bundled source keeps its pin by containing repository commit and its manifest/skill hashes were verified before approval.
 - The official registry's invalid-pin remediation merged as PR #11. It removes
   the all-zero pin and validates provenance, but does not grant approval to
   either pending entry.

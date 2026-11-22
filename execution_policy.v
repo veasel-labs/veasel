@@ -122,8 +122,7 @@ fn agent_final_response_for_cli(response string, code_change_request bool,
 		return '${response.trim_space()} Veasel recorded approved native CLI command(s): ${facts.commands_ran.join(', ')}. This does not establish that a code change was applied. ${verification}'
 	}
 	if facts.effects_observed {
-		return agent_final_response_for_execution_policy(response, true,
-			ExecutionPolicyTurn{ mode: .ask, interactive: true }, false, false)
+		return 'The installed CLI reported no successfully applied native edit or approved command in this turn. Veasel cannot confirm the requested code change; inspect the workspace and run the requested checks before treating the task as complete. ${response}'
 	}
 	return 'Veasel could not confirm whether the installed CLI applied changes for this code-change request. Inspect the workspace and run the requested checks before treating the task as complete. ${response}'
 }

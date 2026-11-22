@@ -143,7 +143,8 @@ fn test_installed_cli_final_response_uses_recorded_effects_and_does_not_overclai
 
 	no_effects := agent_final_response_for_cli('I made the requested change.', true, false,
 		TurnOutcomeFacts{ effects_observed: true })
-	assert no_effects.contains('No workspace edit was applied')
+	assert no_effects.contains('no successfully applied native edit or approved command')
+	assert no_effects.contains('cannot confirm the requested code change')
 
 	command_only := agent_final_response_for_cli('No workspace edit was applied; npm test passed.', true,
 		true, TurnOutcomeFacts{

@@ -116,9 +116,9 @@ Merged since prior ledger snapshot:
 ### veasel-labs/veasel#689 — cross-repository consolidation epic
 
 - **State / owner:** OPEN · integration owner across all seven repositories.
-- **Dependencies:** #549, #550, #673 and the official plugin governance
-  decision in `veasel-labs/agent-toolkit#10`; final compatibility and HorneroOS
-  evidence.
+- **Dependencies:** #549, #550 and #673; final compatibility and HorneroOS
+  evidence. The first-party governance decision in official registry #10 is
+  resolved; external community entries still need independent review.
 - **Evidence:** ADR-0001, implementation history, security/orchestration,
   Library and World merges are present in current Veasel history. Current repo
   inventory and all still-open work are recorded above and below.
@@ -181,14 +181,15 @@ the retired Desktop runtime wholesale.
   evidence in their linked issue comments. These do not close the parent
   daily-driver or product-mission gates.
 - Veasel Library #706 closed through PR #782; runtime/catalog work is integrated.
-  Official plugin installation remains governed by #10.
+  First-party `veasel-essentials` is installable after owner-approved PR #12;
+  community entries stay blocked until independent review.
 - World integration #693 closed through [PR #789](https://github.com/veasel-labs/veasel/pull/789)
   at current `main`; runtime state is canonical. Visual design/accessibility
   evidence remains part of the open epic acceptance.
 - Official registry governance issue [#10](https://github.com/veasel-labs/agent-toolkit/issues/10) was resolved with the owner's explicit option A decision. [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12) merged as `2096315d10ccdb19b1cb8ea071986bd2c641eb89`, marked only first-party `veasel-essentials` approved, updated generated catalogs and documented the transparent owner exception. Exact-main validation [#45075110730](https://github.com/veasel-labs/agent-toolkit/actions/runs/45075110730) passed. Community `agent-toolkit-core` remains pending; no independent review is claimed. The first-party bundled source keeps its pin by containing repository commit and its manifest/skill hashes were verified before approval.
 - The official registry's invalid-pin remediation merged as PR #11. It removes
-  the all-zero pin and validates provenance, but does not grant approval to
-  either pending entry.
+  the all-zero pin and validates provenance; community `agent-toolkit-core`
+  remains pending and non-installable until independent review.
 - Personal Toolkit PRs [#1832](https://github.com/ulises-jeremias/agent-toolkit/pull/1832)
   (`94291bdc`, GUI CLI redirected to Veasel Desktop), [#1833](https://github.com/ulises-jeremias/agent-toolkit/pull/1833)
   (`d1ae2d53`, publish-by-reference documentation), and [#1834](https://github.com/ulises-jeremias/agent-toolkit/pull/1834)
@@ -203,7 +204,7 @@ the retired Desktop runtime wholesale.
 
 ## Closeout rule
 
-Keep #549, #550, #673, #689 and official registry #10 open while their stated
-acceptance remains. Before closing any item, attach the exact destination SHA,
+Keep #549, #550, #673 and #689 open while their stated acceptance remains.
+Before closing any item, attach the exact destination SHA,
 required CI result, packaged/runtime evidence and final resolution link. Close
 #689 last; do not substitute the current zero-PR count for product completion.

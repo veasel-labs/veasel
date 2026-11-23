@@ -170,7 +170,8 @@ class ResponsesProxyTests(unittest.TestCase):
         self.proxy = self.make_proxy(max_requests=4)
         self.proxy_url = self.proxy.start()
 
-    def make_proxy(self, *, max_requests: int, max_run_cost_usd: str = "0.01") -> Any:
+    def make_proxy(self, *, max_requests: int, max_run_cost_usd: str = "0.01",
+                   client_protocol: str = "opencode") -> Any:
         return responses_proxy.BudgetProxy(
             upstream_base_url=f"http://127.0.0.1:{self.upstream.server_port}/v1",
             api_key="upstream-secret-test",
@@ -183,6 +184,7 @@ class ResponsesProxyTests(unittest.TestCase):
             max_run_cost_usd=max_run_cost_usd,
             input_usd_per_million_tokens="0.1",
             output_usd_per_million_tokens="0.2",
+            client_protocol=client_protocol,
         )
 
     def responses_endpoint(self, path: str = "/v1/responses") -> str:
@@ -225,6 +227,38 @@ class ResponsesProxyTests(unittest.TestCase):
             "tools": [_tool(name) for name in (
                 "edit", "glob", "grep", "opencode_worktree_remove", "read", "shell", "skill", "write",
             )],
+        }
+        payload.update(overrides)
+        return payload
+
+    @staticmethod
+    def valid_veasel_payload(**overrides: Any) -> dict[str, Any]:
+        tool_names = (
+            "subagent_run", "subagent_wait", "workspace_list_files", "workspace_read_file",
+            "workspace_search", "workspace_propose_file_edit", "workspace_propose_file_content",
+            "workspace_propose_shell_command",
+        )
+        schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+        payload: dict[str, Any] = {
+            "model": "fixture-model",
+            "max_output_tokens": 2048,
+            "input": [
+                {"type": "message", "role": "system", "content": "Use only the provided workspace tools."},
+                {"type": "message", "role": "user", "content": "Read the project README."},
+                {"type": "function_call", "call_id": "call-1", "name": "workspace_read_file",
+                 "arguments": '{"path":"README.md"}'},
+                {"type": "function_call_output", "call_id": "call-1", "output": "Fixture README."},
+                {"type": "reasoning", "encrypted_content": "opaque-fixture", "id": "reasoning-1",
+                 "summary": [{"type": "summary_text", "text": "Inspect the README."}]},
+            ],
+            "tools": [{"type": "function", "name": name, "description": "Bounded fixture tool.",
+                       "parameters": schema} for name in tool_names],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+            "stream": True,
+            "store": False,
+            "include": ["reasoning.encrypted_content"],
+            "reasoning": {"effort": "high", "summary": "auto"},
         }
         payload.update(overrides)
         return payload
@@ -286,6 +320,29 @@ class ResponsesProxyTests(unittest.TestCase):
         self.assertEqual(requests[1]["payload"]["input"], tool_round_input)
         self.assertEqual(self.proxy.metrics()["input_token_prechecks"], 1)
         self.assertEqual(self.proxy.metrics()["upstream_generation_attempts"], 1)
+
+    def test_pinned_veasel_responses_contract_uses_the_budget_and_rejects_unknown_tools(self) -> None:
+        self.proxy.close()
+        self.proxy = self.make_proxy(max_requests=2, client_protocol="veasel")
+        self.proxy_url = self.proxy.start()
+        status, body = self.post_json(self.valid_veasel_payload())
+        self.assertEqual(status, 200, body)
+        requests = self.upstream_requests()
+        self.assertEqual([request["path"] for request in requests], [
+            "/v1/responses/input_tokens", "/v1/responses",
+        ])
+        self.assertNotIn("instructions", requests[0]["payload"])
+        metrics = self.proxy.metrics()
+        self.assertEqual(metrics["upstream_generation_attempts"], 1)
+        self.assertEqual(metrics["generation_cost_settled_usd"], "0.00001160")
+
+        with UpstreamFixtureHandler.requests_lock:
+            UpstreamFixtureHandler.requests_seen.clear()
+        invalid = self.valid_veasel_payload()
+        invalid["tools"][0]["name"] = "mcp_shell"
+        status, body = self.post_json(invalid)
+        self.assertEqual(status, 400, body)
+        self.assertEqual(self.upstream_requests(), [])
 
     def test_rejects_hosted_tools_server_history_unknown_fields_and_non_observed_shapes(self) -> None:
         cases = (

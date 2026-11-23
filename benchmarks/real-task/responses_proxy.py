@@ -1,6 +1,6 @@
 """Fail-closed Responses proxy with per-call token and spend reservations.
 
-The local OpenCode adapter is deliberately limited to the observed 2.2.7
+The OpenCode 2.2.7 and Veasel 0.79.5 adapters each accept only their pinned
 client-side function-tool request shape. Every generation is pre-counted by
 Meta's input-token endpoint, reserves a context/output worst case atomically,
 and must return final usage before any reservation is released. This module
@@ -26,6 +26,11 @@ _OPEN_CODE_TOP_LEVEL_KEYS = {
 }
 _OPEN_CODE_TOOLS = {
     "edit", "glob", "grep", "opencode_worktree_remove", "read", "shell", "skill", "write",
+}
+_VEASEL_TOOLS = {
+    "subagent_run", "subagent_wait", "workspace_list_files", "workspace_read_file",
+    "workspace_search", "workspace_propose_file_edit", "workspace_propose_file_content",
+    "workspace_propose_shell_command", "agent_skill_load", "agent_skill_read_resource",
 }
 _REASONING_INCLUDE = ["reasoning.encrypted_content"]
 _JSON_SCHEMA_KEYS = {
@@ -53,7 +58,8 @@ class BudgetProxy:
                  client_api_key: str, max_request_body_bytes: int | None = None,
                  max_run_cost_usd: str | Decimal = "0.11",
                  input_usd_per_million_tokens: str | Decimal = "0.1",
-                 output_usd_per_million_tokens: str | Decimal = "0.2") -> None:
+                 output_usd_per_million_tokens: str | Decimal = "0.2",
+                 client_protocol: str = "opencode") -> None:
         parsed = urlsplit(upstream_base_url)
         local_fixture = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
         if (parsed.scheme != "https" and not (parsed.scheme == "http" and local_fixture)) \
@@ -65,6 +71,8 @@ class BudgetProxy:
             raise ValueError("live upstream must be https://api.meta.ai/v1")
         if not api_key or not client_api_key or not model:
             raise ValueError("provider credential, client credential, and model are required")
+        if client_protocol not in {"opencode", "veasel"}:
+            raise ValueError("unsupported budget proxy client protocol")
         if any(value <= 0 for value in (max_requests, context_tokens, output_tokens)):
             raise ValueError("request and token budgets must be positive")
         try:
@@ -79,6 +87,7 @@ class BudgetProxy:
         self._upstream_base_url = upstream_base_url.rstrip("/")
         self._api_key = api_key
         self._model = model
+        self._client_protocol = client_protocol
         self._max_requests = max_requests
         self._context_tokens = context_tokens
         self._output_tokens = output_tokens
@@ -174,7 +183,10 @@ class BudgetProxy:
                 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                     self._respond(400, b'{"error":"invalid_json"}')
                     return
-                if not _valid_opencode_payload(payload, proxy._model, proxy._output_tokens):
+                valid_payload = _valid_veasel_payload(payload, proxy._model, proxy._output_tokens) \
+                    if proxy._client_protocol == "veasel" \
+                    else _valid_opencode_payload(payload, proxy._model, proxy._output_tokens)
+                if not valid_payload:
                     self._respond(400, b'{"error":"unsupported_responses_payload"}')
                     return
                 canonical_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
@@ -464,6 +476,95 @@ def _valid_opencode_payload(payload: Any, model: str, output_limit: int) -> bool
             return False
         names.add(name)
     return names == _OPEN_CODE_TOOLS
+
+
+def _valid_veasel_payload(payload: Any, model: str, output_limit: int) -> bool:
+    """Validate the pinned Veasel 0.79.5 Meta Responses client contract."""
+    expected_keys = {
+        "model", "max_output_tokens", "input", "tools", "tool_choice",
+        "parallel_tool_calls", "stream", "store", "include", "reasoning",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        return False
+    if payload.get("model") != model or payload.get("stream") is not True or payload.get("store") is not False:
+        return False
+    output = payload.get("max_output_tokens")
+    if not isinstance(output, int) or isinstance(output, bool) or not 16 <= output <= output_limit:
+        return False
+    if payload.get("tool_choice") != "auto" or payload.get("parallel_tool_calls") is not True \
+            or payload.get("include") != _REASONING_INCLUDE \
+            or payload.get("reasoning") != {"effort": "high", "summary": "auto"}:
+        return False
+    if not _valid_veasel_input_items(payload.get("input")):
+        return False
+    tools = payload.get("tools")
+    if not isinstance(tools, list) or not 8 <= len(tools) <= len(_VEASEL_TOOLS):
+        return False
+    names: set[str] = set()
+    for tool in tools:
+        if not isinstance(tool, dict) or set(tool) != {"type", "name", "description", "parameters"}:
+            return False
+        name = tool.get("name")
+        if tool.get("type") != "function" or name not in _VEASEL_TOOLS or name in names \
+                or not isinstance(tool.get("description"), str) or len(tool["description"]) > 8192 \
+                or not _valid_json_schema(tool.get("parameters"), 0):
+            return False
+        names.add(name)
+    required_tools = _VEASEL_TOOLS - {"agent_skill_load", "agent_skill_read_resource"}
+    return required_tools.issubset(names)
+
+
+def _valid_veasel_input_items(value: Any) -> bool:
+    if not isinstance(value, list) or not value or len(value) > 128:
+        return False
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str):
+            return False
+        kind = item["type"]
+        if kind == "message":
+            required = {"type", "role", "content"}
+            if not required.issubset(item) or not set(item).issubset(required | {"phase"}) \
+                    or item.get("role") not in {"system", "user", "assistant"} \
+                    or not isinstance(item.get("content"), str):
+                return False
+            if "phase" in item and (item.get("role") != "assistant" or item["phase"] != "commentary"):
+                return False
+        elif kind == "function_call":
+            required = {"type", "call_id", "name", "arguments"}
+            if not required.issubset(item) or not set(item).issubset(required | {"id"}) \
+                    or not all(isinstance(item.get(key), str) for key in ("call_id", "name", "arguments")) \
+                    or not 1 <= len(item["call_id"]) <= 64 or item["name"] not in _VEASEL_TOOLS:
+                return False
+            if "id" in item and (not isinstance(item["id"], str) or len(item["id"]) > 128):
+                return False
+            try:
+                arguments = json.loads(item["arguments"], object_pairs_hook=_unique_object_pairs)
+            except (json.JSONDecodeError, ValueError):
+                return False
+            if not isinstance(arguments, dict):
+                return False
+        elif kind == "function_call_output":
+            if set(item) != {"type", "call_id", "output"} \
+                    or not isinstance(item.get("call_id"), str) or len(item["call_id"]) > 64 \
+                    or not isinstance(item.get("output"), str):
+                return False
+        elif kind == "reasoning":
+            if not {"type", "encrypted_content"}.issubset(item) \
+                    or not set(item).issubset({"type", "encrypted_content", "id", "summary"}) \
+                    or not isinstance(item.get("encrypted_content"), str):
+                return False
+            if "id" in item and (not isinstance(item["id"], str) or len(item["id"]) > 128):
+                return False
+            summary = item.get("summary", [])
+            if not isinstance(summary, list) or len(summary) > 32:
+                return False
+            if any(not isinstance(part, dict) or set(part) != {"type", "text"}
+                   or part.get("type") != "summary_text" or not isinstance(part.get("text"), str)
+                   for part in summary):
+                return False
+        else:
+            return False
+    return True
 
 
 def _valid_input_items(value: Any) -> bool:

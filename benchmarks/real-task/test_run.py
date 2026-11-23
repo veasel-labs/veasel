@@ -938,7 +938,10 @@ class PreflightTests(unittest.TestCase):
             launched_env = popen.call_args.kwargs["env"]
             self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
             self.assertIn("--standalone", launched_command)
-            self.assertEqual(launched_env["OPENCODE_CONFIG"], str(data_dir / "benchmark-opencode.json"))
+            config_path = Path(launched_env["OPENCODE_CONFIG"])
+            self.assertEqual(config_path.name, "benchmark-opencode.json")
+            self.assertEqual(config_path.parent.parent, data_dir / "runs")
+            self.assertTrue(config_path.is_file())
             self.assertNotIn("ANTHROPIC_API_KEY", launched_env)
             self.assertEqual(popen.call_args.kwargs["cwd"], workspace)
             report = json.loads((artifacts / "attempt.json").read_text())
@@ -948,6 +951,65 @@ class PreflightTests(unittest.TestCase):
             self.assertIsNone(report["resource_measurements"]["agent_process_tree_rss_sampled_max_bytes"])
             self.assertFalse(report["provider_usage"]["reported"])
             self.assertEqual(report["provider_usage"]["source"], "opencode_json_step_finish_events")
+
+    def test_remote_veasel_uses_only_ephemeral_budget_proxy_without_provider_call(self):
+        case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            data_dir = root / "state"
+            data_dir.mkdir()
+            (data_dir / "model-settings.json").write_text(json.dumps({
+                "active_provider": "meta",
+                "profiles": {"meta": {
+                    "model": "muse-spark-1.3-contributor",
+                    "base_url": "https://api.meta.ai/v1",
+                    "max_output_tokens": 2048,
+                    "api_key": "upstream-secret-fixture",
+                }},
+            }))
+            artifacts = root / "artifacts"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
+            process = Mock()
+            process.poll.return_value = 0
+            process.wait.return_value = 0
+            args = argparse.Namespace(
+                case=case_path, workspace=workspace, data_dir=data_dir,
+                ollama_url="unused", agent="veasel", veasel="veasel", opencode="opencode",
+                artifacts=artifacts, isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256, approved_spend_usd="5",
+            )
+            with (
+                patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/veasel"),
+                patch.object(runner.subprocess, "check_output", return_value="Veasel 0.79.5"),
+                patch.object(runner, "provider_reported_usage", return_value={"reported": False}),
+                patch.object(runner, "create_task_clone", return_value=workspace),
+                patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
+                patch.object(runner.subprocess, "Popen", return_value=process) as popen,
+            ):
+                self.assertEqual(runner.run_case(args), 0)
+            launched_command = popen.call_args.args[0]
+            launched_env = popen.call_args.kwargs["env"]
+            self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
+            self.assertEqual(launched_command[2:4], ["/usr/bin/veasel", "run"])
+            self.assertNotIn("VEASEL_MODEL_API_KEY", launched_env)
+            client_key = launched_env["VEASEL_BENCHMARK_PROXY_KEY"]
+            self.assertTrue(launched_env["VEASEL_BENCHMARK_PROXY_SOCKET"].endswith("budget-proxy.sock"))
+            settings_path = Path(launched_env["VEASEL_DATA_DIR"]) / "model-settings.json"
+            settings = json.loads(settings_path.read_text())
+            profile = settings["profiles"]["meta"]
+            self.assertEqual(profile["base_url"], "http://127.0.0.1:18765/v1")
+            self.assertEqual(profile["api_key"], client_key)
+            self.assertNotEqual(profile["api_key"], "upstream-secret-fixture")
+            self.assertEqual(profile["model"], "muse-spark-1.3-contributor")
+            self.assertNotIn("upstream-secret-fixture", (data_dir / "model-settings.json").read_text())
+            self.assertNotIn("upstream-secret-fixture", " ".join(launched_command))
+            report = json.loads((artifacts / "attempt.json").read_text())
+            self.assertEqual(report["provider_proxy_metrics"]["input_token_prechecks"], 0)
+            self.assertEqual(report["provider_proxy_metrics"]["upstream_generation_attempts"], 0)
 
     def test_launcher_records_agent_and_gpu_resource_samples(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"

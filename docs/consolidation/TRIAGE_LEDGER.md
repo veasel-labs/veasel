@@ -104,12 +104,19 @@ Merged since prior ledger snapshot:
   reviewed isolation for OpenCode shell children.
 - **Evidence:** deterministic Responses fixtures and enforced generic spending
   bounds are recorded in [the Nov 20 issue update](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7033093408).
+  The current isolation branch adds a Veasel 0.79.5 Meta Responses adapter,
+  per-run proxy-only credentials and Linux Bubblewrap/Unix-relay tests; 88
+  local tests passed without contacting Meta. This is branch evidence only and
+  awaits PR review and required CI on its exact head.
 - **Remaining acceptance:** run and independently score the same meaningful task,
   prompt, base, model, permissions and budgets through Veasel and OpenCode;
   preserve sanitized traces and versions/hashes. The pinned Muse model is not
   in the verified price schedule and shell-child isolation still needs review;
   a previously recorded budget authorization does not remove those fail-closed
   gates. No provider request or success is inferred here.
+- **Remaining blocker:** rotate/update the Meta credential after review, then
+  run only the owner-authorized bounded benchmark and independently score both
+  attempts. No live provider request has been made by this adapter work.
 - **Action:** IMPLEMENT/REVIEW in Veasel; KEEP OPEN until the matched pair and
   budget/isolation evidence are complete.
 

@@ -35,29 +35,29 @@ required while the pinned model weights and context fit in VRAM. During a run,
 the runner continues sampling RAM and swap once per second and aborts below the
 4.5 GiB floor. A failed preflight exits with status 2 and lists the unmet checks.
 
-## Run Veasel
+## Outer isolation for remote Meta runs
 
-Run only through an operator-managed isolation wrapper whose reviewed behavior
-enforces a disposable task environment: no host home mounts or unrelated
-secrets, and writable access limited to the task checkout and isolated Veasel
-state/artifacts. The runner requires an absolute executable wrapper path and
-its reviewed SHA-256, verifies that digest immediately before launch, and
-passes the agent command through the wrapper using `-- <agent argv>`. A plain
-confirmation flag is not accepted. The runner verifies wrapper identity, not
-its sandbox semantics; the operator must review that the pinned wrapper applies
-the intended filesystem, process, and network boundaries. The wrapper's digest
-is recorded in `attempt.json`. It should `exec` the child so the monitored PID,
-signals, and process tree continue to cover Veasel/OpenCode, and it must never
-log command arguments or environment variables. For the local Qwen case, the
-Veasel provider configuration must point at the pinned local model; no paid API
-is used. The configured Muse case uses a remote provider and must only be run
-with explicit operator authorization and the aggregate USD budget controls
-described below.
+For the pinned remote OpenCode or Veasel Meta case, run only through the repository's Linux
+Bubblewrap wrapper. It hides host home, runtime, and application-config directories; binds only the
+disposable task, per-attempt state, and artifact directories; and creates a
+private network namespace. For a remote attempt, the only network
+path is a mode-0600 Unix socket forwarded to the fixed loopback BudgetProxy.
+OpenCode shell commands run in the separate namespace established by
+`opencode-shell-sandbox.sh`; that namespace cannot see the socket or proxy key.
+Veasel receives neither relay path nor proxy credential in its process environment;
+its private per-run provider profile contains only the ephemeral proxy key. Its
+approved shell tools use Veasel's separate OS sandbox. The wrapper refuses direct
+provider credentials. Its exact SHA-256 is checked
+by the runner and recorded with the attempt. The Linux fixture suite exercises
+the filesystem, host-loopback, proxy-relay, and nested-shell boundaries without
+contacting Meta.
 
 ```sh
-ISOLATION_WRAPPER=/absolute/path/to/reviewed-isolation-wrapper
-ISOLATION_WRAPPER_SHA256=<reviewed-64-character-sha256>
+ISOLATION_WRAPPER="$(pwd)/benchmarks/real-task/benchmark_agent_sandbox.py"
+ISOLATION_WRAPPER_SHA256="$(sha256sum "$ISOLATION_WRAPPER" | cut -d' ' -f1)"
 python3 benchmarks/real-task/run.py run \
+  --agent opencode \
+  --case benchmarks/real-task/cases/website-173-muse-spark-v0795/case.json \
   --workspace /path/to/disposable/website-checkout \
   --data-dir /benchmark/state \
   --artifacts /path/to/private-attempt-artifacts \
@@ -74,10 +74,11 @@ of `completed`, `resource_aborted`, `timeout`, or `agent_error`. A completed
 turn is still **unscored** until an independent reviewer checks the expected
 diff and task-specific tests against the external oracle.
 
-## Run the OpenCode baseline
+## Local-model runs
 
-Reset the same checkout to the same pinned base commit and use the same local
-Ollama endpoint/model and disposable sandbox. OpenCode is pinned at v2.2.5;
+The remote wrapper above does not allow an arbitrary local Ollama endpoint.
+Existing local-model runs still require their separately reviewed wrapper and
+the same pinned disposable workspace. OpenCode is pinned at v2.2.5;
 the runner writes a private provider config with the same endpoint and 4096 / 2048
 context/output limits. Its Build agent allows only repository read/edit/search/list
 and shell tools; web, subagents, MCP, and external-directory access are denied.
@@ -87,24 +88,12 @@ standalone, model, agent, auto-approval, and JSON event options ([CLI docs](http
 The preflight rejects repository or system OpenCode config files that could
 override the pinned model/provider setup.
 
-```sh
-ISOLATION_WRAPPER=/absolute/path/to/reviewed-isolation-wrapper
-ISOLATION_WRAPPER_SHA256=<reviewed-64-character-sha256>
-python3 benchmarks/real-task/run.py preflight --agent opencode \
-  --workspace /path/to/disposable/website-checkout \
-  --data-dir /benchmark/opencode-state
-python3 benchmarks/real-task/run.py run --agent opencode \
-  --workspace /path/to/disposable/website-checkout \
-  --data-dir /benchmark/opencode-state \
-  --artifacts /path/to/private-opencode-attempt \
-  --isolation-wrapper "$ISOLATION_WRAPPER" \
-  --isolation-wrapper-sha256 "$ISOLATION_WRAPPER_SHA256"
-```
-
-Run Veasel and OpenCode as separate attempts from reset workspaces. Do not run
-them concurrently: they share the same local model and host resource budget.
-The reports pin task/model/settings, but a comparison is valid only after both
-outcomes are externally scored against the same oracle.
+The remote Veasel adapter is pinned to the released 0.79.5 Meta Responses
+request contract. The proxy rejects unknown tools and fields, pre-counts exact
+input, reserves the configured context/output ceiling, and requires final
+provider usage before settling cost. The local fixture validates the request
+contract without making a provider call; a live comparison remains unverified
+until the owner rotates the provider credential and authorizes the reviewed run.
 
 ## Configured Muse Responses case
 

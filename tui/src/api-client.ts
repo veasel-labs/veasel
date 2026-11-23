@@ -24,6 +24,20 @@ export type ApiSession = {
   last_model?: string
 }
 
+export type ApiCliProvider = {
+  id: string
+  name: string
+  exec: string
+  protocol: string
+  installed: boolean
+  version: string
+  auth_probe_present: boolean
+  auth_state: "probe-present" | "probe-missing" | "unknown"
+  permission_modes: string[]
+  session_resume_verified: boolean
+  usage_reporting: string
+}
+
 export type ModelProfileView = {
   model: string
   base_url: string
@@ -385,6 +399,30 @@ export class VeaselApiClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title, directory }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSession
+  }
+
+  async listCliProviders(): Promise<ApiCliProvider[]> {
+    const response = await fetch(`${this.base}/v1/providers/cli`, { signal: this.signal })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiCliProvider[]
+  }
+
+  async updateSessionTarget(
+    session: Pick<ApiSession, "id" | "prefs_version">,
+    preferredProvider: string,
+  ): Promise<ApiSession> {
+    const response = await fetch(`${this.base}/v1/sessions/${encodeURIComponent(session.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        preferred_provider: preferredProvider,
+        preferred_model: "",
+        expected_prefs_version: session.prefs_version ?? 0,
+      }),
       signal: this.signal,
     })
     if (!response.ok) throw await httpError(response)

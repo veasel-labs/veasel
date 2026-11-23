@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { resolveLoopbackApiBase, VeaselApiClient } from "./api-client"
+import { resolveLoopbackApiBase, VeaselApiClient, type ApiSession } from "./api-client"
 
 describe("resolveLoopbackApiBase", () => {
   test("defaults to loopback port 4097", () => {
@@ -568,6 +568,45 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({ scope: "project", directory: "/tmp/proj", enabled: true })
     expect(calls[1]?.url).toContain("scope=project&directory=%2Ftmp%2Fproj")
     expect(calls[2]?.url).toContain("/v1/mcp-servers/docs?scope=project&directory=%2Ftmp%2Fproj")
+  })
+})
+
+describe("VeaselApiClient session runner", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("lists installed CLI provider capability records", async () => {
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      url = String(input)
+      return new Response(JSON.stringify([{ id: "opencode", installed: true }]), { status: 200 })
+    }) as typeof fetch
+    const providers = await new VeaselApiClient("http://127.0.0.1:4097").listCliProviders()
+    expect(url).toBe("http://127.0.0.1:4097/v1/providers/cli")
+    expect(providers[0]?.id).toBe("opencode")
+  })
+
+  test("patches a session runner with its optimistic preferences version", async () => {
+    let request: RequestInit | undefined
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      url = String(input)
+      request = init
+      return new Response(JSON.stringify({ id: "s-1", preferred_provider: "opencode" }), { status: 200 })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const updated = await client.updateSessionTarget({ id: "s/1", prefs_version: 4 } as ApiSession, "opencode")
+    expect(url).toBe("http://127.0.0.1:4097/v1/sessions/s%2F1")
+    expect(request?.method).toBe("PATCH")
+    expect(JSON.parse(String(request?.body))).toEqual({
+      preferred_provider: "opencode",
+      preferred_model: "",
+      expected_prefs_version: 4,
+    })
+    expect(updated.preferred_provider).toBe("opencode")
   })
 })
 

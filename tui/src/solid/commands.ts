@@ -418,6 +418,7 @@ export type LivePaletteHandlers = {
   showHelp: () => void
   openSettings: () => void
   showModelPicker: () => void
+  showCliProviderPicker: () => void
   showVariant: () => void
   showAgent: () => void
   showSessions: () => void
@@ -495,6 +496,14 @@ export function buildLivePaletteCommands(handlers: LivePaletteHandlers): Palette
       keywords: ["model", "models", "llm", "provider", "catalog"],
       shortcut: "F2",
       run: () => handlers.showModelPicker(),
+    },
+    {
+      id: "veasel.session.runner",
+      title: "Choose session runner",
+      description: "Route this session to an installed Claude Code, Codex, OpenCode, or Muse CLI",
+      group: "session",
+      keywords: ["provider", "runner", "cli", "claude", "codex", "opencode", "muse"],
+      run: () => handlers.showCliProviderPicker(),
     },
     {
       id: "veasel.variant.picker",

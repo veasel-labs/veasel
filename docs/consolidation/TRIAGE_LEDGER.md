@@ -13,25 +13,43 @@ proposed dispositions are historical and must not be used as current state.
 
 | Repository | `main` SHA | Open issues | Open PRs | Latest relevant evidence |
 | --- | --- | ---: | ---: | --- |
-| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | `9a2ca6b4f8ead74747826c1f199bf145db1405f4` | 4 | 2 | Core CI [#44771350387](https://github.com/veasel-labs/veasel/actions/runs/44771350387) passed on this exact SHA: Linux/macOS/Windows backend, Linux shards, Desktop/Terminal, security, and all three desktop package jobs. The Nov 22 [#45039541114](https://github.com/veasel-labs/veasel/actions/runs/45039541114) is a watchdog, not a replacement for core CI. PRs #790 and #791 are listed below; PR CI is in progress. |
-| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | `e2c218aa1302639172976d12e383abda3ae23641` | 1 | 0 | Registry validation [#44588769444](https://github.com/veasel-labs/agent-toolkit/actions/runs/44588769444) passed. |
-| [veasel-labs/website](https://github.com/veasel-labs/website) | `1e402a3c32107be92b8ebaad42bc57ba119f6e79` | 0 | 0 | Release refresh [#45038246879](https://github.com/veasel-labs/website/actions/runs/45038246879) passed; build/deploy for the current release metadata passed [#44787710645](https://github.com/veasel-labs/website/actions/runs/44787710645). |
-| [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | `edc719b52d24b0b3f0c077ce65fef89d2a7de839` | 0 | 0 | macOS cask CI [#45056896872](https://github.com/veasel-labs/homebrew-tap/actions/runs/45056896872) passed on this SHA; updater manifest + install smoke [#45056699780](https://github.com/veasel-labs/homebrew-tap/actions/runs/45056699780) passed on pre-merge PR head `e993a4be`; it is not evidence from this main SHA. |
-| [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | `bb8c04675a57b1840cf65d91959d71254d62c8df` | 0 | 0 | Package CI [#44785915351](https://github.com/veasel-labs/aur-package/actions/runs/44785915351) and publisher [#44998127589](https://github.com/veasel-labs/aur-package/actions/runs/44998127589) passed. |
+| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | `c20254af8267705432449102c091185445098d25` | 4 | 1 | Latest-main CI [#45070709828](https://github.com/veasel-labs/veasel/actions/runs/45070709828) passed on this exact SHA, including Linux/macOS/Windows backend, all six Linux shards, native Windows auth regression and Credential Manager, ConPTY, Desktop/Terminal, security, and Linux/macOS/Windows packaging. Verified prerelease [`v0.100.1-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.100.1-next.0) targets this SHA; all manifest hashes/sizes match GitHub API digests, all ten checksum entries match, and unsigned status is explicit. |
+| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | `2096315d10ccdb19b1cb8ea071986bd2c641eb89` | 0 | 0 | Owner-approved first-party exception merged in [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12); exact-main validation [#45075110730](https://github.com/veasel-labs/agent-toolkit/actions/runs/45075110730) passed. `agent-toolkit-core` remains pending and non-installable. |
+| [veasel-labs/website](https://github.com/veasel-labs/website) | `590d458ee53229c98cfc067bda493b2d698209c0` | 0 | 0 | Release-metadata CI [#45081076364](https://github.com/veasel-labs/website/actions/runs/45081076364) passed on the exact proposed SHA; merge landed with main CI [#45081560447](https://github.com/veasel-labs/website/actions/runs/45081560447) and deployment [#45081560504](https://github.com/veasel-labs/website/actions/runs/45081560504) successful. Live Chromium review evidence: [website#171](https://github.com/veasel-labs/website/issues/171#issuecomment-7087442613). |
+| [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | `004860b04a9c3393af2a7178ae6155e19c053596` | 0 | 0 | Main cask CI [#45081630804](https://github.com/veasel-labs/homebrew-tap/actions/runs/45081630804) passed. Updater [#45081036921](https://github.com/veasel-labs/homebrew-tap/actions/runs/45081036921) verified the new release archive, performed install smoke, and opened #62; exact-PR CI [#45081167752](https://github.com/veasel-labs/homebrew-tap/actions/runs/45081167752) passed install, upgrade, and uninstall acceptance. |
+| [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | `6bd394cc742d64f8618815655cb8c0cbe92ac4ad` | 0 | 0 | Package CI [#45081790113](https://github.com/veasel-labs/aur-package/actions/runs/45081790113) passed on this exact main SHA. Release publish [#45081036506](https://github.com/veasel-labs/aur-package/actions/runs/45081036506) built/installed the package and confirmed CLI version/runtime before mirroring #63. |
 | [veasel-labs/.github](https://github.com/veasel-labs/.github) | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | Community-file validation [#40167738112](https://github.com/veasel-labs/.github/actions/runs/40167738112) passed on this SHA. |
-| [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | `5b788da03322d01495cc39579ddbf41657120107` | 0 | 0 | Required CI [#44704030935](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/44704030935) passed, including Linux/macOS/Windows integration. |
-| **Total** | — | **5** | **2** | Four open issues in Veasel and one owner-decision issue in the official registry; both open PRs are reviewable Veasel work. |
+| [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | `cc5c60d48c18ff6b5788c08f38f681c933505fbe` | 0 | 0 | PR #1835 merged at this SHA. Main validation is in progress: [Validate #45082787685](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45082787685), [Desktop #45082787719](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45082787719), and [clean-machine Desktop #45082787731](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45082787731). |
+| **Total** | — | **4** | **1** | Four open issues are in Veasel. The only open PR is the Veasel evidence ledger #792; the other six repositories have no open items. |
 
-These counts are a point-in-time snapshot. The unresolved items below stay open
+This snapshot was refreshed on 2026-11-22 after resolving official registry issue #10, merging release-propagation PRs Website #223, Homebrew #62 and AUR #63, merging personal Toolkit PR #1835, and completing Veasel `c20254a` main CI/release; it counts only open PR #792. The unresolved items below stay open
 until their product acceptance is met or an explicitly approved disposition is
-recorded. A zero PR count does not imply all closed draft work was migrated.
+recorded. A low PR count does not imply all closed draft work was migrated.
+
+### Veasel `main` branch protection
+
+On Nov 22, the required checks were expanded from the existing four to twelve.
+The required contexts are:
+
+- `Version plan`, `Security scan`, and `Terminal client`.
+- `V backend / linux`, `V backend / macOS`, and `V backend / Windows`.
+- `V extra tests / linux (shards 0–5)`.
+
+All are bound to the GitHub Actions app. This makes the supported platform
+backends and Linux test shards merge gates; it does not replace the separate
+release artifact and packaged provider acceptance gates.
 
 ## Open pull requests
 
 | PR | State / owner | Dependencies and remaining acceptance | Evidence / destination | Required action |
 | --- | --- | --- | --- | --- |
-| [veasel#790](https://github.com/veasel-labs/veasel/pull/790) | OPEN DRAFT · cross-repository consolidation ledger | Ledger refresh only; update with the current PR state and retain all historical disposition caveats. | Head `bbec34ea28e6dcf395ef592cebfbcc7a31a7cc97` at this ledger revision; targeted file is `docs/consolidation/TRIAGE_LEDGER.md`; CI run [#45060104302](https://github.com/veasel-labs/veasel/actions/runs/45060104302), Linux/macOS/Windows backend checks were pending at capture. | REVIEW, mark ready and merge only after required checks pass; the final merge SHA is pending. |
-| [veasel#791](https://github.com/veasel-labs/veasel/pull/791) | OPEN DRAFT · Veasel runtime / installed CLI provider outcomes | Provider-specific tool contract plus authoritative final reporting from `TurnFacts`; preserve command-only results, provider-reported test results, and incomplete/test-failure reports. Then repeat a fresh packaged Claude edit journey to resolve the current NOT VERIFIED evidence. | Head `56cac1814b5964eb4abd8796b092c3c1d4729809` (commits `d6f51ea`, `b13610a`, `af1dcc2`, `f587ed4`, `838094c`, `56cac18`); regression cases are in `execution_policy_test.v`; exact-head CI is [#45061101096](https://github.com/veasel-labs/veasel/actions/runs/45061101096) and was still running at capture. The evidence update is [#550 comment](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7084305149). Destination: Veasel `main`. | REVIEW/VERIFY; merge only with exact-head required CI green. Then publish a new package and repeat the real provider task before updating #550. |
+| [veasel#792](https://github.com/veasel-labs/veasel/pull/792) | OPEN DRAFT · consolidation evidence ledger | Documentation-only update of this ledger; the latest edit must pass CI on its exact head before merge. | Previous head `0b6abee` predates consumer synchronization and personal Toolkit PR #1835 merge; this update records green Veasel main, release `v0.100.1-next.0`, Website `590d458`, Homebrew `004860b`, AUR `6bd394c`, and personal Toolkit `cc5c60d`. | REVIEW, then merge only after all required checks on the updated head pass. |
+
+Merged since prior ledger snapshot:
+
+- [veasel#790](https://github.com/veasel-labs/veasel/pull/790) merged as `a594e4ef23002761e7b29386655b345166ad96a4`; it refreshed the cross-repository ledger.
+- [veasel#791](https://github.com/veasel-labs/veasel/pull/791) merged as current `main` `c20254af8267705432449102c091185445098d25`. It fixes installed CLI provider final reporting from durable `TurnFacts`. Full main CI and Linux/macOS/Windows desktop packaging passed on this exact SHA in [#45070709828](https://github.com/veasel-labs/veasel/actions/runs/45070709828). It published `v0.100.1-next.0` from this SHA with verified manifest and checksums. The real packaged Claude journey is still NOT VERIFIED; see [#550 evidence](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7087233125).
+- Personal Toolkit PR [#1835](https://github.com/ulises-jeremias/agent-toolkit/pull/1835) merged as `cc5c60d48c18ff6b5788c08f38f681c933505fbe`, preserving its original commits. It adds the reviewed, opt-in portable Creative Studio skills/agents/catalog product, pins the MCP server, and applies approval-gated OpenCode permissions. Exact-head validation for V, catalog/provenance, security, Windows integration, and packaged Desktop clean-machine journeys passed. The separate Electron package/linkage release workflow [#45074181542](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45074181542) was cancelled after ~50 minutes in unrelated macOS packaging jobs; it is recorded as cancelled, not passed. New personal main CI is in progress on the merge SHA (runs #45082787618–#45082787731); no latest-main pass is claimed yet.
 
 ## Open issues and required resolution
 
@@ -52,7 +70,7 @@ recorded. A zero PR count does not imply all closed draft work was migrated.
   Do not reuse deterministic fixtures as real-provider proof.
 - **Action:** KEEP OPEN. Continue implementation and platform acceptance in
   `veasel-labs/veasel`; resolve only with independent packaged evidence and
-  links in the issue. Current destination is `main` at `9a2ca6b4`; no final
+  links in the issue. Current destination is `main` at `c20254af8267705432449102c091185445098d25`; no final
   resolution commit exists.
 
 ### veasel-labs/veasel#550 — installed-binary cross-platform journeys
@@ -61,9 +79,15 @@ recorded. A zero PR count does not imply all closed draft work was migrated.
 - **Dependencies:** supported macOS/Windows runners and authenticated provider
   accounts; #549 product mission.
 - **Evidence:** Linux package journey and real visual TUI continuation are
-  recorded in [the issue's latest evidence comment](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7034671256).
+  recorded in [the Nov 20 evidence comment](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7034671256).
   The evidence distinguishes rendered visual TUI continuity from a successful
-  provider turn where required.
+  provider turn where required. The installed CLI outcome contradiction was fixed
+  in PR #791; [the follow-up](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7085930868)
+  explicitly retains the prior journey as NOT VERIFIED pending a fresh packaged run.
+  The earlier Windows auth failure was the test's invalid interpolated JSON
+  (`\U` in `C:\Users\...`), fixed by PR #773; its native regression passes in
+  Windows batch 1. [The root-cause follow-up](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7086183011)
+  records the repro and current check status.
 - **Remaining acceptance:** complete native macOS and Windows install/configure/
   edit/review/test/restart journeys with real providers; test rejected changes,
   cancellation and process cleanup on those platforms. Claude edit success is
@@ -92,9 +116,9 @@ recorded. A zero PR count does not imply all closed draft work was migrated.
 ### veasel-labs/veasel#689 — cross-repository consolidation epic
 
 - **State / owner:** OPEN · integration owner across all seven repositories.
-- **Dependencies:** #549, #550, #673 and the official plugin governance
-  decision in `veasel-labs/agent-toolkit#10`; final compatibility and HorneroOS
-  evidence.
+- **Dependencies:** #549, #550 and #673; final compatibility and HorneroOS
+  evidence. The first-party governance decision in official registry #10 is
+  resolved; external community entries still need independent review.
 - **Evidence:** ADR-0001, implementation history, security/orchestration,
   Library and World merges are present in current Veasel history. Current repo
   inventory and all still-open work are recorded above and below.
@@ -107,31 +131,16 @@ recorded. A zero PR count does not imply all closed draft work was migrated.
 - **Action:** KEEP OPEN and close LAST after every repository, acceptance gate,
   release and user-data migration is independently reconciled.
 
-### veasel-labs/agent-toolkit#10 — first-party registry review policy
-
-- **State / owner:** OPEN · repository owner decision required.
-- **Dependencies:** none for independent runtime and catalog implementation;
-  a second maintainer remains required for community entries.
-- **Evidence:** [decision brief](https://github.com/veasel-labs/agent-toolkit/issues/10#issuecomment-7019036861)
-  records that invalid/all-zero pins are rejected, `veasel-essentials` has a
-  valid source and narrow declared permissions, and both entries remain
-  `pending-initial-review` / `installable: false`.
-- **Remaining acceptance:** owner chooses A (approve the disclosed first-party
-  exception for `veasel-essentials` only), B (reject), or C (amend terms). No
-  agent may self-approve; `agent-toolkit-core` still needs a distinct reviewer.
-- **Action:** HUMAN DECISION. Keep the catalog fail-closed until the owner
-  records the decision. Destination is the official registry; no approval
-  commit exists.
 
 ## Distribution and release reconciliation
 
-- Veasel release [`v0.100.0-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.100.0-next.0)
-  names source `9a2ca6b4f8ead74747826c1f199bf145db1405f4`, with Linux, macOS and
-  Windows artifacts. The manifest truthfully reports installers as unsigned.
-- Website metadata, Homebrew cask and AUR package are synchronized to that
-  release and source. Website issue #171, Homebrew #15 and AUR #17 are closed;
-  their mirror PRs #222, #61 and #62 are merged. Package install/upgrade/
-  uninstall evidence is in the current-main CI links above.
+- Veasel release [`v0.100.1-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.100.1-next.0)
+  names source `c20254af8267705432449102c091185445098d25`, with Linux, macOS and
+  Windows CLI and Desktop artifacts. All nine manifest digests/sizes match
+  GitHub's asset metadata and all ten `SHA256SUMS` entries match; the three
+  platform CLI archives were downloaded and verified locally. Installers remain
+  truthfully unsigned.
+- Website metadata, Homebrew cask and AUR package now all point to `v0.100.1-next.0` and its source SHA. Release refresh PRs [Website #223](https://github.com/veasel-labs/website/pull/223), [Homebrew #62](https://github.com/veasel-labs/homebrew-tap/pull/62), and [AUR #63](https://github.com/veasel-labs/aur-package/pull/63) merged as `590d458`, `004860b`, and `6bd394c`; their exact-main CI and deployment passed. Live website review and actual Homebrew cask install/upgrade/uninstall are linked above. The AUR update workflow built and installed the exact generated package before publishing and mirroring it; the subsequent main package CI passed on `6bd394c`.
 - Homebrew's repeated updater failure was reproduced in [run
   #44996193101](https://github.com/veasel-labs/homebrew-tap/actions/runs/44996193101):
   it rebased a stale branch containing 117 commits and conflicted on three
@@ -172,28 +181,32 @@ the retired Desktop runtime wholesale.
   evidence in their linked issue comments. These do not close the parent
   daily-driver or product-mission gates.
 - Veasel Library #706 closed through PR #782; runtime/catalog work is integrated.
-  Official plugin installation remains governed by #10.
+  First-party `veasel-essentials` is installable after owner-approved PR #12;
+  community entries stay blocked until independent review.
 - World integration #693 closed through [PR #789](https://github.com/veasel-labs/veasel/pull/789)
   at current `main`; runtime state is canonical. Visual design/accessibility
   evidence remains part of the open epic acceptance.
+- Official registry governance issue [#10](https://github.com/veasel-labs/agent-toolkit/issues/10) is closed with the owner's explicit decision, “Aprobar excepción first-party de veasel-essentials.” [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12) merged as `2096315d10ccdb19b1cb8ea071986bd2c641eb89`, marked only first-party `veasel-essentials` approved, updated generated catalogs, and documented the transparent owner exception. Exact-main validation [#45075110730](https://github.com/veasel-labs/agent-toolkit/actions/runs/45075110730) passed. Community `agent-toolkit-core` remains pending; no independent review is claimed. The first-party bundled source keeps its pin by containing repository commit and its manifest/skill hashes were verified before approval.
 - The official registry's invalid-pin remediation merged as PR #11. It removes
-  the all-zero pin and validates provenance, but does not grant approval to
-  either pending entry.
+  the all-zero pin and validates provenance; community `agent-toolkit-core`
+  remains pending and non-installable until independent review.
 - Personal Toolkit PRs [#1832](https://github.com/ulises-jeremias/agent-toolkit/pull/1832)
   (`94291bdc`, GUI CLI redirected to Veasel Desktop), [#1833](https://github.com/ulises-jeremias/agent-toolkit/pull/1833)
   (`d1ae2d53`, publish-by-reference documentation), and [#1834](https://github.com/ulises-jeremias/agent-toolkit/pull/1834)
-  (`5b788da0`, Swarm v1 disposition) are merged into current personal Toolkit
-  `main`. They account for those compatibility, publishing-guidance and
-  disposition slices; they do not prove every legacy Desktop capability was
-  migrated or every Swarm data migration is complete. Required CI [#44704030935](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/44704030935)
-  passed on current `main`.
+  (`5b788da0`, Swarm v1 disposition) and [#1835](https://github.com/ulises-jeremias/agent-toolkit/pull/1835)
+  (`cc5c60d4`, Creative Studio portable skills/agents) are merged into current
+  personal Toolkit `main`. They account for compatibility, publishing guidance,
+  Swarm v1 disposition, and this reviewed portable capability slice; they do not
+  prove every legacy Desktop capability was migrated or every Swarm data
+  migration is complete. The exact merge SHA's current-main CI is still running
+  (runs #45082787618–#45082787731), so no post-merge green result is claimed.
 - HorneroOS AgentSpec registration issue #418 closed through #419. A real
   HorneroOS installation/launch/reuse/cleanup check is not claimed by this
   record.
 
 ## Closeout rule
 
-Keep #549, #550, #673, #689 and official registry #10 open while their stated
-acceptance remains. Before closing any item, attach the exact destination SHA,
+Keep #549, #550, #673 and #689 open while their stated acceptance remains.
+Before closing any item, attach the exact destination SHA,
 required CI result, packaged/runtime evidence and final resolution link. Close
 #689 last; do not substitute the current zero-PR count for product completion.

@@ -89,7 +89,9 @@ jobs:
           sudo bwrap --unshare-all --unshare-user --disable-userns --die-with-parent --new-session --ro-bind / / -- true
           cat > "$RUNNER_TEMP/veasel-bwrap-root" <<'EOF'
           #!/bin/sh
-          exec sudo -n /usr/bin/bwrap --unshare-user --disable-userns --uid "$SUDO_UID" --gid "$SUDO_GID" "$@"
+          runner_uid=$(/usr/bin/id -u)
+          runner_gid=$(/usr/bin/id -g)
+          exec sudo -n /usr/bin/bwrap --unshare-user --disable-userns --uid "$runner_uid" --gid "$runner_gid" "$@"
           EOF
           chmod 700 "$RUNNER_TEMP/veasel-bwrap-root"
       - name: Audit Harbor adapter dependencies

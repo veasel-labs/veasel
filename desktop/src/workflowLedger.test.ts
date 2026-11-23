@@ -42,11 +42,12 @@ describe('Desktop workflow ledger (docs/desktop/workflows.yaml)', () => {
     const tuiContinuity = journeys.find((j) => j.id === 'tui-desktop-continuity');
     expect(tuiContinuity).toBeDefined();
     expect(tuiContinuity!.status).toBe('ok');
-    for (const id of ['verified-release', 'claude-code-real-edit']) {
-      const journey = journeys.find((j) => j.id === id);
-      expect(journey, id).toBeDefined();
-      expect(journey!.status).toBe('partial');
-    }
+    const claudeEdit = journeys.find((j) => j.id === 'claude-code-real-edit');
+    expect(claudeEdit).toBeDefined();
+    expect(claudeEdit!.status).toBe('ok');
+    const release = journeys.find((j) => j.id === 'verified-release');
+    expect(release).toBeDefined();
+    expect(release!.status).toBe('partial');
   });
 });
 

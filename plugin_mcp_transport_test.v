@@ -885,8 +885,6 @@ fn test_linux_mcp_sandbox_command_binds_follow_symlink_chains() {
 	binds := linux_mcp_sandbox_command_binds(tool, {
 		'PATH': '/usr/bin:/bin'
 	})
-		'PATH': '/usr/bin:/bin'
-	})}')
 	assert os.real_path(venv) in binds, 'venv tree missing from ${binds}'
 	assert os.real_path(py_root) in binds, 'interpreter tree missing from ${binds}'
 	assert os.real_path(os.join_path(base, 'uv-python')) in binds, 'alias parent dir missing from ${binds}'

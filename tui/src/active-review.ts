@@ -1,4 +1,4 @@
-export type ActiveReviewKind = "patch" | "command" | "mcp"
+export type ActiveReviewKind = "patch" | "command" | "mcp" | "cli"
 
 export type ActiveReview = {
   kind: ActiveReviewKind

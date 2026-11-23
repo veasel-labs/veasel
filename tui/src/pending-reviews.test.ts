@@ -36,6 +36,8 @@ describe("formatPendingReviewStatus", () => {
       "/mcp calls",
     ])
     expect(pendingReviewOpenCommand({ edits: 0, commands: 2, mcp: 1 })).toBe("/commands")
+    expect(formatPendingReviewStatus({ edits: 0, commands: 0, mcp: 0, cli: 1 })).toContain("1 CLI  ·  /cli approvals")
+    expect(totalPendingReviews({ edits: 0, commands: 0, mcp: 0, cli: 1 })).toBe(1)
   })
 
   test("prefers the review cue over a completed-turn status", () => {
@@ -63,7 +65,7 @@ describe("pending review inventory", () => {
     )
     expect(empty).toEqual({
       ok: true,
-      counts: { edits: 0, commands: 0, mcp: 0 },
+      counts: { edits: 0, commands: 0, mcp: 0, cli: 0 },
       queue: [],
     })
     expect(statusWithPendingReviews("● connected", { edits: 0, commands: 0, mcp: 0 })).toBe("● connected")
@@ -80,7 +82,7 @@ describe("pending review inventory", () => {
     expect(pendingReviewInventoryFailureNotice()).toContain("/commands")
   })
 
-  test("loads all three queues atomically and preserves their pending IDs", async () => {
+  test("loads all review queues atomically and preserves their pending IDs", async () => {
     const requests: string[] = []
     const fetcher = async (input: string | URL | Request) => {
       const url = String(input)
@@ -91,21 +93,26 @@ describe("pending review inventory", () => {
       if (url.endsWith("/workspace/commands")) {
         return Response.json([{ id: "command-1", status: "pending" }])
       }
-      return Response.json([{ id: "mcp-1", status: "pending" }])
+      if (url.endsWith("/mcp-tool-calls")) {
+        return Response.json([{ id: "mcp-1", status: "pending" }])
+      }
+      return Response.json([{ id: "cli-1", status: "pending" }])
     }
     const result = await loadPendingReviewInventory("http://127.0.0.1:8000/", "session/one", undefined, fetcher)
     expect(requests).toEqual([
       "http://127.0.0.1:8000/v1/sessions/session%2Fone/workspace/edits",
       "http://127.0.0.1:8000/v1/sessions/session%2Fone/workspace/commands",
       "http://127.0.0.1:8000/v1/sessions/session%2Fone/mcp-tool-calls",
+      "http://127.0.0.1:8000/v1/sessions/session%2Fone/cli-approvals",
     ])
     expect(result).toEqual({
       ok: true,
-      counts: { edits: 1, commands: 1, mcp: 1 },
+      counts: { edits: 1, commands: 1, mcp: 1, cli: 1 },
       queue: [
         { kind: "patch", id: "edit-1", pending: true },
         { kind: "command", id: "command-1", pending: true },
         { kind: "mcp", id: "mcp-1", pending: true },
+        { kind: "cli", id: "cli-1", pending: true },
       ],
     })
   })
@@ -152,7 +159,7 @@ describe("pending review inventory", () => {
     expect(staleRequest.current).toBe(false)
     expect(staleRequest.inventory).toEqual({
       ok: true,
-      counts: { edits: 0, commands: 0, mcp: 0 },
+      counts: { edits: 0, commands: 0, mcp: 0, cli: 0 },
       queue: [],
     })
   })

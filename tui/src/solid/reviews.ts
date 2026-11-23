@@ -99,12 +99,13 @@ export function pendingSolidReviews(items: readonly SolidReviewItem[]): SolidRev
 export function reviewKindLabel(kind: ActiveReviewKind): string {
   if (kind === "patch") return "edit"
   if (kind === "command") return "shell"
-  return "MCP"
+  if (kind === "mcp") return "MCP"
+  return "installed CLI"
 }
 
 export function reviewPanelTitle(item: SolidReviewItem | undefined, pendingTotal: number): string {
   if (!item) return pendingTotal > 0 ? "Pending reviews" : "No pending reviews"
-  const kind = item.kind === "patch" ? "Workspace edit" : item.kind === "command" ? "Shell command" : "MCP call"
+  const kind = item.kind === "patch" ? "Workspace edit" : item.kind === "command" ? "Shell command" : item.kind === "mcp" ? "MCP call" : "Installed CLI tool"
   return `Review · ${kind}`
 }
 

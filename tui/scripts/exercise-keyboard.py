@@ -3,7 +3,8 @@
 
 This checks the keyboard path that unit tests cannot see: provider setup,
 model discovery, slash arguments, a bounded diff review, a bounded
-shell-command review, a bounded MCP argument review, a failed turn,
+shell-command review, a bounded MCP argument review, installed-CLI approval
+inventory, a failed turn,
 cancellation, a long session list that keeps the selection on screen, a
 session switch while completion data is still in flight, and a narrow
 terminal.
@@ -201,9 +202,11 @@ class Handler(BaseHTTPRequestHandler):
             f"/v1/sessions/{SESSION}/skills",
             f"/v1/sessions/{SESSION}/mcp-servers",
             f"/v1/sessions/{SESSION}/mcp-tool-calls",
+            f"/v1/sessions/{SESSION}/cli-approvals",
             f"/v1/sessions/{OTHER}/skills",
             f"/v1/sessions/{OTHER}/mcp-servers",
             f"/v1/sessions/{OTHER}/mcp-tool-calls",
+            f"/v1/sessions/{OTHER}/cli-approvals",
             f"/v1/sessions/{OTHER}/workspace/commands",
         ):
             if path.endswith("/mcp-tool-calls") and SESSION in path:
@@ -999,6 +1002,9 @@ def run_core_suite() -> None:
         reviewed = screen.terminal.text()
         if "MCP-TAIL" in reviewed:
             raise AssertionError(f"MCP review showed arguments past the terminal budget\n--- screen ---\n{reviewed}")
+        screen.send("/cli approvals\r", 0.7)
+        screen.wait_for("No pending installed-CLI tool approvals", 4)
+        screen.wait_for("VEASEL_CLI_INTERACTIVE_APPROVALS=1", 4)
         screen.send("/mcp trust ", 0.6)
         screen.wait_for("review-tools/local")
         screen.send("\x1b", 0.25)

@@ -39,7 +39,7 @@ export type SessionFooterMode = {
   skillComplete?: boolean
   slashComplete?: boolean
   reviewPending?: boolean
-  reviewKind?: "patch" | "command" | "mcp"
+  reviewKind?: "patch" | "command" | "mcp" | "cli"
   streaming?: boolean
 }
 

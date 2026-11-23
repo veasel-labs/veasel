@@ -5,6 +5,7 @@ export type PendingReviewCounts = {
   edits: number
   commands: number
   mcp: number
+  cli?: number
 }
 
 export type PendingReviewInventoryResult =
@@ -61,17 +62,19 @@ export async function loadPendingReviewInventory(
   }
 
   try {
-    const [edits, commands, mcp] = await Promise.all([
+    const [edits, commands, mcp, cli] = await Promise.all([
       load("workspace/edits"),
       load("workspace/commands"),
       load("mcp-tool-calls"),
+      load("cli-approvals"),
     ])
     const groups = [
       { kind: "patch" as const, records: edits, count: "edits" as const },
       { kind: "command" as const, records: commands, count: "commands" as const },
       { kind: "mcp" as const, records: mcp, count: "mcp" as const },
+      { kind: "cli" as const, records: cli, count: "cli" as const },
     ]
-    const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
+    const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0, cli: 0 }
     const queue: ActiveReview[] = []
     for (const group of groups) {
       const pending = group.records.filter((item) => item.status === "pending" && typeof item.id === "string")
@@ -85,7 +88,7 @@ export async function loadPendingReviewInventory(
 }
 
 export function pendingReviewInventoryFailureNotice(): string {
-  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, or /mcp calls to reopen a review list."
+  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, /mcp calls, or /cli approvals to reopen a review list."
 }
 
 export function pendingReviewDecisionFailureNotice(
@@ -100,7 +103,7 @@ export function pendingReviewDecisionFailureNotice(
 }
 
 export function totalPendingReviews(counts: PendingReviewCounts): number {
-  return counts.edits + counts.commands + counts.mcp
+  return counts.edits + counts.commands + counts.mcp + (counts.cli ?? 0)
 }
 
 // Slash list commands that open each pending review family, in priority order.
@@ -109,6 +112,7 @@ export function pendingReviewActions(counts: PendingReviewCounts): string[] {
   if (counts.edits > 0) actions.push("/patches")
   if (counts.commands > 0) actions.push("/commands")
   if (counts.mcp > 0) actions.push("/mcp calls")
+  if ((counts.cli ?? 0) > 0) actions.push("/cli approvals")
   return actions
 }
 
@@ -133,6 +137,9 @@ export function formatPendingReviewStatus(
   }
   if (counts.mcp > 0) {
     parts.push(`${counts.mcp} MCP`)
+  }
+  if ((counts.cli ?? 0) > 0) {
+    parts.push(`${counts.cli} CLI`)
   }
   if (parts.length === 0) return undefined
   const total = totalPendingReviews(counts)

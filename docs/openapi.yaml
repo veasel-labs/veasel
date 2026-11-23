@@ -1121,7 +1121,7 @@ paths:
   /v1/sessions/{id}/cli-approvals:
     get:
       operationId: listSessionCliApprovals
-      description: Lists pending interactive approvals for installed-CLI tool calls in this session. Only populated when the server runs with VEASEL_CLI_INTERACTIVE_APPROVALS=1; otherwise CLI approvals deny immediately and never appear here.
+      description: Lists pending interactive approvals for installed-CLI tool calls in this session. `veasel tui` sets VEASEL_CLI_INTERACTIVE_APPROVALS=1 before spawning a new backend; a separately started backend must be launched with that setting to expose approvals. Otherwise CLI approvals deny immediately and never appear here. Requests are never auto-approved and each decision applies only to that request.
       parameters:
         - in: path
           name: id

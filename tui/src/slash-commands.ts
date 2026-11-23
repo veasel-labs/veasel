@@ -31,7 +31,8 @@ export function slashCategoryForName(name: string): SlashCategory {
   if (name === "/connect" || name === "/models" || name === "/theme") return "setup"
   if (name.startsWith("/skill")) return "skills"
   if (name.startsWith("/plugin")) return "plugins"
-  if (name === "/mcp calls" || name.startsWith("/mcp call")) return "approvals"
+  if (name === "/mcp calls" || name.startsWith("/mcp call") || name.startsWith("/cli approval")) return "approvals"
+  if (name.startsWith("/cli")) return "approvals"
   if (name.startsWith("/mcp")) return "mcp"
   if (name.startsWith("/patch") || name.startsWith("/command")) return "approvals"
   if (name.startsWith("/agent") || name.startsWith("/delegate")) return "agents"
@@ -89,6 +90,8 @@ export const slashCommands: SlashCommand[] = [
   { name: "/mcp oauth", category: "mcp", description: "Authorize, complete, or refresh an MCP OAuth PKCE credential (no secrets shown)", usage: "/mcp oauth authorize|complete|refresh …" },
   { name: "/mcp calls", category: "approvals", description: "List MCP calls waiting for review" },
   { name: "/mcp call", category: "approvals", description: "Inspect, approve, or reject an MCP call", usage: "/mcp call show|approve|reject <id>" },
+  { name: "/cli approvals", category: "approvals", description: "List installed-provider tool requests waiting for explicit review" },
+  { name: "/cli approval", category: "approvals", description: "Inspect, approve, or reject one installed-provider tool request", usage: "/cli approval show|approve|reject <id>" },
   { name: "/patches", category: "approvals", description: "List proposed file edits waiting for approval; add text to filter by path or status" },
   { name: "/patch", category: "approvals", description: "Show, approve, or reject a file edit", usage: "/patch show|approve|reject <id>" },
   { name: "/commands", category: "approvals", description: "List proposed shell commands waiting for approval; add text to filter by command or cwd" },

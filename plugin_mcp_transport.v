@@ -402,7 +402,8 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 	bwrap_args << '/proc'
 	bwrap_args << '--dev'
 	bwrap_args << '/dev'
-	if canonical_workspace.len > 0 {
+	if canonical_workspace.len > 0 && canonical_workspace != root && canonical_workspace != data
+		&& !path_is_within(root, canonical_workspace) && !path_is_within(data, canonical_workspace) {
 		append_linux_bwrap_parent_dirs(mut bwrap_args, canonical_workspace)
 		bwrap_args << '--bind'
 		bwrap_args << canonical_workspace

@@ -34,6 +34,7 @@ except ImportError:  # Remote benchmark isolation is Linux-only; local cases rem
 fcntl: Any = _fcntl
 
 from responses_proxy import BudgetProxy
+from proxy_network_bridge import UnixBudgetProxyRelay
 
 
 ROOT = Path(__file__).resolve().parent
@@ -780,6 +781,50 @@ def remove_profile_key_from_disk(data_dir: Path) -> None:
     os.replace(temporary, settings_path)
 
 
+def scrub_isolated_veasel_profile(data_dir: Path) -> None:
+    """Remove an ephemeral proxy credential from persistent benchmark run state."""
+    settings_path = data_dir / "model-settings.json"
+    if not settings_path.exists() and not settings_path.is_symlink():
+        return
+    try:
+        remove_profile_key_from_disk(data_dir)
+    except Exception as exc:
+        # The profile is disposable. If it cannot be parsed or atomically
+        # rewritten, unlink it so a proxy credential is never left behind.
+        try:
+            settings_path.unlink(missing_ok=True)
+        except OSError as unlink_error:
+            raise RuntimeError("could not remove ephemeral benchmark credential") from unlink_error
+        if settings_path.exists() or settings_path.is_symlink():
+            raise RuntimeError("could not remove ephemeral benchmark credential") from exc
+
+
+def write_isolated_veasel_model_settings(data_dir: Path, case: dict[str, Any], base_url: str,
+                                        api_key: str = "") -> Path:
+    """Write one sanitized provider profile for the disposable benchmark run."""
+    provider = case["model"]["provider"]
+    if provider not in {"meta", "ollama"} or not safe_endpoint(base_url):
+        raise ValueError("benchmark provider profile is outside the reviewed endpoint contract")
+    if provider == "meta" and urlsplit(base_url).hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("remote benchmark profile must use the local budget proxy")
+    if provider == "ollama" and base_url != case["provider_config"]["base_url"]:
+        raise ValueError("local model endpoint must match the immutable case")
+    data_dir = private_directory(data_dir)
+    profile = {
+        "model": case["model"]["name"],
+        "base_url": base_url,
+        "api_key": api_key,
+        "max_output_tokens": case["model"]["output_tokens"],
+    }
+    content = json.dumps({"active_provider": provider, "profiles": {provider: profile}}, separators=(",", ":"))
+    target = data_dir / "model-settings.json"
+    temporary = data_dir / ".model-settings.json.tmp"
+    temporary.write_text(content)
+    temporary.chmod(0o600)
+    os.replace(temporary, target)
+    return target
+
+
 def safe_provider_config_report(case: dict[str, Any]) -> dict[str, Any]:
     """Allowlist non-secret provider identity/settings, excluding endpoint URLs."""
     config = case.get("provider_config", {})
@@ -987,7 +1032,8 @@ def binary_sha256(binary: str) -> str | None:
 
 
 def open_code_config(case: dict[str, Any], responses_base_url: str | None = None,
-                     shell_wrapper_path: Path | None = None) -> dict[str, Any]:
+                     shell_wrapper_path: Path | None = None,
+                     configured_shell_wrapper_path: Path | None = None) -> dict[str, Any]:
     model_name = case["model"]["name"]
     model_id = case["comparators"]["opencode_model"]
     permissions = [{"action": "*", "resource": "*", "effect": "deny"}]
@@ -1033,10 +1079,12 @@ def open_code_config(case: dict[str, Any], responses_base_url: str | None = None
         "127.0.0.1", "localhost", "::1",
     }:
         raise ValueError("Responses provider must use a loopback budget proxy")
+    shell_config_path = shell_wrapper_path if configured_shell_wrapper_path is None \
+        else configured_shell_wrapper_path
     config = {
         "$schema": "https://opencode.ai/config.json",
         "model": model_id,
-        "shell": str(shell_wrapper_path),
+        "shell": str(shell_config_path),
         "providers": {
             "museproxy": {
                 "name": "Muse (budget proxy)",
@@ -1069,9 +1117,11 @@ def open_code_config(case: dict[str, Any], responses_base_url: str | None = None
 
 def prepare_open_code_config(case: dict[str, Any], data_dir: Path,
                              responses_base_url: str | None = None,
-                             shell_wrapper_path: Path | None = None) -> Path:
+                             shell_wrapper_path: Path | None = None,
+                             configured_shell_wrapper_path: Path | None = None) -> Path:
     config_path = data_dir / "benchmark-opencode.json"
-    content = json.dumps(open_code_config(case, responses_base_url, shell_wrapper_path), indent=2) + "\n"
+    content = json.dumps(open_code_config(case, responses_base_url, shell_wrapper_path,
+                                          configured_shell_wrapper_path), indent=2) + "\n"
     if config_path.exists() and config_path.read_text() != content:
         raise RuntimeError(f"Refusing to overwrite a different OpenCode config: {config_path}")
     private_directory(data_dir)
@@ -1094,6 +1144,13 @@ def project_open_code_config_paths(workspace: Path, revision: str) -> list[str]:
     paths = git(workspace, "ls-tree", "-r", "--name-only", revision).splitlines()
     return [path for path in paths if Path(path).name in {"opencode.json", "opencode.jsonc"}
             or path.startswith(".opencode/")]
+
+
+def project_mcp_config_paths(workspace: Path, revision: str) -> list[str]:
+    """Find project MCP configuration that could launch unreviewed stdio tools."""
+    paths = set(git(workspace, "ls-tree", "-r", "--name-only", revision).splitlines())
+    known_configs = {".veasel/mcp-servers.json", ".mcp.json", ".cursor/mcp.json"}
+    return sorted(paths & known_configs)
 
 
 def build_command(agent: str, binary: str, case: dict[str, Any], workspace: Path,
@@ -1271,6 +1328,12 @@ def preflight(
     check("base_commit", revision == case["base_commit"], revision, case["base_commit"])
     dirty = git(workspace, "status", "--porcelain")
     check("clean_workspace", not dirty, not bool(dirty), True)
+    if agent == "veasel":
+        try:
+            project_mcp_configs = project_mcp_config_paths(workspace, revision)
+            check("veasel_project_mcp_config", not project_mcp_configs, project_mcp_configs, [])
+        except (OSError, subprocess.CalledProcessError) as exc:
+            check("veasel_project_mcp_config", False, type(exc).__name__, [])
     ollama_target_safe = False
     if is_ollama:
         expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")
@@ -1555,11 +1618,12 @@ def run_case(args: argparse.Namespace) -> int:
         return 2
     private_directory(data_dir)
     aggregate_run_id: str | None = None
+    sandbox_run_id = aggregate_run_id or uuid.uuid4().hex
     aggregate_run_cap: Decimal | None = None
     aggregate_before: dict[str, str] | None = None
     if case["model"].get("provider") != "ollama":
         aggregate_run_id = uuid.uuid4().hex
-        if args.agent == "opencode":
+        if case["model"].get("provider") == "meta":
             aggregate_run_cap = Decimal(responses_proxy_budget(case, args.approved_spend_usd)[
                 "enforced_run_cost_cap_usd"])
         else:
@@ -1576,64 +1640,116 @@ def run_case(args: argparse.Namespace) -> int:
         return 2
     artifact_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     artifact_dir.chmod(0o700)
+    run_state_dir = private_directory(data_dir / "runs" / sandbox_run_id)
+    for name in ("home", "tmp", "xdg-config", "xdg-data", "xdg-cache", "veasel-data", "plugins"):
+        private_directory(run_state_dir / name)
+    relay_dir = private_directory(data_dir / "proxy-relays" / sandbox_run_id)
     trace_path = artifact_dir / "trajectory.private.json"
     stdout_path = artifact_dir / "stdout.private.log"
     stderr_path = artifact_dir / "stderr.private.log"
     env = restricted_environment()
-    env["HOME"] = str(private_directory(data_dir / "home"))
+    env["HOME"] = str(run_state_dir / "home")
+    env["VEASEL_BENCHMARK_STATE_DIR"] = str(run_state_dir)
+    env["VEASEL_BENCHMARK_ARTIFACTS"] = str(artifact_dir)
+    env["VEASEL_BENCHMARK_BRIDGE_SCRIPT"] = str(ROOT / "proxy_network_bridge.py")
+    env["VEASEL_BENCHMARK_AGENT"] = args.agent
+    env["VEASEL_REAL_TASK_ROOT"] = str(task_root)
+    env["VEASEL_REAL_TASK_PARENT"] = str(task_parent)
+    env["VEASEL_BWRAP"] = str(validated_bwrap(getattr(args, "bwrap", Path("/usr/bin/bwrap"))))
     prompt = (args.case.parent / case["prompt_file"]).read_text()
-    if args.agent == "veasel":
-        env["VEASEL_DATA_DIR"] = str(data_dir)
-        env.setdefault("VEASEL_SECRET_STORE", "file")  # headless benchmark: explicit opt-in
-        if case.get("provider_config", {}).get("credential") == "saved-profile":
-            env["VEASEL_MODEL_API_KEY"] = private_profile_key(data_dir)
-            remove_profile_key_from_disk(data_dir)
-        plugin_dir = private_directory(data_dir / "plugins")
-        env["VEASEL_PLUGIN_DIR"] = str(plugin_dir)
-        env["VEASEL_PORT"] = str(free_loopback_port())
-        env["VEASEL_MODEL_CONTEXT_TOKENS"] = str(case["model"]["context_tokens"])
-        env["VEASEL_MODEL_MAX_OUTPUT_TOKENS"] = str(case["model"]["output_tokens"])
-        env["VEASEL_ALLOW_AUTONOMOUS_EXECUTION"] = "1"
-        command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
-    else:
-        proxy: BudgetProxy | None = None
+    proxy: BudgetProxy | None = None
+    proxy_relay: UnixBudgetProxyRelay | None = None
+    proxy_base_url: str | None = None
+    if case["model"].get("provider") == "meta":
         try:
-            if case["model"].get("provider") != "ollama":
-                upstream_key = private_profile_key(data_dir)
-                client_key = secrets.token_urlsafe(32)
-                remove_profile_key_from_disk(data_dir)
-                proxy_budget = responses_proxy_budget(case, args.approved_spend_usd)
-                proxy = BudgetProxy(
-                    upstream_base_url=REMOTE_CASE_BASE_URL,
-                    api_key=upstream_key,
-                    model=REMOTE_CASE_MODEL,
-                    max_requests=min(proxy_budget["upstream_attempt_limit"], case["cost_budget"]["max_model_requests"]),
-                    context_tokens=REMOTE_CASE_CONTEXT_TOKENS,
-                    output_tokens=REMOTE_CASE_OUTPUT_TOKENS,
-                    client_api_key=client_key,
-                    max_request_body_bytes=proxy_budget["max_request_body_bytes"],
-                    max_run_cost_usd=proxy_budget["enforced_run_cost_cap_usd"],
-                    input_usd_per_million_tokens=REMOTE_CASE_INPUT_USD_PER_MILLION,
-                    output_usd_per_million_tokens=REMOTE_CASE_OUTPUT_USD_PER_MILLION,
-                )
-                proxy_base_url = proxy.start()
-                env["VEASEL_BENCHMARK_PROXY_KEY"] = client_key
-            else:
-                proxy_base_url = None
-            shell_wrapper_path, _shell_wrapper_digest = install_opencode_shell_wrapper(data_dir)
-            opencode_config = prepare_open_code_config(case, data_dir, proxy_base_url, shell_wrapper_path)
-            env["OPENCODE_CONFIG"] = str(opencode_config)
-            env["VEASEL_REAL_TASK_ROOT"] = str(task_root)
-            env["VEASEL_REAL_TASK_PARENT"] = str(task_parent)
-            env["VEASEL_BWRAP"] = str(validated_bwrap(getattr(args, "bwrap", Path("/usr/bin/bwrap"))))
-            for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
-                env[key] = str(private_directory(data_dir / name))
-            command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
+            upstream_key = private_profile_key(data_dir)
+            client_key = secrets.token_urlsafe(32)
+            remove_profile_key_from_disk(data_dir)
+            proxy_budget = responses_proxy_budget(case, args.approved_spend_usd)
+            proxy = BudgetProxy(
+                upstream_base_url=REMOTE_CASE_BASE_URL,
+                api_key=upstream_key,
+                model=REMOTE_CASE_MODEL,
+                max_requests=min(proxy_budget["upstream_attempt_limit"], case["cost_budget"]["max_model_requests"]),
+                context_tokens=REMOTE_CASE_CONTEXT_TOKENS,
+                output_tokens=REMOTE_CASE_OUTPUT_TOKENS,
+                client_api_key=client_key,
+                max_request_body_bytes=proxy_budget["max_request_body_bytes"],
+                max_run_cost_usd=proxy_budget["enforced_run_cost_cap_usd"],
+                input_usd_per_million_tokens=REMOTE_CASE_INPUT_USD_PER_MILLION,
+                output_usd_per_million_tokens=REMOTE_CASE_OUTPUT_USD_PER_MILLION,
+                client_protocol=args.agent,
+            )
+            host_proxy_base_url = proxy.start()
+            host_proxy_port = urlsplit(host_proxy_base_url).port
+            if host_proxy_port is None:
+                raise RuntimeError("budget proxy did not expose a loopback port")
+            proxy_socket = relay_dir / "budget-proxy.sock"
+            proxy_relay = UnixBudgetProxyRelay(proxy_socket, host_proxy_port)
+            proxy_relay.start()
+            env["VEASEL_BENCHMARK_PROXY_SOCKET"] = str(proxy_socket)
+            env["VEASEL_BENCHMARK_PROXY_KEY"] = client_key
+            proxy_base_url = "http://127.0.0.1:18765/v1"
         except Exception:
+            if proxy is not None and args.agent == "veasel":
+                scrub_isolated_veasel_profile(run_state_dir / "veasel-data")
+            if proxy_relay is not None:
+                proxy_relay.close()
             if proxy is not None:
                 proxy.close()
             raise
-    command = wrapped_command(isolation_wrapper, command)
+    if args.agent == "veasel":
+        try:
+            env["VEASEL_DATA_DIR"] = str(run_state_dir / "veasel-data")
+            env.setdefault("VEASEL_SECRET_STORE", "file")  # headless benchmark: explicit opt-in
+            if proxy is not None:
+                # The disposable Veasel profile points only at the local metered
+                # proxy. Its credential stays in the private profile, not in the
+                # process environment inherited by shell/MCP child processes.
+                write_isolated_veasel_model_settings(
+                    run_state_dir / "veasel-data", case, proxy_base_url or "", client_key)
+            elif case.get("provider_config", {}).get("credential") == "saved-profile":
+                env["VEASEL_MODEL_API_KEY"] = private_profile_key(data_dir)
+                remove_profile_key_from_disk(data_dir)
+            elif case["model"].get("provider") == "ollama":
+                write_isolated_veasel_model_settings(
+                    run_state_dir / "veasel-data", case, case["provider_config"]["base_url"])
+            plugin_dir = private_directory(run_state_dir / "plugins")
+            env["VEASEL_PLUGIN_DIR"] = str(plugin_dir)
+            env["VEASEL_PORT"] = str(free_loopback_port())
+            env["VEASEL_MODEL_CONTEXT_TOKENS"] = str(case["model"]["context_tokens"])
+            env["VEASEL_MODEL_MAX_OUTPUT_TOKENS"] = str(case["model"]["output_tokens"])
+            env["VEASEL_ALLOW_AUTONOMOUS_EXECUTION"] = "1"
+            command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
+            command = wrapped_command(isolation_wrapper, command)
+        except Exception:
+            try:
+                if proxy is not None:
+                    scrub_isolated_veasel_profile(run_state_dir / "veasel-data")
+            finally:
+                if proxy_relay is not None:
+                    proxy_relay.close()
+                if proxy is not None:
+                    proxy.close()
+            raise
+    else:
+        try:
+            shell_wrapper_path, _shell_wrapper_digest = install_opencode_shell_wrapper(run_state_dir)
+            guest_shell_wrapper_path = Path("/tmp/veasel-state/opencode-shell-sandbox.sh")
+            opencode_config = prepare_open_code_config(
+                case, run_state_dir, proxy_base_url, shell_wrapper_path, guest_shell_wrapper_path,
+            )
+            env["OPENCODE_CONFIG"] = str(opencode_config)
+            for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
+                env[key] = str(run_state_dir / name)
+            command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
+            command = wrapped_command(isolation_wrapper, command)
+        except Exception:
+            if proxy_relay is not None:
+                proxy_relay.close()
+            if proxy is not None:
+                proxy.close()
+            raise
     started = time.monotonic()
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
@@ -1722,7 +1838,21 @@ def run_case(args: argparse.Namespace) -> int:
     finally:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
-        if args.agent == "opencode" and case["model"].get("provider") != "ollama" and proxy is not None:
+        if proxy is not None and args.agent == "veasel":
+            try:
+                scrub_isolated_veasel_profile(run_state_dir / "veasel-data")
+            except Exception:
+                runner_error_type = "CredentialScrubError"
+                if outcome == "completed":
+                    outcome = "credential_scrub_error"
+        if proxy is not None:
+            if proxy_relay is not None:
+                try:
+                    proxy_relay.close()
+                except Exception:
+                    proxy_close_error_type = "UnixRelayCloseError"
+                    if outcome == "completed":
+                        outcome = "proxy_close_error"
             try:
                 proxy.close()
             except KeyboardInterrupt:
@@ -1753,7 +1883,7 @@ def run_case(args: argparse.Namespace) -> int:
     if aggregate_run_id is not None:
         actual_cost: Decimal | None = None
         if outcome == "completed" and return_code == 0:
-            if args.agent == "opencode" and proxy is not None:
+            if proxy is not None:
                 metrics = proxy.metrics()
                 if metrics["uncertain_responses"] == 0 and metrics["over_budget_responses"] == 0 \
                         and metrics["generation_cost_in_flight"] == 0 \
@@ -1787,9 +1917,15 @@ def run_case(args: argparse.Namespace) -> int:
         "runtime": case["runtime"],
         "permissions": case["permissions"],
         "isolation": {
-            "mode": "operator_managed_wrapper",
+            "mode": "linux_bubblewrap_network_namespace_proxy_unix_relay"
+            if isolation_wrapper == (ROOT / "benchmark_agent_sandbox.py").resolve()
+            else "operator_managed_wrapper",
             "wrapper_sha256": isolation_wrapper_sha256,
-            "contract": "operator-reviewed wrapper enforces disposable workspace and task isolation",
+            "network_bridge_sha256": hashlib.sha256((ROOT / "proxy_network_bridge.py").read_bytes()).hexdigest()
+            if isolation_wrapper == (ROOT / "benchmark_agent_sandbox.py").resolve() else None,
+            "contract": "network namespace has no external route; only the private Unix bridge to the bounded local proxy is mounted"
+            if isolation_wrapper == (ROOT / "benchmark_agent_sandbox.py").resolve()
+            else "operator-reviewed wrapper enforces disposable workspace and task isolation",
         },
         "host": {"platform": platform.platform(), "machine": platform.machine(), "processor": platform.processor()},
         "agent": args.agent,
@@ -1806,7 +1942,7 @@ def run_case(args: argparse.Namespace) -> int:
         "resource_samples": samples,
         "resource_measurements": resource_measurement_summary(samples),
         "provider_usage": usage,
-        "provider_proxy_metrics": proxy.metrics() if args.agent == "opencode" and case["model"].get("provider") != "ollama" else None,
+        "provider_proxy_metrics": proxy.metrics() if proxy is not None else None,
         "estimated_provider_cost_usd": estimate_provider_cost(case, usage),
         "aggregate_spend": {
             "run_id": aggregate_run_id,

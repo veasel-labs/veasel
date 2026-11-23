@@ -940,3 +940,32 @@ fn test_linux_mcp_sandbox_command_binds_follow_symlink_chains() {
 		assert true
 	}
 }
+
+fn test_linux_mcp_sandbox_command_binds_keep_path_symlink_visible() {
+	$if linux {
+		base := os.join_path(os.home_dir(), '.cache', 'veasel-mcp-path-${uuid.new_v4().str()}')
+		install_root := os.join_path(base, '.cache', 'mcp-server')
+		install_bin := os.join_path(install_root, 'bin')
+		alias_dir := os.join_path(base, '.local', 'bin')
+		os.mkdir_all(install_bin) or { panic(err) }
+		os.mkdir_all(os.join_path(install_root, 'lib')) or { panic(err) }
+		os.mkdir_all(alias_dir) or { panic(err) }
+		defer {
+			os.rmdir_all(base) or {}
+		}
+		server := os.join_path(install_bin, 'mcp-server-real')
+		os.write_file(server, '#!/bin/sh\nexit 0\n') or { panic(err) }
+		os.chmod(server, 0o700) or { panic(err) }
+		alias := os.join_path(alias_dir, 'mcp-server')
+		os.symlink(server, alias) or { panic(err) }
+
+		binds := linux_mcp_sandbox_command_binds('mcp-server', {
+			'PATH': alias_dir
+		})
+		assert os.real_path(alias_dir) in binds, 'PATH symlink directory missing from ${binds}'
+		assert os.real_path(install_root) in binds, 'resolved command tree missing from ${binds}'
+		assert os.home_dir() !in binds, 'sandbox must not expose the full home directory'
+	} $else {
+		assert true
+	}
+}

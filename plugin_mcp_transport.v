@@ -1008,9 +1008,9 @@ fn linux_mcp_path_is_hidden(path string) bool {
 	return false
 }
 
-fn linux_mcp_resolve_command(command string, env map[string]string) string {
+fn linux_mcp_locate_command(command string, env map[string]string) string {
 	if os.is_abs_path(command) {
-		return os.real_path(command)
+		return command
 	}
 	path_value := env['PATH'] or { '' }
 	for dir in path_value.split(':') {
@@ -1019,10 +1019,15 @@ fn linux_mcp_resolve_command(command string, env map[string]string) string {
 		}
 		candidate := os.join_path(dir, command)
 		if os.is_file(candidate) && os.is_executable(candidate) {
-			return os.real_path(candidate)
+			return candidate
 		}
 	}
 	return ''
+}
+
+fn linux_mcp_resolve_command(command string, env map[string]string) string {
+	located := linux_mcp_locate_command(command, env)
+	return if located.len > 0 { os.real_path(located) } else { '' }
 }
 
 // linux_mcp_sandbox_tree_root widens an executable path to the smallest
@@ -1141,7 +1146,8 @@ fn linux_mcp_sandbox_command_binds(command string, env map[string]string) []stri
 	}
 	mut binds := []string{}
 	mut seen := map[string]bool{}
-	for candidate in [command, resolved, linux_mcp_shebang_interpreter(resolved, env)] {
+	for candidate in [linux_mcp_locate_command(command, env), command, resolved,
+		linux_mcp_shebang_interpreter(resolved, env)] {
 		if candidate.len == 0 {
 			continue
 		}

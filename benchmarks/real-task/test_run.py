@@ -872,6 +872,25 @@ class PreflightTests(unittest.TestCase):
                     config = runner.configured_model(Path(temp_dir))
                 self.assertFalse(config["api_key_saved"])
 
+    def test_scrubs_ephemeral_veasel_proxy_key_from_persistent_run_state(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            data_dir = Path(temp_dir)
+            settings_path = data_dir / "model-settings.json"
+            settings_path.write_text(json.dumps({
+                "active_provider": "meta",
+                "profiles": {"meta": {
+                    "model": "muse-spark-1.3-contributor",
+                    "base_url": "http://127.0.0.1:18765/v1",
+                    "api_key": "ephemeral-proxy-fixture",
+                }},
+            }))
+            settings_path.chmod(0o600)
+            runner.scrub_isolated_veasel_profile(data_dir)
+            scrubbed = json.loads(settings_path.read_text())
+        profile = scrubbed["profiles"]["meta"]
+        self.assertNotIn("api_key", profile)
+        self.assertEqual(profile["model"], "muse-spark-1.3-contributor")
+
     def test_opencode_config_pins_endpoint_and_token_limits(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         case, _prompt, _digest = runner.load_case(case_path)
@@ -1002,6 +1021,16 @@ class PreflightTests(unittest.TestCase):
                 artifacts=artifacts, isolation_wrapper=wrapper,
                 isolation_wrapper_sha256=wrapper_sha256, approved_spend_usd="5",
             )
+            def launch_with_ephemeral_profile(*_command, **kwargs):
+                launch_env = kwargs["env"]
+                launch_settings = json.loads(
+                    (Path(launch_env["VEASEL_DATA_DIR"]) / "model-settings.json").read_text()
+                )
+                self.assertEqual(
+                    launch_settings["profiles"]["meta"]["api_key"],
+                    launch_env["VEASEL_BENCHMARK_PROXY_KEY"],
+                )
+                return process
             with (
                 patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
                 patch.object(runner.shutil, "which", return_value="/usr/bin/veasel"),
@@ -1010,7 +1039,7 @@ class PreflightTests(unittest.TestCase):
                 patch.object(runner, "create_task_clone", return_value=workspace),
                 patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
                 patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
-                patch.object(runner.subprocess, "Popen", return_value=process) as popen,
+                patch.object(runner.subprocess, "Popen", side_effect=launch_with_ephemeral_profile) as popen,
             ):
                 self.assertEqual(runner.run_case(args), 0)
             launched_command = popen.call_args.args[0]
@@ -1024,8 +1053,8 @@ class PreflightTests(unittest.TestCase):
             settings = json.loads(settings_path.read_text())
             profile = settings["profiles"]["meta"]
             self.assertEqual(profile["base_url"], "http://127.0.0.1:18765/v1")
-            self.assertEqual(profile["api_key"], client_key)
-            self.assertNotEqual(profile["api_key"], "upstream-secret-fixture")
+            self.assertNotIn("api_key", profile)
+            self.assertNotIn(client_key, settings_path.read_text())
             self.assertEqual(profile["model"], "muse-spark-1.3-contributor")
             self.assertNotIn("upstream-secret-fixture", (data_dir / "model-settings.json").read_text())
             self.assertNotIn("upstream-secret-fixture", " ".join(launched_command))

@@ -781,6 +781,24 @@ def remove_profile_key_from_disk(data_dir: Path) -> None:
     os.replace(temporary, settings_path)
 
 
+def scrub_isolated_veasel_profile(data_dir: Path) -> None:
+    """Remove an ephemeral proxy credential from persistent benchmark run state."""
+    settings_path = data_dir / "model-settings.json"
+    if not settings_path.exists() and not settings_path.is_symlink():
+        return
+    try:
+        remove_profile_key_from_disk(data_dir)
+    except Exception as exc:
+        # The profile is disposable. If it cannot be parsed or atomically
+        # rewritten, unlink it so a proxy credential is never left behind.
+        try:
+            settings_path.unlink(missing_ok=True)
+        except OSError as unlink_error:
+            raise RuntimeError("could not remove ephemeral benchmark credential") from unlink_error
+        if settings_path.exists() or settings_path.is_symlink():
+            raise RuntimeError("could not remove ephemeral benchmark credential") from exc
+
+
 def write_isolated_veasel_model_settings(data_dir: Path, case: dict[str, Any], base_url: str,
                                         api_key: str = "") -> Path:
     """Write one sanitized provider profile for the disposable benchmark run."""
@@ -1673,6 +1691,8 @@ def run_case(args: argparse.Namespace) -> int:
             env["VEASEL_BENCHMARK_PROXY_KEY"] = client_key
             proxy_base_url = "http://127.0.0.1:18765/v1"
         except Exception:
+            if proxy is not None and args.agent == "veasel":
+                scrub_isolated_veasel_profile(run_state_dir / "veasel-data")
             if proxy_relay is not None:
                 proxy_relay.close()
             if proxy is not None:
@@ -1701,11 +1721,16 @@ def run_case(args: argparse.Namespace) -> int:
             env["VEASEL_MODEL_MAX_OUTPUT_TOKENS"] = str(case["model"]["output_tokens"])
             env["VEASEL_ALLOW_AUTONOMOUS_EXECUTION"] = "1"
             command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
+            command = wrapped_command(isolation_wrapper, command)
         except Exception:
-            if proxy_relay is not None:
-                proxy_relay.close()
-            if proxy is not None:
-                proxy.close()
+            try:
+                if proxy is not None:
+                    scrub_isolated_veasel_profile(run_state_dir / "veasel-data")
+            finally:
+                if proxy_relay is not None:
+                    proxy_relay.close()
+                if proxy is not None:
+                    proxy.close()
             raise
     else:
         try:
@@ -1718,13 +1743,13 @@ def run_case(args: argparse.Namespace) -> int:
             for key, name in (("XDG_CONFIG_HOME", "xdg-config"), ("XDG_DATA_HOME", "xdg-data"), ("XDG_CACHE_HOME", "xdg-cache")):
                 env[key] = str(run_state_dir / name)
             command = build_command(args.agent, agent_binary, case, task_root, prompt, trace_path)
+            command = wrapped_command(isolation_wrapper, command)
         except Exception:
             if proxy_relay is not None:
                 proxy_relay.close()
             if proxy is not None:
                 proxy.close()
             raise
-    command = wrapped_command(isolation_wrapper, command)
     started = time.monotonic()
     min_memory = case["budgets"]["minimum_available_memory_bytes"]
     min_swap = case["budgets"]["minimum_free_swap_bytes"]
@@ -1813,6 +1838,13 @@ def run_case(args: argparse.Namespace) -> int:
     finally:
         for signum, handler in previous_handlers.items():
             signal.signal(signum, handler)
+        if proxy is not None and args.agent == "veasel":
+            try:
+                scrub_isolated_veasel_profile(run_state_dir / "veasel-data")
+            except Exception:
+                runner_error_type = "CredentialScrubError"
+                if outcome == "completed":
+                    outcome = "credential_scrub_error"
         if proxy is not None:
             if proxy_relay is not None:
                 try:

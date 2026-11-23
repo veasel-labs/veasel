@@ -1218,26 +1218,31 @@ fn test_session_plugin_mcp_trust_persists_and_emits_only_state_changes() {
 	session := store.create_session(SessionInput{ title: 'MCP session', directory: '/tmp/mcp' }) or {
 		panic(err)
 	}
-	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true) or {
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true, false) or {
 		panic(err)
 	}
-	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true) or {
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true, false) or {
+		panic(err)
+	}
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', true, true) or {
 		panic(err)
 	}
 	assert store.session_plugin_mcp_servers(session.id) or { panic(err) } == [SessionPluginMCPServer{
-		plugin_name: 'local-tools'
-		server_name: 'workspace'
+		plugin_name:            'local-tools'
+		server_name:            'workspace'
+		workspace_write_access: true
 	}]
 	events := store.events_after(0) or { panic(err) }
-	assert events.len == 2
+	assert events.len == 3
 	assert events[1].type == 'session.mcp_server_trusted'
-	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', false) or {
+	assert events[2].type == 'session.mcp_workspace_access_updated'
+	store.set_session_plugin_mcp_server(session.id, 'local-tools', 'workspace', false, false) or {
 		panic(err)
 	}
 	assert (store.session_plugin_mcp_servers(session.id) or { panic(err) }).len == 0
 	updated_events := store.events_after(0) or { panic(err) }
-	assert updated_events.len == 3
-	assert updated_events[2].type == 'session.mcp_server_untrusted'
+	assert updated_events.len == 4
+	assert updated_events[3].type == 'session.mcp_server_untrusted'
 }
 
 fn test_provider_tool_parameters_preserve_nested_mcp_json_schema() {

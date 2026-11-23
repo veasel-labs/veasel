@@ -31,11 +31,12 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
         { name: "disabled-tools", enabled: false, transport: "stdio", scope: "user" },
       ] })
     }
+    if (url.pathname === "/v1/plugins") return Response.json({ plugins: [] })
     return Response.json({})
   } })
   const setup = await testRender(
     () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/launch" />,
-    { width: 100, height: 35, kittyKeyboard: true },
+    { width: 100, height: 48, kittyKeyboard: true },
   )
   async function until(text: string) {
     for (let n = 0; n < 100; n++) {
@@ -62,6 +63,8 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
     await setup.renderOnce()
     expect(setup.renderer.currentFocusedEditor?.plainText).toBe("/mcp trust configured/echo-tools")
     setup.mockInput.pressEnter()
+    await until("Trust this MCP server?")
+    setup.mockInput.pressEnter()
     await until("Trusted configured/echo-tools")
     await submit("/mcp", "MCP servers")
     await until("Trusted")
@@ -81,11 +84,21 @@ test("LiveApp routes MCP trust and revoke commands to the session API", async ()
     expect(calls).toEqual([
       {
         path: "/v1/sessions/a/mcp-servers",
-        body: { plugin_name: "configured", server_name: "echo-tools", trusted: true },
+        body: {
+          plugin_name: "configured",
+          server_name: "echo-tools",
+          trusted: true,
+          workspace_write_access: true,
+        },
       },
       {
         path: "/v1/sessions/a/mcp-servers",
-        body: { plugin_name: "configured", server_name: "echo-tools", trusted: false },
+        body: {
+          plugin_name: "configured",
+          server_name: "echo-tools",
+          trusted: false,
+          workspace_write_access: false,
+        },
       },
     ])
   } finally {

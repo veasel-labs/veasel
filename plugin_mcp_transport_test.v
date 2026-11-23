@@ -279,7 +279,7 @@ fn test_trusted_session_mcp_tool_discovery_and_dispatch_keep_turn_state() {
 		title:     'MCP runtime fixture'
 		directory: root
 	}) or { panic(err) }
-	store.set_session_plugin_mcp_server(session.id, 'fixture-tools', 'local', true) or {
+	store.set_session_plugin_mcp_server(session.id, 'fixture-tools', 'local', true, false) or {
 		panic(err)
 	}
 	mut app := new_app(store, plugin_directory)
@@ -527,23 +527,31 @@ fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_pre
 		assert !mcp_stdio_sandbox_seatbelt_capability()
 		assert !mcp_stdio_sandbox_windows_capability()
 		if bubblewrap_available() {
-			node := if os.is_file('/usr/bin/node') { '/usr/bin/node' } else { return }
+			home := os.home_dir()
 			root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-${uuid.new_v4().str()}')
 			data := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-data-${uuid.new_v4().str()}')
+			workspace := os.join_path(home, '.cache', 'veasel-mcp-workspace-${uuid.new_v4().str()}')
+			command_dir := os.join_path(home, '.cache', 'veasel-mcp-command-${uuid.new_v4().str()}')
 			os.mkdir_all(root) or { panic(err) }
+			os.mkdir_all(workspace) or { panic(err) }
+			os.mkdir_all(command_dir) or { panic(err) }
 			defer {
 				os.rmdir_all(root) or {}
 				os.rmdir_all(data) or {}
+				os.rmdir_all(workspace) or {}
+				os.rmdir_all(command_dir) or {}
 			}
-			script := os.join_path(root, 'echo.mjs')
-			os.write_file(script, "import readline from 'node:readline';\nconst lines = readline.createInterface({ input: process.stdin });\nfor await (const line of lines) {\n  const request = JSON.parse(line);\n  if (!request.id) continue;\n  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { ok: true, sandboxed: true } }) + '\\n');\n}\n") or {
+			command := os.join_path(command_dir, 'mcp-fixture')
+			os.write_file(command, '#!/bin/sh\nprintf runtime-visible > "$1/mcp-write.txt"\nwhile IFS= read -r request; do\n  case "$request" in *initialize*) printf \'{"jsonrpc":"2.0","id":1,"result":{"sandboxed":true}}\\n\'; break ;; esac\ndone\n') or {
 				panic(err)
 			}
+			os.chmod(command, 0o700) or { panic(err) }
 			mut transport := start_plugin_mcp_transport(root, data, PluginMCPServer{
 				name:      'sandbox-fixture'
 				transport: 'stdio'
-				command:   node
-				args:      [script]
+				command:   command
+				args:      [workspace]
+				workspace: workspace
 			}) or { panic(err) }
 			defer {
 				transport.close()
@@ -555,6 +563,7 @@ fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_pre
 			frame := transport.receive() or { panic(err) }
 			assert frame.contains('"id":1')
 			assert frame.contains('"sandboxed":true')
+			assert (os.read_file(os.join_path(workspace, 'mcp-write.txt')) or { '' }) == 'runtime-visible'
 		}
 	} $else $if macos {
 		assert !mcp_stdio_sandbox_bubblewrap_capability()
@@ -671,6 +680,32 @@ fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_pre
 			return
 		}
 		assert false, 'expected require mode to refuse MCP stdio without a platform sandbox backend'
+	}
+}
+
+fn test_linux_mcp_runtime_paths_include_home_command_and_python_venv() {
+	$if linux {
+		home := os.home_dir()
+		root := os.join_path(home, '.cache', 'veasel-mcp-runtime-${uuid.new_v4().str()}')
+		venv := os.join_path(root, '.venv')
+		bin := os.join_path(venv, 'bin')
+		os.mkdir_all(bin) or { panic(err) }
+		defer {
+			os.rmdir_all(root) or {}
+		}
+		os.write_file(os.join_path(venv, 'pyvenv.cfg'), 'home = /usr/bin\n') or { panic(err) }
+		interpreter := os.join_path(bin, 'python')
+		os.write_file(interpreter, '#!/bin/sh\nexit 0\n') or { panic(err) }
+		command := os.join_path(bin, 'mcp-fixture')
+		os.write_file(command, '#!${interpreter}\n') or { panic(err) }
+		os.chmod(command, 0o700) or { panic(err) }
+		binds := linux_mcp_sandbox_command_binds(command, {
+			'PATH': '/usr/bin:/bin'
+		})
+		assert os.real_path(venv) in binds, 'Python venv must be available read-only: ${binds}'
+		assert os.home_dir() !in binds, 'sandbox must not expose the full home directory'
+	} $else {
+		assert true
 	}
 }
 
@@ -809,4 +844,128 @@ fn test_plugin_mcp_configured_synthetic_root_starts_after_ensure() {
 		client.close()
 	}
 	client.initialize() or { panic(err) }
+}
+
+fn test_linux_mcp_sandbox_command_binds_cover_venv_and_interpreter() {
+	$if linux {
+		base := os.join_path(os.temp_dir(), 'veasel-mcp-binds-${os.getpid()}')
+		venv := os.join_path(base, 'venv')
+		bin_dir := os.join_path(venv, 'bin')
+		os.mkdir_all(bin_dir) or { panic(err) }
+		defer {
+			os.rmdir_all(base) or {}
+		}
+		os.write_file(os.join_path(venv, 'pyvenv.cfg'), 'home = /usr/bin\n') or { panic(err) }
+		tool := os.join_path(bin_dir, 'fake-mcp')
+		os.write_file(tool, '#!${os.join_path(bin_dir, 'python')}\nprint(1)\n') or { panic(err) }
+		os.write_file(os.join_path(bin_dir, 'python'), 'fake interpreter placeholder\n') or { panic(err) }
+		os.chmod(tool, 0o755) or {}
+		binds := linux_mcp_sandbox_command_binds(tool, {
+			'PATH': '/usr/bin:/bin'
+		})
+		assert binds == [os.real_path(venv)], 'expected the venv tree only, got ${binds}'
+	} $else {
+		assert true
+	}
+}
+
+fn test_linux_mcp_sandbox_command_binds_skip_visible_and_broad_paths() {
+	$if linux {
+		// A system executable outside the hidden roots needs no bind.
+		visible := linux_mcp_sandbox_command_binds('/bin/true', {
+			'PATH': '/usr/bin:/bin'
+		})
+		assert visible.len == 0
+		// An executable sitting directly in a hidden root must never widen
+		// the bind to that whole root.
+		base := os.join_path(os.temp_dir(), 'veasel-mcp-broad-${os.getpid()}.sh')
+		os.write_file(base, '#!/bin/sh\nexit 0\n') or { panic(err) }
+		defer {
+			os.rm(base) or {}
+		}
+		os.chmod(base, 0o755) or {}
+		broad := linux_mcp_sandbox_command_binds(base, {
+			'PATH': '/usr/bin:/bin'
+		})
+		assert os.temp_dir() !in broad
+		for bind in broad {
+			assert bind != '/tmp'
+			assert bind != '/home'
+		}
+	} $else {
+		assert true
+	}
+}
+
+fn test_linux_mcp_sandbox_command_binds_follow_symlink_chains() {
+	$if linux {
+		// uv-style layout: venv/bin/python -> uv/python/cpython-3 (directory
+		// symlink alias) -> uv/python/cpython-3.14/bin/python3.14. Binding only
+		// the endpoints still breaks exec: the intermediate alias directory
+		// must stay visible for the kernel to resolve the chain.
+		base := os.join_path(os.temp_dir(), 'veasel-mcp-chain-${os.getpid()}')
+		venv := os.join_path(base, 'venv')
+		venv_bin := os.join_path(venv, 'bin')
+		py_root := os.join_path(base, 'uv-python', 'cpython-3.14')
+		py_bin := os.join_path(py_root, 'bin')
+		os.mkdir_all(venv_bin) or { panic(err) }
+		os.mkdir_all(py_bin) or { panic(err) }
+		os.mkdir_all(os.join_path(py_root, 'lib')) or { panic(err) }
+		defer {
+			os.rmdir_all(base) or {}
+		}
+		os.write_file(os.join_path(venv, 'pyvenv.cfg'), 'home = /usr/bin\n') or { panic(err) }
+		os.write_file(os.join_path(py_bin, 'python3.14'), 'fake interpreter placeholder\n') or {
+			panic(err)
+		}
+		alias := os.join_path(base, 'uv-python', 'cpython-3')
+		os.symlink(py_root, alias) or { panic(err) }
+		venv_python := os.join_path(venv_bin, 'python')
+		os.symlink(os.join_path(alias, 'bin', 'python3.14'), venv_python) or { panic(err) }
+		tool := os.join_path(venv_bin, 'fake-mcp')
+		os.write_file(tool, '#!${venv_python}\nprint(1)\n') or { panic(err) }
+		os.chmod(tool, 0o755) or {}
+
+		binds := linux_mcp_sandbox_command_binds(tool, {
+			'PATH': '/usr/bin:/bin'
+		})
+		assert os.real_path(venv) in binds, 'venv tree missing from ${binds}'
+		assert os.real_path(py_root) in binds, 'interpreter tree missing from ${binds}'
+		assert os.real_path(os.join_path(base, 'uv-python')) in binds, 'alias parent dir missing from ${binds}'
+		for bind in binds {
+			assert bind != os.temp_dir()
+			assert bind.starts_with(os.real_path(base))
+		}
+	} $else {
+		assert true
+	}
+}
+
+fn test_linux_mcp_sandbox_command_binds_keep_path_symlink_visible() {
+	$if linux {
+		base := os.join_path(os.home_dir(), '.cache', 'veasel-mcp-path-${uuid.new_v4().str()}')
+		install_root := os.join_path(base, '.cache', 'mcp-server')
+		install_bin := os.join_path(install_root, 'bin')
+		alias_dir := os.join_path(base, '.local', 'bin')
+		os.mkdir_all(install_bin) or { panic(err) }
+		os.mkdir_all(os.join_path(install_root, 'lib')) or { panic(err) }
+		os.mkdir_all(alias_dir) or { panic(err) }
+		defer {
+			os.rmdir_all(base) or {}
+		}
+		server := os.join_path(install_bin, 'mcp-server-real')
+		os.write_file(server, '#!/bin/sh\nexit 0\n') or { panic(err) }
+		os.chmod(server, 0o700) or { panic(err) }
+		alias := os.join_path(alias_dir, 'mcp-server')
+		os.symlink(server, alias) or { panic(err) }
+
+		binds := linux_mcp_sandbox_command_binds('mcp-server', {
+			'PATH': alias_dir
+		})
+		assert os.real_path(alias_dir) in binds, 'PATH symlink directory missing from ${binds}'
+		assert os.real_path(install_root) in binds, 'resolved command tree missing from ${binds}'
+		assert os.home_dir() !in binds, 'sandbox must not expose the full home directory'
+	} $else {
+		assert true
+	}
 }

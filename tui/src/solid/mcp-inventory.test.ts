@@ -15,6 +15,7 @@ describe("mcp inventory", () => {
     )
     expect(rows.map((row) => row.name)).toEqual(["configured/echo", "configured/http", "configured/off"])
     expect(rows[0]?.status).toBe("trusted")
+    expect(rows[0]?.workspaceWriteAccess).toBe(false)
     expect(rows[1]?.status).toBe("available")
     expect(rows[2]?.status).toBe("disabled")
   })
@@ -30,7 +31,16 @@ describe("mcp inventory", () => {
         transport: "plugin",
         scope: "session",
         status: "trusted",
+        workspaceWriteAccess: false,
       },
     ])
+  })
+
+  test("preserves the separately confirmed workspace write scope", () => {
+    const rows = solidMcpServersFromCatalog(
+      { servers: [{ name: "echo", enabled: true, transport: "stdio" }] },
+      [{ plugin_name: "configured", server_name: "echo", workspace_write_access: true }],
+    )
+    expect(rows[0]?.workspaceWriteAccess).toBe(true)
   })
 })

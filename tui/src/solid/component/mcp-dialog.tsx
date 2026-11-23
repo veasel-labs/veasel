@@ -11,6 +11,7 @@ export type SolidMcpServer = {
   status: SolidMcpStatus
   scope?: string
   error?: string
+  workspaceWriteAccess?: boolean
 }
 
 export type McpDialogProps = {
@@ -102,7 +103,11 @@ export function openMcpDialog(
       title: server.name,
       value: server.name,
       category: statusCategory(server.status),
-      description: statusLabel(server.status),
+      description: server.status === "trusted" && server.transport === "stdio"
+        ? server.workspaceWriteAccess
+          ? "Trusted · workspace read/write on Linux · review each call"
+          : "Trusted · workspace denied · review each call"
+        : statusLabel(server.status),
       footer: `${server.transport}${server.scope ? ` · ${server.scope}` : ""}`,
       searchText: `${server.name} ${server.transport} ${server.scope ?? ""} ${server.error ?? ""}`,
     })),

@@ -139,6 +139,13 @@ unset/invalid = `require`). Linux Bubblewrap, macOS Seatbelt, or Windows
 AppContainer wrap when available; missing backends refuse to start the server.
 `auto`/`off` refuse unless the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in is set. Review
 payloads expose `stdio_sandbox` mode / `will_wrap` / `backend`.
+On Linux, newly trusted stdio servers require a separate confirmation to grant
+read/write access to the active session workspace; this is stored per session.
+Older trust entries migrate with workspace access denied. Bubblewrap resolves
+the executable before masking `$HOME`, re-exposes only its executable and
+Python virtual-environment runtime read-only, and mounts the confirmed
+workspace separately. macOS and Windows currently keep workspace access denied
+by this scope; their existing plugin-root/data boundaries remain in force.
 Tool arguments and results are sent to the configured provider. Selection is
 persisted and produces session events. Skill instructions are bounded, reloaded when composing each turn,
 and inserted into explicitly untrusted system context. When discovered skills

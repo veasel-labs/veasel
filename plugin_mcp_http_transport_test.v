@@ -231,8 +231,8 @@ fn test_plugin_mcp_streamable_http_stateless_discovery_sse_tool_call_and_redirec
 		title:     'Remote MCP fixture'
 		directory: workspace_directory
 	}) or { panic(err) }
-	store.set_session_plugin_mcp_server(session.id, 'remote-plugin', 'remote', true) or { panic(err) }
-	store.set_session_plugin_mcp_server(session.id, 'remote-plugin', 'auth-required', true) or {
+	store.set_session_plugin_mcp_server(session.id, 'remote-plugin', 'remote', true, false) or { panic(err) }
+	store.set_session_plugin_mcp_server(session.id, 'remote-plugin', 'auth-required', true, false) or {
 		panic(err)
 	}
 	mut app := new_app(store, plugin_directory)

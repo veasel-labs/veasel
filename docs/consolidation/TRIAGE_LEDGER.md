@@ -100,16 +100,31 @@ Merged since prior ledger snapshot:
 ### veasel-labs/veasel#673 — matched Veasel/OpenCode benchmark
 
 - **State / owner:** OPEN · Veasel benchmark harness and provider isolation.
-- **Dependencies:** #553 benchmark acceptance; trustworthy model price bounds;
-  reviewed isolation for OpenCode shell children.
+- **Dependencies:** #553 benchmark acceptance; reviewed isolation for OpenCode
+  shell children. Meta's current [official pricing and rate-limit page](https://dev.meta.ai/docs/pricing-rate-limits)
+  lists Muse Spark 1.3 Contributor at $0.10/M input and $0.20/M output tokens;
+  Contributor mode permits prompts, code, files, context, and responses to be
+  used for future model training.
 - **Evidence:** deterministic Responses fixtures and enforced generic spending
   bounds are recorded in [the Nov 20 issue update](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7033093408).
+  The current isolation branch adds a Veasel 0.79.5 Meta Responses adapter,
+  per-run proxy-only credentials, project-MCP fail-closed preflight, and Linux
+  Bubblewrap/Unix-relay tests; 92 local tests pass without contacting Meta.
+  Full Linux namespace tests passed on the local Arch host. The GitHub-hosted
+  Ubuntu runner cannot create the required network namespace as its unprivileged
+  job user. CI detects and reports this limitation and explicitly skips only
+  those kernel-dependent integration tests; that CI result is not Linux
+  namespace validation. The branch still awaits PR review and required CI on
+  its exact head.
 - **Remaining acceptance:** run and independently score the same meaningful task,
   prompt, base, model, permissions and budgets through Veasel and OpenCode;
-  preserve sanitized traces and versions/hashes. The pinned Muse model is not
-  in the verified price schedule and shell-child isolation still needs review;
-  a previously recorded budget authorization does not remove those fail-closed
-  gates. No provider request or success is inferred here.
+  preserve sanitized traces and versions/hashes. The proxy uses the published
+  Contributor rates, reserves input at the uncached rate, and caps the pinned
+  run at its case budget. Rotate/update the Meta credential after reviewing the
+  isolation change. No provider request or success is inferred here.
+- **Remaining blocker:** rotate/update the Meta credential after review, then
+  run only the owner-authorized bounded benchmark and independently score both
+  attempts. No live provider request has been made by this adapter work.
 - **Action:** IMPLEMENT/REVIEW in Veasel; KEEP OPEN until the matched pair and
   budget/isolation evidence are complete.
 

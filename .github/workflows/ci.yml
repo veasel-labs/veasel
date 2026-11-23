@@ -81,6 +81,12 @@ jobs:
         run: python -m pip install --disable-pip-version-check --upgrade 'pip==26.2.1'
       - name: Install pinned Harbor agent API
         run: python -m pip install --disable-pip-version-check -r benchmarks/harbor/requirements.in 'pip-audit==2.10.1'
+      - name: Install Bubblewrap for benchmark isolation tests
+        run: |
+          if ! command -v bwrap >/dev/null 2>&1; then
+            sudo apt-get install -y bubblewrap
+          fi
+          sudo bwrap --unshare-all --unshare-user --disable-userns --die-with-parent --new-session --ro-bind / / -- true
       - name: Audit Harbor adapter dependencies
         run: python -m pip_audit --strict --progress-spinner off
       - name: Validate Harbor adapter
@@ -89,9 +95,27 @@ jobs:
           python -m py_compile benchmarks/harbor/veasel_agent.py
           python -m unittest discover -s benchmarks/harbor -p 'test_*.py' -v
           python -m py_compile benchmarks/real-task/run.py
-          python -m unittest discover -s benchmarks/real-task -p 'test_*.py' -v
           python -m unittest discover -s tools/provider-catalog -p 'test_*.py' -v
           python -m unittest discover -s tools/release -p 'test_*.py' -v
+      - name: Report real-task sandbox test capabilities
+        run: |
+          PYTHONPATH=benchmarks/real-task python - <<'PY'
+          import os
+          from sandbox_test_support import LINUX_BWRAP_NETWORK_SKIP_REASON, LINUX_BWRAP_NETWORK_SUPPORTED
+          if LINUX_BWRAP_NETWORK_SUPPORTED:
+              message = "Linux Bubblewrap network namespace proofs will run."
+          else:
+              message = (
+                  "Linux Bubblewrap namespace integration proofs are NOT VERIFIED on this hosted runner: "
+                  + LINUX_BWRAP_NETWORK_SKIP_REASON
+                  + ". Those tests report explicit skips; full namespace proofs must run on a capable Linux host."
+              )
+          print(message)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(message + "\n")
+          PY
+      - name: Run real-task sandbox tests
+        run: python -m unittest discover -s benchmarks/real-task -p 'test_*.py' -v
 
   backend:
     name: V backend / ${{ matrix.os }}

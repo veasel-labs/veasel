@@ -339,6 +339,28 @@ class PreflightTests(unittest.TestCase):
         self.allow_synthetic_remote_cases = patch.object(runner, "validate_remote_case_pin", return_value=None)
         self.allow_synthetic_remote_cases.start()
         self.addCleanup(self.allow_synthetic_remote_cases.stop)
+        self.no_project_mcp_configs = patch.object(runner, "project_mcp_config_paths", return_value=[])
+        self.no_project_mcp_configs.start()
+        self.addCleanup(self.no_project_mcp_configs.stop)
+
+    def test_veasel_project_mcp_configs_are_detected_for_fail_closed_benchmark_preflight(self):
+        self.no_project_mcp_configs.stop()
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            repo = Path(temp_dir) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.email", "fixture@example.test"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Fixture"], check=True)
+            expected: list[str] = []
+            for config in (".veasel/mcp-servers.json", ".mcp.json", ".cursor/mcp.json"):
+                config_path = repo / config
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                config_path.write_text('{"mcpServers":{}}\n')
+                subprocess.run(["git", "-C", str(repo), "add", config], check=True)
+                subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "add MCP config"], check=True)
+                revision = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+                expected.append(config)
+                self.assertEqual(runner.project_mcp_config_paths(repo, revision), sorted(expected))
 
     def test_disposable_task_clone_preserves_tracked_and_untracked_candidate_content(self):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
@@ -850,6 +872,25 @@ class PreflightTests(unittest.TestCase):
                     config = runner.configured_model(Path(temp_dir))
                 self.assertFalse(config["api_key_saved"])
 
+    def test_scrubs_ephemeral_veasel_proxy_key_from_persistent_run_state(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            data_dir = Path(temp_dir)
+            settings_path = data_dir / "model-settings.json"
+            settings_path.write_text(json.dumps({
+                "active_provider": "meta",
+                "profiles": {"meta": {
+                    "model": "muse-spark-1.3-contributor",
+                    "base_url": "http://127.0.0.1:18765/v1",
+                    "api_key": "ephemeral-proxy-fixture",
+                }},
+            }))
+            settings_path.chmod(0o600)
+            runner.scrub_isolated_veasel_profile(data_dir)
+            scrubbed = json.loads(settings_path.read_text())
+        profile = scrubbed["profiles"]["meta"]
+        self.assertNotIn("api_key", profile)
+        self.assertEqual(profile["model"], "muse-spark-1.3-contributor")
+
     def test_opencode_config_pins_endpoint_and_token_limits(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
         case, _prompt, _digest = runner.load_case(case_path)
@@ -938,7 +979,10 @@ class PreflightTests(unittest.TestCase):
             launched_env = popen.call_args.kwargs["env"]
             self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
             self.assertIn("--standalone", launched_command)
-            self.assertEqual(launched_env["OPENCODE_CONFIG"], str(data_dir / "benchmark-opencode.json"))
+            config_path = Path(launched_env["OPENCODE_CONFIG"])
+            self.assertEqual(config_path.name, "benchmark-opencode.json")
+            self.assertEqual(config_path.parent.parent, data_dir / "runs")
+            self.assertTrue(config_path.is_file())
             self.assertNotIn("ANTHROPIC_API_KEY", launched_env)
             self.assertEqual(popen.call_args.kwargs["cwd"], workspace)
             report = json.loads((artifacts / "attempt.json").read_text())
@@ -948,6 +992,75 @@ class PreflightTests(unittest.TestCase):
             self.assertIsNone(report["resource_measurements"]["agent_process_tree_rss_sampled_max_bytes"])
             self.assertFalse(report["provider_usage"]["reported"])
             self.assertEqual(report["provider_usage"]["source"], "opencode_json_step_finish_events")
+
+    def test_remote_veasel_uses_only_ephemeral_budget_proxy_without_provider_call(self):
+        case_path = SCRIPT.parent / "cases/website-173-muse-spark-v0795/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            root = Path(temp_dir)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            data_dir = root / "state"
+            data_dir.mkdir()
+            (data_dir / "model-settings.json").write_text(json.dumps({
+                "active_provider": "meta",
+                "profiles": {"meta": {
+                    "model": "muse-spark-1.3-contributor",
+                    "base_url": "https://api.meta.ai/v1",
+                    "max_output_tokens": 2048,
+                    "api_key": "upstream-secret-fixture",
+                }},
+            }))
+            artifacts = root / "artifacts"
+            wrapper, wrapper_sha256 = make_isolation_wrapper(root)
+            process = Mock()
+            process.poll.return_value = 0
+            process.wait.return_value = 0
+            args = argparse.Namespace(
+                case=case_path, workspace=workspace, data_dir=data_dir,
+                ollama_url="unused", agent="veasel", veasel="veasel", opencode="opencode",
+                artifacts=artifacts, isolation_wrapper=wrapper,
+                isolation_wrapper_sha256=wrapper_sha256, approved_spend_usd="5",
+            )
+            def launch_with_ephemeral_profile(*_command, **kwargs):
+                launch_env = kwargs["env"]
+                launch_settings = json.loads(
+                    (Path(launch_env["VEASEL_DATA_DIR"]) / "model-settings.json").read_text()
+                )
+                self.assertEqual(
+                    launch_settings["profiles"]["meta"]["api_key"],
+                    launch_env["VEASEL_BENCHMARK_PROXY_KEY"],
+                )
+                return process
+            with (
+                patch.object(runner, "preflight", return_value={"passed": True, "checks": []}),
+                patch.object(runner.shutil, "which", return_value="/usr/bin/veasel"),
+                patch.object(runner.subprocess, "check_output", return_value="Veasel 0.79.5"),
+                patch.object(runner, "provider_reported_usage", return_value={"reported": False}),
+                patch.object(runner, "create_task_clone", return_value=workspace),
+                patch.object(runner, "preserve_candidate_changes", return_value={"dirty": False}),
+                patch.object(runner, "validated_bwrap", return_value=Path("/usr/bin/bwrap")),
+                patch.object(runner.subprocess, "Popen", side_effect=launch_with_ephemeral_profile) as popen,
+            ):
+                self.assertEqual(runner.run_case(args), 0)
+            launched_command = popen.call_args.args[0]
+            launched_env = popen.call_args.kwargs["env"]
+            self.assertEqual(launched_command[:2], [str(wrapper.resolve()), "--"])
+            self.assertEqual(launched_command[2:4], ["/usr/bin/veasel", "run"])
+            self.assertNotIn("VEASEL_MODEL_API_KEY", launched_env)
+            client_key = launched_env["VEASEL_BENCHMARK_PROXY_KEY"]
+            self.assertTrue(launched_env["VEASEL_BENCHMARK_PROXY_SOCKET"].endswith("budget-proxy.sock"))
+            settings_path = Path(launched_env["VEASEL_DATA_DIR"]) / "model-settings.json"
+            settings = json.loads(settings_path.read_text())
+            profile = settings["profiles"]["meta"]
+            self.assertEqual(profile["base_url"], "http://127.0.0.1:18765/v1")
+            self.assertNotIn("api_key", profile)
+            self.assertNotIn(client_key, settings_path.read_text())
+            self.assertEqual(profile["model"], "muse-spark-1.3-contributor")
+            self.assertNotIn("upstream-secret-fixture", (data_dir / "model-settings.json").read_text())
+            self.assertNotIn("upstream-secret-fixture", " ".join(launched_command))
+            report = json.loads((artifacts / "attempt.json").read_text())
+            self.assertEqual(report["provider_proxy_metrics"]["input_token_prechecks"], 0)
+            self.assertEqual(report["provider_proxy_metrics"]["upstream_generation_attempts"], 0)
 
     def test_launcher_records_agent_and_gpu_resource_samples(self):
         case_path = SCRIPT.parent / "cases/website-173/case.json"
@@ -1229,6 +1342,36 @@ class PreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path(temp_dir) / "isolated-veasel")
         self.assertTrue(result["passed"])
+
+    def test_preflight_fails_closed_when_veasel_project_has_mcp_configuration(self):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            data_dir = Path(temp_dir) / "state"
+            with (
+                patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB)),
+                patch.object(runner, "git", side_effect=[
+                    "https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", "",
+                ]),
+                patch.object(runner, "project_mcp_config_paths", return_value=[".mcp.json"]),
+                patch.object(runner, "configured_model", return_value={
+                    "provider": "ollama", "model": "qwen3:8b", "base_url": "http://127.0.0.1:11435/v1",
+                    "max_output_tokens": 2048, "api_key_saved": False,
+                }),
+                patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"),
+                patch.object(runner, "ollama_version", return_value="0.40.15"),
+                patch.object(runner, "ollama_gpu_placement", return_value={
+                    "name": "qwen3:8b", "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+                    "size_bytes": 5_054_440_406, "size_vram_bytes": 5_586_592_726,
+                    "context_length": 4096, "runner": "llamacpp",
+                }),
+                patch.object(runner, "gpu_info", return_value={"name": "NVIDIA GeForce RTX 3060", "memory_mib": 12288}),
+            ):
+                result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",
+                                          data_dir, "veasel")
+        mcp_check = next(item for item in result["checks"] if item["name"] == "veasel_project_mcp_config")
+        self.assertFalse(mcp_check["passed"])
+        self.assertEqual(mcp_check["actual"], [".mcp.json"])
+        self.assertFalse(result["passed"])
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")

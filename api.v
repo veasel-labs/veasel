@@ -115,9 +115,10 @@ pub:
 
 struct PluginMCPServerSelectionInput {
 pub:
-	plugin_name string
-	server_name string
-	trusted     bool
+	plugin_name            string
+	server_name            string
+	trusted                bool
+	workspace_write_access bool
 }
 
 struct WorkspaceFileInput {
@@ -1450,9 +1451,29 @@ pub fn (app &App) set_session_mcp_server(mut ctx Context, id string) veb.Result 
 			error: 'session not found'
 		})
 	}
+	mut workspace_write_access := false
 	if input.trusted {
-		_, _ := app.find_session_mcp_server(input.plugin_name, input.server_name, session.directory) or {
+		_, server := app.find_session_mcp_server(input.plugin_name, input.server_name, session.directory) or {
 			return json_request_error(mut ctx, 'MCP server is invalid or its transport is not supported')
+		}
+		if server.transport == 'stdio' {
+			$if linux {
+				if !input.workspace_write_access {
+					current_trust := app.store.session_plugin_mcp_servers(id) or {
+						return json_server_error(mut ctx, 'Unable to read session MCP workspace access')
+					}
+					has_workspace_grant := current_trust.any(it.plugin_name == input.plugin_name
+						&& it.server_name == input.server_name && it.workspace_write_access)
+					if !has_workspace_grant {
+						return json_request_error(mut ctx, 'Linux trusted stdio MCP requires explicit workspace write access; review the path and confirm this scope')
+					}
+					workspace_write_access = false
+				} else {
+					workspace_write_access = true
+				}
+			} $else {
+				workspace_write_access = input.workspace_write_access
+			}
 		}
 	}
 	mut turn_lock := app.session_turn_lock(id)
@@ -1471,7 +1492,8 @@ pub fn (app &App) set_session_mcp_server(mut ctx Context, id string) veb.Result 
 			})
 		}
 	}
-	app.store.set_session_plugin_mcp_server(id, input.plugin_name, input.server_name, input.trusted) or {
+	app.store.set_session_plugin_mcp_server(id, input.plugin_name, input.server_name, input.trusted,
+		input.trusted && workspace_write_access) or {
 		return json_server_error(mut ctx, 'Unable to update session MCP trust')
 	}
 	return ctx.json(app.store.session_plugin_mcp_servers(id) or {

@@ -1,4 +1,4 @@
-import type { ApiSessionPluginMcpServer } from "../api-client"
+import type { ApiPluginCatalogEntry, ApiSessionPluginMcpServer } from "../api-client"
 import type { SolidMcpServer } from "./component/mcp-dialog"
 
 export type ConfiguredMcpServerView = {
@@ -18,19 +18,19 @@ export type ConfiguredMcpCatalog = {
 export function solidMcpServersFromCatalog(
   configured: ConfiguredMcpCatalog | undefined,
   trusted: readonly ApiSessionPluginMcpServer[],
+  plugins: readonly ApiPluginCatalogEntry[] = [],
 ): SolidMcpServer[] {
-  const trustedKeys = new Set(
-    trusted.map((item) => `${item.plugin_name}/${item.server_name}`),
-  )
+  const trustedByKey = new Map(trusted.map((item) => [`${item.plugin_name}/${item.server_name}`, item]))
   const rows: SolidMcpServer[] = []
   for (const server of configured?.servers ?? []) {
     const key = `configured/${server.name}`
-    const trustedHit = trustedKeys.has(key)
+    const trustedHit = trustedByKey.get(key)
     rows.push({
       name: key,
       transport: server.transport,
       scope: server.scope ?? "user",
       status: !server.enabled ? "disabled" : trustedHit ? "trusted" : "available",
+      workspaceWriteAccess: trustedHit?.workspace_write_access ?? false,
       error: !server.enabled
         ? "Disabled in configured MCP settings"
         : trustedHit
@@ -41,11 +41,15 @@ export function solidMcpServersFromCatalog(
   for (const item of trusted) {
     const key = `${item.plugin_name}/${item.server_name}`
     if (rows.some((row) => row.name === key)) continue
+    const pluginServer = plugins
+      .find((plugin) => plugin.name === item.plugin_name)
+      ?.mcp_servers?.find((server) => server.name === item.server_name)
     rows.push({
       name: key,
-      transport: "plugin",
+      transport: pluginServer?.transport ?? "plugin",
       scope: "session",
       status: "trusted",
+      workspaceWriteAccess: item.workspace_write_access ?? false,
     })
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name))

@@ -216,6 +216,13 @@ export type ApiSessionUsageSummary = {
 export type ApiSessionPluginMcpServer = {
   plugin_name: string
   server_name: string
+  workspace_write_access?: boolean
+}
+
+export type ApiPluginCatalogEntry = {
+  name: string
+  skills: Array<{ name: string; description: string; source?: string; scope?: string }>
+  mcp_servers?: Array<{ name: string; transport: string }>
 }
 
 export type ApiPluginLink = {
@@ -596,13 +603,19 @@ export class VeaselApiClient {
     pluginName: string,
     serverName: string,
     trusted: boolean,
+    workspaceWriteAccess = false,
   ): Promise<ApiSessionPluginMcpServer[]> {
     const response = await fetch(
       `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/mcp-servers`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plugin_name: pluginName, server_name: serverName, trusted }),
+        body: JSON.stringify({
+          plugin_name: pluginName,
+          server_name: serverName,
+          trusted,
+          workspace_write_access: workspaceWriteAccess,
+        }),
         signal: this.signal,
       },
     )
@@ -691,21 +704,11 @@ export class VeaselApiClient {
     if (!response.ok) throw await httpError(response)
   }
 
-  async listPlugins(directory: string): Promise<{
-    plugins: Array<{
-      name: string
-      skills: Array<{ name: string; description: string; source?: string; scope?: string }>
-    }>
-  }> {
+  async listPlugins(directory: string): Promise<{ plugins: ApiPluginCatalogEntry[] }> {
     const query = new URLSearchParams({ directory })
     const response = await fetch(`${this.base}/v1/plugins?${query}`, { signal: this.signal })
     if (!response.ok) throw await httpError(response)
-    return await response.json() as {
-      plugins: Array<{
-        name: string
-        skills: Array<{ name: string; description: string; source?: string; scope?: string }>
-      }>
-    }
+    return await response.json() as { plugins: ApiPluginCatalogEntry[] }
   }
 
   async listPluginLinks(): Promise<{

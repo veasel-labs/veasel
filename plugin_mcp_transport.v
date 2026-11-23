@@ -235,7 +235,7 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	if plan == .wrap {
 		$if linux {
 			return start_plugin_mcp_transport_linux_sandboxed(root, data, cwd, server.command,
-				args, env)
+				args, env, server.workspace)
 		} $else $if macos {
 			return start_plugin_mcp_transport_macos_sandboxed(root, data, cwd, server.command,
 				args, env)
@@ -373,12 +373,15 @@ fn start_plugin_mcp_transport_macos_sandboxed(root string, data string, cwd stri
 // - network is shared (many MCP servers need outbound HTTPS); not a shell-style deny
 // - missing bwrap under auto falls back unsandboxed and never pretends sandboxed
 fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd string, command string,
-	args []string, env map[string]string) !&PluginMCPTransport {
+	args []string, env map[string]string, workspace string) !&PluginMCPTransport {
+	canonical_workspace := if workspace.len > 0 { canonical_plugin_root(workspace)! } else { '' }
 	for broad_root in ['/', '/home', '/root', '/tmp', '/usr', '/etc', '/var', '/opt'] {
-		if root == broad_root || data == broad_root {
-			return error('Trusted MCP stdio refused: PLUGIN_ROOT or PLUGIN_DATA is too broad for the sandbox')
+		if root == broad_root || data == broad_root || canonical_workspace == broad_root {
+			return error('Trusted MCP stdio refused: a writable sandbox root is too broad')
 		}
 	}
+	resolved_command := resolve_linux_mcp_command(command)!
+	runtime_paths := linux_mcp_runtime_mount_paths(resolved_command)!
 	bwrap := bubblewrap_executable_path() or {
 		return error('Trusted MCP stdio could not locate bubblewrap (bwrap)')
 	}
@@ -401,6 +404,12 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 	bwrap_args << '/proc'
 	bwrap_args << '--dev'
 	bwrap_args << '/dev'
+	if canonical_workspace.len > 0 {
+		append_linux_bwrap_parent_dirs(mut bwrap_args, canonical_workspace)
+		bwrap_args << '--bind'
+		bwrap_args << canonical_workspace
+		bwrap_args << canonical_workspace
+	}
 	append_linux_bwrap_parent_dirs(mut bwrap_args, root)
 	bwrap_args << '--bind'
 	bwrap_args << root
@@ -411,10 +420,21 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 		bwrap_args << data
 		bwrap_args << data
 	}
+	for runtime_path in runtime_paths {
+		if runtime_path == root || runtime_path == data || runtime_path == canonical_workspace
+			|| runtime_path.starts_with(root + '/') || runtime_path.starts_with(data + '/')
+			|| (canonical_workspace.len > 0 && runtime_path.starts_with(canonical_workspace + '/')) {
+			continue
+		}
+		append_linux_bwrap_parent_dirs(mut bwrap_args, runtime_path)
+		bwrap_args << '--ro-bind'
+		bwrap_args << runtime_path
+		bwrap_args << runtime_path
+	}
 	bwrap_args << '--chdir'
 	bwrap_args << cwd
 	bwrap_args << '--'
-	bwrap_args << command
+	bwrap_args << resolved_command
 	for arg in args {
 		bwrap_args << arg
 	}
@@ -432,6 +452,104 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 	}
 	return &PluginMCPTransport{
 		process: process
+	}
+}
+
+// Resolve the executable on the host before /home and /tmp are masked. A bare
+// command is still accepted, but the child receives the absolute host-resolved
+// path so PATH lookup cannot silently escape the sandbox.
+fn resolve_linux_mcp_command(command string) !string {
+	path := if os.is_abs_path(command) {
+		command
+	} else {
+		os.find_abs_path_of_executable(command) or {
+			return error('Trusted MCP stdio executable could not be resolved: ${command}')
+		}
+	}
+	if !os.is_file(path) {
+		return error('Trusted MCP stdio executable is not a regular file: ${command}')
+	}
+	// Preserve the final path component when it is a venv symlink. Python uses
+	// the invoked path to find pyvenv.cfg, so executing only its real target can
+	// select the wrong interpreter prefix.
+	return os.join_path(os.real_path(os.dir(path)), os.file_name(path))
+}
+
+// Only runtime files that would otherwise be hidden by the sandbox are
+// reintroduced. A Python virtual environment is mounted read-only as a unit
+// because its interpreter loads stdlib and installed modules from that tree.
+fn linux_mcp_runtime_mount_paths(command string) ![]string {
+	mut paths := []string{}
+	add_linux_mcp_runtime_path(mut paths, command)
+	if venv := linux_mcp_python_venv_root(command) {
+		add_linux_mcp_runtime_path(mut paths, venv)
+	}
+	if info := os.stat(command) {
+		if info.size > 0 && info.size <= 4096 {
+			contents := os.read_file(command) or { '' }
+			if contents.starts_with('#!') {
+				line := contents.all_before('\n').trim_space()
+				mut fields := []string{}
+				for field in line[2..].replace('\t', ' ').split(' ') {
+					if field.len > 0 {
+						fields << field
+					}
+				}
+				if fields.len > 0 {
+					mut interpreter := fields[0]
+					if os.file_name(interpreter) == 'env' {
+						if fields.len < 2 {
+							return error('Trusted MCP stdio shebang uses env without an interpreter')
+						}
+						interpreter = fields[1]
+					}
+					resolved_interpreter := resolve_linux_mcp_command(interpreter)!
+					add_linux_mcp_runtime_path(mut paths, interpreter)
+					add_linux_mcp_runtime_path(mut paths, resolved_interpreter)
+					if venv := linux_mcp_python_venv_root(interpreter) {
+						add_linux_mcp_runtime_path(mut paths, venv)
+					}
+				}
+			}
+		}
+	}
+	return paths
+}
+
+fn linux_mcp_python_venv_root(interpreter string) ?string {
+	mut current := os.dir(interpreter)
+	for _ in 0 .. 12 {
+		if os.is_file(os.join_path(current, 'pyvenv.cfg')) {
+			return os.real_path(current)
+		}
+		parent := os.dir(current)
+		if parent == current || parent == '/' {
+			break
+		}
+		current = parent
+	}
+	return none
+}
+
+fn add_linux_mcp_runtime_path(mut paths []string, path string) {
+	canonical := if os.is_dir(path) {
+		os.real_path(path)
+	} else {
+		os.join_path(os.real_path(os.dir(path)), os.file_name(path))
+	}
+	if !os.is_abs_path(canonical) || (!canonical.starts_with('/home/') && !canonical.starts_with('/root/')
+		&& !canonical.starts_with('/tmp/')) || canonical in ['/home', '/root', '/tmp', os.home_dir()] {
+		return
+	}
+	if canonical !in paths {
+		paths << canonical
+	}
+	if !os.is_dir(path) {
+		target := os.real_path(path)
+		if (target.starts_with('/home/') || target.starts_with('/root/') || target.starts_with('/tmp/'))
+			&& target !in paths {
+			paths << target
+		}
 	}
 }
 
@@ -719,10 +837,14 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 		return error(err.msg())
 	}
 	for selected in active {
-		plugin_root, server := app.find_session_mcp_server(selected.plugin_name, selected.server_name,
+		plugin_root, discovered_server := app.find_session_mcp_server(selected.plugin_name, selected.server_name,
 			session.directory) or {
 			eprintln('veasel: trusted MCP server configuration is no longer available')
 			continue
+		}
+		mut server := discovered_server
+		if selected.workspace_write_access {
+			server.workspace = session.directory
 		}
 		plugin_data := if selected.plugin_name == configured_mcp_plugin_name {
 			app.configured_mcp_package_root(selected.server_name)

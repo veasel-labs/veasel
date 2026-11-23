@@ -434,6 +434,7 @@ type SessionPluginSkill = {
 type SessionPluginMCPServer = {
   plugin_name: string
   server_name: string
+  workspace_write_access?: boolean
 }
 
 type ReviewSandboxPreview = {
@@ -687,6 +688,7 @@ let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let pendingReviewQueue: ActiveReview[] = []
 let pendingReviewInventoryUnavailable = false
 let pendingReviewInventoryRefreshing = false
+let pendingMcpWorkspaceTrustConfirmation: { key: string; expiresAt: number } | undefined
 const pendingReviewInventoryCoordinator = createPendingReviewInventoryCoordinator()
 let activeReview: ActiveReview | undefined
 let selectedReviewKeys = new Set<string>()
@@ -2085,6 +2087,7 @@ async function showMcpServers(filter = "") {
       ? await configuredResponse.json() as ConfiguredMcpCatalog
       : { servers: [] as ConfiguredMcpCatalog["servers"] }
     const trusted = new Set(active.map((item) => `${item.plugin_name}/${item.server_name}`))
+    const activeByKey = new Map(active.map((item) => [`${item.plugin_name}/${item.server_name}`, item]))
     const configuredEntries = configured.servers.map((server) => {
       const key = `configured/${server.name}`
       const scopeLabel = server.scope === "project"
@@ -2104,7 +2107,9 @@ async function showMcpServers(filter = "") {
       const state = !server.enabled
         ? "○ disabled"
         : trusted.has(key)
-          ? "● trusted"
+          ? activeByKey.get(key)?.workspace_write_access
+            ? "● trusted · workspace read/write"
+            : "● trusted · workspace denied"
           : "○ available"
       const line = `${state}  ${safeTerminalText(key)} [${safeTerminalText(server.transport)}] · ${scopeLabel}${configFile}${command}${cwd}${endpoint}${headers}`
       const haystack = `${key} ${server.transport} ${scopeLabel} ${server.command || ""} ${(server.args ?? []).join(" ")} ${server.url_origin || ""} ${server.cwd || ""} ${(server.header_names ?? []).join(" ")} ${state}`
@@ -2122,7 +2127,11 @@ async function showMcpServers(filter = "") {
         const support = ["stdio", "streamable-http"].includes(server.transport)
           ? server.transport
           : `${server.transport} (unsupported)`
-        const state = trusted.has(key) ? "● trusted" : "○ available"
+        const state = trusted.has(key)
+          ? activeByKey.get(key)?.workspace_write_access
+            ? "● trusted · workspace read/write"
+            : "● trusted · workspace denied"
+          : "○ available"
         const line = `${state}  ${safeTerminalText(key)} [${safeTerminalText(support)}]${command}${endpoint}${headers}`
         const haystack = `${key} ${support} ${server.command || ""} ${server.url_origin || ""} ${server.header_names.join(" ")} ${state}`
         return { haystack, line }
@@ -3027,11 +3036,29 @@ async function setMcpServerTrust(trusted: boolean, pluginName: string, serverNam
     renderChat(chatMessages)
     return
   }
+  let workspaceWriteAccess = false
+  if (trusted && process.platform === "linux") {
+    const key = `${activeSession.id}/${pluginName}/${serverName}`
+    if (pendingMcpWorkspaceTrustConfirmation?.key !== key
+      || pendingMcpWorkspaceTrustConfirmation.expiresAt < Date.now()) {
+      pendingMcpWorkspaceTrustConfirmation = { key, expiresAt: Date.now() + 30_000 }
+      skillNotice = `Linux Bubblewrap will grant this trusted stdio MCP read/write access to ${safeTerminalText(activeSession.directory)}. Every tool call still requires exact argument approval. Repeat /mcp trust ${pluginName}/${serverName} within 30 seconds to confirm this filesystem scope.`
+      renderChat(chatMessages)
+      return
+    }
+    pendingMcpWorkspaceTrustConfirmation = undefined
+    workspaceWriteAccess = true
+  }
   try {
     const response = await fetch(`${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/mcp-servers`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ plugin_name: pluginName, server_name: serverName, trusted }),
+      body: JSON.stringify({
+        plugin_name: pluginName,
+        server_name: serverName,
+        trusted,
+        workspace_write_access: workspaceWriteAccess,
+      }),
       signal: controller.signal,
     })
     if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)

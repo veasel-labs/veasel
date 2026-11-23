@@ -72,6 +72,9 @@ pub:
 	credential string // named HTTP credential; enables one OAuth refresh retry on 401
 pub mut:
 	plugin_name string
+	// workspace is the active session directory only when a separate
+	// session-level write grant was recorded for this trusted server.
+	workspace string
 }
 
 struct PluginDiagnostic {

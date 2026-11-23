@@ -128,6 +128,9 @@ Honesty bounds that stay in the product voice:
   not Codex-level WFP/LPAC. Trusted MCP stdio also defaults to fail-closed
   sandboxing (`VEASEL_MCP_STDIO_SANDBOX=require`); unsandboxed execution needs the explicit `VEASEL_SHELL_ALLOW_UNSANDBOXED` opt-in (see docs/SHELL_COMMANDS.md). Capabilities are shown only
   when the platform wrap will run; inspect effects before approval
+- On Linux, trusting a stdio MCP separately confirms read/write access to the
+  active session workspace. This scope is shown in the MCP inventory and can be
+  revoked without removing session trust; older trust entries stay workspace-denied.
 - Autonomous Linux shell is Bubblewrap fail-closed best-effort containment,
   not a Codex-level sandbox
 - Conversation input is capped at 1 MiB; Veasel does **not** claim Muse’s full

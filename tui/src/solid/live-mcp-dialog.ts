@@ -19,6 +19,11 @@ export function mcpServerActions(server: SolidMcpServer, hasSession: boolean): D
   const configuredScope = server.scope === "user" || server.scope === "project"
   const trusted = server.status === "trusted" || server.status === "connected"
   return [
+    ...(hasSession && process.platform === "linux" && trusted && server.transport === "stdio" ? [{
+      title: server.workspaceWriteAccess ? "Revoke workspace write access" : "Grant workspace write access",
+      value: server.workspaceWriteAccess ? "workspace-untrust" : "workspace-trust",
+      description: "Linux Bubblewrap session scope",
+    }] : []),
     ...(!hasSession || server.status === "disabled" ? [] : [{
       title: trusted ? "Revoke session trust" : "Trust for this session",
       value: trusted ? "untrust" : "trust",
@@ -45,7 +50,8 @@ export function createLiveMcpWorkflows(deps: {
 }) {
   const { api, dialog, toast, directory, sessionId, setComposerFocused } = deps
 
-  const runTrustAction = async (trusted: boolean, key?: string, context?: LiveMcpContext) => {
+  const runTrustAction = async (trusted: boolean, key?: string, context?: LiveMcpContext,
+    workspaceWriteAccess?: boolean) => {
     const currentSession = context ? context.sessionId : sessionId()
     if (!currentSession) {
       openDialogAlert(dialog, { title: "Session required", message: "Open a session before trusting an MCP server.", onConfirm: () => setComposerFocused(true) })
@@ -70,19 +76,35 @@ export function createLiveMcpWorkflows(deps: {
     }
     const pluginName = key.slice(0, separator)
     const serverName = key.slice(separator + 1)
-    try {
-      await api.setSessionMcpServerTrust(currentSession, pluginName, serverName, trusted)
-      toast.success(
-        trusted
-          ? `Trusted ${pluginName}/${serverName}; it connects on the next turn. Each tool call still needs review.`
-          : `Revoked trust for ${pluginName}/${serverName}; it will not connect on future turns.`,
-        "MCP",
-      )
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not update MCP trust", "MCP")
-    } finally {
-      setComposerFocused(true)
+    const applyTrust = async (workspaceWriteAccess: boolean) => {
+      try {
+        await api.setSessionMcpServerTrust(currentSession, pluginName, serverName, trusted,
+          workspaceWriteAccess)
+        toast.success(
+          trusted
+            ? `Trusted ${pluginName}/${serverName}; it connects on the next turn. Each tool call still needs review.`
+            : `Revoked trust for ${pluginName}/${serverName}; it will not connect on future turns.`,
+          "MCP",
+        )
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not update MCP trust", "MCP")
+      } finally {
+        setComposerFocused(true)
+      }
     }
+    const grantWorkspaceAccess = workspaceWriteAccess ?? (trusted && process.platform === "linux")
+    if (trusted && grantWorkspaceAccess && process.platform === "linux") {
+      const workspacePath = context?.directory ?? directory()
+      openDialogConfirm(dialog, {
+        title: "Trust this MCP server?",
+        message: `On Linux, this trusted stdio server can read/write this workspace:\n${workspacePath}\nIts network is shared. Each tool call still needs exact review. Grant workspace access to ${pluginName}/${serverName}?`,
+        label: { confirm: "Trust with workspace access", cancel: "Cancel" },
+        onClose: () => setComposerFocused(true),
+        onConfirm: () => { void applyTrust(true) },
+      })
+      return
+    }
+    await applyTrust(trusted && grantWorkspaceAccess)
   }
 
   const runAdd = async (
@@ -212,7 +234,7 @@ export async function openLiveMcpDialog(options: {
   directory: string
   sessionId?: string
   setComposerFocused: (focused: boolean) => void
-  runTrustAction: (trusted: boolean, key: string, context: LiveMcpContext) => void
+  runTrustAction: (trusted: boolean, key: string, context: LiveMcpContext, workspaceWriteAccess?: boolean) => void
   runConfigure: (action: McpConfigAction, scope: McpConfigScope, name: string, context: LiveMcpContext) => void
   isCurrentContext: () => boolean
   filter?: string
@@ -221,16 +243,17 @@ export async function openLiveMcpDialog(options: {
   const context: LiveMcpContext = { directory, sessionId }
   setComposerFocused(false)
   try {
-    const [configured, trusted] = await Promise.all([
+    const [configured, trusted, plugins] = await Promise.all([
       api.listConfiguredMcpServers(directory),
       sessionId ? api.listSessionMcpServers(sessionId) : Promise.resolve([]),
+      api.listPlugins(directory),
     ])
     if (!options.isCurrentContext()) {
       setComposerFocused(true)
       return
     }
     const needle = options.filter?.trim().toLowerCase() ?? ""
-    const servers = solidMcpServersFromCatalog(configured, trusted).filter((server) => {
+    const servers = solidMcpServersFromCatalog(configured, trusted, plugins.plugins ?? []).filter((server) => {
       if (!needle) return true
       const haystack = `${server.name} ${server.transport} ${server.status} ${server.scope ?? ""}`.toLowerCase()
       return needle.split(/\s+/).every((token) => haystack.includes(token))
@@ -261,8 +284,10 @@ export async function openLiveMcpDialog(options: {
           onCancel: () => setComposerFocused(true),
           onSelect: (action) => {
             dialog.clear()
-            if (action.value === "trust" || action.value === "untrust") {
-              options.runTrustAction(action.value === "trust", server.name, context)
+            if (action.value === "trust" || action.value === "untrust"
+              || action.value === "workspace-trust" || action.value === "workspace-untrust") {
+              options.runTrustAction(action.value !== "untrust", server.name, context,
+                action.value === "trust" || action.value === "workspace-trust")
             } else if (action.value === "enable" || action.value === "disable" || action.value === "remove") {
               options.runConfigure(action.value, server.scope as McpConfigScope, server.name.slice("configured/".length), context)
             }

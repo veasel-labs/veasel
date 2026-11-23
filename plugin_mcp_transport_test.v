@@ -279,7 +279,7 @@ fn test_trusted_session_mcp_tool_discovery_and_dispatch_keep_turn_state() {
 		title:     'MCP runtime fixture'
 		directory: root
 	}) or { panic(err) }
-	store.set_session_plugin_mcp_server(session.id, 'fixture-tools', 'local', true) or {
+	store.set_session_plugin_mcp_server(session.id, 'fixture-tools', 'local', true, false) or {
 		panic(err)
 	}
 	mut app := new_app(store, plugin_directory)
@@ -527,23 +527,31 @@ fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_pre
 		assert !mcp_stdio_sandbox_seatbelt_capability()
 		assert !mcp_stdio_sandbox_windows_capability()
 		if bubblewrap_available() {
-			node := if os.is_file('/usr/bin/node') { '/usr/bin/node' } else { return }
+			home := os.home_dir()
 			root := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-${uuid.new_v4().str()}')
 			data := os.join_path(os.temp_dir(), 'veasel-mcp-sandbox-data-${uuid.new_v4().str()}')
+			workspace := os.join_path(home, '.cache', 'veasel-mcp-workspace-${uuid.new_v4().str()}')
+			command_dir := os.join_path(home, '.cache', 'veasel-mcp-command-${uuid.new_v4().str()}')
 			os.mkdir_all(root) or { panic(err) }
+			os.mkdir_all(workspace) or { panic(err) }
+			os.mkdir_all(command_dir) or { panic(err) }
 			defer {
 				os.rmdir_all(root) or {}
 				os.rmdir_all(data) or {}
+				os.rmdir_all(workspace) or {}
+				os.rmdir_all(command_dir) or {}
 			}
-			script := os.join_path(root, 'echo.mjs')
-			os.write_file(script, "import readline from 'node:readline';\nconst lines = readline.createInterface({ input: process.stdin });\nfor await (const line of lines) {\n  const request = JSON.parse(line);\n  if (!request.id) continue;\n  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { ok: true, sandboxed: true } }) + '\\n');\n}\n") or {
+			command := os.join_path(command_dir, 'mcp-fixture')
+			os.write_file(command, '#!/bin/sh\nprintf runtime-visible > "$1/mcp-write.txt"\nwhile IFS= read -r request; do\n  case "$request" in *initialize*) printf \'{"jsonrpc":"2.0","id":1,"result":{"sandboxed":true}}\\n\'; break ;; esac\ndone\n') or {
 				panic(err)
 			}
+			os.chmod(command, 0o700) or { panic(err) }
 			mut transport := start_plugin_mcp_transport(root, data, PluginMCPServer{
 				name:      'sandbox-fixture'
 				transport: 'stdio'
-				command:   node
-				args:      [script]
+				command:   command
+				args:      [workspace]
+				workspace: workspace
 			}) or { panic(err) }
 			defer {
 				transport.close()
@@ -555,6 +563,7 @@ fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_pre
 			frame := transport.receive() or { panic(err) }
 			assert frame.contains('"id":1')
 			assert frame.contains('"sandboxed":true')
+			assert (os.read_file(os.join_path(workspace, 'mcp-write.txt')) or { '' }) == 'runtime-visible'
 		}
 	} $else $if macos {
 		assert !mcp_stdio_sandbox_bubblewrap_capability()
@@ -671,6 +680,30 @@ fn test_mcp_stdio_sandbox_default_fails_closed_without_backend_or_wraps_when_pre
 			return
 		}
 		assert false, 'expected require mode to refuse MCP stdio without a platform sandbox backend'
+	}
+}
+
+fn test_linux_mcp_runtime_paths_include_home_command_and_python_venv() {
+	$if linux {
+		home := os.home_dir()
+		root := os.join_path(home, '.cache', 'veasel-mcp-runtime-${uuid.new_v4().str()}')
+		venv := os.join_path(root, '.venv')
+		bin := os.join_path(venv, 'bin')
+		os.mkdir_all(bin) or { panic(err) }
+		defer {
+			os.rmdir_all(root) or {}
+		}
+		os.write_file(os.join_path(venv, 'pyvenv.cfg'), 'home = /usr/bin\n') or { panic(err) }
+		interpreter := os.join_path(bin, 'python')
+		os.write_file(interpreter, '#!/bin/sh\nexit 0\n') or { panic(err) }
+		command := os.join_path(bin, 'mcp-fixture')
+		os.write_file(command, '#!${interpreter}\n') or { panic(err) }
+		paths := linux_mcp_runtime_mount_paths(os.real_path(command)) or { panic(err) }
+		assert os.real_path(command) in paths
+		assert os.real_path(interpreter) in paths
+		assert os.real_path(venv) in paths
+	} $else {
+		assert true
 	}
 }
 

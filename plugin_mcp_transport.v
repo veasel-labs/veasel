@@ -730,7 +730,7 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 			os.join_path(app.plugin_data_directory, selected.plugin_name)
 		}
 		mut connection := new_plugin_mcp_connection(plugin_root, plugin_data, server) or {
-			eprintln('veasel: trusted MCP server could not be started')
+			eprintln('veasel: trusted MCP server could not be started: ${err.msg()}')
 			continue
 		}
 		// Attach OAuth refresh before initialize so a 401 can refresh once and
@@ -741,7 +741,7 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 				app.mcp_credentials)
 		}
 		connection.client.initialize() or {
-			eprintln('veasel: trusted MCP server initialization failed')
+			eprintln('veasel: trusted MCP server initialization failed: ${err.msg()}')
 			connection.client.close()
 			continue
 		}

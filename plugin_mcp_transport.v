@@ -206,6 +206,12 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	if server.transport != 'stdio' || server.command.len == 0 {
 		return error('unsupported Agent Plugin MCP server')
 	}
+	// Configured (operator-added) servers use a synthetic package root
+	// under the plugin data directory that nobody creates beforehand;
+	// canonical_plugin_root would reject it and every configured stdio
+	// server would fail to start. Ensure it exists first (a no-op for
+	// real plugin packages, whose root already exists).
+	ensure_directory(plugin_root)!
 	root := canonical_plugin_root(plugin_root)!
 	data_parent := os.dir(os.real_path(plugin_data))
 	ensure_directory(data_parent)!

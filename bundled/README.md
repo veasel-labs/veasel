@@ -14,7 +14,7 @@ minimal first-party skill set with no network access (#706).
   plugin loader requires.
 - `veasel-essentials` is first-party and is approved/installable under the
   owner's explicit exception in
-  [veasel-labs/agent-toolkit#10](https://github.com/veasel-labs/agent-toolkit/issues/10#issuecomment-7019036861),
+  [veasel-labs/agent-toolkit#10](https://github.com/veasel-labs/agent-toolkit/issues/10#issuecomment-7086420717),
   recorded by [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12).
   The vendored plugin content comes from official registry commit
   `3c1c3149c13de05585df68ff9d9d7d63598b4c87`; its approval state comes from

@@ -579,7 +579,13 @@ fn test_agent_skill_frontmatter_enforces_supported_fields_and_limits() {
 	}
 	assert autoinvoke_off.disable_model_invocation
 
-	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nextra: ignored')
+	// Unknown top-level fields are inert distribution metadata and are
+	// ignored (mirroring plugin-manifest parsing), never a rejection:
+	// ecosystems annotate skills with origin/tools/triggers blocks.
+	annotated := parse_agent_skill('review', '/plugin/skills/review/SKILL.md', '---\nname: review\ndescription: Valid.\norigin:\n  type: first-party\ntools:\n  - kdenlive\ntriggers:\n  - edit video\n---\nBody') or {
+		panic(err)
+	}
+	assert annotated.name == 'review'
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ndisable-model-invocation: maybe')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\nlicense: true')
 	assert agent_skill_frontmatter_rejected('review', 'name: review\ndescription: Valid.\ncompatibility: ""')

@@ -7,8 +7,8 @@
       "version": "0.1.0",
       "license": "MIT",
       "trust": "first-party",
-      "review": "pending-initial-review",
-      "installable": false,
+      "review": "approved",
+      "installable": true,
       "opt_in_required": false,
       "source": { "type": "relative", "path": "veasel-essentials", "ref": "main", "repo": "", "sha": "" },
       "permissions": {

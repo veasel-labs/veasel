@@ -129,19 +129,22 @@ fn test_library_invalid_catalog_structures_rejected() {
 	}
 }
 
-fn test_bundled_offline_catalog_loads_and_stays_pending_review() {
+fn test_bundled_offline_catalog_is_approved_installable_and_permission_scoped() {
 	// The catalog physically shipped in this repository (bundled/) is the
 	// offline fallback: it loads with no network, lists only bundled
-	// content, and never claims installability before owner review (#10).
+	// content, and matches the owner's first-party exception recorded in #10.
 	path := bundled_library_catalog_path_from([os.getwd()])
 	assert path.len > 0, 'bundled catalog must exist in the repository layout'
 	catalog := load_library_catalog(path) or { panic(err) }
 	assert catalog.plugins.len == 1
 	entry := catalog.entry('veasel-essentials') or { panic('bundled entry missing') }
 	assert entry.trust == 'first-party'
+	assert entry.review == 'approved'
+	assert entry.installable
+	assert !entry.opt_in_required
 	installable, reason := library_entry_installable(entry)
-	assert !installable
-	assert reason.contains('not approved'), reason
+	assert installable, reason
+	assert library_permission_summary(entry) == 'shell=false network=false mcp=none hooks=none dangerous_permissions=none'
 	package := library_resolve_package(os.dir(path), entry, LibraryInstallOptions{}) or {
 		panic(err)
 	}
@@ -149,6 +152,22 @@ fn test_bundled_offline_catalog_loads_and_stays_pending_review() {
 	assert plugin.manifest.name == 'veasel-essentials'
 	assert plugin.skills.len == 1
 	assert plugin.skills[0].name == 'output-handshake'
+	base := os.join_path(os.temp_dir(), 'veasel-bundled-install-${uuid.new_v4().str()}')
+	os.mkdir_all(base) or { panic(err) }
+	defer { os.rmdir_all(base) or {} }
+	plugin_dir := os.join_path(base, 'plugins')
+	os.mkdir_all(plugin_dir) or { panic(err) }
+	registry := os.join_path(base, 'plugin-links.json')
+	link := install_library_entry(plugin_dir, registry, os.dir(path), entry, LibraryInstallOptions{}) or {
+		panic(err)
+	}
+	assert link.name == 'veasel-essentials'
+	assert link.skill_count == 1
+	discovered := discover_agent_plugins(plugin_dir) or { panic(err) }
+	assert discovered.plugins.len == 1
+	remove_library_entry(plugin_dir, registry, entry) or { panic(err) }
+	after := discover_agent_plugins(plugin_dir) or { panic(err) }
+	assert after.plugins.len == 0
 }
 
 fn test_library_headless_parse_requires_opt_in_flags_scoped() {

@@ -51,4 +51,32 @@ describe("installed CLI approval review", () => {
     expect(notices).toEqual(["session-1"])
     poller.stop()
   })
+
+  test("retries notification when the review inventory is temporarily unavailable", async () => {
+    const approval: CliToolApproval = {
+      id: "approval-1",
+      session_id: "session-1",
+      request_id: "request-1",
+      tool_name: "Edit",
+      input_json: "{}",
+      status: "pending",
+      created_at: "",
+      updated_at: "",
+    }
+    let attempts = 0
+    const poller = createCliApprovalPoller({
+      list: async () => [approval],
+      isCurrent: () => true,
+      onPending: async () => {
+        attempts++
+        return attempts > 1
+      },
+    })
+    poller.start("session-1")
+    await poller.pollNow()
+    await poller.pollNow()
+    await poller.pollNow()
+    expect(attempts).toBe(2)
+    poller.stop()
+  })
 })

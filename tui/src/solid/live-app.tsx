@@ -1114,7 +1114,7 @@ function LiveAppShell(props: LiveAppProps) {
       setPendingReviewItems([])
       setPendingReviewSessionId(undefined)
       setPendingReviewInventoryError(false)
-      return undefined
+      return null
     }
     if (pendingReviewSessionId() !== sessionId) {
       setPendingReviewItems([])
@@ -1138,7 +1138,7 @@ function LiveAppShell(props: LiveAppProps) {
       knownPendingReviewIds.set(sessionId, new Set(items.map((item) => `${item.kind}:${item.id}`)))
       setPendingReviewItems(items)
       setPendingReviewInventoryError(false)
-      return newReview
+      return newReview ?? null
     } catch {
       if (revision === pendingReviewRevision && sessionId === activeSessionId()) {
         // Preserve known pending work during transient inventory failures and
@@ -1161,9 +1161,11 @@ function LiveAppShell(props: LiveAppProps) {
       && activeSessionId() === sessionId,
     onPending: async (sessionId) => {
       const newReview = await refreshPendingReviews(sessionId, true)
+      if (newReview === undefined) return false
       if (newReview && activeSessionId() === sessionId && !dialog.open()) {
         void openLiveReviews({ kind: newReview.kind, id: newReview.id }, true)
       }
+      return true
     },
   })
   createEffect(() => {

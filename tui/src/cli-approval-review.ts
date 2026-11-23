@@ -11,7 +11,7 @@ export type CliToolApproval = ApiCliToolApproval
 export type CliApprovalPollerOptions = {
   list: (sessionId: string) => Promise<CliToolApproval[]>
   isCurrent: (sessionId: string) => boolean
-  onPending: (sessionId: string, approvals: CliToolApproval[]) => void | Promise<void>
+  onPending: (sessionId: string, approvals: CliToolApproval[]) => boolean | void | Promise<boolean | void>
 }
 
 /** Poll only during an active turn and notify once for each newly pending request. */
@@ -32,10 +32,11 @@ export function createCliApprovalPoller(options: CliApprovalPollerOptions) {
       for (const knownId of notifiedIds) {
         if (!pendingIds.has(knownId)) notifiedIds.delete(knownId)
       }
-      const hasNewRequest = pending.some((approval) => !notifiedIds.has(approval.id))
-      for (const approval of pending) notifiedIds.add(approval.id)
-      if (hasNewRequest && sessionId === currentSessionId && options.isCurrent(currentSessionId)) {
-        await options.onPending(currentSessionId, pending)
+      const newApprovals = pending.filter((approval) => !notifiedIds.has(approval.id))
+      if (newApprovals.length > 0 && sessionId === currentSessionId && options.isCurrent(currentSessionId)) {
+        const handled = await options.onPending(currentSessionId, newApprovals)
+        if (handled === false || sessionId !== currentSessionId || !options.isCurrent(currentSessionId)) return
+        for (const approval of newApprovals) notifiedIds.add(approval.id)
       }
     } catch {
       // Durable turn completion stays authoritative; a failed poll is not an empty queue.

@@ -14,7 +14,7 @@ from GitHub on 2026-11-23; PR counts include drafts.
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
 | veasel-labs/veasel | `dd105961483d8646c652a7ad898dd0ce9ab5914a` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | Main CI run `45224522194` green; #803 platform CI green; combined runner+approval branch now awaits exact-head CI |
-| veasel-labs/agent-toolkit | `2096315d10ccdb19b1cb8ea071986bd2c641eb89` | 0 | 1 (#13) | #13 is creative-studio by-reference; `shell:true`, `network:true`, `mcp:[kdenlive]`; awaits independent review per owner |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; truthful core hook/network metadata; #13 creative-studio by-reference awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
 | veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | No open work |
@@ -27,9 +27,12 @@ Owner decisions recorded: registry #10 approved the first-party exception for
 self-approved. Its current manifest discloses shell, network, and Kdenlive MCP
 capabilities; the hold is the required independent trust review. The #10
 outcome is reflected in official toolkit main. A separate catalog audit found
-`agent-toolkit-core`'s pending, non-installable entry currently understates
-its pinned source's shell hook and networked GitHub MCP as `shell:false` and
-`network:false`; correct this metadata before any installability decision.
+`agent-toolkit-core`'s pending, non-installable entry had understated its
+pinned source's shell hook and networked GitHub MCP as `shell:false` and
+`network:false`; PR [#14](https://github.com/veasel-labs/agent-toolkit/pull/14)
+corrected the metadata without changing its pending review or installability.
+It merged at `8205dd0e09ea6c74342503152b3fc71325be1351`; exact-main registry
+validation [#45273303142](https://github.com/veasel-labs/agent-toolkit/actions/runs/45273303142) passed.
 
 Current distribution release: `v0.101.3-next.0`, targeting
 `1d041d86a19275b6c73e2c1750890dacaf18dd97`; the GitHub release contains
@@ -69,6 +72,47 @@ are conditional and do not establish packaged-release acceptance. The CLI sessio
 remains NOT VERIFIED as a real-provider coding journey after write approval
 was denied; see
 https://github.com/veasel-labs/veasel/issues/550#issuecomment-7113850660.
+
+The previous candidate head `8768a5d19e24f4d01f5b25e915e1e008cf374ab7`
+passed targeted client, security, CodeQL, coverage and version checks. Its
+six Linux extra-test shards passed before CI run
+[45272119996](https://github.com/veasel-labs/veasel/actions/runs/45272119996)
+was canceled after a review found a P2 availability issue: approval IDs were
+marked notified before review-inventory loading succeeded, so a transient
+failure could suppress retry. The poller now records IDs only after successful
+handling and retries on callback failure. The new regression passes; full local
+TUI validation passes 702 tests across 142 files plus typecheck. A new
+exact-head native matrix must finish before merge. The earlier local run also
+passed the standalone Linux client build/version smoke; pinned-V backend tests
+passed on the same source ancestry, all under bounded local execution.
+
+### Active issue/PR resolution register (live 2026-11-23)
+
+| Repository/item | State / owner | Existing implementation and evidence | Remaining acceptance / dependency | Action and destination |
+| --- | --- | --- | --- | --- |
+| veasel#549 | OPEN; Veasel product mission | Current release and Linux packaged OpenCode red→green journey are recorded; deterministic Focus journeys and orchestration/security work are integrated | Independently repeatable provider edit + real visual-TUI same-session continuation; cross-platform packaged journeys; truthful readiness/usage | IMPLEMENT in Veasel; keep open until #550 and full mission gates pass |
+| veasel#550 | OPEN; Veasel packaged acceptance | Existing packaged GUI evidence retained; PR #803 runner selection and #804 approval UI form a combined candidate; denied write approval is recorded as NOT VERIFIED | Exact-head CI; installed-binary edit with provider approval; same session reopened/continued in visual TUI and Desktop observes it; native platform legs | REVIEW/MERGE #804, then continue packaged journeys; no fabricated provider success |
+| veasel#673 | OPEN; Veasel benchmark | Deterministic suite: 93 passed, 1 skipped because pinned OpenCode binary is absent; no paid call this checkpoint | Independently review wrapper/isolation, rotate Meta credential, then matched provider run within the owner's $5 aggregate ceiling | IMPLEMENT in Veasel only after both safety/credential gates; remain open |
+| veasel#689 | OPEN; cross-repo parent | Release consumers hash-match v0.101.3-next.0; current main and ownership boundaries documented | All active child and external acceptance gates, final green latest-main CI, truthful release, issue/PR reconciliation | KEEP LAST; close only after all seven repos and external dependencies are reconciled |
+| official agent-toolkit#13 | OPEN, ready; registry governance | Immutable pin `ulises-jeremias/agent-toolkit@cc5c60d48c18ff6b5788c08f38f681c933505fbe`; MIT; `shell:true`, `network:true`, `mcp:[kdenlive]`; registry validation green; not installable | Independent non-submitter review of the complete source and permissions; owner explicitly said leave pending | HUMAN REVIEW; keep pending and non-installable, never self-approve |
+| personal agent-toolkit#1838 | OPEN; Creative Studio umbrella | Creative assets/workflow, Hornero adapters, docs, QA scenario, and Veasel runtime fixes are tracked; first-cut teaser exists in evaluation-host cache | Tool-capable model completes a real creative edit; guest-image QA run; graphical GIMP/OBS/REAPER; gated Blender Lab; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until each remaining acceptance is proven or explicitly descoped |
+| veasel#803 | OPEN DRAFT; Veasel | Original runner-selection commit `9ca5c91b7b0bf0cb406705cad370deb947a756b5` is preserved as ancestor in #804 | No independent value after combined PR lands; don't abandon it before #804 merges | SUPERSEDE by #804 only after merge; close with exact merge SHA and checks |
+| veasel#804 | OPEN DRAFT; Veasel | Combined runner selection + approval UI, retry-on-inventory-failure fix; local 702/142 TUI suite and typecheck pass | Previous run #45272119996 canceled after the fix; require full Linux/macOS/Windows backend and six Linux-shard CI on updated head | REVIEW/MERGE after every required check succeeds; then close #803 as superseded; follow with real-provider acceptance |
+
+Destination for #13 is the official registry only after independent review;
+personal portable content remains sourced by immutable reference. There are
+5 open issues and 3 open PRs before #804 merge, including drafts.
+
+External epic dependency (outside the seven-repository count):
+[HorneroOS/shell#447](https://github.com/HorneroOS/shell/issues/447) remains
+open. Veasel's current release contains `veasel-tui.desktop`; Hornero Shell's
+generic app launcher discovers `DesktopEntries` and its launch adapter uses
+`app2unit` when present, with a direct user-process fallback. Relevant source
+regressions passed (69 tests under a bounded scope). The host's installed
+Veasel is still `0.79.13-next.0` and lacks the current entry; actual launch,
+canonical-session use, and cleanup are therefore NOT VERIFIED on this host.
+The shell's Agent Center `horneroctl agent launch` remains accurately labeled
+as a dry-run proposal and is not evidence of a real launch.
 
 Benchmark #673 remains gated: no paid provider call until the benchmark
 wrapper is independently reviewed and the Meta credential is rotated. The

@@ -15,8 +15,9 @@ Properties that matter for integration:
 - No `DBusActivatable`, no service files: Veasel is started and stopped
   by the user, zero cost when off, matching Hornero's M3 rules.
 
-Installers should place this file at
+The Linux CLI release archive carries this file as `veasel.desktop`.
+Package maintainers should install it at
 `/usr/share/applications/veasel.desktop` (system) or
 `~/.local/share/applications/veasel.desktop` (user). The icon entry is
-intentionally omitted until a shipped icon asset exists — do not point
-it at the CC-BY-NC mascot (see repo `THIRD_PARTY` notes).
+intentionally omitted until a shipped icon asset exists — do not point it at
+the CC-BY-NC mascot (see repo `THIRD_PARTY` notes).

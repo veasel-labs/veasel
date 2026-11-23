@@ -445,7 +445,16 @@ jobs:
           tui_binary_name="${tui_binary_name#dist/}"
           # Bundled offline Library content (#706) ships next to the binary.
           cp -r bundled dist/bundled
-          tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist veasel "$tui_binary_name" build.json bundled
+          archive_members=(veasel "$tui_binary_name" build.json bundled)
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # Register the CLI in XDG launchers (including HorneroOS Apps).
+            install -m 0644 packaging/linux/veasel.desktop dist/veasel.desktop
+            archive_members+=(veasel.desktop)
+          fi
+          tar -czf dist/veasel-${{ runner.os }}.tar.gz -C dist "${archive_members[@]}"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            tar -tzf dist/veasel-Linux.tar.gz | grep -Fx veasel.desktop
+          fi
       - name: Package Windows binaries for artifact smoke
         if: runner.os == 'Windows'
         run: |

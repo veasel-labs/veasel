@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import sys
@@ -133,7 +134,7 @@ class ProxyNetworkBridgeTests(unittest.TestCase):
             f"[sys.executable,'-c',{('from urllib.request import Request,urlopen; ' + f'r=Request(\"http://127.0.0.1:{port}/responses\",data=b\"sandbox\",method=\"POST\"); print(urlopen(r,timeout=3).read().decode())')!r}], {port}))"
         )
         wrapped = subprocess.run(
-            ["/usr/bin/bwrap", "--unshare-all", "--ro-bind", "/", "/",
+            [os.environ.get("VEASEL_BWRAP", "/usr/bin/bwrap"), "--unshare-all", "--ro-bind", "/", "/",
              "/usr/bin/python3", "-c", script],
             capture_output=True,
             text=True,

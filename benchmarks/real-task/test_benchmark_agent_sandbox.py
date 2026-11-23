@@ -74,7 +74,7 @@ class BenchmarkAgentSandboxTests(unittest.TestCase):
             "VEASEL_BENCHMARK_PROXY_KEY": "fixture-client-key",
             "VEASEL_BENCHMARK_AGENT": "veasel",
             "VEASEL_BENCHMARK_BRIDGE_SCRIPT": str(SCRIPT_DIR / "proxy_network_bridge.py"),
-            "VEASEL_BWRAP": "/usr/bin/bwrap",
+            "VEASEL_BWRAP": os.environ.get("VEASEL_BWRAP", "/usr/bin/bwrap"),
         }
         self.wrapper_env = env
 

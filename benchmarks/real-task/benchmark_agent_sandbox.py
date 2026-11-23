@@ -156,6 +156,7 @@ def build_bwrap_command(command: Sequence[str]) -> tuple[list[str], dict[str, st
         raise ValueError("budget proxy bridge does not match the reviewed source pin")
     if not os.environ.get("VEASEL_BENCHMARK_PROXY_KEY"):
         raise ValueError("budget proxy client credential is required")
+    guest = _guest_environment(state, task)
 
     workspace_mirror = state / "workspace-parent"
     workspace_mirror.mkdir(mode=0o700, exist_ok=True)
@@ -163,6 +164,14 @@ def build_bwrap_command(command: Sequence[str]) -> tuple[list[str], dict[str, st
     task_mountpoint = workspace_mirror / task.name
     task_mountpoint.mkdir(mode=0o700, exist_ok=True)
     task_mountpoint.chmod(0o700)
+
+    # The checkout commonly lives below /home, which this namespace deliberately
+    # hides. Stage only the already hash-pinned bridge into this run's private
+    # state so Bubblewrap never needs to resolve a source path after /home is
+    # overmounted.
+    staged_bridge = state / "proxy_network_bridge.py"
+    staged_bridge.write_bytes(bridge.read_bytes())
+    staged_bridge.chmod(0o500)
 
     mounts: list[str] = [
         "--unshare-all", "--die-with-parent", "--new-session",
@@ -176,13 +185,12 @@ def build_bwrap_command(command: Sequence[str]) -> tuple[list[str], dict[str, st
         "--bind", str(task), str(WORKSPACE_PARENT_GUEST / task.name),
         "--dir", str(ARTIFACTS_GUEST), "--bind", str(artifacts), str(ARTIFACTS_GUEST),
         "--dir", str(RELAY_DIR_GUEST), "--ro-bind", str(relay_dir), str(RELAY_DIR_GUEST),
-        "--dir", str(TOOLS_GUEST), "--ro-bind", str(bridge), str(TOOLS_GUEST / bridge.name),
+        "--dir", str(TOOLS_GUEST), "--ro-bind", str(staged_bridge), str(TOOLS_GUEST / bridge.name),
     ]
     executable = _add_guest_binary_mounts(command, mounts)
 
     remapped = [_rewrite_argument(arg, task, artifacts) for arg in command]
     remapped[0] = str(executable)
-    guest = _guest_environment(state, task)
     # If the binary was installed under the hidden home directory, the exact
     # executable file is re-mounted read-only at its original absolute path.
     namespace_command = [

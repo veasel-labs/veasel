@@ -76,7 +76,7 @@ class OpenCode227CompatibilityTests(unittest.TestCase):
                     **os.environ,
                     "VEASEL_REAL_TASK_ROOT": str(root),
                     "VEASEL_REAL_TASK_PARENT": str(parent),
-                    "VEASEL_BWRAP": shutil.which("bwrap") or "",
+                    "VEASEL_BWRAP": os.environ.get("VEASEL_BWRAP", shutil.which("bwrap") or ""),
                 },
                 text=True,
                 capture_output=True,
@@ -257,7 +257,7 @@ printf runtime-ok
                     "PATH": os.environ.get("PATH", ""),
                     "VEASEL_REAL_TASK_ROOT": str(workspace),
                     "VEASEL_REAL_TASK_PARENT": str(workspace_parent),
-                    "VEASEL_BWRAP": shutil.which("bwrap") or "",
+                    "VEASEL_BWRAP": os.environ.get("VEASEL_BWRAP", shutil.which("bwrap") or ""),
                 },
                 text=True,
                 capture_output=True,
@@ -325,7 +325,7 @@ else:
             env.update({key: SECRET for key in SECRET_KEYS})
             env["VEASEL_REAL_TASK_ROOT"] = str(workspace)
             env["VEASEL_REAL_TASK_PARENT"] = str(workspace_parent)
-            env["VEASEL_BWRAP"] = shutil.which("bwrap") or ""
+            env["VEASEL_BWRAP"] = os.environ.get("VEASEL_BWRAP", shutil.which("bwrap") or "")
             try:
                 result = subprocess.run(
                     [str(LAUNCHER), "-c", command],

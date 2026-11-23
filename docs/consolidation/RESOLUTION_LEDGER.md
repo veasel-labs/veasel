@@ -13,7 +13,7 @@ from GitHub on 2026-11-23; PR counts include drafts.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `dd105961483d8646c652a7ad898dd0ce9ab5914a` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | Main CI run `45224522194` green; #803 platform CI green; #804 head `574626ef` checks running |
+| veasel-labs/veasel | `dd105961483d8646c652a7ad898dd0ce9ab5914a` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | Main CI run `45224522194` green; #803 platform CI green; combined runner+approval branch now awaits exact-head CI |
 | veasel-labs/agent-toolkit | `2096315d10ccdb19b1cb8ea071986bd2c641eb89` | 0 | 1 (#13) | #13 is creative-studio by-reference; `shell:true`, `network:true`, `mcp:[kdenlive]`; awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
@@ -34,31 +34,38 @@ its pinned source's shell hook and networked GitHub MCP as `shell:false` and
 Current distribution release: `v0.101.3-next.0`, targeting
 `1d041d86a19275b6c73e2c1750890dacaf18dd97`; the GitHub release contains
 Linux, macOS, and Windows CLI/Desktop assets plus `release.json` and
-`SHA256SUMS`. This is newer than main `dd105961` and is not a claim that
-current main itself was released. Independent verification found exact
-consumer pins against the manifest: website `a195dfcd` CI/deploy/refresh
-success (`45177649535`, `45177649646`, `45179468992`); Homebrew
-`a84ae2f2` cask SHA `2aa33d87…` equals manifest `veasel-macOS.tar.gz`
-(`45177863518`, updater `45176481350`); AUR `21d52c32` SHA `d3d4c907…`
+`SHA256SUMS` ([release](https://github.com/veasel-labs/veasel/releases/tag/v0.101.3-next.0)); manifest SHA-256 is
+`e16d4d20283a6742f3bfbb1b6a1f4da8ca32d20459ede01f2e146829325eb725`.
+This is newer than main `dd105961` and is not a claim that current main
+itself was released. Independent verification found exact consumer pins
+against the manifest: website `a195dfcd` CI/deploy/refresh success
+(`45177649535`, `45177649646`, `45179468992`); Homebrew `a84ae2f2` cask SHA
+`2aa33d87f8eb74bd8a5c6d7bd70a16b9e1210d5c43dc990a9b68a7eaded1b280`
+equals manifest `veasel-macOS.tar.gz` (`45177863518`, updater `45176481350`);
+AUR `21d52c32` SHA
+`d3d4c907183ba8ab8852f8d8b885aedb11c1f783c7ce8d6782ec53f4267a838a`
 equals manifest `veasel-Linux.tar.gz` (`45177921284`, publish
-`45176500717`). Installers remain truthfully unsigned.
+`45176500717`). Installers remain truthfully unsigned. The exact source SHA
+`1d041d86` release run `45165644241` passed Linux/macOS/Windows backend,
+all Linux shards, and Linux/macOS/Windows packaging/publish; later main SHA
+`dd105961` CI `45224522194` also passed.
 
 Current implementation candidate: veasel PR #804
-(`https://github.com/veasel-labs/veasel/pull/804`) adds installed-CLI approval
-review to the shipped Solid TUI, with terminal-safe input previews,
+(`https://github.com/veasel-labs/veasel/pull/804`) now contains the original
+runner-selection commit from #803 (preserved as its parent commit) plus
+installed-CLI approval review in the shipped Solid TUI. It supports provider
+selection per session, terminal-safe input previews,
 inspection-before-approval, fail-closed truncation handling, and one-at-a-time
-decisions. Local validation on 2026-11-23: `bun run typecheck`, all 694 Bun
-tests across 141 files, standalone `bun-linux-x64` build and `--version`
+decisions. Local validation on 2026-11-23: `bun run typecheck`, `bun run test`
+(701 tests across 142 files), standalone `bun-linux-x64` build and `--version`
 smoke passed; high/critical Bun audit and `git diff --check` passed. These
-local checks used bounded `systemd-run` scopes. PR head is
-`574626ef45eb445362630c455971a1237f238a44`; required checks are running in
-CI run `45269293587` (CodeQL run `45269293613`). The first terminal run
-failed because this shared inventory lost its CLI queue route and action
-label; exact annotations identified the two stale expectations. A focused
-fix restores CLI inventory by default and opts the retired Classic shell out
-explicitly because it has no safe CLI decision surface. The replacement exact
-head and full suite are pending. PR package/release jobs are conditional and
-do not establish packaged-release acceptance. The CLI session in #550
+local checks used bounded `systemd-run` scopes. Previous head
+`574626ef45eb445362630c455971a1237f238a44` exposed two stale expectations in
+the common CLI review inventory; annotations on run `45269293587` identified
+them. The fix restores CLI review inventory by default and opts the retired
+Classic shell out explicitly because it has no safe CLI decision surface.
+The combined branch needs fresh exact-head checks; PR package/release jobs
+are conditional and do not establish packaged-release acceptance. The CLI session in #550
 remains NOT VERIFIED as a real-provider coding journey after write approval
 was denied; see
 https://github.com/veasel-labs/veasel/issues/550#issuecomment-7113850660.

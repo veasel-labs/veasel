@@ -32,9 +32,10 @@ export function createPendingReviewInventoryCoordinator() {
       sessionId: string,
       signal?: AbortSignal,
       fetcher?: PendingReviewFetcher,
+      includeCli = true,
     ): Promise<PendingReviewInventoryRequest> {
       const requestRevision = ++revision
-      const inventory = await loadPendingReviewInventory(apiBase, sessionId, signal, fetcher)
+      const inventory = await loadPendingReviewInventory(apiBase, sessionId, signal, fetcher, { includeCli })
       return { current: requestRevision === revision, inventory }
     },
   }
@@ -46,6 +47,7 @@ export async function loadPendingReviewInventory(
   sessionId: string,
   signal?: AbortSignal,
   fetcher: PendingReviewFetcher = fetch,
+  options: { includeCli?: boolean } = {},
 ): Promise<PendingReviewInventoryResult> {
   const base = apiBase.replace(/\/+$/, "")
   const session = encodeURIComponent(sessionId)
@@ -62,16 +64,20 @@ export async function loadPendingReviewInventory(
   }
 
   try {
-    const [edits, commands, mcp] = await Promise.all([
+    const includeCli = options.includeCli ?? true
+    const requests: Promise<ReviewRecord[]>[] = [
       load("workspace/edits"),
       load("workspace/commands"),
       load("mcp-tool-calls"),
-    ])
-    const groups = [
+    ]
+    if (includeCli) requests.push(load("cli-approvals"))
+    const [edits, commands, mcp, cli = []] = await Promise.all(requests)
+    const groups: { kind: ActiveReview["kind"]; records: ReviewRecord[]; count: keyof PendingReviewCounts }[] = [
       { kind: "patch" as const, records: edits, count: "edits" as const },
       { kind: "command" as const, records: commands, count: "commands" as const },
       { kind: "mcp" as const, records: mcp, count: "mcp" as const },
     ]
+    if (includeCli) groups.push({ kind: "cli", records: cli, count: "cli" })
     const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0, cli: 0 }
     const queue: ActiveReview[] = []
     for (const group of groups) {
@@ -86,7 +92,7 @@ export async function loadPendingReviewInventory(
 }
 
 export function pendingReviewInventoryFailureNotice(): string {
-  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, or /mcp calls to reopen a review list."
+  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, /mcp calls, or /cli approvals to reopen a review list."
 }
 
 export function pendingReviewDecisionFailureNotice(
@@ -110,6 +116,7 @@ export function pendingReviewActions(counts: PendingReviewCounts): string[] {
   if (counts.edits > 0) actions.push("/patches")
   if (counts.commands > 0) actions.push("/commands")
   if (counts.mcp > 0) actions.push("/mcp calls")
+  if ((counts.cli ?? 0) > 0) actions.push("/cli approvals")
   return actions
 }
 

@@ -117,6 +117,24 @@ describe("pending review inventory", () => {
     })
   })
 
+  test("can omit CLI approvals for legacy clients without a safe decision surface", async () => {
+    const requests: string[] = []
+    const fetcher = async (input: string | URL | Request) => {
+      requests.push(String(input))
+      return Response.json([])
+    }
+    const result = await loadPendingReviewInventory(
+      "http://127.0.0.1:8000",
+      "session-legacy",
+      undefined,
+      fetcher,
+      { includeCli: false },
+    )
+    expect(result).toEqual({ ok: true, counts: { edits: 0, commands: 0, mcp: 0, cli: 0 }, queue: [] })
+    expect(requests).toHaveLength(3)
+    expect(requests.some((url) => url.endsWith("/cli-approvals"))).toBe(false)
+  })
+
   test("a partial non-OK response makes the entire inventory unavailable", async () => {
     const fetcher = async (input: string | URL | Request) =>
       String(input).endsWith("/workspace/commands")

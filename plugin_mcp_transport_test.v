@@ -810,3 +810,88 @@ fn test_plugin_mcp_configured_synthetic_root_starts_after_ensure() {
 	}
 	client.initialize() or { panic(err) }
 }
+
+fn test_linux_mcp_sandbox_command_binds_cover_venv_and_interpreter() {
+	base := os.join_path(os.temp_dir(), 'veasel-mcp-binds-${os.getpid()}')
+	venv := os.join_path(base, 'venv')
+	bin_dir := os.join_path(venv, 'bin')
+	os.mkdir_all(bin_dir) or { panic(err) }
+	defer {
+		os.rmdir_all(base) or {}
+	}
+	os.write_file(os.join_path(venv, 'pyvenv.cfg'), 'home = /usr/bin\n') or { panic(err) }
+	tool := os.join_path(bin_dir, 'fake-mcp')
+	os.write_file(tool, '#!${os.join_path(bin_dir, 'python')}\nprint(1)\n') or { panic(err) }
+	os.write_file(os.join_path(bin_dir, 'python'), 'fake interpreter placeholder\n') or { panic(err) }
+	os.chmod(tool, 0o755) or {}
+	binds := linux_mcp_sandbox_command_binds(tool, {
+		'PATH': '/usr/bin:/bin'
+	})
+	assert binds == [os.real_path(venv)], 'expected the venv tree only, got ${binds}'
+}
+
+fn test_linux_mcp_sandbox_command_binds_skip_visible_and_broad_paths() {
+	// A system executable outside the hidden roots needs no bind.
+	visible := linux_mcp_sandbox_command_binds('/bin/true', {
+		'PATH': '/usr/bin:/bin'
+	})
+	assert visible.len == 0
+	// An executable sitting directly in a hidden root must never widen
+	// the bind to that whole root.
+	base := os.join_path(os.temp_dir(), 'veasel-mcp-broad-${os.getpid()}.sh')
+	os.write_file(base, '#!/bin/sh\nexit 0\n') or { panic(err) }
+	defer {
+		os.rm(base) or {}
+	}
+	os.chmod(base, 0o755) or {}
+	broad := linux_mcp_sandbox_command_binds(base, {
+		'PATH': '/usr/bin:/bin'
+	})
+	assert os.temp_dir() !in broad
+	for bind in broad {
+		assert bind != '/tmp'
+		assert bind != '/home'
+	}
+}
+
+fn test_linux_mcp_sandbox_command_binds_follow_symlink_chains() {
+	// uv-style layout: venv/bin/python -> uv/python/cpython-3 (directory
+	// symlink alias) -> uv/python/cpython-3.14/bin/python3.14. Binding only
+	// the endpoints still breaks exec: the intermediate alias directory
+	// must stay visible for the kernel to resolve the chain.
+	base := os.join_path(os.temp_dir(), 'veasel-mcp-chain-${os.getpid()}')
+	venv := os.join_path(base, 'venv')
+	venv_bin := os.join_path(venv, 'bin')
+	py_root := os.join_path(base, 'uv-python', 'cpython-3.14')
+	py_bin := os.join_path(py_root, 'bin')
+	os.mkdir_all(venv_bin) or { panic(err) }
+	os.mkdir_all(py_bin) or { panic(err) }
+	os.mkdir_all(os.join_path(py_root, 'lib')) or { panic(err) }
+	defer {
+		os.rmdir_all(base) or {}
+	}
+	os.write_file(os.join_path(venv, 'pyvenv.cfg'), 'home = /usr/bin\n') or { panic(err) }
+	os.write_file(os.join_path(py_bin, 'python3.14'), 'fake interpreter placeholder\n') or {
+		panic(err)
+	}
+	alias := os.join_path(base, 'uv-python', 'cpython-3')
+	os.symlink(py_root, alias) or { panic(err) }
+	venv_python := os.join_path(venv_bin, 'python')
+	os.symlink(os.join_path(alias, 'bin', 'python3.14'), venv_python) or { panic(err) }
+	tool := os.join_path(venv_bin, 'fake-mcp')
+	os.write_file(tool, '#!${venv_python}\nprint(1)\n') or { panic(err) }
+	os.chmod(tool, 0o755) or {}
+
+	binds := linux_mcp_sandbox_command_binds(tool, {
+		'PATH': '/usr/bin:/bin'
+	})
+		'PATH': '/usr/bin:/bin'
+	})}')
+	assert os.real_path(venv) in binds, 'venv tree missing from ${binds}'
+	assert os.real_path(py_root) in binds, 'interpreter tree missing from ${binds}'
+	assert os.real_path(os.join_path(base, 'uv-python')) in binds, 'alias parent dir missing from ${binds}'
+	for bind in binds {
+		assert bind != os.temp_dir()
+		assert bind.starts_with(os.real_path(base))
+	}
+}

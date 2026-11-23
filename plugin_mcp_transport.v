@@ -411,6 +411,29 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 		bwrap_args << data
 		bwrap_args << data
 	}
+	// The tmpfs overlays above hide all of /home and /tmp, which also hides
+	// MCP servers installed there (uv tools, pipx, venvs, npm-global) and
+	// an operator-configured cwd outside root/data. Re-expose exactly the
+	// approved paths, nothing broader: the resolved executable (plus its
+	// interpreter/venv tree) read-only, and the configured cwd — the one
+	// directory the operator already declared for this server — writable.
+	for bind in linux_mcp_sandbox_command_binds(command, env) {
+		append_linux_bwrap_parent_dirs(mut bwrap_args, bind)
+		bwrap_args << '--ro-bind'
+		bwrap_args << bind
+		bwrap_args << bind
+	}
+	if cwd != root && cwd != data && !path_is_within(root, cwd) && !path_is_within(data, cwd) {
+		for broad_root in ['/', '/home', '/root', '/tmp', '/usr', '/etc', '/var', '/opt'] {
+			if cwd == broad_root {
+				return error('Trusted MCP stdio refused: configured cwd is too broad for the sandbox')
+			}
+		}
+		append_linux_bwrap_parent_dirs(mut bwrap_args, cwd)
+		bwrap_args << '--bind'
+		bwrap_args << cwd
+		bwrap_args << cwd
+	}
 	bwrap_args << '--chdir'
 	bwrap_args << cwd
 	bwrap_args << '--'
@@ -955,4 +978,182 @@ fn execute_plugin_mcp_tool(mut connections []PluginMCPConnection, binding Plugin
 		return '{"error":"MCP tool returned an error or oversized result."}'
 	}
 	return response.result
+}
+
+// linux_mcp_sandbox_hidden_roots are the top-level directories the Linux
+// sandbox hides behind tmpfs. Paths outside them are already visible
+// through the initial `--ro-bind / /` and need no extra bind.
+const linux_mcp_sandbox_hidden_roots = ['/home', '/root', '/run', '/mnt', '/media', '/tmp']
+
+fn linux_mcp_path_is_hidden(path string) bool {
+	for hidden in linux_mcp_sandbox_hidden_roots {
+		if path == hidden || path.starts_with(hidden + '/') {
+			return true
+		}
+	}
+	return false
+}
+
+fn linux_mcp_resolve_command(command string, env map[string]string) string {
+	if os.is_abs_path(command) {
+		return os.real_path(command)
+	}
+	path_value := env['PATH'] or { '' }
+	for dir in path_value.split(':') {
+		if dir.len == 0 {
+			continue
+		}
+		candidate := os.join_path(dir, command)
+		if os.is_file(candidate) && os.is_executable(candidate) {
+			return os.real_path(candidate)
+		}
+	}
+	return ''
+}
+
+// linux_mcp_sandbox_tree_root widens an executable path to the smallest
+// install tree that must stay visible for it to run: a virtualenv root
+// (bin/ + pyvenv.cfg, covering uv-tool/pipx/venv layouts), else an
+// interpreter install prefix (bin/ next to lib/), else the bin directory.
+fn linux_mcp_sandbox_tree_root(executable string) string {
+	bin_dir := os.dir(executable)
+	if os.file_name(bin_dir) != 'bin' {
+		return bin_dir
+	}
+	prefix := os.dir(bin_dir)
+	if os.is_file(os.join_path(prefix, 'pyvenv.cfg')) || os.is_dir(os.join_path(prefix, 'lib')) {
+		return prefix
+	}
+	return bin_dir
+}
+
+fn linux_mcp_shebang_interpreter(executable string, env map[string]string) string {
+	content := os.read_bytes(executable) or { return '' }
+	if content.len < 3 || content[0] != `#` || content[1] != `!` {
+		return ''
+	}
+	mut line_end := content.len
+	for i, b in content {
+		if b == `\n` {
+			line_end = i
+			break
+		}
+	}
+	parts := content[2..line_end].bytestr().trim_space().fields()
+	if parts.len == 0 {
+		return ''
+	}
+	mut interpreter := parts[0]
+	// `#!/usr/bin/env python3` (optionally `env -S python3 ...`): the real
+	// interpreter is the first non-flag argument, resolved via PATH.
+	if os.file_name(interpreter) == 'env' {
+		interpreter = ''
+		for part in parts[1..] {
+			if !part.starts_with('-') {
+				interpreter = part
+				break
+			}
+		}
+		if interpreter.len == 0 {
+			return ''
+		}
+	}
+	if os.is_abs_path(interpreter) {
+		// Deliberately unresolved: callers that compute sandbox binds need
+		// the original path to discover intermediate symlink hops; they
+		// realpath it themselves when they need the final target.
+		return interpreter
+	}
+	return linux_mcp_resolve_command(interpreter, env)
+}
+
+// linux_mcp_sandbox_link_dirs returns the directories that must stay
+// visible for the kernel to resolve `path` itself: every symlink hop on
+// the way to the real file lives in some directory, and hiding that
+// directory breaks resolution even when both endpoints are bound (uv
+// interpreters chain venv/bin/python -> uv/python/cpython-<v> -> the
+// versioned install tree). Only directories under hidden roots are
+// returned, and never a hidden root itself.
+fn linux_mcp_sandbox_link_dirs(path string) []string {
+	mut dirs := []string{}
+	mut seen := map[string]bool{}
+	// Follow the symlink chain hop by hop. At every hop, symlinked
+	// directory components in the middle of the path (uv's version
+	// alias) are hops too, so each hop's prefixes are walked as well.
+	mut current := path
+	for _ in 0 .. 16 {
+		mut prefix := ''
+		mut last_link := ''
+		for component in current.split('/') {
+			if component.len == 0 {
+				continue
+			}
+			prefix = if prefix.len == 0 { '/${component}' } else { '${prefix}/${component}' }
+			if os.is_link(prefix) {
+				dir := os.dir(prefix)
+				if linux_mcp_path_is_hidden(dir) && dir !in linux_mcp_sandbox_hidden_roots
+					&& dir !in seen {
+					seen[dir] = true
+					dirs << dir
+				}
+				last_link = prefix
+			}
+		}
+		if last_link.len == 0 {
+			break
+		}
+		target := os.readlink(last_link) or { break }
+		rest := current[last_link.len..]
+		base := if os.is_abs_path(target) {
+			target
+		} else {
+			os.join_path(os.dir(last_link), target)
+		}
+		current = base + rest
+	}
+	return dirs
+}
+
+// linux_mcp_sandbox_command_binds lists the read-only directory binds a
+// trusted stdio MCP server needs to start at all when its executable or
+// interpreter lives under a hidden top-level directory. It never widens
+// to a hidden root itself: only the executable's own install tree (and
+// its interpreter's, plus the symlink-chain directories) are re-exposed,
+// read-only.
+fn linux_mcp_sandbox_command_binds(command string, env map[string]string) []string {
+	resolved := linux_mcp_resolve_command(command, env)
+	if resolved.len == 0 || !os.is_file(resolved) {
+		return []
+	}
+	mut binds := []string{}
+	mut seen := map[string]bool{}
+	for candidate in [command, resolved, linux_mcp_shebang_interpreter(resolved, env)] {
+		if candidate.len == 0 {
+			continue
+		}
+		// No abs_path here: it resolves symlinks on this V version, which
+		// would erase exactly the hops link_dirs needs to discover.
+		raw := if os.is_abs_path(candidate) { candidate } else { os.abs_path(candidate) }
+		for dir in linux_mcp_sandbox_link_dirs(raw) {
+			if dir !in seen {
+				seen[dir] = true
+				binds << dir
+			}
+		}
+		real := os.real_path(candidate)
+		if !os.is_file(real) {
+			continue
+		}
+		tree := linux_mcp_sandbox_tree_root(real)
+		if !linux_mcp_path_is_hidden(tree) || tree in seen {
+			continue
+		}
+		if tree in linux_mcp_sandbox_hidden_roots {
+			continue
+		}
+		seen[tree] = true
+		binds << tree
+	}
+	binds.sort()
+	return binds
 }

@@ -1,0 +1,51 @@
+{
+  "schema": "veasel.real-provider-acceptance/v1",
+  "captured_at": "2026-11-23",
+  "classification": [
+    "PACKAGED GUI E2E",
+    "REAL PROVIDER",
+    "PLATFORM VERIFIED: Linux"
+  ],
+  "run_kind": "packaged Veasel Desktop Focus real-provider coding task",
+  "artifact": {
+    "release": "v0.100.1-next.0",
+    "source_commit": "c20254af8267705432449102c091185445098d25",
+    "name": "veasel-desktop-0.100.1-next.0-linux-x86_64.AppImage",
+    "sha256": "1b4477500f42143deb7770a1459fd9999cbe1ab0571170739f23d505365d41ce",
+    "bundled_backend_sha256": "89e5992db86f1ebabc29f5b8a114ee84cf5d03d376b340268dbfd97cb4cf927a"
+  },
+  "platform": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "kernel": "7.3.5-arch1-1"
+  },
+  "provider": {
+    "id": "claude-code",
+    "version": "2.1.329",
+    "auth": "authenticated CLI successfully completed one task; credential contents omitted",
+    "model": null,
+    "permission_mode": "ask"
+  },
+  "operation": {
+    "session_id": "3e8c719d-8fc8-4db0-b9f7-d52a51f16618",
+    "operation_id": "ead1608c-701c-4d37-91ff-89d8d154038e",
+    "status": "completed",
+    "outcome": "completed",
+    "approved_tools": ["Write", "Bash"],
+    "input_tokens": 12325,
+    "output_tokens": 2018,
+    "cost_usd": null,
+    "cost_reported": false
+  },
+  "task": "Implement dependency-free parseCsvLine with quoted commas, doubled quote escapes, whitespace handling, empty trailing/consecutive fields, and malformed quote rejection.",
+  "independent_check": {
+    "workspace": "disposable temporary Git repository; no user project data",
+    "baseline": "red; node test.js exit 1 before provider turn (exact stderr was not retained)",
+    "after_turn": "node test.js exit 0; 7 CSV parser assertions passed",
+    "modified_files": ["src.csv.js"],
+    "source_sha256": "535d9efde3519098aaf96bf6653c9388f871b77795973112a9199c670de46e72",
+    "repository_status": "only src.csv.js modified; uncommitted disposable worktree"
+  },
+  "telemetry_limit": "Backend recorded approved Write and Bash requests but no shell_commands row; the independent node test.js result above is the verification oracle. Model and monetary cost remain unknown.",
+  "provenance": "AppImage and bundled backend hashes were recomputed locally; operation and approval states were read from the isolated Veasel SQLite database; changed file and post-run test were checked directly. No provider credential material is included."
+}

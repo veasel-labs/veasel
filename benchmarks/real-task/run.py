@@ -1128,6 +1128,13 @@ def project_open_code_config_paths(workspace: Path, revision: str) -> list[str]:
             or path.startswith(".opencode/")]
 
 
+def project_mcp_config_paths(workspace: Path, revision: str) -> list[str]:
+    """Find project MCP configuration that could launch unreviewed stdio tools."""
+    paths = set(git(workspace, "ls-tree", "-r", "--name-only", revision).splitlines())
+    known_configs = {".veasel/mcp-servers.json", ".mcp.json", ".cursor/mcp.json"}
+    return sorted(paths & known_configs)
+
+
 def build_command(agent: str, binary: str, case: dict[str, Any], workspace: Path,
                   prompt: str, trace_path: Path) -> list[str]:
     if agent == "veasel":
@@ -1303,6 +1310,12 @@ def preflight(
     check("base_commit", revision == case["base_commit"], revision, case["base_commit"])
     dirty = git(workspace, "status", "--porcelain")
     check("clean_workspace", not dirty, not bool(dirty), True)
+    if agent == "veasel":
+        try:
+            project_mcp_configs = project_mcp_config_paths(workspace, revision)
+            check("veasel_project_mcp_config", not project_mcp_configs, project_mcp_configs, [])
+        except (OSError, subprocess.CalledProcessError) as exc:
+            check("veasel_project_mcp_config", False, type(exc).__name__, [])
     ollama_target_safe = False
     if is_ollama:
         expected_ollama_url = case["provider_config"]["base_url"].rstrip("/").removesuffix("/v1")

@@ -46,7 +46,9 @@ OpenCode shell commands run in the separate namespace established by
 `opencode-shell-sandbox.sh`; that namespace cannot see the socket or proxy key.
 Veasel receives neither relay path nor proxy credential in its process environment;
 its private per-run provider profile contains only the ephemeral proxy key. Its
-approved shell tools use Veasel's separate OS sandbox. The wrapper refuses direct
+approved shell tools use Veasel's separate OS sandbox. Preflight fails closed
+when the task repository contains a Veasel or imported project MCP configuration,
+so unreviewed stdio servers cannot start as part of the benchmark. The wrapper refuses direct
 provider credentials. Its exact SHA-256 is checked
 by the runner and recorded with the attempt. The Linux fixture suite exercises
 the filesystem, host-loopback, proxy-relay, and nested-shell boundaries without

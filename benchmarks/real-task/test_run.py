@@ -339,6 +339,28 @@ class PreflightTests(unittest.TestCase):
         self.allow_synthetic_remote_cases = patch.object(runner, "validate_remote_case_pin", return_value=None)
         self.allow_synthetic_remote_cases.start()
         self.addCleanup(self.allow_synthetic_remote_cases.stop)
+        self.no_project_mcp_configs = patch.object(runner, "project_mcp_config_paths", return_value=[])
+        self.no_project_mcp_configs.start()
+        self.addCleanup(self.no_project_mcp_configs.stop)
+
+    def test_veasel_project_mcp_configs_are_detected_for_fail_closed_benchmark_preflight(self):
+        self.no_project_mcp_configs.stop()
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            repo = Path(temp_dir) / "repo"
+            repo.mkdir()
+            subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.email", "fixture@example.test"], check=True)
+            subprocess.run(["git", "-C", str(repo), "config", "user.name", "Fixture"], check=True)
+            expected: list[str] = []
+            for config in (".veasel/mcp-servers.json", ".mcp.json", ".cursor/mcp.json"):
+                config_path = repo / config
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                config_path.write_text('{"mcpServers":{}}\n')
+                subprocess.run(["git", "-C", str(repo), "add", config], check=True)
+                subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "add MCP config"], check=True)
+                revision = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+                expected.append(config)
+                self.assertEqual(runner.project_mcp_config_paths(repo, revision), sorted(expected))
 
     def test_disposable_task_clone_preserves_tracked_and_untracked_candidate_content(self):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
@@ -1291,6 +1313,36 @@ class PreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
             result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435", Path(temp_dir) / "isolated-veasel")
         self.assertTrue(result["passed"])
+
+    def test_preflight_fails_closed_when_veasel_project_has_mcp_configuration(self):
+        case_path = SCRIPT.parent / "cases/website-173/case.json"
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            data_dir = Path(temp_dir) / "state"
+            with (
+                patch.object(runner, "available_resources", return_value=(10 * runner.GIB, 3 * runner.GIB)),
+                patch.object(runner, "git", side_effect=[
+                    "https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", "",
+                ]),
+                patch.object(runner, "project_mcp_config_paths", return_value=[".mcp.json"]),
+                patch.object(runner, "configured_model", return_value={
+                    "provider": "ollama", "model": "qwen3:8b", "base_url": "http://127.0.0.1:11435/v1",
+                    "max_output_tokens": 2048, "api_key_saved": False,
+                }),
+                patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"),
+                patch.object(runner, "ollama_version", return_value="0.40.15"),
+                patch.object(runner, "ollama_gpu_placement", return_value={
+                    "name": "qwen3:8b", "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+                    "size_bytes": 5_054_440_406, "size_vram_bytes": 5_586_592_726,
+                    "context_length": 4096, "runner": "llamacpp",
+                }),
+                patch.object(runner, "gpu_info", return_value={"name": "NVIDIA GeForce RTX 3060", "memory_mib": 12288}),
+            ):
+                result = runner.preflight(case_path, Path("/tmp/clean-checkout"), "http://127.0.0.1:11435",
+                                          data_dir, "veasel")
+        mcp_check = next(item for item in result["checks"] if item["name"] == "veasel_project_mcp_config")
+        self.assertFalse(mcp_check["passed"])
+        self.assertEqual(mcp_check["actual"], [".mcp.json"])
+        self.assertFalse(result["passed"])
 
     @patch.object(runner, "git", side_effect=["https://github.com/veasel-labs/website.git", "184c7d86911d4a760ec89c6ddc9097682e65da44", ""])
     @patch.object(runner, "model_digest", return_value="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")

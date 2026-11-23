@@ -108,8 +108,9 @@ Merged since prior ledger snapshot:
 - **Evidence:** deterministic Responses fixtures and enforced generic spending
   bounds are recorded in [the Nov 20 issue update](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7033093408).
   The current isolation branch adds a Veasel 0.79.5 Meta Responses adapter,
-  per-run proxy-only credentials and Linux Bubblewrap/Unix-relay tests; 88
-  local tests passed without contacting Meta. This is branch evidence only and
+  per-run proxy-only credentials, project-MCP fail-closed preflight, and Linux
+  Bubblewrap/Unix-relay tests; 90 local tests passed without contacting Meta.
+  This is branch evidence only and
   awaits PR review and required CI on its exact head.
 - **Remaining acceptance:** run and independently score the same meaningful task,
   prompt, base, model, permissions and budgets through Veasel and OpenCode;

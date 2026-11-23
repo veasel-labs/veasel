@@ -49,6 +49,41 @@ describe("VeaselApiClient health", () => {
   })
 })
 
+describe("VeaselApiClient installed CLI approvals", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("lists and decides a durable approval for the exact session and request", async () => {
+    const observed: Array<{ url: string; method: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      observed.push({ url: String(input), method: String(init?.method ?? "GET") })
+      const approval = {
+        id: "approval-1",
+        session_id: "session/one",
+        request_id: "request-1",
+        tool_name: "Edit",
+        input_json: '{"path":"a.ts"}',
+        status: init?.method === "POST" ? "approved" : "pending",
+        created_at: "",
+        updated_at: "",
+      }
+      return Response.json(init?.method === "POST" ? approval : [approval])
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const approvals = await client.listCliToolApprovals("session/one")
+    const decision = await client.decideCliToolApproval("session/one", "approval/one", "approve")
+    expect(approvals[0]?.request_id).toBe("request-1")
+    expect(decision.status).toBe("approved")
+    expect(observed).toEqual([
+      { url: "http://127.0.0.1:4097/v1/sessions/session%2Fone/cli-approvals", method: "GET" },
+      { url: "http://127.0.0.1:4097/v1/sessions/session%2Fone/cli-approvals/approval%2Fone/approve", method: "POST" },
+    ])
+  })
+})
+
 describe("VeaselApiClient model settings", () => {
   const originalFetch = globalThis.fetch
 

@@ -61,7 +61,7 @@ describe("slashSuggestions", () => {
     expect(names("/bearer")[0]).toBe("/mcp credential")
     expect(names("/color")[0]).toBe("/theme")
     expect(names("/repo")[0]).toBe("/map")
-    expect(names("/approval")).toEqual(["/cli approvals", "/cli approval"])
+    expect(names("/approval")).toEqual(["/patches", "/commands"])
   })
 
   test("finds pending values by description path fragments", () => {

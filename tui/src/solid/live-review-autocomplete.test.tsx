@@ -19,7 +19,7 @@ test("LiveApp completes a pending review ID and opens that inspected review", as
       { id: "edit-123", path: "src/target.v", status: "pending" },
       { id: "edit-456", path: "src/other.v", status: "pending" },
     ])
-    if (path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
+    if (path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls") || path.endsWith("/cli-approvals")) return Response.json([])
     if (path === "/v1/sessions/a/workspace/edits/edit-123") {
       return Response.json({ id: "edit-123", path: "src/target.v", status: "pending", diff: "@@ -1 +1 @@\n-old\n+target-change" })
     }

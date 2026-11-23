@@ -1,18 +1,12 @@
+import type { ApiCliToolApproval } from "./api-client"
+
 export type CliApprovalInputPreview = {
   text: string
   fullyVisible: boolean
+  truncationNotice?: string
 }
 
-export type CliToolApproval = {
-  id: string
-  session_id: string
-  request_id: string
-  tool_name: string
-  input_json: string
-  status: "pending" | "approved" | "denied" | "expired"
-  created_at: string
-  updated_at: string
-}
+export type CliToolApproval = ApiCliToolApproval
 
 export type CliApprovalPollerOptions = {
   list: (sessionId: string) => Promise<CliToolApproval[]>
@@ -69,13 +63,14 @@ export function createCliApprovalPoller(options: CliApprovalPollerOptions) {
 /** Escape terminal controls before showing provider-supplied tool arguments. */
 export function cliApprovalInputPreview(input: string, maxLength = 12_000): CliApprovalInputPreview {
   const safe = input.replace(
-    /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu,
+    /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/gu,
     (character) => `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`,
   )
   if (safe.length <= maxLength) return { text: safe, fullyVisible: true }
   return {
-    text: `${safe.slice(0, maxLength)}\n… input truncated; approval is disabled until the full request can be reviewed.`,
+    text: safe.slice(0, maxLength),
     fullyVisible: false,
+    truncationNotice: "Input truncated; approval is disabled because the complete request is not visible.",
   }
 }
 

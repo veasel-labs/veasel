@@ -167,12 +167,6 @@ import {
   totalPendingReviews,
   type PendingReviewCounts,
 } from "./pending-reviews"
-import {
-  cliApprovalCanApprove,
-  cliApprovalInputPreview,
-  createCliApprovalPoller,
-  type CliToolApproval,
-} from "./cli-approval-review"
 import { formatBusyStatus, formatCancelledStatus, formatErrorStatus, formatHomeFilterStatus, formatHomeSessionStatus, formatOkStatus, formatStatusLine, formatStreamingBusyStatus, formatWarnStatus } from "./status-a11y"
 import {
   prefersReducedMotion,
@@ -690,32 +684,15 @@ let activeTurnId: string | undefined
 let activeTurnController: AbortController | undefined
 let activeTurnCancelled = false
 let pendingUserMessage = ""
-let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0, cli: 0 }
+let lastPendingCounts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0 }
 let pendingReviewQueue: ActiveReview[] = []
 let pendingReviewInventoryUnavailable = false
 let pendingReviewInventoryRefreshing = false
 let pendingMcpWorkspaceTrustConfirmation: { key: string; expiresAt: number } | undefined
 const pendingReviewInventoryCoordinator = createPendingReviewInventoryCoordinator()
-const reviewedCliApprovalIds = new Set<string>()
 let activeReview: ActiveReview | undefined
 let selectedReviewKeys = new Set<string>()
 let activePatchDiff = ""
-const cliApprovalPoller = createCliApprovalPoller({
-  list: listCliToolApprovals,
-  isCurrent: (sessionId) => activeSession?.id === sessionId && Boolean(activeTurnId),
-  onPending: async (sessionId, pending) => {
-    const counts = await countPendingReviews()
-    if (!activeTurnId || activeSession?.id !== sessionId) return
-    skillNotice = `${pending.length} installed-CLI tool request${pending.length === 1 ? "" : "s"} need review. No request runs before approval. Type /cli approvals, then inspect with /cli approval show <id>.`
-    const statusLine = formatPendingReviewStatus(counts, activeModelLabel || undefined)
-    if (statusLine) {
-      status.content = statusLine
-      status.fg = theme.statusWarn
-    }
-    chatInput?.focus()
-    renderChat(chatMessages)
-  },
-})
 let activePatchPath = ""
 let activePatchStatus = ""
 let activePatchHunkIndex = 0
@@ -1207,10 +1184,8 @@ async function openSession(session: Session) {
   resetSlashContext()
   pendingReviewInventoryCoordinator.invalidate()
   pendingReviewInventoryRefreshing = false
-  cliApprovalPoller.stop()
   activeSession = session
-  reviewedCliApprovalIds.clear()
-  lastPendingCounts = { edits: 0, commands: 0, mcp: 0, cli: 0 }
+  lastPendingCounts = { edits: 0, commands: 0, mcp: 0 }
   pendingReviewQueue = []
   pendingReviewInventoryUnavailable = false
   chatHistoryHasOlder = false
@@ -1272,8 +1247,7 @@ async function openSession(session: Session) {
 async function sendMessage(value: string) {
   const content = value.trim()
   const mcpCallCommand = /^\/mcp (calls|call (show|approve|reject) [0-9a-f-]{36})$/.test(content)
-  const cliApprovalCommand = /^\/cli (approvals|approval (show|approve|reject) [0-9a-f-]{36})$/.test(content)
-  if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand && !cliApprovalCommand) return
+  if (!content || !activeSession || !chatInput || sendingMessage && !mcpCallCommand) return
   composerHistory = rememberComposerEntry(composerHistory, content)
   if (content === "/help" || content === "/?" || content === "/help advanced") {
     skillNotice = renderHelp(content === "/help" && (process.stdout.rows ?? 40) < 30)
@@ -1475,28 +1449,6 @@ async function sendMessage(value: string) {
     chatInput.focus()
     return
   }
-  if (content === "/cli approvals") {
-    await showCliToolApprovals()
-    chatInput.value = ""
-    chatInput.focus()
-    return
-  }
-  const cliApprovalAction = /^\/cli approval (show|approve|reject) ([0-9a-f-]{36})$/.exec(content)
-  if (cliApprovalAction) {
-    const [, action, approvalId] = cliApprovalAction
-    if (action === "show") await showCliToolApproval(approvalId)
-    else if (action === "approve" || action === "reject") await actOnCliToolApproval(approvalId, action)
-    chatInput.value = ""
-    chatInput.focus()
-    return
-  }
-  if (content.startsWith("/cli ")) {
-    skillNotice = "Use /cli approvals to list waiting installed-provider tool requests, /cli approval show <id> to inspect one, then /cli approval approve|reject <id>. Approvals apply to that exact request once."
-    renderChat(chatMessages)
-    chatInput.value = ""
-    chatInput.focus()
-    return
-  }
   const mcpToolCallCommand = /^\/mcp call (show|approve|reject) ([0-9a-f-]{36})$/.exec(content)
   if (mcpToolCallCommand) {
     const action = mcpToolCallCommand[1]
@@ -1648,7 +1600,6 @@ async function sendMessage(value: string) {
   skillNotice = ""
   sendingMessage = true
   activeTurnId = crypto.randomUUID()
-  cliApprovalPoller.start(activeSession.id)
   activeTurnController = new AbortController()
   activeTurnCancelled = false
   pendingUserMessage = content
@@ -1711,7 +1662,6 @@ async function sendMessage(value: string) {
       pendingUserMessage = ""
       activeTurnId = undefined
       activeTurnController = undefined
-      cliApprovalPoller.stop()
       stopMotionPulse()
       if (streamingAssistantText) renderChat(chatMessages)
       chatInput?.focus()
@@ -1853,7 +1803,6 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     sendingMessage = false
     activeTurnId = undefined
     activeTurnController = undefined
-    cliApprovalPoller.stop()
     activeTurnCancelled = false
     stopMotionPulse()
     return
@@ -1870,7 +1819,6 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
       sendingMessage = false
       activeTurnId = undefined
       activeTurnController = undefined
-      cliApprovalPoller.stop()
       activeTurnCancelled = false
       stopMotionPulse()
       return
@@ -1893,7 +1841,6 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
     sendingMessage = false
     activeTurnId = undefined
     activeTurnController = undefined
-    cliApprovalPoller.stop()
     activeTurnCancelled = false
     stopMotionPulse()
     return
@@ -1901,7 +1848,6 @@ async function finishAsyncSessionTurn(sessionId: string, completion: SessionTurn
   sendingMessage = false
   activeTurnId = undefined
   activeTurnController = undefined
-  cliApprovalPoller.stop()
   activeTurnCancelled = false
   stopMotionPulse()
   if (completion.status === "completed") {
@@ -2506,90 +2452,6 @@ async function showMcpToolCall(callId: string) {
   }
 }
 
-async function listCliToolApprovals(sessionId = activeSession?.id): Promise<CliToolApproval[]> {
-  if (!sessionId) return []
-  const response = await fetch(
-    `${apiBase}/v1/sessions/${encodeURIComponent(sessionId)}/cli-approvals`,
-    { signal: controller.signal },
-  )
-  if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
-  return await response.json() as CliToolApproval[]
-}
-
-async function showCliToolApprovals() {
-  if (!activeSession) return
-  try {
-    const approvals = await listCliToolApprovals()
-    const lines = approvals.map((approval) =>
-      `PENDING  ${approval.id}\n  ${safeTerminalReviewText(approval.tool_name)} · ${safeTerminalReviewText(approval.request_id)}\n  Inspect: /cli approval show ${approval.id}`,
-    )
-    skillNotice = approvals.length > 0
-      ? `INSTALLED CLI TOOL APPROVALS\n${lines.join("\n\n")}\n\nNothing runs until you inspect and approve one request. Use /cli approval reject <id> to deny it.`
-      : "No pending installed-CLI tool approvals in this session. If provider requests are being denied immediately, this backend may have been started without interactive approvals; restart it with VEASEL_CLI_INTERACTIVE_APPROVALS=1, then launch the TUI."
-    renderChat(chatMessages)
-  } catch (error) {
-    skillNotice = `Could not load installed-CLI approvals: ${error instanceof Error ? error.message : "request failed"}`
-    renderChat(chatMessages)
-  }
-}
-
-async function showCliToolApproval(approvalId: string) {
-  if (!activeSession) return
-  try {
-    const response = await fetch(
-      `${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/cli-approvals`,
-      { signal: controller.signal },
-    )
-    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
-    const approvals = await response.json() as CliToolApproval[]
-    const approval = approvals.find((item) => item.id === approvalId)
-    if (!approval) throw new Error("approval is no longer pending; refresh with /cli approvals")
-    const preview = cliApprovalInputPreview(approval.input_json)
-    const fullyVisible = preview.fullyVisible
-    if (fullyVisible) reviewedCliApprovalIds.add(approval.id)
-    else reviewedCliApprovalIds.delete(approval.id)
-    const review: ActiveReview = { kind: "cli", id: approval.id, pending: true }
-    setActiveReview(review)
-    skillNotice = withReviewHotkeyHint(
-      `REVIEW INSTALLED CLI TOOL REQUEST  /  PENDING\nTool: ${safeTerminalReviewText(approval.tool_name)}\nRequest: ${safeTerminalReviewText(approval.request_id)}\n\n${preview.text}\n\n${fullyVisible ? "Approve allows this exact tool request once; reject denies it." : "Reject remains available; approval is disabled because the full request is not shown."}`,
-      review,
-      reviewHintOptions(),
-    )
-    renderChat(chatMessages)
-  } catch (error) {
-    skillNotice = `Could not inspect installed-CLI approval: ${error instanceof Error ? error.message : "request failed"}`
-    renderChat(chatMessages)
-  }
-}
-
-async function actOnCliToolApproval(approvalId: string, action: "approve" | "reject") {
-  if (blockReviewDecisionWhenInventoryUnavailable()) return
-  if (!activeSession) return
-  if (action === "approve" && !cliApprovalCanApprove(approvalId, reviewedCliApprovalIds)) {
-    skillNotice = `Inspect the full request first with /cli approval show ${approvalId}.`
-    renderChat(chatMessages)
-    return
-  }
-  try {
-    const response = await fetch(
-      `${apiBase}/v1/sessions/${encodeURIComponent(activeSession.id)}/cli-approvals/${encodeURIComponent(approvalId)}/${action}`,
-      { method: "POST", signal: controller.signal },
-    )
-    if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`)
-    reviewedCliApprovalIds.delete(approvalId)
-    setActiveReview(undefined)
-    const decision = await response.json() as CliToolApproval
-    skillNotice = action === "approve"
-      ? `Approved the exact installed-CLI tool request (${safeTerminalReviewText(decision.tool_name)}). The waiting turn may now continue.`
-      : `Rejected the installed-CLI tool request (${safeTerminalReviewText(decision.tool_name)}). The tool was denied.`
-    await countPendingReviews()
-    renderChat(chatMessages)
-  } catch (error) {
-    skillNotice = `Could not ${action} installed-CLI tool request: ${error instanceof Error ? error.message : "request failed"}`
-    renderChat(chatMessages)
-  }
-}
-
 async function actOnMcpToolCall(callId: string, action: "approve" | "reject") {
   if (blockReviewDecisionWhenInventoryUnavailable()) return
   if (!activeSession) return
@@ -2613,7 +2475,7 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
   if (!activeSession) {
     pendingReviewInventoryCoordinator.invalidate()
     pendingReviewInventoryRefreshing = false
-    const empty = { edits: 0, commands: 0, mcp: 0, cli: 0 }
+    const empty = { edits: 0, commands: 0, mcp: 0 }
     pendingReviewInventoryUnavailable = false
     lastPendingCounts = empty
     pendingReviewQueue = []
@@ -2738,8 +2600,7 @@ async function openActiveReview(review: ActiveReview) {
   setActiveReview(review)
   if (review.kind === "patch") await showWorkspaceEdit(review.id)
   else if (review.kind === "command") await showShellCommand(review.id)
-  else if (review.kind === "mcp") await showMcpToolCall(review.id)
-  else await showCliToolApproval(review.id)
+  else await showMcpToolCall(review.id)
 }
 
 function renderActivePatchDiff() {
@@ -2783,8 +2644,7 @@ async function actOnReviewItems(action: "approve" | "reject", items: ActiveRevie
   for (const item of items) {
     if (item.kind === "patch") await actOnWorkspaceEdit(action, item.id)
     else if (item.kind === "command") await actOnShellCommand(action, item.id)
-    else if (item.kind === "mcp") await actOnMcpToolCall(item.id, action)
-    else await actOnCliToolApproval(item.id, action)
+    else await actOnMcpToolCall(item.id, action)
   }
 }
 
@@ -2843,11 +2703,6 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
   }
   if (action === "approveAll" || action === "rejectAll") {
     const kind = activeReview.kind
-    if (kind === "cli" && action === "approveAll") {
-      skillNotice = "Installed-CLI requests must be inspected and approved one at a time."
-      renderChat(chatMessages)
-      return
-    }
     const decide = action === "approveAll" ? "approve" : "reject"
     if (pendingReviewQueue.length === 0) await countPendingReviews()
     if (blockReviewDecisionWhenInventoryUnavailable()) return
@@ -2858,7 +2713,7 @@ async function handleReviewHotkey(action: "approve" | "approveAll" | "reject" | 
     reviewDiffSurface = "segments"
     hideReviewDiffRenderable()
     await countPendingReviews()
-    const label = kind === "patch" ? "edit" : kind === "command" ? "shell command" : kind === "mcp" ? "MCP call" : "installed-CLI request"
+    const label = kind === "patch" ? "edit" : kind === "command" ? "shell command" : "MCP call"
     const hotkey = decide === "approve" ? "Shift+A" : "Shift+X"
     const verb = decide === "approve" ? "Approved" : "Rejected"
     const emptyVerb = decide === "approve" ? "approve" : "reject"
@@ -2980,9 +2835,6 @@ async function notifyPendingProposals(): Promise<PendingReviewCounts> {
   }
   if (counts.mcp > 0) {
     notices.push(`${counts.mcp} MCP tool call${counts.mcp === 1 ? "" : "s"} need review. Type /mcp calls, inspect with /mcp call show <id>, then approve or reject.`)
-  }
-  if ((counts.cli ?? 0) > 0) {
-    notices.push(`${counts.cli} installed-CLI tool request${counts.cli === 1 ? "" : "s"} need review. Type /cli approvals, inspect with /cli approval show <id>, then approve or reject.`)
   }
   if (pendingReviewInventoryUnavailable) {
     notices.push(pendingReviewInventoryFailureNotice())

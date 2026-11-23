@@ -39,6 +39,20 @@ as the next turn; it does not change the prompt the model is currently working
 on. Queued messages appear in the transcript and become cancellable when their
 `session.turn_started` event arrives.
 
+### Installed-provider tool approvals
+
+While an installed CLI provider is working, the TUI checks for its durable tool
+requests and opens the shared review panel when one appears. Inspect the full
+arguments before pressing `a` to approve that exact request once or `x` to
+reject it. Installed CLI requests cannot be approved in bulk, and requests whose
+arguments exceed the display limit remain fail-closed.
+
+`veasel tui` enables interactive CLI approvals before it starts a new backend,
+unless `VEASEL_CLI_INTERACTIVE_APPROVALS` was explicitly set. An already-running
+backend is never reconfigured by the TUI. If the server is started separately,
+set `VEASEL_CLI_INTERACTIVE_APPROVALS=1` before launching it; an explicit `0`
+keeps immediate denial enabled.
+
 The startup screen uses a 32×32 pixel portrait of Veasel's companion, rendered
 as 16 rows of Unicode half-blocks. Russet fur, cream, teal accents, and
 highlights follow the active theme. The source art is a 128×128, 14-color

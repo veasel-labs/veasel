@@ -185,7 +185,7 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
   const bodyText = createMemo(() => {
     const item = current()
-    if (!item) return "No pending file, shell, or MCP reviews."
+    if (!item) return "No pending file, shell, MCP, or installed-CLI reviews."
     if (item.kind === "patch" && diffSurface() === "split") {
       return patchSplitChrome(item, hunkIndex(), dimensions().width)
     }
@@ -207,6 +207,17 @@ export function ReviewPanel(props: ReviewPanelProps) {
 
   const applyDecision = async (decision: ReviewDecision, targets: ActiveReview[]) => {
     if (busy()) return
+    if (decision === "approve" && targets.some((target) => target.kind === "cli")) {
+      const item = targets.length === 1
+        ? queue().find((candidate) => candidate.kind === "cli" && candidate.id === targets[0]!.id)
+        : undefined
+      if (item?.kind !== "cli" || !item.inputFullyVisible) {
+        setFailures([targets.length === 1
+          ? "Installed CLI approval is disabled because the complete request is not visible."
+          : "Installed CLI requests must be approved one at a time."])
+        return
+      }
+    }
     if (decision === "approve" && props.onInspect && targets.some((target) =>
       queue().find((item) => reviewSelectionKey(item) === reviewSelectionKey(target))?.inspected !== true,
     )) {
@@ -276,6 +287,11 @@ export function ReviewPanel(props: ReviewPanelProps) {
       },
     )
     if (!hotkey) return
+    if (hotkey.action === "approveAll" && item?.kind === "cli") {
+      key.preventDefault()
+      setFailures(["Installed CLI requests must be approved one at a time."])
+      return
+    }
 
     const result = resolveReviewAction(hotkey, queue(), item, selectedKeys())
     if (!result) return

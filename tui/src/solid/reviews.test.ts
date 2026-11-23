@@ -14,6 +14,7 @@ import {
   settleReviews,
   toActiveReview,
 } from "./reviews"
+import { solidCliFromApproval } from "./reviews-inventory"
 
 describe("Solid reviews helpers", () => {
   test("documents Ctrl+R as the review shortcut", () => {
@@ -24,7 +25,7 @@ describe("Solid reviews helpers", () => {
 
   test("demo fixture covers patch, shell, and MCP families", () => {
     const demo = demoPendingReviews()
-    expect(countsFromReviews(demo)).toEqual({ edits: 1, commands: 1, mcp: 1 })
+    expect(countsFromReviews(demo)).toEqual({ edits: 1, commands: 1, mcp: 1, cli: 0 })
     expect(pendingStatusForReviews(demo)).toContain("Ctrl+R")
     expect(pendingStatusForReviews(demo)).toContain("1 edit")
     expect(reviewPanelTitle(demo[0], 3)).toContain("Workspace edit")
@@ -49,6 +50,28 @@ describe("Solid reviews helpers", () => {
     expect(shellBody.indexOf("Bubblewrap")).toBeLessThan(shellBody.indexOf("Command:"))
     expect(formatSolidReviewBody(mcp!)).toContain("write_note")
     expect(formatSolidReviewBody(mcp!)).toContain("Arguments")
+  })
+
+  test("formats installed CLI requests without exposing terminal controls or allowing truncated approval", () => {
+    const approval = solidCliFromApproval({
+      id: "cli-1",
+      session_id: "session-1",
+      request_id: "request-1",
+      tool_name: "Edit\u001b[2J",
+      input_json: `{"path":"src/a.ts","text":"${"x".repeat(13_000)}"}`,
+      status: "pending",
+      created_at: "",
+      updated_at: "",
+    })
+    expect(approval).toMatchObject({ kind: "cli", pending: true, inputFullyVisible: false })
+    if (approval.kind !== "cli") throw new Error("expected installed CLI review")
+    const body = formatSolidReviewBody(approval)
+    expect(body).toContain("REVIEW INSTALLED CLI TOOL  /  PENDING")
+    expect(body).toContain("Edit\\u001b[2J")
+    expect(body).not.toContain("\u001b[2J")
+    expect(body).toContain("INPUT TRUNCATED — APPROVAL DISABLED")
+    expect(countsFromReviews([approval])).toEqual({ edits: 0, commands: 0, mcp: 0, cli: 1 })
+    expect(reviewKindLabel("cli")).toBe("installed CLI")
   })
 
   test("keeps every pending command line available in the scrollable review body", () => {
@@ -95,7 +118,7 @@ describe("Solid reviews helpers", () => {
   test("settleReviews removes decided targets", () => {
     const queue = demoPendingReviews()
     const next = settleReviews(queue, [toActiveReview(queue[0]!)])
-    expect(countsFromReviews(next)).toEqual({ edits: 0, commands: 1, mcp: 1 })
+    expect(countsFromReviews(next)).toEqual({ edits: 0, commands: 1, mcp: 1, cli: 0 })
     expect(pendingStatusForReviews([])).toBeUndefined()
   })
 })

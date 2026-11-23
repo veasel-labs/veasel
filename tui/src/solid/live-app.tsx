@@ -53,6 +53,7 @@ import {
 } from "./reviews"
 import { pendingReviewInventoryFailureNotice, totalPendingReviews } from "../pending-reviews"
 import type { ActiveReviewKind } from "../active-review"
+import { createCliApprovalPoller } from "../cli-approval-review"
 import { openAgentDialog } from "./component/agent-dialog"
 import { openCliProviderDialog } from "./component/cli-provider-dialog"
 import {
@@ -1151,6 +1152,30 @@ function LiveAppShell(props: LiveAppProps) {
     pendingReviewSessionId() === activeSessionId() ? pendingReviewItems() : []
   createEffect(() => {
     void refreshPendingReviews(activeSessionId())
+  })
+  const cliApprovalPoller = createCliApprovalPoller({
+    list: (sessionId) => props.api.listCliToolApprovals(sessionId),
+    isCurrent: (sessionId) =>
+      activeTurnId() !== undefined
+      && activeTurnSessionId === sessionId
+      && activeSessionId() === sessionId,
+    onPending: async (sessionId) => {
+      const newReview = await refreshPendingReviews(sessionId, true)
+      if (newReview && activeSessionId() === sessionId && !dialog.open()) {
+        void openLiveReviews({ kind: newReview.kind, id: newReview.id }, true)
+      }
+    },
+  })
+  createEffect(() => {
+    const operationId = activeTurnId()
+    const focusedSessionId = activeSessionId()
+    const sessionId = activeTurnSessionId
+    if (operationId && sessionId && focusedSessionId === sessionId) {
+      cliApprovalPoller.start(sessionId)
+    } else {
+      cliApprovalPoller.stop()
+    }
+    onCleanup(() => cliApprovalPoller.stop())
   })
   const [pluginLinkArguments, setPluginLinkArguments] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {

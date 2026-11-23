@@ -52,7 +52,7 @@ test("integrated proposals enter the existing review flow and wait for explicit 
       if (path.endsWith("/workspace/edits")) {
         return Response.json([{ id: "edit-1", path: "src/main.v", status: "pending" }])
       }
-      if (path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
+      if (path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls") || path.endsWith("/cli-approvals")) return Response.json([])
       if (path.endsWith("/workspace/edits/edit-1/approve")) return Response.json({ id: "edit-1", status: "applied" })
       if (path.endsWith("/workspace/edits/edit-1")) {
         return Response.json({ id: "edit-1", path: "src/main.v", status: "pending", diff: "+safe" })

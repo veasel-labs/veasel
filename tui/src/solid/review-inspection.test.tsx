@@ -24,7 +24,7 @@ for (const failFirst of [false, true]) {
         { id: "e1", path: "first.v", status: "pending" },
         { id: "e2", path: "second.v", status: "pending" },
       ])
-      if (path.endsWith("/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
+      if (path.endsWith("/commands") || path.endsWith("/mcp-tool-calls") || path.endsWith("/cli-approvals")) return Response.json([])
       if (path.endsWith("/approve")) return Response.json({ status: "applied" })
       if (failDetail) return new Response("details unavailable", { status: 503 })
       const id = path.split("/").at(-1)!
@@ -34,7 +34,7 @@ for (const failFirst of [false, true]) {
     let setup: Awaited<ReturnType<typeof testRender>> | undefined
     try {
       const reviews = await loadPendingSolidReviews(api, "session")
-      expect(requests).toHaveLength(3)
+      expect(requests).toHaveLength(4)
       expect(reviews.every((item) => item.inspected === false)).toBe(true)
       setup = await testRender(() => <DialogProvider><Harness
         reviews={reviews}
@@ -70,6 +70,109 @@ for (const failFirst of [false, true]) {
     } finally { setup?.renderer.destroy(); server.stop(true) }
   })
 }
+
+test("installed CLI approval requires inspection and allows only one request per approval", async () => {
+  const requests: string[] = []
+  const approval = {
+    id: "cli-1",
+    session_id: "session",
+    request_id: "request-1",
+    tool_name: "Edit",
+    input_json: '{"path":"src/a.ts","text":"safe"}',
+    status: "pending",
+    created_at: "",
+    updated_at: "",
+  }
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    const path = new URL(request.url).pathname
+    requests.push(`${request.method} ${path}`)
+    if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) {
+      return Response.json([])
+    }
+    if (path.endsWith("/cli-approvals/cli-1/approve")) {
+      return Response.json({ ...approval, status: "approved" })
+    }
+    if (path.endsWith("/cli-approvals")) return Response.json([approval])
+    return new Response("not found", { status: 404 })
+  } })
+  const api = new VeaselApiClient(server.url.origin)
+  let setup: Awaited<ReturnType<typeof testRender>> | undefined
+  try {
+    const reviews = await loadPendingSolidReviews(api, "session")
+    expect(reviews).toHaveLength(1)
+    expect(reviews[0]).toMatchObject({ kind: "cli", inspected: false })
+    setup = await testRender(() => <DialogProvider><Harness
+      reviews={reviews}
+      onInspect={(target) => inspectSolidReview(api, "session", target)}
+      onDecide={(decision, targets) => decideSolidReviews(api, "session", decision, targets)}
+    /></DialogProvider>, { width: 100, height: 30, kittyKeyboard: true })
+    async function until(text: string) {
+      for (let n = 0; n < 100; n++) {
+        await setup!.renderOnce()
+        if (setup!.captureCharFrame().includes(text)) return
+        await Bun.sleep(5)
+      }
+      throw new Error(`Missing ${text}`)
+    }
+    await until("REVIEW INSTALLED CLI TOOL")
+    await until('"path":"src/a.ts"')
+    expect(setup.captureCharFrame()).toContain("Approval allows this exact tool request once.")
+
+    setup.mockInput.pressKey("a", { shift: true })
+    await until("must be approved one at a time")
+    expect(requests.some((request) => request.startsWith("POST "))).toBe(false)
+
+    setup.mockInput.pressKey("a")
+    for (let n = 0; n < 100 && !requests.some((request) => request.startsWith("POST ")); n++) await Bun.sleep(5)
+    expect(requests.filter((request) => request === "POST /v1/sessions/session/cli-approvals/cli-1/approve")).toHaveLength(1)
+  } finally { setup?.renderer.destroy(); server.stop(true) }
+})
+
+test("truncated installed CLI arguments cannot be approved", async () => {
+  const requests: string[] = []
+  const approval = {
+    id: "cli-2",
+    session_id: "session",
+    request_id: "request-2",
+    tool_name: "Edit",
+    input_json: JSON.stringify({ text: "x".repeat(13_000) }),
+    status: "pending",
+    created_at: "",
+    updated_at: "",
+  }
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
+    const path = new URL(request.url).pathname
+    requests.push(`${request.method} ${path}`)
+    if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) {
+      return Response.json([])
+    }
+    if (path.endsWith("/cli-approvals")) return Response.json([approval])
+    return new Response("not found", { status: 404 })
+  } })
+  const api = new VeaselApiClient(server.url.origin)
+  let setup: Awaited<ReturnType<typeof testRender>> | undefined
+  try {
+    const reviews = await loadPendingSolidReviews(api, "session")
+    setup = await testRender(() => <DialogProvider><Harness
+      reviews={reviews}
+      onInspect={(target) => inspectSolidReview(api, "session", target)}
+      onDecide={(decision, targets) => decideSolidReviews(api, "session", decision, targets)}
+    /></DialogProvider>, { width: 100, height: 30, kittyKeyboard: true })
+    async function until(text: string) {
+      for (let n = 0; n < 100; n++) {
+        await setup!.renderOnce()
+        if (setup!.captureCharFrame().includes(text)) return
+        await Bun.sleep(5)
+      }
+      throw new Error(`Missing ${text}`)
+    }
+    await until("INPUT TRUNCATED — APPROVAL DISABLED")
+    setup.mockInput.pressKey("a")
+    await setup.renderOnce()
+    expect(setup.captureCharFrame()).toContain("INPUT TRUNCATED — APPROVAL DISABLED")
+    expect(requests.some((request) => request.startsWith("POST "))).toBe(false)
+  } finally { setup?.renderer.destroy(); server.stop(true) }
+})
 
 test("late detail response cannot mark a review inspected after navigating away", async () => {
   const reviews = ["first", "second"].map((id) => ({

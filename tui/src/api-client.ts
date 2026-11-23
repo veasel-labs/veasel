@@ -327,6 +327,17 @@ export type ApiMcpToolCallApproval = ApiMcpToolCallSummary & {
   arguments_json: string
 }
 
+export type ApiCliToolApproval = {
+  id: string
+  session_id: string
+  request_id: string
+  tool_name: string
+  input_json: string
+  status: "pending" | "approved" | "denied" | "expired"
+  created_at: string
+  updated_at: string
+}
+
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
   onTurnQueued?: (sessionId: string, operationId: string) => void
@@ -960,6 +971,28 @@ export class VeaselApiClient {
     )
     if (!response.ok) throw await httpError(response)
     return await response.json() as { id: string; status: string }
+  }
+
+  async listCliToolApprovals(sessionId: string): Promise<ApiCliToolApproval[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/cli-approvals`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiCliToolApproval[]
+  }
+
+  async decideCliToolApproval(
+    sessionId: string,
+    approvalId: string,
+    decision: "approve" | "reject",
+  ): Promise<ApiCliToolApproval> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/cli-approvals/${encodeURIComponent(approvalId)}/${decision}`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiCliToolApproval
   }
 
   async sendMessage(

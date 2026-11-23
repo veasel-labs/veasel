@@ -57,6 +57,17 @@ describe("reviewHotkey", () => {
       review: { kind: "command", id: pendingPatch.id, pending: true },
     })).toBeUndefined()
   })
+
+  test("installed CLI reviews use a single-request approval hotkey", () => {
+    const cli: ActiveReview = { kind: "cli", id: "approval-1", pending: true }
+    expect(reviewHotkey({ name: "a", ctrl: false, meta: false }, {
+      composerEmpty: true,
+      review: cli,
+    })).toEqual({ action: "approve" })
+    expect(reviewHotkeyHint(cli)).toContain("a approve one")
+    expect(reviewHotkeyHint(cli)).not.toContain("A/X all")
+    expect(reviewHotkeyHint(cli, { selectedCount: 2, currentSelected: true })).toContain("approve one at a time")
+  })
 })
 
 describe("review multi-select", () => {

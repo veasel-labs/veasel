@@ -6,6 +6,45 @@ Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 Refreshed: **2026-11-19** from live `gh` state. Method: `gh issue/pr list`
 + main-branch SHAs + latest-main CI + release manifest verification.
 
+## Checkpoint 2026-11-23 — live GitHub state
+
+This checkpoint supersedes the older live snapshot below. It was refreshed
+from GitHub on 2026-11-23; PR counts include drafts.
+
+| Repository | main SHA | Open issues | Open PRs | Current note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `dd105961483d8646c652a7ad898dd0ce9ab5914a` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | Main CI run `45224522194` green; #803 platform CI green; #804 exact-head checks pending |
+| veasel-labs/agent-toolkit | `2096315d10ccdb19b1cb8ea071986bd2c641eb89` | 0 | 1 (#13) | #13 remains pending review per owner; fail-closed permission mismatch (`network:false`, pinned `brag` declares network access) |
+| veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
+| veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
+| veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | No open work |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work |
+| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 0 | Umbrella issue still open |
+| **Total** | | **5** | **3** | No zero-backlog claim |
+
+Owner decisions recorded: registry #10 approved the first-party exception for
+`veasel-essentials`; official registry PR #13 remains pending and is not
+self-approved. The #10 outcome is reflected in official toolkit main.
+
+Current implementation candidate: veasel PR #804
+(`https://github.com/veasel-labs/veasel/pull/804`) adds installed-CLI approval
+review to the shipped Solid TUI, with terminal-safe input previews,
+inspection-before-approval, fail-closed truncation handling, and one-at-a-time
+decisions. Local validation on 2026-11-23: `bun run typecheck`, all 694 Bun
+tests across 141 files, standalone `bun-linux-x64` build and `--version`
+smoke passed; high/critical Bun audit and `git diff --check` passed. These
+local checks used bounded `systemd-run` scopes. The PR's current GitHub head
+must still pass required checks; PR package/release jobs are conditional and
+do not establish packaged-release acceptance. The CLI session in #550
+remains NOT VERIFIED as a real-provider coding journey after write approval
+was denied; see
+https://github.com/veasel-labs/veasel/issues/550#issuecomment-7113850660.
+
+Benchmark #673 remains gated: no paid provider call until the benchmark
+wrapper is independently reviewed and the Meta credential is rotated. The
+user's aggregate $5 ceiling remains in force; no spend was incurred in this
+checkpoint.
+
 ## Checkpoint 2026-11-20 — consolidation state
 
 | Repository | main SHA | Open issues | Open PRs | State |

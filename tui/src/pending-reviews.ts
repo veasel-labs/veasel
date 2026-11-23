@@ -62,17 +62,15 @@ export async function loadPendingReviewInventory(
   }
 
   try {
-    const [edits, commands, mcp, cli] = await Promise.all([
+    const [edits, commands, mcp] = await Promise.all([
       load("workspace/edits"),
       load("workspace/commands"),
       load("mcp-tool-calls"),
-      load("cli-approvals"),
     ])
     const groups = [
       { kind: "patch" as const, records: edits, count: "edits" as const },
       { kind: "command" as const, records: commands, count: "commands" as const },
       { kind: "mcp" as const, records: mcp, count: "mcp" as const },
-      { kind: "cli" as const, records: cli, count: "cli" as const },
     ]
     const counts: PendingReviewCounts = { edits: 0, commands: 0, mcp: 0, cli: 0 }
     const queue: ActiveReview[] = []
@@ -88,7 +86,7 @@ export async function loadPendingReviewInventory(
 }
 
 export function pendingReviewInventoryFailureNotice(): string {
-  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, /mcp calls, or /cli approvals to reopen a review list."
+  return "Could not load pending approvals. Press Ctrl+R to retry or run /patches, /commands, or /mcp calls to reopen a review list."
 }
 
 export function pendingReviewDecisionFailureNotice(
@@ -112,7 +110,6 @@ export function pendingReviewActions(counts: PendingReviewCounts): string[] {
   if (counts.edits > 0) actions.push("/patches")
   if (counts.commands > 0) actions.push("/commands")
   if (counts.mcp > 0) actions.push("/mcp calls")
-  if ((counts.cli ?? 0) > 0) actions.push("/cli approvals")
   return actions
 }
 

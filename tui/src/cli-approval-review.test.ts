@@ -17,7 +17,7 @@ describe("installed CLI approval review", () => {
   test("does not permit approval when the complete request is not displayed", () => {
     const preview = cliApprovalInputPreview("x".repeat(20), 10)
     expect(preview.fullyVisible).toBe(false)
-    expect(preview.text).toContain("input truncated")
+    expect(preview.truncationNotice).toContain("Input truncated")
     expect(cliApprovalCanApprove("approval-1", new Set())).toBe(false)
     expect(cliApprovalCanApprove("approval-1", new Set(["approval-1"]))).toBe(true)
   })

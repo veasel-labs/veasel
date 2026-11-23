@@ -447,14 +447,13 @@ fn parse_agent_skill(directory_name string, path string, content string) !Plugin
 		return error('frontmatter must be a YAML mapping')
 	}
 	fields := doc.root as map[string]yaml.Any
-	for key, _ in fields {
-		// `origin` is provenance metadata used by the official/personal
-		// catalogs (e.g. first-party); it carries no authority and is ignored.
-		if key !in ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools',
-			'disable-model-invocation', 'origin'] {
-			return error('unknown Agent Skill frontmatter field `${key}`')
-		}
-	}
+	// Unknown top-level fields are ignored, mirroring parse_plugin_manifest.
+	// Distribution ecosystems annotate skills with inert provenance and
+	// routing metadata (`origin`, `tools`, `triggers`, `requires`, trust
+	// blocks, ...) that is never executed; allow-listing individual keys
+	// silently dropped every such skill (`origin` alone needed a fix).
+	// Only the fields parsed below influence behavior, and each of those
+	// is still type- and content-checked.
 	name := skill_required_string(fields, 'name')!
 	description := skill_required_string(fields, 'description')!
 	if !is_valid_skill_name(name) || name != directory_name {

@@ -746,3 +746,67 @@ fn test_mcp_stdio_preview_reports_unsandboxed_only_with_opt_in() {
 	assert opted.network == 'host'
 	assert mcp_stdio_unsandboxed_capability()
 }
+
+fn test_plugin_mcp_missing_plugin_root_is_rejected() {
+	// A real plugin package whose root does not exist must keep failing
+	// canonicalization: only the synthetic configured-server root is
+	// created by the caller, never an arbitrary missing package path.
+	root := os.join_path(os.temp_dir(), 'veasel-mcp-missing-root-${os.getpid()}')
+	data := os.join_path(os.temp_dir(), 'veasel-mcp-missing-data-${os.getpid()}')
+	os.mkdir_all(data) or { panic(err) }
+	defer {
+		os.rmdir_all(data) or {}
+	}
+	server := PluginMCPServer{
+		name:      'fixture'
+		transport: 'stdio'
+		command:   'true'
+		cwd:       './'
+	}
+	if _ := start_plugin_mcp_fixture_transport(root, data, server) {
+		assert false, 'missing plugin root must be rejected'
+	}
+	assert !os.exists(root)
+}
+
+fn test_plugin_mcp_configured_synthetic_root_starts_after_ensure() {
+	node := os.find_abs_path_of_executable('node') or {
+		if os.getenv('CI') == 'true' {
+			panic('Node.js is required to run the MCP process fixture in CI')
+		}
+		return
+	}
+	// Mirrors the configured-server flow in load_session_plugin_mcp_tools:
+	// the synthetic package root does not exist until the caller ensures
+	// it, after which the transport must start and initialize normally.
+	root := os.join_path(os.temp_dir(), 'veasel-mcp-configured-root-${os.getpid()}')
+	data := os.join_path(os.temp_dir(), 'veasel-mcp-configured-data-${os.getpid()}')
+	defer {
+		os.rmdir_all(root) or {}
+		os.rmdir_all(data) or {}
+	}
+	assert !os.exists(root)
+	ensure_directory(root) or { panic(err) }
+	script := os.join_path(root, 'fixture.mjs')
+	fixture := "import readline from 'node:readline';\n" +
+		'const lines = readline.createInterface({ input: process.stdin });\n' +
+		'for await (const line of lines) {\n' +
+		'  const request = JSON.parse(line);\n' +
+		'  if (!request.id) continue;\n' +
+		"  const result = request.method === 'initialize' ? { protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'fixture', version: '1.0.0' } } : {};\n" +
+		"  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\\n');\n" +
+		'}\n'
+	os.write_file(script, fixture) or { panic(err) }
+	server := PluginMCPServer{
+		name:      'fixture'
+		transport: 'stdio'
+		command:   node
+		args:      [script]
+		cwd:       './'
+	}
+	mut client := new_plugin_mcp_fixture_client(root, data, server) or { panic(err) }
+	defer {
+		client.close()
+	}
+	client.initialize() or { panic(err) }
+}

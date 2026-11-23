@@ -729,8 +729,21 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 		} else {
 			os.join_path(app.plugin_data_directory, selected.plugin_name)
 		}
+		// Configured (operator-added) servers use a synthetic package root
+		// under the plugin data directory that nobody creates beforehand;
+		// canonical_plugin_root would reject it and every configured stdio
+		// server would fail to start. Create only that synthetic root:
+		// real plugin packages keep failing canonicalization when their
+		// root is missing, so a typo'd or removed package is never
+		// silently treated as valid.
+		if selected.plugin_name == configured_mcp_plugin_name {
+			ensure_directory(plugin_root) or {
+				eprintln('veasel: trusted MCP server could not be started: ${redact_trace_text(err.msg(), [])}')
+				continue
+			}
+		}
 		mut connection := new_plugin_mcp_connection(plugin_root, plugin_data, server) or {
-			eprintln('veasel: trusted MCP server could not be started')
+			eprintln('veasel: trusted MCP server could not be started: ${redact_trace_text(err.msg(), [])}')
 			continue
 		}
 		// Attach OAuth refresh before initialize so a 401 can refresh once and
@@ -741,7 +754,7 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 				app.mcp_credentials)
 		}
 		connection.client.initialize() or {
-			eprintln('veasel: trusted MCP server initialization failed')
+			eprintln('veasel: trusted MCP server initialization failed: ${redact_trace_text(err.msg(), [])}')
 			connection.client.close()
 			continue
 		}

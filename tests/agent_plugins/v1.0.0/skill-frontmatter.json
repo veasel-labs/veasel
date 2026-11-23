@@ -18,10 +18,10 @@
     "content": "---\nname: café-分析-3\ndescription: Review localized source.\n---\nInstructions."
   },
   {
-    "name": "unknown frontmatter field is rejected",
+    "name": "unknown frontmatter fields are ignored as inert metadata",
     "directory": "review",
-    "accepted": false,
-    "content": "---\nname: review\ndescription: Review source changes.\nunknown-field: true\n---\nInstructions."
+    "accepted": true,
+    "content": "---\nname: review\ndescription: Review source changes.\norigin:\n  type: first-party\ntriggers:\n  - review this\nunknown-field: true\n---\nInstructions."
   },
   {
     "name": "non-string metadata is rejected",

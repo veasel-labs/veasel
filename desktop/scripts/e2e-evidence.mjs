@@ -26,9 +26,10 @@ function renderPackagedEvidence(outputPath) {
   const rows = records.map(({ name, record }) => {
     const classification = Array.isArray(record.classification) ? record.classification.join(', ') : 'UNCLASSIFIED';
     const test = record.independent_check?.after_turn ?? 'No independent test recorded';
-    return `| ${record.captured_at ?? 'unknown'} | ${record.provider?.id ?? 'unknown'} | ${record.artifact?.release ?? 'unknown'} | ${classification} | ${test} | [${name}](evidence/${name}) |`;
+    const driver = record.automation_driver?.status ?? 'No driver caveat recorded';
+    return `| ${record.captured_at ?? 'unknown'} | ${record.provider?.id ?? 'unknown'} | ${record.artifact?.release ?? 'unknown'} | ${classification} | ${test} | ${driver} | [${name}](evidence/${name}) |`;
   });
-  return `${PACKAGED_START}\n## Packaged GUI real-provider journeys\n\nGenerated from sanitized records in docs/desktop/evidence/. It complements the deterministic journey table above; it does not change its verdicts.\n\n| Date | Provider | Release | Classification | Independent check | Provenance |\n|------|----------|---------|----------------|-------------------|------------|\n${rows.join('\n')}\n${PACKAGED_END}`;
+  return `${PACKAGED_START}\n## Packaged GUI real-provider journeys\n\nGenerated from sanitized records in docs/desktop/evidence/. It complements the deterministic journey table above; it does not change its verdicts.\n\n| Date | Provider | Release | Classification | Independent check | Driver note | Provenance |\n|------|----------|---------|----------------|-----------------|-------------|------------|\n${rows.join('\n')}\n${PACKAGED_END}`;
 }
 
 if (process.argv[2] === '--refresh-packaged') {

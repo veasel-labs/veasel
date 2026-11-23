@@ -47,5 +47,10 @@
     "repository_status": "only src.csv.js modified; uncommitted disposable worktree"
   },
   "telemetry_limit": "Backend recorded approved Write and Bash requests but no shell_commands row; the independent node test.js result above is the verification oracle. Model and monetary cost remain unknown.",
-  "provenance": "AppImage and bundled backend hashes were recomputed locally; operation and approval states were read from the isolated Veasel SQLite database; changed file and post-run test were checked directly. No provider credential material is included."
+  "provenance": "AppImage and bundled backend hashes were recomputed locally; operation and approval states were read from the isolated Veasel SQLite database; changed file and post-run test were checked directly. No provider credential material is included.",
+  "automation_driver": {
+    "status": "runner timed out after the approval dialog detached during its stability wait",
+    "recovery_oracle": "after app exit, the private SQLite database showed operation completed and exactly two approvals (Write and Bash) approved; the disposable file diff and independent node test were then checked directly",
+    "screenshot_or_trace": "not retained"
+  }
 }

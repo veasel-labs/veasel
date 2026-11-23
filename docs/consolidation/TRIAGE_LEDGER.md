@@ -109,9 +109,13 @@ Merged since prior ledger snapshot:
   bounds are recorded in [the Nov 20 issue update](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7033093408).
   The current isolation branch adds a Veasel 0.79.5 Meta Responses adapter,
   per-run proxy-only credentials, project-MCP fail-closed preflight, and Linux
-  Bubblewrap/Unix-relay tests; 90 local tests passed without contacting Meta.
-  This is branch evidence only and
-  awaits PR review and required CI on its exact head.
+  Bubblewrap/Unix-relay tests; 92 local tests pass without contacting Meta.
+  Full Linux namespace tests passed on the local Arch host. The GitHub-hosted
+  Ubuntu runner cannot create the required network namespace as its unprivileged
+  job user. CI detects and reports this limitation and explicitly skips only
+  those kernel-dependent integration tests; that CI result is not Linux
+  namespace validation. The branch still awaits PR review and required CI on
+  its exact head.
 - **Remaining acceptance:** run and independently score the same meaningful task,
   prompt, base, model, permissions and budgets through Veasel and OpenCode;
   preserve sanitized traces and versions/hashes. The proxy uses the published

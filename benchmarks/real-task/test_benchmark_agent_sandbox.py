@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from benchmark_agent_sandbox import build_bwrap_command
 from proxy_network_bridge import UnixBudgetProxyRelay
+from sandbox_test_support import LINUX_BWRAP_NETWORK_SKIP_REASON, LINUX_BWRAP_NETWORK_SUPPORTED
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -85,13 +86,21 @@ class BenchmarkAgentSandboxTests(unittest.TestCase):
         self.http_thread.join(timeout=2)
         self.temp.cleanup()
 
+    @unittest.skipUnless(LINUX_BWRAP_NETWORK_SUPPORTED, LINUX_BWRAP_NETWORK_SKIP_REASON)
     def test_wrapper_exposes_only_task_state_artifacts_and_budget_proxy(self) -> None:
         host_port = socket.socket()
         host_port.bind(("127.0.0.1", 0))
         unrelated_loopback_port = host_port.getsockname()[1]
         host_port.close()
+        child_code = (
+            "import os,socket; from pathlib import Path; "
+            "assert 'VEASEL_BENCHMARK_PROXY_KEY' not in os.environ; "
+            "assert not Path('/tmp/veasel-proxy/budget.sock').exists(); "
+            f"s=socket.socket(); s.settimeout(1); "
+            f"assert s.connect_ex(('127.0.0.1',{unrelated_loopback_port})) != 0"
+        )
         probe = (
-            "from pathlib import Path; import os,socket,urllib.request; "
+            "from pathlib import Path; import os,socket,subprocess,urllib.request; "
             "assert Path(os.environ['VEASEL_REAL_TASK_ROOT'],'tracked.txt').read_text() == 'workspace fixture'; "
             "assert 'VEASEL_BENCHMARK_PROXY_KEY' not in os.environ; "
             "assert 'VEASEL_BENCHMARK_PROXY_SOCKET' not in os.environ; "
@@ -103,6 +112,12 @@ class BenchmarkAgentSandboxTests(unittest.TestCase):
             "r=urllib.request.Request('http://127.0.0.1:18765/v1/responses', "
             "data=b'approved-request', method='POST'); "
             "assert urllib.request.urlopen(r, timeout=3).read() == b'BOUNDED_PROXY:approved-request'; "
+            f"child={child_code!r}; "
+            "shell_env=dict(os.environ); shell_env['VEASEL_BWRAP']='/usr/bin/bwrap'; "
+            "nested=subprocess.run(['/tmp/veasel-state/opencode-shell-sandbox.sh','-c',"
+            "'/usr/bin/python3 -c ' + repr(child)], cwd=os.environ['VEASEL_REAL_TASK_ROOT'], "
+            "env=shell_env, capture_output=True, text=True, timeout=5); "
+            "assert nested.returncode == 0, nested.stderr; "
             "Path('/tmp/veasel-artifacts/wrapper-proof.txt').write_text('sandbox-ok')"
         )
         env = dict(self.wrapper_env)

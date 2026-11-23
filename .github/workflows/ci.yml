@@ -87,13 +87,6 @@ jobs:
             sudo apt-get install -y bubblewrap
           fi
           sudo bwrap --unshare-all --unshare-user --disable-userns --die-with-parent --new-session --ro-bind / / -- true
-          cat > "$RUNNER_TEMP/veasel-bwrap-root" <<'EOF'
-          #!/bin/sh
-          runner_uid=$(/usr/bin/id -u)
-          runner_gid=$(/usr/bin/id -g)
-          exec sudo -n /usr/bin/bwrap --unshare-user --disable-userns --uid "$runner_uid" --gid "$runner_gid" "$@"
-          EOF
-          chmod 700 "$RUNNER_TEMP/veasel-bwrap-root"
       - name: Audit Harbor adapter dependencies
         run: python -m pip_audit --strict --progress-spinner off
       - name: Validate Harbor adapter
@@ -104,9 +97,24 @@ jobs:
           python -m py_compile benchmarks/real-task/run.py
           python -m unittest discover -s tools/provider-catalog -p 'test_*.py' -v
           python -m unittest discover -s tools/release -p 'test_*.py' -v
-      - name: Run real-task sandbox tests with kernel namespace capabilities
-        env:
-          VEASEL_BWRAP: ${{ runner.temp }}/veasel-bwrap-root
+      - name: Report real-task sandbox test capabilities
+        run: |
+          PYTHONPATH=benchmarks/real-task python - <<'PY'
+          import os
+          from sandbox_test_support import LINUX_BWRAP_NETWORK_SKIP_REASON, LINUX_BWRAP_NETWORK_SUPPORTED
+          if LINUX_BWRAP_NETWORK_SUPPORTED:
+              message = "Linux Bubblewrap network namespace proofs will run."
+          else:
+              message = (
+                  "Linux Bubblewrap namespace integration proofs are NOT VERIFIED on this hosted runner: "
+                  + LINUX_BWRAP_NETWORK_SKIP_REASON
+                  + ". Those tests report explicit skips; full namespace proofs must run on a capable Linux host."
+              )
+          print(message)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(message + "\n")
+          PY
+      - name: Run real-task sandbox tests
         run: python -m unittest discover -s benchmarks/real-task -p 'test_*.py' -v
 
   backend:

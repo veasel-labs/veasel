@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from proxy_network_bridge import UnixBudgetProxyRelay, run_namespace_bridge
+from sandbox_test_support import LINUX_BWRAP_NETWORK_SKIP_REASON, LINUX_BWRAP_NETWORK_SUPPORTED
 
 
 class ProxyFixtureHandler(BaseHTTPRequestHandler):
@@ -93,7 +94,7 @@ class ProxyNetworkBridgeTests(unittest.TestCase):
         finally:
             relay.close()
 
-    @unittest.skipUnless(Path("/usr/bin/bwrap").is_file(), "Bubblewrap is required for the Linux namespace proof")
+    @unittest.skipUnless(LINUX_BWRAP_NETWORK_SUPPORTED, LINUX_BWRAP_NETWORK_SKIP_REASON)
     def test_bubblewrap_cannot_reach_host_loopback_but_can_reach_mounted_budget_relay(self) -> None:
         denied = ThreadingHTTPServer(("127.0.0.1", 0), ProxyFixtureHandler)
         denied.daemon_threads = True

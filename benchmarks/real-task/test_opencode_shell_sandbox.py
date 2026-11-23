@@ -3,7 +3,6 @@
 import json
 import contextlib
 import os
-import platform
 import shlex
 import shutil
 import socket
@@ -12,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from sandbox_test_support import LINUX_BWRAP_NETWORK_SKIP_REASON, LINUX_BWRAP_NETWORK_SUPPORTED
 
 
 HERE = Path(__file__).resolve().parent
@@ -62,7 +62,7 @@ class OpenCode227CompatibilityTests(unittest.TestCase):
             fixture["shell_select_invocation"]["argv"], ["-c", "printf opencode-2.2.7-shell-ok"]
         )
 
-    @unittest.skipUnless(platform.system() == "Linux" and shutil.which("bwrap"), "requires Linux bubblewrap")
+    @unittest.skipUnless(LINUX_BWRAP_NETWORK_SUPPORTED, LINUX_BWRAP_NETWORK_SKIP_REASON)
     def test_v227_shellselect_invocation_reaches_the_reviewed_launcher(self):
         fixture = json.loads(FIXTURE.read_text())
         invocation = fixture["shell_select_invocation"]
@@ -238,7 +238,7 @@ class OpenCodeShellSandboxTests(unittest.TestCase):
             self.assertEqual(outside_sentinel.read_text(), "outside-content-preserved")
             outside_sentinel.unlink()
 
-    @unittest.skipUnless(platform.system() == "Linux" and shutil.which("bwrap"), "requires Linux bubblewrap")
+    @unittest.skipUnless(LINUX_BWRAP_NETWORK_SUPPORTED, LINUX_BWRAP_NETWORK_SKIP_REASON)
     def test_minimal_runtime_supports_git_and_installed_language_runtimes(self):
         with persistent_workspace() as (workspace_parent, workspace):
             command = r'''set -eu
@@ -267,7 +267,7 @@ printf runtime-ok
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "runtime-ok")
 
-    @unittest.skipUnless(platform.system() == "Linux" and shutil.which("bwrap"), "requires Linux bubblewrap")
+    @unittest.skipUnless(LINUX_BWRAP_NETWORK_SUPPORTED, LINUX_BWRAP_NETWORK_SKIP_REASON)
     def test_tool_process_cannot_read_proxy_token_or_reach_loopback_proxy(self):
         if not Path("/proc").is_dir():
             self.skipTest("requires Linux procfs")

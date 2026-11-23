@@ -24,6 +24,7 @@ SECRET_KEYS = (
     "META_API_KEY",
     "PROXY_BEARER_TOKEN",
     "VEASEL_MODEL_API_KEY",
+    "VEASEL_BENCHMARK_PROXY_KEY",
 )
 INVALID_ROOT_PROBE = shutil.which("true") or "/usr/bin/true"
 HOST_FILESYSTEM_CANARY = Path("/etc/hostname")
@@ -291,14 +292,16 @@ printf runtime-ok
                 accepted.close()
 
             python_probe = r'''import glob, os, socket
-for key in ("OPENAI_API_KEY", "META_API_KEY", "PROXY_BEARER_TOKEN", "VEASEL_MODEL_API_KEY"):
+for key in ("OPENAI_API_KEY", "META_API_KEY", "PROXY_BEARER_TOKEN", "VEASEL_MODEL_API_KEY",
+           "VEASEL_BENCHMARK_PROXY_KEY"):
     assert key not in os.environ, key
 for path in glob.glob("/proc/[0-9]*/environ"):
     try:
         contents = open(path, "rb").read()
     except OSError:
         continue
-    for key in (b"OPENAI_API_KEY=", b"META_API_KEY=", b"PROXY_BEARER_TOKEN=", b"VEASEL_MODEL_API_KEY="):
+    for key in (b"OPENAI_API_KEY=", b"META_API_KEY=", b"PROXY_BEARER_TOKEN=",
+                b"VEASEL_MODEL_API_KEY=", b"VEASEL_BENCHMARK_PROXY_KEY="):
         assert key not in contents, path
 try:
     connection = socket.create_connection(("127.0.0.1", PORT), timeout=0.5)
@@ -323,6 +326,10 @@ else:
             command = f'/usr/bin/python3 -c {shlex.quote(python_probe)}'
             env = dict(os.environ)
             env.update({key: SECRET for key in SECRET_KEYS})
+            # This is the agent runtime's actual proxy-only credential path.
+            # The shell launcher must scrub it before starting any nested tool.
+            env["VEASEL_BENCHMARK_AGENT"] = "opencode"
+            env["VEASEL_BENCHMARK_PROXY_KEY"] = "fake-ephemeral-opencode-proxy-key"
             env["VEASEL_REAL_TASK_ROOT"] = str(workspace)
             env["VEASEL_REAL_TASK_PARENT"] = str(workspace_parent)
             env["VEASEL_BWRAP"] = os.environ.get("VEASEL_BWRAP", shutil.which("bwrap") or "")

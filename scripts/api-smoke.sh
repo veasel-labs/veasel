@@ -958,16 +958,39 @@ kill "$server_pid"
 wait "$server_pid" 2>/dev/null || true
 server_pid=""
 start_server openai-compatible
-expect_status 200 -H 'content-type: application/json' \
+expect_status 400 -H 'content-type: application/json' \
 	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true}' \
 	"$api/v1/sessions/$session_id/mcp-servers"
 python3 - "$work_dir/response" <<'PY'
 import json
 import sys
 
-trusted = json.load(open(sys.argv[1], encoding='utf-8'))
-assert {'plugin_name': 'review-tools', 'server_name': 'effect'} in trusted
+assert "explicit workspace write access" in json.load(open(sys.argv[1], encoding="utf-8"))["error"]
 PY
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true,"workspace_write_access":true}' \
+	"$api/v1/sessions/$session_id/mcp-servers"
+python3 - "$work_dir/response" <<'PY'
+import json
+import sys
+
+trusted = json.load(open(sys.argv[1], encoding='utf-8'))
+expected = {'plugin_name': 'review-tools', 'server_name': 'effect', 'workspace_write_access': True}
+assert expected in trusted, f'granted MCP workspace scope missing: {trusted!r}'
+PY
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true,"workspace_write_access":false}' \
+	"$api/v1/sessions/$session_id/mcp-servers"
+python3 - "$work_dir/response" <<'PY'
+import json
+import sys
+
+trusted = json.load(open(sys.argv[1], encoding='utf-8'))
+assert {'plugin_name': 'review-tools', 'server_name': 'effect', 'workspace_write_access': False} in trusted
+PY
+expect_status 200 -H 'content-type: application/json' \
+	-d '{"plugin_name":"review-tools","server_name":"effect","trusted":true,"workspace_write_access":true}' \
+	"$api/v1/sessions/$session_id/mcp-servers"
 rm -f "$plugin_dir/effect.txt"
 mcp_operation_id="$(start_mcp_turn 'Call MCP effect')"
 for ((attempt = 0; attempt < 100; attempt++)); do

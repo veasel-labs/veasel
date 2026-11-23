@@ -235,7 +235,7 @@ fn start_plugin_mcp_transport(plugin_root string, plugin_data string, server Plu
 	if plan == .wrap {
 		$if linux {
 			return start_plugin_mcp_transport_linux_sandboxed(root, data, cwd, server.command,
-				args, env)
+				args, env, server.workspace)
 		} $else $if macos {
 			return start_plugin_mcp_transport_macos_sandboxed(root, data, cwd, server.command,
 				args, env)
@@ -373,10 +373,11 @@ fn start_plugin_mcp_transport_macos_sandboxed(root string, data string, cwd stri
 // - network is shared (many MCP servers need outbound HTTPS); not a shell-style deny
 // - missing bwrap under auto falls back unsandboxed and never pretends sandboxed
 fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd string, command string,
-	args []string, env map[string]string) !&PluginMCPTransport {
+	args []string, env map[string]string, workspace string) !&PluginMCPTransport {
+	canonical_workspace := if workspace.len > 0 { canonical_plugin_root(workspace)! } else { '' }
 	for broad_root in ['/', '/home', '/root', '/tmp', '/usr', '/etc', '/var', '/opt'] {
-		if root == broad_root || data == broad_root {
-			return error('Trusted MCP stdio refused: PLUGIN_ROOT or PLUGIN_DATA is too broad for the sandbox')
+		if root == broad_root || data == broad_root || canonical_workspace == broad_root {
+			return error('Trusted MCP stdio refused: a writable sandbox root is too broad')
 		}
 	}
 	bwrap := bubblewrap_executable_path() or {
@@ -401,6 +402,12 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 	bwrap_args << '/proc'
 	bwrap_args << '--dev'
 	bwrap_args << '/dev'
+	if canonical_workspace.len > 0 {
+		append_linux_bwrap_parent_dirs(mut bwrap_args, canonical_workspace)
+		bwrap_args << '--bind'
+		bwrap_args << canonical_workspace
+		bwrap_args << canonical_workspace
+	}
 	append_linux_bwrap_parent_dirs(mut bwrap_args, root)
 	bwrap_args << '--bind'
 	bwrap_args << root
@@ -411,19 +418,8 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 		bwrap_args << data
 		bwrap_args << data
 	}
-	// The tmpfs overlays above hide all of /home and /tmp, which also hides
-	// MCP servers installed there (uv tools, pipx, venvs, npm-global) and
-	// an operator-configured cwd outside root/data. Re-expose exactly the
-	// approved paths, nothing broader: the resolved executable (plus its
-	// interpreter/venv tree) read-only, and the configured cwd — the one
-	// directory the operator already declared for this server — writable.
-	for bind in linux_mcp_sandbox_command_binds(command, env) {
-		append_linux_bwrap_parent_dirs(mut bwrap_args, bind)
-		bwrap_args << '--ro-bind'
-		bwrap_args << bind
-		bwrap_args << bind
-	}
-	if cwd != root && cwd != data && !path_is_within(root, cwd) && !path_is_within(data, cwd) {
+	if cwd != root && cwd != data && !path_is_within(root, cwd) && !path_is_within(data, cwd)
+		&& cwd != canonical_workspace && !(canonical_workspace.len > 0 && path_is_within(canonical_workspace, cwd)) {
 		for broad_root in ['/', '/home', '/root', '/tmp', '/usr', '/etc', '/var', '/opt'] {
 			if cwd == broad_root {
 				return error('Trusted MCP stdio refused: configured cwd is too broad for the sandbox')
@@ -433,6 +429,19 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 		bwrap_args << '--bind'
 		bwrap_args << cwd
 		bwrap_args << cwd
+	}
+	// Re-expose the executable's install tree and symlink-chain directories
+	// read-only. These binds are narrower than restoring an entire hidden root.
+	for bind in linux_mcp_sandbox_command_binds(command, env) {
+		if bind == root || bind == data || bind == canonical_workspace
+			|| path_is_within(root, bind) || path_is_within(data, bind)
+			|| (canonical_workspace.len > 0 && path_is_within(canonical_workspace, bind)) {
+			continue
+		}
+		append_linux_bwrap_parent_dirs(mut bwrap_args, bind)
+		bwrap_args << '--ro-bind'
+		bwrap_args << bind
+		bwrap_args << bind
 	}
 	bwrap_args << '--chdir'
 	bwrap_args << cwd
@@ -742,10 +751,14 @@ fn (app &App) load_session_plugin_mcp_tools(session_id string) !([]AgentToolDefi
 		return error(err.msg())
 	}
 	for selected in active {
-		plugin_root, server := app.find_session_mcp_server(selected.plugin_name, selected.server_name,
+		plugin_root, discovered_server := app.find_session_mcp_server(selected.plugin_name, selected.server_name,
 			session.directory) or {
 			eprintln('veasel: trusted MCP server configuration is no longer available')
 			continue
+		}
+		mut server := discovered_server
+		if selected.workspace_write_access {
+			server.workspace = session.directory
 		}
 		plugin_data := if selected.plugin_name == configured_mcp_plugin_name {
 			app.configured_mcp_package_root(selected.server_name)

@@ -13,6 +13,7 @@ test("ignores an MCP inventory response after the workspace changes", async () =
   const api = {
     listConfiguredMcpServers: () => new Promise<{ servers: never[] }>((resolve) => { resolveConfigured = resolve }),
     listSessionMcpServers: () => new Promise<never[]>((resolve) => { resolveTrusted = resolve }),
+    listPlugins: async () => ({ plugins: [] }),
   } as unknown as VeaselApiClient
   const dialog = {
     replace: () => { openedDialog = true },
@@ -69,7 +70,7 @@ test("MCP actions from an open dialog stay bound to its original session and wor
   await workflows.runTrustAction(true, "configured/demo", {
     directory: "/workspace/old",
     sessionId: "old-session",
-  })
+  }, false)
 
   expect(calls).toEqual([
     { kind: "configure", directory: "/workspace/old" },
@@ -86,4 +87,18 @@ test("does not offer per-session MCP trust from the sessionless home view", () =
   }, false)
 
   expect(actions.map((action) => action.value)).toEqual(["disable", "remove"])
+})
+
+test("trusted stdio MCP exposes explicit workspace scope revocation", () => {
+  const actions = mcpServerActions({
+    name: "configured/docs",
+    transport: "stdio",
+    status: "trusted",
+    scope: "user",
+    workspaceWriteAccess: true,
+  }, true)
+
+  if (process.platform === "linux") {
+    expect(actions.map((action) => action.value)).toContain("workspace-untrust")
+  }
 })

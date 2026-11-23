@@ -40,7 +40,7 @@ const session_columns = "id, title, directory, created_at, preferred_provider, p
 // latest_schema_version is the highest migration open_store applies. Tests
 // compare against it instead of a literal so adding a migration never breaks
 // them; keep it equal to the last `if current < N` block below.
-const latest_schema_version = 33
+const latest_schema_version = 34
 
 // add_column_if_missing makes ADD COLUMN migrations re-runnable: a ledger row
 // that was removed (tests, manual repair) must not fail on a duplicate column.
@@ -258,8 +258,9 @@ pub:
 
 pub struct SessionPluginMCPServer {
 pub:
-	plugin_name string
-	server_name string
+	plugin_name            string
+	server_name            string
+	workspace_write_access bool
 }
 
 @[heap]
@@ -1242,6 +1243,31 @@ fn open_store_at(path string) !&Store {
 			return error('unable to commit agent cost budget migration')
 		}
 	}
+	if current < 34 {
+		// MCP workspace writes must be an explicit session trust scope. Existing
+		// trusted servers migrate with no workspace access and keep their prior
+		// PLUGIN_ROOT/PLUGIN_DATA sandbox behavior.
+		db.begin() or {
+			db.close() or {}
+			return error('unable to begin MCP workspace trust-scope migration')
+		}
+		add_column_if_missing(db, 'session_plugin_mcp_servers', 'workspace_write_access',
+			'INTEGER NOT NULL DEFAULT 0 CHECK (workspace_write_access IN (0, 1))') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to add MCP workspace trust-scope column')
+		}
+		db.exec('INSERT INTO schema_migrations (version) VALUES (34)') or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to record MCP workspace trust-scope migration')
+		}
+		db.commit() or {
+			db.rollback() or {}
+			db.close() or {}
+			return error('unable to commit MCP workspace trust-scope migration')
+		}
+	}
 	// Running or cancelling work may have contacted a provider or started a tool
 	// effect without a durable result, so it becomes uncertain and is never
 	// replayed. Queued parent turns retain their request for resume; child runs
@@ -1832,32 +1858,46 @@ fn (mut store Store) session_plugin_mcp_servers(session_id string) ![]SessionPlu
 	defer {
 		store.mu.unlock()
 	}
-	rows := store.db.exec_param('SELECT plugin_name, server_name FROM session_plugin_mcp_servers WHERE session_id = ? ORDER BY plugin_name, server_name',
+	rows := store.db.exec_param('SELECT plugin_name, server_name, workspace_write_access FROM session_plugin_mcp_servers WHERE session_id = ? ORDER BY plugin_name, server_name',
 		session_id)!
 	mut servers := []SessionPluginMCPServer{cap: rows.len}
 	for row in rows {
 		servers << SessionPluginMCPServer{
-			plugin_name: row.val(0)
-			server_name: row.val(1)
+			plugin_name:            row.val(0)
+			server_name:            row.val(1)
+			workspace_write_access: row.val(2).int() == 1
 		}
 	}
 	return servers
 }
 
 fn (mut store Store) set_session_plugin_mcp_server(session_id string, plugin_name string,
-	server_name string, trusted bool) ! {
+	server_name string, trusted bool, workspace_write_access bool) ! {
 	store.mu.lock()
 	defer {
 		store.mu.unlock()
 	}
 	store.db.begin()!
-	rows := store.db.exec_param_many('SELECT 1 FROM session_plugin_mcp_servers WHERE session_id = ? AND plugin_name = ? AND server_name = ?',
+	rows := store.db.exec_param_many('SELECT workspace_write_access FROM session_plugin_mcp_servers WHERE session_id = ? AND plugin_name = ? AND server_name = ?',
 		[session_id, plugin_name, server_name]) or {
 		store.db.rollback() or {}
 		return error('unable to read session plugin MCP trust')
 	}
 	exists := rows.len != 0
 	if exists == trusted {
+		if trusted && (rows[0].val(0).int() == 1) != workspace_write_access {
+			value := if workspace_write_access { '1' } else { '0' }
+			_ = store.db.exec_param_many('UPDATE session_plugin_mcp_servers SET workspace_write_access = ? WHERE session_id = ? AND plugin_name = ? AND server_name = ?',
+				[value, session_id, plugin_name, server_name]) or {
+				store.db.rollback() or {}
+				return error('unable to update session MCP workspace access')
+			}
+			_ = store.db.exec_param_many('INSERT INTO events (type, session_id) VALUES (?, ?)',
+				['session.mcp_workspace_access_updated', session_id]) or {
+				store.db.rollback() or {}
+				return error('unable to record session MCP workspace access')
+			}
+		}
 		store.db.commit() or {
 			store.db.rollback() or {}
 			return error('unable to commit session plugin MCP trust update')
@@ -1865,8 +1905,9 @@ fn (mut store Store) set_session_plugin_mcp_server(session_id string, plugin_nam
 		return
 	}
 	if trusted {
-		_ = store.db.exec_param_many('INSERT INTO session_plugin_mcp_servers (session_id, plugin_name, server_name) VALUES (?, ?, ?)',
-			[session_id, plugin_name, server_name]) or {
+		workspace_access := if workspace_write_access { '1' } else { '0' }
+		_ = store.db.exec_param_many('INSERT INTO session_plugin_mcp_servers (session_id, plugin_name, server_name, workspace_write_access) VALUES (?, ?, ?, ?)',
+			[session_id, plugin_name, server_name, workspace_access]) or {
 			store.db.rollback() or {}
 			return error('unable to trust session plugin MCP server')
 		}

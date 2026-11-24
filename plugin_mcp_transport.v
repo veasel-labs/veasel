@@ -419,15 +419,21 @@ fn start_plugin_mcp_transport_linux_sandboxed(root string, data string, cwd stri
 		bwrap_args << data
 		bwrap_args << data
 	}
-	if cwd != root && cwd != data && !path_is_within(root, cwd) && !path_is_within(data, cwd)
-		&& cwd != canonical_workspace && !(canonical_workspace.len > 0 && path_is_within(canonical_workspace, cwd)) {
+	// A configured cwd outside every already-bound tree is re-exposed
+	// READ-ONLY. Writable access is reserved for the session workspace
+	// after its explicit workspace_write_access grant (bound above):
+	// a server config must never turn an arbitrary personal directory
+	// into a writable mount just by naming it as cwd. Servers that need
+	// a writable working directory outside the workspace can use
+	// PLUGIN_DATA, which is always bound writable.
+	if linux_mcp_sandbox_cwd_needs_bind(root, data, canonical_workspace, cwd) {
 		for broad_root in ['/', '/home', '/root', '/tmp', '/usr', '/etc', '/var', '/opt'] {
 			if cwd == broad_root {
 				return error('Trusted MCP stdio refused: configured cwd is too broad for the sandbox')
 			}
 		}
 		append_linux_bwrap_parent_dirs(mut bwrap_args, cwd)
-		bwrap_args << '--bind'
+		bwrap_args << '--ro-bind'
 		bwrap_args << cwd
 		bwrap_args << cwd
 	}
@@ -1139,6 +1145,20 @@ fn linux_mcp_sandbox_link_dirs(path string) []string {
 // to a hidden root itself: only the executable's own install tree (and
 // its interpreter's, plus the symlink-chain directories) are re-exposed,
 // read-only.
+// linux_mcp_sandbox_cwd_needs_bind reports whether the configured cwd
+// still needs its own (read-only) bind: it is outside the plugin root,
+// the plugin data dir and the granted session workspace, all of which
+// are already bound by the caller.
+fn linux_mcp_sandbox_cwd_needs_bind(root string, data string, workspace string, cwd string) bool {
+	if cwd == root || cwd == data || path_is_within(root, cwd) || path_is_within(data, cwd) {
+		return false
+	}
+	if workspace.len > 0 && (cwd == workspace || path_is_within(workspace, cwd)) {
+		return false
+	}
+	return true
+}
+
 fn linux_mcp_sandbox_command_binds(command string, env map[string]string) []string {
 	resolved := linux_mcp_resolve_command(command, env)
 	if resolved.len == 0 || !os.is_file(resolved) {

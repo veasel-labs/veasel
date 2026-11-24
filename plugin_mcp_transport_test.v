@@ -969,3 +969,66 @@ fn test_linux_mcp_sandbox_command_binds_keep_path_symlink_visible() {
 		assert true
 	}
 }
+
+fn test_linux_mcp_sandbox_cwd_needs_bind_scope() {
+	root := '/tmp/plugin-root'
+	data := '/tmp/plugin-data'
+	workspace := '/home/user/project'
+	// Already covered by root/data/workspace binds: no extra bind.
+	assert !linux_mcp_sandbox_cwd_needs_bind(root, data, workspace, root)
+	assert !linux_mcp_sandbox_cwd_needs_bind(root, data, workspace, data)
+	assert !linux_mcp_sandbox_cwd_needs_bind(root, data, workspace, workspace)
+	assert !linux_mcp_sandbox_cwd_needs_bind(root, data, workspace, '${workspace}/sub')
+	assert !linux_mcp_sandbox_cwd_needs_bind(root, data, workspace, '${root}/sub')
+	// An unrelated operator-configured directory needs its own bind
+	// (granted read-only by the caller).
+	assert linux_mcp_sandbox_cwd_needs_bind(root, data, workspace, '/home/user/Other')
+	// Without a workspace grant the session directory itself also needs
+	// the read-only bind instead of silently becoming writable.
+	assert linux_mcp_sandbox_cwd_needs_bind(root, data, '', workspace)
+}
+
+fn test_mcp_stdio_sandbox_configured_cwd_is_read_only_without_workspace_grant() {
+	$if linux {
+		if !bubblewrap_available() {
+			return
+		}
+		home := os.home_dir()
+		root := os.join_path(os.temp_dir(), 'veasel-mcp-cwd-root-${uuid.new_v4().str()}')
+		data := os.join_path(os.temp_dir(), 'veasel-mcp-cwd-data-${uuid.new_v4().str()}')
+		protected := os.join_path(home, '.cache', 'veasel-mcp-protected-${uuid.new_v4().str()}')
+		os.mkdir_all(root) or { panic(err) }
+		os.mkdir_all(protected) or { panic(err) }
+		defer {
+			os.rmdir_all(root) or {}
+			os.rmdir_all(data) or {}
+			os.rmdir_all(protected) or {}
+		}
+		os.write_file(os.join_path(protected, 'keep.txt'), 'original') or { panic(err) }
+		command := os.join_path(root, 'mcp-fixture')
+		// The fixture tries to write into its cwd (the protected dir)
+		// before answering initialize. With the read-only cwd bind the
+		// write must fail while the handshake still succeeds.
+		os.write_file(command, '#!/bin/sh\nprintf escaped > escape.txt 2>/dev/null || true\nwhile IFS= read -r request; do\n  case "$request" in *initialize*) printf \'{"jsonrpc":"2.0","id":1,"result":{"sandboxed":true}}\\n\'; break ;; esac\ndone\n') or {
+			panic(err)
+		}
+		os.chmod(command, 0o700) or { panic(err) }
+		mut transport := start_plugin_mcp_transport(root, data, PluginMCPServer{
+			name:      'cwd-fixture'
+			transport: 'stdio'
+			command:   command
+			cwd:       protected
+		}) or { panic(err) }
+		defer {
+			transport.close()
+		}
+		assert transport.mcp_stdio_alive()
+		transport.send('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}') or {
+			panic(err)
+		}
+		frame := transport.receive() or { panic(err) }
+		assert frame.contains('"sandboxed":true')
+		assert !os.exists(os.join_path(protected, 'escape.txt'))
+		assert (os.read_file(os.join_path(protected, 'keep.txt')) or { '' }) == 'original'
+	}
+}

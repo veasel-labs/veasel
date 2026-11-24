@@ -359,7 +359,7 @@ run on the exact merge SHA.
 | 552 | Terminal UX/keyboard/a11y gate | veasel | IMPLEMENT | PTY size-matrix exists; full a11y gate pending |
 | 553 | Reproducible benchmarks | veasel | IMPLEMENT | Includes #673 |
 | 673 | OpenCode Responses benchmark case | veasel | IMPLEMENT | Child of #553 |
-| 691 | Installed-CLI provider adapters | veasel | IMPLEMENT | Claude/OpenCode live-proven; Codex quota-blocked, Copilot resume unverified |
+| 691 | Installed-CLI provider adapters | veasel | IMPLEMENT | PR pending: bounded native status checks verify Claude/Codex login without prompts; host reports Claude.ai MAX and ChatGPT login; quota remains unknown. OpenCode/Muse remain unverified. |
 | 692 | Focus copy-first migration | veasel | REVIEW | Substantially landed; close only after parity checklist vs #689 C/D |
 | 706 | Integrated plugin Library | veasel | IMPLEMENT | Depends on official agent-toolkit#4 + governance #10 |
 | 693 | Cozy World (P2) | veasel | IMPLEMENT | After Focus parity; PXL license audit first (207 sprites) |

@@ -15,6 +15,8 @@ pub:
 	exec                    string
 	protocol                string // stream-json|app-server|acp|unknown
 	auth_probe_path         string // '~/...' presence-only probe, '' if none
+	auth_status_args        []string // provider-owned, non-mutating local auth check
+	auth_status_kind        string // claude-json|codex-text|'' when unsupported
 	permission_modes        []string
 	session_resume_verified bool
 	usage_reporting         string // adapter-reported|not-published|unknown
@@ -23,44 +25,48 @@ pub:
 pub fn provider_cli_registry() []ProviderCliSpec {
 	return [
 		ProviderCliSpec{
-			id:                      'claude-code'
-			name:                    'Claude Code'
-			exec:                    'claude'
-			protocol:                'stream-json'
-			auth_probe_path:         '~/.claude/.credentials.json'
-			permission_modes:        ['ask', 'accept-edits', 'plan', 'bypass']
-			session_resume_verified: true             // --resume, measured claude 2.1.322 in agent-toolkit
-			usage_reporting:         'adapter-reported' // result frame usage + total_cost_usd (session-cumulative)
+			id: 'claude-code'
+			name: 'Claude Code'
+			exec: 'claude'
+			protocol: 'stream-json'
+			auth_probe_path: '~/.claude/.credentials.json'
+			auth_status_args: ['auth', 'status', '--json']
+			auth_status_kind: 'claude-json'
+			permission_modes: ['ask', 'accept-edits', 'plan', 'bypass']
+			session_resume_verified: true // --resume, measured claude 2.1.322 in agent-toolkit
+			usage_reporting: 'adapter-reported' // result frame usage + total_cost_usd (session-cumulative)
 		},
 		ProviderCliSpec{
-			id:                      'codex'
-			name:                    'OpenAI Codex'
-			exec:                    'codex'
-			protocol:                'app-server'
-			auth_probe_path:         '~/.codex/auth.json'
-			permission_modes:        ['ask', 'accept-edits', 'plan', 'bypass']
-			session_resume_verified: true          // thread/resume, measured codex-cli 0.167.2
-			usage_reporting:         'not-published' // tokenUsage last/total are not per-turn spend
+			id: 'codex'
+			name: 'OpenAI Codex'
+			exec: 'codex'
+			protocol: 'app-server'
+			auth_probe_path: '~/.codex/auth.json'
+			auth_status_args: ['login', 'status']
+			auth_status_kind: 'codex-text'
+			permission_modes: ['ask', 'accept-edits', 'plan', 'bypass']
+			session_resume_verified: true // thread/resume, measured codex-cli 0.167.2
+			usage_reporting: 'not-published' // tokenUsage last/total are not per-turn spend
 		},
 		ProviderCliSpec{
-			id:                      'opencode'
-			name:                    'OpenCode'
-			exec:                    'opencode'
-			protocol:                'acp'
-			auth_probe_path:         '~/.local/share/opencode/auth.json'
-			permission_modes:        ['ask']          // ACP approvals are ask-only; see opencode_permission_mode_supported
-			session_resume_verified: true             // session/load with safe session id
-			usage_reporting:         'adapter-reported' // prompt result input/output tokens; cost never reported
+			id: 'opencode'
+			name: 'OpenCode'
+			exec: 'opencode'
+			protocol: 'acp'
+			auth_probe_path: '~/.local/share/opencode/auth.json'
+			permission_modes: ['ask'] // ACP approvals are ask-only; see opencode_permission_mode_supported
+			session_resume_verified: true // session/load with safe session id
+			usage_reporting: 'adapter-reported' // prompt result input/output tokens; cost never reported
 		},
 		ProviderCliSpec{
-			id:                      'muse'
-			name:                    'Muse Code'
-			exec:                    'muse'
-			protocol:                'acp' // `muse acp`, verified live against Muse Code 1.4.20 (initialize + session/new)
-			auth_probe_path:         '~/.config/muse/auth.json'
-			permission_modes:        ['ask'] // runner forces mode=onRequest; Muse defaults sessions to allowAll
-			session_resume_verified: false     // loadSession advertised live, resume path not yet exercised
-			usage_reporting:         'unknown' // prompt-result usage not yet measured for Muse
+			id: 'muse'
+			name: 'Muse Code'
+			exec: 'muse'
+			protocol: 'acp' // `muse acp`, verified live against Muse Code 1.4.20 (initialize + session/new)
+			auth_probe_path: '~/.config/muse/auth.json'
+			permission_modes: ['ask'] // runner forces mode=onRequest; Muse defaults sessions to allowAll
+			session_resume_verified: false // loadSession advertised live, resume path not yet exercised
+			usage_reporting: 'unknown' // prompt-result usage not yet measured for Muse
 		},
 	]
 }

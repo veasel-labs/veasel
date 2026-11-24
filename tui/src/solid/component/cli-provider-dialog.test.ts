@@ -23,7 +23,27 @@ test("CLI runner picker offers the default and installed providers with honest a
     provider({ id: "codex", name: "Codex", installed: false }),
   ])
   expect(options.map((option) => option.value)).toEqual(["", "opencode"])
-  expect(options[1]?.description).toContain("auth file detected; sign-in not verified")
+  expect(options[1]?.description).toContain("credentials detected; sign-in unverified")
+})
+
+test("CLI runner picker identifies verified native subscription login without claiming quota", () => {
+  const options = cliProviderOptions([
+    provider({
+      id: "claude-code",
+      name: "Claude Code",
+      auth_state: "verified",
+      auth_method: "claude.ai",
+      account_mode: "max",
+    }),
+  ])
+  expect(options[1]?.description).toContain("signed in with Claude.ai · MAX plan; quota unknown")
+})
+
+test("CLI runner picker keeps file presence distinct from a reported sign-out", () => {
+  const present = cliProviderOptions([provider({ auth_state: "probe-present" })])
+  const signedOut = cliProviderOptions([provider({ auth_state: "signed-out" })])
+  expect(present[1]?.description).toContain("credentials detected; sign-in unverified")
+  expect(signedOut[1]?.description).toContain("native CLI reports signed out")
 })
 
 test("CLI runner picker fails closed when no CLI is installed", () => {

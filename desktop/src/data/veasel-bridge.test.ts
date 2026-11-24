@@ -319,7 +319,7 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(providers.every((provider) => provider.auth === 'unknown')).toBe(true);
   });
 
-  it('maps server provider facts without ever claiming a verified sign-in', async () => {
+  it('maps verified native sign-in while keeping file presence unverified', async () => {
     const bridge = createVeaselFocusBridge({
       baseUrl: 'http://veasel.test',
       fetch: fakeFetch({
@@ -333,6 +333,9 @@ describe('veasel Focus bridge HTTP behavior', () => {
             version: 'codex-cli 0.169.0',
             auth_probe_present: true,
             auth_state: 'probe-present',
+            auth_method: '',
+            account_mode: '',
+            auth_error: '',
             permission_modes: ['ask'],
             session_resume_verified: true,
             usage_reporting: 'not-published',
@@ -346,6 +349,9 @@ describe('veasel Focus bridge HTTP behavior', () => {
             version: '',
             auth_probe_present: false,
             auth_state: 'probe-missing',
+            auth_method: '',
+            account_mode: '',
+            auth_error: '',
             permission_modes: ['ask'],
             session_resume_verified: true,
             usage_reporting: 'adapter-reported',
@@ -360,9 +366,39 @@ describe('veasel Focus bridge HTTP behavior', () => {
     expect(codex?.auth).toBe('unknown');
     expect(codex?.capabilities.sessions).toBe(true);
     const opencode = providers.find((provider) => provider.id === 'opencode');
-    expect(opencode?.auth).toBe('signed-out');
+    expect(opencode?.auth).toBe('unknown');
     // ACP is a wired session protocol in the backend, installed or not.
     expect(opencode?.capabilities.sessions).toBe(true);
+  });
+
+  it('shows a provider-reported Claude.ai login without exposing account identity', async () => {
+    const bridge = createVeaselFocusBridge({
+      baseUrl: 'http://veasel.test',
+      fetch: fakeFetch({
+        '/v1/providers/cli': [
+          {
+            id: 'claude-code',
+            name: 'Claude Code',
+            exec: 'claude',
+            protocol: 'stream-json',
+            installed: true,
+            version: '2.1.330',
+            auth_probe_present: true,
+            auth_state: 'verified',
+            auth_method: 'claude.ai',
+            account_mode: 'max',
+            auth_error: '',
+            permission_modes: ['ask', 'accept-edits'],
+            session_resume_verified: true,
+            usage_reporting: 'adapter-reported',
+          },
+        ],
+      }),
+    });
+    const claude = (await bridge.providers()).find((provider) => provider.id === 'claude');
+    expect(claude?.auth).toBe('ready');
+    expect(claude?.authDetail).toContain('Signed in with Claude.ai · MAX plan');
+    expect(claude?.authDetail).toContain('Quota is not reported');
   });
 });
 

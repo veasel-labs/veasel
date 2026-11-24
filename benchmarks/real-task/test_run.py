@@ -24,6 +24,11 @@ SPEC = importlib.util.spec_from_file_location("real_task_runner", SCRIPT)
 runner = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(runner)
+SANDBOX_SCRIPT = SCRIPT.with_name("benchmark_agent_sandbox.py")
+SANDBOX_SPEC = importlib.util.spec_from_file_location("benchmark_agent_sandbox", SANDBOX_SCRIPT)
+sandbox = importlib.util.module_from_spec(SANDBOX_SPEC)
+assert SANDBOX_SPEC.loader is not None
+SANDBOX_SPEC.loader.exec_module(sandbox)
 
 SAFE_PREFLIGHT_COST = (
     {"conservative_max_cost_usd": "0.08601600"},
@@ -31,11 +36,8 @@ SAFE_PREFLIGHT_COST = (
 )
 
 
-def make_isolation_wrapper(root: Path) -> tuple[Path, str]:
-    wrapper = root / "operator-isolation-wrapper"
-    wrapper.write_text('#!/bin/sh\n[ "$1" = "--" ] || exit 64\nshift\nexec "$@"\n')
-    wrapper.chmod(0o700)
-    return wrapper, hashlib.sha256(wrapper.read_bytes()).hexdigest()
+def make_isolation_wrapper(_root: Path) -> tuple[Path, str]:
+    return runner.BENCHMARK_ISOLATION_WRAPPER, runner.BENCHMARK_ISOLATION_WRAPPER_SHA256
 
 
 class IsolationWrapperTests(unittest.TestCase):
@@ -45,15 +47,49 @@ class IsolationWrapperTests(unittest.TestCase):
             wrapper, digest = make_isolation_wrapper(root)
             with self.assertRaisesRegex(ValueError, "required"):
                 runner.validated_isolation_wrapper(argparse.Namespace())
-            with self.assertRaisesRegex(ValueError, "does not match"):
+            with self.assertRaisesRegex(ValueError, "trusted repository pin"):
                 runner.validated_isolation_wrapper(argparse.Namespace(
                     isolation_wrapper=wrapper, isolation_wrapper_sha256="0" * 64,
                 ))
             actual_path, actual_digest = runner.validated_isolation_wrapper(argparse.Namespace(
                 isolation_wrapper=wrapper, isolation_wrapper_sha256=digest,
             ))
+            untrusted_wrapper = root / "operator-isolation-wrapper"
+            untrusted_wrapper.write_text('#!/bin/sh\n[ "$1" = "--" ] || exit 64\nshift\nexec "$@"\n')
+            untrusted_wrapper.chmod(0o700)
+            caller_computed_digest = hashlib.sha256(untrusted_wrapper.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "trusted repository pin"):
+                runner.validated_isolation_wrapper(argparse.Namespace(
+                    isolation_wrapper=untrusted_wrapper,
+                    isolation_wrapper_sha256=caller_computed_digest,
+                ))
         self.assertEqual(actual_path, wrapper.resolve())
         self.assertEqual(actual_digest, digest)
+
+    def test_bwrap_rejects_operator_supplied_executable_shim(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            shim = Path(temp_dir) / "bwrap"
+            shim.write_text("#!/bin/sh\nexit 0\n")
+            shim.chmod(0o700)
+            with self.assertRaisesRegex(ValueError, "trusted system binary"):
+                runner.validated_bwrap(shim)
+
+    @unittest.skipUnless(Path("/usr/bin/bwrap").exists(), "system Bubblewrap unavailable")
+    def test_bwrap_accepts_only_root_owned_nonwritable_system_binary(self):
+        bwrap = runner.validated_bwrap("/usr/bin/bwrap")
+        info = bwrap.stat()
+        self.assertEqual(bwrap, Path("/usr/bin/bwrap").resolve())
+        self.assertEqual(info.st_uid, 0)
+        self.assertFalse(info.st_mode & (runner.stat.S_IWGRP | runner.stat.S_IWOTH))
+        self.assertEqual(sandbox._trusted_bwrap("/usr/bin/bwrap"), bwrap)
+
+    def test_sandbox_wrapper_rejects_operator_supplied_bwrap_shim(self):
+        with tempfile.TemporaryDirectory(dir=Path.home()) as temp_dir:
+            shim = Path(temp_dir) / "bwrap"
+            shim.write_text("#!/bin/sh\nexit 0\n")
+            shim.chmod(0o700)
+            with self.assertRaisesRegex(ValueError, "trusted system binary"):
+                sandbox._trusted_bwrap(str(shim))
 
     def test_agent_command_is_always_passed_through_wrapper(self):
         self.assertEqual(
@@ -115,6 +151,10 @@ class IsolationWrapperTests(unittest.TestCase):
                 )
             check = next(item for item in complete["checks"] if item["name"] == "responses_proxy_live_isolation")
             self.assertTrue(check["passed"], check)
+            self.assertEqual(
+                check["actual"]["outer_wrapper_trust"],
+                "reviewed source SHA-256 pin in run.py",
+            )
             with patch.object(runner, "install_opencode_shell_wrapper",
                               return_value=(runner.OPEN_CODE_SHELL_WRAPPER,
                                             runner.OPEN_CODE_SHELL_WRAPPER_SHA256)):

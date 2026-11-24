@@ -54,6 +54,9 @@ IMPORTED_PRIOR_SPEND_NOTE = (
 )
 OPEN_CODE_SHELL_WRAPPER = ROOT / "opencode-shell-sandbox.sh"
 OPEN_CODE_SHELL_WRAPPER_SHA256 = "71c2acbfd29a9ebad5634060418b9dfed4ea8626fbdb0ba0c32e8bc5258e7388"
+# Review the sandbox source and its boundary tests before changing this identity pin.
+BENCHMARK_ISOLATION_WRAPPER = ROOT / "benchmark_agent_sandbox.py"
+BENCHMARK_ISOLATION_WRAPPER_SHA256 = "eef14cf72151a6f1e426b3b20701db72a3211bac0c4985538a976cc0150e9490"
 REMOTE_CASE_PINS = {
     "veasel-labs/website#173-muse-spark-1.3-contributor-veasel-0.79.5": {
         "case_sha256": "5db9f79592bad398135f5f724938dc57b6e096c1c12e8470deaf56b0ed06c9af",
@@ -1167,13 +1170,16 @@ def build_command(agent: str, binary: str, case: dict[str, Any], workspace: Path
 
 
 def validated_isolation_wrapper(args: argparse.Namespace) -> tuple[Path, str]:
-    """Require the operator's pinned launcher that enforces task isolation."""
+    """Require the reviewed repository launcher and its independently pinned digest."""
     wrapper_arg = getattr(args, "isolation_wrapper", None)
-    expected_hash = getattr(args, "isolation_wrapper_sha256", None)
-    if not wrapper_arg or not expected_hash:
-        raise ValueError("an operator-managed isolation wrapper and its SHA-256 are required")
-    if len(expected_hash) != 64 or any(char not in "0123456789abcdefABCDEF" for char in expected_hash):
+    supplied_hash = getattr(args, "isolation_wrapper_sha256", None)
+    expected_hash = BENCHMARK_ISOLATION_WRAPPER_SHA256
+    if not wrapper_arg or not supplied_hash:
+        raise ValueError("the reviewed isolation wrapper path and SHA-256 assertion are required")
+    if len(supplied_hash) != 64 or any(char not in "0123456789abcdefABCDEF" for char in supplied_hash):
         raise ValueError("isolation wrapper SHA-256 must be 64 hexadecimal characters")
+    if supplied_hash.lower() != expected_hash:
+        raise ValueError("isolation wrapper SHA-256 does not match the trusted repository pin")
     wrapper_input = Path(wrapper_arg).expanduser()
     if not wrapper_input.is_absolute():
         raise ValueError("isolation wrapper path must be absolute")
@@ -1181,8 +1187,8 @@ def validated_isolation_wrapper(args: argparse.Namespace) -> tuple[Path, str]:
     if not wrapper.is_file() or not os.access(wrapper, os.X_OK):
         raise ValueError("isolation wrapper must be an executable regular file")
     actual_hash = hashlib.sha256(wrapper.read_bytes()).hexdigest()
-    if actual_hash.lower() != expected_hash.lower():
-        raise ValueError("isolation wrapper SHA-256 does not match the reviewed operator pin")
+    if actual_hash != expected_hash:
+        raise ValueError("isolation wrapper does not match the trusted repository pin")
     return wrapper, actual_hash
 
 
@@ -1193,6 +1199,12 @@ def validated_bwrap(path_value: str | Path) -> Path:
     resolved = path.resolve(strict=True)
     if not resolved.is_file() or not os.access(resolved, os.X_OK):
         raise ValueError("Bubblewrap must be an executable regular file")
+    trusted_path = Path("/usr/bin/bwrap").resolve(strict=True)
+    if resolved != trusted_path:
+        raise ValueError("Bubblewrap must resolve to the trusted system binary /usr/bin/bwrap")
+    info = resolved.stat()
+    if info.st_uid != 0 or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise ValueError("trusted Bubblewrap must be root-owned and not group/world-writable")
     return resolved
 
 
@@ -1508,6 +1520,7 @@ def preflight(
                     and shell_config and wrapper.is_file() and bool(bwrap) and task_root.is_dir()
                 isolation_report.update({
                     "outer_wrapper_sha256": actual_wrapper_hash,
+                    "outer_wrapper_trust": "reviewed source SHA-256 pin in run.py",
                     "shell_wrapper_sha256": shell_hash,
                     "shell_config_wired": shell_config,
                     "task_root": str(task_root),
@@ -1983,7 +1996,7 @@ def main() -> int:
         sub.add_argument("--isolation-wrapper", type=Path,
                          help="operator-reviewed outer launcher wrapper")
         sub.add_argument("--isolation-wrapper-sha256",
-                         help="SHA-256 pin for the operator-reviewed outer launcher wrapper")
+                         help="asserted SHA-256; must equal the reviewed source pin in run.py")
         sub.add_argument("--task-root", type=Path,
                          help="existing persistent data-dir/workspaces/veasel-real-task-* clone for preflight")
         if action == "run":

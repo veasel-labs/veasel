@@ -13,14 +13,61 @@ from GitHub on 2026-11-24 UTC; PR counts include drafts.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `b686997effd6cb6bb0683d8ddc8fa421670e517d` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | #805 merged; exact-main CI `45289019479` still running. #804 includes implementation commit `995c675` and a ledger refresh; current-branch checks are queued |
-| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13 draft) | #14 merged; truthful core hook/network metadata; #13 creative-studio by-reference awaits independent review per owner |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 0 | #804/#806 merged; CodeQL `45307427273` passed; exact-main CI `45307427282` pending behind prior run `45304821923` (Windows batch 3 active) |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; exact-main registry validation `45273303142` passed; #13 is open, not draft, and awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
 | veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | No open work |
 | veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work |
 | ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 0 | Umbrella issue still open |
-| **Total** | | **5** | **3** | No zero-backlog claim |
+| **Total** | | **5** | **1** | No zero-backlog claim |
+
+Current Veasel main is four commits beyond the published release source
+`1d041d86a19275b6c73e2c1750890dacaf18dd97`. The latest two feature changes
+are PR #804 merged at `6bf9846454ed9ce6e3dbb2a2038ef20264789984` (SQLite store
+locking for CLI approval/resume) and PR #806 merged at
+`eab88d598b5ab8329dabffcd45d35aa00e2a4cab` (trusted sandbox executable
+pinning). Both PR-head CI runs passed on Linux,
+macOS, and Windows; exact-main CI for the latest SHA is queued and must pass
+before the ecosystem can claim a green latest main or refresh the release.
+The previous-main run `45304821923` is still active in Windows backend batch
+3; its success is not a substitute for latest-SHA run `45307427282`.
+
+Open Veasel work (no closure implied):
+
+- [#549](https://github.com/veasel-labs/veasel/issues/549) — product mission;
+  native packaged/provider acceptance remains incomplete.
+- [#550](https://github.com/veasel-labs/veasel/issues/550) — Linux evidence is
+  recorded, but packaged real-provider journeys on macOS and Windows remain
+  unverified.
+- [#673](https://github.com/veasel-labs/veasel/issues/673) — benchmark tooling
+  and pinned binaries are prepared. No paid request was made: the approved Meta
+  API key is currently absent from the profile and the `VEASEL_MODEL_API_KEY`,
+  `META_API_KEY`, and `MUSE_API_KEY` environment variables. Preflight and the
+  matched run remain blocked until the key is made available; aggregate cap is
+  USD 5 including the previously recorded approximate USD 0.35444 spend.
+- [#689](https://github.com/veasel-labs/veasel/issues/689) — parent epic stays
+  open until all repository, release, provider, review, and issue acceptance is
+  complete; close last.
+
+Open non-Veasel items:
+
+- [official toolkit #13](https://github.com/veasel-labs/agent-toolkit/pull/13)
+  — user explicitly chose to leave it pending. Its first-party creative-studio
+  registry entry remains subject to an independent permission/trust review;
+  do not self-approve or merge while review is outstanding.
+- [personal toolkit #1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838)
+  — Creative Studio umbrella remains open. Its listed remaining acceptance
+  includes a second-client real-provider edit, guest-image QA render scenario,
+  live graphical integrations, durable flagship-film delivery, and external
+  workstation review. This issue remains in the seven-repository open-issue
+  count until those outcomes are completed or validly superseded.
+
+Human/external dependencies currently evidenced: (1) an independent reviewer
+for official toolkit #13; (2) the authorized Meta credential for #673 (do not
+put credentials in GitHub); (3) macOS/Windows machines with provider accounts
+for #550; and (4) Apple/Windows signing credentials only if signed installers
+are required. Installers continue to be represented as unsigned.
 
 Owner decisions recorded: registry #10 approved the first-party exception for
 `veasel-essentials`; official registry PR #13 remains pending and is not

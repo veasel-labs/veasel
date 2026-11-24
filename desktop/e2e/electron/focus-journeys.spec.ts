@@ -254,7 +254,9 @@ test('J1 clean first launch lists the installed CLI providers', async ({}, testI
   expect(readCliLog(env).filter((entry) => entry.event === 'spawn')).toHaveLength(0);
   record(testInfo, 'J1', 'GET /v1/providers/cli installed ids and native auth checks; no CLI turn spawned', {
     installedCount: installed.length,
-    authChecks,
+    authCheckCount: authChecks.length,
+    claudeAuthChecks: authChecks.filter((cli) => cli === 'claude').length,
+    codexAuthChecks: authChecks.filter((cli) => cli === 'codex').length,
   });
 });
 

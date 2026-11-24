@@ -36,7 +36,7 @@ struct ProviderCliStatusCommandResult {
 }
 
 struct ClaudeAuthStatusResponse {
-	logged_in         ?bool @[json: 'loggedIn']
+	logged_in         ?bool  @[json: 'loggedIn']
 	auth_method       string @[json: 'authMethod']
 	subscription_type string @[json: 'subscriptionType']
 }
@@ -65,20 +65,20 @@ fn provider_cli_status_with_auth(spec ProviderCliSpec, installed_path string, ve
 		'probe-missing'
 	}
 	return ProviderCliStatus{
-		id: spec.id
-		name: spec.name
-		exec: spec.exec
-		protocol: spec.protocol
-		installed: installed_path.len > 0
-		version: version.trim_space()
-		auth_probe_present: auth_probe_present
-		auth_state: state
-		auth_method: auth.method
-		account_mode: auth.account_mode
-		auth_error: auth.error
-		permission_modes: spec.permission_modes
+		id:                      spec.id
+		name:                    spec.name
+		exec:                    spec.exec
+		protocol:                spec.protocol
+		installed:               installed_path.len > 0
+		version:                 version.trim_space()
+		auth_probe_present:      auth_probe_present
+		auth_state:              state
+		auth_method:             auth.method
+		account_mode:            auth.account_mode
+		auth_error:              auth.error
+		permission_modes:        spec.permission_modes
 		session_resume_verified: spec.session_resume_verified
-		usage_reporting: spec.usage_reporting
+		usage_reporting:         spec.usage_reporting
 	}
 }
 
@@ -116,8 +116,8 @@ fn provider_cli_auth_result(spec ProviderCliSpec, exit_code int, output string) 
 					else { '' }
 				}
 				return ProviderCliAuthResult{
-					state: 'verified'
-					method: method
+					state:        'verified'
+					method:       method
 					account_mode: provider_cli_verified_account_mode(response.subscription_type)
 				}
 			}
@@ -134,13 +134,13 @@ fn provider_cli_auth_result(spec ProviderCliSpec, exit_code int, output string) 
 			}
 			if line.starts_with('logged in using chatgpt') {
 				return ProviderCliAuthResult{
-					state: 'verified'
+					state:  'verified'
 					method: 'chatgpt'
 				}
 			}
 			if line.starts_with('logged in using api key') {
 				return ProviderCliAuthResult{
-					state: 'verified'
+					state:  'verified'
 					method: 'api-key'
 				}
 			}
@@ -212,7 +212,7 @@ fn run_provider_cli_status_command(executable string, args []string) !ProviderCl
 		return error('status command output limit exceeded')
 	}
 	return ProviderCliStatusCommandResult{
-		code: code
+		code:   code
 		stdout: output
 	}
 }

@@ -2,14 +2,14 @@ module main
 
 fn status_test_spec() ProviderCliSpec {
 	return ProviderCliSpec{
-		id: 'codex'
-		name: 'OpenAI Codex'
-		exec: 'codex'
-		protocol: 'app-server'
-		auth_probe_path: '~/.codex/auth.json'
-		permission_modes: ['ask', 'accept-edits']
+		id:                      'codex'
+		name:                    'OpenAI Codex'
+		exec:                    'codex'
+		protocol:                'app-server'
+		auth_probe_path:         '~/.codex/auth.json'
+		permission_modes:        ['ask', 'accept-edits']
 		session_resume_verified: true
-		usage_reporting: 'not-published'
+		usage_reporting:         'not-published'
 	}
 }
 

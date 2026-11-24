@@ -2,7 +2,7 @@
 
 Epic: [veasel#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Architecture: [ADR-0001](../adr/0001-one-product-one-runtime.md) ·
-Audit: 2026-11-23 · Method: GitHub API open-issue/open-PR enumeration, exact
+Audit: 2026-11-24 · Method: GitHub API open-issue/open-PR enumeration, exact
 `main` SHA lookup, latest-main check runs, release and updater inspection.
 
 The prior November 15 audit is retained at
@@ -13,18 +13,18 @@ proposed dispositions are historical and must not be used as current state.
 
 | Repository | `main` SHA | Open issues | Open PRs | Latest relevant evidence |
 | --- | --- | ---: | ---: | --- |
-| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | dd105961483d8646c652a7ad898dd0ce9ab5914a | 4 | 1 | Exact-main CI [#45224522194](https://github.com/veasel-labs/veasel/actions/runs/45224522194) passed on this SHA. PR [#803](https://github.com/veasel-labs/veasel/pull/803) is the current draft for installed CLI provider selection; its Linux, macOS and Windows backend checks, including Windows auth, now pass in [#45249265166](https://github.com/veasel-labs/veasel/actions/runs/45249265166). Desktop package and release-only jobs were skipped for this PR; it is not a release validation. #550 remains open. |
-| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | 2096315d10ccdb19b1cb8ea071986bd2c641eb89 | 0 | 1 | Owner-approved first-party `veasel-essentials` exception merged in [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12). [PR #13](https://github.com/veasel-labs/agent-toolkit/pull/13) remains open and non-installable by the owner's decision; independent review is still required, and `network:false` conflicts with the vendored `brag` skill's declared network permission. |
-| [veasel-labs/website](https://github.com/veasel-labs/website) | a195dfcd34a0934a78cb07d3499c95e98d110a38 | 0 | 0 | Release metadata PR #227 merged for v0.101.3-next.0; exact-head CI [#45176846478](https://github.com/veasel-labs/website/actions/runs/45176846478), exact-main CI [#45177649535](https://github.com/veasel-labs/website/actions/runs/45177649535), and deployment [#45177649646](https://github.com/veasel-labs/website/actions/runs/45177649646) passed. |
-| [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | a84ae2f260c17ec33872c2dd6bfc59003951b3ed | 0 | 0 | Cask update PR #67 merged for v0.101.3-next.0; exact-head install/upgrade/runtime/uninstall CI [#45177514872](https://github.com/veasel-labs/homebrew-tap/actions/runs/45177514872) and exact-main CI [#45177863518](https://github.com/veasel-labs/homebrew-tap/actions/runs/45177863518) passed. |
-| [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | 21d52c32f1d449c5cf2fb216b980e7870646d459 | 0 | 0 | AUR mirror PR #69 merged for v0.101.3-next.0; publisher run [#45176500717](https://github.com/veasel-labs/aur-package/actions/runs/45176500717) built and published it to AUR, and exact-main Package CI [#45177921284](https://github.com/veasel-labs/aur-package/actions/runs/45177921284) passed. PR event was `action_required`, not counted as a pass. |
+| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | eab88d598b5ab8329dabffcd45d35aa00e2a4cab | 4 | 1 | Core exact-main CI [#45307427282](https://github.com/veasel-labs/veasel/actions/runs/45307427282) passed on this SHA, including Linux/macOS/Windows backend and packaging. Release `v0.102.1-next.0` is sourced from this SHA. PR [#807](https://github.com/veasel-labs/veasel/pull/807) is documentation-only; exact-head backends passed in [#45322750555](https://github.com/veasel-labs/veasel/actions/runs/45322750555), while conditional packaging/release jobs were skipped. |
+| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | 8205dd0e09ea6c74342503152b3fc71325be1351 | 0 | 1 | Exact-main Validate [#45273303142](https://github.com/veasel-labs/agent-toolkit/actions/runs/45273303142) passed. Owner-approved first-party `veasel-essentials` exception is resolved by #10/#12. Community [PR #13](https://github.com/veasel-labs/agent-toolkit/pull/13) remains non-installable and pending independent review at head `6be6dc8462d32e3c1c7a17806a051b3a0d456179`; the permission mismatch is unresolved. |
+| [veasel-labs/website](https://github.com/veasel-labs/website) | 40f78446b02517abd452abc256e1c29e9ce58a8d | 0 | 0 | Release metadata PR #228 merged for v0.102.1-next.0. Exact-main CI [#45326905628](https://github.com/veasel-labs/website/actions/runs/45326905628) and deployment [#45326905565](https://github.com/veasel-labs/website/actions/runs/45326905565) passed. |
+| [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | 5b732843aba04fcfd9bc21c0a77a29d53b08d791 | 0 | 0 | Cask update PR #68 merged for v0.102.1-next.0; current-main CI [#45326961698](https://github.com/veasel-labs/homebrew-tap/actions/runs/45326961698) passed. PR-head install/upgrade/runtime/uninstall smoke passed before merge. |
+| [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | bb2090236f76dd91d0aac3212a74e5e1b324fdcf | 0 | 0 | AUR mirror PR #70 merged for v0.102.1-next.0; current-main Package CI [#45327011543](https://github.com/veasel-labs/aur-package/actions/runs/45327011543) passed. Build/install/upgrade/uninstall smoke passed before merge. |
 | [veasel-labs/.github](https://github.com/veasel-labs/.github) | 7097e534eeafae932bcf427e12b0a5df398d9894 | 0 | 0 | No organization-level change is currently required. |
-| [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | e050f5668ca7d462b9e3189f2834e20ab9f3efbc | 1 | 0 | Issue [#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) remains open. PR #1844 replaced the restricted Vercel wrapper with an offline first-party skill and merged at this SHA; #1839 was closed after its changes were accounted for. Exact-main Validate [#45205639087](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205639087) passed in 30m59s; CodeQL [#45205638952](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205638952), Web [#45205638789](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205638789), and MegaLinter [#45205638802](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205638802) passed on the same SHA. |
-| **Total** | — | **5** | **3** | Four Veasel issues and personal Toolkit #1838 remain open. Open PRs: Veasel #803/#804 and official registry #13. |
+| [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | e050f5668ca7d462b9e3189f2834e20ab9f3efbc | 1 | 1 | Issue [#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) remains open. PR [#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) transfers Creative Studio resources to Veasel's portable Toolkit CLI; current head `b68b2193adda3c764bb343294b79a967131af3d1` is in CI. Main Validate [#45205639087](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205639087) passed on the main SHA. |
+| **Total** | — | **5** | **3** | Four Veasel issues and personal Toolkit #1838 remain open. Open PRs: Veasel #807, official registry #13, and personal Toolkit #1845. |
 
-This snapshot was refreshed on 2026-11-23 by re-querying all seven GitHub repositories. It records five open issues and three open PRs: Veasel #803/#804 and official registry #13. Personal Toolkit PR #1844 merged at `e050f5668ca7d462b9e3189f2834e20ab9f3efbc`; #1839 was closed after its content was accounted for. Exact-main Validate [#45205639087](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205639087), CodeQL [#45205638952](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205638952), Web [#45205638789](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205638789), and MegaLinter [#45205638802](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45205638802) all passed on that exact SHA. Veasel main is `dd105961483d8646c652a7ad898dd0ce9ab5914a`; exact-main run [#45224522194](https://github.com/veasel-labs/veasel/actions/runs/45224522194) passed on that SHA. PR #803's current exact-head run [#45249265166](https://github.com/veasel-labs/veasel/actions/runs/45249265166) passed Linux/macOS/Windows backend checks, including Windows authentication, while PR-only package and release jobs were skipped. New PR #804 is based on that main SHA; its exact current head is `aefa8da` and required checks are pending. The packaged MCP smoke used a local deterministic provider and a separately approved read/write boundary probe; no paid provider call occurred. Current issue/PR state is authoritative over older historical counts.
+This snapshot was re-queried on 2026-11-24. Main SHAs, issue/PR counts, and current open items are listed above. Veasel core CI and CodeQL passed on `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`; this is distinct from the green main-CI watchdog. Website, Homebrew and AUR now track the `v0.102.1-next.0` release sourced from that SHA. The owner-approved registry exception is recorded; community PR #13 remains fail-closed at the owner's direction. Personal Toolkit PR #1845's previous head failed packaged V compilation because the pinned V toolchain does not include `sync.new_lazy_lock`; the current head replaces it with pinned-compatible `sync.Mutex`, and exact-head validation is pending. Current issue/PR state is authoritative over older historical counts.
 
-### Latest release artifact smoke
+### Latest fully downloaded artifact smoke (historical release)
 
 Downloaded the Linux CLI archive for `v0.101.3-next.0` from the immutable release. Its SHA256 (`d3d4c907183ba8ab8852f8d8b885aedb11c1f783c7ce8d6782ec53f4267a838a`) matched both `SHA256SUMS` and `release.json`; the manifest source and packaged `build.json` record `1d041d86a19275b6c73e2c1750890dacaf18dd97`. The extracted binary SHA256 is `368bdd478e2f806ce1f484043c6d078070e49bfaa26bff8dd0897fb3695a7d2e` and reports `0.101.3-next.0`. In a fresh temporary `VEASEL_DATA_DIR`, the packaged backend started on an isolated local port, `GET /v1/health` returned `{"healthy":true,"auth":"bearer","protocol":1}`, and the generated API token had mode `0600`. This is a packaged backend/health smoke only: no provider call, GUI journey, user-profile install, upgrade, or TUI continuation is claimed. The host's pre-existing PATH binary reports `0.79.13-next.0`; it was not modified. Full sanitized record: [#550 comment](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7106642142).
 
@@ -47,12 +47,21 @@ release artifact and packaged provider acceptance gates.
 
 | PR | State / owner | Dependencies and remaining acceptance | Evidence / destination | Required action |
 | --- | --- | --- | --- | --- |
-| [Veasel #803](https://github.com/veasel-labs/veasel/pull/803) | OPEN DRAFT · installed CLI provider picker · branch `ulisesjcf/550-tui-cli-provider-picker` | Adds per-session installed CLI selection and provider readiness details. #550 remains open for packaged multi-platform real-provider journey evidence. | Exact-head run [#45249265166](https://github.com/veasel-labs/veasel/actions/runs/45249265166): Linux, macOS and Windows backend checks passed, including Windows auth; TUI, Desktop, security and TypeScript checks passed. The Windows ConPTY smoke also passed. PR package jobs and release publish were skipped by workflow conditions; no packaged real-provider journey is claimed. | REVIEW/MERGE only after maintainer review; then verify exact-main CI. |
-| [Veasel #804](https://github.com/veasel-labs/veasel/pull/804) | OPEN DRAFT · durable installed-CLI tool approvals in the visual TUI · head `aefa8da` | Built on main `dd105961`; allows the TUI to review requests generated during an installed-provider turn. A backend already running without interactive approvals remains fail-closed; explicit operator opt-out is preserved. #550 remains open until packaged real-provider workflows are rerun. | Local V `main_test.v` passed with 1,368.982 ms runtime; TUI typecheck passed; full TUI suite passed 687 tests across 141 files including the PTY keyboard exercise; Bun audit found no high/critical vulnerabilities. Exact-head GitHub checks are pending; no provider journey or release package is claimed. | REVIEW/VALIDATE exact head, then merge only through branch policy and verify exact-main CI. |
-| [official registry #13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN · community Creative Studio plugin by reference · head `ff6a56316dfa00ce9147f54d4880a2ad3c6af6cf` | User decision: leave pending. Requires independent maintainer review. Source is pinned at `cc5c60d48c18ff6b5788c08f38f681c933505fbe`; no source is copied. `network:false` conflicts with `skills/brag/SKILL.md` declaring `security.network:true`. | Registry CI [#45112445890](https://github.com/veasel-labs/agent-toolkit/actions/runs/45112445890) passed; entry remains `installable:false`. | Keep pending and fail-closed. Correct permission metadata, audit capabilities/provenance, then obtain independent review. Never self-approve or mark installable before review. |
+| [Veasel #807](https://github.com/veasel-labs/veasel/pull/807) | OPEN · documentation-only live ledger refresh · head `bcee8a76299858b0d567a36d4b3ec3af16db6f96` | Updates consolidation evidence and open-work accounting. No product code changes. | Exact-head run [#45322750555](https://github.com/veasel-labs/veasel/actions/runs/45322750555) passed Linux/macOS/Windows backend, six Linux shards, Desktop, Terminal and security. Conditional package/release jobs skipped for docs-only changes. | Refresh this snapshot again before merge; then merge under repo policy and verify the ledger commit is on `main`. |
+| [official registry #13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN · community Creative Studio plugin by reference · head `6be6dc8462d32e3c1c7a17806a051b3a0d456179` | Owner decision: leave pending until independent review. Source is pinned by reference; no source is copied. `network:false` conflicts with `skills/brag/SKILL.md` declaring `security.network:true`. | Entry remains non-installable. Registry validation has passed on prior revisions, but permission mismatch and independent review remain unresolved. | Keep pending and fail-closed. Correct permission metadata, audit provenance/capabilities, then obtain independent review. Never self-approve or mark installable before review. |
+| [personal Toolkit #1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) | OPEN · Creative Studio embedded-resource build fix · head `b68b2193adda3c764bb343294b79a967131af3d1` | Replaces 2,347 generated `$embed_file` constants with a deterministic compressed archive and lazy indexed reads, retaining offline assets. Previous head was canceled in macOS package jobs after 60m; the first optimization attempt then exposed use of an API absent from the pinned V version. Current head uses the pinned `sync.Mutex` API. | Local V focused tests pass; production CLI built under a 2 GiB `systemd-run` limit and listed bundled skills from `/tmp` (outside the source checkout). Exact-head CI [#45335348877](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45335348877) and Release [#45335348595](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45335348595) are running; no package pass is claimed yet. | Validate exact-head V 0.5.2 CI and finish macOS Intel/ARM packaging within declared job limits. Merge only after all required exact-head checks pass. |
 
 Merged during this audit:
 
+- Veasel [#804](https://github.com/veasel-labs/veasel/pull/804) merged at
+  `6bf9846454ed9ce6e3dbb2a2038ef20264789984`. It carries the original runner
+  picker commit from [#803](https://github.com/veasel-labs/veasel/pull/803)
+  (`9ca5c91b7b0bf0cb406705cad370deb947a756b5`) plus durable TUI approval
+  review; #803 was closed without merge after its code was included in #804.
+  The current exact-main core CI passed at `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`
+  in [#45307427282](https://github.com/veasel-labs/veasel/actions/runs/45307427282).
+  #550 remains open for native macOS/Windows real-provider journeys; the
+  failed packaged Codex attempt remains NOT VERIFIED. [Current #550 status](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7123306150).
 - [personal Toolkit #1841](https://github.com/ulises-jeremias/agent-toolkit/pull/1841) merged as `2a032f2fbf91a36edf4784b907489a19bb8f79f7` after exact-head Linux/macOS/Windows integration and security checks passed. The `setup-uv` v10.4.0 pin matches upstream tag commit `1db35dd8eee11c5894872e0b383ae6c406cf738d`.
 - [personal Toolkit #1840](https://github.com/ulises-jeremias/agent-toolkit/pull/1840) merged at `465a8d69f71224259e035ca35c4d3ee54c30d3df` after exact PR-head validation run [#45172137137](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45172137137) passed. It records packaged MCP and creative-tool compatibility evidence while explicitly leaving real-provider creative edits and same-session visual TUI continuation unverified. Post-merge main runs [#45179562504](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45179562504) and [#45179562294](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45179562294) were queued/in progress at capture.
 - [personal Toolkit #1842](https://github.com/ulises-jeremias/agent-toolkit/pull/1842) merged at `69e92db9eafdedf66ae648fea8af480e7fb5d60c` after exact-head CI [#45186218528](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45186218528) passed 50 checks with three conditional skips, including macOS/Linux V module and Swarm E2E jobs; CodeQL [#45186218253](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45186218253) passed. Its main Validate was superseded as a latest-main gate when #1843 merged. The change blocks automatic redistribution of policy-restricted sources and removes stale human review attribution when content is updated.
@@ -107,14 +116,14 @@ Merged since prior ledger snapshot:
   update](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7034671256).
   A new packaged Linux Claude Code run is recorded in [#550's Nov 23 update](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7090028693) and PR #794: it independently changed a parser and passed seven red-to-green assertions, with two approved tools and durable completed SQLite state. Playwright approval automation detached, so its evidence is not a fully stable GUI automation pass; provider model and cost remain unknown. The parent status was refreshed in [#549's Nov 23 update](https://github.com/veasel-labs/veasel/issues/549#issuecomment-7102509149). Current release and CI evidence is listed above.
 - **Remaining acceptance:** repeatable representative tasks on installed
-  binaries; native macOS and Windows real-provider journeys; visual-TUI
-  continuation from that Claude session; durable crash/restart outcome; and
-  transparent recovery/usage evidence. Do not reuse deterministic fixtures as
-  real-provider proof.
+  binaries; native macOS and Windows real-provider journeys; durable
+  crash/restart outcome; and transparent recovery/usage evidence. The
+  packaged OpenCode same-session visual-TUI continuation is already recorded;
+  do not reuse deterministic fixtures as real-provider proof.
 - **Action:** KEEP OPEN. Continue implementation and platform acceptance in
   `veasel-labs/veasel`; resolve only with independent packaged evidence and
   links in the issue. Current destination is `main` at
-  `1d041d86a19275b6c73e2c1750890dacaf18dd97`; no final
+  `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`; no final
   resolution commit exists.
 
 ### veasel-labs/veasel#550 — installed-binary cross-platform journeys
@@ -138,12 +147,17 @@ Merged since prior ledger snapshot:
   one write approval was denied, no Git change or independent test resulted,
   and usage/cost was unavailable. It is
   classified NOT VERIFIED. PR [#804](https://github.com/veasel-labs/veasel/pull/804)
-  adds explicit TUI review for these durable approvals; its exact-head checks
-  are pending and it does not retroactively change that journey's result.
+  merged at `6bf9846454ed9ce6e3dbb2a2038ef20264789984`, adding installed CLI
+  selection and explicit TUI review for durable approvals. Its merge and CI do
+  not retroactively change that journey's result. [The 2026-11-24 status
+  comment](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7123306150)
+  links the merge, current-main CI, and the still-unverified native-platform
+  acceptance.
 - **Remaining acceptance:** complete native macOS and Windows install/configure/
   edit/review/test/restart journeys with real providers; test rejected changes,
-  cancellation and process cleanup on those platforms; continue the Claude
-  session in the actual visual TUI and verify Desktop observes the same session.
+  cancellation and process cleanup on those platforms. Packaged OpenCode
+  Desktop-to-visual-TUI same-session continuation is verified on Linux; do not
+  claim that as native macOS or Windows provider acceptance.
 - **Action:** IMPLEMENT/VERIFY in Veasel; KEEP OPEN until platform and provider
   evidence is attached. Current CI proves platform backend/package jobs, not
   these real-provider journeys.
@@ -158,8 +172,8 @@ Merged since prior ledger snapshot:
 - **Remaining acceptance:** PR #793 merged the deterministic adapter and
   isolation wrapper at `240d95ebd5bd93ba2637314dadf6b335b055ac83`; its
   exact-main CI [#45106567453](https://github.com/veasel-labs/veasel/actions/runs/45106567453)
-  passed on SHA `240d95e`. The latest Veasel main `1d041d86` also passed all
-  required checks in [#45165644241](https://github.com/veasel-labs/veasel/actions/runs/45165644241); this does not prove a live matched benchmark. Network-namespace
+  passed on SHA `240d95e`. The latest Veasel main `eab88d59` also passed all
+  required checks in [#45307427282](https://github.com/veasel-labs/veasel/actions/runs/45307427282) on main `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`; this does not prove a live matched benchmark. Network-namespace
   enforcement remains unverified on hosted runners; prior local Arch evidence
   is recorded separately.
   The pinned model's published pricing can inform a reservation but cannot by
@@ -194,25 +208,25 @@ Merged since prior ledger snapshot:
 
 ## Distribution and release reconciliation
 
-As of 2026-11-23, the latest published release is
-[`v0.101.3-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.101.3-next.0),
-source `1d041d86a19275b6c73e2c1750890dacaf18dd97`. GitHub reports SHA-256
-digests for `release.json`, `SHA256SUMS`, Linux CLI/Desktop, macOS CLI/Desktop,
-and Windows CLI/Desktop assets. Website, Homebrew, and AUR updater PRs #227,
-#67, and #69 were reviewed and merged; their current `main` SHAs and CI runs
-appear in the snapshot table. Website CI/deployment and Homebrew install,
-upgrade, runtime, and uninstall checks passed on the exact updated heads. The
-AUR publisher built and published the package, and exact-main Package CI passed.
-Its `pull_request` event was `action_required` because the workflow uses
-`GITHUB_TOKEN` to create it; that event is not counted as a pass.
+As of 2026-11-24, the latest published release is
+[`v0.102.1-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.102.1-next.0),
+source `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`. Its `release.json`,
+`SHA256SUMS`, and Linux/macOS/Windows CLI and Desktop artifacts have published
+SHA-256 digests; all nine artifact digests and sizes were verified against the
+manifest. Website/Homebrew/AUR updates #228/#68/#70 are merged and current-main
+CI and deployment/package checks passed on the SHAs above. Homebrew's actual
+install/upgrade/runtime/uninstall and AUR build/install/upgrade/uninstall
+smokes passed on the exact PR heads. Unsigned installers remain explicitly
+unsigned. The AUR publisher workflow reports success; no action-required PR
+event is represented as a CI pass.
 
-- Veasel release [`v0.100.1-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.100.1-next.0)
+- Historical Veasel release [`v0.100.1-next.0`](https://github.com/veasel-labs/veasel/releases/tag/v0.100.1-next.0)
   names source `c20254af8267705432449102c091185445098d25`, with Linux, macOS and
   Windows CLI and Desktop artifacts. All nine manifest digests/sizes match
   GitHub's asset metadata and all ten `SHA256SUMS` entries match; the three
   platform CLI archives were downloaded and verified locally. Installers remain
   truthfully unsigned.
-- The earlier v0.100.1 and v0.101.2 distribution audits are historical. Consumer `main` branches now reference v0.101.3-next.0 via the merged PRs #227, #67, and #69.
+- The earlier v0.100.1, v0.101.2, and v0.101.3 distribution audits are historical. Consumer `main` branches now reference v0.102.1-next.0 via PRs #228, #68, and #70.
 - Homebrew's repeated updater failure was reproduced in [run
   #44996193101](https://github.com/veasel-labs/homebrew-tap/actions/runs/44996193101):
   it rebased a stale branch containing 117 commits and conflicted on three

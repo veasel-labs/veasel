@@ -3,30 +3,155 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-24 03:50 UTC** from live GitHub state. Method: issue/PR
 queries, branch SHAs, current CI, and release manifest verification.
 
-## Checkpoint 2026-11-24 UTC — live GitHub state
+## Checkpoint 2026-11-24 03:50 UTC — live GitHub state
 
-This checkpoint supersedes the older live snapshot below. It was refreshed
-from GitHub on 2026-11-24 UTC; PR counts include drafts.
+Counts remain 5 open issues and 3 open PRs. The targeted `#1845` fixes
+identified by automated review are implemented; its new exact-head checks are
+running. No unresolved item was closed to reduce the count.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `b686997effd6cb6bb0683d8ddc8fa421670e517d` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | #805 merged; exact-main CI `45289019479` still running. #804 includes implementation commit `995c675` and a ledger refresh; current-branch checks are queued |
-| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13 draft) | #14 merged; truthful core hook/network metadata; #13 creative-studio by-reference awaits independent review per owner |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807) | Exact-main CI `45307427282`: Windows batch 3 running; Linux, macOS, six Linux shards, desktop, terminal and security passed. #807 exact-head backend gates are re-running. |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #13 remains pending independent review by owner direction; installed state stays fail-closed. |
+| veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | Consumers still track verified release `v0.101.3-next.0`; not yet refreshed to current Veasel main. |
+| veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | Consumer SHA matches verified release manifest. |
+| veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | Consumer SHA matches verified release manifest. |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work. |
+| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 1 (#1845) | #1845 head `814b4cdc8309d410ca5da936cc1fef4c4d4c6e98`; hidden-file and missing-plugin drift checks, attribution cleanup and cue-window validation are included; exact-head CI running. |
+| **Total** | | **5** | **3** | No zero-backlog claim. |
+
+### Latest changes in #1845
+
+`skill_tree_drift` now sees hidden paths and reports a missing Creative Studio
+plugin directory. Python audio cue analysis rejects a window starting after
+track end. Provenance records now point at locked upstream commit
+`7c98a0830fd2810c93b1f9da7d9edef98ed6ef8a` and no longer claim the old
+reviewed-provenance digests; both skills remain experimental. The source skill
+bodies independently match the respective pinned upstream bodies. V tests,
+Python tests, skills validation, Agent Plugins validation, and provenance
+checks passed locally under the requested resource limits. Hosted generation
+completed at run `45322452797`; the temporary workflow was removed.
+
+## Checkpoint 2026-11-24 03:34 UTC — live GitHub state
+
+Historical checkpoint; superseded by the 03:50 refresh above.
+
+This checkpoint supersedes the 02:34 snapshot below. It was refreshed from
+GitHub at 03:34 UTC; PR counts include drafts and this ledger PR #807.
+
+| Repository | main SHA | Open issues | Open PRs | Current note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807) | #804/#806 merged; exact-main CI `45307427282` has Linux domain tests and Windows batch 2 running; macOS and six Linux shards passed. Previous main run `45304821923` is green. #807 auto-merge is waiting on its exact-head Linux/Windows gates. |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; exact-main registry validation `45273303142` passed. #13 is open, ready for review, and held fail-closed by the owner's decision pending independent review. |
+| veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | Release consumers remain pinned to verified `v0.101.3-next.0`; not yet refreshed to current Veasel main. |
+| veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | Release consumer SHA matches the verified manifest; no open work. |
+| veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | Release consumer SHA matches the verified manifest; no open work. |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work. |
+| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 1 (#1845) | #1845 repairs Creative Studio resource generation; exact-head required CI is running. |
+| **Total** | | **5** | **3** | No zero-backlog claim. |
+
+### Current open-item register
+
+| Item | State / owner | Existing implementation and exact evidence | Remaining acceptance / dependency | Action and destination |
+| --- | --- | --- | --- | --- |
+| [veasel#549](https://github.com/veasel-labs/veasel/issues/549) | OPEN; Veasel product mission | Linux packaged OpenCode coding journey, deterministic Focus journeys, and merged runtime/security work are retained | Repeatable real-provider coding tasks, visual-TUI continuation of the same Desktop session, cross-platform packaged journeys, truthful readiness/usage | IMPLEMENT in Veasel; keep open until mission gates pass |
+| [veasel#550](https://github.com/veasel-labs/veasel/issues/550) | OPEN; Veasel packaged acceptance | Linux packaged evidence is recorded; exact-main CI `45307427282` still running | Native macOS/Windows provider journeys need those platforms and authenticated provider accounts; full same-session visual-TUI continuation remains required | IMPLEMENT/VERIFY in Veasel; human platform/account access remains necessary |
+| [veasel#673](https://github.com/veasel-labs/veasel/issues/673) | OPEN; Veasel benchmark | Pinned binaries and safe wrapper regression are prepared; no paid request made | Meta credential absent; approved aggregate cap is USD 5, including prior approximate USD 0.35444 | HUMAN INPUT for credential availability, then run the authorized matched benchmark |
+| [veasel#689](https://github.com/veasel-labs/veasel/issues/689) | OPEN; cross-repository parent | Release consumers and ownership boundaries documented | All active child acceptance, exact-main green CI, current release, and final issue/PR reconciliation | KEEP OPEN and close last |
+| [official toolkit#13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN, non-draft; official registry governance | Live PR head `6be6dc8462d32e3c1c7a17806a051b3a0d456179` declares `network:true`, matching pinned `brag`/`brag-slim`; regression test checks disclosure. User chose to leave pending. | Independent non-submitter trust/permission review. Do not self-approve; keep non-installable until review. After personal Toolkit #1845 merges, update this immutable source pin before asking for that review. | HUMAN REVIEW in official registry; no approval/merge by this agent |
+| [veasel#807](https://github.com/veasel-labs/veasel/pull/807) | OPEN; cross-repository ledger | This ledger has current repo SHAs, 5 open issues, 3 PRs, blockers, and acceptance evidence. Its current head is the linked PR; checks are re-running after the latest ledger refresh. | Exact-head CI completion; update this register again after #1845 merges. | MERGE via existing auto-merge when required checks pass; destination Veasel `main` |
+| [personal toolkit#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) | OPEN; Creative Studio umbrella | Creative skills/MCP/agents and source workflow are on main; downstream work remains separately tracked | Tool-capable model completes a real creative edit; guest-image QA; graphical integrations; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until accepted or explicitly descoped |
+| [personal toolkit#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) | OPEN; personal Toolkit compiler/distribution | Current PR head `814b4cdc8309d410ca5da936cc1fef4c4d4c6e98`; focused V/Python tests, skills/plugin validation, provenance checks and hosted generation passed. Exact-head required CI is running. | Exact-head required checks and review; then update official PR #13 to the merged immutable Toolkit SHA, leaving #13 pending independent review. | MERGE after CI; destination personal Toolkit `main` |
+
+Human/external dependencies currently evidenced: independent reviewer for #13;
+availability of the authorized Meta credential for #673; macOS/Windows
+machines and provider accounts for #550; signing credentials only if signed
+installers are required; and an actual HorneroOS installed-session proof for
+external HorneroOS/shell#447. Installers remain truthfully unsigned.
+
+## Historical checkpoint 2026-11-24 02:34 UTC (superseded below)
+
+This historical snapshot is retained to show prior state and evidence. Its
+counts, registry review status, and active PR rows are not current.
+
+| Repository | main SHA | Open issues | Open PRs | Current note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807, this ledger) | #804/#806 merged; CodeQL `45307427273` passed; exact-main CI `45307427282` pending behind prior run `45304821923` (Windows batch 3 active); #807 auto-merge enabled, final-head checks pending |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; exact-main registry validation `45273303142` passed; #13 is open, not draft, and awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
 | veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | No open work |
 | veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work |
 | ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 0 | Umbrella issue still open |
-| **Total** | | **5** | **3** | No zero-backlog claim |
+| **Total** | | **5** | **2** | No zero-backlog claim |
+
+Current Veasel main is four commits beyond the published release source
+`1d041d86a19275b6c73e2c1750890dacaf18dd97`. The latest two feature changes
+are PR #804 merged at `6bf9846454ed9ce6e3dbb2a2038ef20264789984` (SQLite store
+locking for CLI approval/resume) and PR #806 merged at
+`eab88d598b5ab8329dabffcd45d35aa00e2a4cab` (trusted sandbox executable
+pinning). Both PR-head CI runs passed on Linux,
+macOS, and Windows; exact-main CI for the latest SHA is queued and must pass
+before the ecosystem can claim a green latest main or refresh the release.
+The previous-main run `45304821923` is still active in Windows backend batch
+3; its success is not a substitute for latest-SHA run `45307427282`.
+
+Open Veasel work (no closure implied):
+
+- [#549](https://github.com/veasel-labs/veasel/issues/549) — product mission;
+  native packaged/provider acceptance remains incomplete.
+- [#550](https://github.com/veasel-labs/veasel/issues/550) — Linux evidence is
+  recorded, but packaged real-provider journeys on macOS and Windows remain
+  unverified.
+- [#673](https://github.com/veasel-labs/veasel/issues/673) — benchmark tooling
+  and pinned binaries are prepared. No paid request was made: the approved Meta
+  API key is currently absent from the profile and the `VEASEL_MODEL_API_KEY`,
+  `META_API_KEY`, and `MUSE_API_KEY` environment variables. Preflight and the
+  matched run remain blocked until the key is made available; aggregate cap is
+  USD 5 including the previously recorded approximate USD 0.35444 spend.
+- [#689](https://github.com/veasel-labs/veasel/issues/689) — parent epic stays
+  open until all repository, release, provider, review, and issue acceptance is
+  complete; close last.
+
+Open Veasel PR:
+
+- [#807](https://github.com/veasel-labs/veasel/pull/807) — this ledger refresh;
+  its final-head CI is pending after permission-state correction in this
+  document. Auto-merge is enabled but remains gated on required checks.
+
+Open non-Veasel items:
+
+- [official toolkit #13](https://github.com/veasel-labs/agent-toolkit/pull/13)
+  — user explicitly chose to leave it pending. Its first-party creative-studio
+  registry entry remains subject to an independent permission/trust review.
+  The network flag is now truthful (`true`), but the pinned source omits the
+  upstream `brag` assets/scripts its docs reference; see the static
+  [supply-chain report](AGENT_TOOLKIT_CREATIVE_STUDIO_SUPPLY_CHAIN.md). Keep
+  non-installable; do not self-approve or merge while acceptance is outstanding.
+- [personal toolkit #1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838)
+  — Creative Studio umbrella remains open. Its listed remaining acceptance
+  includes a second-client real-provider edit, guest-image QA render scenario,
+  live graphical integrations, durable flagship-film delivery, and external
+  workstation review. This issue remains in the seven-repository open-issue
+  count until those outcomes are completed or validly superseded.
+
+Human/external dependencies currently evidenced: (1) an independent reviewer
+for official toolkit #13; (2) the authorized Meta credential for #673 (do not
+put credentials in GitHub); (3) macOS/Windows machines with provider accounts
+for #550; and (4) Apple/Windows signing credentials only if signed installers
+are required. Installers continue to be represented as unsigned.
 
 Owner decisions recorded: registry #10 approved the first-party exception for
 `veasel-essentials`; official registry PR #13 remains pending and is not
-self-approved. Its current manifest discloses shell, network, and Kdenlive MCP
-capabilities; the hold is the required independent trust review. The #10
-outcome is reflected in official toolkit main. A separate catalog audit found
+self-approved, per the owner's instruction. Its current head `6be6dc84`
+declares `network:true`, matching the pinned `brag` and `brag-slim` source
+skills at `7c98a083`; the PR's regression test checks that this capability is
+disclosed. Both skills remain experimental upstream; #13 is non-installable
+until an independent trust review is complete. The #10 outcome is reflected in
+official toolkit main. A separate catalog audit found
 `agent-toolkit-core`'s pending, non-installable entry had understated its
 pinned source's shell hook and networked GitHub MCP as `shell:false` and
 `network:false`; PR [#14](https://github.com/veasel-labs/agent-toolkit/pull/14)

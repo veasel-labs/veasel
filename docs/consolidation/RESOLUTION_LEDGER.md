@@ -3,18 +3,18 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 02:22 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-24 02:34 UTC** from live GitHub state. Method: issue/PR
 queries, branch SHAs, current CI, and release manifest verification.
 
 ## Checkpoint 2026-11-24 UTC — live GitHub state
 
 This checkpoint supersedes the older live snapshot below. It was refreshed
-from GitHub at 2026-11-24 02:22 UTC; PR counts include drafts and this ledger
-PR #807.
+from GitHub at 2026-11-24 02:34 UTC; PR counts include drafts and this ledger
+PR #807. The Veasel counts include #807 before auto-merge.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807, this ledger) | #804/#806 merged; CodeQL `45307427273` passed; exact-main CI `45307427282` pending behind prior run `45304821923` (Windows batch 3 active); #807 head `9e02a238` CI in progress, auto-merge enabled |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807, this ledger) | #804/#806 merged; CodeQL `45307427273` passed; exact-main CI `45307427282` pending behind prior run `45304821923` (Windows batch 3 active); #807 auto-merge enabled, final-head checks pending |
 | veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; exact-main registry validation `45273303142` passed; #13 is open, not draft, and awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
@@ -54,16 +54,18 @@ Open Veasel work (no closure implied):
 Open Veasel PR:
 
 - [#807](https://github.com/veasel-labs/veasel/pull/807) — this ledger refresh;
-  head `9e02a238f3b5e446379ba1dab3d4bb47457c34ca`, exact PR CI run
-  `45311411563` in progress (and DangerJS `45311484003` passed). Auto-merge is
-  enabled but remains gated on required checks.
+  its final-head CI is pending after permission-state correction in this
+  document. Auto-merge is enabled but remains gated on required checks.
 
 Open non-Veasel items:
 
 - [official toolkit #13](https://github.com/veasel-labs/agent-toolkit/pull/13)
   — user explicitly chose to leave it pending. Its first-party creative-studio
-  registry entry remains subject to an independent permission/trust review;
-  do not self-approve or merge while review is outstanding.
+  registry entry remains subject to an independent permission/trust review.
+  The network flag is now truthful (`true`), but the pinned source omits the
+  upstream `brag` assets/scripts its docs reference; see the static
+  [supply-chain report](AGENT_TOOLKIT_CREATIVE_STUDIO_SUPPLY_CHAIN.md). Keep
+  non-installable; do not self-approve or merge while acceptance is outstanding.
 - [personal toolkit #1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838)
   — Creative Studio umbrella remains open. Its listed remaining acceptance
   includes a second-client real-provider edit, guest-image QA render scenario,
@@ -79,10 +81,12 @@ are required. Installers continue to be represented as unsigned.
 
 Owner decisions recorded: registry #10 approved the first-party exception for
 `veasel-essentials`; official registry PR #13 remains pending and is not
-self-approved. PR #13 currently declares `network:false` while its included
-`brag` skill declares `network:true`; correct this permission mismatch and
-complete the required independent trust review before considering approval.
-The #10 outcome is reflected in official toolkit main. A separate catalog audit found
+self-approved, per the owner's instruction. Its current head `6be6dc84`
+declares `network:true`, matching the pinned `brag` and `brag-slim` source
+skills at `7c98a083`; the PR's regression test checks that this capability is
+disclosed. Both skills remain experimental upstream; #13 is non-installable
+until an independent trust review is complete. The #10 outcome is reflected in
+official toolkit main. A separate catalog audit found
 `agent-toolkit-core`'s pending, non-installable entry had understated its
 pinned source's shell hook and networked GitHub MCP as `shell:false` and
 `network:false`; PR [#14](https://github.com/veasel-labs/agent-toolkit/pull/14)

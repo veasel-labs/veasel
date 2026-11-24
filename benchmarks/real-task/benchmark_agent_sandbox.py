@@ -26,6 +26,21 @@ RELAY_DIR_GUEST = Path("/tmp/veasel-proxy")
 TOOLS_GUEST = Path("/tmp/veasel-tools")
 PROXY_PORT = 18765
 EXPECTED_PROXY_BRIDGE_SHA256 = "a4c1a741828b69bd267acf138ccba49635e59eec13080c0a7ed74ea8884ab254"
+TRUSTED_BWRAP = Path("/usr/bin/bwrap")
+
+
+def _trusted_bwrap(value: str) -> Path:
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("Bubblewrap must be an absolute system binary path")
+    resolved = candidate.resolve(strict=True)
+    trusted = TRUSTED_BWRAP.resolve(strict=True)
+    info = resolved.stat()
+    if resolved != trusted or not stat.S_ISREG(info.st_mode) or not os.access(resolved, os.X_OK):
+        raise ValueError("Bubblewrap must resolve to the trusted system binary /usr/bin/bwrap")
+    if info.st_uid != 0 or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise ValueError("trusted Bubblewrap must be root-owned and not group/world-writable")
+    return resolved
 
 
 def _private_owned_directory(value: str, label: str) -> Path:
@@ -100,7 +115,7 @@ def _guest_environment(state: Path, task: Path) -> dict[str, str]:
         "VEASEL_PLUGIN_DIR": str(STATE_GUEST / "plugins"),
         "VEASEL_REAL_TASK_ROOT": str(WORKSPACE_PARENT_GUEST / task.name),
         "VEASEL_REAL_TASK_PARENT": str(WORKSPACE_PARENT_GUEST),
-        "VEASEL_BWRAP": os.environ.get("VEASEL_BWRAP", "/usr/bin/bwrap"),
+        "VEASEL_BWRAP": str(_trusted_bwrap(os.environ.get("VEASEL_BWRAP", str(TRUSTED_BWRAP)))),
         "OPENCODE_CONFIG": str(STATE_GUEST / "benchmark-opencode.json"),
     })
     if os.environ.get("VEASEL_BENCHMARK_AGENT") == "opencode":
@@ -143,10 +158,7 @@ def build_bwrap_command(command: Sequence[str]) -> tuple[list[str], dict[str, st
     if relay_dir.stat().st_uid != os.getuid() or stat.S_IMODE(relay_dir.stat().st_mode) != 0o700:
         raise ValueError("budget proxy socket directory must be owned by this user with mode 0700")
 
-    bwrap_value = os.environ.get("VEASEL_BWRAP", "/usr/bin/bwrap")
-    bwrap = Path(bwrap_value).expanduser()
-    if not bwrap.is_absolute() or not bwrap.is_file() or not os.access(bwrap, os.X_OK):
-        raise ValueError("Bubblewrap must be an absolute executable path")
+    bwrap = _trusted_bwrap(os.environ.get("VEASEL_BWRAP", str(TRUSTED_BWRAP)))
     bridge_value = os.environ.get("VEASEL_BENCHMARK_BRIDGE_SCRIPT", "")
     bridge = Path(bridge_value).resolve(strict=True)
     if not bridge.is_file():

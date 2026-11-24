@@ -50,13 +50,14 @@ approved shell tools use Veasel's separate OS sandbox. Preflight fails closed
 when the task repository contains a Veasel or imported project MCP configuration,
 so unreviewed stdio servers cannot start as part of the benchmark. The wrapper refuses direct
 provider credentials. Its exact SHA-256 is checked
-by the runner and recorded with the attempt. The Linux fixture suite exercises
+against a SHA-256 constant in the reviewed runner source and recorded with the attempt. Supplying
+a hash computed from a different wrapper does not authorize it. The Linux fixture suite exercises
 the filesystem, host-loopback, proxy-relay, and nested-shell boundaries without
 contacting Meta.
 
 ```sh
 ISOLATION_WRAPPER="$(pwd)/benchmarks/real-task/benchmark_agent_sandbox.py"
-ISOLATION_WRAPPER_SHA256="$(sha256sum "$ISOLATION_WRAPPER" | cut -d' ' -f1)"
+ISOLATION_WRAPPER_SHA256='eef14cf72151a6f1e426b3b20701db72a3211bac0c4985538a976cc0150e9490' # pinned in run.py
 python3 benchmarks/real-task/run.py run \
   --agent opencode \
   --case benchmarks/real-task/cases/website-173-muse-spark-v0795/case.json \

@@ -71,9 +71,10 @@ are required. Installers continue to be represented as unsigned.
 
 Owner decisions recorded: registry #10 approved the first-party exception for
 `veasel-essentials`; official registry PR #13 remains pending and is not
-self-approved. Its current manifest discloses shell, network, and Kdenlive MCP
-capabilities; the hold is the required independent trust review. The #10
-outcome is reflected in official toolkit main. A separate catalog audit found
+self-approved. PR #13 currently declares `network:false` while its included
+`brag` skill declares `network:true`; correct this permission mismatch and
+complete the required independent trust review before considering approval.
+The #10 outcome is reflected in official toolkit main. A separate catalog audit found
 `agent-toolkit-core`'s pending, non-installable entry had understated its
 pinned source's shell hook and networked GitHub MCP as `shell:false` and
 `network:false`; PR [#14](https://github.com/veasel-labs/agent-toolkit/pull/14)

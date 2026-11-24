@@ -20,7 +20,7 @@ running. No unresolved item was closed to reduce the count.
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | Consumer SHA matches verified release manifest. |
 | veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | Consumer SHA matches verified release manifest. |
 | veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work. |
-| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 1 (#1845) | #1845 head `edaa69b9eee751ef68edec36b929c5dedf6a6926`; hidden-file and missing-plugin drift checks, stale attribution cleanup and cue-window validation are included; required CI running. |
+| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 1 (#1845) | #1845 head `814b4cdc8309d410ca5da936cc1fef4c4d4c6e98`; hidden-file and missing-plugin drift checks, attribution cleanup and cue-window validation are included; exact-head CI running. |
 | **Total** | | **5** | **3** | No zero-backlog claim. |
 
 ### Latest changes in #1845
@@ -33,7 +33,7 @@ reviewed-provenance digests; both skills remain experimental. The source skill
 bodies independently match the respective pinned upstream bodies. V tests,
 Python tests, skills validation, Agent Plugins validation, and provenance
 checks passed locally under the requested resource limits. Hosted generation
-completed at run `45321568552`; the temporary workflow was removed.
+completed at run `45322452797`; the temporary workflow was removed.
 
 ## Checkpoint 2026-11-24 03:34 UTC — live GitHub state
 
@@ -64,7 +64,7 @@ GitHub at 03:34 UTC; PR counts include drafts and this ledger PR #807.
 | [official toolkit#13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN, non-draft; official registry governance | Live PR head `6be6dc8462d32e3c1c7a17806a051b3a0d456179` declares `network:true`, matching pinned `brag`/`brag-slim`; regression test checks disclosure. User chose to leave pending. | Independent non-submitter trust/permission review. Do not self-approve; keep non-installable until review. After personal Toolkit #1845 merges, update this immutable source pin before asking for that review. | HUMAN REVIEW in official registry; no approval/merge by this agent |
 | [veasel#807](https://github.com/veasel-labs/veasel/pull/807) | OPEN; cross-repository ledger | This ledger has current repo SHAs, 5 open issues, 3 PRs, blockers, and acceptance evidence. Its current head is the linked PR; checks are re-running after the latest ledger refresh. | Exact-head CI completion; update this register again after #1845 merges. | MERGE via existing auto-merge when required checks pass; destination Veasel `main` |
 | [personal toolkit#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) | OPEN; Creative Studio umbrella | Creative skills/MCP/agents and source workflow are on main; downstream work remains separately tracked | Tool-capable model completes a real creative edit; guest-image QA; graphical integrations; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until accepted or explicitly descoped |
-| [personal toolkit#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) | OPEN; personal Toolkit compiler/distribution | Current PR head `edaa69b9eee751ef68edec36b929c5dedf6a6926`; focused V/Python tests, skills/plugin validation, provenance checks and hosted generation passed. Exact-head required CI is running. | Exact-head required checks and review; then update official PR #13 to the merged immutable Toolkit SHA, leaving #13 pending independent review. | MERGE after CI; destination personal Toolkit `main` |
+| [personal toolkit#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) | OPEN; personal Toolkit compiler/distribution | Current PR head `814b4cdc8309d410ca5da936cc1fef4c4d4c6e98`; focused V/Python tests, skills/plugin validation, provenance checks and hosted generation passed. Exact-head required CI is running. | Exact-head required checks and review; then update official PR #13 to the merged immutable Toolkit SHA, leaving #13 pending independent review. | MERGE after CI; destination personal Toolkit `main` |
 
 Human/external dependencies currently evidenced: independent reviewer for #13;
 availability of the authorized Meta credential for #673; macOS/Windows

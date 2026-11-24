@@ -20,7 +20,9 @@ pub fn is_safe_cli_session_id(id string) bool {
 	return true
 }
 
-fn (store &Store) get_cli_resume_id(session_id string, provider string) string {
+fn (mut store Store) get_cli_resume_id(session_id string, provider string) string {
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	rows := store.db.exec_param_many('SELECT cli_session_id FROM session_cli_resume WHERE session_id = ? AND provider = ?',
 		[session_id, provider]) or { return '' }
 	if rows.len == 0 {
@@ -37,6 +39,8 @@ fn (mut store Store) set_cli_resume_id(session_id string, provider string, cli_s
 	if !is_safe_cli_session_id(cli_session_id) {
 		return error('refusing to store an unsafe CLI session id')
 	}
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	_ = store.db.exec_param_many('INSERT INTO session_cli_resume (session_id, provider, cli_session_id, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(session_id, provider) DO UPDATE SET cli_session_id = excluded.cli_session_id, updated_at = CURRENT_TIMESTAMP',
 		[session_id, provider, cli_session_id]) or {
 		return error('unable to store CLI session resume id')
@@ -44,6 +48,8 @@ fn (mut store Store) set_cli_resume_id(session_id string, provider string, cli_s
 }
 
 fn (mut store Store) clear_cli_resume_id(session_id string, provider string) ! {
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	_ = store.db.exec_param_many('DELETE FROM session_cli_resume WHERE session_id = ? AND provider = ?',
 		[session_id, provider]) or { return error('unable to clear CLI session resume id') }
 }

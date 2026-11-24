@@ -13,6 +13,11 @@ if (process.argv.includes('--version')) {
   process.stdout.write('codex-cli 0.167.2 (fake)\n');
   process.exit(0);
 }
+if (process.argv.slice(2).join(' ') === 'login status') {
+  log('auth-status');
+  process.stdout.write('Not logged in\n');
+  process.exit(0);
+}
 log('spawn', { argv: process.argv.slice(2) });
 process.stderr.write('fake codex decoy: not a real turn target\n');
 process.exit(1);

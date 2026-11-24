@@ -246,9 +246,15 @@ test('J1 clean first launch lists the installed CLI providers', async ({}, testI
     .map((status) => status.id)
     .sort();
   expect(installed).toEqual(expect.arrayContaining(['claude-code', 'codex']));
+  const authChecks = readCliLog(env)
+    .filter((entry) => entry.event === 'auth-status')
+    .map((entry) => entry.cli)
+    .sort();
+  expect(authChecks).toEqual(expect.arrayContaining(['claude', 'codex']));
   expect(readCliLog(env).filter((entry) => entry.event === 'spawn')).toHaveLength(0);
-  record(testInfo, 'J1', 'GET /v1/providers/cli installed ids; no CLI turn spawned', {
+  record(testInfo, 'J1', 'GET /v1/providers/cli installed ids and native auth checks; no CLI turn spawned', {
     installedCount: installed.length,
+    authChecks,
   });
 });
 

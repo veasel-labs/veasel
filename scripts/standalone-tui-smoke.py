@@ -84,15 +84,19 @@ def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
     raise TimeoutError("Veasel backend did not become healthy within 15 seconds")
 
 
-def diagnostic_process_state(name: str, process: subprocess.Popen[bytes] | None, port: int) -> str:
+def diagnostic_process_state(name: str, process: subprocess.Popen[bytes] | None, port: int | None) -> str:
     if process is None:
         return f"{name}: not started"
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.25):
-            listener = "accepting TCP"
-    except OSError as error:
-        listener = f"not accepting TCP ({type(error).__name__})"
-    return f"{name}: pid={process.pid}, exit={process.poll()!r}, port={port} {listener}"
+    if port is None:
+        listener = "port not assigned"
+    else:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+                listener = "accepting TCP"
+        except OSError as error:
+            listener = f"not accepting TCP ({type(error).__name__})"
+        listener = f"port={port} {listener}"
+    return f"{name}: pid={process.pid}, exit={process.poll()!r}, {listener}"
 
 
 def diagnostic_log_tail(path: Path, limit: int = 8_000) -> str:
@@ -101,10 +105,13 @@ def diagnostic_log_tail(path: Path, limit: int = 8_000) -> str:
     except OSError as error:
         return f"<could not read {path.name}: {type(error).__name__}>"
     contents = re.sub(
-        r"(?im)(authorization\s*:\s*bearer\s+)[^\s,;]+",
-        r"\1[REDACTED]",
+        r"(?i)(['\"]?(?:authorization|proxy-authorization|x-api-key|x-goog-api-key|"
+        r"api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)['\"]?"
+        r"\s*[:=]\s*['\"]?)(?:bearer\s+)?[^'\"\s,}\]]+(['\"]?)",
+        r"\1[REDACTED]\2",
         contents,
     )
+    contents = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", contents)
     return contents
 
 
@@ -1046,11 +1053,19 @@ def main() -> None:
         deadline = time.monotonic() + 5
         while not provider_port_file.exists() and time.monotonic() < deadline:
             if provider.poll() is not None:
+                provider_log.flush()
+                print(diagnostic_process_state("mock provider", provider, None), file=sys.stderr)
+                print("mock provider log tail:\n" + diagnostic_log_tail(provider_log_path), file=sys.stderr)
+                provider_log.close()
                 raise RuntimeError("mock provider exited before becoming ready")
             time.sleep(0.05)
         if not provider_port_file.exists():
             provider.terminate()
             provider.wait(timeout=5)
+            provider_log.flush()
+            print(diagnostic_process_state("mock provider", provider, None), file=sys.stderr)
+            print("mock provider log tail:\n" + diagnostic_log_tail(provider_log_path), file=sys.stderr)
+            provider_log.close()
             raise RuntimeError("mock provider did not become ready")
         provider_port = int(provider_port_file.read_text(encoding="utf-8"))
         provider_base = f"http://127.0.0.1:{provider_port}"

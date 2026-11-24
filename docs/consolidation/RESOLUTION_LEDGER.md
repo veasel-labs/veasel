@@ -3,8 +3,76 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 20:29 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-24 22:09 UTC** from live GitHub state. Method: issue/PR
 queries, default-branch SHAs, latest exact-head CI, and release metadata.
+
+## Checkpoint 2026-11-24 22:09 UTC — post-merge verification
+
+The native CLI authentication status change (#814) and portable-toolkit website
+positioning change (#1848) are merged. Veasel `main` is now
+`f01173f294830523d21d402318a1d191d70a76a7`; personal Toolkit `main` is
+`968bbaa4483ee5133e8276b6494738b6796c4a28`. This checkpoint is deliberately
+not green: exact-main Veasel CI `45496637250` has a failing TUI test while the
+platform backend and test-shard jobs are running. The failure was in the
+existing queued-follow-up UI test; the isolated test and the complete local
+704-test TUI suite passed under a 3 GiB / 2 CPU `systemd-run` scope. A CI rerun
+and completion of all exact-main jobs are still required. Personal Toolkit
+validation `45495906604` is still running its macOS integration job; web,
+CodeQL, and MegaLinter passed. No issue has been closed to lower counts.
+
+| Repository | main SHA | Open issues | Open PRs | Current note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `f01173f294830523d21d402318a1d191d70a76a7` | 5 (#549, #550, #673, #689, #693) | 1 (#813) | CI `45496637250` is not green yet: terminal test `queues a follow-up and cancels it without affecting the active turn` failed once; local isolated and full TUI suite passed. Windows/Linux/macOS backend jobs remain in progress. CodeQL `45496636752` passed. |
+| veasel-labs/agent-toolkit | `416e7de7022a75249072a78971ded9a22fd1e9f3` | 0 | 0 | Registry state unchanged: first-party veasel-essentials exception is owner-approved; agent-toolkit-core and PR #13 remain fail-closed pending independent review. |
+| veasel-labs/website | `9f3a2285bc7824ebb5c83ff721706ab460b6deb1` | 0 | 1 (#229) | Deployment `45465994338` passed. Consumer PR awaits a new immutable source release. |
+| veasel-labs/homebrew-tap | `9f2ae8fac9b366b8dd0d19921681c2d53b127db7` | 0 | 1 (#69) | CI `45466285841` passed; consumer PR awaits a new immutable source release. |
+| veasel-labs/aur-package | `eb01b95dca3123514162427b67facc86caf5af8b` | 0 | 1 (#71) | Package CI `45466040535` passed; host package installation still requires successful local `yay` completion. |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No new changes. |
+| ulises-jeremias/agent-toolkit | `968bbaa4483ee5133e8276b6494738b6796c4a28` | 0 | 0 | PR #1848 merged. Live `agent-toolkit.io` serves portable-capability positioning; web, CodeQL, and MegaLinter passed; exact-main Validate/macOS integration remains in progress. |
+| **Total** | | **5** | **4** | No zero-backlog or all-green claim. |
+
+### Newly completed evidence
+
+- Veasel #814 merged at `f01173f`. Claude Code's native non-billable
+  `claude auth status --json` reported `loggedIn: true`, method `claude.ai`,
+  subscription `max`; Codex `login status` reported a ChatGPT login. The
+  screenshot's “Auth file present; sign-in is not verified” was a detection
+  limitation, not evidence of logout. OpenCode and Muse remain unknown because
+  no safe supported auth-status probe was established. Quota is not inferred.
+- #814 exact-head CI passed on PR head `1eb86653bcf495458aab8ee4d82fee0b0bee49c4`,
+  including Windows/Linux/macOS backend tests and the native provider status
+  tests. The new `main` run must still finish independently.
+- Personal Toolkit #1848 merged at `968bbaa`. Local Astro checks/build and
+  browser verification passed, including 14/14 Playwright cases. Production
+  `www.agent-toolkit.io` returns 200, the apex redirects to it, and the new
+  portable-toolkit Open Graph image is served as PNG. Historical Desktop
+  content and governed PXL source assets were retained.
+- Host's cached AUR source tarball was stale. Replacing only that cache entry
+  with the official release archive made `makepkg --verifysource` pass and
+  produced `veasel-code-bin 0.102.3.next.0-1`; system installation is still
+  unconfirmed (`pacman` reported no system package), so do not count it as
+  installed.
+
+### Current open work at this checkpoint
+
+| Item | Current owner/state | Remaining acceptance / dependency | Action / destination |
+| --- | --- | --- | --- |
+| [veasel#549](https://github.com/veasel-labs/veasel/issues/549) | OPEN; daily-driver mission | Representative real-provider coding, shared Desktop/TUI session, native packaged evidence, truthful auth/quota state | IMPLEMENT/VERIFY in Veasel; keep open |
+| [veasel#550](https://github.com/veasel-labs/veasel/issues/550) | OPEN; packaged acceptance | Installed-binary real task, Desktop↔visual-TUI continuation, macOS/Windows provider journey | VERIFY in Veasel; keep open |
+| [veasel#673](https://github.com/veasel-labs/veasel/issues/673) | OPEN; paid matched benchmark | Owner-approved spend and valid Meta credentials; do not run until both exist | HUMAN DECISION then IMPLEMENT in Veasel |
+| [veasel#689](https://github.com/veasel-labs/veasel/issues/689) | OPEN; parent epic | Child milestones, immutable release propagation, installed-host acceptance, final reconciliation | KEEP OPEN; close last |
+| [veasel#693](https://github.com/veasel-labs/veasel/issues/693) | OPEN; semantic World | Installed-app visual/accessibility QA and same-session lifecycle proof with preserved PXL assets | IMPLEMENT/VERIFY in Veasel |
+| [veasel#813](https://github.com/veasel-labs/veasel/pull/813) | OPEN DRAFT; updates historical TRIAGE ledger, head `843797e0` | Its current snapshot is stale after #814/#1848; preserve useful historical findings and refresh the canonical ledger before disposition | REVIEW/MERGE updated evidence or SUPERSEDE only after all unique evidence is preserved |
+| [website#229](https://github.com/veasel-labs/website/pull/229) | OPEN DRAFT; release consumer | Current source release `v0.102.3-next.0` is `immutable:false`; need a newer immutable release and exact asset validation | HOLD; refresh in website after qualifying Veasel release |
+| [homebrew-tap#69](https://github.com/veasel-labs/homebrew-tap/pull/69) | OPEN DRAFT; CLI consumer | Same immutable source-release dependency; exact current version/archive/checksum | HOLD; refresh and verify in Homebrew |
+| [aur-package#71](https://github.com/veasel-labs/aur-package/pull/71) | OPEN DRAFT; CLI/TUI package mirror | Same immutable source-release dependency plus successful local Arch package install/update/runtime/uninstall smoke | HOLD; refresh and verify in AUR |
+| [agent-toolkit #13](https://github.com/veasel-labs/agent-toolkit/pull/13) | CLOSED/MERGED but fail-closed in catalog; no independent review | `veasel-essentials` owner exception is approved; `agent-toolkit-core` remains pending independent reviewer; do not install as reviewed absent valid state | HUMAN REVIEW for community entry; preserve `installable:false` |
+
+The latest Veasel core CI is **not green** until every job on exact main SHA
+`f01173f294830523d21d402318a1d191d70a76a7` completes successfully. Local full
+TUI verification used the complete 704-test suite, not only the single failed
+test. Do not interpret that local result as replacing hosted
+Windows/macOS/Linux backend validation.
 
 ## Checkpoint 2026-11-24 20:29 UTC — live GitHub state
 
@@ -61,7 +129,7 @@ GitHub at 03:34 UTC; PR counts include drafts and this ledger PR #807.
 | ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 1 (#1845) | #1845 repairs Creative Studio resource generation; exact-head required CI is running. |
 | **Total** | | **5** | **3** | No zero-backlog claim. |
 
-### Current open-item register
+### Historical open-item register — checkpoint 2026-11-24 03:34 UTC
 
 | Item | State / owner | Existing implementation and exact evidence | Remaining acceptance / dependency | Action and destination |
 | --- | --- | --- | --- | --- |

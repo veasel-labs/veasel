@@ -13,7 +13,7 @@ from GitHub on 2026-11-24 UTC; PR counts include drafts.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `b686997effd6cb6bb0683d8ddc8fa421670e517d` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | #805 merged; exact-main CI `45289019479` still running. #804 head `995c675` has fresh Linux/macOS/Windows checks pending |
+| veasel-labs/veasel | `b686997effd6cb6bb0683d8ddc8fa421670e517d` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | #805 merged; exact-main CI `45289019479` still running. #804 includes implementation commit `995c675` and a ledger refresh; current-branch checks are queued |
 | veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13 draft) | #14 merged; truthful core hook/network metadata; #13 creative-studio by-reference awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
@@ -91,11 +91,11 @@ smoke fails. A second commit `995c675` redacts Authorization, bearer, and
 API-key values from dict/JSON/plain-text logs; five local redaction cases and
 Python syntax validation pass in bounded `systemd-run` scopes. These changes
 aim to identify the cause of two prior macOS-only failures; no root cause has
-yet been proven. Exact-head checks for `995c675` have started; required
-Linux/macOS/Windows backend and six Linux shards are pending. Conditional PR
-package/release jobs do not establish packaged-release acceptance. The CLI session in #550
-remains NOT VERIFIED as a real-provider coding journey after write approval
-was denied; see
+yet been proven. Exact-head checks for the refreshed branch are queued;
+required Linux/macOS/Windows backend and six Linux shards are pending.
+Conditional PR package/release jobs do not establish packaged-release
+acceptance. The CLI session in #550 remains NOT VERIFIED as a real-provider
+coding journey after write approval was denied; see
 https://github.com/veasel-labs/veasel/issues/550#issuecomment-7113850660.
 
 The previous candidate head `8768a5d19e24f4d01f5b25e915e1e008cf374ab7`
@@ -111,7 +111,7 @@ exact-head native matrix must finish before merge. The earlier local run also
 passed the standalone Linux client build/version smoke; pinned-V backend tests
 passed on the same source ancestry, all under bounded local execution.
 
-### Active issue/PR resolution register (live 2026-11-23)
+### Active issue/PR resolution register (live 2026-11-24 UTC)
 
 | Repository/item | State / owner | Existing implementation and evidence | Remaining acceptance / dependency | Action and destination |
 | --- | --- | --- | --- | --- |
@@ -122,7 +122,7 @@ passed on the same source ancestry, all under bounded local execution.
 | official agent-toolkit#13 | OPEN DRAFT; registry governance | Immutable pin `ulises-jeremias/agent-toolkit@cc5c60d48c18ff6b5788c08f38f681c933505fbe`; MIT; manifest says `network:false` while included `brag` skill declares `network:true`; fail-closed | Correct the permission declaration and obtain independent non-submitter review of the complete source; owner explicitly said leave pending | HUMAN REVIEW; keep draft and non-installable, never self-approve |
 | personal agent-toolkit#1838 | OPEN; Creative Studio umbrella | Creative assets/workflow, Hornero adapters, docs, QA scenario, and Veasel runtime fixes are tracked; first-cut teaser exists in evaluation-host cache | Tool-capable model completes a real creative edit; guest-image QA run; graphical GIMP/OBS/REAPER; gated Blender Lab; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until each remaining acceptance is proven or explicitly descoped |
 | veasel#803 | OPEN DRAFT; Veasel | Original runner-selection commit `9ca5c91b7b0bf0cb406705cad370deb947a756b5` is preserved as ancestor in #804 | No independent value after combined PR lands; don't abandon it before #804 merges | SUPERSEDE by #804 only after merge; close with exact merge SHA and checks |
-| veasel#804 | OPEN; Veasel | Combined runner selection + approval UI, retry-on-inventory-failure fix; local 702/142 TUI suite and typecheck pass; failure diagnostics and credential redaction at `995c675` | Current exact-head matrix `45294210453`: initial client, security, and six Linux-shard checks are pending; investigate two prior macOS smoke failures from recorded diagnostics | REVIEW/MERGE only after exact-head required CI passes; then close #803 as superseded; follow with real-provider acceptance |
+| veasel#804 | OPEN; Veasel | Combined runner selection + approval UI, retry-on-inventory-failure fix; local 702/142 TUI suite and typecheck pass; failure diagnostics and credential redaction at `995c675` | Exact-head required checks on the refreshed branch are queued; investigate two prior macOS smoke failures from recorded diagnostics | REVIEW/MERGE only after exact-head required CI passes; then close #803 as superseded; follow with real-provider acceptance |
 
 Destination for #13 is the official registry only after independent review;
 personal portable content remains sourced by immutable reference. There are

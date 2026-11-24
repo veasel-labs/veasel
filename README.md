@@ -80,11 +80,17 @@ no environment variables required. Press `s` or `/models` for full provider
 settings (endpoint and output budget). Use `/theme` to switch among mint,
 ember, slate, mono, and aurora.
 
-Headless turn with the same local server and approval rules:
+Headless read-only turn with the same local server and provider configuration:
 
 ```sh
 veasel run --prompt "Explain the request flow in this repository" --workspace . --json
 ```
+
+`veasel run` is non-interactive. In its default `ask` mode, Veasel withholds edits,
+shell commands, and MCP tools because this command cannot collect per-operation
+approval. A trusted configured MCP server can initialize without exposing its tools
+to the model. Use the interactive TUI or Desktop when a task needs MCP calls or other
+reviewable side effects. The benchmark-only `--autonomous` mode does not enable MCP.
 
 ### API authentication
 

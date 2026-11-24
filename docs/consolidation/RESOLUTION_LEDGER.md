@@ -3,14 +3,48 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 02:34 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-24 03:26 UTC** from live GitHub state. Method: issue/PR
 queries, branch SHAs, current CI, and release manifest verification.
 
-## Checkpoint 2026-11-24 UTC — live GitHub state
+## Checkpoint 2026-11-24 03:26 UTC — live GitHub state
 
-This checkpoint supersedes the older live snapshot below. It was refreshed
-from GitHub at 2026-11-24 02:34 UTC; PR counts include drafts and this ledger
-PR #807. The Veasel counts include #807 before auto-merge.
+This checkpoint supersedes the 02:34 snapshot below. It was refreshed from
+GitHub at 03:26 UTC; PR counts include drafts and this ledger PR #807.
+
+| Repository | main SHA | Open issues | Open PRs | Current note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807) | #804/#806 merged; exact-main CI `45307427282` has Linux domain tests and Windows batch 2 running; macOS and six Linux shards passed. Previous main run `45304821923` is green. #807 auto-merge is waiting on its exact-head Linux/Windows gates. |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; exact-main registry validation `45273303142` passed. #13 is open, ready for review, and held fail-closed by the owner's decision pending independent review. |
+| veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | Release consumers remain pinned to verified `v0.101.3-next.0`; not yet refreshed to current Veasel main. |
+| veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | Release consumer SHA matches the verified manifest; no open work. |
+| veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | Release consumer SHA matches the verified manifest; no open work. |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work. |
+| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 1 (#1845) | #1845 repairs Creative Studio resource generation; exact-head required CI is running. |
+| **Total** | | **5** | **3** | No zero-backlog claim. |
+
+### Current open-item register
+
+| Item | State / owner | Existing implementation and exact evidence | Remaining acceptance / dependency | Action and destination |
+| --- | --- | --- | --- | --- |
+| [veasel#549](https://github.com/veasel-labs/veasel/issues/549) | OPEN; Veasel product mission | Linux packaged OpenCode coding journey, deterministic Focus journeys, and merged runtime/security work are retained | Repeatable real-provider coding tasks, visual-TUI continuation of the same Desktop session, cross-platform packaged journeys, truthful readiness/usage | IMPLEMENT in Veasel; keep open until mission gates pass |
+| [veasel#550](https://github.com/veasel-labs/veasel/issues/550) | OPEN; Veasel packaged acceptance | Linux packaged evidence is recorded; exact-main CI `45307427282` still running | Native macOS/Windows provider journeys need those platforms and authenticated provider accounts; full same-session visual-TUI continuation remains required | IMPLEMENT/VERIFY in Veasel; human platform/account access remains necessary |
+| [veasel#673](https://github.com/veasel-labs/veasel/issues/673) | OPEN; Veasel benchmark | Pinned binaries and safe wrapper regression are prepared; no paid request made | Meta credential absent; approved aggregate cap is USD 5, including prior approximate USD 0.35444 | HUMAN INPUT for credential availability, then run the authorized matched benchmark |
+| [veasel#689](https://github.com/veasel-labs/veasel/issues/689) | OPEN; cross-repository parent | Release consumers and ownership boundaries documented | All active child acceptance, exact-main green CI, current release, and final issue/PR reconciliation | KEEP OPEN and close last |
+| [official toolkit#13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN, non-draft; official registry governance | Live PR head `6be6dc8462d32e3c1c7a17806a051b3a0d456179` declares `network:true`, matching pinned `brag`/`brag-slim`; regression test checks disclosure. User chose to leave pending. | Independent non-submitter trust/permission review. Do not self-approve; keep non-installable until review. After personal Toolkit #1845 merges, update this immutable source pin before asking for that review. | HUMAN REVIEW in official registry; no approval/merge by this agent |
+| [veasel#807](https://github.com/veasel-labs/veasel/pull/807) | OPEN; cross-repository ledger | This ledger has current repo SHAs, 5 open issues, 3 PRs, blockers, and acceptance evidence. PR head `c0c98de63c84060d18166274a29e9f53b6e8dc68`; macOS CI passed, Linux/Windows gates running. | Exact-head CI completion; update this register again after #1845 merges. | MERGE via existing auto-merge when required checks pass; destination Veasel `main` |
+| [personal toolkit#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) | OPEN; Creative Studio umbrella | Creative skills/MCP/agents and source workflow are on main; downstream work remains separately tracked | Tool-capable model completes a real creative edit; guest-image QA; graphical integrations; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until accepted or explicitly descoped |
+| [personal toolkit#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) | OPEN; personal Toolkit compiler/distribution | PR head `fd2d1bda68eda56a1bdd7189e3cb44edd6c3e616`; targeted V tests, provenance checks, and hosted generator/build-check passed; exact-head full CI is running. Generated output includes declared text resources and a distribution note while omitting binary audio. | Exact-head required checks and review; then update official PR #13 to the merged immutable Toolkit SHA, leaving #13 pending independent review. | MERGE after CI; destination personal Toolkit `main` |
+
+Human/external dependencies currently evidenced: independent reviewer for #13;
+availability of the authorized Meta credential for #673; macOS/Windows
+machines and provider accounts for #550; signing credentials only if signed
+installers are required; and an actual HorneroOS installed-session proof for
+external HorneroOS/shell#447. Installers remain truthfully unsigned.
+
+## Historical checkpoint 2026-11-24 02:34 UTC (superseded below)
+
+This historical snapshot is retained to show prior state and evidence. Its
+counts, registry review status, and active PR rows are not current.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |

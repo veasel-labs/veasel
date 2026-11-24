@@ -801,7 +801,7 @@ paths:
   /v1/providers/cli:
     get:
       operationId: listCliProviders
-      description: Lists installed-CLI providers (dual provider plane) with honest status facts — PATH install state, the binary's own --version output, and a presence-only auth probe. Credential contents are never read; auth_state is probe-present/probe-missing/unknown, never a verified sign-in. Usage stays adapter-reported or not-published per provider, never estimated.
+      description: Lists installed-CLI providers (dual provider plane) with PATH install state, bounded version checks, and bounded non-mutating native auth checks only for CLIs with a verified status contract. Credential contents and raw command output are never returned. File presence alone remains unverified; quota and spend are never inferred.
       responses:
         '200':
           description: Registry-ordered installed-CLI provider statuses.
@@ -3622,7 +3622,7 @@ components:
           description: Model of the latest completed turn; empty before the first completed turn.
     ProviderCliStatus:
       type: object
-      required: [id, name, exec, protocol, installed, version, auth_probe_present, auth_state, permission_modes, session_resume_verified, usage_reporting]
+      required: [id, name, exec, protocol, installed, version, auth_probe_present, auth_state, auth_method, account_mode, auth_error, permission_modes, session_resume_verified, usage_reporting]
       properties:
         id: { type: string }
         name: { type: string }
@@ -3631,7 +3631,10 @@ components:
         installed: { type: boolean }
         version: { type: string }
         auth_probe_present: { type: boolean }
-        auth_state: { type: string, enum: [probe-present, probe-missing, unknown] }
+        auth_state: { type: string, enum: [verified, signed-out, probe-present, probe-missing, unknown] }
+        auth_method: { type: string, description: Safe provider-native login method label; never an account identifier. }
+        account_mode: { type: string, description: Allowlisted provider-reported plan or account mode; never includes an email or account ID. }
+        auth_error: { type: string, description: Stable local status-check error code, never raw provider output. }
         permission_modes:
           type: array
           items: { type: string }

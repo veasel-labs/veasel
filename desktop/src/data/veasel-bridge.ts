@@ -9,7 +9,7 @@
  * the new wiring layer beside them.
  *
  * Honesty rules: usage cost is `null` unless the server reports it; provider
- * install/auth state is `unknown` until a provider-status route exists;
+ * sign-in is `ready` only when its native CLI status command verifies it;
  * approval decisions map onto the durable CLI-approvals API (approve =
  * `allow`, reject = `deny`; `allow-session` is rejected rather than widened).
  */
@@ -64,6 +64,10 @@ export interface VeaselCliProviderStatus {
   version: string;
   auth_probe_present: boolean;
   auth_state: string;
+  auth_method: string;
+  account_mode: string;
+  /** Stable code only; never contains provider output or credential data. */
+  auth_error: string;
   permission_modes: string[];
   session_resume_verified: boolean;
   usage_reporting: string;
@@ -378,10 +382,8 @@ export function createVeaselFocusBridge(options: {
   }
 
   return {
-    // Provider facts come from GET /v1/providers/cli. The server probe is
-    // presence-only, so a present auth file still maps to Focus 'unknown'
-    // (never 'ready' — sign-in is not verified), a missing one to
-    // 'signed-out', and any route failure to the honest static fallback.
+    // Provider facts come from GET /v1/providers/cli. Only native CLI status
+    // commands can map sign-in to 'ready'; file presence alone stays unknown.
     async providers(): Promise<FocusProviderStatus[]> {
       const checkedAt = new Date().toISOString();
       const fallback: FocusProviderStatus[] = PROVIDER_IDS.map((id) => ({
@@ -409,13 +411,21 @@ export function createVeaselFocusBridge(options: {
           installed: status.installed,
           binary: status.installed ? status.exec : null,
           version: status.version || null,
-          auth: status.auth_state === 'probe-missing' ? ('signed-out' as const) : ('unknown' as const),
-          authDetail:
-            status.auth_state === 'probe-present'
-              ? 'Auth file present; sign-in is not verified by the Veasel API.'
-              : status.auth_state === 'probe-missing'
-                ? 'No auth file found for this CLI.'
-                : 'Auth state is unknown.',
+          auth:
+            status.auth_state === 'verified'
+              ? ('ready' as const)
+              : status.auth_state === 'signed-out'
+                ? ('signed-out' as const)
+                : ('unknown' as const),
+          authDetail: providerAuthDetail(status),
+          signInHint:
+            status.auth_state === 'signed-out'
+              ? status.id === 'claude-code'
+                ? 'claude'
+                : status.id === 'codex'
+                  ? 'codex login'
+                  : null
+              : null,
           capabilities: {
             ...base.capabilities,
             // Only wired protocols may claim structured sessions.
@@ -653,4 +663,28 @@ export function createVeaselFocusBridge(options: {
       };
     },
   };
+}
+
+function providerAuthDetail(status: VeaselCliProviderStatus): string {
+  if (status.auth_state === 'verified') {
+    if (status.auth_method === 'claude.ai') {
+      const plan = status.account_mode ? ` · ${status.account_mode.toUpperCase()} plan` : '';
+      return `Signed in with Claude.ai${plan}. Quota is not reported here.`;
+    }
+    if (status.auth_method === 'console') return 'Signed in with Claude Console. Quota is not reported here.';
+    if (status.auth_method === 'chatgpt')
+      return 'Signed in with ChatGPT. Plan and quota are not reported by Codex CLI.';
+    if (status.auth_method === 'api-key')
+      return 'Authenticated with an API key. Billing mode and quota are not reported.';
+    return 'Sign-in verified by the provider CLI. Plan and quota are unknown.';
+  }
+  if (status.auth_state === 'signed-out') return 'The provider CLI reports that you are signed out.';
+  if (status.auth_error === 'status-command-timeout')
+    return 'The local sign-in check timed out; sign-in state is unknown.';
+  if (status.auth_error) return 'The local sign-in check failed; sign-in state is unknown.';
+  if (status.auth_state === 'probe-present')
+    return 'Credentials were detected, but this CLI does not expose a verified sign-in check.';
+  if (status.auth_state === 'probe-missing')
+    return 'No credential file was detected; environment or native-store sign-in may still be available.';
+  return 'Sign-in state is unknown until the provider CLI can verify it.';
 }

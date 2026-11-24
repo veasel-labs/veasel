@@ -31,6 +31,12 @@ if (process.argv.includes('--version')) {
   process.exit(0);
 }
 
+if (process.argv.slice(2).join(' ') === 'auth status --json') {
+  log('auth-status');
+  process.stdout.write('{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}\n');
+  process.exit(0);
+}
+
 log('spawn', { argv: process.argv.slice(2) });
 process.on('SIGTERM', () => {
   log('sigterm');

@@ -13,8 +13,10 @@ pub:
 	id                      string // claude-code|codex|opencode|muse
 	name                    string
 	exec                    string
-	protocol                string // stream-json|app-server|acp|unknown
-	auth_probe_path         string // '~/...' presence-only probe, '' if none
+	protocol                string   // stream-json|app-server|acp|unknown
+	auth_probe_path         string   // '~/...' presence-only probe, '' if none
+	auth_status_args        []string // provider-owned, non-mutating local auth check
+	auth_status_kind        string   // claude-json|codex-text|'' when unsupported
 	permission_modes        []string
 	session_resume_verified bool
 	usage_reporting         string // adapter-reported|not-published|unknown
@@ -28,6 +30,8 @@ pub fn provider_cli_registry() []ProviderCliSpec {
 			exec:                    'claude'
 			protocol:                'stream-json'
 			auth_probe_path:         '~/.claude/.credentials.json'
+			auth_status_args:        ['auth', 'status', '--json']
+			auth_status_kind:        'claude-json'
 			permission_modes:        ['ask', 'accept-edits', 'plan', 'bypass']
 			session_resume_verified: true             // --resume, measured claude 2.1.322 in agent-toolkit
 			usage_reporting:         'adapter-reported' // result frame usage + total_cost_usd (session-cumulative)
@@ -38,6 +42,8 @@ pub fn provider_cli_registry() []ProviderCliSpec {
 			exec:                    'codex'
 			protocol:                'app-server'
 			auth_probe_path:         '~/.codex/auth.json'
+			auth_status_args:        ['login', 'status']
+			auth_status_kind:        'codex-text'
 			permission_modes:        ['ask', 'accept-edits', 'plan', 'bypass']
 			session_resume_verified: true          // thread/resume, measured codex-cli 0.167.2
 			usage_reporting:         'not-published' // tokenUsage last/total are not per-turn spend
@@ -59,7 +65,7 @@ pub fn provider_cli_registry() []ProviderCliSpec {
 			protocol:                'acp' // `muse acp`, verified live against Muse Code 1.4.20 (initialize + session/new)
 			auth_probe_path:         '~/.config/muse/auth.json'
 			permission_modes:        ['ask'] // runner forces mode=onRequest; Muse defaults sessions to allowAll
-			session_resume_verified: false     // loadSession advertised live, resume path not yet exercised
+			session_resume_verified: false   // loadSession advertised live, resume path not yet exercised
 			usage_reporting:         'unknown' // prompt-result usage not yet measured for Muse
 		},
 	]

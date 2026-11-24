@@ -4,3 +4,7 @@
 # Desktop sources are built on Windows runners too; the vite prettier
 # step rejects CRLF, so pin LF at checkout on every platform.
 desktop/** text eol=lf
+
+# Keep the World and application artwork byte-for-byte intact. The source
+# newline rule above must not normalize binary PNG contents on checkout.
+desktop/**/*.png -text

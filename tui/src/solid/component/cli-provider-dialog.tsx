@@ -4,6 +4,25 @@ import type { ApiCliProvider } from "../../api-client"
 import { safeModelCatalogText } from "../../model-providers"
 import { openDialogSelect } from "../ui/dialog-select"
 
+function authSummary(provider: ApiCliProvider): string {
+  if (provider.auth_state === "verified") {
+    if (provider.auth_method === "claude.ai") {
+      const plan = provider.account_mode ? ` · ${provider.account_mode.toUpperCase()} plan` : ""
+      return `signed in with Claude.ai${plan}; quota unknown`
+    }
+    if (provider.auth_method === "chatgpt") return "signed in with ChatGPT; plan and quota unknown"
+    if (provider.auth_method === "api-key") return "CLI reports API-key auth; billing and quota unknown"
+    if (provider.auth_method === "console") return "signed in with Claude Console; quota unknown"
+    return "sign-in verified by native CLI; plan and quota unknown"
+  }
+  if (provider.auth_state === "signed-out") return "native CLI reports signed out"
+  if (provider.auth_error === "status-command-timeout") return "sign-in check timed out; state unknown"
+  if (provider.auth_error) return "native sign-in check failed; state unknown"
+  if (provider.auth_state === "probe-present") return "credentials detected; sign-in unverified"
+  if (provider.auth_state === "probe-missing") return "no credential file detected; sign-in may still use another method"
+  return "sign-in state unknown"
+}
+
 export function cliProviderOptions(providers: ApiCliProvider[], permissionMode = "ask") {
   const installed = providers.filter((provider) => provider.installed)
   const defaultOption = {
@@ -33,11 +52,7 @@ export function cliProviderOptions(providers: ApiCliProvider[], permissionMode =
         value: provider.id,
         description: [
           safeModelCatalogText(provider.version) || "version unavailable",
-          provider.auth_state === "probe-present"
-            ? "auth file detected; sign-in not verified"
-            : provider.auth_state === "probe-missing"
-              ? "auth file not detected"
-              : "auth state unknown",
+          authSummary(provider),
           `permissions: ${provider.permission_modes.join(", ") || "none"}`,
           ...(!supportsMode ? [`unavailable in ${mode} mode`] : []),
         ].join(" · "),

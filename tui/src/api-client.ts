@@ -32,7 +32,10 @@ export type ApiCliProvider = {
   installed: boolean
   version: string
   auth_probe_present: boolean
-  auth_state: "probe-present" | "probe-missing" | "unknown"
+  auth_state: "verified" | "signed-out" | "probe-present" | "probe-missing" | "unknown"
+  auth_method?: string
+  account_mode?: string
+  auth_error?: string
   permission_modes: string[]
   session_resume_verified: boolean
   usage_reporting: string

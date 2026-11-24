@@ -33,7 +33,7 @@ if (process.argv.includes('--version')) {
 
 if (process.argv.slice(2).join(' ') === 'auth status --json') {
   log('auth-status');
-  process.stdout.write('{"loggedIn":false}\n');
+  process.stdout.write('{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}\n');
   process.exit(0);
 }
 

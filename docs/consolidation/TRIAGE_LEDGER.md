@@ -13,16 +13,16 @@ proposed dispositions are historical and must not be used as current state.
 
 | Repository | `main` SHA | Open issues | Open PRs | Latest relevant evidence |
 | --- | --- | ---: | ---: | --- |
-| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | 56f2c6b30008f4e68f74e21e4767789962b91640 | 4 | 0 | PR [#808](https://github.com/veasel-labs/veasel/pull/808) merged the live ledger refresh. Exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252) is running on this merge SHA: Windows backend is still in progress; macOS backend and five Linux shards passed at audit time, one shard and Linux backend remain active. The latest completed core run is [#45342354902](https://github.com/veasel-labs/veasel/actions/runs/45342354902) on parent `a72a2f5d82f5a4169068c73782fc8c05027c83e0`. Latest release remains `v0.102.1-next.0` from `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`. |
-| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | 8205dd0e09ea6c74342503152b3fc71325be1351 | 0 | 1 | Exact-main Validate [#45273303142](https://github.com/veasel-labs/agent-toolkit/actions/runs/45273303142) passed. Owner-approved first-party `veasel-essentials` exception is resolved by #10/#12. Community [PR #13](https://github.com/veasel-labs/agent-toolkit/pull/13) remains non-installable and pending independent review at head `6be6dc8462d32e3c1c7a17806a051b3a0d456179`; the permission mismatch is unresolved. |
+| [veasel-labs/veasel](https://github.com/veasel-labs/veasel) | 56f2c6b30008f4e68f74e21e4767789962b91640 | 5 | 1 | Exact-main core CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252) passed on this SHA, including Windows, macOS, Linux, six Linux shards, Desktop, Terminal, and security. Open ledger refresh [#809](https://github.com/veasel-labs/veasel/pull/809) at `ffe4e009e809c5cbc730f4d8041c654c7baa2f39` also passed exact-head Windows/Linux/macOS checks in [#45365723057](https://github.com/veasel-labs/veasel/actions/runs/45365723057); its snapshot is being refreshed before merge. Latest release remains `v0.102.1-next.0` from `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`. |
+| [veasel-labs/agent-toolkit](https://github.com/veasel-labs/agent-toolkit) | 8205dd0e09ea6c74342503152b3fc71325be1351 | 0 | 1 | Exact-main Validate [#45273303142](https://github.com/veasel-labs/agent-toolkit/actions/runs/45273303142) passed. The owner approved the narrow first-party `veasel-essentials` exception (#10/#12). Community [PR #13](https://github.com/veasel-labs/agent-toolkit/pull/13) remains non-installable at head `6be6dc8462d32e3c1c7a17806a051b3a0d456179`; owner directed that it stay pending until an independent reviewer resolves the `network:false` versus `brag` `network:true` mismatch. |
 | [veasel-labs/website](https://github.com/veasel-labs/website) | 40f78446b02517abd452abc256e1c29e9ce58a8d | 0 | 0 | Release metadata PR #228 merged for v0.102.1-next.0. Exact-main CI [#45326905628](https://github.com/veasel-labs/website/actions/runs/45326905628) and deployment [#45326905565](https://github.com/veasel-labs/website/actions/runs/45326905565) passed. |
 | [veasel-labs/homebrew-tap](https://github.com/veasel-labs/homebrew-tap) | 5b732843aba04fcfd9bc21c0a77a29d53b08d791 | 0 | 0 | Cask update PR #68 merged for v0.102.1-next.0; current-main CI [#45326961698](https://github.com/veasel-labs/homebrew-tap/actions/runs/45326961698) passed. PR-head install/upgrade/runtime/uninstall smoke passed before merge. |
 | [veasel-labs/aur-package](https://github.com/veasel-labs/aur-package) | bb2090236f76dd91d0aac3212a74e5e1b324fdcf | 0 | 0 | AUR mirror PR #70 merged for v0.102.1-next.0; current-main Package CI [#45327011543](https://github.com/veasel-labs/aur-package/actions/runs/45327011543) passed. Build/install/upgrade/uninstall smoke passed before merge. |
 | [veasel-labs/.github](https://github.com/veasel-labs/.github) | 7097e534eeafae932bcf427e12b0a5df398d9894 | 0 | 0 | No organization-level change is currently required. |
-| [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | d7ac3ccc69f15b460d95ffc38d8ba1f4c09b9d26 | 1 | 1 | Issue [#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) remains open. [PR #1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) merged at this SHA: source Electron/backend E2E, packaged Electron with isolated HOME, Validate, parity, and release packaging/linkage on Linux/macOS/Windows passed on exact PR head `26fe12b884c064209949f1f6771fbd35e1aabdf8` ([desktop](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45358214968), [clean machine](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45358214982), [Validate](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45358215051), [Release](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45358215137)). Post-merge main CI is running: Validate [#45361053249](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45361053249), desktop [#45361053468](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45361053468), and clean-machine [#45361053408](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45361053408). Open [PR #1846](https://github.com/ulises-jeremias/agent-toolkit/pull/1846) prepares v1.50.0 from head `9c64bc5ff6a3602cf14d67b6ae16aa5b774548c4`; generated-artifact check #981 now passes after regenerating the bundle and SHA, with the remaining exact-head CI still running. Latest published release remains v1.49.0; no v1.50.0 tag exists. |
-| **Total (seven requested repositories)** | — | **5** | **2** | Four Veasel issues and personal Toolkit #1838 remain open. Open PRs are official registry #13 and personal Toolkit #1846. The adjacent personal Homebrew #61 and AUR #10 PRs have merged; real install/upgrade smoke against the new v1.50.0 release remains. |
+| [ulises-jeremias/agent-toolkit](https://github.com/ulises-jeremias/agent-toolkit) | 6303544045e3fc6ffbc5f085215eececdf7a7789 | 1 | 1 | Issue [#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) remains open. Release [v1.50.0](https://github.com/ulises-jeremias/agent-toolkit/releases/tag/v1.50.0) resolves to this SHA; release CI [#45371940996](https://github.com/ulises-jeremias/agent-toolkit/actions/runs/45371940996) passed all five platform builds, artifact upload, PyPI and Docker. All 10 platform binary/archive hashes match the manifest, `SHA256SUMS`, and GitHub asset digests. Personal Homebrew formula PR #62 merged at `b555488e5041b3decb28b013d4c47c779d630fe8`; AUR updater verified `1.50.0-1` in [#45375027630](https://github.com/ulises-jeremias/aur-packages/actions/runs/45375027630). Draft release lifecycle fix [#1847](https://github.com/ulises-jeremias/agent-toolkit/pull/1847) remains open for human review after the PR-head checks. |
+| **Total (seven requested repositories)** | — | **6** | **3** | Veasel issues #549, #550, #673, #689, #693 and personal Toolkit #1838 remain open. Open PRs are Veasel #809, official registry #13, and personal Toolkit #1847. The owner decision on #13 and complete cross-platform real-provider, World visual, package lifecycle, HorneroOS, and signing evidence remain genuine dependencies. |
 
-This snapshot was re-queried on 2026-11-24 after Veasel #808 and personal Toolkit #1845 merged. Veasel exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252) is still running on `56f2c6b30008f4e68f74e21e4767789962b91640`; the previous exact-main run [#45342354902](https://github.com/veasel-labs/veasel/actions/runs/45342354902) passed on `a72a2f5d82f5a4169068c73782fc8c05027c83e0`. The current Veasel release remains `v0.102.1-next.0` from `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`; Website, official Homebrew and official AUR remain synchronized. The owner-approved first-party registry exception is recorded; community PR #13 remains fail-closed at the owner's direction. Personal Toolkit's deterministic offline resource sidecar is integrated and passed all exact PR-head cross-platform package/linkage and packaged Electron checks. New release preparation [#1846](https://github.com/ulises-jeremias/agent-toolkit/pull/1846) targets v1.50.0; CI caught that version/changelog changes also require regenerated embedded bundle/hash, now fixed at `9c64bc5ff6a3602cf14d67b6ae16aa5b774548c4`. No new release has been tagged or published. Current issue/PR state is authoritative over older historical counts.
+This live snapshot was re-queried on 2026-11-24. Exact-main Veasel CI passed on `56f2c6b30008f4e68f74e21e4767789962b91640`; Windows authentication tests were included, not skipped. The current Veasel release remains `v0.102.1-next.0` from `eab88d598b5ab8329dabffcd45d35aa00e2a4cab`; Website, official Homebrew and official AUR remain synchronized. World issue #693 was reopened after packaged visual review because the map does not yet meet the requested cozy visual quality; runtime semantics remain real-data-backed. Personal Toolkit `v1.50.0` has complete verified artifacts and successful PyPI/Docker/npm plus Homebrew/AUR propagation, but native Homebrew/AUR install/upgrade/uninstall smoke remains outstanding. The new draft-release gate and current live inventory are recorded in open PR #1847 and this PR respectively. Current GitHub state overrides older historical counts below.
 
 ### Latest fully downloaded artifact smoke (historical release)
 
@@ -47,15 +47,47 @@ release artifact and packaged provider acceptance gates.
 
 | PR | State / owner | Dependencies and remaining acceptance | Evidence / destination | Required action |
 | --- | --- | --- | --- | --- |
+| [Veasel #809](https://github.com/veasel-labs/veasel/pull/809) | OPEN · live cross-repository inventory · prior head `ffe4e009e809c5cbc730f4d8041c654c7baa2f39` | Refresh issue/PR counts, exact-main evidence, current release state, and the reopened World visual gap. | Prior exact-head CI [#45365723057](https://github.com/veasel-labs/veasel/actions/runs/45365723057) passed Windows (49 minutes), Linux, macOS, six Linux shards, Desktop, Terminal, and security. This ledger update supersedes the old inventory; the new head and checks are linked from the PR. | Wait for the refreshed snapshot to pass exact-head checks, then merge and verify the resulting exact-main SHA. |
 | [official registry #13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN · community Creative Studio plugin by reference · head `6be6dc8462d32e3c1c7a17806a051b3a0d456179` | Owner decision: leave pending until independent review. Source is pinned by reference; no source is copied. `network:false` conflicts with `skills/brag/SKILL.md` declaring `security.network:true`. | Entry remains non-installable. Registry validation has passed on prior revisions, but permission mismatch and independent review remain unresolved. | Keep pending and fail-closed. Correct permission metadata, audit provenance/capabilities, then obtain independent review. Never self-approve or mark installable before review. |
-| [personal Toolkit #1846](https://github.com/ulises-jeremias/agent-toolkit/pull/1846) | OPEN · Prepare v1.50.0 for Creative Studio + verified resource sidecar · head `9c64bc5ff6a3602cf14d67b6ae16aa5b774548c4` | Bumps version sources, plugin provenance and OpenAPI; promotes the Creative Studio mainline work and sidecar fix into the release changelog. Generated offline bundle/hash must match the release tree. | First head `937ce85e8a2c49e4df0c134f85baa6b2204f6646` correctly failed `Check Generated Artifacts (#981)`: version/changelog changes alter the embedded source tree. Regenerated `embedded_data.bundle.gz` and hash locally with pinned V `c0e47bf` under 2 GiB `systemd-run`; local SHA-256 is `802314f1f6b446ffdc52d579949aa45172d88a560e6b0c2c6d0890f06d0d68c0`. On corrected head, #981 passed and no CI failures are reported; cross-platform validations remain in progress. No release tag has been created. | Wait for all current exact-head checks and review their conclusions. Merge only when they pass; then wait for exact-main CI before tagging v1.50.0. |
+| [personal Toolkit #1847](https://github.com/ulises-jeremias/agent-toolkit/pull/1847) | DRAFT · defer public release until distribution gates pass · head `c68347b9e69a8f2b0db0ce6b8349cbc027e06237` | Future tag releases remain draft until binary assets, SBOM, PyPI, and Docker succeed. | YAML parse, workflow dependency/permission assertions and `git diff --check` passed locally. PR checks completed; the initial Docker PR smoke failed with HTTP 404 while v1.50.0 assets were still uploading, then the failed job was rerun successfully after artifact publication. | Keep draft for maintainer review. Confirm same repository token access to draft assets in the next release before treating the lifecycle gate as fully exercised. |
+
+## Remaining open issue outside the Veasel Labs organization
+
+### ulises-jeremias/agent-toolkit#1838 — AI-Native Creative Studio ecosystem
+
+- **State / owner:** OPEN · personal Agent Toolkit owns portable creative skills,
+  agents, MCP packaging and workflows; HorneroOS owns native OS integration;
+  Veasel consumes approved capabilities by reference and owns its session runtime.
+- **Dependencies:** external `agentic-workstation#236` owner review and
+  HorneroOS `hornero#474` merge; actual HorneroOS installation to validate
+  `shell#447`; an authenticated, tool-capable model for the second-client Veasel
+  workflow; remaining creative workflow/video production and graphical-app
+  acceptance. Do not self-approve or infer acceptance from source CI.
+- **Landed evidence:** Toolkit #1835/#1837 and HorneroOS docs #151/QA #97 are
+  merged; host-side Kdenlive, Blender, Inkscape, audio and `horneroctl`
+  workflows are recorded in the issue. Veasel #800 provides packaged MCP
+  approval/sandbox evidence. The v1.50.0 release is tied to main
+  `6303544045e3fc6ffbc5f085215eececdf7a7789`; release artifacts, manifest and
+  checksums plus PyPI/Docker/npm and downstream Homebrew/AUR propagation are
+  recorded in [the latest issue evidence](https://github.com/ulises-jeremias/agent-toolkit/issues/1838#issuecomment-7129227513).
+- **Remaining acceptance:** clean Homebrew and Arch install/upgrade/uninstall
+  smoke; next-tag verification of the draft-until-gates-pass workflow in open
+  PR #1847; merge/review blockers above; a real Veasel session completing a
+  creative edit; actual HorneroOS shell launch/session reuse/cleanup; and the
+  outstanding flagship footage and application-specific workflows. Signing
+  remains truthful as unsigned until credentials and platform verification
+  exist.
+- **Action / destination:** IMPLEMENT/REVIEW in the owning repositories; keep
+  open until each accepted workflow is completed or explicitly descoped by its
+  owner. Do not close the umbrella based solely on release or host-side app
+  smoke evidence.
 
 ## Adjacent personal Toolkit distribution PRs (not counted in the seven-repository inventory)
 
 | PR | State / owner | Remaining acceptance | Evidence | Required action |
 | --- | --- | --- | --- | --- |
-| [personal Homebrew tap #61](https://github.com/ulises-jeremias/homebrew-tap/pull/61) | MERGED at `94585d355059db374f013f4d3da161c87f0eca8c` · install sidecar with verified versioned archive | Formula updater validates manifest version/tag/source SHA against resolved GitHub tag, archive metadata and digest. | PR merged 2026-11-24. It installs and verifies the bundle alongside the binary. Latest published v1.49.0 predates strict sourceSha metadata; no next-version formula run yet. | After v1.50.0 publishes, verify real `brew install`, offline skill listing, upgrade and uninstall on macOS. |
-| [personal AUR packages #10](https://github.com/ulises-jeremias/aur-packages/pull/10) | MERGED at `f5e65953ee686715fb3d4fef788db69410d020b7` · install sidecar with verified versioned archive | PKGBUILD installs bundle to `/usr/share/agent-toolkit/data`, rejects missing sidecars for archive-based updates, and checks manifest tag/source SHA/platform/digest. | PR merged 2026-11-24. Local updater checks and disposable `package()` smoke covered executable, bundle and license. Latest published v1.49.0 predates these changes. | After v1.50.0 publishes, verify Arch build/install/upgrade/uninstall and offline skill listing. |
+| [personal Homebrew tap #61](https://github.com/ulises-jeremias/homebrew-tap/pull/61) | MERGED at `94585d355059db374f013f4d3da161c87f0eca8c` · install sidecar with verified versioned archive | Formula updater validates manifest version/tag/source SHA against resolved GitHub tag, archive metadata and digest. | v1.50.0 updater created formula PR [#62](https://github.com/ulises-jeremias/homebrew-tap/pull/62), revalidated after [automation fix #63](https://github.com/ulises-jeremias/homebrew-tap/pull/63), and merged at `b555488e5041b3decb28b013d4c47c779d630fe8`. Old version-only PRs #52–#60 were superseded after checking their complete diffs. | Run actual clean macOS install, offline skill listing, upgrade and uninstall; no local macOS install is claimed. |
+| [personal AUR packages #10](https://github.com/ulises-jeremias/aur-packages/pull/10) | MERGED at `f5e65953ee686715fb3d4fef788db69410d020b7` · install sidecar with verified versioned archive | PKGBUILD installs bundle to `/usr/share/agent-toolkit/data`, rejects missing sidecars for archive-based updates, and checks manifest tag/source SHA/platform/digest. | The v1.50.0 updater run [#45375027630](https://github.com/ulises-jeremias/aur-packages/actions/runs/45375027630) succeeded after AUR propagation delay and verified `agent-toolkit-bin@1.50.0-1`. | Run actual clean Arch build/install, offline skill listing, upgrade and uninstall; this updater result is not an install smoke. |
 
 Merged during this audit:
 
@@ -69,16 +101,20 @@ Merged during this audit:
 - Veasel [#808](https://github.com/veasel-labs/veasel/pull/808) merged at
   `56f2c6b30008f4e68f74e21e4767789962b91640`. It refreshes this ledger and
   passed PR-head Linux/macOS/Windows CI; exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252)
-  is still running on the merge SHA.
+  completed successfully on the merge SHA, including Windows backend and all
+  Linux shards.
 - Personal Toolkit [#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845)
   merged at `d7ac3ccc69f15b460d95ffc38d8ba1f4c09b9d26`; exact PR-head source
   Electron, fresh-HOME packaged E2E, Validate, parity and Linux/macOS/Windows
-  package/linkage checks passed. Post-merge main CI is still running.
+  package/linkage checks passed. Later exact-main checks on the resulting
+  Toolkit lineage include the full v1.50.0 release validation listed above;
+  do not confuse that release proof with a fresh-HOME package lifecycle smoke.
 - Adjacent personal distribution PRs [Homebrew #61](https://github.com/ulises-jeremias/homebrew-tap/pull/61)
   and [AUR #10](https://github.com/ulises-jeremias/aur-packages/pull/10)
   merged at `94585d355059db374f013f4d3da161c87f0eca8c` and
-  `f5e65953ee686715fb3d4fef788db69410d020b7`, respectively. Next-release
-  install/upgrade/uninstall acceptance remains outstanding.
+  `f5e65953ee686715fb3d4fef788db69410d020b7`, respectively. v1.50.0
+  propagation was verified in the release, Homebrew updater and AUR updater
+  workflows; clean local package lifecycle smoke remains outstanding.
 - Veasel [#804](https://github.com/veasel-labs/veasel/pull/804) merged at
   `6bf9846454ed9ce6e3dbb2a2038ef20264789984`. It carries the original runner
   picker commit from [#803](https://github.com/veasel-labs/veasel/pull/803)
@@ -150,8 +186,8 @@ Merged since prior ledger snapshot:
   `veasel-labs/veasel`; resolve only with independent packaged evidence and
   links in the issue. Current destination is `main` at
   `56f2c6b30008f4e68f74e21e4767789962b91640`; the merged ledger-only change
-  has exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252)
-  still running. No final resolution commit exists.
+  passed exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252),
+  including the Windows backend. No final resolution commit exists.
 
 ### veasel-labs/veasel#550 — installed-binary cross-platform journeys
 
@@ -179,7 +215,8 @@ Merged since prior ledger snapshot:
   not retroactively change that journey's result. [The 2026-11-24 status
   comment](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7123306150)
   links the merge, current-main CI, and the still-unverified native-platform
-  acceptance.
+  acceptance. A later packaged Linux Claude Code attempt is documented in
+  [the Nov 24 evidence update](https://github.com/veasel-labs/veasel/issues/550#issuecomment-7128170052): the actual provider responded, but two edit approvals expired; there were no changes or independent tests, so coding acceptance remains NOT VERIFIED. The run consumed 36,515 input and 1,504 output tokens; cost was not reported, and no retry was made.
 - **Remaining acceptance:** complete native macOS and Windows install/configure/
   edit/review/test/restart journeys with real providers; test rejected changes,
   cancellation and process cleanup on those platforms. Packaged OpenCode
@@ -201,8 +238,9 @@ Merged since prior ledger snapshot:
   exact-main CI [#45106567453](https://github.com/veasel-labs/veasel/actions/runs/45106567453)
   passed on SHA `240d95e`. Baseline Veasel main `eab88d59` passed all required
   checks in [#45307427282](https://github.com/veasel-labs/veasel/actions/runs/45307427282);
-  latest main `56f2c6b30008f4e68f74e21e4767789962b91640` is undergoing exact-main
-  CI in [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252).
+  latest main `56f2c6b30008f4e68f74e21e4767789962b91640` passed exact-main
+  CI in [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252),
+  including Windows. This does not prove a live matched benchmark.
   Neither run proves a live matched benchmark. Network-namespace
   enforcement remains unverified on hosted runners; prior local Arch evidence
   is recorded separately.
@@ -234,6 +272,27 @@ Merged since prior ledger snapshot:
   not by itself prove every visual-quality target in the epic.
 - **Action:** KEEP OPEN and close LAST after every repository, acceptance gate,
   release and user-data migration is independently reconciled.
+
+### veasel-labs/veasel#693 — cozy World visual acceptance
+
+- **State / owner:** OPEN again · Veasel World scene and Desktop visual design.
+- **Dependencies:** preserve the authored PXL sprite system and provenance;
+  align terrain scale/composition with the cozy RPG-quality visual target;
+  retain real runtime state and keyboard/Focus parity.
+- **Evidence:** PR [#789](https://github.com/veasel-labs/veasel/pull/789)
+  integrated the semantic World using real runtime state. Packaged `v0.102.1-next.0`
+  launched on Wayland and exposed the accessible World map. The visual review
+  found a broad, mostly flat green field with sparse landmarks at default zoom;
+  roads, waterways, vegetation, and architecture do not form the requested
+  cohesive cozy scene. Screenshot SHA256 and review are recorded in
+  [the issue update](https://github.com/veasel-labs/veasel/issues/693#issuecomment-7128115047);
+  launch verification was corrected in [the follow-up](https://github.com/veasel-labs/veasel/issues/693#issuecomment-7128314289).
+- **Remaining acceptance:** improve the authored composition without replacing
+  governed PXL assets, then review compact/high-zoom/reduced-motion layouts and
+  real packaged Electron behavior. The scene must remain truthful when no
+  workspace or active session exists.
+- **Action:** IMPLEMENT/REVIEW; keep open. Do not use the runtime integration
+  PR or screenshots alone as proof that the visual acceptance is complete.
 
 
 ## Distribution and release reconciliation
@@ -303,11 +362,13 @@ the retired Desktop runtime wholesale.
   Linux/macOS/Windows checks passed, including Windows. Post-merge exact-main
   CI [#45342354902](https://github.com/veasel-labs/veasel/actions/runs/45342354902)
   passed on `a72a2f5d82f5a4169068c73782fc8c05027c83e0`; the newer docs merge
-  `56f2c6b` is still in exact-main CI. Community entries remain pending
+  `56f2c6b` also passed exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252),
+  including Windows. Community entries remain pending
   independent review as directed.
-- World integration #693 closed through [PR #789](https://github.com/veasel-labs/veasel/pull/789)
-  at current `main`; runtime state is canonical. Visual design/accessibility
-  evidence remains part of the open epic acceptance.
+- World integration #693 was initially closed through [PR #789](https://github.com/veasel-labs/veasel/pull/789)
+  after semantic runtime integration. It was reopened after packaged visual
+  review; see the current #693 disposition above. Runtime state is canonical,
+  but visual design/accessibility acceptance is not complete.
 - Official registry governance issue [#10](https://github.com/veasel-labs/agent-toolkit/issues/10) is closed with the owner's explicit decision, “Aprobar excepción first-party de veasel-essentials.” [PR #12](https://github.com/veasel-labs/agent-toolkit/pull/12) merged as `2096315d10ccdb19b1cb8ea071986bd2c641eb89`, marked only first-party `veasel-essentials` approved, updated generated catalogs, and documented the transparent owner exception. Exact-main validation [#45075110730](https://github.com/veasel-labs/agent-toolkit/actions/runs/45075110730) passed. Community `agent-toolkit-core` remains pending; no independent review is claimed. The first-party bundled source keeps its pin by containing repository commit and its manifest/skill hashes were verified before approval.
 - The official registry's invalid-pin remediation merged as PR #11. It removes
   the all-zero pin and validates provenance; community `agent-toolkit-core`

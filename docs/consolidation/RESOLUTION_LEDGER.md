@@ -3,24 +3,25 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-24 02:22 UTC** from live GitHub state. Method: issue/PR
 queries, branch SHAs, current CI, and release manifest verification.
 
 ## Checkpoint 2026-11-24 UTC — live GitHub state
 
 This checkpoint supersedes the older live snapshot below. It was refreshed
-from GitHub on 2026-11-24 UTC; PR counts include drafts.
+from GitHub at 2026-11-24 02:22 UTC; PR counts include drafts and this ledger
+PR #807.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
-| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 0 | #804/#806 merged; CodeQL `45307427273` passed; exact-main CI `45307427282` pending behind prior run `45304821923` (Windows batch 3 active) |
+| veasel-labs/veasel | `eab88d598b5ab8329dabffcd45d35aa00e2a4cab` | 4 (#549, #550, #673, #689) | 1 (#807, this ledger) | #804/#806 merged; CodeQL `45307427273` passed; exact-main CI `45307427282` pending behind prior run `45304821923` (Windows batch 3 active); #807 head `9e02a238` CI in progress, auto-merge enabled |
 | veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13) | #14 merged; exact-main registry validation `45273303142` passed; #13 is open, not draft, and awaits independent review per owner |
 | veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
 | veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
 | veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | No open work |
 | veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work |
 | ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 0 | Umbrella issue still open |
-| **Total** | | **5** | **1** | No zero-backlog claim |
+| **Total** | | **5** | **2** | No zero-backlog claim |
 
 Current Veasel main is four commits beyond the published release source
 `1d041d86a19275b6c73e2c1750890dacaf18dd97`. The latest two feature changes
@@ -49,6 +50,13 @@ Open Veasel work (no closure implied):
 - [#689](https://github.com/veasel-labs/veasel/issues/689) — parent epic stays
   open until all repository, release, provider, review, and issue acceptance is
   complete; close last.
+
+Open Veasel PR:
+
+- [#807](https://github.com/veasel-labs/veasel/pull/807) — this ledger refresh;
+  head `9e02a238f3b5e446379ba1dab3d4bb47457c34ca`, exact PR CI run
+  `45311411563` in progress (and DangerJS `45311484003` passed). Auto-merge is
+  enabled but remains gated on required checks.
 
 Open non-Veasel items:
 

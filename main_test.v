@@ -140,6 +140,30 @@ fn test_serve_and_tui_help_are_available_without_starting_the_backend() {
 	assert command_help('mcp').contains('Trust and per-call approval')
 }
 
+fn test_interactive_tui_enables_durable_cli_approvals_before_backend_spawn() {
+	previous := os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS')
+	os.unsetenv('VEASEL_CLI_INTERACTIVE_APPROVALS')
+	enable_tui_cli_approvals()
+	assert os.getenv('VEASEL_CLI_INTERACTIVE_APPROVALS') == '1'
+	if value := previous {
+		os.setenv('VEASEL_CLI_INTERACTIVE_APPROVALS', value, true)
+	} else {
+		os.unsetenv('VEASEL_CLI_INTERACTIVE_APPROVALS')
+	}
+}
+
+fn test_interactive_tui_preserves_explicit_cli_approval_opt_out() {
+	previous := os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS')
+	os.setenv('VEASEL_CLI_INTERACTIVE_APPROVALS', '0', true)
+	enable_tui_cli_approvals()
+	assert os.getenv('VEASEL_CLI_INTERACTIVE_APPROVALS') == '0'
+	if value := previous {
+		os.setenv('VEASEL_CLI_INTERACTIVE_APPROVALS', value, true)
+	} else {
+		os.unsetenv('VEASEL_CLI_INTERACTIVE_APPROVALS')
+	}
+}
+
 fn test_session_turn_semaphores_serialize_the_same_session() {
 	store := open_store(':memory:') or { panic(err) }
 	defer {

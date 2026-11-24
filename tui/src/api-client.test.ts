@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { resolveLoopbackApiBase, VeaselApiClient } from "./api-client"
+import { resolveLoopbackApiBase, VeaselApiClient, type ApiSession } from "./api-client"
 
 describe("resolveLoopbackApiBase", () => {
   test("defaults to loopback port 4097", () => {
@@ -46,6 +46,41 @@ describe("VeaselApiClient health", () => {
     const health = await client.getHealth()
     expect(url).toContain("/v1/health")
     expect(health.version).toBe("0.42.0-dev")
+  })
+})
+
+describe("VeaselApiClient installed CLI approvals", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("lists and decides a durable approval for the exact session and request", async () => {
+    const observed: Array<{ url: string; method: string }> = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      observed.push({ url: String(input), method: String(init?.method ?? "GET") })
+      const approval = {
+        id: "approval-1",
+        session_id: "session/one",
+        request_id: "request-1",
+        tool_name: "Edit",
+        input_json: '{"path":"a.ts"}',
+        status: init?.method === "POST" ? "approved" : "pending",
+        created_at: "",
+        updated_at: "",
+      }
+      return Response.json(init?.method === "POST" ? approval : [approval])
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const approvals = await client.listCliToolApprovals("session/one")
+    const decision = await client.decideCliToolApproval("session/one", "approval/one", "approve")
+    expect(approvals[0]?.request_id).toBe("request-1")
+    expect(decision.status).toBe("approved")
+    expect(observed).toEqual([
+      { url: "http://127.0.0.1:4097/v1/sessions/session%2Fone/cli-approvals", method: "GET" },
+      { url: "http://127.0.0.1:4097/v1/sessions/session%2Fone/cli-approvals/approval%2Fone/approve", method: "POST" },
+    ])
   })
 })
 
@@ -568,6 +603,45 @@ describe("VeaselApiClient usage and MCP", () => {
     expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({ scope: "project", directory: "/tmp/proj", enabled: true })
     expect(calls[1]?.url).toContain("scope=project&directory=%2Ftmp%2Fproj")
     expect(calls[2]?.url).toContain("/v1/mcp-servers/docs?scope=project&directory=%2Ftmp%2Fproj")
+  })
+})
+
+describe("VeaselApiClient session runner", () => {
+  const originalFetch = globalThis.fetch
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  test("lists installed CLI provider capability records", async () => {
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      url = String(input)
+      return new Response(JSON.stringify([{ id: "opencode", installed: true }]), { status: 200 })
+    }) as typeof fetch
+    const providers = await new VeaselApiClient("http://127.0.0.1:4097").listCliProviders()
+    expect(url).toBe("http://127.0.0.1:4097/v1/providers/cli")
+    expect(providers[0]?.id).toBe("opencode")
+  })
+
+  test("patches a session runner with its optimistic preferences version", async () => {
+    let request: RequestInit | undefined
+    let url = ""
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      url = String(input)
+      request = init
+      return new Response(JSON.stringify({ id: "s-1", preferred_provider: "opencode" }), { status: 200 })
+    }) as typeof fetch
+    const client = new VeaselApiClient("http://127.0.0.1:4097")
+    const updated = await client.updateSessionTarget({ id: "s/1", prefs_version: 4 } as ApiSession, "opencode")
+    expect(url).toBe("http://127.0.0.1:4097/v1/sessions/s%2F1")
+    expect(request?.method).toBe("PATCH")
+    expect(JSON.parse(String(request?.body))).toEqual({
+      preferred_provider: "opencode",
+      preferred_model: "",
+      expected_prefs_version: 4,
+    })
+    expect(updated.preferred_provider).toBe("opencode")
   })
 })
 

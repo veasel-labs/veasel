@@ -280,7 +280,19 @@ fn tui_executable_for_executable(executable_path string) string {
 	return os.join_path(os.dir(executable), name)
 }
 
+fn enable_tui_cli_approvals() {
+	// Interactive TUI turns surface installed-CLI tool requests as durable,
+	// user-decided approvals. A backend already running without this setting
+	// continues to fail closed; it is never reconfigured through the client.
+	// Preserve an explicit operator choice such as `0` to keep immediate denial.
+	if os.getenv_opt('VEASEL_CLI_INTERACTIVE_APPROVALS') or { '' } != '' {
+		return
+	}
+	os.setenv('VEASEL_CLI_INTERACTIVE_APPROVALS', '1', true)
+}
+
 fn launch_tui(port int, data_dir string) {
+	enable_tui_cli_approvals()
 	ensure_backend(port, server_log_path(data_dir)) or {
 		eprintln('veasel: ${err.msg()}')
 		exit(1)
@@ -313,7 +325,7 @@ fn command_help(command string) string {
 			return 'Usage: veasel token <path|rotate>\n\n  path    Print the API token file location (never the token)\n  rotate  Replace the API token; clients holding the old one are rejected\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_API_TOKEN'
 		}
 		'tui' {
-			return 'Usage: veasel tui\n\nStart or reuse the local backend, then open the terminal UI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'
+			return 'Usage: veasel tui\n\nStart or reuse the local backend, then open the terminal UI. By default, a backend started here exposes durable installed-CLI approval requests to the TUI; requests still require an explicit per-tool decision. An explicitly configured VEASEL_CLI_INTERACTIVE_APPROVALS value is preserved. A separately started backend must have VEASEL_CLI_INTERACTIVE_APPROVALS=1.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR, VEASEL_CLI_INTERACTIVE_APPROVALS'
 		}
 		'mcp' {
 			return 'Usage: veasel mcp <list|add|enable|disable|remove> [options]\n\nManage configured MCP servers through the local API (user or project scope).\nRun `veasel mcp --help` for full syntax. Trust and per-call approval stay in the TUI.\n\nEnvironment: VEASEL_PORT, VEASEL_DATA_DIR, VEASEL_PLUGIN_DIR'

@@ -84,6 +84,37 @@ def wait_for_server(process: subprocess.Popen[bytes], port: int) -> None:
     raise TimeoutError("Veasel backend did not become healthy within 15 seconds")
 
 
+def diagnostic_process_state(name: str, process: subprocess.Popen[bytes] | None, port: int | None) -> str:
+    if process is None:
+        return f"{name}: not started"
+    if port is None:
+        listener = "port not assigned"
+    else:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.25):
+                listener = "accepting TCP"
+        except OSError as error:
+            listener = f"not accepting TCP ({type(error).__name__})"
+        listener = f"port={port} {listener}"
+    return f"{name}: pid={process.pid}, exit={process.poll()!r}, {listener}"
+
+
+def diagnostic_log_tail(path: Path, limit: int = 8_000) -> str:
+    try:
+        contents = path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError as error:
+        return f"<could not read {path.name}: {type(error).__name__}>"
+    contents = re.sub(
+        r"(?i)(['\"]?(?:authorization|proxy-authorization|x-api-key|x-goog-api-key|"
+        r"api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)['\"]?"
+        r"\s*[:=]\s*['\"]?)(?:bearer\s+)?[^'\"\s,}\]]+(['\"]?)",
+        r"\1[REDACTED]\2",
+        contents,
+    )
+    contents = re.sub(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", contents)
+    return contents
+
+
 def wait_for_persisted_reply(api_base: str, session_id: str, expected_reply: str = "Provider fixture reply") -> None:
     deadline = time.monotonic() + 30
     url = f"{api_base}/v1/sessions/{session_id}/messages"
@@ -1006,6 +1037,8 @@ def main() -> None:
             if any(marker in name for marker in ("API_KEY", "_TOKEN", "_PAT", "_SECRET_KEY")):
                 env.pop(name)
         provider_port_file = Path(temporary) / "provider.port"
+        provider_log_path = Path(temporary) / "provider.log"
+        provider_log = provider_log_path.open("ab")
         provider = subprocess.Popen(
             [
                 sys.executable,
@@ -1013,18 +1046,26 @@ def main() -> None:
                 str(provider_port_file),
                 "--allow-no-auth",
             ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=provider_log,
+            stderr=subprocess.STDOUT,
             env=env,
         )
         deadline = time.monotonic() + 5
         while not provider_port_file.exists() and time.monotonic() < deadline:
             if provider.poll() is not None:
+                provider_log.flush()
+                print(diagnostic_process_state("mock provider", provider, None), file=sys.stderr)
+                print("mock provider log tail:\n" + diagnostic_log_tail(provider_log_path), file=sys.stderr)
+                provider_log.close()
                 raise RuntimeError("mock provider exited before becoming ready")
             time.sleep(0.05)
         if not provider_port_file.exists():
             provider.terminate()
             provider.wait(timeout=5)
+            provider_log.flush()
+            print(diagnostic_process_state("mock provider", provider, None), file=sys.stderr)
+            print("mock provider log tail:\n" + diagnostic_log_tail(provider_log_path), file=sys.stderr)
+            provider_log.close()
             raise RuntimeError("mock provider did not become ready")
         provider_port = int(provider_port_file.read_text(encoding="utf-8"))
         provider_base = f"http://127.0.0.1:{provider_port}"
@@ -1051,12 +1092,14 @@ def main() -> None:
         backend_log = backend_log_path.open("ab")
 
         def start_server() -> subprocess.Popen[bytes]:
+            nonlocal server
             process = subprocess.Popen(
                 [str(server_path), "serve"],
                 env=env,
                 stdout=backend_log,
                 stderr=subprocess.STDOUT,
             )
+            server = process
             wait_for_server(process, port)
             return process
 
@@ -1425,6 +1468,18 @@ def main() -> None:
                 "uiShowedIndependentTerminalStatuses": True,
             }
         finally:
+            if sys.exc_info()[0] is not None:
+                backend_log.flush()
+                provider_log.flush()
+                print("standalone TUI failure diagnostics:", file=sys.stderr)
+                print(diagnostic_process_state("backend", server, port), file=sys.stderr)
+                print(diagnostic_process_state("mock provider", provider, provider_port), file=sys.stderr)
+                print(
+                    diagnostic_process_state("first-run provider", first_run_provider, 11434),
+                    file=sys.stderr,
+                )
+                print("backend log tail:\n" + diagnostic_log_tail(backend_log_path), file=sys.stderr)
+                print("mock provider log tail:\n" + diagnostic_log_tail(provider_log_path), file=sys.stderr)
             if server is not None:
                 stop_server(server)
             backend_log.close()
@@ -1442,6 +1497,7 @@ def main() -> None:
             except subprocess.TimeoutExpired:
                 provider.kill()
                 provider.wait(timeout=5)
+            provider_log.close()
 
     ordered = sorted(samples_ms)
     provenance = read_build_provenance(server_path, tui_path)

@@ -43,14 +43,22 @@ fn (mut store Store) create_cli_tool_approval(session_id string, request_id stri
 		return error('session not found')
 	}
 	id := uuid.new_v4().str()
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	_ = store.db.exec_param_many('INSERT INTO cli_tool_approvals (${cli_tool_approval_columns}) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
 		[id, session_id, request_id, tool_name, input_json, 'pending']) or {
 		return error('unable to record CLI tool approval')
 	}
-	return store.get_cli_tool_approval(id)!
+	return store.get_cli_tool_approval_unlocked(id)!
 }
 
 fn (mut store Store) get_cli_tool_approval(id string) !CliToolApproval {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	return store.get_cli_tool_approval_unlocked(id)
+}
+
+fn (mut store Store) get_cli_tool_approval_unlocked(id string) !CliToolApproval {
 	rows := store.db.exec_param_many('SELECT ${cli_tool_approval_columns} FROM cli_tool_approvals WHERE id = ?',
 		[id]) or { return error('unable to read CLI tool approval') }
 	if rows.len == 0 {
@@ -60,6 +68,8 @@ fn (mut store Store) get_cli_tool_approval(id string) !CliToolApproval {
 }
 
 fn (mut store Store) list_pending_cli_tool_approvals(session_id string) ![]CliToolApproval {
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	rows := store.db.exec_param_many('SELECT ${cli_tool_approval_columns} FROM cli_tool_approvals WHERE session_id = ? AND status = ? ORDER BY created_at ASC',
 		[session_id, 'pending']) or {
 		return error('unable to list CLI tool approvals')
@@ -76,7 +86,9 @@ fn (mut store Store) list_pending_cli_tool_approvals(session_id string) ![]CliTo
 // stale client can never flip a settled approval.
 fn (mut store Store) decide_cli_tool_approval(session_id string, id string,
 	approved bool) !CliToolApproval {
-	current := store.get_cli_tool_approval(id) or {
+	store.mu.lock()
+	defer { store.mu.unlock() }
+	current := store.get_cli_tool_approval_unlocked(id) or {
 		return error('CLI tool approval not found')
 	}
 	if current.session_id != session_id {
@@ -90,10 +102,15 @@ fn (mut store Store) decide_cli_tool_approval(session_id string, id string,
 		[status, id, 'pending']) or {
 		return error('unable to decide CLI tool approval')
 	}
-	return store.get_cli_tool_approval(id)!
+	if store.db.get_affected_rows_count() != 1 {
+		return error('CLI tool approval is already decided')
+	}
+	return store.get_cli_tool_approval_unlocked(id)!
 }
 
 fn (mut store Store) expire_cli_tool_approval(id string) ! {
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	_ = store.db.exec_param_many('UPDATE cli_tool_approvals SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ?',
 		['expired', id, 'pending']) or {
 		return error('unable to expire CLI tool approval')
@@ -105,6 +122,8 @@ fn (mut store Store) expire_cli_tool_approval(id string) ! {
 // session as expired. Called when a turn ends (cancel, deadline, error) so no
 // approval outlives the CLI process it belonged to.
 fn (mut store Store) expire_pending_cli_tool_approvals(session_id string) ! {
+	store.mu.lock()
+	defer { store.mu.unlock() }
 	_ = store.db.exec_param_many('UPDATE cli_tool_approvals SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND status = ?',
 		['expired', session_id, 'pending']) or {
 		return error('unable to expire pending CLI tool approvals')

@@ -201,9 +201,11 @@ class Handler(BaseHTTPRequestHandler):
             f"/v1/sessions/{SESSION}/skills",
             f"/v1/sessions/{SESSION}/mcp-servers",
             f"/v1/sessions/{SESSION}/mcp-tool-calls",
+            f"/v1/sessions/{SESSION}/cli-approvals",
             f"/v1/sessions/{OTHER}/skills",
             f"/v1/sessions/{OTHER}/mcp-servers",
             f"/v1/sessions/{OTHER}/mcp-tool-calls",
+            f"/v1/sessions/{OTHER}/cli-approvals",
             f"/v1/sessions/{OTHER}/workspace/commands",
         ):
             if path.endswith("/mcp-tool-calls") and SESSION in path:

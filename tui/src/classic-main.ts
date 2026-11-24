@@ -2483,7 +2483,9 @@ async function countPendingReviews(): Promise<PendingReviewCounts> {
   }
   const sessionId = activeSession.id
   pendingReviewInventoryRefreshing = true
-  const request = await pendingReviewInventoryCoordinator.load(apiBase, sessionId, controller.signal)
+  // The emergency Classic shell is retired and has no installed-CLI decision
+  // surface. Keep its inventory scoped to review families it can safely act on.
+  const request = await pendingReviewInventoryCoordinator.load(apiBase, sessionId, controller.signal, undefined, false)
   if (!request.current || activeSession?.id !== sessionId) return lastPendingCounts
   pendingReviewInventoryRefreshing = false
   const { inventory } = request

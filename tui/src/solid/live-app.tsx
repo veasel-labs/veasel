@@ -53,7 +53,9 @@ import {
 } from "./reviews"
 import { pendingReviewInventoryFailureNotice, totalPendingReviews } from "../pending-reviews"
 import type { ActiveReviewKind } from "../active-review"
+import { createCliApprovalPoller } from "../cli-approval-review"
 import { openAgentDialog } from "./component/agent-dialog"
+import { openCliProviderDialog } from "./component/cli-provider-dialog"
 import {
   EXECUTION_POLICY_AGENTS,
   agentPolicyLabel,
@@ -572,6 +574,54 @@ function LiveAppShell(props: LiveAppProps) {
     })
   }
 
+  const openLiveCliProviderPicker = async () => {
+    const sessionId = activeSessionId()
+    if (!sessionId) {
+      toast.info("Open or create a session before choosing its runner", "Session runner")
+      return
+    }
+    setComposerFocused(false)
+    try {
+      const [providers, listedSessions] = await Promise.all([
+        props.api.listCliProviders(),
+        props.api.listSessions(),
+      ])
+      const session = listedSessions.find((item) => item.id === sessionId)
+      if (!session) throw new Error("The active session is no longer available")
+      openCliProviderDialog(dialog, {
+        providers,
+        current: session.preferred_provider ?? "",
+        permissionMode: session.permission_mode ?? "ask",
+        onSelect: (provider) => {
+          void (async () => {
+            try {
+              if (activeSessionId() !== sessionId) {
+                throw new Error("The active session changed; reopen the runner picker")
+              }
+              const updated = await props.api.updateSessionTarget(session, provider)
+              await refreshSessions()
+              const label = provider || "default model provider"
+              if (activeSessionId() !== sessionId) {
+                toast.info(`Runner updated for ${updated.title} · ${label}`, "Session runner")
+                return
+              }
+              await openSession(sessionEntry(updated))
+              toast.success(`Session runner · ${label}`, "Session")
+            } catch (error) {
+              toast.info(error instanceof Error ? error.message : "could not update session runner", "Session runner")
+            } finally {
+              setComposerFocused(true)
+            }
+          })()
+        },
+        onCancel: () => setComposerFocused(true),
+      })
+    } catch (error) {
+      toast.info(error instanceof Error ? error.message : "could not load installed CLI providers", "Session runner")
+      setComposerFocused(true)
+    }
+  }
+
   const openLiveSessionList = () => {
     setComposerFocused(false)
     void (async () => {
@@ -1064,7 +1114,7 @@ function LiveAppShell(props: LiveAppProps) {
       setPendingReviewItems([])
       setPendingReviewSessionId(undefined)
       setPendingReviewInventoryError(false)
-      return undefined
+      return null
     }
     if (pendingReviewSessionId() !== sessionId) {
       setPendingReviewItems([])
@@ -1088,7 +1138,7 @@ function LiveAppShell(props: LiveAppProps) {
       knownPendingReviewIds.set(sessionId, new Set(items.map((item) => `${item.kind}:${item.id}`)))
       setPendingReviewItems(items)
       setPendingReviewInventoryError(false)
-      return newReview
+      return newReview ?? null
     } catch {
       if (revision === pendingReviewRevision && sessionId === activeSessionId()) {
         // Preserve known pending work during transient inventory failures and
@@ -1102,6 +1152,32 @@ function LiveAppShell(props: LiveAppProps) {
     pendingReviewSessionId() === activeSessionId() ? pendingReviewItems() : []
   createEffect(() => {
     void refreshPendingReviews(activeSessionId())
+  })
+  const cliApprovalPoller = createCliApprovalPoller({
+    list: (sessionId) => props.api.listCliToolApprovals(sessionId),
+    isCurrent: (sessionId) =>
+      activeTurnId() !== undefined
+      && activeTurnSessionId === sessionId
+      && activeSessionId() === sessionId,
+    onPending: async (sessionId) => {
+      const newReview = await refreshPendingReviews(sessionId, true)
+      if (newReview === undefined) return false
+      if (newReview && activeSessionId() === sessionId && !dialog.open()) {
+        void openLiveReviews({ kind: newReview.kind, id: newReview.id }, true)
+      }
+      return true
+    },
+  })
+  createEffect(() => {
+    const operationId = activeTurnId()
+    const focusedSessionId = activeSessionId()
+    const sessionId = activeTurnSessionId
+    if (operationId && sessionId && focusedSessionId === sessionId) {
+      cliApprovalPoller.start(sessionId)
+    } else {
+      cliApprovalPoller.stop()
+    }
+    onCleanup(() => cliApprovalPoller.stop())
   })
   const [pluginLinkArguments, setPluginLinkArguments] = createSignal<SlashArgument[]>([])
   const wantsSkillSuggestions = createMemo(() => {
@@ -2705,6 +2781,9 @@ function LiveAppShell(props: LiveAppProps) {
         },
         showModelPicker: () => {
           void openLiveModelPicker()
+        },
+        showCliProviderPicker: () => {
+          void openLiveCliProviderPicker()
         },
         showVariant: () => {
           void openLiveVariantPicker()

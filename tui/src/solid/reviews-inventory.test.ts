@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   solidCommandFromSummary,
+  solidCliFromApproval,
   solidMcpFromApproval,
   solidPatchFromEdit,
 } from "./reviews-inventory"
@@ -62,5 +63,37 @@ describe("reviews-inventory mappers", () => {
       argumentsText: '{"path":"x"}',
       stdioSandbox: undefined,
     })
+  })
+
+  test("escapes and bounds installed CLI approval arguments", () => {
+    expect(solidCliFromApproval({
+      id: "cli-1",
+      session_id: "session-1",
+      request_id: "request-1",
+      tool_name: "Edit",
+      input_json: '{"path":"src/a.ts","text":"safe"}',
+      status: "pending",
+      created_at: "",
+      updated_at: "",
+    })).toEqual({
+      kind: "cli",
+      id: "cli-1",
+      pending: true,
+      toolName: "Edit",
+      requestId: "request-1",
+      argumentsText: '{"path":"src/a.ts","text":"safe"}',
+      inputFullyVisible: true,
+    })
+    const truncated = solidCliFromApproval({
+      id: "cli-2",
+      session_id: "session-1",
+      request_id: "request-2",
+      tool_name: "Edit",
+      input_json: '{"text":"' + "x".repeat(13_000) + '"}',
+      status: "pending",
+      created_at: "",
+      updated_at: "",
+    })
+    expect(truncated).toMatchObject({ kind: "cli", inputFullyVisible: false })
   })
 })

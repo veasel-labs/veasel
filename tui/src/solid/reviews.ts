@@ -12,6 +12,7 @@ import {
 } from "../pending-reviews"
 import { formatReviewDiff, reviewDiffLineBudget, reviewHunkStarts } from "../review-diff"
 import { formatMcpReview, mcpReviewLineBudget } from "../mcp-review"
+import { cliApprovalInputPreview } from "../cli-approval-review"
 import {
   formatShellReview,
   shellReviewLineBudget,
@@ -63,7 +64,17 @@ export type SolidMcpReview = {
   stdioSandbox?: ReviewSandboxPreview
 }
 
-export type SolidReviewItem = (SolidPatchReview | SolidCommandReview | SolidMcpReview) & {
+export type SolidCliReview = {
+  kind: "cli"
+  id: string
+  pending: boolean
+  toolName: string
+  requestId: string
+  argumentsText: string
+  inputFullyVisible: boolean
+}
+
+export type SolidReviewItem = (SolidPatchReview | SolidCommandReview | SolidMcpReview | SolidCliReview) & {
   /** False until details have been loaded for the visible review. */
   inspected?: boolean
 }
@@ -83,13 +94,15 @@ export function countsFromReviews(items: readonly SolidReviewItem[]): PendingRev
   let edits = 0
   let commands = 0
   let mcp = 0
+  let cli = 0
   for (const item of items) {
     if (!item.pending) continue
     if (item.kind === "patch") edits++
     else if (item.kind === "command") commands++
-    else mcp++
+    else if (item.kind === "mcp") mcp++
+    else cli++
   }
-  return { edits, commands, mcp }
+  return { edits, commands, mcp, cli }
 }
 
 export function pendingSolidReviews(items: readonly SolidReviewItem[]): SolidReviewItem[] {
@@ -99,19 +112,21 @@ export function pendingSolidReviews(items: readonly SolidReviewItem[]): SolidRev
 export function reviewKindLabel(kind: ActiveReviewKind): string {
   if (kind === "patch") return "edit"
   if (kind === "command") return "shell"
-  return "MCP"
+  if (kind === "mcp") return "MCP"
+  return "installed CLI"
 }
 
 export function reviewPanelTitle(item: SolidReviewItem | undefined, pendingTotal: number): string {
   if (!item) return pendingTotal > 0 ? "Pending reviews" : "No pending reviews"
-  const kind = item.kind === "patch" ? "Workspace edit" : item.kind === "command" ? "Shell command" : "MCP call"
+  const kind = item.kind === "patch" ? "Workspace edit" : item.kind === "command" ? "Shell command" : item.kind === "mcp" ? "MCP call" : "Installed CLI tool"
   return `Review · ${kind}`
 }
 
 export function reviewSummaryLine(item: SolidReviewItem): string {
   if (item.kind === "patch") return item.path
   if (item.kind === "command") return item.command.split("\n")[0] ?? item.command
-  return `${item.plugin}/${item.server} · ${item.tool}`
+  if (item.kind === "mcp") return `${item.plugin}/${item.server} · ${item.tool}`
+  return `${cliApprovalInputPreview(item.toolName, 128).text} · ${cliApprovalInputPreview(item.requestId, 256).text}`
 }
 
 /** Body text for segment / fallback rendering (not used when split DiffRenderable owns the hunk). */
@@ -141,6 +156,14 @@ export function formatSolidReviewBody(
       sandbox: item.sandbox,
       compactWarning: rows <= 12 || (options.terminalColumns ?? 80) < 44,
     })
+  }
+  if (item.kind === "cli") {
+    const toolName = cliApprovalInputPreview(item.toolName, 128).text
+    const requestId = cliApprovalInputPreview(item.requestId, 256).text
+    const decision = item.inputFullyVisible
+      ? "Approval allows this exact tool request once."
+      : "INPUT TRUNCATED — APPROVAL DISABLED: the complete request is not visible."
+    return `REVIEW INSTALLED CLI TOOL  /  ${item.pending ? "PENDING" : "SETTLED"}\nTool: ${toolName}\nRequest: ${requestId}\n\n${decision}\n\n${item.argumentsText}`
   }
   return formatMcpReview({
     plugin: item.plugin,

@@ -39,7 +39,7 @@ export type SessionFooterMode = {
   skillComplete?: boolean
   slashComplete?: boolean
   reviewPending?: boolean
-  reviewKind?: "patch" | "command" | "mcp"
+  reviewKind?: "patch" | "command" | "mcp" | "cli"
   streaming?: boolean
 }
 
@@ -50,6 +50,7 @@ export function sessionFooterForMode(mode: SessionFooterMode = {}): string {
   if (mode.skillComplete) return sessionSkillFooterHint
   if (mode.slashComplete) return sessionSlashFooterHint
   if (mode.reviewPending) {
+    if (mode.reviewKind === "cli") return "a approve one · x reject · ]/[ · Esc"
     return mode.reviewKind === "patch" ? sessionReviewPatchFooterHint : sessionReviewFooterHint
   }
   if (mode.streaming) return sessionStreamingFooterHint

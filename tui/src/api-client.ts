@@ -24,6 +24,20 @@ export type ApiSession = {
   last_model?: string
 }
 
+export type ApiCliProvider = {
+  id: string
+  name: string
+  exec: string
+  protocol: string
+  installed: boolean
+  version: string
+  auth_probe_present: boolean
+  auth_state: "probe-present" | "probe-missing" | "unknown"
+  permission_modes: string[]
+  session_resume_verified: boolean
+  usage_reporting: string
+}
+
 export type ModelProfileView = {
   model: string
   base_url: string
@@ -313,6 +327,17 @@ export type ApiMcpToolCallApproval = ApiMcpToolCallSummary & {
   arguments_json: string
 }
 
+export type ApiCliToolApproval = {
+  id: string
+  session_id: string
+  request_id: string
+  tool_name: string
+  input_json: string
+  status: "pending" | "approved" | "denied" | "expired"
+  created_at: string
+  updated_at: string
+}
+
 export type EventHandlers = {
   onAssistantDelta?: (delta: string) => void
   onTurnQueued?: (sessionId: string, operationId: string) => void
@@ -385,6 +410,30 @@ export class VeaselApiClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title, directory }),
+      signal: this.signal,
+    })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiSession
+  }
+
+  async listCliProviders(): Promise<ApiCliProvider[]> {
+    const response = await fetch(`${this.base}/v1/providers/cli`, { signal: this.signal })
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiCliProvider[]
+  }
+
+  async updateSessionTarget(
+    session: Pick<ApiSession, "id" | "prefs_version">,
+    preferredProvider: string,
+  ): Promise<ApiSession> {
+    const response = await fetch(`${this.base}/v1/sessions/${encodeURIComponent(session.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        preferred_provider: preferredProvider,
+        preferred_model: "",
+        expected_prefs_version: session.prefs_version ?? 0,
+      }),
       signal: this.signal,
     })
     if (!response.ok) throw await httpError(response)
@@ -922,6 +971,28 @@ export class VeaselApiClient {
     )
     if (!response.ok) throw await httpError(response)
     return await response.json() as { id: string; status: string }
+  }
+
+  async listCliToolApprovals(sessionId: string): Promise<ApiCliToolApproval[]> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/cli-approvals`,
+      { signal: this.signal },
+    )
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiCliToolApproval[]
+  }
+
+  async decideCliToolApproval(
+    sessionId: string,
+    approvalId: string,
+    decision: "approve" | "reject",
+  ): Promise<ApiCliToolApproval> {
+    const response = await fetch(
+      `${this.base}/v1/sessions/${encodeURIComponent(sessionId)}/cli-approvals/${encodeURIComponent(approvalId)}/${decision}`,
+      { method: "POST", signal: this.signal },
+    )
+    if (!response.ok) throw await httpError(response)
+    return await response.json() as ApiCliToolApproval
   }
 
   async sendMessage(

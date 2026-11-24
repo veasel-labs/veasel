@@ -3,8 +3,152 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-19** from live `gh` state. Method: `gh issue/pr list`
-+ main-branch SHAs + latest-main CI + release manifest verification.
+Refreshed: **2026-11-24 UTC** from live GitHub state. Method: issue/PR
+queries, branch SHAs, current CI, and release manifest verification.
+
+## Checkpoint 2026-11-24 UTC — live GitHub state
+
+This checkpoint supersedes the older live snapshot below. It was refreshed
+from GitHub on 2026-11-24 UTC; PR counts include drafts.
+
+| Repository | main SHA | Open issues | Open PRs | Current note |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `b686997effd6cb6bb0683d8ddc8fa421670e517d` | 4 (#549, #550, #673, #689) | 2 (#803, #804) | #805 merged; exact-main CI `45289019479` still running. #804 includes implementation commit `995c675` and a ledger refresh; current-branch checks are queued |
+| veasel-labs/agent-toolkit | `8205dd0e09ea6c74342503152b3fc71325be1351` | 0 | 1 (#13 draft) | #14 merged; truthful core hook/network metadata; #13 creative-studio by-reference awaits independent review per owner |
+| veasel-labs/website | `a195dfcd34a0934a78cb07d3499c95e98d110a38` | 0 | 0 | No open work |
+| veasel-labs/homebrew-tap | `a84ae2f260c17ec33872c2dd6bfc59003951b3ed` | 0 | 0 | No open work |
+| veasel-labs/aur-package | `21d52c32f1d449c5cf2fb216b980e7870646d459` | 0 | 0 | No open work |
+| veasel-labs/.github | `7097e534eeafae932bcf427e12b0a5df398d9894` | 0 | 0 | No open work |
+| ulises-jeremias/agent-toolkit | `e050f5668ca7d462b9e3189f2834e20ab9f3efbc` | 1 (#1838) | 0 | Umbrella issue still open |
+| **Total** | | **5** | **3** | No zero-backlog claim |
+
+Owner decisions recorded: registry #10 approved the first-party exception for
+`veasel-essentials`; official registry PR #13 remains pending and is not
+self-approved. Its current manifest discloses shell, network, and Kdenlive MCP
+capabilities; the hold is the required independent trust review. The #10
+outcome is reflected in official toolkit main. A separate catalog audit found
+`agent-toolkit-core`'s pending, non-installable entry had understated its
+pinned source's shell hook and networked GitHub MCP as `shell:false` and
+`network:false`; PR [#14](https://github.com/veasel-labs/agent-toolkit/pull/14)
+corrected the metadata without changing its pending review or installability.
+It merged at `8205dd0e09ea6c74342503152b3fc71325be1351`; exact-main registry
+validation [#45273303142](https://github.com/veasel-labs/agent-toolkit/actions/runs/45273303142) passed.
+
+Current distribution release: `v0.101.3-next.0`, targeting
+`1d041d86a19275b6c73e2c1750890dacaf18dd97`; the GitHub release contains
+Linux, macOS, and Windows CLI/Desktop assets plus `release.json` and
+`SHA256SUMS` ([release](https://github.com/veasel-labs/veasel/releases/tag/v0.101.3-next.0)); manifest SHA-256 is
+`e16d4d20283a6742f3bfbb1b6a1f4da8ca32d20459ede01f2e146829325eb725`.
+This is newer than main `dd105961` and is not a claim that current main
+itself was released. Independent verification found exact consumer pins
+against the manifest: website `a195dfcd` CI/deploy/refresh success
+(`45177649535`, `45177649646`, `45179468992`); Homebrew `a84ae2f2` cask SHA
+`2aa33d87f8eb74bd8a5c6d7bd70a16b9e1210d5c43dc990a9b68a7eaded1b280`
+equals manifest `veasel-macOS.tar.gz` (`45177863518`, updater `45176481350`);
+AUR `21d52c32` SHA
+`d3d4c907183ba8ab8852f8d8b885aedb11c1f783c7ce8d6782ec53f4267a838a`
+equals manifest `veasel-Linux.tar.gz` (`45177921284`, publish
+`45176500717`). Installers remain truthfully unsigned. The exact source SHA
+`1d041d86` release run `45165644241` passed Linux/macOS/Windows backend,
+all Linux shards, and Linux/macOS/Windows packaging/publish; later main SHA
+`dd105961` CI `45224522194` also passed.
+
+Since the prior checkpoint, benchmark regression PR
+[#805](https://github.com/veasel-labs/veasel/pull/805) merged at
+`b686997effd6cb6bb0683d8ddc8fa421670e517d`. It now rejects accidental
+inheritance of `VEASEL_BENCHMARK_PROXY_KEY` by the OpenCode shell wrapper.
+Its exact-head Linux/macOS/Windows CI was green, including six Linux shards
+and the benchmark suite. This is only a regression guard: #673 remains open
+for independently pinned wrapper provenance and the owner-authorized matched
+provider run. Main CI on this exact merge SHA is still in progress.
+
+Veasel issue [#693](https://github.com/veasel-labs/veasel/issues/693) was
+closed on 2026-11-20 with packaged Electron workflow `44764165441`: the
+World projects canonical Focus threads, opens the same thread, and reflects
+thread deletion, with responsive zoom/reduced-motion coverage and pinned
+governed sprites. Its closeout comment records 166 World/shell tests and the
+570-test Desktop suite. This supports the issue's scoped implementation
+acceptance. It does not establish a real external-provider World launch; that
+broader product evidence remains part of #549/#550 and is not claimed here.
+
+Current implementation candidate: veasel PR #804
+(`https://github.com/veasel-labs/veasel/pull/804`) now contains the original
+runner-selection commit from #803 (preserved as its parent commit) plus
+installed-CLI approval review in the shipped Solid TUI. It supports provider
+selection per session, terminal-safe input previews,
+inspection-before-approval, fail-closed truncation handling, and one-at-a-time
+decisions. Local validation on 2026-11-23: `bun run typecheck`, `bun run test`
+(701 tests across 142 files), standalone `bun-linux-x64` build and `--version`
+smoke passed; high/critical Bun audit and `git diff --check` passed. These
+local checks used bounded `systemd-run` scopes. Previous head
+`574626ef45eb445362630c455971a1237f238a44` exposed two stale expectations in
+the common CLI review inventory; annotations on run `45269293587` identified
+them. The fix restores CLI review inventory by default and opts the retired
+Classic shell out explicitly because it has no safe CLI decision surface.
+Failure diagnostics added in `f6e1283` capture backend/provider exit state,
+listener reachability, and bounded log tails when the macOS packaged TUI
+smoke fails. A second commit `995c675` redacts Authorization, bearer, and
+API-key values from dict/JSON/plain-text logs; five local redaction cases and
+Python syntax validation pass in bounded `systemd-run` scopes. These changes
+aim to identify the cause of two prior macOS-only failures; no root cause has
+yet been proven. Exact-head checks for the refreshed branch are queued;
+required Linux/macOS/Windows backend and six Linux shards are pending.
+Conditional PR package/release jobs do not establish packaged-release
+acceptance. The CLI session in #550 remains NOT VERIFIED as a real-provider
+coding journey after write approval was denied; see
+https://github.com/veasel-labs/veasel/issues/550#issuecomment-7113850660.
+
+The previous candidate head `8768a5d19e24f4d01f5b25e915e1e008cf374ab7`
+passed targeted client, security, CodeQL, coverage and version checks. Its
+six Linux extra-test shards passed before CI run
+[45272119996](https://github.com/veasel-labs/veasel/actions/runs/45272119996)
+was canceled after a review found a P2 availability issue: approval IDs were
+marked notified before review-inventory loading succeeded, so a transient
+failure could suppress retry. The poller now records IDs only after successful
+handling and retries on callback failure. The new regression passes; full local
+TUI validation passes 702 tests across 142 files plus typecheck. A new
+exact-head native matrix must finish before merge. The earlier local run also
+passed the standalone Linux client build/version smoke; pinned-V backend tests
+passed on the same source ancestry, all under bounded local execution.
+
+### Active issue/PR resolution register (live 2026-11-24 UTC)
+
+| Repository/item | State / owner | Existing implementation and evidence | Remaining acceptance / dependency | Action and destination |
+| --- | --- | --- | --- | --- |
+| veasel#549 | OPEN; Veasel product mission | Current release and Linux packaged OpenCode red→green journey are recorded; deterministic Focus journeys and orchestration/security work are integrated | Independently repeatable provider edit + real visual-TUI same-session continuation; cross-platform packaged journeys; truthful readiness/usage | IMPLEMENT in Veasel; keep open until #550 and full mission gates pass |
+| veasel#550 | OPEN; Veasel packaged acceptance | Existing packaged GUI evidence retained; PR #803 runner selection and #804 approval UI form a combined candidate; denied write approval is recorded as NOT VERIFIED | Exact-head CI; installed-binary edit with provider approval; same session reopened/continued in visual TUI and Desktop observes it; native platform legs | REVIEW/MERGE #804, then continue packaged journeys; no fabricated provider success |
+| veasel#673 | OPEN; Veasel benchmark | PR #805 merged at `b686997`; 7 focused regression tests and the wrapper env-isolation integration pass; CI exact head passed all platforms | Independently pin/review wrapper provenance and decide/authorize matched provider run within the recorded $5 aggregate ceiling; no paid call made | IMPLEMENT in Veasel only after both safety/authorization gates; remain open |
+| veasel#689 | OPEN; cross-repo parent | Release consumers hash-match v0.101.3-next.0; current main and ownership boundaries documented | All active child and external acceptance gates, final green latest-main CI, truthful release, issue/PR reconciliation | KEEP LAST; close only after all seven repos and external dependencies are reconciled |
+| official agent-toolkit#13 | OPEN DRAFT; registry governance | Immutable pin `ulises-jeremias/agent-toolkit@cc5c60d48c18ff6b5788c08f38f681c933505fbe`; MIT; manifest says `network:false` while included `brag` skill declares `network:true`; fail-closed | Correct the permission declaration and obtain independent non-submitter review of the complete source; owner explicitly said leave pending | HUMAN REVIEW; keep draft and non-installable, never self-approve |
+| personal agent-toolkit#1838 | OPEN; Creative Studio umbrella | Creative assets/workflow, Hornero adapters, docs, QA scenario, and Veasel runtime fixes are tracked; first-cut teaser exists in evaluation-host cache | Tool-capable model completes a real creative edit; guest-image QA run; graphical GIMP/OBS/REAPER; gated Blender Lab; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until each remaining acceptance is proven or explicitly descoped |
+| veasel#803 | OPEN DRAFT; Veasel | Original runner-selection commit `9ca5c91b7b0bf0cb406705cad370deb947a756b5` is preserved as ancestor in #804 | No independent value after combined PR lands; don't abandon it before #804 merges | SUPERSEDE by #804 only after merge; close with exact merge SHA and checks |
+| veasel#804 | OPEN; Veasel | Combined runner selection + approval UI, retry-on-inventory-failure fix; local 702/142 TUI suite and typecheck pass; failure diagnostics and credential redaction at `995c675` | Exact-head required checks on the refreshed branch are queued; investigate two prior macOS smoke failures from recorded diagnostics | REVIEW/MERGE only after exact-head required CI passes; then close #803 as superseded; follow with real-provider acceptance |
+
+Destination for #13 is the official registry only after independent review;
+personal portable content remains sourced by immutable reference. There are
+5 open issues and 3 open PRs before #804 merge, including drafts.
+
+External epic dependency (outside the seven-repository count):
+[HorneroOS/shell#447](https://github.com/HorneroOS/shell/issues/447) remains
+open. Veasel's current release contains `veasel-tui.desktop`; Hornero Shell's
+generic app launcher discovers `DesktopEntries` and its launch adapter uses
+`app2unit` when present, with a direct user-process fallback. Relevant source
+regressions passed (69 tests under a bounded scope). The host's installed
+Veasel is still `0.79.13-next.0` and lacks the current entry; actual launch,
+canonical-session use, and cleanup are therefore NOT VERIFIED on this host.
+The shell's Agent Center `horneroctl agent launch` remains accurately labeled
+as a dry-run proposal and is not evidence of a real launch.
+
+Benchmark #673 remains gated: no paid provider call until the benchmark
+wrapper is independently reviewed and the Meta credential is rotated. The
+user's aggregate $5 ceiling remains in force; no spend was incurred in this
+checkpoint.
+
+Personal Toolkit reconciliation: main is `e050f5668ca7d462b9e3189f2834e20ab9f3efbc`,
+with only umbrella #1838 open and no open PRs. Ten legacy Desktop drafts
+(#1783–#1799) are closed without merge; #1808 merged. Closure alone does not
+prove the capabilities were migrated: maintain the per-PR parity map and
+keep any genuinely missing behavior open in its canonical destination.
 
 ## Checkpoint 2026-11-20 — consolidation state
 

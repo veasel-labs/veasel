@@ -1,4 +1,4 @@
-export type ActiveReviewKind = "patch" | "command" | "mcp"
+export type ActiveReviewKind = "patch" | "command" | "mcp" | "cli"
 
 export type ActiveReview = {
   kind: ActiveReviewKind
@@ -90,6 +90,12 @@ export function reviewHotkeyHint(
     : ""
   const selected = options.selectedCount ?? 0
   const mark = options.currentSelected ? "●" : "○"
+  if (review.kind === "cli") {
+    const selection = selected > 0
+      ? ` · ${mark} Space · ${selected} selected · x reject selection (approve one at a time)`
+      : ` · ${mark} Space select`
+    return `a approve one · x reject · ]/[ or n/p next/prev${selection}`
+  }
   const selectCue = selected > 0
     ? ` · ${mark} Space · ${selected} selected · a/x act on selection`
     : ` · ${mark} Space select`

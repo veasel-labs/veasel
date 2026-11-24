@@ -7,6 +7,8 @@ import { LiveApp } from "./live-app"
 function reviewServer() {
   const requests: string[] = []
   let pending = false
+  let cliOnly = false
+  let cliApprovalPending = false
   let inventoryUnavailable = false
   let eventStream: ReadableStreamDefaultController<Uint8Array> | undefined
   let submittedOperationId = ""
@@ -35,7 +37,7 @@ function reviewServer() {
       ])
       if (path === "/v1/sessions/session-1/messages") {
         if (request.method === "POST") {
-          pending = true
+          pending = !cliOnly
           submittedOperationId = request.headers.get("x-veasel-operation-id") ?? ""
           return Response.json({ operation_id: submittedOperationId, status: "running" }, { status: 202 })
         }
@@ -63,6 +65,29 @@ function reviewServer() {
         return Response.json(snapshot)
       }
       if (path === "/v1/sessions/session-1/mcp-tool-calls") return Response.json([])
+      if (path === "/v1/sessions/session-1/cli-approvals") return Response.json(cliApprovalPending ? [{
+        id: "cli-approval-1",
+        session_id: "session-1",
+        request_id: "provider-request-1",
+        tool_name: "Edit",
+        input_json: '{"path":"src/example.ts","text":"safe"}',
+        status: "pending",
+        created_at: "",
+        updated_at: "",
+      }] : [])
+      if (path === "/v1/sessions/session-1/cli-approvals/cli-approval-1/approve" && request.method === "POST") {
+        cliApprovalPending = false
+        return Response.json({
+          id: "cli-approval-1",
+          session_id: "session-1",
+          request_id: "provider-request-1",
+          tool_name: "Edit",
+          input_json: '{"path":"src/example.ts","text":"safe"}',
+          status: "approved",
+          created_at: "",
+          updated_at: "",
+        })
+      }
       if (path === "/v1/sessions/session-1/workspace/commands/command-1") {
         return Response.json({
           id: "command-1",
@@ -91,6 +116,8 @@ function reviewServer() {
     server,
     requests,
     setInventoryUnavailable(value: boolean) { inventoryUnavailable = value },
+    setCliApprovalPending(value: boolean) { cliApprovalPending = value },
+    setCliOnly(value: boolean) { cliOnly = value },
     deferNextCommandInventory() {
       let release!: () => void
       let start!: () => void
@@ -110,6 +137,51 @@ function reviewServer() {
     },
   }
 }
+
+test("LiveApp polls and opens a pending installed CLI approval during its turn", async () => {
+  const controller = new AbortController()
+  const { server, requests, setCliApprovalPending, setCliOnly } = reviewServer()
+  setCliOnly(true)
+  const setup = await testRender(
+    () => <LiveApp api={new VeaselApiClient(server.url.origin, controller.signal)} directory="/tmp" />,
+    { width: 100, height: 35, kittyKeyboard: true },
+  )
+  try {
+    await until(setup, "HTML request")
+    setup.mockInput.pressEnter()
+    await until(setup, "Message Veasel")
+    await setup.mockInput.typeText("Run an installed CLI edit")
+    setup.mockInput.pressEnter()
+    for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/messages"); attempt++) {
+      await Bun.sleep(5)
+    }
+    expect(requests).toContain("POST /v1/sessions/session-1/messages")
+    setCliApprovalPending(true)
+
+    for (let attempt = 0; attempt < 260; attempt++) {
+      await setup.renderOnce()
+      if (setup.captureCharFrame().includes("REVIEW INSTALLED CLI TOOL")) break
+      await Bun.sleep(5)
+    }
+    await until(setup, "REVIEW INSTALLED CLI TOOL")
+    await until(setup, '"path":"src/example.ts"')
+    expect(setup.captureCharFrame()).toContain("Approval allows this exact tool request once.")
+
+    setup.mockInput.pressKey("a", { shift: true })
+    await until(setup, "must be approved one at a time")
+    expect(requests.some((request) => request.startsWith("POST /v1/sessions/session-1/cli-approvals/"))).toBe(false)
+
+    setup.mockInput.pressKey("a")
+    for (let attempt = 0; attempt < 120 && !requests.includes("POST /v1/sessions/session-1/cli-approvals/cli-approval-1/approve"); attempt++) {
+      await Bun.sleep(5)
+    }
+    expect(requests).toContain("POST /v1/sessions/session-1/cli-approvals/cli-approval-1/approve")
+  } finally {
+    setup.renderer.destroy()
+    controller.abort()
+    server.stop(true)
+  }
+})
 
 async function until(
   setup: Awaited<ReturnType<typeof testRender>>,
@@ -514,7 +586,7 @@ test("a background turn completion cannot invalidate the focused session review 
           status: "pending",
         }])
       }
-      if (path.endsWith("/mcp-tool-calls")) return Response.json([])
+      if (path.endsWith("/mcp-tool-calls") || path.endsWith("/cli-approvals")) return Response.json([])
       return Response.json({})
     },
   })
@@ -576,7 +648,7 @@ test("a background uncertain turn keeps its warning in the focused session", asy
       }
       if (path.endsWith("/messages")) return Response.json([])
       if (path.endsWith("/operations")) return Response.json([])
-      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls")) return Response.json([])
+      if (path.endsWith("/workspace/edits") || path.endsWith("/workspace/commands") || path.endsWith("/mcp-tool-calls") || path.endsWith("/cli-approvals")) return Response.json([])
       return Response.json({})
     },
   })

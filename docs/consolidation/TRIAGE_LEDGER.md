@@ -253,25 +253,27 @@ Merged since prior ledger snapshot:
   shell children; provider-specific cost controls.
 - **Evidence:** deterministic Responses fixtures and enforced generic spending
   bounds are recorded in [the Nov 20 issue update](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7033093408).
+  On 2026-11-24, the pinned current-main shell wrapper was reviewed and its
+  adversarial sandbox suite passed 7/7 under a 2 GiB/2 CPU `systemd-run` scope;
+  the deterministic budget proxy suite passed 17/17 under the same resource
+  limits. Both results are recorded in [isolation review](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7136152520)
+  and [proxy tests](https://github.com/veasel-labs/veasel/issues/673#issuecomment-7136180837).
+  Source was unchanged from `85fe10d1540380484c25cd21c2b44ca0854db633`.
 - **Remaining acceptance:** PR #793 merged the deterministic adapter and
   isolation wrapper at `240d95ebd5bd93ba2637314dadf6b335b055ac83`; its
   exact-main CI [#45106567453](https://github.com/veasel-labs/veasel/actions/runs/45106567453)
-  passed on SHA `240d95e`. Baseline Veasel main `eab88d59` passed all required
-  checks in [#45307427282](https://github.com/veasel-labs/veasel/actions/runs/45307427282);
-  latest main `56f2c6b30008f4e68f74e21e4767789962b91640` passed exact-main
-  CI in [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252),
-  including Windows. This does not prove a live matched benchmark.
-  Neither run proves a live matched benchmark. Network-namespace
-  enforcement remains unverified on hosted runners; prior local Arch evidence
-  is recorded separately.
-  The pinned model's published pricing can inform a reservation but cannot by
-  itself prove an enforced total-spend cap. The user previously authorized up
-  to USD 5 after key rotation, but no live provider request has been made.
-  Review the shell boundary and reservation implementation before any call.
-  Then run and independently score the same meaningful task,
-  prompt, base, model, permissions and budgets through Veasel and OpenCode;
-  preserve sanitized traces and versions/hashes. No provider call or benchmark
-  success is inferred here.
+  passed on SHA `240d95e`. Main SHA `56f2c6b30008f4e68f74e21e4767789962b91640`
+  passed exact-main CI [#45360661252](https://github.com/veasel-labs/veasel/actions/runs/45360661252).
+  Current main `85fe10d1540380484c25cd21c2b44ca0854db633` has Linux backend
+  success, but exact-main CI [#45415123870](https://github.com/veasel-labs/veasel/actions/runs/45415123870)
+  remains in progress on Windows at this audit. The local tests prove the
+  fixture's namespace and proxy contracts; they do not prove live billing or a
+  matched benchmark. The approved aggregate allowance is up to USD 5, but the
+  required Meta credential/profile is unavailable in this environment and no
+  provider call has been made. Run and independently score the same meaningful
+  task, prompt, base, model, permissions and budgets through Veasel and OpenCode;
+  preserve sanitized traces and versions/hashes. No live benchmark success is
+  inferred here.
 - **Action:** IMPLEMENT/REVIEW in Veasel; KEEP OPEN until the matched pair and
   budget/isolation evidence are complete.
 

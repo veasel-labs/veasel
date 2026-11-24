@@ -3,13 +3,13 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-24 03:31 UTC** from live GitHub state. Method: issue/PR
+Refreshed: **2026-11-24 03:34 UTC** from live GitHub state. Method: issue/PR
 queries, branch SHAs, current CI, and release manifest verification.
 
-## Checkpoint 2026-11-24 03:31 UTC — live GitHub state
+## Checkpoint 2026-11-24 03:34 UTC — live GitHub state
 
 This checkpoint supersedes the 02:34 snapshot below. It was refreshed from
-GitHub at 03:31 UTC; PR counts include drafts and this ledger PR #807.
+GitHub at 03:34 UTC; PR counts include drafts and this ledger PR #807.
 
 | Repository | main SHA | Open issues | Open PRs | Current note |
 | --- | --- | ---: | ---: | --- |
@@ -31,7 +31,7 @@ GitHub at 03:31 UTC; PR counts include drafts and this ledger PR #807.
 | [veasel#673](https://github.com/veasel-labs/veasel/issues/673) | OPEN; Veasel benchmark | Pinned binaries and safe wrapper regression are prepared; no paid request made | Meta credential absent; approved aggregate cap is USD 5, including prior approximate USD 0.35444 | HUMAN INPUT for credential availability, then run the authorized matched benchmark |
 | [veasel#689](https://github.com/veasel-labs/veasel/issues/689) | OPEN; cross-repository parent | Release consumers and ownership boundaries documented | All active child acceptance, exact-main green CI, current release, and final issue/PR reconciliation | KEEP OPEN and close last |
 | [official toolkit#13](https://github.com/veasel-labs/agent-toolkit/pull/13) | OPEN, non-draft; official registry governance | Live PR head `6be6dc8462d32e3c1c7a17806a051b3a0d456179` declares `network:true`, matching pinned `brag`/`brag-slim`; regression test checks disclosure. User chose to leave pending. | Independent non-submitter trust/permission review. Do not self-approve; keep non-installable until review. After personal Toolkit #1845 merges, update this immutable source pin before asking for that review. | HUMAN REVIEW in official registry; no approval/merge by this agent |
-| [veasel#807](https://github.com/veasel-labs/veasel/pull/807) | OPEN; cross-repository ledger | This ledger has current repo SHAs, 5 open issues, 3 PRs, blockers, and acceptance evidence. PR head `c0c98de63c84060d18166274a29e9f53b6e8dc68`; macOS CI passed, Linux/Windows gates running. | Exact-head CI completion; update this register again after #1845 merges. | MERGE via existing auto-merge when required checks pass; destination Veasel `main` |
+| [veasel#807](https://github.com/veasel-labs/veasel/pull/807) | OPEN; cross-repository ledger | This ledger has current repo SHAs, 5 open issues, 3 PRs, blockers, and acceptance evidence. Its current head is the linked PR; checks are re-running after the latest ledger refresh. | Exact-head CI completion; update this register again after #1845 merges. | MERGE via existing auto-merge when required checks pass; destination Veasel `main` |
 | [personal toolkit#1838](https://github.com/ulises-jeremias/agent-toolkit/issues/1838) | OPEN; Creative Studio umbrella | Creative skills/MCP/agents and source workflow are on main; downstream work remains separately tracked | Tool-capable model completes a real creative edit; guest-image QA; graphical integrations; durable final film; workstation review | IMPLEMENT/MIGRATE by canonical repo; keep open until accepted or explicitly descoped |
 | [personal toolkit#1845](https://github.com/ulises-jeremias/agent-toolkit/pull/1845) | OPEN; personal Toolkit compiler/distribution | Current PR head `8056a664c79b09958806fc3f0eb002b220410c75` includes generated embedded data for the corrected Creative Studio output. Targeted V/provenance checks and hosted generation/build-check passed on the source-equivalent predecessor; exact-head required CI is running. | Exact-head required checks and review; then update official PR #13 to the merged immutable Toolkit SHA, leaving #13 pending independent review. | MERGE after CI; destination personal Toolkit `main` |
 

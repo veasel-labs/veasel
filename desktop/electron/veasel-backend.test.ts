@@ -4,13 +4,14 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   VeaselBackendSupervisor,
   canonicalVeaselDataDir,
   classifyVeaselBackend,
   probeVeaselBackend,
   readBackendApiToken,
+  resolveVeaselBackendUrl,
   veaselBackendEnvironment,
   veaselHealthIdentity,
 } from './veasel-backend';
@@ -39,6 +40,15 @@ describe('canonicalVeaselDataDir', () => {
   it('mirrors the V default_data_dir contract', () => {
     expect(canonicalVeaselDataDir({}, '/home/tester')).toBe(path.join('/home/tester', '.local', 'share', 'veasel'));
     expect(canonicalVeaselDataDir({ VEASEL_DATA_DIR: '/tmp/custom' }, '/home/tester')).toBe('/tmp/custom');
+  });
+});
+
+describe('resolveVeaselBackendUrl', () => {
+  it('uses the terminal launcher port, including its fallback for invalid values', () => {
+    expect(resolveVeaselBackendUrl({ VEASEL_PORT: '5100' })).toBe('http://127.0.0.1:5100');
+    for (const port of [undefined, '0', '65536', '-2', 'random']) {
+      expect(resolveVeaselBackendUrl({ VEASEL_PORT: port })).toBe('http://127.0.0.1:4097');
+    }
   });
 });
 
@@ -158,7 +168,7 @@ describe('legacy backend negotiation', () => {
       if (req.url === '/v1/health') {
         if (mode === 'garbage') return send(200, 'not json');
         if (mode === 'legacy') return send(200, JSON.stringify({ healthy: true, version: '0.0.9', pid: 4242 }));
-        if (mode === 'secure' && req.headers.authorization) {
+        if (mode === 'secure' && req.headers.authorization === `Bearer ${T1}`) {
           return send(200, JSON.stringify({ healthy: true, auth: 'bearer', protocol: 1, version: '1.0.0', pid: 7 }));
         }
         return send(200, JSON.stringify({ healthy: true, auth: 'bearer', protocol: 1 }));
@@ -214,8 +224,7 @@ describe('legacy backend negotiation', () => {
       const supervisor = new VeaselBackendSupervisor({
         userDataDir: dir,
         dataDir: dir,
-        env: {},
-        conventionalUrl: secure.url,
+        env: { VEASEL_PORT: secure.port },
       });
       const state = await supervisor.start();
       expect(state.status).toBe('ready');
@@ -226,6 +235,99 @@ describe('legacy backend negotiation', () => {
       expect(secure.authSeen.slice(0, 2)).toEqual([undefined, undefined]);
       expect(secure.authSeen).toContain(`Bearer ${T1}`);
     } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not start another backend when a different profile owns the configured port', async () => {
+    const secure = await fake('secure');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-other-profile-'));
+    try {
+      const supervisor = new VeaselBackendSupervisor({
+        userDataDir: dir,
+        dataDir: dir,
+        env: { VEASEL_PORT: secure.port, VEASEL_API_TOKEN: 'different-profile' },
+      });
+      const state = await supervisor.start();
+      expect(state.status).toBe('failed');
+      expect(state.url).toBeNull();
+      expect(state.problem).toContain('different profile or credential');
+      expect(supervisor.isAttached()).toBe(false);
+      expect(fs.readdirSync(dir)).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('starts an owned backend on the port a terminal will discover', async () => {
+    const portProbe = http.createServer();
+    await new Promise<void>((resolve) => portProbe.listen(0, '127.0.0.1', resolve));
+    const port = String((portProbe.address() as AddressInfo).port);
+    await new Promise<void>((resolve) => portProbe.close(() => resolve()));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-desktop-first-'));
+    const bin = path.join(dir, 'veasel-test-backend');
+    fs.writeFileSync(
+      bin,
+      `#!/usr/bin/env node
+const http = require('node:http');
+http.createServer((request, response) => {
+  if (request.url === '/v1/health') {
+    const health = { healthy: true, auth: 'bearer', protocol: 1 };
+    if (request.headers.authorization === 'Bearer ' + process.env.VEASEL_API_TOKEN) {
+      Object.assign(health, { version: 'test', pid: process.pid });
+    }
+    response.end(JSON.stringify(health));
+  } else {
+    response.writeHead(401).end();
+  }
+}).listen(Number(process.env.VEASEL_PORT), '127.0.0.1');
+`,
+      { mode: 0o700 },
+    );
+    const supervisor = new VeaselBackendSupervisor({
+      userDataDir: dir,
+      dataDir: dir,
+      env: { PATH: process.env.PATH, VEASEL_PORT: port, VEASEL_BACKEND_BIN: bin, VEASEL_API_TOKEN: T1 },
+    });
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const startup = supervisor.start();
+      expect(supervisor.start()).toBe(startup);
+      await expect(startup).resolves.toMatchObject({ status: 'ready', url });
+      expect(supervisor.isAttached()).toBe(false);
+      await expect(probeVeaselBackend(url, T1)).resolves.toMatchObject({ version: 'test' });
+    } finally {
+      await supervisor.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('stops an owned backend before it becomes healthy', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'veasel-stopping-startup-'));
+    const bin = path.join(dir, 'veasel-test-backend');
+    const marker = path.join(dir, 'started');
+    fs.writeFileSync(
+      bin,
+      `#!/usr/bin/env node
+require('node:fs').writeFileSync(process.env.VEASEL_TEST_MARKER, 'started');
+setInterval(() => {}, 1000);
+`,
+      { mode: 0o700 },
+    );
+    const supervisor = new VeaselBackendSupervisor({
+      userDataDir: dir,
+      dataDir: dir,
+      env: { PATH: process.env.PATH, VEASEL_BACKEND_BIN: bin, VEASEL_TEST_MARKER: marker },
+      conventionalUrl: 'http://127.0.0.1:1',
+    });
+    try {
+      const startup = supervisor.start();
+      await vi.waitFor(() => expect(fs.existsSync(marker)).toBe(true));
+      await supervisor.stop();
+      await expect(startup).resolves.toMatchObject({ status: 'stopped', url: null });
+      expect(supervisor.snapshot().status).toBe('stopped');
+    } finally {
+      await supervisor.stop();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

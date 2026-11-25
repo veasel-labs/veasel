@@ -71,6 +71,8 @@ export interface VeaselCliProviderStatus {
   permission_modes: string[];
   session_resume_verified: boolean;
   usage_reporting: string;
+  launchable?: boolean;
+  launch_reason?: string;
 }
 
 export interface VeaselCliApproval {
@@ -192,20 +194,28 @@ function defaultEventStream(url: string, onEvent: (type: string, data: string) =
 /** How often a running turn is checked for new or decided approvals. */
 const APPROVAL_POLL_MS = 1_000;
 
-const PROVIDER_IDS: FocusProviderId[] = ['claude', 'codex', 'opencode', 'muse'];
+const PROVIDER_IDS: FocusProviderId[] = ['claude', 'codex', 'opencode', 'muse', 'cursor-agent'];
 
 const PERMISSION_MODES: FocusPermissionMode[] = ['ask', 'accept-edits', 'plan', 'bypass'];
 
 function toVeaselProviderId(provider: FocusThreadProviderId): string | null {
   if (provider === 'claude') return 'claude-code';
-  if (provider === 'codex' || provider === 'opencode' || provider === 'muse') return provider;
+  if (provider === 'codex' || provider === 'opencode' || provider === 'muse' || provider === 'cursor-agent')
+    return provider;
   return null;
 }
 
 /** Veasel CLI provider ids (`claude-code`, …) collapse to Focus provider ids. */
 export function toFocusProviderId(veaselProvider: string | null | undefined): FocusProviderId | 'unknown' {
   if (veaselProvider === 'claude-code' || veaselProvider === 'claude') return 'claude';
-  if (veaselProvider === 'codex' || veaselProvider === 'opencode' || veaselProvider === 'muse') return veaselProvider;
+  if (
+    veaselProvider === 'codex' ||
+    veaselProvider === 'opencode' ||
+    veaselProvider === 'muse' ||
+    veaselProvider === 'cursor-agent'
+  ) {
+    return veaselProvider;
+  }
   return 'unknown';
 }
 
@@ -463,7 +473,16 @@ export function createVeaselFocusBridge(options: {
       const checkedAt = new Date().toISOString();
       const fallback: FocusProviderStatus[] = PROVIDER_IDS.map((id) => ({
         id,
-        label: id === 'claude' ? 'Claude Code' : id === 'codex' ? 'Codex' : id === 'muse' ? 'Muse' : 'OpenCode',
+        label:
+          id === 'claude'
+            ? 'Claude Code'
+            : id === 'codex'
+              ? 'Codex'
+              : id === 'muse'
+                ? 'Muse'
+                : id === 'cursor-agent'
+                  ? 'Cursor Agent'
+                  : 'OpenCode',
         installed: false,
         binary: null,
         version: null,
@@ -471,7 +490,17 @@ export function createVeaselFocusBridge(options: {
         authDetail: 'Provider status route is unavailable.',
         signInHint: null,
         models: [],
-        capabilities: { sessions: true, approvals: true, interrupt: true, resume: true, modelSwitch: false },
+        capabilities: {
+          sessions: id !== 'cursor-agent',
+          approvals: id !== 'cursor-agent',
+          interrupt: id !== 'cursor-agent',
+          resume: id !== 'cursor-agent',
+          modelSwitch: false,
+        },
+        launchBlocker:
+          id === 'cursor-agent'
+            ? 'Cursor Agent is discovered but not launchable until Veasel implements ACP authenticate(cursor_login) and verifies permission handling.'
+            : null,
         checkedAt,
       }));
       const statuses = await request<VeaselCliProviderStatus[]>('/v1/providers/cli').catch(() => null);
@@ -493,6 +522,12 @@ export function createVeaselFocusBridge(options: {
                 ? ('signed-out' as const)
                 : ('unknown' as const),
           authDetail: providerAuthDetail(status),
+          launchBlocker:
+            status.id === 'cursor-agent' && status.launchable !== true
+              ? status.launch_reason || 'Veasel has not verified Cursor ACP authentication and permission handling.'
+              : status.launchable === false
+                ? status.launch_reason || 'This runner is not launchable.'
+                : null,
           signInHint:
             status.auth_state === 'signed-out'
               ? status.id === 'claude-code'
@@ -505,7 +540,8 @@ export function createVeaselFocusBridge(options: {
             ...base.capabilities,
             // Only wired protocols may claim structured sessions.
             sessions:
-              status.protocol === 'stream-json' || status.protocol === 'app-server' || status.protocol === 'acp',
+              (status.id === 'cursor-agent' ? status.launchable === true : status.launchable !== false) &&
+              (status.protocol === 'stream-json' || status.protocol === 'app-server' || status.protocol === 'acp'),
             resume: status.session_resume_verified,
             permissionModes: PERMISSION_MODES.filter((mode) => status.permission_modes.includes(mode)),
           },

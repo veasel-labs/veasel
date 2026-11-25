@@ -39,6 +39,8 @@ export type ApiCliProvider = {
   permission_modes: string[]
   session_resume_verified: boolean
   usage_reporting: string
+  launchable?: boolean
+  launch_reason?: string
 }
 
 export type ModelProfileView = {

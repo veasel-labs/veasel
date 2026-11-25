@@ -21,6 +21,7 @@ pub:
 	permission_modes        []string
 	session_resume_verified bool
 	usage_reporting         string // adapter-reported|not-published|unknown
+	launch_blocked_reason   string // non-empty until protocol prerequisites are verified
 }
 
 pub fn provider_cli_registry() []ProviderCliSpec {
@@ -69,6 +70,18 @@ pub fn provider_cli_registry() []ProviderCliSpec {
 			session_resume_verified: false   // loadSession advertised live, resume path not yet exercised
 			usage_reporting:         'unknown' // prompt-result usage not yet measured for Muse
 		},
+		ProviderCliSpec{
+			id:                      'cursor-agent'
+			name:                    'Cursor Agent'
+			exec:                    'cursor-agent'
+			protocol:                'acp' // initialize observed on cursor-agent 2026.09.15-d2fe57e
+			auth_status_args:        ['status', '--format', 'json']
+			auth_status_kind:        'cursor-json' // isAuthenticated observed; no credential contents read
+			permission_modes:        []          // disabled until Cursor's ACP permission options are verified
+			session_resume_verified: false
+			usage_reporting:         'unknown'
+			launch_blocked_reason:   'Cursor Agent is discovered but not launchable: Veasel has not implemented the required ACP authenticate(cursor_login) step or verified Cursor permission responses. Continue with the configured model provider or a verified CLI runner; authenticating Cursor with its own CLI does not enable it here.'
+		},
 	]
 }
 
@@ -90,6 +103,9 @@ pub fn validate_provider_cli_launch(id string, permission_mode string) !Provider
 	}
 	if spec.protocol == 'unknown' {
 		return error('${spec.name} protocol is not verified; refusing to launch')
+	}
+	if spec.launch_blocked_reason.len > 0 {
+		return error(spec.launch_blocked_reason)
 	}
 	if permission_mode !in spec.permission_modes {
 		return error('${spec.name} does not support permission mode "${permission_mode}"')

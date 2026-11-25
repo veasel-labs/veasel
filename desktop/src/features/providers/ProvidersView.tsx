@@ -119,6 +119,9 @@ export default function ProvidersView() {
                         ...(provider.installed && provider.protocol
                           ? [{ label: 'Adapter', value: provider.protocol }]
                           : []),
+                        ...(provider.installed && provider.launch_reason
+                          ? [{ label: 'Runner availability', value: provider.launch_reason }]
+                          : []),
                         ...(provider.installed && provider.auth_method
                           ? [{ label: 'Login method', value: provider.auth_method }]
                           : []),

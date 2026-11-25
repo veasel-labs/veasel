@@ -148,12 +148,12 @@ fn validate_goal_admission(goal GoalAdmission) ! {
 }
 
 fn validate_goal_tasks(tasks []GoalTask, repositories map[string]bool) ! {
-	mut remaining := map[string]int{}
-	mut dependents := map[string][]string{}
+	mut seen_tasks := map[string]bool{}
 	for task in tasks {
-		if task.id in remaining || !valid_goal_id(task.id) || !valid_session_title(task.title) {
+		if seen_tasks[task.id] || !valid_goal_id(task.id) || !valid_session_title(task.title) {
 			return error('Goal has an invalid or repeated task')
 		}
+		seen_tasks[task.id] = true
 		if !repositories[task.repository.to_lower()] || !valid_goal_sha(task.base_sha)
 			|| task.paths.len == 0 || task.runner.trim_space() == '' || task.verifier.trim_space() == ''
 			|| task.recipe !in ['research', 'bug', 'feature', 'migration', 'release'] {
@@ -162,6 +162,25 @@ fn validate_goal_tasks(tasks []GoalTask, repositories map[string]bool) ! {
 		if task.paths.any(!valid_goal_relative_path(it)) {
 			return error('Goal task paths must be relative to an authorized repository')
 		}
+	}
+	_ := ordered_goal_tasks(tasks)!
+}
+
+// ordered_goal_tasks validates and returns a stable Kahn traversal. Ready
+// tasks and each dependent list retain manifest order, so task-id spelling
+// never changes tie ordering. Both admission and the read-only task projection
+// use this one O(V+E) graph walk.
+fn ordered_goal_tasks(tasks []GoalTask) ![]GoalTask {
+	mut task_ids := map[string]bool{}
+	mut tasks_by_id := map[string]GoalTask{}
+	mut remaining := map[string]int{}
+	mut dependents := map[string][]string{}
+	for task in tasks {
+		if task.id in task_ids {
+			return error('Goal has an invalid or repeated task')
+		}
+		task_ids[task.id] = true
+		tasks_by_id[task.id] = task
 		remaining[task.id] = task.depends_on.len
 	}
 	mut ready := []string{}
@@ -189,6 +208,7 @@ fn validate_goal_tasks(tasks []GoalTask, repositories map[string]bool) ! {
 	if ready.len != tasks.len {
 		return error('Goal task dependencies contain a cycle')
 	}
+	return ready.map(tasks_by_id[it])
 }
 
 fn (mut store Store) admit_goal(goal GoalAdmission) !GoalAdmissionResult {

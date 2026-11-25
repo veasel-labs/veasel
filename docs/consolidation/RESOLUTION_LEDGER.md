@@ -960,8 +960,10 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   `~/.ai-workspace/loops` definitions and scheduler state were not modified.
 
 - 2026-11-25 20:48 UTC: Website fallback generator advanced the verified
-  download metadata to `v0.104.0-next.0` after validating the remote release,
+  download metadata to `v0.105.0-next.0` after validating the remote release,
   checksums, manifest, and asset digests. Website PR #235 contains only the
-  generated fallback and is awaiting CI. Homebrew fix PR #75 merged after its
-  cask check passed. Keep `agent-toolkit.io` on the personal Toolkit portable
-  capabilities track; this website sync only refreshes the Veasel downloads.
+  generated fallback, is synchronized with main, and its build CI passed.
+  The live site remains on v0.103.3 until the PR merges. Homebrew
+  fix PR #75 merged after its cask check passed. Keep `agent-toolkit.io` on
+  the personal Toolkit portable capabilities track; this website sync only
+  refreshes the Veasel downloads.

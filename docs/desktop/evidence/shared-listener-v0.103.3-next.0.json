@@ -1,5 +1,5 @@
 {
-  "classification": "PACKAGED LINUX SHARED-LISTENER STARTUP, PRIOR RUN PASSED; CURRENT HARNESS RERUN FAILED",
+  "classification": "PACKAGED LINUX SHARED-LISTENER STARTUP: PRIOR AND CORRECTED ROUTEPROBES PASSED; CHECKED-IN HARNESS RERUN FAILED",
   "date": "2026-11-25",
   "release": {
     "tag": "v0.103.3-next.0",
@@ -56,5 +56,40 @@
     "prior_pass": "Temporary predecessor with the same artifact, backend reuse, TUI, and Focus-route assertions; it ran before the checked-in child-environment allowlist was added. It made no provider request, but that run does not prove child environment isolation.",
     "checked_in_harness_rerun": "failed",
     "rerun_details": "On 2026-11-25 the AppImage-first attempt exited before the expected Focus route/readiness was observed. The TUI subsequently started a backend, so the run did not prove AppImage-first shared PID. Creation of the second-order profile then failed with Disk quota exceeded."
+  },
+  "corrected_routeprobe": {
+    "date": "2026-11-25",
+    "result": "passed",
+    "method": "Separate routeprobe that waits for the React Router Focus destination instead of accepting the initial Electron page.",
+    "artifacts_verified": true,
+    "release_tag": "v0.103.3-next.0",
+    "release_manifest_sha256": "c210c4a33792cf1ce5ee3bc0ff18f279b2f73a7141153dd730018c6cee238c4b",
+    "modes": [
+      {
+        "first_launcher": "AppImage",
+        "result": "passed",
+        "backend_version": "0.103.3-next.0",
+        "shared_backend_pid": true,
+        "authenticated_loopback_health": true,
+        "tui_visible": true,
+        "desktop_renderer": true,
+        "desktop_focus_page": true
+      },
+      {
+        "first_launcher": "standalone TUI",
+        "result": "passed",
+        "backend_version": "0.103.3-next.0",
+        "shared_backend_pid": true,
+        "authenticated_loopback_health": true,
+        "tui_visible": true,
+        "desktop_renderer": true,
+        "desktop_focus_page": true
+      }
+    ],
+    "limitations": [
+      "This routeprobe is separate from the checked-in harness and does not establish that the harness itself passes.",
+      "It validates startup and backend reuse only; it does not exercise provider authentication, approvals, file edits, cancellation, restart recovery, or macOS/Windows."
+    ],
+    "raw_host_summary": "Retained in the local validation cache; host PIDs, ports, and private temporary paths are intentionally omitted from this repository evidence."
   }
 }

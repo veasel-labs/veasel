@@ -51,3 +51,10 @@ observed, then the second order hit the host disk quota while creating its
 profile. The checked-in harness therefore does not yet have a successful
 full-run result. The release source contains shared-listener PR #820 and
 predates #821, so neither run verifies exact-file approval behavior.
+
+A separate corrected routeprobe passed both launch orders with the same
+hash-verified release. Its readiness check waits for the routed Focus page
+instead of accepting Electron's initial page. The sanitized result is recorded
+in the evidence JSON's `corrected_routeprobe` field. This independently confirms
+startup/reuse and a visible TUI/Focus page; it does not turn the checked-in
+harness run into a pass or establish the full daily-driver journey.

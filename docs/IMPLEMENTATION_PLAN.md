@@ -58,8 +58,9 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   runs kept one authenticated backend PID and reached a TUI connected view plus
   the Desktop Focus route. A later corrected routeprobe independently passed
   both orders and confirmed the visible TUI, routed Focus page, artifact hashes,
-  and shared backend PID/version; see
-  [`/tmp/veasel-host-acceptance-run-20261125-v1033-routeprobe/summary.json`](/tmp/veasel-host-acceptance-run-20261125-v1033-routeprobe/summary.json).
+  and shared backend PID/version; the sanitized result is preserved in the
+  [`corrected routeprobe evidence`](desktop/evidence/shared-listener-v0.103.3-next.0.json)
+  alongside the checked-in harness result.
   The checked-in harness itself still failed to observe AppImage-first
   readiness/Focus, then hit the host disk quota creating its second-order
   profile. These results establish packaged startup/reuse only, not the complete

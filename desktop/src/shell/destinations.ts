@@ -8,18 +8,7 @@ export interface Destination {
   component: LazyExoticComponent<ComponentType>;
 }
 
-export type DestinationPath =
-  | '/focus'
-  | '/world'
-  | '/providers'
-  | '/office'
-  | '/operations'
-  | '/workspace'
-  | '/library'
-  | '/people'
-  | '/insights'
-  | '/terminal'
-  | '/settings';
+export type DestinationPath = '/focus' | '/world' | '/providers' | '/terminal';
 
 export const DESTINATIONS: readonly Destination[] = [
   {
@@ -39,5 +28,11 @@ export const DESTINATIONS: readonly Destination[] = [
     label: 'Providers',
     question: 'Which installed tools and workspace capabilities can Veasel use?',
     component: lazy(() => import('../features/providers/ProvidersView')),
+  },
+  {
+    path: '/terminal',
+    label: 'Terminal',
+    question: 'Where can I work directly in a local terminal session?',
+    component: lazy(() => import('../features/terminal/TerminalView')),
   },
 ];

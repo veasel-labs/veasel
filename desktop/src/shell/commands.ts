@@ -1,33 +1,17 @@
 import { DESTINATIONS, type DestinationPath } from './destinations';
-import type { LoopInfo, McpProviderInfo, Person, SwarmRunInfo } from '../lib/api';
-import type { PtySessionInfo } from '../types/electron';
 
-export type CommandGroup = 'Go' | 'Library' | 'People' | 'Loops' | 'Swarms' | 'Session' | 'Appearance' | 'Help';
+export type CommandGroup = 'Go' | 'Session' | 'Appearance' | 'Help';
 
 export type PaletteAction =
   | { type: 'navigate'; path: DestinationPath }
-  | { type: 'workspace-switch' }
   | {
       type: 'world-jump';
-      target: 'world-knowledge' | 'world-memory' | 'world-projects' | 'world-terminal' | 'world-attention';
+      target: 'world-memory' | 'world-projects' | 'world-terminal' | 'world-attention';
     }
   | { type: 'world-project'; projectName: string }
-  | { type: 'person'; intent: 'inspect' | 'start' | 'session'; personId: string }
-  | { type: 'people-workflow'; intent: 'create' | 'import' }
-  | { type: 'library-workflow'; intent: 'review-installation' }
-  | { type: 'mcp-provider'; providerId: string }
-  | { type: 'loop-schedule'; name: string }
-  | { type: 'swarm-run'; runId: string }
   | {
       type: 'session';
-      intent:
-        | 'new-terminal'
-        | 'start-job'
-        | 'run-loop'
-        | 'start-swarm'
-        | 'next-needs-me'
-        | 'restart-backend'
-        | 'replay-onboarding';
+      intent: 'new-terminal' | 'restart-backend' | 'replay-onboarding';
     }
   | { type: 'theme'; theme: 'meadow' | 'dusk' | 'system' }
   | { type: 'help'; intent: 'shortcuts' };
@@ -51,14 +35,6 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
     keywords: [destination.label, destination.path.slice(1)],
     action: { type: 'navigate', path: destination.path },
   })),
-  {
-    id: 'go:world-knowledge',
-    group: 'Go',
-    title: 'Go to shared knowledge (Library)',
-    hint: 'Inspector the world opens · catalog knowledge, not memory',
-    keywords: ['world', 'knowledge', 'library', 'archive'],
-    action: { type: 'world-jump', target: 'world-knowledge' },
-  },
   {
     id: 'go:world-memory',
     group: 'Go',
@@ -98,70 +74,6 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
     hint: 'Open a PTY at this workstation',
     keywords: ['pty', 'shell', 'dock', 'workstation'],
     action: { type: 'session', intent: 'new-terminal' },
-  },
-  {
-    id: 'people:create',
-    group: 'People',
-    title: 'Create Person',
-    hint: 'Open the roster form for a reusable collaborator',
-    keywords: ['new', 'collaborator', 'hire', 'profile'],
-    action: { type: 'people-workflow', intent: 'create' },
-  },
-  {
-    id: 'library:review-installation',
-    group: 'Library',
-    title: 'Review capability installation',
-    hint: 'Inspect targets and paths before anything is written',
-    keywords: ['install', 'skills', 'agents', 'packs', 'preview', 'capabilities'],
-    action: { type: 'library-workflow', intent: 'review-installation' },
-  },
-  {
-    id: 'people:import-munder',
-    group: 'People',
-    title: 'Import Person from Munder Difflin',
-    hint: 'Review a hire file before saving; import never starts a session',
-    keywords: ['hire', 'json', 'review', 'munder', 'import'],
-    action: { type: 'people-workflow', intent: 'import' },
-  },
-  {
-    id: 'go:switch-workspace',
-    group: 'Go',
-    title: 'Switch workspace…',
-    hint: 'Settings · choose another local workspace or return to the default',
-    keywords: ['workspace', 'harness', 'switch', 'context', 'folder'],
-    action: { type: 'workspace-switch' },
-  },
-  {
-    id: 'session:start-job',
-    group: 'Session',
-    title: 'Start a job',
-    hint: 'Operations · inspect the job that serve returns',
-    keywords: ['job', 'operations', 'workshop'],
-    action: { type: 'session', intent: 'start-job' },
-  },
-  {
-    id: 'session:run-loop',
-    group: 'Session',
-    title: 'Run a loop as a job',
-    hint: 'Operations · POST /loops/{name}/run',
-    keywords: ['loop', 'operations', 'workshop'],
-    action: { type: 'session', intent: 'run-loop' },
-  },
-  {
-    id: 'session:start-swarm',
-    group: 'Session',
-    title: 'Start a swarm',
-    hint: 'Choose a recipe and task in Operations',
-    keywords: ['team', 'agents', 'operations', 'recipe'],
-    action: { type: 'session', intent: 'start-swarm' },
-  },
-  {
-    id: 'session:next-needs-me',
-    group: 'Session',
-    title: 'Next that needs me',
-    hint: 'Cycle crash, failed jobs, then running work',
-    keywords: ['attention', 'failed', 'crash', 'next', 'needs'],
-    action: { type: 'session', intent: 'next-needs-me' },
   },
   {
     id: 'session:restart-backend',
@@ -209,130 +121,6 @@ export const PALETTE_COMMANDS: readonly PaletteCommand[] = [
     action: { type: 'help', intent: 'shortcuts' },
   },
 ];
-
-/** Dynamic provider actions route to the same reviewed flow used in Library. */
-export function mcpProviderCommands(
-  providers: readonly Pick<McpProviderInfo, 'id' | 'display_name' | 'package' | 'required_env'>[],
-): PaletteCommand[] {
-  return [...providers]
-    .sort((a, b) => (a.display_name || a.id).localeCompare(b.display_name || b.id))
-    .map<PaletteCommand>((provider) => {
-      const name = provider.display_name || provider.id;
-      return {
-        id: `library:mcp:${provider.id}`,
-        group: 'Library',
-        title: `Configure ${name} MCP`,
-        hint: 'Review provider requirements and local changes first',
-        keywords: [
-          'mcp',
-          'provider',
-          'connector',
-          'configure',
-          provider.id,
-          provider.package,
-          ...provider.required_env,
-        ],
-        action: { type: 'mcp-provider', providerId: provider.id },
-      };
-    });
-}
-
-export function commandsForWorkspace(hasWorkspace: boolean): readonly PaletteCommand[] {
-  return hasWorkspace
-    ? PALETTE_COMMANDS
-    : PALETTE_COMMANDS.filter((command) => command.action.type !== 'people-workflow');
-}
-
-/** Dynamic direct actions for saved People; session actions require a live PTY. */
-export function personCommands(
-  people: readonly Pick<Person, 'id' | 'name' | 'role' | 'archived'>[],
-  sessions: readonly Pick<PtySessionInfo, 'personId' | 'projectId' | 'exitCode'>[],
-): PaletteCommand[] {
-  return [...people]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .flatMap((person) => {
-      const liveSession = sessions.find((session) => session.personId === person.id && session.exitCode === null);
-      const commonKeywords = ['people', 'person', person.id, person.name, person.role];
-      const commands: PaletteCommand[] = [
-        {
-          id: `people:inspect:${person.id}`,
-          group: 'People',
-          title: `Inspect ${person.name}`,
-          hint: `${person.role}${person.archived ? ' · archived' : ''}`,
-          keywords: [...commonKeywords, 'profile', 'details', 'open'],
-          action: { type: 'person', intent: 'inspect', personId: person.id },
-        },
-      ];
-      if (liveSession) {
-        commands.push({
-          id: `people:session:${person.id}`,
-          group: 'People',
-          title: `Open ${person.name}'s terminal`,
-          hint: `${person.role} · live PTY${liveSession.projectId ? ` · ${liveSession.projectId}` : ''}`,
-          keywords: [...commonKeywords, 'terminal', 'session', 'running', liveSession.projectId ?? ''],
-          action: { type: 'person', intent: 'session', personId: person.id },
-        });
-      } else if (!person.archived) {
-        commands.push({
-          id: `people:start:${person.id}`,
-          group: 'People',
-          title: `Start ${person.name}`,
-          hint: `${person.role} · review project and runner`,
-          keywords: [...commonKeywords, 'start', 'run', 'collaborator'],
-          action: { type: 'person', intent: 'start', personId: person.id },
-        });
-      }
-      return commands;
-    });
-}
-
-export function loopScheduleCommands(loops: readonly Pick<LoopInfo, 'name' | 'cadence'>[]): PaletteCommand[] {
-  return [...loops]
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((loop) => ({
-      id: `loop:schedule:${loop.name}`,
-      group: 'Loops',
-      title: `Manage ${loop.name} schedule`,
-      hint: `${loop.cadence} · review install or disable`,
-      keywords: ['schedule', 'timer', 'launchd', 'systemd', 'loop', loop.name],
-      action: { type: 'loop-schedule', name: loop.name },
-    }));
-}
-
-const ACTIONABLE_SWARM_STATES = new Set([
-  'paused',
-  'budget_exhausted',
-  'failed',
-  'awaiting_human',
-  'awaiting_plan_approval',
-]);
-
-export function recoverableSwarmCommands(
-  runs: readonly Pick<SwarmRunInfo, 'run_id' | 'task' | 'run_state' | 'recipe'>[],
-) {
-  return runs
-    .filter((run) => ACTIONABLE_SWARM_STATES.has(run.run_state))
-    .map((run) => ({
-      id: `swarm:inspect:${run.run_id}`,
-      group: 'Swarms' as const,
-      title: `Review ${run.run_state} swarm`,
-      hint: `${run.task || run.recipe || 'Swarm run'} · ${run.run_id}`,
-      keywords: [
-        'recover',
-        'resume',
-        'failed',
-        'paused',
-        'budget',
-        ...(run.run_state === 'awaiting_human' || run.run_state === 'awaiting_plan_approval'
-          ? ['approve', 'approval', 'human', 'plan', 'gate']
-          : []),
-        run.task,
-        run.recipe,
-        run.run_id,
-      ],
-      action: { type: 'swarm-run' as const, runId: run.run_id },
-    }));
-}
 
 export const SHORTCUTS: ReadonlyArray<{ keys: readonly string[]; action: string }> = [
   { keys: ['Ctrl', 'K'], action: 'Open the command palette' },

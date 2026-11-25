@@ -32,4 +32,15 @@ describe('projectVeaselBackendState', () => {
       problem: 'spawn-error',
     });
   });
+
+  it('projects the protected renderer proxy URL instead of the backend loopback URL', () => {
+    const state = projectVeaselBackendState(
+      { status: 'ready', url: 'http://127.0.0.1:4097', problem: null },
+      null,
+      false,
+      'http://127.0.0.1:43123',
+    );
+
+    expect(state.url).toBe('http://127.0.0.1:43123');
+  });
 });

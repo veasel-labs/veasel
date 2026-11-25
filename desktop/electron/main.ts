@@ -76,7 +76,12 @@ async function createWindow(): Promise<void> {
       rendererServer?.setBackendTarget(state.url);
       mainWindow?.webContents.send(
         'atk:backend-state',
-        projectVeaselBackendState(state, harness?.resolve() ?? null, veaselBackend?.isAttached()),
+        projectVeaselBackendState(
+          state,
+          harness?.resolve() ?? null,
+          veaselBackend?.isAttached(),
+          rendererServer?.url ?? null,
+        ),
       );
     });
     ipcMain.handle('veasel:backend-url', () => rendererServer?.url ?? null);

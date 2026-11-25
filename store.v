@@ -2957,6 +2957,32 @@ fn (mut store Store) events_after(after int) ![]Event {
 	return events
 }
 
+// Session history needs durable turn boundaries as well as persisted chat text.
+// Return only the public message markers and completion facts; live deltas are
+// deliberately excluded because they are replayed only while a turn is active.
+fn (mut store Store) session_history_events(session_id string) ![]Event {
+	store.mu.lock()
+	defer {
+		store.mu.unlock()
+	}
+	rows := store.db.exec_param("SELECT id, type, session_id, created_at, data FROM events WHERE session_id = ? AND type IN ('message.created', 'session.turn_completed') ORDER BY id",
+		session_id)!
+	mut events := []Event{cap: rows.len}
+	for row in rows {
+		data := json2.decode[EventData](row.val(4)) or {
+			return error('unable to decode stored session history event')
+		}
+		events << Event{
+			id:         row.val(0).int()
+			type:       row.val(1)
+			session_id: row.val(2)
+			created_at: row.val(3)
+			data:       data
+		}
+	}
+	return events
+}
+
 fn (mut store Store) assistant_text_for_operation(session_id string, operation_id string) !string {
 	if !validate_operation_id(operation_id) {
 		return error('invalid session operation identifier')

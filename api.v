@@ -2028,6 +2028,21 @@ pub fn (app &App) get_session_messages(mut ctx Context, id string) veb.Result {
 	return ctx.json(messages)
 }
 
+@['/v1/sessions/:id/events'; get]
+pub fn (app &App) get_session_history_events(mut ctx Context, id string) veb.Result {
+	_ := app.store.get_session(id) or {
+		ctx.res.set_status(.not_found)
+		return ctx.json(APIError{
+			error: 'session not found'
+		})
+	}
+	mut store := app.store
+	events := store.session_history_events(id) or {
+		return json_server_error(mut ctx, 'Unable to read session history events')
+	}
+	return ctx.json(events)
+}
+
 fn parse_session_history_query(query map[string]string) !(int, int) {
 	mut limit := max_session_history_page_size
 	if raw_limit := query['limit'] {

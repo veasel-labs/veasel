@@ -1506,6 +1506,23 @@ fn test_async_session_turn_completion_event_commits_with_exchange() {
 	assert completion.data.output_tokens == 0
 }
 
+fn test_session_history_events_preserve_message_and_completion_order() {
+	mut store := open_store(':memory:') or { panic(err) }
+	defer { store.close() or {} }
+	session := store.create_session(SessionInput{ title: 'History', directory: '/tmp/history' }) or {
+		panic(err)
+	}
+	_ = store.append_exchange(session.id, 'b1f21cb9-6f34-43d6-b924-7e8b71d9b307', 'Review this change',
+		'Changes applied.', 'openai-compatible', 'fixture-model', '', ProviderUsage{}) or { panic(err) }
+	events := store.session_history_events(session.id) or { panic(err) }
+	assert events.map(it.type) == ['message.created', 'message.created', 'session.turn_completed']
+	assert events[2].session_id == session.id
+	assert events[2].data.status == 'completed'
+	assert events[2].data.operation_id == 'b1f21cb9-6f34-43d6-b924-7e8b71d9b307'
+	missing := store.session_history_events('missing') or { panic(err) }
+	assert missing.len == 0
+}
+
 fn test_session_operation_persists_provider_reported_token_usage() {
 	mut store := open_store(':memory:') or { panic(err) }
 	defer { store.close() or {} }

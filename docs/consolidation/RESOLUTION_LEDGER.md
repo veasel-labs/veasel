@@ -3,8 +3,29 @@
 Epic: [#689](https://github.com/veasel-labs/veasel/issues/689) ·
 Supersedes the 2026-11-15 snapshot in [TRIAGE_LEDGER.md](TRIAGE_LEDGER.md)
 (proposals only; kept for history).
-Refreshed: **2026-11-25 00:57 UTC** from live GitHub state. Method: issue/PR
-queries, default-branch SHAs, latest exact-head CI, and release metadata.
+This is an append-only record of dated checkpoints. The opening inventory is
+historical (**2026-11-25 00:57 UTC**); the latest live-state checkpoint is
+**2026-11-25 18:17 UTC** below. Method: GitHub issue/PR queries, default-branch
+SHAs, latest exact-head CI, release metadata, and host acceptance artifacts.
+
+## Latest live state — 2026-11-25 18:17 UTC
+
+| Repository | main SHA | Open issues | Open PRs | Current evidence |
+| --- | --- | ---: | ---: | --- |
+| veasel-labs/veasel | `9d59d61697730e95b63c8fbf7adaef038e79935d` | 5 | 7 | #828 palette route fix merged; exact-main CI `45670879316` is pending; #829–831 and #832 remain open. |
+| veasel-labs/agent-toolkit | `16eb93b22e2d1df44fbfcd88e3662321163c1743` | 0 | 0 | Marketplace governance issue #10 resolved; community plugin entries still await independent review. |
+| veasel-labs/website | `4a708170ace9612171bbc8168d47574786a544c1` | 0 | 0 | Release metadata updated; build/deploy workflows green; live `/downloads/` shows v0.103.3-next.0 and unsigned status. |
+| veasel-labs/homebrew-tap | `37ad7cfe0bb2b3d680d562ebca4108ef7bb31159` | 0 | 0 | Release cask merged; post-merge CI green. |
+| veasel-labs/aur-package | `cfd14914e35b05c2a323ba2449d0fd02c18409a6` | 0 | 0 | Package CI and publisher green; AUR RPC reports v0.103.3.next.0-1. |
+| veasel-labs/.github | `6c20f546bdf7768d7563a1f8e7f324205dea0eac` | 0 | 0 | No pending governance changes. |
+| ulises-jeremias/agent-toolkit | `d3a8586362f684ca24f423384c65f7f753c6e3f2` | 0 | 1 | Release 1.51.0 PR #1854 (`f802ae5`): generated-bundle check passes; core CI is queued and some ancillary checks are pending. Live agent-toolkit.io promotes portable capabilities across agents. |
+| ulises-jeremias/my-ai-workspace | `220d4750e9985248eddf7667671c32c60177cf5a` | 0 | 0 | Goal-loop handoff #14 and CI-reference correction #15 merged; post-merge CI is running. |
+| **Total** | | **5** | **8** | Open work remains in Veasel and the Toolkit 1.51.0 release-prep PR. |
+
+The immutable Veasel release `v0.103.3-next.0` and its consumers are now
+synchronized. The host's packaged shared-listener startup passed in both
+launch orders, but this release predates #821 and does not establish the
+complete daily-driver acceptance in issue #550.
 
 ## Checkpoint 2026-11-25 00:57 UTC — Desktop runtime bridge and Focus acceptance
 
@@ -609,3 +630,195 @@ HUMAN BLOCKERS if certificates/accounts are absent — never claim signed.
   tests green locally on Linux; native jobs on the PR are the platform
   proof). Remaining totals after closures: 47 issues / 16 PRs (incl. #773,
   #774, #775).
+- 2026-11-25 16:50 UTC: release-sync audit for Veasel `v0.103.3-next.0`.
+  GitHub reports the release immutable and published, targeting source
+  `1ed9ae5f3c82c5e1f70a1cb48f91f6270c159c80`; `release.json` reports Linux,
+  macOS arm64 and Windows x86_64 CI/assets published, with Desktop installers
+  unsigned. The release `SHA256SUMS` entries agree with `release.json` digests
+  and GitHub asset SHA-256 metadata for all listed payloads checked. The
+  downloaded manifest includes `veasel-tui.exe` in `assets[]` and in
+  `SHA256SUMS`; an earlier audit note claiming otherwise was incorrect. This
+  is a metadata cross-check; the large binary payloads were not downloaded and
+  rehashed independently.
+  Website main `src/data/verified-release.json` and the Homebrew cask still
+  point to `v0.103.2-next.0`; AUR `PKGBUILD`/`.SRCINFO` likewise still pin
+  `v0.103.2.next.0`. There are no open PRs in the three consumer repositories.
+  Follow-up at that checkpoint: refresh website verified release metadata,
+  Homebrew cask version/SHA, and AUR PKGBUILD plus generated `.SRCINFO` against
+  `v0.103.3-next.0`, then review consumer CI/deployment or package-publisher
+  results. The manifest already included `veasel-tui.exe`; the earlier audit
+  note claiming otherwise was incorrect. No external repository was changed
+  during this audit.
+
+- 2026-11-25 17:12 UTC: HorneroOS host acceptance of official `v0.103.3-next.0`
+  was run only in isolated temporary profiles. The release manifest SHA-256
+  is `c210c4a3…238c4b`; all nine payloads were downloaded, rehashed against
+  both `release.json` and `SHA256SUMS`, and the source SHA is `1ed9ae5f`
+  (#820 only). In the first run AppImage-first rendered Focus and shared its
+  healthy backend PID with TUI. TUI-first rendered TUI, kept the same healthy
+  backend PID and had no data-dir lock conflict, but Desktop did not reach the
+  Focus route, so the run failed acceptance. A diagnostic rerun was
+  intermittent: it did not consistently expose a renderer page and one
+  instrumented AppImage launch exited 127. This prerelease lacks #821 and is
+  not accepted for daily use; no installed path or user data was changed.
+  Sanitized results and hashes: `/tmp/veasel-host-acceptance-v1033-summary.json`;
+  full release artifacts and logs are under `/tmp/veasel-release-acceptance-v1033-full`
+  and `/tmp/veasel-host-acceptance-run-20261125-v1033-p0`.
+
+- 2026-11-25: latest verified Veasel main is
+  `dcc7bd0e1cd17de48c6406fcb29fcffede03dd90`, including #824 (correlated
+  Codex JSON-RPC handshake) and #825 (Cursor ACP discovery-only). #822 Goal
+  intake is integrated at `ff1af49a08744cd8b8ce1fbc0bd90f72a32f1164`.
+  Main CI run `45662840256` is still pending; watchdog `45662854547` passed
+  but is not a substitute for the actual CI result.
+  #826 preflight hardening is on `7dc61e49`; its current CI run
+  `45662647961` remains in progress with Linux/macOS/Windows backend and
+  several Linux shards pending. Its earlier package/publish failures belong
+  to the old base/head and do not establish failure of the current run.
+  #828 palette route fix remains open; CI run `45652358285` has all reported
+  checks passed except Windows backend still in progress.
+  #823/#826/#827 are based on synthetic branch `feat/durable-goal-intake`
+  and are not yet integrated. #823's feature diff has been reconstructed on
+  current main as PR #829 (`4fa09a16`); local `goals_test.v` passed and
+  independent review found no blockers, while noting CLI end-to-end output
+  coverage can be expanded. Equivalent main-based PRs #830 (`c27d8511`,
+  preflight; two focused V test files passed) and #831 (`7caff3db`, task
+  projection; two focused V test files passed) are now open. Independent Luna
+  review found no task projection blocker; it confirmed the endpoint is
+  authenticated, deterministic and read-only. All three replacements require
+  their GitHub checks and merge before the old stacked PRs can close as
+  superseded. Current Veasel inventory is five open issues (#549/#550/#673/
+  #689/#693) and seven open PRs (#823/#826/#827/#828/#829/#830/#831).
+  The other six repositories have zero open PRs/issues in the live snapshot;
+  their latest main workflows are green. Personal Toolkit main is
+  `d3a8586362f684ca24f423384c65f7f753c6e3f2`; marketplace main is
+  `16eb93b22e2d1df44fbfcd88e3662321163c1743`; Homebrew `2c2c796c`, AUR
+  `0d757707`, Website `a0d4eb1b`, org `.github` `6c20f546`. The release
+  consumers are nevertheless one version behind (`v0.103.2-next.0` vs
+  current `v0.103.3-next.0`). Website draft #234 (`5517a182`) and Homebrew
+  #74 (`5a3508d8`) now propose that exact release. AUR draft #79 (`c3c0c01e`)
+  is open; its candidate workflow `45665835206`
+  verified checksums, regenerated `.SRCINFO`, and built/smoke-tested Arch.
+  Its PR CI run `45666108454` was `action_required` with no jobs; GitHub's run
+  payload identifies `github-actions[bot]` as actor but does not expose a
+  reason. A clean human-authored replacement is being prepared to obtain the
+  standard PR workflow. Homebrew's macOS workflow
+  `45665957394` was queued/pending; its local verifier and eight Python tests
+  passed. Website's release generator, Astro checks and formatting passed;
+  preview check passed but remaining PR checks had not reported. None is
+  merged/deployed. Local Homebrew/macOS package-manager acceptance is
+  unavailable on this Linux host.
+
+  The existing `~/.ai-workspace` loops were inventoried in its local report;
+  the resumed Codex `veasel-labs` chat produced a read-only Goal v1 handoff at
+  commit `fd94aa64` in branch `codex/goal-loop-adoption-20261125`. Private
+  PR #14 is open. It preserves all seven loop YAML/state histories and
+  records stale release-pilot base SHAs, missing installed Toolkit Goal CLI,
+  and no verified Veasel dispatcher. No timers, loop triggers or dirty user
+  checkouts were changed.
+
+- 2026-11-25: reran shared-listener packaged acceptance against the
+  same official v0.103.3 assets with a corrected route wait. The previous
+  helper returned as soon as Electron exposed any page, before React Router
+  redirected to Focus, producing a false negative for TUI-first. The corrected
+  helper waits for `/#/focus`, records page URLs and persists `summary.json`.
+  Both AppImage-first and TUI-first passed: TUI visible, Focus page visible,
+  authenticated backend healthy, same backend PID before and after launching
+  the second UI, and both isolated backends report `0.103.3-next.0`. Artifact
+  hashes match the release manifest. Evidence: `/tmp/veasel-host-acceptance-run-20261125-v1033-routeprobe/summary.json`.
+  This verifies shared-listener startup only. It is the #820 source release,
+  so it does not validate #821 exact-file approval, an existing session's
+  Desktop↔TUI continuation, a real provider edit, restart or recovery.
+
+- 2026-11-25 17:50 UTC: distribution and Goal progress refreshed. AUR PR #80
+  merged to main at `cfd14914e35b05c2a323ba2449d0fd02c18409a6`; its exact-main
+  Package CI run `45667864928` passed all 23 tests and Arch package checks.
+  The separately authorized publisher run `45668419628` passed immutable
+  artifact checksum verification and Arch build/install smoke, then completed
+  successfully; the public AUR RPC reports `veasel-code-bin 0.103.3.next.0-1`.
+  The earlier accidental metadata push was reverted, and the downgrade-guard
+  failure on that revert is superseded by reviewed PR #80 and its green main CI.
+  Homebrew PR #74 merged as `37ad7cfe0bb2b3d680d562ebca4108ef7bb31159`;
+  its exact-head cask check and main run `45668892548` both passed. Website PR
+  #234, after being marked ready, merged as
+  `4a708170ace9612171bbc8168d47574786a544c1`; its build and Vercel previews
+  passed. Post-merge build/deploy runs `45668989306`/`45668989394` passed and
+  the live homepage contains `v0.103.3-next.0`. Local macOS Homebrew installation
+  is not proven on this Linux host.
+
+  Goal PRs reconstructed directly on current Veasel main remain open:
+  #829 CLI (`4fa09a16`), #830 repository preflight (`c27d8511`) and #831
+  deterministic read-only task projection (`7caff3db`). #831's client,
+  security, coverage, six Linux shards and macOS backend checks have passed;
+  its Linux and Windows backends remain pending. #829 has passing client,
+  security, coverage, six Linux shards and macOS backend checks; Linux and
+  Windows backends remain pending. #830 has one Terminal client test failure;
+  GitHub has not yet exposed the failed job log because its core CI run is
+  still active, while multiple backend/shard jobs remain pending. Do not merge
+  these PRs until exact-head required CI passes. Veasel main remains
+  `dcc7bd0e1cd17de48c6406fcb29fcffede03dd90`; core CI `45662840256` is still
+  pending without jobs, and green watchdog `45662854547` is not the core gate.
+  The clean main-based PRs supersede the synthetic-base drafts #823/#826/#827
+  only after the replacements merge.
+
+  Personal Toolkit Goal v1 remains in main at
+  `d3a8586362f684ca24f423384c65f7f753c6e3f2`; a release-preparation PR #1854
+  now bumps the portable CLI to 1.51.0 and includes Goal v1 release notes.
+  Its CI/review is pending. No tag, package publication or local CLI upgrade
+  has occurred. Private `~/.ai-workspace` handoff PR #14 is updated at
+  `dc7ad537d6d8590587ec33bf63f6758575cc9f15`; checks passed. It preserves the
+  seven loop histories, does not change timers/triggers or dirty checkouts,
+  and correctly records authenticated Veasel Goal admission as integrated
+  while dispatch/scheduling/recovery remain absent. Its head was refreshed to
+  `5f6c1084ca9db9eb986d85b42341c1a03561eb8d` with the latest #830 timeout,
+  the #828-updated Veasel main pin and #1854's actual open-PR status. Luna
+  review confirmed it touched no loops/timers/user data; updated checks passed
+  and the documentation merged as `f569b67f3a122751aa32e315ffc6a08f26925efb`.
+
+- 2026-11-25 17:58 UTC: packaged acceptance harness PR #832 is open at
+  `d6ed413fdbf638946c2a330c35b8ed8f76bdffa9`. It records the earlier shared-
+  listener PASS and a separate rerun that failed to reach Focus and later hit
+  host disk quota; it does not overwrite the successful recorded run. Luna
+  review approved the checked-in evidence scope and environment isolation.
+  Child processes now receive a fixed environment that excludes inherited
+  credentials, proxy values, display/DBus sockets and Veasel overrides; a
+  focused test injects such values and confirms none leak; the focused test and
+  syntax check are wired into Linux CI. Local checks passed (`py_compile`,
+  focused test, artifact hash/trust-anchor verification, `--help`, evidence
+  JSON parse and `git diff --check`). PR CI remains pending.
+
+- 2026-11-25 18:02 UTC: PR #828 passed exact-head CI across Linux, macOS,
+  Windows, Desktop, Terminal, Focus journeys, security and all Linux shards;
+  Luna's independent review found no routing issue. It merged as
+  `9d59d61697730e95b63c8fbf7adaef038e79935d`. The PR inventory is now seven
+  open Veasel PRs (#823, #826, #827, #829, #830, #831, #832). Main run
+  `45670879316` has started; verify its required jobs before claiming current
+  main is green.
+
+- 2026-11-25 18:14 UTC: a one-line follow-up PR #15 in the private workspace
+  corrects the handoff's exact-main CI ID to `45670879316`. Luna confirmed that
+  run is pending for SHA `9d59d61697730e95b63c8fbf7adaef038e79935d`; the
+  documentation change passed `git diff --check`, with PR checks pending. It
+  does not touch loops, timers, or user data.
+
+- 2026-11-25 18:16 UTC: private workspace PR #15 passed Pre-commit and context
+  schema checks, then merged as `220d4750e9985248eddf7667671c32c60177cf5a`.
+  Its post-merge CI run `45673431723` is in progress; no loop data or timers
+  were changed.
+
+- 2026-11-25 18:17 UTC: PR #1854's generated-artifact failure was traced to a
+  stale checked-in Goal v1 resource bundle. Commit `f802ae5c` regenerates the
+  bundle and matching hash; hosted check #981 passes with matching size/hash,
+  and Luna review found no issue. The exact-head workflow is queued with some
+  ancillary checks still pending. No merge, tag, package publication, or
+  installed CLI upgrade occurred. A live
+  audit of `agent-toolkit.io` confirms it leads with portable skills, agents,
+  MCP templates and workflows; it separates Veasel as the integrated app and
+  lists other supported agent tools.
+
+  The failed #830 Terminal job log is now accessible: the queue/cancel UI test
+  made 705 of 706 tests pass, then timed out after its second queued-turn
+  cancellation while waiting for the message to disappear from the frame.
+  The log does not establish whether runner timing or product state caused it;
+  rerun exact-head CI before changing product behavior. Main CI run
+  `45670879316` is still pending; PR #832 CI `45670205816` remains in progress.

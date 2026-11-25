@@ -56,12 +56,17 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   `v0.103.3-next.0` passing with both packaged launchers in both orders
   (AppImage→TUI and TUI→AppImage). The artifacts matched `release.json`; both
   runs kept one authenticated backend PID and reached a TUI connected view plus
-  the Desktop Focus route. A rerun of the checked-in harness failed to observe
-  AppImage-first readiness/Focus, then hit the host disk quota creating the
-  second-order profile. The recorded prior pass is not a passing run of the
-  checked-in harness. The Desktop renderer was inspected headlessly, so this
-  proves startup/reuse only. The
-  release predates exact-file approval PR #821. Reproduction and exact artifact
+  the Desktop Focus route. A later corrected routeprobe independently passed
+  both orders and confirmed the visible TUI, routed Focus page, artifact hashes,
+  and shared backend PID/version; see
+  [`/tmp/veasel-host-acceptance-run-20261125-v1033-routeprobe/summary.json`](/tmp/veasel-host-acceptance-run-20261125-v1033-routeprobe/summary.json).
+  The checked-in harness itself still failed to observe AppImage-first
+  readiness/Focus, then hit the host disk quota creating its second-order
+  profile. These results establish packaged startup/reuse only, not the complete
+  daily-driver journey. The Desktop renderer was inspected headlessly. The
+  separate diagnostic attempt that exited 127 is intermittent; available logs
+  do not establish its cause. The release predates exact-file approval PR #821.
+  Reproduction and exact artifact
   hashes are in [`desktop/packaged-shared-listener-smoke.md`](desktop/packaged-shared-listener-smoke.md)
   and [`desktop/evidence/shared-listener-v0.103.3-next.0.json`](desktop/evidence/shared-listener-v0.103.3-next.0.json).
 - On the same Linux host, the released AppImage completed a real Claude Code

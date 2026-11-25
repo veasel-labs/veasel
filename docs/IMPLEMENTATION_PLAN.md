@@ -73,6 +73,31 @@ remain open. See [`RESEARCH.md`](RESEARCH.md) and
   installed cross-platform recovery and full daily-driver acceptance remain
   tracked in [#550](https://github.com/veasel-labs/veasel/issues/550).
 
+### Optional cozy World (#693)
+
+- The packaged Linux preview `v0.105.0-next.0` was installed side-by-side on
+  HorneroOS and launched through its extracted AppDir because this host denies
+  AppImage FUSE mounting. Its top-down pixel-art World rendered nine real
+  destinations; no session or productivity activity was fabricated. A
+  separate isolated profile also opened the World with real temporary sessions.
+  Screenshots are retained under `/home/ulisesjcf/.cache/veasel-validation/`.
+- The packaged World currently projects the real Focus session list and
+  destinations. PR #836 adds existing memory, detected-tool, and job sources,
+  makes project job state explicitly unknown when that source is unavailable,
+  and labels retained data after a backend disconnect. It also replaces fixed
+  “ready” claims with destination descriptions and improves the camera framing
+  for tall compact windows while keeping Fit World as the complete overview.
+  This is an open PR, not a released behavior; its regression suite and CI must
+  pass before the change is considered shipped.
+- The World remains optional and is not evidence of daily-driver completion.
+  Focus/TUI session parity, provider authentication recovery, cancellation,
+  packaged-session recovery, and cross-platform acceptance remain open under
+  [#550](https://github.com/veasel-labs/veasel/issues/550). On this host, the
+  installed Codex authentication completed a real isolated read-only acceptance
+  turn. Claude’s UI reported an authenticated MAX account but the provider
+  rejected its revoked OAuth token; Cursor is detected but is not yet
+  launchable through Veasel. No credentials were changed as part of acceptance.
+
 ### Durable goals and worker coordination
 
 - [x] Add Veasel-specific, authenticated admission, listing and manifest replay for portable goals.
